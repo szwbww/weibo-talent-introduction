@@ -6,7 +6,9 @@ import com.weibo.talentintroduction.campaign.service.ExpertContactManagementServ
 import com.weibo.talentintroduction.campaign.service.ManualHandoffAssignCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCompleteCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCreateCommand
+import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
+import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.service.ManualExpertMailService
 import com.weibo.talentintroduction.mail.service.ManualMailOption
@@ -122,6 +124,8 @@ data class ManualMailSendRequest(
 data class ExpertContactDetailResponse(
     val contact: ExpertContactResponse,
     val mails: List<MailRecordResponse>,
+    val attachments: List<MailAttachmentResponse>,
+    val documents: List<ExpertDocumentResponse>,
     val latestHandoff: ManualHandoffResponse?
 )
 
@@ -154,6 +158,27 @@ data class MailRecordResponse(
     val createdAt: String?
 )
 
+data class MailAttachmentResponse(
+    val id: Long?,
+    val mailRecordId: Long,
+    val fileName: String,
+    val contentType: String?,
+    val fileSize: Long,
+    val storagePath: String,
+    val createdAt: String?
+)
+
+data class ExpertDocumentResponse(
+    val id: Long?,
+    val expertContactId: Long,
+    val mailAttachmentId: Long,
+    val documentType: String,
+    val documentStatus: String,
+    val reviewNote: String?,
+    val createdAt: String?,
+    val updatedAt: String?
+)
+
 data class ManualHandoffResponse(
     val id: Long?,
     val expertContactId: Long,
@@ -167,6 +192,8 @@ private fun ExpertContactDetail.toResponse(): ExpertContactDetailResponse =
     ExpertContactDetailResponse(
         contact = contact.toResponse(),
         mails = mails.map { it.toResponse() },
+        attachments = attachments.map { it.toResponse() },
+        documents = documents.map { it.toResponse() },
         latestHandoff = latestHandoff?.toResponse()
     )
 
@@ -199,6 +226,29 @@ private fun MailRecord.toResponse(): MailRecordResponse =
         receivedAt = receivedAt?.toString(),
         sentAt = sentAt?.toString(),
         createdAt = createdAt?.toString()
+    )
+
+private fun MailAttachment.toResponse(): MailAttachmentResponse =
+    MailAttachmentResponse(
+        id = id,
+        mailRecordId = mailRecordId,
+        fileName = fileName,
+        contentType = contentType,
+        fileSize = fileSize,
+        storagePath = storagePath,
+        createdAt = createdAt?.toString()
+    )
+
+private fun ExpertDocument.toResponse(): ExpertDocumentResponse =
+    ExpertDocumentResponse(
+        id = id,
+        expertContactId = expertContactId,
+        mailAttachmentId = mailAttachmentId,
+        documentType = documentType,
+        documentStatus = documentStatus,
+        reviewNote = reviewNote,
+        createdAt = createdAt?.toString(),
+        updatedAt = updatedAt?.toString()
     )
 
 private fun ManualHandoff.toResponse(): ManualHandoffResponse =

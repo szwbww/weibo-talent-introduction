@@ -3,9 +3,13 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.document.domain.ExpertDocument
+import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
+import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -14,7 +18,9 @@ import java.time.LocalDateTime
 class ExpertContactManagementService(
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
-    private val manualHandoffRepository: ManualHandoffRepository
+    private val manualHandoffRepository: ManualHandoffRepository,
+    private val mailAttachmentRepository: MailAttachmentRepository,
+    private val expertDocumentRepository: ExpertDocumentRepository
 ) {
     fun listContacts(campaignId: Long?, status: String?): List<ExpertContact> =
         when {
@@ -33,9 +39,15 @@ class ExpertContactManagementService(
 
     fun getContactDetail(contactId: Long): ExpertContactDetail {
         val contact = getContact(contactId)
+        val mails = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        val attachments = mails
+            .mapNotNull { it.id }
+            .flatMap(mailAttachmentRepository::findAllByMailRecordIdOrderByCreatedAtAsc)
         return ExpertContactDetail(
             contact = contact,
-            mails = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
+            mails = mails,
+            attachments = attachments,
+            documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
             latestHandoff = manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(contactId)
         )
     }
@@ -124,6 +136,8 @@ class ExpertContactManagementService(
 data class ExpertContactDetail(
     val contact: ExpertContact,
     val mails: List<MailRecord>,
+    val attachments: List<MailAttachment>,
+    val documents: List<ExpertDocument>,
     val latestHandoff: ManualHandoff?
 )
 

@@ -16,5 +16,12 @@ data class ReceivedMail(
     val body: String,
     val messageId: String?,
     val inReplyTo: String?,
-    val receivedAt: LocalDateTime
+    val receivedAt: LocalDateTime,
+    val attachments: List<ReceivedMailAttachment> = emptyList()
+)
+
+data class ReceivedMailAttachment(
+    val fileName: String,
+    val contentType: String?,
+    val content: ByteArray
 )

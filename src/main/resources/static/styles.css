@@ -1041,6 +1041,35 @@ textarea {
     grid-column: 1 / -1;
 }
 
+.document-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: #ffffff;
+}
+
+.document-row > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.document-row strong {
+    white-space: nowrap;
+}
+
+.document-row span {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
 /* Keywords Pills */
 .keywords-container {
     display: flex;

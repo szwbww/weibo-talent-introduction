@@ -64,6 +64,28 @@ const mailTypeLabels = {
     MEETING_INVITATION: "会议邀约"
 };
 
+const documentTypeLabels = {
+    CV: "简历",
+    PASSPORT: "护照",
+    PHD_DEGREE: "博士学位",
+    MASTER_DEGREE: "硕士学位",
+    BACHELOR_DEGREE: "学士学位",
+    EMPLOYMENT_PROOF: "工作证明",
+    PATENT_PROOF: "专利证明",
+    AWARD_PROOF: "奖项证明",
+    PUBLICATION_LIST: "论文清单",
+    PPT: "PPT",
+    VIDEO: "视频",
+    COMMITMENT: "承诺书",
+    OTHER: "其他材料"
+};
+
+const documentStatusLabels = {
+    PENDING_REVIEW: "待审核",
+    ACCEPTED: "已通过",
+    REJECTED: "已驳回"
+};
+
 function labelStatus(value) {
     return statusLabels[value] || value || "";
 }
@@ -74,6 +96,21 @@ function labelMailDirection(value) {
 
 function labelMailType(value) {
     return mailTypeLabels[value] || value || "";
+}
+
+function labelDocumentType(value) {
+    return documentTypeLabels[value] || value || "";
+}
+
+function labelDocumentStatus(value) {
+    return documentStatusLabels[value] || value || "";
+}
+
+function formatFileSize(size) {
+    if (!size) return "0 B";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -449,6 +486,7 @@ function showExpertDetail(expert) {
     const contactDetail = $("#contactDetail");
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
+    const attachmentsById = new Map((detail.attachments || []).map((attachment) => [attachment.id, attachment]));
     contactDetail.innerHTML = `
         <div class="detail">
             <div class="expert-profile-header">
@@ -465,6 +503,30 @@ function showExpertDetail(expert) {
 
             <div class="mail-timeline">
                 ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
+            </div>
+
+            <div class="metadata-card span-all">
+                <div class="metadata-card-header">
+                    <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.82l8.48-8.49"/></svg>
+                    <span>专家材料</span>
+                </div>
+                <div class="metadata-card-value" style="display: flex; flex-direction: column; gap: 8px;">
+                    ${(detail.documents || []).length ? detail.documents.map((document) => {
+                        const attachment = attachmentsById.get(document.mailAttachmentId);
+                        return `
+                            <div class="document-row">
+                                <div>
+                                    <strong>${escapeHtml(labelDocumentType(document.documentType))}</strong>
+                                    <span>${escapeHtml(attachment?.fileName || "未知文件")}</span>
+                                </div>
+                                <div>
+                                    ${badge(labelDocumentStatus(document.documentStatus), document.documentStatus === "REJECTED" ? "error" : document.documentStatus === "ACCEPTED" ? "ok" : "warn")}
+                                    <span>${escapeHtml(formatFileSize(attachment?.fileSize || 0))}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join("") : "<span>暂无材料附件。</span>"}
+                </div>
             </div>
 
             <div class="metadata-grid">

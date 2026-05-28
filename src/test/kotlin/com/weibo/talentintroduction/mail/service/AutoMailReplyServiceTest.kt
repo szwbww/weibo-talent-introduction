@@ -30,6 +30,7 @@ class AutoMailReplyServiceTest {
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val inboundIntentRepository = Mockito.mock(InboundIntentRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
+    private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
     private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val service = AutoMailReplyService(
@@ -41,6 +42,7 @@ class AutoMailReplyServiceTest {
         inboundMailProcessingRepository,
         inboundIntentRepository,
         manualHandoffRepository,
+        mailAttachmentService,
         MailBodyCleaner(),
         InboundIntentClassifier(),
         mailTemplateService,
@@ -100,6 +102,9 @@ class AutoMailReplyServiceTest {
             val record = invocation.getArgument<MailRecord>(0)
             record.copy(id = record.id ?: 100)
         }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
         Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
             QaMatchResult(
                 ruleId = 7,
@@ -148,6 +153,9 @@ class AutoMailReplyServiceTest {
             val record = invocation.getArgument<MailRecord>(0)
             record.copy(id = record.id ?: 100)
         }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
 
         val result = service.receiveAndAutoReply("sender", 5)
 

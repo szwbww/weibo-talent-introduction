@@ -61,6 +61,8 @@ talent-introduction:
     initial-outreach-cron: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CRON:-}
     initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
+  mail-attachment-storage:
+    base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
 
 server:
   port: ${SERVER_PORT:8080}

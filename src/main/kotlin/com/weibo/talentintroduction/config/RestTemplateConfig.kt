@@ -10,7 +10,8 @@ import org.springframework.web.client.RestTemplate
     ElasticsearchProperties::class,
     CandidateFilterProperties::class,
     MailQueueProperties::class,
-    MailSchedulingProperties::class
+    MailSchedulingProperties::class,
+    MailAttachmentStorageProperties::class
 )
 class RestTemplateConfig {
     @Bean

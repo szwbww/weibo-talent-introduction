@@ -27,6 +27,7 @@ class AutoMailReplyService(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val inboundIntentRepository: InboundIntentRepository,
     private val manualHandoffRepository: ManualHandoffRepository,
+    private val mailAttachmentService: MailAttachmentService,
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val mailTemplateService: MailTemplateService,
@@ -78,11 +79,18 @@ class AutoMailReplyService(
                 )
             )
             recorded += 1
+            val inboundMailRecordId = inboundMailRecord.id ?: error("Inbound mail record id is required")
 
-            val intent = inboundIntentClassifier.classify(cleanedBody, received.subject)
+            val savedDocuments = mailAttachmentService.saveInboundAttachments(
+                expertContactId = contactId,
+                mailRecordId = inboundMailRecordId,
+                attachments = received.attachments
+            )
+            val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
+            val intent = effectiveIntent(classifiedIntent, received.attachments)
             inboundIntentRepository.save(
                 InboundIntent(
-                    mailRecordId = inboundMailRecord.id ?: error("Inbound mail record id is required"),
+                    mailRecordId = inboundMailRecordId,
                     expertContactId = contactId,
                     intentCode = intent.intentCode.name,
                     confidence = intent.confidence,
@@ -100,7 +108,7 @@ class AutoMailReplyService(
                         received = received,
                         status = manualReviewStatus(intent.intentCode),
                         reason = reason,
-                        note = manualReviewNote(received, cleanedBody, intent)
+                        note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
                     )
                     confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason)
                     manualReview += 1
@@ -127,7 +135,7 @@ class AutoMailReplyService(
                             received = received,
                             status = ConversationStatus.MEETING_SCHEDULING,
                             reason = "CONFIRM_MEETING",
-                            note = manualReviewNote(received, cleanedBody, intent)
+                            note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
                         )
                         confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "MEETING_INVITATION_ALREADY_SENT")
                         manualReview += 1
@@ -296,16 +304,35 @@ class AutoMailReplyService(
     private fun manualReviewNote(
         received: ReceivedMail,
         cleanedBody: String,
-        intent: InboundIntentClassification
+        intent: InboundIntentClassification,
+        savedDocumentCount: Int
     ): String =
         listOf(
             "Intent: ${intent.intentCode.name}",
             "Confidence: ${intent.confidence}",
             "Matched keywords: ${intent.matchedKeywords.joinToString(",").ifBlank { "-" }}",
+            "Saved documents: $savedDocumentCount",
             "Subject: ${received.subject.orEmpty()}",
             "",
             cleanedBody
         ).joinToString("\n").take(2000)
+
+    private fun effectiveIntent(
+        classified: InboundIntentClassification,
+        attachments: List<ReceivedMailAttachment>
+    ): InboundIntentClassification {
+        if (attachments.isEmpty() || classified.intentCode != InboundIntentCode.UNKNOWN) {
+            return classified
+        }
+        val attachmentIntent = mailAttachmentService.inferPrimaryIntentFromAttachments(attachments)
+            ?: return classified
+        return InboundIntentClassification(
+            intentCode = attachmentIntent,
+            confidence = 80,
+            matchedKeywords = attachments.map { it.fileName },
+            autoAction = AutoIntentAction.MANUAL_REVIEW
+        )
+    }
 
     private fun sendMeetingInvitation(
         account: MailSenderAccount,

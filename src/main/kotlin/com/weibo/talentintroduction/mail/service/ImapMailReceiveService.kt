@@ -12,6 +12,7 @@ import javax.mail.Multipart
 import javax.mail.Part
 import javax.mail.Session
 import javax.mail.UIDFolder
+import javax.mail.internet.MimeUtility
 import javax.mail.internet.InternetAddress
 
 @Service
@@ -67,7 +68,8 @@ class ImapMailReceiveService : MailReceiveService {
                 ?.toInstant()
                 ?.atZone(ZoneId.systemDefault())
                 ?.toLocalDateTime()
-                ?: LocalDateTime.now()
+                ?: LocalDateTime.now(),
+            attachments = extractAttachments(this)
         )
 
     private fun Message.extractFrom(): String =
@@ -93,6 +95,31 @@ class ImapMailReceiveService : MailReceiveService {
                 .orEmpty()
         }
         return ""
+    }
+
+    private fun extractAttachments(part: Part): List<ReceivedMailAttachment> {
+        if (part.isMimeType("multipart/*")) {
+            val content = part.content as Multipart
+            return (0 until content.count)
+                .flatMap { extractAttachments(content.getBodyPart(it)) }
+        }
+
+        val fileName = part.fileName?.let { MimeUtility.decodeText(it) }
+        val disposition = part.disposition
+        val isAttachment = Part.ATTACHMENT.equals(disposition, ignoreCase = true) ||
+            Part.INLINE.equals(disposition, ignoreCase = true) && !fileName.isNullOrBlank()
+        if (!isAttachment || fileName.isNullOrBlank()) {
+            return emptyList()
+        }
+
+        val bytes = part.inputStream.use { it.readBytes() }
+        return listOf(
+            ReceivedMailAttachment(
+                fileName = fileName,
+                contentType = part.contentType?.substringBefore(";")?.trim(),
+                content = bytes
+            )
+        )
     }
 
     private fun stripHtml(html: String): String =

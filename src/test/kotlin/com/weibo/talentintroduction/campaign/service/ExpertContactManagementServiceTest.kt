@@ -3,8 +3,10 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
+import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -16,10 +18,14 @@ class ExpertContactManagementServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
+    private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
+    private val expertDocumentRepository = Mockito.mock(ExpertDocumentRepository::class.java)
     private val service = ExpertContactManagementService(
         expertContactRepository,
         mailRecordRepository,
-        manualHandoffRepository
+        manualHandoffRepository,
+        mailAttachmentRepository,
+        expertDocumentRepository
     )
 
     @Test
