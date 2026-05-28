@@ -3,9 +3,11 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -15,6 +17,7 @@ import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import java.time.LocalDateTime
 
@@ -26,6 +29,7 @@ class AutoMailReplyServiceTest {
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val inboundIntentRepository = Mockito.mock(InboundIntentRepository::class.java)
+    private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
     private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val service = AutoMailReplyService(
@@ -36,6 +40,7 @@ class AutoMailReplyServiceTest {
         mailRecordRepository,
         inboundMailProcessingRepository,
         inboundIntentRepository,
+        manualHandoffRepository,
         MailBodyCleaner(),
         InboundIntentClassifier(),
         mailTemplateService,
@@ -120,12 +125,53 @@ class AutoMailReplyServiceTest {
         Mockito.verify(receiveService, Mockito.never()).markSeen(account, 101)
     }
 
-    private fun reply(): ReceivedMail =
+    @Test
+    fun `meeting time reply creates manual meeting confirmation task`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name
+        )
+        val meetingReply = reply(body = "I am available at 9AM China time next Tuesday.")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(meetingReply))
+        Mockito.`when`(contactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        val handoffCaptor = ArgumentCaptor.forClass(ManualHandoff::class.java)
+        Mockito.verify(manualHandoffRepository).save(handoffCaptor.capture())
+        assertEquals("CONFIRM_MEETING", handoffCaptor.value.reason)
+        assertEquals("PENDING", handoffCaptor.value.handoffStatus)
+
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(contactRepository).save(contactCaptor.capture())
+        assertEquals(ConversationStatus.MEETING_SCHEDULING.name, contactCaptor.value.currentStatus)
+        assertEquals(true, contactCaptor.value.manualHandoffRequired)
+        Mockito.verifyNoInteractions(qaMatchService, deliveryService)
+        Mockito.verify(receiveService).markSeen(account, 101)
+    }
+
+    private fun reply(body: String = "Could you share the program details?"): ReceivedMail =
         ReceivedMail(
             imapUid = 101,
             from = "expert@example.com",
             subject = "Re: Talent Program",
-            body = "Could you share the program details?",
+            body = body,
             messageId = "reply-1",
             inReplyTo = "intro-1",
             receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0)

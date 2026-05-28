@@ -169,7 +169,7 @@ class ManualExpertMailService(
     private fun nextStatus(currentStatus: String, mailType: String): String =
         when (mailType) {
             "INTRODUCTION" -> ConversationStatus.INTRO_SENT.name
-            "MEETING_INVITATION" -> ConversationStatus.MEETING_INVITATION_SENT.name
+            "MEETING_INVITATION" -> ConversationStatus.MEETING_SCHEDULING.name
             "MANUAL_QA_REPLY" -> ConversationStatus.QA_AUTO_REPLIED.name
             else -> currentStatus
         }

@@ -9,4 +9,10 @@ interface ManualHandoffRepository : CrudRepository<ManualHandoff, Long> {
     fun findAllByHandoffStatusOrderByUpdatedAtDesc(handoffStatus: String): List<ManualHandoff>
 
     fun findFirstByExpertContactIdOrderByUpdatedAtDesc(expertContactId: Long): ManualHandoff?
+
+    fun findFirstByExpertContactIdAndReasonAndHandoffStatusOrderByUpdatedAtDesc(
+        expertContactId: Long,
+        reason: String,
+        handoffStatus: String
+    ): ManualHandoff?
 }

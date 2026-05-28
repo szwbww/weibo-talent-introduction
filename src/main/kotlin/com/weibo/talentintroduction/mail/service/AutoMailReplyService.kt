@@ -1,7 +1,10 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.handoff.domain.ManualHandoff
+import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.InboundIntent
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -23,6 +26,7 @@ class AutoMailReplyService(
     private val mailRecordRepository: MailRecordRepository,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val inboundIntentRepository: InboundIntentRepository,
+    private val manualHandoffRepository: ManualHandoffRepository,
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val mailTemplateService: MailTemplateService,
@@ -90,8 +94,15 @@ class AutoMailReplyService(
 
             when (intent.autoAction) {
                 AutoIntentAction.MANUAL_REVIEW -> {
-                    markManualReview(contact, received)
-                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "INTENT_${intent.intentCode.name}")
+                    val reason = manualReviewReason(intent.intentCode)
+                    markManualReview(
+                        contact = contact,
+                        received = received,
+                        status = manualReviewStatus(intent.intentCode),
+                        reason = reason,
+                        note = manualReviewNote(received, cleanedBody, intent)
+                    )
+                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason)
                     manualReview += 1
                     return@forEach
                 }
@@ -111,7 +122,13 @@ class AutoMailReplyService(
 
                 AutoIntentAction.SEND_MEETING_INVITATION -> {
                     if (hasMeetingInvitation(contactId)) {
-                        markManualReview(contact, received)
+                        markManualReview(
+                            contact = contact,
+                            received = received,
+                            status = ConversationStatus.MEETING_SCHEDULING,
+                            reason = "CONFIRM_MEETING",
+                            note = manualReviewNote(received, cleanedBody, intent)
+                        )
                         confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "MEETING_INVITATION_ALREADY_SENT")
                         manualReview += 1
                         return@forEach
@@ -120,7 +137,7 @@ class AutoMailReplyService(
                     sendMeetingInvitation(account, contactId, received)
                     expertContactRepository.save(
                         contact.copy(
-                            currentStatus = ConversationStatus.MEETING_INVITATION_SENT.name,
+                            currentStatus = ConversationStatus.MEETING_SCHEDULING.name,
                             lastReplyAt = received.receivedAt,
                             lastMailAt = LocalDateTime.now(),
                             updatedAt = LocalDateTime.now()
@@ -136,7 +153,13 @@ class AutoMailReplyService(
 
             val match = qaMatchService.match(cleanedBody)
             if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
-                markManualReview(contact, received)
+                markManualReview(
+                    contact = contact,
+                    received = received,
+                    status = ConversationStatus.MANUAL_REVIEW,
+                    reason = "QA_MANUAL_REVIEW",
+                    note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
+                )
                 confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "QA_MANUAL_REVIEW")
                 manualReview += 1
                 return@forEach
@@ -204,18 +227,85 @@ class AutoMailReplyService(
         )
 
     private fun markManualReview(
-        contact: com.weibo.talentintroduction.campaign.domain.ExpertContact,
-        received: ReceivedMail
+        contact: ExpertContact,
+        received: ReceivedMail,
+        status: ConversationStatus,
+        reason: String,
+        note: String?
     ) {
+        val contactId = contact.id ?: error("Expert contact id is required")
+        createManualHandoffIfAbsent(contactId, reason, note)
         expertContactRepository.save(
             contact.copy(
-                currentStatus = ConversationStatus.MANUAL_REVIEW.name,
+                currentStatus = status.name,
                 lastReplyAt = received.receivedAt,
                 manualHandoffRequired = true,
                 updatedAt = LocalDateTime.now()
             )
         )
     }
+
+    private fun createManualHandoffIfAbsent(contactId: Long, reason: String, note: String?) {
+        val existing = manualHandoffRepository
+            .findFirstByExpertContactIdAndReasonAndHandoffStatusOrderByUpdatedAtDesc(contactId, reason, "PENDING")
+        if (existing != null) {
+            return
+        }
+
+        val now = LocalDateTime.now()
+        manualHandoffRepository.save(
+            ManualHandoff(
+                expertContactId = contactId,
+                reason = reason,
+                handoffStatus = "PENDING",
+                assignedTo = null,
+                note = note?.take(2000),
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    private fun manualReviewStatus(intentCode: InboundIntentCode): ConversationStatus =
+        when (intentCode) {
+            InboundIntentCode.MEETING_TIME_PROVIDED,
+            InboundIntentCode.MEETING_REQUESTED -> ConversationStatus.MEETING_SCHEDULING
+
+            InboundIntentCode.CV_ATTACHED,
+            InboundIntentCode.DOCS_ATTACHED,
+            InboundIntentCode.PASSPORT_UPDATED -> ConversationStatus.MATERIALS_PARTIAL
+
+            else -> ConversationStatus.MANUAL_REVIEW
+        }
+
+    private fun manualReviewReason(intentCode: InboundIntentCode): String =
+        when (intentCode) {
+            InboundIntentCode.MEETING_TIME_PROVIDED,
+            InboundIntentCode.MEETING_REQUESTED -> "CONFIRM_MEETING"
+
+            InboundIntentCode.CV_ATTACHED,
+            InboundIntentCode.DOCS_ATTACHED,
+            InboundIntentCode.PASSPORT_UPDATED -> "REVIEW_DOCUMENT"
+
+            InboundIntentCode.ASK_FUNDING,
+            InboundIntentCode.ASK_CONFIDENTIALITY -> "HANDLE_RISKY_QUESTION"
+
+            else -> "REVIEW_INBOUND_INTENT_${intentCode.name}"
+        }
+
+    private fun manualReviewNote(
+        received: ReceivedMail,
+        cleanedBody: String,
+        intent: InboundIntentClassification
+    ): String =
+        listOf(
+            "Intent: ${intent.intentCode.name}",
+            "Confidence: ${intent.confidence}",
+            "Matched keywords: ${intent.matchedKeywords.joinToString(",").ifBlank { "-" }}",
+            "Subject: ${received.subject.orEmpty()}",
+            "",
+            cleanedBody
+        ).joinToString("\n").take(2000)
 
     private fun sendMeetingInvitation(
         account: MailSenderAccount,
