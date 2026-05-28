@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: weibo-talent-introduction
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/talent_introduction?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 3
+          multiplier: 2
+
+talent-introduction:
+  elasticsearch:
+    base-url: ${ES_BASE_URL:https://es-fcxvip4d.public.tencentelasticsearch.com:9200}
+    username: ${ES_USERNAME:elastic}
+    password: ${ES_PASSWORD:}
+    raw-index-name: ${ES_RAW_INDEX_NAME:orcid_info}
+    candidate-index-name: ${ES_CANDIDATE_INDEX_NAME:orcid_info_candidate}
+    application-index-name: ${ES_APPLICATION_INDEX_NAME:orcid_info_application}
+  candidate-filter:
+    require-doctoral-degree: ${CANDIDATE_REQUIRE_DOCTORAL_DEGREE:false}
+    require-valid-email: ${CANDIDATE_REQUIRE_VALID_EMAIL:true}
+    exclude-chinese-nationality: ${CANDIDATE_EXCLUDE_CHINESE_NATIONALITY:true}
+    enable-age-filter: ${CANDIDATE_ENABLE_AGE_FILTER:false}
+    max-age-exclusive: ${CANDIDATE_MAX_AGE_EXCLUSIVE:70}
+  mail-queue:
+    enabled: ${MAIL_QUEUE_ENABLED:false}
+    exchange: ${MAIL_QUEUE_EXCHANGE:talent.mail.exchange}
+    dead-letter-exchange: ${MAIL_QUEUE_DEAD_LETTER_EXCHANGE:talent.mail.dlx}
+    initial-outreach-queue: ${MAIL_QUEUE_INITIAL_OUTREACH_QUEUE:talent.mail.initial-outreach}
+    auto-reply-account-queue: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_QUEUE:talent.mail.auto-reply.account}
+    auto-reply-all-accounts-queue: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_QUEUE:talent.mail.auto-reply.all}
+    initial-outreach-dead-letter-queue: ${MAIL_QUEUE_INITIAL_OUTREACH_DLQ:talent.mail.initial-outreach.dlq}
+    auto-reply-account-dead-letter-queue: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_DLQ:talent.mail.auto-reply.account.dlq}
+    auto-reply-all-accounts-dead-letter-queue: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_DLQ:talent.mail.auto-reply.all.dlq}
+    initial-outreach-routing-key: ${MAIL_QUEUE_INITIAL_OUTREACH_ROUTING_KEY:mail.initial-outreach}
+    auto-reply-account-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_ROUTING_KEY:mail.auto-reply.account}
+    auto-reply-all-accounts-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_ROUTING_KEY:mail.auto-reply.all}
+    initial-outreach-dead-letter-routing-key: ${MAIL_QUEUE_INITIAL_OUTREACH_DLX_ROUTING_KEY:mail.initial-outreach.dlq}
+    auto-reply-account-dead-letter-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_DLX_ROUTING_KEY:mail.auto-reply.account.dlq}
+    auto-reply-all-accounts-dead-letter-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_DLX_ROUTING_KEY:mail.auto-reply.all.dlq}
+    auto-reply-account-concurrency: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_CONCURRENCY:2-8}
+  scheduling:
+    enabled: ${MAIL_SCHEDULING_ENABLED:false}
+    auto-reply-all-cron: ${MAIL_SCHEDULING_AUTO_REPLY_ALL_CRON:-}
+    auto-reply-max-messages-per-account: ${MAIL_SCHEDULING_AUTO_REPLY_MAX_MESSAGES_PER_ACCOUNT:20}
+    initial-outreach-cron: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CRON:-}
+    initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
+    initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
+
+server:
+  port: ${SERVER_PORT:8080}
