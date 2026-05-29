@@ -152,3 +152,4 @@ Deferred:
 - Fill real sender account credentials.
 - Confirm the final English wording of QA answers before enabling automatic replies.
 - Define explicit rules for interest, acceptance, rejection, and manual-review detection.
+- multi-ai smoke test: this repository supports a minimal documentation-only smoke test change.

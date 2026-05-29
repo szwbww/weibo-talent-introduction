@@ -2,3 +2,6 @@ target/
 .idea/
 *.iml
 .antigravitycli/
+docs/multi-ai-runs/
+docs/plans/
+docs/reviews/
