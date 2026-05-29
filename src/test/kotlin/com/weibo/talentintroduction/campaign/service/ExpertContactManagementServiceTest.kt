@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
@@ -20,12 +22,16 @@ class ExpertContactManagementServiceTest {
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val expertDocumentRepository = Mockito.mock(ExpertDocumentRepository::class.java)
+    private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
+    private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
         mailRecordRepository,
         manualHandoffRepository,
         mailAttachmentRepository,
-        expertDocumentRepository
+        expertDocumentRepository,
+        statusHistoryRepository,
+        conversationStateService
     )
 
     @Test
@@ -51,6 +57,7 @@ class ExpertContactManagementServiceTest {
                 saved.currentStatus == ConversationStatus.MANUAL_HANDOFF.name && saved.manualHandoffRequired
             }
         )
+        Mockito.verify(statusHistoryRepository).save(Mockito.any(ExpertContactStatusHistory::class.java))
     }
 
     @Test
@@ -90,6 +97,7 @@ class ExpertContactManagementServiceTest {
                 !saved.manualHandoffRequired && saved.currentStatus == ConversationStatus.WAITING_REPLY.name
             }
         )
+        Mockito.verify(statusHistoryRepository).save(Mockito.any(ExpertContactStatusHistory::class.java))
     }
 
     @Test
@@ -103,6 +111,7 @@ class ExpertContactManagementServiceTest {
         assertEquals(ConversationStatus.CLOSED.name, closed.currentStatus)
         assertFalse(closed.manualHandoffRequired)
         assertEquals("Expert declined", closed.closedReason)
+        Mockito.verify(statusHistoryRepository).save(Mockito.any(ExpertContactStatusHistory::class.java))
     }
 
     private fun contact(): ExpertContact =

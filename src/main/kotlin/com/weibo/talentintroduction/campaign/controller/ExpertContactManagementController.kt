@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.controller
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.service.ExpertContactDetail
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
 import com.weibo.talentintroduction.campaign.service.ManualHandoffAssignCommand
@@ -126,7 +127,9 @@ data class ExpertContactDetailResponse(
     val mails: List<MailRecordResponse>,
     val attachments: List<MailAttachmentResponse>,
     val documents: List<ExpertDocumentResponse>,
-    val latestHandoff: ManualHandoffResponse?
+    val latestHandoff: ManualHandoffResponse?,
+    val statusHistory: List<ExpertContactStatusHistoryResponse>,
+    val recommendedNextAction: String
 )
 
 data class ExpertContactResponse(
@@ -188,13 +191,25 @@ data class ManualHandoffResponse(
     val note: String?
 )
 
+data class ExpertContactStatusHistoryResponse(
+    val id: Long?,
+    val expertContactId: Long,
+    val fromStatus: String?,
+    val toStatus: String,
+    val reason: String,
+    val source: String,
+    val createdAt: String?
+)
+
 private fun ExpertContactDetail.toResponse(): ExpertContactDetailResponse =
     ExpertContactDetailResponse(
         contact = contact.toResponse(),
         mails = mails.map { it.toResponse() },
         attachments = attachments.map { it.toResponse() },
         documents = documents.map { it.toResponse() },
-        latestHandoff = latestHandoff?.toResponse()
+        latestHandoff = latestHandoff?.toResponse(),
+        statusHistory = statusHistory.map { it.toResponse() },
+        recommendedNextAction = recommendedNextAction
     )
 
 private fun ExpertContact.toResponse(): ExpertContactResponse =
@@ -259,4 +274,15 @@ private fun ManualHandoff.toResponse(): ManualHandoffResponse =
         handoffStatus = handoffStatus,
         assignedTo = assignedTo,
         note = note
+    )
+
+private fun ExpertContactStatusHistory.toResponse(): ExpertContactStatusHistoryResponse =
+    ExpertContactStatusHistoryResponse(
+        id = id,
+        expertContactId = expertContactId,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
+        reason = reason,
+        source = source,
+        createdAt = createdAt?.toString()
     )

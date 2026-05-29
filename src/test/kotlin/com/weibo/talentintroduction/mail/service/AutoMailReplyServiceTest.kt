@@ -1,7 +1,10 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
+import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -33,6 +36,8 @@ class AutoMailReplyServiceTest {
     private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
     private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
+    private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
+    private val conversationStateService = ConversationStateService(contactRepository, statusHistoryRepository)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -46,7 +51,8 @@ class AutoMailReplyServiceTest {
         MailBodyCleaner(),
         InboundIntentClassifier(),
         mailTemplateService,
-        qaMatchService
+        qaMatchService,
+        conversationStateService
     )
 
     @Test
@@ -156,6 +162,11 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(
             mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
         ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
 
         val result = service.receiveAndAutoReply("sender", 5)
 

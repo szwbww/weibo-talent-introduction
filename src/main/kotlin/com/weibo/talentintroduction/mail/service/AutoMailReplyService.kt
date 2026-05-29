@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
@@ -31,7 +32,8 @@ class AutoMailReplyService(
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val mailTemplateService: MailTemplateService,
-    private val qaMatchService: QaMatchService
+    private val qaMatchService: QaMatchService,
+    private val conversationStateService: ConversationStateService
 ) {
     fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
@@ -116,14 +118,17 @@ class AutoMailReplyService(
                 }
 
                 AutoIntentAction.CLOSE -> {
-                    expertContactRepository.save(
-                        contact.copy(
-                            currentStatus = ConversationStatus.CLOSED.name,
+                    conversationStateService.transition(
+                        contact = contact,
+                        toStatus = ConversationStatus.CLOSED,
+                        reason = "INTENT_${intent.intentCode.name}",
+                        source = "AUTO_REPLY"
+                    ) {
+                        it.copy(
                             lastReplyAt = received.receivedAt,
-                            closedReason = "INTENT_${intent.intentCode.name}",
-                            updatedAt = LocalDateTime.now()
+                            closedReason = "INTENT_${intent.intentCode.name}"
                         )
-                    )
+                    }
                     confirmProcessed(account, received, contactId, "PROCESSED", "INTENT_${intent.intentCode.name}")
                     return@forEach
                 }
@@ -143,14 +148,17 @@ class AutoMailReplyService(
                     }
 
                     sendMeetingInvitation(account, contactId, received)
-                    expertContactRepository.save(
-                        contact.copy(
-                            currentStatus = ConversationStatus.MEETING_SCHEDULING.name,
+                    conversationStateService.transition(
+                        contact = contact,
+                        toStatus = ConversationStatus.MEETING_SCHEDULING,
+                        reason = "MEETING_INVITATION_SENT",
+                        source = "AUTO_REPLY"
+                    ) {
+                        it.copy(
                             lastReplyAt = received.receivedAt,
-                            lastMailAt = LocalDateTime.now(),
-                            updatedAt = LocalDateTime.now()
+                            lastMailAt = LocalDateTime.now()
                         )
-                    )
+                    }
                     confirmProcessed(account, received, contactId, "PROCESSED", "MEETING_INVITATION_SENT")
                     meetingInvitations += 1
                     return@forEach
@@ -199,14 +207,18 @@ class AutoMailReplyService(
                 )
             )
 
-            expertContactRepository.save(
-                contact.copy(
-                    currentStatus = ConversationStatus.QA_AUTO_REPLIED.name,
+            conversationStateService.transition(
+                contact = contact,
+                toStatus = ConversationStatus.QA_AUTO_REPLIED,
+                reason = "QA_AUTO_REPLIED",
+                source = "AUTO_REPLY",
+                now = now
+            ) {
+                it.copy(
                     lastReplyAt = received.receivedAt,
-                    lastMailAt = now,
-                    updatedAt = now
+                    lastMailAt = now
                 )
-            )
+            }
             confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED")
             replied += 1
         }
@@ -243,14 +255,17 @@ class AutoMailReplyService(
     ) {
         val contactId = contact.id ?: error("Expert contact id is required")
         createManualHandoffIfAbsent(contactId, reason, note)
-        expertContactRepository.save(
-            contact.copy(
-                currentStatus = status.name,
+        conversationStateService.transition(
+            contact = contact,
+            toStatus = status,
+            reason = reason,
+            source = "AUTO_REPLY"
+        ) {
+            it.copy(
                 lastReplyAt = received.receivedAt,
-                manualHandoffRequired = true,
-                updatedAt = LocalDateTime.now()
+                manualHandoffRequired = true
             )
-        )
+        }
     }
 
     private fun createManualHandoffIfAbsent(contactId: Long, reason: String, note: String?) {

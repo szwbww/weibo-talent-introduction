@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
@@ -20,7 +22,9 @@ class ExpertContactManagementService(
     private val mailRecordRepository: MailRecordRepository,
     private val manualHandoffRepository: ManualHandoffRepository,
     private val mailAttachmentRepository: MailAttachmentRepository,
-    private val expertDocumentRepository: ExpertDocumentRepository
+    private val expertDocumentRepository: ExpertDocumentRepository,
+    private val statusHistoryRepository: ExpertContactStatusHistoryRepository,
+    private val conversationStateService: ConversationStateService
 ) {
     fun listContacts(campaignId: Long?, status: String?): List<ExpertContact> =
         when {
@@ -48,7 +52,12 @@ class ExpertContactManagementService(
             mails = mails,
             attachments = attachments,
             documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
-            latestHandoff = manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(contactId)
+            latestHandoff = manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(contactId),
+            statusHistory = statusHistoryRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
+            recommendedNextAction = conversationStateService.recommendedNextAction(
+                contact.currentStatus,
+                contact.manualHandoffRequired
+            )
         )
     }
 
@@ -67,13 +76,15 @@ class ExpertContactManagementService(
                 updatedAt = now
             )
         )
-        expertContactRepository.save(
-            contact.copy(
-                currentStatus = ConversationStatus.MANUAL_HANDOFF.name,
-                manualHandoffRequired = true,
-                updatedAt = now
-            )
-        )
+        conversationStateService.transition(
+            contact = contact,
+            toStatus = ConversationStatus.MANUAL_HANDOFF,
+            reason = "CREATE_MANUAL_HANDOFF:${command.reason}",
+            source = "MANUAL",
+            now = now
+        ) {
+            it.copy(manualHandoffRequired = true)
+        }
         return handoff
     }
 
@@ -101,27 +112,34 @@ class ExpertContactManagementService(
             )
         )
         val contact = getContact(contactId)
-        expertContactRepository.save(
-            contact.copy(
-                manualHandoffRequired = false,
-                currentStatus = command.nextStatus ?: contact.currentStatus,
-                updatedAt = now
-            )
-        )
+        val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
+            ?: ConversationStatus.fromName(contact.currentStatus)
+        conversationStateService.transition(
+            contact = contact,
+            toStatus = nextStatus,
+            reason = "COMPLETE_MANUAL_HANDOFF",
+            source = "MANUAL",
+            now = now
+        ) {
+            it.copy(manualHandoffRequired = false)
+        }
         return completed
     }
 
     fun closeContact(contactId: Long, reason: String): ExpertContact {
         require(reason.isNotBlank()) { "reason is required" }
         val contact = getContact(contactId)
-        return expertContactRepository.save(
-            contact.copy(
-                currentStatus = ConversationStatus.CLOSED.name,
+        return conversationStateService.transition(
+            contact = contact,
+            toStatus = ConversationStatus.CLOSED,
+            reason = "CLOSE_CONTACT:$reason",
+            source = "MANUAL"
+        ) {
+            it.copy(
                 manualHandoffRequired = false,
-                closedReason = reason,
-                updatedAt = LocalDateTime.now()
+                closedReason = reason
             )
-        )
+        }
     }
 
     private fun getContact(contactId: Long): ExpertContact =
@@ -138,7 +156,9 @@ data class ExpertContactDetail(
     val mails: List<MailRecord>,
     val attachments: List<MailAttachment>,
     val documents: List<ExpertDocument>,
-    val latestHandoff: ManualHandoff?
+    val latestHandoff: ManualHandoff?,
+    val statusHistory: List<ExpertContactStatusHistory>,
+    val recommendedNextAction: String
 )
 
 data class ManualHandoffCreateCommand(

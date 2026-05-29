@@ -30,10 +30,23 @@ const statusLabels = {
     INTEREST_CONFIRMED: "已确认意向",
     QA_AUTO_REPLIED: "QA 已自动回复",
     MEETING_SCHEDULING: "会议排期中",
+    MEETING_SCHEDULED: "会议已安排",
+    MEETING_DONE: "会议已完成",
     MEETING_INVITATION_SENT: "会议邀约已发送",
     WAITING_MEETING_CONFIRMATION: "等待会议确认",
+    MATERIALS_REQUESTED: "已请求材料",
     MATERIALS_PARTIAL: "材料部分收到",
     MATERIALS_RECEIVED: "材料已收到",
+    COMPANY_MATCHED: "企业已匹配",
+    APPLICATION_PREPARING: "申请准备中",
+    VIDEO_REQUESTED: "已请求视频",
+    VIDEO_RECEIVED: "视频已收到",
+    COMMITMENT_REQUESTED: "已请求承诺书",
+    COMMITMENT_RECEIVED: "承诺书已收到",
+    SUBMITTED: "已提交",
+    RESULT_PENDING: "等待结果",
+    REJECTED_THIS_ROUND: "本轮未通过",
+    NEXT_ROUND_FOLLOW_UP: "下一轮跟进",
     MANUAL_HANDOFF: "已转人工",
     MANUAL_REVIEW: "待人工审核",
     CLOSED: "已关闭",
@@ -104,6 +117,11 @@ function labelDocumentType(value) {
 
 function labelDocumentStatus(value) {
     return documentStatusLabels[value] || value || "";
+}
+
+function formatStatusTransition(history) {
+    const from = history.fromStatus ? labelStatus(history.fromStatus) : "初始";
+    return `${from} → ${labelStatus(history.toStatus)}`;
 }
 
 function formatFileSize(size) {
@@ -726,6 +744,16 @@ async function loadContactDetail(contactId) {
                         ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "CLOSED" ? "error" : contact.currentStatus === "MANUAL_HANDOFF" || contact.currentStatus === "MANUAL_REVIEW" ? "warn" : "ok")}
                     </div>
                 </div>
+
+                <div class="metadata-card">
+                    <div class="metadata-card-header">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        <span>推荐下一步</span>
+                    </div>
+                    <div class="metadata-card-value next-action-text">
+                        ${escapeHtml(detail.recommendedNextAction || "请人工确认下一步动作。")}
+                    </div>
+                </div>
                 
                 <!-- Manual Review Card -->
                 <div class="metadata-card">
@@ -803,6 +831,24 @@ async function loadContactDetail(contactId) {
                     </div>
                 </div>
                 ` : ""}
+
+                <div class="metadata-card span-all">
+                    <div class="metadata-card-header">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        <span>阶段流转历史</span>
+                    </div>
+                    <div class="metadata-card-value status-history-list">
+                        ${(detail.statusHistory || []).length ? detail.statusHistory.slice().reverse().map((history) => `
+                            <div class="status-history-row">
+                                <div>
+                                    <strong>${escapeHtml(formatStatusTransition(history))}</strong>
+                                    <span>${escapeHtml(history.reason || "-")} · ${escapeHtml(history.source || "-")}</span>
+                                </div>
+                                <span>${escapeHtml(history.createdAt || "")}</span>
+                            </div>
+                        `).join("") : "<span>暂无阶段流转记录。</span>"}
+                    </div>
+                </div>
             </div>
 
         </div>

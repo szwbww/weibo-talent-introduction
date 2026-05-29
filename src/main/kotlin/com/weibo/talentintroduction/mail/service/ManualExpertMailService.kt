@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -23,7 +24,8 @@ class ManualExpertMailService(
     private val mailDeliveryService: MailDeliveryService,
     private val mailTemplateRepository: MailTemplateRepository,
     private val mailTemplateService: MailTemplateService,
-    private val qaRuleRepository: QaRuleRepository
+    private val qaRuleRepository: QaRuleRepository,
+    private val conversationStateService: ConversationStateService
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         val templateOptions = mailTemplateRepository.findAllByEnabledTrueOrderByTemplateCodeAsc()
@@ -90,13 +92,17 @@ class ManualExpertMailService(
             )
         )
 
-        expertContactRepository.save(
-            contact.copy(
-                currentStatus = nextStatus(contact.currentStatus, composed.mailType),
+        conversationStateService.transition(
+            contact = contact,
+            toStatus = nextStatus(contact.currentStatus, composed.mailType),
+            reason = "MANUAL_MAIL_${composed.mailType}",
+            source = "MANUAL_MAIL",
+            now = now
+        ) {
+            it.copy(
                 lastMailAt = now,
-                updatedAt = now
             )
-        )
+        }
 
         return ManualMailSendResult(
             contactId = contactId,
@@ -166,12 +172,12 @@ class ManualExpertMailService(
         )
     }
 
-    private fun nextStatus(currentStatus: String, mailType: String): String =
+    private fun nextStatus(currentStatus: String, mailType: String): ConversationStatus =
         when (mailType) {
-            "INTRODUCTION" -> ConversationStatus.INTRO_SENT.name
-            "MEETING_INVITATION" -> ConversationStatus.MEETING_SCHEDULING.name
-            "MANUAL_QA_REPLY" -> ConversationStatus.QA_AUTO_REPLIED.name
-            else -> currentStatus
+            "INTRODUCTION" -> ConversationStatus.INTRO_SENT
+            "MEETING_INVITATION" -> ConversationStatus.MEETING_SCHEDULING
+            "MANUAL_QA_REPLY" -> ConversationStatus.QA_AUTO_REPLIED
+            else -> ConversationStatus.fromName(currentStatus)
         }
 
     private fun String.toChineseTemplateName(templateCode: String): String =
