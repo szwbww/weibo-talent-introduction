@@ -1,0 +1,19 @@
+release:
+  production:
+    type: ssh-tomcat-war
+    ssh_target: root@150.158.92.103
+    build_command: JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
+    local_war: target/weibo-talent-introduction-1.0.0-SNAPSHOT.war
+    tomcat_home: /opt/apache-tomcat-9.0.71
+    war_name: talent.war
+    context_dir: talent
+    upload_dir: /opt/apache-tomcat-9.0.71/deploy/incoming
+    backup_dir: /opt/apache-tomcat-9.0.71/deploy/backups
+    health_url: http://127.0.0.1/talent/
+    health_timeout_seconds: 120
+    require_clean_worktree: true
+    database_migrations:
+      mode: external-mysql
+      database: talent_introduction
+      migration_dir: src/main/resources/db/migration
+      baseline_version: 9
