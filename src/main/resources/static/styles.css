@@ -1389,6 +1389,137 @@ textarea {
     padding: 14px;
 }
 
+.nav-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9999px;
+    background-color: var(--error);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    margin-left: auto;
+}
+
+.nav-tab.active .nav-badge {
+    background-color: #fca5a5;
+    color: #7f1d1d;
+}
+
+.unmatched-detail-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.detail-section h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.candidates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.candidate-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+    background-color: #ffffff;
+    transition: var(--transition);
+}
+
+.candidate-row:hover {
+    border-color: #cbd5e1;
+    box-shadow: var(--shadow-sm);
+}
+
+.candidate-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.candidate-info strong {
+    font-size: 13px;
+    color: var(--text-main);
+}
+
+.candidate-info span {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.candidate-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.search-bind-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.bind-form-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--panel-border);
+}
+
+.bind-form-row label {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.bind-form-row input {
+    width: auto;
+    min-width: 200px;
+    height: 34px;
+    min-height: 34px;
+}
+
+.button.small {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 12px;
+    font-size: 12px;
+}
+
+.text-muted {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 /* Responsiveness Queries */
 @media (max-width: 1024px) {
     .app-shell {

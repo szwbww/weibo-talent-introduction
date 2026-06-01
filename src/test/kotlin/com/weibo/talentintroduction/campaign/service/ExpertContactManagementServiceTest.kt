@@ -23,6 +23,7 @@ class ExpertContactManagementServiceTest {
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val expertDocumentRepository = Mockito.mock(ExpertDocumentRepository::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
+    private val meetingScheduleRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
@@ -31,7 +32,8 @@ class ExpertContactManagementServiceTest {
         mailAttachmentRepository,
         expertDocumentRepository,
         statusHistoryRepository,
-        conversationStateService
+        conversationStateService,
+        meetingScheduleRepository
     )
 
     @Test

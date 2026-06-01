@@ -8,7 +8,9 @@ const state = {
     selectedAccount: null,
     accountEditorMode: null,
     selectedExpertOrcid: null,
-    selectedRuleId: null
+    selectedRuleId: null,
+    unmatchedRecords: [],
+    unmatchedFiltered: []
 };
 
 const contextPath = (() => {
@@ -20,6 +22,7 @@ const viewMeta = {
     accounts: ["邮箱账号", "维护发送账号、权重、限额和连通性。"],
     qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
+    unmatched: ["未匹配来信", "无法自动匹配专家的来信队列与人工绑定。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -195,6 +198,7 @@ async function refreshCurrentView() {
         if (state.view === "accounts") await loadAccounts();
         if (state.view === "qa") await loadQa();
         if (state.view === "contacts") await loadContacts();
+        if (state.view === "unmatched") await loadUnmatched();
         if (state.view === "tasks") await loadTasks();
     } catch (error) {
         showStatus(error.message, "error");
@@ -502,9 +506,10 @@ function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
+    $("#contactHeadActions").hidden = true;
+    $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
-    const attachmentsById = new Map((detail.attachments || []).map((attachment) => [attachment.id, attachment]));
     contactDetail.innerHTML = `
         <div class="detail">
             <div class="expert-profile-header">
@@ -516,34 +521,6 @@ function showExpertDetail(expert) {
                         <span class="divider">·</span>
                         <span>${escapeHtml(expert.email || "邮箱未知")}</span>
                     </p>
-                </div>
-            </div>
-
-            <div class="mail-timeline">
-                ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
-            </div>
-
-            <div class="metadata-card span-all">
-                <div class="metadata-card-header">
-                    <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.82l8.48-8.49"/></svg>
-                    <span>专家材料</span>
-                </div>
-                <div class="metadata-card-value" style="display: flex; flex-direction: column; gap: 8px;">
-                    ${(detail.documents || []).length ? detail.documents.map((document) => {
-                        const attachment = attachmentsById.get(document.mailAttachmentId);
-                        return `
-                            <div class="document-row">
-                                <div>
-                                    <strong>${escapeHtml(labelDocumentType(document.documentType))}</strong>
-                                    <span>${escapeHtml(attachment?.fileName || "未知文件")}</span>
-                                </div>
-                                <div>
-                                    ${badge(labelDocumentStatus(document.documentStatus), document.documentStatus === "REJECTED" ? "error" : document.documentStatus === "ACCEPTED" ? "ok" : "warn")}
-                                    <span>${escapeHtml(formatFileSize(attachment?.fileSize || 0))}</span>
-                                </div>
-                            </div>
-                        `;
-                    }).join("") : "<span>暂无材料附件。</span>"}
                 </div>
             </div>
 
@@ -643,7 +620,7 @@ function renderMailItem(mail) {
     const body = mail.body || "";
     const compactBody = compactText(body);
     const shouldCollapse = body.trim().length > compactBody.length;
-    
+
     // Choose appropriate SVG icon
     const isOutbound = mail.direction === "OUTBOUND";
     const mailIcon = isOutbound 
@@ -672,6 +649,118 @@ function renderMailItem(mail) {
             ` : ""}
         </article>
     `;
+}
+
+function renderMeetingSchedule(detail) {
+    const schedules = detail.meetingSchedules || [];
+    const contactId = detail.contact.id;
+    const activeSchedule = schedules.find(s => s.meetingStatus === "PENDING" || s.meetingStatus === "CONFIRMED");
+
+    if (!activeSchedule) {
+        const isSchedulingState = detail.contact.currentStatus === "MEETING_SCHEDULING" || detail.contact.currentStatus === "INTEREST_CONFIRMED" || detail.contact.currentStatus === "WAITING_REPLY";
+        if (!isSchedulingState) return "";
+        return `
+            <div class="meeting-schedule-panel card span-all" style="margin-top: 16px; border: 1px dashed #d1d5db; border-radius: 8px; padding: 16px;">
+                <div class="panel-header" style="display: flex; align-items: center; gap: 6px; color: #4b5563; margin-bottom: 12px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="panel-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <h3 style="margin: 0; font-size: 14px; font-weight: 600;">会议日程安排</h3>
+                </div>
+                <div class="panel-body empty-state" style="text-align: center; padding: 16px;">
+                    <p style="color: #6b7280; margin-bottom: 12px; font-size: 13px;">目前没有活动的会议安排。</p>
+                    <button class="button primary" data-action="initiate-meeting-schedule" data-id="${contactId}">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        发起会议排期
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    const isPending = activeSchedule.meetingStatus === "PENDING";
+    const statusClass = isPending ? "status-pending" : "status-confirmed";
+    const statusText = isPending ? "安排中" : "已确认";
+
+    return `
+        <div class="meeting-schedule-panel card span-all ${statusClass}" style="margin-top: 16px; border: 1px solid ${isPending ? '#fde68a' : '#a7f3d0'}; background: ${isPending ? '#fffbef' : '#f0fdf4'}; border-radius: 8px; padding: 16px;">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed ${isPending ? '#fcd34d' : '#6ee7b7'};">
+                <div class="header-title" style="display: flex; align-items: center; gap: 6px; color: ${isPending ? '#92400e' : '#065f46'};">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="panel-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <h3 style="margin: 0; font-size: 14px; font-weight: 600;">会议日程排期</h3>
+                </div>
+                <span class="badge ${isPending ? 'warn' : 'ok'}">${statusText}</span>
+            </div>
+            <div class="panel-body">
+                ${activeSchedule.expertAvailableText ? `
+                    <div class="form-group readonly" style="margin-bottom: 12px;">
+                        <label style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">专家可沟通时间 (邮件提取)</label>
+                        <div class="pre-text" style="background: rgba(0,0,0,0.03); padding: 8px; border-radius: 4px; font-size: 13px; font-family: monospace; white-space: pre-wrap; color: #1f2937;">${escapeHtml(activeSchedule.expertAvailableText)}</div>
+                    </div>
+                ` : ""}
+
+                <form id="meetingScheduleForm" data-schedule-id="${activeSchedule.id}" data-contact-id="${contactId}">
+                    <div class="form-row" style="display: flex; gap: 12px; margin-bottom: 12px;">
+                        <div class="form-group flex-1" style="flex: 1;">
+                            <label for="chinaTime" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">中国时间 (China Time)</label>
+                            <input type="text" id="chinaTime" name="chinaTime" value="${escapeHtml(activeSchedule.chinaTime || '')}" placeholder="例如: 2026-06-01 10:00 AM" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;" ${!isPending ? 'disabled' : ''} required>
+                        </div>
+                        <div class="form-group flex-1" style="flex: 1;">
+                            <label for="meetingTool" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">会议工具</label>
+                            <select id="meetingTool" name="meetingTool" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; background: white;" ${!isPending ? 'disabled' : ''} required>
+                                <option value="Zoom" ${activeSchedule.meetingTool === 'Zoom' ? 'selected' : ''}>Zoom</option>
+                                <option value="Teams" ${activeSchedule.meetingTool === 'Teams' ? 'selected' : ''}>Teams</option>
+                                <option value="Webex" ${activeSchedule.meetingTool === 'Webex' ? 'selected' : ''}>Webex</option>
+                                <option value="Google Meet" ${activeSchedule.meetingTool === 'Google Meet' ? 'selected' : ''}>Google Meet</option>
+                                <option value="Other" ${activeSchedule.meetingTool === 'Other' || (!activeSchedule.meetingTool && activeSchedule.meetingTool !== 'Zoom' && activeSchedule.meetingTool !== 'Teams' && activeSchedule.meetingTool !== 'Webex' && activeSchedule.meetingTool !== 'Google Meet') ? 'selected' : ''}>Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label for="meetingLink" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">会议链接 (Meeting Link)</label>
+                        <input type="url" id="meetingLink" name="meetingLink" value="${escapeHtml(activeSchedule.meetingLink || '')}" placeholder="https://..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;" ${!isPending ? 'disabled' : ''} required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label for="note" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">备注</label>
+                        <textarea id="note" name="note" rows="2" placeholder="输入会议注意事项..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; resize: vertical;" ${!isPending ? 'disabled' : ''}>${escapeHtml(activeSchedule.note || '')}</textarea>
+                    </div>
+
+                    <div class="panel-actions" style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
+                        ${isPending ? `
+                            <button type="button" class="button" data-action="save-meeting-schedule" data-id="${activeSchedule.id}" data-contact-id="${contactId}">仅保存更新</button>
+                            <button type="submit" class="button primary" data-action="confirm-meeting-schedule" data-id="${activeSchedule.id}">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                确认并发送邮件
+                            </button>
+                            <button type="button" class="button danger" data-action="cancel-meeting-schedule" data-id="${activeSchedule.id}" data-contact-id="${contactId}">取消排期</button>
+                        ` : `
+                            <button type="button" class="button primary" data-action="complete-meeting-schedule" data-id="${activeSchedule.id}" data-contact-id="${contactId}">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
+                                标记会议完成
+                            </button>
+                            <button type="button" class="button danger" data-action="cancel-meeting-schedule" data-id="${activeSchedule.id}" data-contact-id="${contactId}">取消排期</button>
+                        `}
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+}
+
+async function confirmMeetingSchedule(form) {
+    const contactId = form.dataset.contactId;
+    const scheduleId = form.dataset.scheduleId;
+    const values = formValues(form);
+    await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/confirm-and-email`, {
+        method: "POST",
+        body: JSON.stringify({
+            chinaTime: values.chinaTime,
+            meetingTool: values.meetingTool,
+            meetingLink: values.meetingLink,
+            note: values.note
+        })
+    });
+    showStatus("会议已确认并已向专家发送确认邮件");
+    await loadContactDetail(contactId);
+    await loadContacts();
 }
 
 async function loadContactDetail(contactId) {
@@ -732,6 +821,8 @@ async function loadContactDetail(contactId) {
             <div class="mail-timeline">
                 ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
             </div>
+
+            ${renderMeetingSchedule(detail)}
 
             <div class="metadata-grid">
                 <!-- Stage Status Card -->
@@ -832,6 +923,14 @@ async function loadContactDetail(contactId) {
                 </div>
                 ` : ""}
 
+                <div class="metadata-card span-all" id="emailAliasPlaceholder" style="min-height: 60px;">
+                    <div class="metadata-card-header">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                        <span>邮箱别名</span>
+                    </div>
+                    <div class="metadata-card-value" style="font-size: 12px; color: var(--text-muted);">加载中...</div>
+                </div>
+
                 <div class="metadata-card span-all">
                     <div class="metadata-card-header">
                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -846,7 +945,7 @@ async function loadContactDetail(contactId) {
                                 </div>
                                 <span>${escapeHtml(history.createdAt || "")}</span>
                             </div>
-                        `).join("") : "<span>暂无阶段流转记录。</span>"}
+                        `).join("") : "<span>暂无阶段流转记录。"}
                     </div>
                 </div>
             </div>
@@ -856,6 +955,60 @@ async function loadContactDetail(contactId) {
     requestAnimationFrame(() => {
         contactDetail.scrollTop = 0;
     });
+    if (contact.id) {
+        loadEmailAliases(contact.id, contact);
+    }
+}
+
+async function loadEmailAliases(contactId, contact) {
+    const placeholder = $("#emailAliasPlaceholder");
+    if (!placeholder) return;
+    try {
+        const aliases = await api(`/api/expert-contacts/${contactId}/email-aliases`);
+        const aliasTable = aliases.length ? `
+            <table style="width: 100%; font-size: 12px; margin-top: 4px;">
+                <thead>
+                    <tr>
+                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">别名邮箱</th>
+                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">来源</th>
+                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">确认</th>
+                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">创建时间</th>
+                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${aliases.map((alias) => `
+                    <tr>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.email)}</td>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.source)}</td>
+                        <td style="padding: 4px 6px;">${alias.verified ? badge("已确认", "ok") : badge("未确认", "warn")}</td>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.createdAt || "")}</td>
+                        <td style="padding: 4px 6px;">
+                            <button class="button small danger" data-action="delete-alias" data-alias-id="${alias.id}" data-contact-id="${contactId}" style="height: 28px; min-height: 28px; padding: 0 8px; font-size: 11px;">移除</button>
+                        </td>
+                    </tr>`).join("")}
+                </tbody>
+            </table>` : '<p style="color: var(--text-muted); font-size: 12px; margin: 4px 0 0;">暂无别名。</p>';
+        const mainEmail = contact.expertEmail || "";
+        placeholder.innerHTML = `
+            <div class="metadata-card-header">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                <span>邮箱别名</span>
+            </div>
+            <div style="font-size: 13px; color: var(--text-main); margin-bottom: 4px;">
+                <strong>主邮箱:</strong> ${escapeHtml(mainEmail)}
+            </div>
+            ${aliasTable}
+            <div class="add-alias-row" style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                <input id="newAliasEmail" placeholder="输入邮箱地址" style="flex: 1; height: 34px; min-height: 34px; font-size: 12px;">
+                <button class="button primary small" data-action="add-alias" data-contact-id="${contactId}" style="height: 34px; min-height: 34px; padding: 0 12px; font-size: 12px;">添加别名</button>
+            </div>
+        `;
+    } catch (e) {
+        placeholder.innerHTML = `
+            <div class="metadata-card-header"><span>邮箱别名</span></div>
+            <p style="color: var(--text-muted); font-size: 12px;">加载失败。</p>`;
+    }
 }
 
 async function loadMailSendOptions() {
@@ -933,6 +1086,61 @@ async function handleContactAction(element) {
         $("#contactDetail").classList.add("detail-empty");
         $("#contactDetail").innerHTML = `选择一条专家联系记录。`;
     }
+    if (action === "initiate-meeting-schedule") {
+        const availableText = prompt("专家可沟通时间说明 (若为空，则由手动填写)", "");
+        await api(`/api/expert-contacts/${id}/meeting-schedules`, {
+            method: "POST",
+            body: JSON.stringify({
+                expertAvailableText: availableText || "手动发起的会议安排",
+                expertTimezone: null,
+                chinaTime: null,
+                meetingTool: "Zoom",
+                meetingLink: null,
+                note: null
+            })
+        });
+        showStatus("已发起会议排期");
+        await loadContactDetail(id);
+    }
+    if (action === "save-meeting-schedule") {
+        const form = $("#meetingScheduleForm");
+        if (!form) return;
+        const values = formValues(form);
+        const scheduleId = element.dataset.id;
+        const contactId = element.dataset.contactId;
+        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+                chinaTime: values.chinaTime,
+                meetingTool: values.meetingTool,
+                meetingLink: values.meetingLink,
+                note: values.note
+            })
+        });
+        showStatus("会议排期已更新");
+        await loadContactDetail(contactId);
+    }
+    if (action === "cancel-meeting-schedule") {
+        const scheduleId = element.dataset.id;
+        const contactId = element.dataset.contactId;
+        if (!confirm("确定要取消当前会议排期吗？")) return;
+        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/cancel`, {
+            method: "POST"
+        });
+        showStatus("会议排期已取消");
+        await loadContactDetail(contactId);
+        await loadContacts();
+    }
+    if (action === "complete-meeting-schedule") {
+        const scheduleId = element.dataset.id;
+        const contactId = element.dataset.contactId;
+        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/complete`, {
+            method: "POST"
+        });
+        showStatus("已标记会议完成，进入材料准备阶段");
+        await loadContactDetail(contactId);
+        await loadContacts();
+    }
 }
 
 async function loadTasks() {
@@ -954,6 +1162,265 @@ async function loadTasks() {
             <td>${escapeHtml(task.errorMessage || "")}</td>
         </tr>
     `).join("");
+}
+
+async function updateUnmatchedBadge() {
+    try {
+        const data = await api("/api/mail/unmatched-inbound");
+        const count = data.totalCount || 0;
+        const badge = $("#unmatchedBadge");
+        if (count > 0) {
+            badge.textContent = count > 99 ? "99+" : count;
+            badge.hidden = false;
+        } else {
+            badge.hidden = true;
+        }
+    } catch (e) {
+    }
+}
+
+async function loadUnmatched() {
+    const data = await api("/api/mail/unmatched-inbound");
+    state.unmatchedRecords = data.records || [];
+    applyUnmatchedFilters();
+}
+
+function applyUnmatchedFilters() {
+    const emailFilter = ($("#unmatchedFilterEmail").value || "").trim().toLowerCase();
+    const subjectFilter = ($("#unmatchedFilterSubject").value || "").trim().toLowerCase();
+    state.unmatchedFiltered = state.unmatchedRecords.filter((r) => {
+        if (emailFilter && !(r.fromEmail || "").toLowerCase().includes(emailFilter)) return false;
+        if (subjectFilter && !(r.subject || "").toLowerCase().includes(subjectFilter)) return false;
+        return true;
+    });
+    renderUnmatchedTable();
+}
+
+function renderUnmatchedTable() {
+    const rows = state.unmatchedFiltered.map((r) => `
+        <tr>
+            <td>${r.id}</td>
+            <td>${escapeHtml(r.fromEmail)}</td>
+            <td>${escapeHtml(r.subject || "-")}</td>
+            <td>${escapeHtml(r.receivedAt || "")}</td>
+            <td>${escapeHtml(r.senderAccountCode)}</td>
+            <td>${badge(r.processReason || "UNKNOWN", "warn")}</td>
+            <td class="actions">
+                <button class="button" data-action="view-unmatched" data-id="${r.id}">查看</button>
+            </td>
+        </tr>
+    `).join("");
+    $("#unmatchedTable").innerHTML = rows;
+}
+
+async function showUnmatchedDetail(id) {
+    const data = await api(`/api/mail/unmatched-inbound/${id}`);
+    const record = data.record;
+    const candidates = data.candidates || [];
+    const panel = $("#unmatchedDetailPanel");
+    panel.hidden = false;
+
+    const candidatesHtml = candidates.map((c) => `
+        <div class="candidate-row" data-contact-id="${c.contactId}">
+            <div class="candidate-info">
+                <strong>${escapeHtml(c.expertName || "?")}</strong>
+                <span>${escapeHtml(c.expertEmail)}</span>
+                <span class="text-muted">${escapeHtml(c.orcidId)}</span>
+            </div>
+            <div class="candidate-meta">
+                <span class="badge ${c.confidence >= 80 ? "ok" : "warn"}">${c.reason}</span>
+                <span>${c.confidence}%</span>
+                <button class="button primary small" data-action="bind-candidate" data-contact-id="${c.contactId}" data-record-id="${record.id}">绑定</button>
+            </div>
+        </div>
+    `).join("") || "<p class='text-muted'>暂无系统推荐，请手动搜索联系人。</p>";
+
+    panel.innerHTML = `
+        <div class="panel-head">
+            <h2>来信详情与绑定</h2>
+            <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
+        </div>
+        <div class="unmatched-detail-body">
+            <div class="metadata-grid">
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>发件邮箱</span></div>
+                    <div class="metadata-card-value">${escapeHtml(record.fromEmail)}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>主题</span></div>
+                    <div class="metadata-card-value">${escapeHtml(record.subject || "-")}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>Message-ID</span></div>
+                    <div class="metadata-card-value" style="font-size: 11px; word-break: break-all;">${escapeHtml(record.messageId || "-")}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>In-Reply-To</span></div>
+                    <div class="metadata-card-value" style="font-size: 11px; word-break: break-all;">${escapeHtml(record.inReplyTo || "-")}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>收信时间</span></div>
+                    <div class="metadata-card-value">${escapeHtml(record.receivedAt || "")}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>邮箱账号</span></div>
+                    <div class="metadata-card-value">${escapeHtml(record.senderAccountCode)}</div>
+                </div>
+            </div>
+
+            ${record.body ? `
+            <div class="detail-section">
+                <h3>原始正文</h3>
+                <div class="pre">${escapeHtml(record.body)}</div>
+            </div>` : ""}
+
+            ${record.cleanedBody ? `
+            <div class="detail-section">
+                <h3>清洗后正文</h3>
+                <div class="pre">${escapeHtml(record.cleanedBody)}</div>
+            </div>` : ""}
+
+            <div class="detail-section">
+                <h3>候选推荐联系人</h3>
+                <div class="candidates-list">${candidatesHtml}</div>
+            </div>
+
+            <div class="detail-section">
+                <h3>搜索并手动绑定</h3>
+                <div class="search-bind-row">
+                    <input id="unmatchedSearchQuery" placeholder="输入 ORCID、专家姓名或邮箱搜索" style="flex: 1; min-width: 200px;">
+                    <button class="button" data-action="search-candidates" data-record-id="${record.id}">搜索</button>
+                </div>
+                <div id="unmatchedSearchResults" class="candidates-list"></div>
+                <div class="bind-form-row">
+                    <label>操作人: <input id="unmatchedResolvedBy" placeholder="输入操作人姓名" required></label>
+                    <button class="button primary" data-action="bind-manual" data-record-id="${record.id}" id="bindManualBtn" disabled>绑定并添加别名</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    panel.scrollIntoView({ behavior: "smooth" });
+}
+
+async function handleUnmatchedAction(element) {
+    const action = element.dataset.action;
+    const id = element.dataset.id || element.dataset.recordId;
+
+    if (action === "view-unmatched") {
+        await showUnmatchedDetail(id);
+        return;
+    }
+    if (action === "close-unmatched-detail") {
+        $("#unmatchedDetailPanel").hidden = true;
+        return;
+    }
+    if (action === "bind-candidate") {
+        const contactId = element.dataset.contactId;
+        const resolvedBy = prompt("操作人姓名：");
+        if (!resolvedBy) return;
+        await api(`/api/mail/unmatched-inbound/${id}/bind`, {
+            method: "POST",
+            body: JSON.stringify({ contactId: Number(contactId), resolvedBy })
+        });
+        showStatus("已绑定并添加别名");
+        $("#unmatchedDetailPanel").hidden = true;
+        await loadUnmatched();
+        updateUnmatchedBadge();
+        return;
+    }
+    if (action === "search-candidates") {
+        const query = $("#unmatchedSearchQuery").value.trim();
+        if (!query) return;
+        const results = await api(`/api/mail/unmatched-inbound/search-contacts?query=${encodeURIComponent(query)}`);
+        const resultsHtml = results.map((c) => `
+            <div class="candidate-row">
+                <div class="candidate-info">
+                    <strong>${escapeHtml(c.expertName || "?")}</strong>
+                    <span>${escapeHtml(c.expertEmail)}</span>
+                    <span class="text-muted">${escapeHtml(c.orcidId)}</span>
+                </div>
+                <div class="candidate-meta">
+                    <button class="button primary small" data-action="bind-candidate" data-contact-id="${c.contactId}" data-record-id="${id}">绑定</button>
+                </div>
+            </div>
+        `).join("") || "<p class='text-muted'>未找到匹配的联系人。</p>";
+        $("#unmatchedSearchResults").innerHTML = resultsHtml;
+        return;
+    }
+    if (action === "bind-manual") {
+        const contactId = element.dataset.contactId;
+        if (!contactId) {
+            showStatus("请先在搜索结果中选择联系人", "error");
+            return;
+        }
+        const resolvedBy = $("#unmatchedResolvedBy").value.trim();
+        if (!resolvedBy) {
+            showStatus("请输入操作人姓名", "error");
+            return;
+        }
+        await api(`/api/mail/unmatched-inbound/${id}/bind`, {
+            method: "POST",
+            body: JSON.stringify({ contactId: Number(contactId), resolvedBy })
+        });
+        showStatus("已绑定并添加别名");
+        $("#unmatchedDetailPanel").hidden = true;
+        await loadUnmatched();
+        updateUnmatchedBadge();
+    }
+}
+
+function renderEmailAliasSection(contactId) {
+    const container = document.createElement("div");
+    container.id = "emailAliasSection";
+    container.className = "metadata-card span-all";
+    container.style.border = "1px solid var(--panel-border)";
+    container.style.padding = "14px";
+    container.style.borderRadius = "8px";
+    api(`/api/expert-contacts/${contactId}/email-aliases`).then((aliases) => {
+        container.innerHTML = `
+            <div class="metadata-card-header" style="margin-bottom: 8px;">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                <span>邮箱别名</span>
+            </div>
+            <div style="font-size: 13px; color: var(--text-main); margin-bottom: 8px;">
+                <strong>主邮箱:</strong> ${escapeHtml(state.contacts.find(c => c.contactId === contactId)?.email || "")}
+            </div>
+            ${aliases.length ? `
+            <table style="width: 100%; font-size: 12px; margin-bottom: 8px;">
+                <thead>
+                    <tr>
+                        <th style="padding: 4px 6px; text-align: left;">别名邮箱</th>
+                        <th style="padding: 4px 6px; text-align: left;">来源</th>
+                        <th style="padding: 4px 6px; text-align: left;">确认</th>
+                        <th style="padding: 4px 6px; text-align: left;">创建时间</th>
+                        <th style="padding: 4px 6px; text-align: left;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${aliases.map((alias) => `
+                    <tr>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.email)}</td>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.source)}</td>
+                        <td style="padding: 4px 6px;">${alias.verified ? badge("已确认", "ok") : badge("未确认", "warn")}</td>
+                        <td style="padding: 4px 6px;">${escapeHtml(alias.createdAt || "")}</td>
+                        <td style="padding: 4px 6px;">
+                            <button class="button small danger" data-action="delete-alias" data-alias-id="${alias.id}" data-contact-id="${contactId}">移除</button>
+                        </td>
+                    </tr>`).join("")}
+                </tbody>
+            </table>` : '<p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">暂无别名。</p>'}
+
+            <div class="add-alias-row" style="display: flex; gap: 8px; align-items: center;">
+                <input id="newAliasEmail" placeholder="输入邮箱地址" style="flex: 1; height: 34px; min-height: 34px; font-size: 12px;">
+                <button class="button primary small" data-action="add-alias" data-contact-id="${contactId}">添加别名</button>
+            </div>
+        `;
+    }).catch(() => {
+        container.innerHTML = `<div class="metadata-card-header"><span>邮箱别名</span></div>
+            <p style="color: var(--text-muted); font-size: 12px;">加载失败。</p>`;
+    });
+    return container;
 }
 
 function bindEvents() {
@@ -996,6 +1463,52 @@ function bindEvents() {
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
     });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
+    document.addEventListener("submit", (event) => {
+        const form = event.target.closest("#meetingScheduleForm");
+        if (form) {
+            event.preventDefault();
+            confirmMeetingSchedule(form).catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#loadUnmatchedBtn").addEventListener("click", loadUnmatched);
+    $("#unmatchedFilterEmail").addEventListener("input", applyUnmatchedFilters);
+    $("#unmatchedFilterSubject").addEventListener("input", applyUnmatchedFilters);
+    $("#unmatchedTable").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#unmatchedDetailPanel").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    document.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "add-alias") {
+            const contactId = button.dataset.contactId;
+            const email = $("#newAliasEmail").value.trim();
+            if (!email) { showStatus("请输入邮箱地址", "error"); return; }
+            api(`/api/expert-contacts/${contactId}/email-aliases`, {
+                method: "POST",
+                body: JSON.stringify({ email, source: "MANUAL_ADD" })
+            }).then(() => {
+                showStatus("别名已添加");
+                loadContactDetail(contactId);
+            }).catch((e) => showStatus(e.message, "error"));
+        }
+        if (button.dataset.action === "delete-alias") {
+            const contactId = button.dataset.contactId;
+            const aliasId = button.dataset.aliasId;
+            if (!confirm("确定移除该别名？")) return;
+            api(`/api/expert-contacts/${contactId}/email-aliases/${aliasId}`, {
+                method: "DELETE"
+            }).then(() => {
+                showStatus("别名已移除");
+                loadContactDetail(contactId);
+            }).catch((e) => showStatus(e.message, "error"));
+        }
+    });
+    updateUnmatchedBadge();
 }
 
 bindEvents();

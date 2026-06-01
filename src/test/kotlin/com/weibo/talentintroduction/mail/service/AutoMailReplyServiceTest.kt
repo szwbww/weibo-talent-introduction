@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -38,6 +39,8 @@ class AutoMailReplyServiceTest {
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
     private val conversationStateService = ConversationStateService(contactRepository, statusHistoryRepository)
+    private val meetingScheduleService = Mockito.mock(com.weibo.talentintroduction.campaign.service.MeetingScheduleService::class.java)
+    private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -52,7 +55,9 @@ class AutoMailReplyServiceTest {
         InboundIntentClassifier(),
         mailTemplateService,
         qaMatchService,
-        conversationStateService
+        conversationStateService,
+        meetingScheduleService,
+        expertEmailAliasService
     )
 
     @Test
@@ -68,7 +73,7 @@ class AutoMailReplyServiceTest {
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
-        Mockito.`when`(contactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc("expert@example.com"))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
             mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
@@ -99,7 +104,7 @@ class AutoMailReplyServiceTest {
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
-        Mockito.`when`(contactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc("expert@example.com"))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
             mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
@@ -150,7 +155,7 @@ class AutoMailReplyServiceTest {
         val meetingReply = reply(body = "I am available at 9AM China time next Tuesday.")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(meetingReply))
-        Mockito.`when`(contactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc("expert@example.com"))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
             mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
@@ -185,10 +190,93 @@ class AutoMailReplyServiceTest {
         Mockito.verify(receiveService).markSeen(account, 101)
     }
 
-    private fun reply(body: String = "Could you share the program details?"): ReceivedMail =
+    @Test
+    fun `alias matched email continues auto processing`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "primary@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name
+        )
+        val aliasReply = reply(from = "alias@example.com")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(aliasReply))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("alias@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(receiveService).markSeen(account, 101)
+    }
+
+    @Test
+    fun `unmatched email records body and in_reply_to for manual review`() {
+        val account = account("sender")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(null)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("CONTACT_NOT_FOUND", captor.value.processReason)
+        assertEquals("reply-1", captor.value.messageId)
+        assertEquals("intro-1", captor.value.inReplyTo)
+    }
+
+    @Test
+    fun `primary email matched works with alias service`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.NEW.name
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(false)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    private fun reply(body: String = "Could you share the program details?", from: String = "expert@example.com"): ReceivedMail =
         ReceivedMail(
             imapUid = 101,
-            from = "expert@example.com",
+            from = from,
             subject = "Re: Talent Program",
             body = body,
             messageId = "reply-1",

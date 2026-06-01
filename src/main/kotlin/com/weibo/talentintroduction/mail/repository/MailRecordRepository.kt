@@ -11,4 +11,8 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         direction: String,
         mailType: String
     ): Boolean
+
+    fun findByMessageId(messageId: String): MailRecord?
+
+    fun findFirstByMessageIdOrderByCreatedAtDesc(messageId: String): MailRecord?
 }

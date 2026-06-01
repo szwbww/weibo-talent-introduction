@@ -20,4 +20,15 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
         campaignId: Long,
         currentStatus: String
     ): List<ExpertContact>
+
+    fun findAllByExpertNameContainingIgnoreCaseOrExpertEmailContainingIgnoreCaseOrderByUpdatedAtDesc(
+        expertName: String,
+        expertEmail: String
+    ): List<ExpertContact>
+
+    fun findAllByOrcidIdContainingIgnoreCaseOrExpertNameContainingIgnoreCaseOrExpertEmailContainingIgnoreCaseOrderByUpdatedAtDesc(
+        orcidId: String,
+        expertName: String,
+        expertEmail: String
+    ): List<ExpertContact>
 }

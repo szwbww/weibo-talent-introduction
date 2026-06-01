@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
@@ -13,6 +14,7 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.springframework.stereotype.Service
@@ -33,7 +35,9 @@ class AutoMailReplyService(
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val mailTemplateService: MailTemplateService,
     private val qaMatchService: QaMatchService,
-    private val conversationStateService: ConversationStateService
+    private val conversationStateService: ConversationStateService,
+    private val meetingScheduleService: MeetingScheduleService,
+    private val expertEmailAliasService: ExpertEmailAliasService
 ) {
     fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
@@ -49,9 +53,10 @@ class AutoMailReplyService(
                 return@forEach
             }
 
-            val contact = expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(received.from)
+            val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
             if (contact == null) {
-                confirmManualReview(account, received, null, "CONTACT_NOT_FOUND")
+                val cleanedBody = mailBodyCleaner.clean(received.body)
+                confirmManualReviewWithBody(account, received, null, "CONTACT_NOT_FOUND", cleanedBody)
                 manualReview += 1
                 return@forEach
             }
@@ -101,6 +106,10 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
+
+            if (intent.intentCode == InboundIntentCode.MEETING_TIME_PROVIDED || intent.intentCode == InboundIntentCode.MEETING_REQUESTED) {
+                meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
+            }
 
             when (intent.autoAction) {
                 AutoIntentAction.MANUAL_REVIEW -> {
@@ -403,6 +412,35 @@ class AutoMailReplyService(
         confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason)
     }
 
+    private fun confirmManualReviewWithBody(
+        account: MailSenderAccount,
+        received: ReceivedMail,
+        expertContactId: Long?,
+        reason: String,
+        cleanedBody: String
+    ) {
+        val now = LocalDateTime.now()
+        inboundMailProcessingRepository.save(
+            InboundMailProcessing(
+                senderAccountCode = account.accountCode,
+                imapUid = received.imapUid,
+                messageId = received.messageId,
+                inReplyTo = received.inReplyTo,
+                fromEmail = received.from,
+                subject = received.subject,
+                body = received.body,
+                cleanedBody = cleanedBody,
+                receivedAt = received.receivedAt,
+                processStatus = "MANUAL_REVIEW",
+                processReason = reason,
+                expertContactId = expertContactId,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        mailReceiveService.markSeen(account, received.imapUid)
+    }
+
     private fun confirmProcessed(
         account: MailSenderAccount,
         received: ReceivedMail,
@@ -416,8 +454,10 @@ class AutoMailReplyService(
                 senderAccountCode = account.accountCode,
                 imapUid = received.imapUid,
                 messageId = received.messageId,
+                inReplyTo = received.inReplyTo,
                 fromEmail = received.from,
                 subject = received.subject,
+                body = received.body,
                 receivedAt = received.receivedAt,
                 processStatus = status,
                 processReason = reason,

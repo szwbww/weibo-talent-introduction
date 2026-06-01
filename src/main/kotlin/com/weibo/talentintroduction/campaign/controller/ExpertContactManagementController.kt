@@ -2,11 +2,16 @@ package com.weibo.talentintroduction.campaign.controller
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
+import com.weibo.talentintroduction.campaign.domain.MeetingSchedule
 import com.weibo.talentintroduction.campaign.service.ExpertContactDetail
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
 import com.weibo.talentintroduction.campaign.service.ManualHandoffAssignCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCompleteCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCreateCommand
+import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
+import com.weibo.talentintroduction.campaign.service.CreateMeetingCommand
+import com.weibo.talentintroduction.campaign.service.UpdateMeetingCommand
+import com.weibo.talentintroduction.campaign.service.ConfirmMeetingCommand
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.MailAttachment
@@ -18,6 +23,7 @@ import com.weibo.talentintroduction.mail.service.ManualMailSendResult
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -27,7 +33,8 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/expert-contacts")
 class ExpertContactManagementController(
     private val service: ExpertContactManagementService,
-    private val manualExpertMailService: ManualExpertMailService
+    private val manualExpertMailService: ManualExpertMailService,
+    private val meetingScheduleService: MeetingScheduleService
 ) {
     @GetMapping
     fun listContacts(
@@ -78,6 +85,43 @@ class ExpertContactManagementController(
         @RequestBody request: ManualMailSendRequest
     ): ManualMailSendResult =
         manualExpertMailService.sendManualMail(contactId, request.toCommand())
+
+    @PostMapping("/{contactId}/meeting-schedules")
+    fun createMeetingSchedule(
+        @PathVariable contactId: Long,
+        @RequestBody request: CreateMeetingScheduleRequest
+    ): MeetingScheduleResponse =
+        meetingScheduleService.createManual(contactId, request.toCommand()).toResponse()
+
+    @PutMapping("/{contactId}/meeting-schedules/{scheduleId}")
+    fun updateMeetingSchedule(
+        @PathVariable contactId: Long,
+        @PathVariable scheduleId: Long,
+        @RequestBody request: UpdateMeetingScheduleRequest
+    ): MeetingScheduleResponse =
+        meetingScheduleService.updateSchedule(contactId, scheduleId, request.toCommand()).toResponse()
+
+    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/confirm-and-email")
+    fun confirmMeetingAndEmail(
+        @PathVariable contactId: Long,
+        @PathVariable scheduleId: Long,
+        @RequestBody request: ConfirmMeetingRequest
+    ): MeetingScheduleResponse =
+        meetingScheduleService.confirmMeetingAndEmail(contactId, scheduleId, request.toCommand()).toResponse()
+
+    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/complete")
+    fun completeMeeting(
+        @PathVariable contactId: Long,
+        @PathVariable scheduleId: Long
+    ): MeetingScheduleResponse =
+        meetingScheduleService.completeMeeting(contactId, scheduleId).toResponse()
+
+    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/cancel")
+    fun cancelMeeting(
+        @PathVariable contactId: Long,
+        @PathVariable scheduleId: Long
+    ): MeetingScheduleResponse =
+        meetingScheduleService.cancelMeeting(contactId, scheduleId).toResponse()
 }
 
 data class ManualHandoffCreateRequest(
@@ -129,7 +173,76 @@ data class ExpertContactDetailResponse(
     val documents: List<ExpertDocumentResponse>,
     val latestHandoff: ManualHandoffResponse?,
     val statusHistory: List<ExpertContactStatusHistoryResponse>,
-    val recommendedNextAction: String
+    val recommendedNextAction: String,
+    val meetingSchedules: List<MeetingScheduleResponse>
+)
+
+data class CreateMeetingScheduleRequest(
+    val expertAvailableText: String?,
+    val expertTimezone: String?,
+    val chinaTime: String?,
+    val meetingTool: String?,
+    val meetingLink: String?,
+    val note: String?
+) {
+    fun toCommand(): CreateMeetingCommand =
+        CreateMeetingCommand(
+            expertAvailableText = expertAvailableText,
+            expertTimezone = expertTimezone,
+            chinaTime = chinaTime,
+            meetingTool = meetingTool,
+            meetingLink = meetingLink,
+            note = note
+        )
+}
+
+data class UpdateMeetingScheduleRequest(
+    val expertAvailableText: String?,
+    val expertTimezone: String?,
+    val chinaTime: String?,
+    val meetingTool: String?,
+    val meetingLink: String?,
+    val note: String?
+) {
+    fun toCommand(): UpdateMeetingCommand =
+        UpdateMeetingCommand(
+            expertAvailableText = expertAvailableText,
+            expertTimezone = expertTimezone,
+            chinaTime = chinaTime,
+            meetingTool = meetingTool,
+            meetingLink = meetingLink,
+            note = note
+        )
+}
+
+data class ConfirmMeetingRequest(
+    val chinaTime: String,
+    val meetingTool: String,
+    val meetingLink: String,
+    val note: String?
+) {
+    fun toCommand(): ConfirmMeetingCommand =
+        ConfirmMeetingCommand(
+            chinaTime = chinaTime,
+            meetingTool = meetingTool,
+            meetingLink = meetingLink,
+            note = note
+        )
+}
+
+data class MeetingScheduleResponse(
+    val id: Long?,
+    val expertContactId: Long,
+    val sourceMailRecordId: Long?,
+    val expertAvailableText: String?,
+    val expertTimezone: String?,
+    val chinaTime: String?,
+    val meetingTool: String?,
+    val meetingLink: String?,
+    val meetingStatus: String,
+    val note: String?,
+    val createdAt: String?,
+    val updatedAt: String?
 )
 
 data class ExpertContactResponse(
@@ -209,7 +322,24 @@ private fun ExpertContactDetail.toResponse(): ExpertContactDetailResponse =
         documents = documents.map { it.toResponse() },
         latestHandoff = latestHandoff?.toResponse(),
         statusHistory = statusHistory.map { it.toResponse() },
-        recommendedNextAction = recommendedNextAction
+        recommendedNextAction = recommendedNextAction,
+        meetingSchedules = meetingSchedules.map { it.toResponse() }
+    )
+
+private fun MeetingSchedule.toResponse(): MeetingScheduleResponse =
+    MeetingScheduleResponse(
+        id = id,
+        expertContactId = expertContactId,
+        sourceMailRecordId = sourceMailRecordId,
+        expertAvailableText = expertAvailableText,
+        expertTimezone = expertTimezone,
+        chinaTime = chinaTime,
+        meetingTool = meetingTool,
+        meetingLink = meetingLink,
+        meetingStatus = meetingStatus,
+        note = note,
+        createdAt = createdAt?.toString(),
+        updatedAt = updatedAt?.toString()
     )
 
 private fun ExpertContact.toResponse(): ExpertContactResponse =

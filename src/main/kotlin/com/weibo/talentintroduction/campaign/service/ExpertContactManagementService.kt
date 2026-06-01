@@ -2,8 +2,10 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
+import com.weibo.talentintroduction.campaign.domain.MeetingSchedule
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
+import com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
@@ -24,7 +26,8 @@ class ExpertContactManagementService(
     private val mailAttachmentRepository: MailAttachmentRepository,
     private val expertDocumentRepository: ExpertDocumentRepository,
     private val statusHistoryRepository: ExpertContactStatusHistoryRepository,
-    private val conversationStateService: ConversationStateService
+    private val conversationStateService: ConversationStateService,
+    private val meetingScheduleRepository: MeetingScheduleRepository
 ) {
     fun listContacts(campaignId: Long?, status: String?): List<ExpertContact> =
         when {
@@ -57,7 +60,8 @@ class ExpertContactManagementService(
             recommendedNextAction = conversationStateService.recommendedNextAction(
                 contact.currentStatus,
                 contact.manualHandoffRequired
-            )
+            ),
+            meetingSchedules = meetingScheduleRepository.findAllByExpertContactIdOrderByCreatedAtDesc(contactId)
         )
     }
 
@@ -158,7 +162,8 @@ data class ExpertContactDetail(
     val documents: List<ExpertDocument>,
     val latestHandoff: ManualHandoff?,
     val statusHistory: List<ExpertContactStatusHistory>,
-    val recommendedNextAction: String
+    val recommendedNextAction: String,
+    val meetingSchedules: List<MeetingSchedule>
 )
 
 data class ManualHandoffCreateCommand(
