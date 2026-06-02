@@ -21,12 +21,14 @@ class UnmatchedInboundMailServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
 
     private val service = UnmatchedInboundMailService(
         inboundMailProcessingRepository = inboundMailProcessingRepository,
         expertContactRepository = expertContactRepository,
         expertEmailAliasService = expertEmailAliasService,
-        mailRecordRepository = mailRecordRepository
+        mailRecordRepository = mailRecordRepository,
+        expertIndexWriterService = expertIndexWriterService
     )
 
     private fun contact(id: Long, email: String) = ExpertContact(

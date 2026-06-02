@@ -1,0 +1,35 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 1
+  },
+  "mappings": {
+    "dynamic": false,
+    "properties": {
+      "orcidId": { "type": "keyword" },
+      "orcid": { "type": "keyword" },
+      "id": { "type": "keyword" },
+      "email": { "type": "keyword" },
+      "givenNames": { "type": "text" },
+      "familyNames": { "type": "text" },
+      "country": { "type": "keyword" },
+      "keyword": { "type": "text" },
+      "employment": { "type": "text" },
+      "age": { "type": "integer" },
+      "degree": { "type": "keyword" },
+      "nationality": { "type": "keyword" },
+      "candidateValidatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "currentConversationStatus": { "type": "keyword" },
+      "applicationStatus": { "type": "keyword" },
+      "autoReplyEnabled": { "type": "boolean" },
+      "firstReplyAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "lastReplyAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "expertContactId": { "type": "long" },
+      "campaignId": { "type": "long" },
+      "promotionSource": { "type": "keyword" },
+      "applicationPromotedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "latestInboundIntent": { "type": "keyword" }
+    }
+  }
+}

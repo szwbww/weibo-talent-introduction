@@ -42,9 +42,11 @@ class ConversationStateServiceTest {
     }
 
     @Test
-    fun `does not record status history when status is unchanged`() {
+    fun `records status history even when status is unchanged with fromStatus null`() {
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.getArgument<ExpertContact>(0) }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
 
         service.transition(
             contact = contact(ConversationStatus.MATERIALS_PARTIAL),
@@ -53,7 +55,11 @@ class ConversationStateServiceTest {
             source = "AUTO_REPLY"
         )
 
-        Mockito.verify(statusHistoryRepository, Mockito.never()).save(Mockito.any(ExpertContactStatusHistory::class.java))
+        val historyCaptor = ArgumentCaptor.forClass(ExpertContactStatusHistory::class.java)
+        Mockito.verify(statusHistoryRepository).save(historyCaptor.capture())
+        assertEquals(null, historyCaptor.value.fromStatus)
+        assertEquals(ConversationStatus.MATERIALS_PARTIAL.name, historyCaptor.value.toStatus)
+        assertEquals("REVIEW_DOCUMENT", historyCaptor.value.reason)
     }
 
     @Test

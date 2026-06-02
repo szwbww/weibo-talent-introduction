@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
@@ -24,6 +25,7 @@ class ExpertContactManagementServiceTest {
     private val expertDocumentRepository = Mockito.mock(ExpertDocumentRepository::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
     private val meetingScheduleRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository::class.java)
+    private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
@@ -33,7 +35,8 @@ class ExpertContactManagementServiceTest {
         expertDocumentRepository,
         statusHistoryRepository,
         conversationStateService,
-        meetingScheduleRepository
+        meetingScheduleRepository,
+        expertIndexWriterService
     )
 
     @Test

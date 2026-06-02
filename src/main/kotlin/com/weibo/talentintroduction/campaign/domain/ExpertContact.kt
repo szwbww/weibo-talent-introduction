@@ -17,6 +17,9 @@ data class ExpertContact(
     val lastReplyAt: LocalDateTime? = null,
     val manualHandoffRequired: Boolean = false,
     val closedReason: String? = null,
+    val autoReplyEnabled: Boolean = true,
+    val firstReplyAt: LocalDateTime? = null,
+    val applicationIndexed: Boolean = false,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )

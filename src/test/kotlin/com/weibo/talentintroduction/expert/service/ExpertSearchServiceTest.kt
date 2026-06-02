@@ -26,7 +26,7 @@ class ExpertSearchServiceTest {
     private val service = ExpertSearchService(
         restTemplate = restTemplate,
         properties = properties,
-        expertIndexService = ExpertIndexService(properties)
+        expertIndexService = ExpertIndexService(properties, restTemplate, mapper)
     )
 
     @Test

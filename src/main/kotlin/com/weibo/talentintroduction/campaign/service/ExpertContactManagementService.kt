@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHisto
 import com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
@@ -27,7 +28,8 @@ class ExpertContactManagementService(
     private val expertDocumentRepository: ExpertDocumentRepository,
     private val statusHistoryRepository: ExpertContactStatusHistoryRepository,
     private val conversationStateService: ConversationStateService,
-    private val meetingScheduleRepository: MeetingScheduleRepository
+    private val meetingScheduleRepository: MeetingScheduleRepository,
+    private val expertIndexWriterService: ExpertIndexWriterService
 ) {
     fun listContacts(campaignId: Long?, status: String?): List<ExpertContact> =
         when {
@@ -80,14 +82,17 @@ class ExpertContactManagementService(
                 updatedAt = now
             )
         )
-        conversationStateService.transition(
+        val updatedContact = conversationStateService.transition(
             contact = contact,
             toStatus = ConversationStatus.MANUAL_HANDOFF,
             reason = "CREATE_MANUAL_HANDOFF:${command.reason}",
             source = "MANUAL",
             now = now
         ) {
-            it.copy(manualHandoffRequired = true)
+            it.copy(manualHandoffRequired = true, autoReplyEnabled = false)
+        }
+        if (updatedContact.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updatedContact, "MANUAL_HANDOFF")
         }
         return handoff
     }
@@ -107,7 +112,11 @@ class ExpertContactManagementService(
 
     fun completeHandoff(contactId: Long, command: ManualHandoffCompleteCommand): ManualHandoff {
         val existing = getLatestHandoff(contactId)
+        val contact = getContact(contactId)
         val now = LocalDateTime.now()
+        val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
+            ?: ConversationStatus.fromName(contact.currentStatus)
+        require(nextStatus in allowedAfterManualStates) { "Invalid next status for handoff completion: $nextStatus" }
         val completed = manualHandoffRepository.save(
             existing.copy(
                 handoffStatus = "COMPLETED",
@@ -115,25 +124,129 @@ class ExpertContactManagementService(
                 updatedAt = now
             )
         )
-        val contact = getContact(contactId)
-        val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
-            ?: ConversationStatus.fromName(contact.currentStatus)
-        conversationStateService.transition(
+        val updatedContact = conversationStateService.transition(
             contact = contact,
             toStatus = nextStatus,
             reason = "COMPLETE_MANUAL_HANDOFF",
             source = "MANUAL",
             now = now
         ) {
-            it.copy(manualHandoffRequired = false)
+            var updated = it.copy(manualHandoffRequired = false)
+            if (command.resumeAutoReply == true) {
+                updated = updated.copy(autoReplyEnabled = true)
+            }
+            updated
+        }
+        if (updatedContact.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updatedContact)
         }
         return completed
+    }
+
+    fun pauseAutoReply(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        val now = LocalDateTime.now()
+        val updated = conversationStateService.transition(
+            contact = contact,
+            toStatus = ConversationStatus.fromName(contact.currentStatus),
+            reason = "pause auto-reply",
+            source = "MANUAL_OPERATOR",
+            now = now
+        ) {
+            it.copy(autoReplyEnabled = false)
+        }
+        if (updated.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updated, "AUTO_REPLY_PAUSED")
+        }
+        return updated
+    }
+
+    fun resumeAutoReply(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        val now = LocalDateTime.now()
+        val updated = conversationStateService.transition(
+            contact = contact,
+            toStatus = ConversationStatus.fromName(contact.currentStatus),
+            reason = "resume auto-reply",
+            source = "MANUAL_OPERATOR",
+            now = now
+        ) {
+            it.copy(autoReplyEnabled = true)
+        }
+        if (updated.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updated, "AUTO_REPLY_RESUMED")
+        }
+        return updated
+    }
+
+    private val allowedAfterManualStates = setOf(
+        ConversationStatus.WAITING_REPLY,
+        ConversationStatus.QA_AUTO_REPLIED,
+        ConversationStatus.MEETING_SCHEDULING,
+        ConversationStatus.MEETING_SCHEDULED,
+        ConversationStatus.MEETING_DONE,
+        ConversationStatus.MATERIALS_REQUESTED,
+        ConversationStatus.MATERIALS_PARTIAL,
+        ConversationStatus.MATERIALS_RECEIVED,
+        ConversationStatus.COMPANY_MATCHED,
+        ConversationStatus.CLOSED
+    )
+
+    fun completeManualReview(contactId: Long, command: ManualHandoffCompleteCommand): ExpertContact {
+        val contact = getContact(contactId)
+        require(
+            contact.currentStatus in listOf(
+                ConversationStatus.MANUAL_REVIEW.name,
+                ConversationStatus.MANUAL_HANDOFF.name
+            )
+        ) { "Contact is not in a manual review or handoff state: ${contact.currentStatus}" }
+        val now = LocalDateTime.now()
+        val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
+            ?: ConversationStatus.fromName(contact.currentStatus)
+        require(nextStatus in allowedAfterManualStates) { "Invalid next status for manual completion: $nextStatus" }
+        val updated = conversationStateService.transition(
+            contact = contact,
+            toStatus = nextStatus,
+            reason = "COMPLETE_MANUAL_REVIEW",
+            source = "MANUAL",
+            now = now
+        ) {
+            var updated = it.copy(manualHandoffRequired = false)
+            if (command.resumeAutoReply == true) {
+                updated = updated.copy(autoReplyEnabled = true)
+            }
+            updated
+        }
+        if (updated.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updated)
+        }
+        return updated
+    }
+
+    fun promoteToApplication(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        if (contact.applicationIndexed) return contact
+        require(contact.currentStatus != ConversationStatus.CLOSED.name) { "Cannot promote a closed contact" }
+        require(contact.orcidId.isNotBlank()) { "Contact has no ORCID" }
+        val firstReplyInstant = if (contact.firstReplyAt != null) {
+            contact.firstReplyAt.toInstant(java.time.ZoneId.systemDefault().rules.getOffset(contact.firstReplyAt))
+        } else {
+            java.time.Instant.now()
+        }
+        val ok = expertIndexWriterService.promoteToApplication(
+            orcid = contact.orcidId,
+            contact = contact,
+            firstReplyAt = firstReplyInstant
+        )
+        require(ok) { "Failed to promote to application index" }
+        val updated = expertContactRepository.save(contact.copy(applicationIndexed = true))
+        return updated
     }
 
     fun closeContact(contactId: Long, reason: String): ExpertContact {
         require(reason.isNotBlank()) { "reason is required" }
         val contact = getContact(contactId)
-        return conversationStateService.transition(
+        val updated = conversationStateService.transition(
             contact = contact,
             toStatus = ConversationStatus.CLOSED,
             reason = "CLOSE_CONTACT:$reason",
@@ -141,9 +254,14 @@ class ExpertContactManagementService(
         ) {
             it.copy(
                 manualHandoffRequired = false,
+                autoReplyEnabled = false,
                 closedReason = reason
             )
         }
+        if (updated.applicationIndexed) {
+            expertIndexWriterService.markApplicationClosed(updated)
+        }
+        return updated
     }
 
     private fun getContact(contactId: Long): ExpertContact =
@@ -179,5 +297,6 @@ data class ManualHandoffAssignCommand(
 
 data class ManualHandoffCompleteCommand(
     val nextStatus: String?,
-    val note: String?
+    val note: String?,
+    val resumeAutoReply: Boolean? = null
 )

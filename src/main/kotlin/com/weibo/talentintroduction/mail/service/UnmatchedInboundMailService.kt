@@ -3,19 +3,22 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class UnmatchedInboundMailService(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val expertContactRepository: ExpertContactRepository,
     private val expertEmailAliasService: ExpertEmailAliasService,
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val expertIndexWriterService: ExpertIndexWriterService
 ) {
     fun listUnmatched(): List<InboundMailProcessing> =
         inboundMailProcessingRepository.findAllByProcessStatusAndExpertContactIdIsNullOrderByReceivedAtDesc("MANUAL_REVIEW")
@@ -93,13 +96,14 @@ class UnmatchedInboundMailService(
     fun bindToContact(
         recordId: Long,
         contactId: Long,
-        resolvedBy: String
+        resolvedBy: String,
+        promoteToApplication: Boolean = false
     ): InboundMailProcessing {
         val record = inboundMailProcessingRepository.findById(recordId)
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
         require(record.expertContactId == null) { "Already bound to a contact" }
 
-        expertContactRepository.findById(contactId)
+        val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
 
         expertEmailAliasService.bindAlias(
@@ -107,6 +111,24 @@ class UnmatchedInboundMailService(
             email = record.fromEmail,
             source = "MANUAL_BIND"
         )
+
+        if (promoteToApplication && !contact.applicationIndexed) {
+            val now = record.receivedAt ?: LocalDateTime.now()
+            val updatedContact = expertContactRepository.save(
+                contact.copy(firstReplyAt = now)
+            )
+            try {
+                val ok = expertIndexWriterService.promoteToApplication(
+                    orcid = contact.orcidId,
+                    contact = updatedContact,
+                    firstReplyAt = now.toInstant(ZoneId.systemDefault().rules.getOffset(now))
+                )
+                if (ok) {
+                    expertContactRepository.save(updatedContact.copy(applicationIndexed = true))
+                }
+            } catch (e: Exception) {
+            }
+        }
 
         val now = LocalDateTime.now()
         return inboundMailProcessingRepository.save(

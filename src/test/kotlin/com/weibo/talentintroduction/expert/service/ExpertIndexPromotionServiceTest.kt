@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito
 
 class ExpertIndexPromotionServiceTest {
     private val properties = ElasticsearchProperties(
@@ -17,7 +18,11 @@ class ExpertIndexPromotionServiceTest {
         applicationIndexName = "orcid_info_application"
     )
     private val service = ExpertIndexPromotionService(
-        ExpertIndexService(properties),
+        ExpertIndexService(
+            properties,
+            Mockito.mock(org.springframework.web.client.RestTemplate::class.java),
+            com.fasterxml.jackson.databind.ObjectMapper()
+        ),
         CandidateEligibilityService(CandidateFilterProperties())
     )
 

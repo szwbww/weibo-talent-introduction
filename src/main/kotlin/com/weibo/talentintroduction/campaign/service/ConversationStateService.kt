@@ -31,18 +31,16 @@ class ConversationStateService(
                 )
             )
         )
-        if (fromStatus != toStatus.name) {
-            statusHistoryRepository.save(
-                ExpertContactStatusHistory(
-                    expertContactId = contactId,
-                    fromStatus = fromStatus,
-                    toStatus = toStatus.name,
-                    reason = reason,
-                    source = source,
-                    createdAt = now
-                )
+        statusHistoryRepository.save(
+            ExpertContactStatusHistory(
+                expertContactId = contactId,
+                fromStatus = if (fromStatus == toStatus.name) null else fromStatus,
+                toStatus = toStatus.name,
+                reason = reason,
+                source = source,
+                createdAt = now
             )
-        }
+        )
         return saved
     }
 

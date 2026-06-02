@@ -50,7 +50,8 @@ class UnmatchedInboundMailController(
         val result = unmatchedInboundMailService.bindToContact(
             recordId = id,
             contactId = request.contactId,
-            resolvedBy = request.resolvedBy
+            resolvedBy = request.resolvedBy,
+            promoteToApplication = request.promoteToApplication ?: false
         )
         return result.toResponse()
     }
@@ -139,7 +140,8 @@ data class CandidateResponse(
 
 data class BindUnmatchedRequest(
     val contactId: Long,
-    val resolvedBy: String
+    val resolvedBy: String,
+    val promoteToApplication: Boolean? = null
 )
 
 data class AddAliasRequest(

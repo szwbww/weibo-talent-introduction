@@ -41,6 +41,7 @@ class AutoMailReplyServiceTest {
     private val conversationStateService = ConversationStateService(contactRepository, statusHistoryRepository)
     private val meetingScheduleService = Mockito.mock(com.weibo.talentintroduction.campaign.service.MeetingScheduleService::class.java)
     private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
+    private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -57,7 +58,8 @@ class AutoMailReplyServiceTest {
         qaMatchService,
         conversationStateService,
         meetingScheduleService,
-        expertEmailAliasService
+        expertEmailAliasService,
+        expertIndexWriterService
     )
 
     @Test
@@ -150,7 +152,8 @@ class AutoMailReplyServiceTest {
             orcidId = "ORCID-11",
             expertEmail = "expert@example.com",
             expertName = "Expert",
-            currentStatus = ConversationStatus.INTRO_SENT.name
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            firstReplyAt = LocalDateTime.now()
         )
         val meetingReply = reply(body = "I am available at 9AM China time next Tuesday.")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
@@ -183,9 +186,10 @@ class AutoMailReplyServiceTest {
         assertEquals("PENDING", handoffCaptor.value.handoffStatus)
 
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
-        Mockito.verify(contactRepository).save(contactCaptor.capture())
-        assertEquals(ConversationStatus.MEETING_SCHEDULING.name, contactCaptor.value.currentStatus)
-        assertEquals(true, contactCaptor.value.manualHandoffRequired)
+        Mockito.verify(contactRepository, Mockito.atLeast(2)).save(contactCaptor.capture())
+        val lastSaved = contactCaptor.allValues.last()
+        assertEquals(ConversationStatus.MEETING_SCHEDULING.name, lastSaved.currentStatus)
+        assertEquals(true, lastSaved.manualHandoffRequired)
         Mockito.verifyNoInteractions(qaMatchService, deliveryService)
         Mockito.verify(receiveService).markSeen(account, 101)
     }
@@ -197,9 +201,10 @@ class AutoMailReplyServiceTest {
             id = 11,
             campaignId = 1,
             orcidId = "ORCID-11",
-            expertEmail = "primary@example.com",
+            expertEmail = "expert@example.com",
             expertName = "Expert",
-            currentStatus = ConversationStatus.INTRO_SENT.name
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            firstReplyAt = LocalDateTime.now()
         )
         val aliasReply = reply(from = "alias@example.com")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)

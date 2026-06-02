@@ -68,6 +68,25 @@ class ExpertContactManagementController(
     ): ManualHandoffResponse =
         service.completeHandoff(contactId, request.toCommand()).toResponse()
 
+    @PostMapping("/{contactId}/complete-manual-review")
+    fun completeManualReview(
+        @PathVariable contactId: Long,
+        @RequestBody request: ManualHandoffCompleteRequest
+    ): ExpertContactResponse =
+        service.completeManualReview(contactId, request.toCommand()).toResponse()
+
+    @PostMapping("/{contactId}/pause-auto-reply")
+    fun pauseAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
+        service.pauseAutoReply(contactId).toResponse()
+
+    @PostMapping("/{contactId}/resume-auto-reply")
+    fun resumeAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
+        service.resumeAutoReply(contactId).toResponse()
+
+    @PostMapping("/{contactId}/promote-to-application")
+    fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
+        service.promoteToApplication(contactId).toResponse()
+
     @PostMapping("/{contactId}/close")
     fun closeContact(
         @PathVariable contactId: Long,
@@ -143,10 +162,11 @@ data class ManualHandoffAssignRequest(
 
 data class ManualHandoffCompleteRequest(
     val nextStatus: String?,
-    val note: String?
+    val note: String?,
+    val resumeAutoReply: Boolean? = null
 ) {
     fun toCommand(): ManualHandoffCompleteCommand =
-        ManualHandoffCompleteCommand(nextStatus = nextStatus, note = note)
+        ManualHandoffCompleteCommand(nextStatus = nextStatus, note = note, resumeAutoReply = resumeAutoReply)
 }
 
 data class ExpertContactCloseRequest(
@@ -255,7 +275,9 @@ data class ExpertContactResponse(
     val lastMailAt: String?,
     val lastReplyAt: String?,
     val manualHandoffRequired: Boolean,
-    val closedReason: String?
+    val closedReason: String?,
+    val autoReplyEnabled: Boolean = true,
+    val applicationIndexed: Boolean = false
 )
 
 data class MailRecordResponse(
@@ -353,7 +375,9 @@ private fun ExpertContact.toResponse(): ExpertContactResponse =
         lastMailAt = lastMailAt?.toString(),
         lastReplyAt = lastReplyAt?.toString(),
         manualHandoffRequired = manualHandoffRequired,
-        closedReason = closedReason
+        closedReason = closedReason,
+        autoReplyEnabled = autoReplyEnabled,
+        applicationIndexed = applicationIndexed
     )
 
 private fun MailRecord.toResponse(): MailRecordResponse =

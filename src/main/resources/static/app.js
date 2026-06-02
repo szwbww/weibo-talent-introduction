@@ -783,10 +783,19 @@ async function loadContactDetail(contactId) {
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
                 <span>完成人工</span>
             </button>
+            <button class="button" data-action="complete-manual-review" data-id="${contact.id}">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>完成审核</span>
+            </button>
             <button class="button danger" data-action="close-contact" data-id="${contact.id}">
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
                 <span>关闭</span>
             </button>
+            <button class="button" data-action="toggle-auto-reply" data-id="${contact.id}" data-enabled="${contact.autoReplyEnabled}">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>${contact.autoReplyEnabled ? "暂停自动回复" : "恢复自动回复"}</span>
+            </button>
+            ${contact.applicationIndexed ? `<span class="badge ok">已加入有效层</span>` : `<button class="button" data-action="promote-to-application" data-id="${contact.id}"><span>加入有效层</span></button>`}
         </div>
         <div class="contact-head-mail-actions">
         <select id="manualMailOption" aria-label="选择要发送的邮件">
@@ -1066,9 +1075,29 @@ async function handleContactAction(element) {
         await loadContacts();
     }
     if (action === "complete-handoff") {
+        const nextStatus = prompt("完成后状态 (留空保持当前)", "WAITING_REPLY");
+        const resumeAuto = confirm("是否恢复自动回复？");
         await api(`/api/expert-contacts/${id}/manual-handoff/complete`, {
             method: "POST",
-            body: JSON.stringify({ nextStatus: "WAITING_REPLY", note: "Completed from console" })
+            body: JSON.stringify({
+                nextStatus: nextStatus || null,
+                note: "Completed from console",
+                resumeAutoReply: resumeAuto
+            })
+        });
+        await loadContactDetail(id);
+        await loadContacts();
+    }
+    if (action === "complete-manual-review") {
+        const nextStatus = prompt("完成后状态 (留空保持当前)", "WAITING_REPLY");
+        const resumeAuto = confirm("是否恢复自动回复？");
+        await api(`/api/expert-contacts/${id}/complete-manual-review`, {
+            method: "POST",
+            body: JSON.stringify({
+                nextStatus: nextStatus || null,
+                note: "Completed from console",
+                resumeAutoReply: resumeAuto
+            })
         });
         await loadContactDetail(id);
         await loadContacts();
@@ -1139,6 +1168,20 @@ async function handleContactAction(element) {
         });
         showStatus("已标记会议完成，进入材料准备阶段");
         await loadContactDetail(contactId);
+        await loadContacts();
+    }
+    if (action === "toggle-auto-reply") {
+        const enabled = element.dataset.enabled === "true";
+        const endpoint = enabled ? "pause-auto-reply" : "resume-auto-reply";
+        await api(`/api/expert-contacts/${id}/${endpoint}`, { method: "POST" });
+        showStatus(enabled ? "已暂停自动回复" : "已恢复自动回复");
+        await loadContactDetail(id);
+        await loadContacts();
+    }
+    if (action === "promote-to-application") {
+        await api(`/api/expert-contacts/${id}/promote-to-application`, { method: "POST" });
+        showStatus("已加入有效层");
+        await loadContactDetail(id);
         await loadContacts();
     }
 }
@@ -1294,6 +1337,7 @@ async function showUnmatchedDetail(id) {
                 <div id="unmatchedSearchResults" class="candidates-list"></div>
                 <div class="bind-form-row">
                     <label>操作人: <input id="unmatchedResolvedBy" placeholder="输入操作人姓名" required></label>
+                    <label class="checkbox-row"><input id="bindPromoteCheck" type="checkbox"> 同时加入有效层</label>
                     <button class="button primary" data-action="bind-manual" data-record-id="${record.id}" id="bindManualBtn" disabled>绑定并添加别名</button>
                 </div>
             </div>
@@ -1319,9 +1363,10 @@ async function handleUnmatchedAction(element) {
         const contactId = element.dataset.contactId;
         const resolvedBy = prompt("操作人姓名：");
         if (!resolvedBy) return;
+        const promote = confirm("是否同时加入有效层？");
         await api(`/api/mail/unmatched-inbound/${id}/bind`, {
             method: "POST",
-            body: JSON.stringify({ contactId: Number(contactId), resolvedBy })
+            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication: promote })
         });
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
@@ -1359,9 +1404,10 @@ async function handleUnmatchedAction(element) {
             showStatus("请输入操作人姓名", "error");
             return;
         }
+        const promote = $("#bindPromoteCheck")?.checked || false;
         await api(`/api/mail/unmatched-inbound/${id}/bind`, {
             method: "POST",
-            body: JSON.stringify({ contactId: Number(contactId), resolvedBy })
+            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication: promote })
         });
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
