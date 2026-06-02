@@ -13,8 +13,10 @@ import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import java.time.LocalDateTime
 import java.util.Optional
 
 class ExpertContactManagementServiceTest {
@@ -66,9 +68,10 @@ class ExpertContactManagementServiceTest {
     }
 
     @Test
-    fun `assigns latest handoff`() {
-        Mockito.`when`(manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(1L))
-            .thenReturn(handoff(status = "PENDING"))
+    fun `assigns latest open handoff`() {
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(1L, listOf("PENDING", "ASSIGNED"))
+        ).thenReturn(handoff(status = "PENDING"))
         Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ManualHandoff }
 
@@ -82,9 +85,10 @@ class ExpertContactManagementServiceTest {
     }
 
     @Test
-    fun `completes latest handoff and clears manual flag`() {
-        Mockito.`when`(manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(1L))
-            .thenReturn(handoff(status = "ASSIGNED"))
+    fun `completes latest open handoff and clears manual flag`() {
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(1L, listOf("PENDING", "ASSIGNED"))
+        ).thenReturn(handoff(status = "ASSIGNED"))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact()))
         Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ManualHandoff }
@@ -103,6 +107,52 @@ class ExpertContactManagementServiceTest {
             }
         )
         Mockito.verify(statusHistoryRepository).save(Mockito.any(ExpertContactStatusHistory::class.java))
+    }
+
+    @Test
+    fun `completes correct open handoff when duplicate tickets exist`() {
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(1L, listOf("PENDING", "ASSIGNED"))
+        ).thenReturn(
+            ManualHandoff(
+                id = 1L,
+                expertContactId = 1L,
+                reason = "QA miss",
+                handoffStatus = "PENDING",
+                assignedTo = null,
+                note = "old open ticket",
+                createdAt = LocalDateTime.of(2026, 6, 1, 10, 0),
+                updatedAt = LocalDateTime.of(2026, 6, 1, 10, 0)
+            )
+        )
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ManualHandoff }
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val completed = service.completeHandoff(
+            1L,
+            ManualHandoffCompleteCommand(nextStatus = ConversationStatus.WAITING_REPLY.name, note = null)
+        )
+
+        assertEquals(1L, completed.id)
+        assertEquals("COMPLETED", completed.handoffStatus)
+        assertEquals("old open ticket", completed.note)
+    }
+
+    @Test
+    fun `fails completion when no open handoff exists`() {
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(1L, listOf("PENDING", "ASSIGNED"))
+        ).thenReturn(null)
+
+        assertThrows(java.lang.IllegalStateException::class.java) {
+            service.completeHandoff(
+                1L,
+                ManualHandoffCompleteCommand(nextStatus = ConversationStatus.WAITING_REPLY.name, note = "done")
+            )
+        }
     }
 
     @Test
@@ -126,7 +176,7 @@ class ExpertContactManagementServiceTest {
             orcidId = "0000-0001",
             expertEmail = "expert@example.com",
             expertName = "Expert",
-            currentStatus = ConversationStatus.MANUAL_REVIEW.name,
+            currentStatus = ConversationStatus.MANUAL_HANDOFF.name,
             manualHandoffRequired = true
         )
 

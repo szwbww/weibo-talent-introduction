@@ -102,8 +102,13 @@ flowchart LR
 - `MEETING_INVITATION_SENT`
 - `WAITING_MEETING_CONFIRMATION`
 - `MANUAL_HANDOFF`
-- `MANUAL_REVIEW`
 - `CLOSED`
+
+`MANUAL_HANDOFF` is the single state for any "needs a human" situation, whether
+the inbound auto-pipeline routed the contact there (unclear intent, attached
+materials, QA miss, paused auto-reply, etc.) or an operator clicked "转人工"
+explicitly. Both paths create a `manual_handoff` ticket so the "完成人工"
+workflow always has a record to close.
 
 ## QA Strategy
 

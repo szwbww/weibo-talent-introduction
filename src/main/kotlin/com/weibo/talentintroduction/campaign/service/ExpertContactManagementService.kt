@@ -57,7 +57,9 @@ class ExpertContactManagementService(
             mails = mails,
             attachments = attachments,
             documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
-            latestHandoff = manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(contactId),
+            latestHandoff = manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(
+                contactId, listOf("PENDING", "ASSIGNED")
+            ),
             statusHistory = statusHistoryRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
             recommendedNextAction = conversationStateService.recommendedNextAction(
                 contact.currentStatus,
@@ -99,7 +101,7 @@ class ExpertContactManagementService(
 
     fun assignHandoff(contactId: Long, command: ManualHandoffAssignCommand): ManualHandoff {
         require(command.assignedTo.isNotBlank()) { "assignedTo is required" }
-        val existing = getLatestHandoff(contactId)
+        val existing = getLatestOpenHandoff(contactId)
         return manualHandoffRepository.save(
             existing.copy(
                 handoffStatus = "ASSIGNED",
@@ -111,7 +113,7 @@ class ExpertContactManagementService(
     }
 
     fun completeHandoff(contactId: Long, command: ManualHandoffCompleteCommand): ManualHandoff {
-        val existing = getLatestHandoff(contactId)
+        val existing = getLatestOpenHandoff(contactId)
         val contact = getContact(contactId)
         val now = LocalDateTime.now()
         val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
@@ -192,37 +194,6 @@ class ExpertContactManagementService(
         ConversationStatus.CLOSED
     )
 
-    fun completeManualReview(contactId: Long, command: ManualHandoffCompleteCommand): ExpertContact {
-        val contact = getContact(contactId)
-        require(
-            contact.currentStatus in listOf(
-                ConversationStatus.MANUAL_REVIEW.name,
-                ConversationStatus.MANUAL_HANDOFF.name
-            )
-        ) { "Contact is not in a manual review or handoff state: ${contact.currentStatus}" }
-        val now = LocalDateTime.now()
-        val nextStatus = command.nextStatus?.let(ConversationStatus::fromName)
-            ?: ConversationStatus.fromName(contact.currentStatus)
-        require(nextStatus in allowedAfterManualStates) { "Invalid next status for manual completion: $nextStatus" }
-        val updated = conversationStateService.transition(
-            contact = contact,
-            toStatus = nextStatus,
-            reason = "COMPLETE_MANUAL_REVIEW",
-            source = "MANUAL",
-            now = now
-        ) {
-            var updated = it.copy(manualHandoffRequired = false)
-            if (command.resumeAutoReply == true) {
-                updated = updated.copy(autoReplyEnabled = true)
-            }
-            updated
-        }
-        if (updated.applicationIndexed) {
-            expertIndexWriterService.syncApplicationStatus(updated)
-        }
-        return updated
-    }
-
     fun promoteToApplication(contactId: Long): ExpertContact {
         val contact = getContact(contactId)
         if (contact.applicationIndexed) return contact
@@ -268,9 +239,10 @@ class ExpertContactManagementService(
         expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
 
-    private fun getLatestHandoff(contactId: Long): ManualHandoff =
-        manualHandoffRepository.findFirstByExpertContactIdOrderByUpdatedAtDesc(contactId)
-            ?: error("Manual handoff not found for expert contact: $contactId")
+    private fun getLatestOpenHandoff(contactId: Long): ManualHandoff =
+        manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(
+            contactId, listOf("PENDING", "ASSIGNED")
+        ) ?: error("No open manual handoff found for expert contact: $contactId")
 }
 
 data class ExpertContactDetail(

@@ -68,13 +68,6 @@ class ExpertContactManagementController(
     ): ManualHandoffResponse =
         service.completeHandoff(contactId, request.toCommand()).toResponse()
 
-    @PostMapping("/{contactId}/complete-manual-review")
-    fun completeManualReview(
-        @PathVariable contactId: Long,
-        @RequestBody request: ManualHandoffCompleteRequest
-    ): ExpertContactResponse =
-        service.completeManualReview(contactId, request.toCommand()).toResponse()
-
     @PostMapping("/{contactId}/pause-auto-reply")
     fun pauseAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
         service.pauseAutoReply(contactId).toResponse()

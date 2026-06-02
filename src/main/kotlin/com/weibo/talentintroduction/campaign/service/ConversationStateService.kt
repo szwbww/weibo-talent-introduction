@@ -67,8 +67,7 @@ class ConversationStateService(
             status == ConversationStatus.REJECTED_THIS_ROUND.name -> "评估是否进入下一轮跟进。"
             status == ConversationStatus.NEXT_ROUND_FOLLOW_UP.name -> "等待下一轮项目窗口并保持联系。"
             status == ConversationStatus.QA_AUTO_REPLIED.name -> "等待专家对 QA 回复的进一步反馈。"
-            status == ConversationStatus.MANUAL_HANDOFF.name -> "请人工接管当前专家沟通。"
-            status == ConversationStatus.MANUAL_REVIEW.name -> "请人工审核邮件内容、材料或风险问题。"
+            status == ConversationStatus.MANUAL_HANDOFF.name -> "请人工接管：审核邮件内容、材料或风险问题，并在完成后更新阶段状态。"
             status == ConversationStatus.CLOSED.name -> "该专家联系已关闭，无需继续自动跟进。"
             else -> "请人工确认下一步动作。"
         }

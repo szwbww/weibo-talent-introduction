@@ -188,7 +188,7 @@ class AutoMailReplyServiceTest {
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
         Mockito.verify(contactRepository, Mockito.atLeast(2)).save(contactCaptor.capture())
         val lastSaved = contactCaptor.allValues.last()
-        assertEquals(ConversationStatus.MEETING_SCHEDULING.name, lastSaved.currentStatus)
+        assertEquals(ConversationStatus.MANUAL_HANDOFF.name, lastSaved.currentStatus)
         assertEquals(true, lastSaved.manualHandoffRequired)
         Mockito.verifyNoInteractions(qaMatchService, deliveryService)
         Mockito.verify(receiveService).markSeen(account, 101)

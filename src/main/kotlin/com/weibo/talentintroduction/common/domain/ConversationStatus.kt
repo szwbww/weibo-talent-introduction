@@ -25,7 +25,6 @@ enum class ConversationStatus {
     REJECTED_THIS_ROUND,
     NEXT_ROUND_FOLLOW_UP,
     MANUAL_HANDOFF,
-    MANUAL_REVIEW,
     CLOSED;
 
     companion object {

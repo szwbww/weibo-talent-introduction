@@ -75,7 +75,6 @@ class AutoMailReplyService(
 
             if (!contact.autoReplyEnabled ||
                 contact.currentStatus in listOf(
-                    ConversationStatus.MANUAL_REVIEW.name,
                     ConversationStatus.MANUAL_HANDOFF.name,
                     ConversationStatus.CLOSED.name
                 )
@@ -83,7 +82,6 @@ class AutoMailReplyService(
                 val reason = when {
                     contact.currentStatus == ConversationStatus.CLOSED.name -> "CLOSED_STATUS"
                     !contact.autoReplyEnabled -> "AUTO_REPLY_DISABLED"
-                    contact.currentStatus == ConversationStatus.MANUAL_REVIEW.name -> "MANUAL_REVIEW_STATUS"
                     else -> "MANUAL_HANDOFF_STATUS"
                 }
                 val cleanedBody = mailBodyCleaner.clean(received.body)
@@ -116,7 +114,7 @@ class AutoMailReplyService(
                     markManualReview(
                         contact = contact,
                         received = received,
-                        status = ConversationStatus.MANUAL_REVIEW,
+                        status = ConversationStatus.MANUAL_HANDOFF,
                         reason = reason,
                         note = "Auto-reply skipped: $reason. Status: ${contact.currentStatus}"
                     )
@@ -257,7 +255,7 @@ class AutoMailReplyService(
                 markManualReview(
                     contact = effectiveContact,
                     received = received,
-                    status = ConversationStatus.MANUAL_REVIEW,
+                    status = ConversationStatus.MANUAL_HANDOFF,
                     reason = "QA_MANUAL_REVIEW",
                     note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
                 )
@@ -426,17 +424,8 @@ class AutoMailReplyService(
         )
     }
 
-    private fun manualReviewStatus(intentCode: InboundIntentCode): ConversationStatus =
-        when (intentCode) {
-            InboundIntentCode.MEETING_TIME_PROVIDED,
-            InboundIntentCode.MEETING_REQUESTED -> ConversationStatus.MEETING_SCHEDULING
-
-            InboundIntentCode.CV_ATTACHED,
-            InboundIntentCode.DOCS_ATTACHED,
-            InboundIntentCode.PASSPORT_UPDATED -> ConversationStatus.MATERIALS_PARTIAL
-
-            else -> ConversationStatus.MANUAL_REVIEW
-        }
+    private fun manualReviewStatus(@Suppress("UNUSED_PARAMETER") intentCode: InboundIntentCode): ConversationStatus =
+        ConversationStatus.MANUAL_HANDOFF
 
     private fun manualReviewReason(intentCode: InboundIntentCode): String =
         when (intentCode) {

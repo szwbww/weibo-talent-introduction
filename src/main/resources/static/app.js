@@ -51,7 +51,6 @@ const statusLabels = {
     REJECTED_THIS_ROUND: "本轮未通过",
     NEXT_ROUND_FOLLOW_UP: "下一轮跟进",
     MANUAL_HANDOFF: "已转人工",
-    MANUAL_REVIEW: "待人工审核",
     CLOSED: "已关闭",
     RUNNING: "运行中",
     SUCCESS: "成功",
@@ -465,7 +464,7 @@ async function loadContacts() {
         const status = contact.contactId ? labelStatus(contact.contactStatus) : "未联系";
         const statusType = contact.contactStatus === "CLOSED"
             ? "error"
-            : contact.contactStatus === "MANUAL_HANDOFF" || contact.contactStatus === "MANUAL_REVIEW"
+            : contact.contactStatus === "MANUAL_HANDOFF"
                 ? "warn"
                 : contact.contactId
                     ? "ok"
@@ -561,7 +560,7 @@ function showExpertDetail(expert) {
                         <span>阶段状态</span>
                     </div>
                     <div class="metadata-card-value">
-                        ${badge(expert.contactStatus ? labelStatus(expert.contactStatus) : "未联系", expert.contactStatus === "CLOSED" ? "error" : expert.contactStatus === "MANUAL_HANDOFF" || expert.contactStatus === "MANUAL_REVIEW" ? "warn" : expert.contactId ? "ok" : "")}
+                        ${badge(expert.contactStatus ? labelStatus(expert.contactStatus) : "未联系", expert.contactStatus === "CLOSED" ? "error" : expert.contactStatus === "MANUAL_HANDOFF" ? "warn" : expert.contactId ? "ok" : "")}
                     </div>
                 </div>
 
@@ -783,10 +782,6 @@ async function loadContactDetail(contactId) {
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
                 <span>完成人工</span>
             </button>
-            <button class="button" data-action="complete-manual-review" data-id="${contact.id}">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>完成审核</span>
-            </button>
             <button class="button danger" data-action="close-contact" data-id="${contact.id}">
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
                 <span>关闭</span>
@@ -841,7 +836,7 @@ async function loadContactDetail(contactId) {
                         <span>阶段状态</span>
                     </div>
                     <div class="metadata-card-value">
-                        ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "CLOSED" ? "error" : contact.currentStatus === "MANUAL_HANDOFF" || contact.currentStatus === "MANUAL_REVIEW" ? "warn" : "ok")}
+                        ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "CLOSED" ? "error" : contact.currentStatus === "MANUAL_HANDOFF" ? "warn" : "ok")}
                     </div>
                 </div>
 
@@ -1078,20 +1073,6 @@ async function handleContactAction(element) {
         const nextStatus = prompt("完成后状态 (留空保持当前)", "WAITING_REPLY");
         const resumeAuto = confirm("是否恢复自动回复？");
         await api(`/api/expert-contacts/${id}/manual-handoff/complete`, {
-            method: "POST",
-            body: JSON.stringify({
-                nextStatus: nextStatus || null,
-                note: "Completed from console",
-                resumeAutoReply: resumeAuto
-            })
-        });
-        await loadContactDetail(id);
-        await loadContacts();
-    }
-    if (action === "complete-manual-review") {
-        const nextStatus = prompt("完成后状态 (留空保持当前)", "WAITING_REPLY");
-        const resumeAuto = confirm("是否恢复自动回复？");
-        await api(`/api/expert-contacts/${id}/complete-manual-review`, {
             method: "POST",
             body: JSON.stringify({
                 nextStatus: nextStatus || null,
