@@ -5,3 +5,5 @@ target/
 docs/multi-ai-runs/
 docs/plans/
 docs/reviews/
+cache/
+docs/.DS_Store
