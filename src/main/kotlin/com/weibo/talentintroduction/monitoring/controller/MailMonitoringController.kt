@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.monitoring.controller
 
 import com.weibo.talentintroduction.monitoring.service.MailMonitoringService
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -15,13 +16,13 @@ class MailMonitoringController(
     private val mailMonitoringService: MailMonitoringService
 ) {
     @GetMapping("/summary")
-    fun summary(@RequestParam(required = false) date: LocalDate?): MailMonitoringService.DailySummary =
+    fun summary(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?): MailMonitoringService.DailySummary =
         mailMonitoringService.summary(date)
 
     @GetMapping("/introductions")
     fun introductions(
-        @RequestParam(required = false) from: LocalDate?,
-        @RequestParam(required = false) to: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
         @RequestParam(required = false) senderAccountCode: String?,
         @RequestParam(required = false, defaultValue = "20") pageSize: Int,
         @RequestParam(required = false, defaultValue = "0") pageOffset: Int
@@ -30,8 +31,8 @@ class MailMonitoringController(
 
     @GetMapping("/outbound-replies")
     fun outboundReplies(
-        @RequestParam(required = false) from: LocalDate?,
-        @RequestParam(required = false) to: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
         @RequestParam(required = false) triggeredBy: String?,
         @RequestParam(required = false) mailType: String?,
         @RequestParam(required = false) senderAccountCode: String?,
@@ -45,8 +46,8 @@ class MailMonitoringController(
 
     @GetMapping("/inbound")
     fun inbound(
-        @RequestParam(required = false) from: LocalDate?,
-        @RequestParam(required = false) to: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
         @RequestParam(required = false) processStatus: String?,
         @RequestParam(required = false) reasonType: String?,
         @RequestParam(required = false, defaultValue = "20") pageSize: Int,
@@ -56,8 +57,8 @@ class MailMonitoringController(
 
     @GetMapping("/promotions")
     fun promotions(
-        @RequestParam(required = false) from: LocalDate?,
-        @RequestParam(required = false) to: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
         @RequestParam(required = false) promotionStatus: String?,
         @RequestParam(required = false, defaultValue = "20") pageSize: Int,
         @RequestParam(required = false, defaultValue = "0") pageOffset: Int
@@ -69,6 +70,6 @@ class MailMonitoringController(
         mailMonitoringService.retryPromotion(id)
 
     @GetMapping("/sender-accounts")
-    fun senderAccounts(@RequestParam(required = false) date: LocalDate?): List<SenderAccountHealthRow> =
+    fun senderAccounts(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?): List<SenderAccountHealthRow> =
         mailMonitoringService.senderAccountHealth(date)
 }
