@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import java.time.LocalDateTime
@@ -28,6 +29,7 @@ class ExpertContactManagementServiceTest {
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
     private val meetingScheduleRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
+    private val inboundMailProcessingRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
@@ -38,7 +40,8 @@ class ExpertContactManagementServiceTest {
         statusHistoryRepository,
         conversationStateService,
         meetingScheduleRepository,
-        expertIndexWriterService
+        expertIndexWriterService,
+        inboundMailProcessingRepository
     )
 
     @Test
@@ -156,17 +159,68 @@ class ExpertContactManagementServiceTest {
     }
 
     @Test
-    fun `closes contact`() {
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact()))
+    fun `switchToManual converts contact to manual handoff`() {
+        val contact = contact().copy(currentStatus = ConversationStatus.WAITING_REPLY.name, manualHandoffRequired = false)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+        Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ManualHandoff }
+
+        val updated = service.switchToManual(1L, "OPERATOR_SWITCH", "some note")
+
+        assertEquals(ConversationStatus.MANUAL_HANDOFF.name, updated.currentStatus)
+        assertFalse(updated.autoReplyEnabled)
+        assertTrue(updated.manualHandoffRequired)
+        Mockito.verify(manualHandoffRepository).save(Mockito.argThat { handoff ->
+            handoff.expertContactId == 1L && handoff.reason == "OPERATOR_SWITCH" && handoff.handoffStatus == "PENDING"
+        })
+    }
+
+    @Test
+    fun `switchToAuto switches contact back to auto reply`() {
+        val contact = contact().copy(currentStatus = ConversationStatus.MANUAL_HANDOFF.name, autoReplyEnabled = false, manualHandoffRequired = true)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(manualHandoffRepository.findAllByExpertContactIdAndHandoffStatusIn(1L, listOf("PENDING", "ASSIGNED")))
+            .thenReturn(listOf(handoff("PENDING")))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+        Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ManualHandoff }
+
+        val updated = service.switchToAuto(1L, "resolved")
+
+        assertEquals(ConversationStatus.WAITING_REPLY.name, updated.currentStatus)
+        assertTrue(updated.autoReplyEnabled)
+        assertFalse(updated.manualHandoffRequired)
+        assertFalse(updated.needsManualAttention)
+    }
+
+    @Test
+    fun `promoteToCandidate works on RAW contact`() {
+        val contact = contact().copy(currentIndexLevel = "RAW")
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertIndexWriterService.promoteToCandidate(contact.orcidId, contact))
+            .thenReturn(true)
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
 
-        val closed = service.closeContact(1L, "Expert declined")
+        val updated = service.promoteToCandidate(1L)
+        assertEquals("CANDIDATE", updated.currentIndexLevel)
+    }
 
-        assertEquals(ConversationStatus.CLOSED.name, closed.currentStatus)
-        assertFalse(closed.manualHandoffRequired)
-        assertEquals("Expert declined", closed.closedReason)
-        Mockito.verify(statusHistoryRepository).save(Mockito.any(ExpertContactStatusHistory::class.java))
+    @Test
+    fun `demoteToRaw works on CANDIDATE contact`() {
+        val contact = contact().copy(currentIndexLevel = "CANDIDATE")
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertIndexWriterService.demoteToRaw(contact.orcidId, contact))
+            .thenReturn(true)
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val updated = service.demoteToRaw(1L)
+        assertEquals("RAW", updated.currentIndexLevel)
+        assertFalse(updated.applicationIndexed)
     }
 
     private fun contact(): ExpertContact =

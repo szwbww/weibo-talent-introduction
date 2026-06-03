@@ -24,12 +24,13 @@ enum class ConversationStatus {
     RESULT_PENDING,
     REJECTED_THIS_ROUND,
     NEXT_ROUND_FOLLOW_UP,
-    MANUAL_HANDOFF,
-    CLOSED;
+    MANUAL_HANDOFF;
 
     companion object {
-        fun fromName(value: String): ConversationStatus =
-            entries.firstOrNull { it.name == value }
+        fun fromName(value: String): ConversationStatus {
+            if (value == "CLOSED") return MANUAL_HANDOFF
+            return entries.firstOrNull { it.name == value }
                 ?: error("Unsupported conversation status: $value")
+        }
     }
 }

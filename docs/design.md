@@ -86,11 +86,9 @@ flowchart LR
     A["Expert selected from ES"] --> B["INTRODUCTION sent"]
     B --> C["Waiting for reply"]
     C --> D{"Reply classification"}
-    D -->|FAQ question| E["QA auto reply"]
+    D -->|FAQ question (QA match)| E["QA auto reply"]
     D -->|Interest expressed| F["MEETING_INVITATION sent"]
-    D -->|Invitation accepted| G["Manual handoff"]
-    D -->|Retired or explicit rejection| H["Closed"]
-    D -->|Unclear| I["Manual review"]
+    D -->|QA miss / Unclear / Not interested| G["Manual handoff (已转人工)"]
 ```
 
 ## Conversation States
@@ -102,13 +100,25 @@ flowchart LR
 - `MEETING_INVITATION_SENT`
 - `WAITING_MEETING_CONFIRMATION`
 - `MANUAL_HANDOFF`
-- `CLOSED`
+- (CLOSED removed)
 
 `MANUAL_HANDOFF` is the single state for any "needs a human" situation, whether
 the inbound auto-pipeline routed the contact there (unclear intent, attached
-materials, QA miss, paused auto-reply, etc.) or an operator clicked "转人工"
-explicitly. Both paths create a `manual_handoff` ticket so the "完成人工"
+materials, QA miss, paused auto-reply, etc.) or an operator clicked "切换为人工回复"
+explicitly. Both paths create a `manual_handoff` ticket so the "切换为自动回复"
 workflow always has a record to close.
+
+## ES Index Levels & Promotion/Demotion
+
+There are three ES index levels representing the funnel stage of an expert:
+- `RAW` (orcid_info index): Original raw expert data.
+- `CANDIDATE` (candidate index): Filtered and ready to receive the first outreach.
+- `APPLICATION` (application index): Validated response received (triggered only on QA match, meeting intent, or manual review).
+
+Index Promotion and Demotion rules:
+- Promoted to `CANDIDATE`: Automated criteria filter or manual click on "加入筛选层".
+- Promoted to `APPLICATION`: Promoted automatically on first reply (except for QA_NO_MATCH and NOT_INTERESTED intents) or manual click on "加入有效层".
+- Demoted to `RAW`: Only manually via "退回到原始层" button. This deletes the expert from both CANDIDATE and APPLICATION indices.
 
 ## QA Strategy
 

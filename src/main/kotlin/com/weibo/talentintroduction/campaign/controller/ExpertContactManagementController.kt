@@ -39,9 +39,10 @@ class ExpertContactManagementController(
     @GetMapping
     fun listContacts(
         @RequestParam(required = false) campaignId: Long?,
-        @RequestParam(required = false) status: String?
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) needsAttention: Boolean?
     ): List<ExpertContactResponse> =
-        service.listContacts(campaignId, status).map { it.toResponse() }
+        service.listContacts(campaignId, status, needsAttention).map { it.toResponse() }
 
     @GetMapping("/{contactId}")
     fun getContactDetail(@PathVariable contactId: Long): ExpertContactDetailResponse =
@@ -80,12 +81,27 @@ class ExpertContactManagementController(
     fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
         service.promoteToApplication(contactId).toResponse()
 
-    @PostMapping("/{contactId}/close")
-    fun closeContact(
+    @PostMapping("/{contactId}/promote-to-candidate")
+    fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
+        service.promoteToCandidate(contactId).toResponse()
+
+    @PostMapping("/{contactId}/demote-to-raw")
+    fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
+        service.demoteToRaw(contactId).toResponse()
+
+    @PostMapping("/{contactId}/switch-to-manual")
+    fun switchToManual(
         @PathVariable contactId: Long,
-        @RequestBody request: ExpertContactCloseRequest
+        @RequestBody request: SwitchToManualRequest
     ): ExpertContactResponse =
-        service.closeContact(contactId, request.reason).toResponse()
+        service.switchToManual(contactId, request.reason, request.note).toResponse()
+
+    @PostMapping("/{contactId}/switch-to-auto")
+    fun switchToAuto(
+        @PathVariable contactId: Long,
+        @RequestBody request: SwitchToAutoRequest
+    ): ExpertContactResponse =
+        service.switchToAuto(contactId, request.note).toResponse()
 
     @GetMapping("/mail-send-options")
     fun listMailSendOptions(): List<ManualMailOption> =
@@ -162,8 +178,13 @@ data class ManualHandoffCompleteRequest(
         ManualHandoffCompleteCommand(nextStatus = nextStatus, note = note, resumeAutoReply = resumeAutoReply)
 }
 
-data class ExpertContactCloseRequest(
-    val reason: String
+data class SwitchToManualRequest(
+    val reason: String?,
+    val note: String?
+)
+
+data class SwitchToAutoRequest(
+    val note: String?
 )
 
 data class ManualMailSendRequest(
@@ -270,7 +291,10 @@ data class ExpertContactResponse(
     val manualHandoffRequired: Boolean,
     val closedReason: String?,
     val autoReplyEnabled: Boolean = true,
-    val applicationIndexed: Boolean = false
+    val applicationIndexed: Boolean = false,
+    val currentIndexLevel: String,
+    val needsManualAttention: Boolean,
+    val latestManualReviewReasonType: String? = null
 )
 
 data class MailRecordResponse(
@@ -331,7 +355,7 @@ data class ExpertContactStatusHistoryResponse(
 
 private fun ExpertContactDetail.toResponse(): ExpertContactDetailResponse =
     ExpertContactDetailResponse(
-        contact = contact.toResponse(),
+        contact = contact.toResponse(latestManualReviewReasonType),
         mails = mails.map { it.toResponse() },
         attachments = attachments.map { it.toResponse() },
         documents = documents.map { it.toResponse() },
@@ -357,7 +381,7 @@ private fun MeetingSchedule.toResponse(): MeetingScheduleResponse =
         updatedAt = updatedAt?.toString()
     )
 
-private fun ExpertContact.toResponse(): ExpertContactResponse =
+private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = null): ExpertContactResponse =
     ExpertContactResponse(
         id = id,
         campaignId = campaignId,
@@ -370,7 +394,10 @@ private fun ExpertContact.toResponse(): ExpertContactResponse =
         manualHandoffRequired = manualHandoffRequired,
         closedReason = closedReason,
         autoReplyEnabled = autoReplyEnabled,
-        applicationIndexed = applicationIndexed
+        applicationIndexed = applicationIndexed,
+        currentIndexLevel = currentIndexLevel,
+        needsManualAttention = needsManualAttention,
+        latestManualReviewReasonType = latestManualReviewReasonType
     )
 
 private fun MailRecord.toResponse(): MailRecordResponse =

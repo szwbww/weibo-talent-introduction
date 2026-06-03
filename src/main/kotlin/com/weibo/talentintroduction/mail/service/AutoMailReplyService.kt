@@ -62,25 +62,28 @@ class AutoMailReplyService(
             val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
             if (contact == null) {
                 val cleanedBody = mailBodyCleaner.clean(received.body)
-                confirmManualReviewWithBody(account, received, null, "CONTACT_NOT_FOUND", cleanedBody)
+                confirmManualReviewWithBody(
+                    account = account,
+                    received = received,
+                    expertContactId = null,
+                    reason = "CONTACT_NOT_FOUND",
+                    reasonType = "UNMATCHED_CONTACT",
+                    cleanedBody = cleanedBody
+                )
                 manualReview += 1
                 return@forEach
             }
             val contactId = contact.id ?: error("Expert contact id is required")
             if (!hasIntroductionInquiry(contactId)) {
-                confirmManualReview(account, received, contactId, "INTRODUCTION_NOT_SENT")
+                confirmManualReview(account, received, contactId, "INTRODUCTION_NOT_SENT", "UNCLEAR_INTENT")
                 manualReview += 1
                 return@forEach
             }
 
             if (!contact.autoReplyEnabled ||
-                contact.currentStatus in listOf(
-                    ConversationStatus.MANUAL_HANDOFF.name,
-                    ConversationStatus.CLOSED.name
-                )
+                contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name
             ) {
                 val reason = when {
-                    contact.currentStatus == ConversationStatus.CLOSED.name -> "CLOSED_STATUS"
                     !contact.autoReplyEnabled -> "AUTO_REPLY_DISABLED"
                     else -> "MANUAL_HANDOFF_STATUS"
                 }
@@ -106,10 +109,12 @@ class AutoMailReplyService(
                     )
                 )
                 recorded += 1
-                if (contact.currentStatus == ConversationStatus.CLOSED.name ||
-                    contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name
-                ) {
-                    confirmProcessed(account, received, contactId, contact.currentStatus, reason)
+                if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
+                    if (!contact.needsManualAttention) {
+                        expertContactRepository.save(contact.copy(needsManualAttention = true))
+                    }
+                    createManualHandoffIfAbsent(contactId, reason, "Auto-reply skipped: contact already in MANUAL_HANDOFF")
+                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
                 } else {
                     markManualReview(
                         contact = contact,
@@ -118,7 +123,7 @@ class AutoMailReplyService(
                         reason = reason,
                         note = "Auto-reply skipped: $reason. Status: ${contact.currentStatus}"
                     )
-                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason)
+                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
                 }
                 manualReview += 1
                 return@forEach
@@ -179,33 +184,37 @@ class AutoMailReplyService(
                         reason = reason,
                         note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
                     )
-                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason)
+                    confirmManualReviewWithBody(
+                        account = account,
+                        received = received,
+                        expertContactId = contactId,
+                        reason = reason,
+                        reasonType = "UNCLEAR_INTENT",
+                        cleanedBody = cleanedBody
+                    )
                     manualReview += 1
                     return@forEach
                 }
 
                 AutoIntentAction.CLOSE -> {
-                    val closeContact = if (intent.intentCode != InboundIntentCode.NOT_INTERESTED) {
-                        promoteIfFirstReply(contact, received) ?: contact
-                    } else {
-                        contact
-                    }
-                    val closedContact = conversationStateService.transition(
-                        contact = closeContact,
-                        toStatus = ConversationStatus.CLOSED,
+                    markManualReview(
+                        contact = contact,
+                        received = received,
+                        status = ConversationStatus.MANUAL_HANDOFF,
                         reason = "INTENT_${intent.intentCode.name}",
-                        source = "AUTO_REPLY"
-                    ) { c ->
-                        c.copy(
-                            lastReplyAt = received.receivedAt,
-                            autoReplyEnabled = false,
-                            closedReason = "INTENT_${intent.intentCode.name}"
-                        )
-                    }
-                    if (closedContact.applicationIndexed) {
-                        expertIndexWriterService.syncApplicationStatus(closedContact, "CLOSED")
-                    }
-                    confirmProcessed(account, received, contactId, "PROCESSED", "INTENT_${intent.intentCode.name}")
+                        note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
+                    )
+                    val reasonType = if (intent.intentCode == InboundIntentCode.NOT_INTERESTED)
+                        "NOT_INTERESTED" else "UNCLEAR_INTENT"
+                    confirmManualReviewWithBody(
+                        account = account,
+                        received = received,
+                        expertContactId = contactId,
+                        reason = "INTENT_${intent.intentCode.name}",
+                        reasonType = reasonType,
+                        cleanedBody = cleanedBody
+                    )
+                    manualReview += 1
                     return@forEach
                 }
 
@@ -219,7 +228,14 @@ class AutoMailReplyService(
                             reason = "CONFIRM_MEETING",
                             note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
                         )
-                        confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "MEETING_INVITATION_ALREADY_SENT")
+                        confirmManualReviewWithBody(
+                            account = account,
+                            received = received,
+                            expertContactId = contactId,
+                            reason = "MEETING_INVITATION_ALREADY_SENT",
+                            reasonType = "UNCLEAR_INTENT",
+                            cleanedBody = cleanedBody
+                        )
                         manualReview += 1
                         return@forEach
                     }
@@ -248,22 +264,28 @@ class AutoMailReplyService(
                 AutoIntentAction.QA -> Unit
             }
 
-            val promoted = promoteIfFirstReply(contact, received)
-            val effectiveContact = promoted ?: contact
             val match = qaMatchService.match(cleanedBody)
             if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
                 markManualReview(
-                    contact = effectiveContact,
+                    contact = contact,
                     received = received,
                     status = ConversationStatus.MANUAL_HANDOFF,
-                    reason = "QA_MANUAL_REVIEW",
+                    reason = "QA_NO_MATCH",
                     note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
                 )
-                confirmProcessed(account, received, contactId, "MANUAL_REVIEW", "QA_MANUAL_REVIEW")
-                manualReview += 1
-                return@forEach
+                confirmManualReviewWithBody(
+                    account = account,
+                    received = received,
+                    expertContactId = contactId,
+                    reason = "QA_NO_MATCH",
+                    reasonType = "QA_NO_MATCH",
+                    cleanedBody = cleanedBody
+                )
+                manualReview += 1; return@forEach
             }
 
+            val promoted = promoteIfFirstReply(contact, received)
+            val effectiveContact = promoted ?: contact
             val reply = ComposedMail(
                 to = received.from,
                 subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
@@ -355,7 +377,7 @@ class AutoMailReplyService(
                 firstReplyAt = firstReplyInstant
             )
             if (ok) {
-                return expertContactRepository.save(saved.copy(applicationIndexed = true))
+                return expertContactRepository.save(saved.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
             }
         } catch (e: Exception) {
             log.warn("ES promotion failed for contact {} (orcid={}), will retry on reindex", contact.id, contact.orcidId, e)
@@ -395,7 +417,8 @@ class AutoMailReplyService(
             it.copy(
                 lastReplyAt = received.receivedAt,
                 manualHandoffRequired = true,
-                autoReplyEnabled = false
+                autoReplyEnabled = false,
+                needsManualAttention = true
             )
         }
         if (updated.applicationIndexed) {
@@ -524,9 +547,10 @@ class AutoMailReplyService(
         account: MailSenderAccount,
         received: ReceivedMail,
         expertContactId: Long?,
-        reason: String
+        reason: String,
+        reasonType: String? = "UNCLEAR_INTENT"
     ) {
-        confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason)
+        confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason, reasonType)
     }
 
     private fun confirmManualReviewWithBody(
@@ -534,6 +558,7 @@ class AutoMailReplyService(
         received: ReceivedMail,
         expertContactId: Long?,
         reason: String,
+        reasonType: String?,
         cleanedBody: String
     ) {
         val now = LocalDateTime.now()
@@ -550,6 +575,7 @@ class AutoMailReplyService(
                 receivedAt = received.receivedAt,
                 processStatus = "MANUAL_REVIEW",
                 processReason = reason,
+                reasonType = reasonType,
                 expertContactId = expertContactId,
                 createdAt = now,
                 updatedAt = now
@@ -563,7 +589,8 @@ class AutoMailReplyService(
         received: ReceivedMail,
         expertContactId: Long?,
         status: String,
-        reason: String
+        reason: String,
+        reasonType: String? = null
     ) {
         val now = LocalDateTime.now()
         inboundMailProcessingRepository.save(
@@ -578,6 +605,7 @@ class AutoMailReplyService(
                 receivedAt = received.receivedAt,
                 processStatus = status,
                 processReason = reason,
+                reasonType = reasonType,
                 expertContactId = expertContactId,
                 createdAt = now,
                 updatedAt = now

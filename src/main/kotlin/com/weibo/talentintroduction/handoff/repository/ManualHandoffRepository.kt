@@ -20,4 +20,9 @@ interface ManualHandoffRepository : CrudRepository<ManualHandoff, Long> {
         reason: String,
         handoffStatus: String
     ): ManualHandoff?
+
+    fun findAllByExpertContactIdAndHandoffStatusIn(
+        expertContactId: Long,
+        handoffStatus: Collection<String>
+    ): List<ManualHandoff>
 }

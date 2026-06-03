@@ -16,6 +16,7 @@ import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
@@ -29,22 +30,11 @@ class ExpertContactManagementService(
     private val statusHistoryRepository: ExpertContactStatusHistoryRepository,
     private val conversationStateService: ConversationStateService,
     private val meetingScheduleRepository: MeetingScheduleRepository,
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val inboundMailProcessingRepository: InboundMailProcessingRepository
 ) {
-    fun listContacts(campaignId: Long?, status: String?): List<ExpertContact> =
-        when {
-            campaignId != null && status != null ->
-                expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, status)
-
-            campaignId != null ->
-                expertContactRepository.findAllByCampaignIdOrderByUpdatedAtDesc(campaignId)
-
-            status != null ->
-                expertContactRepository.findAllByCurrentStatusOrderByUpdatedAtDesc(status)
-
-            else ->
-                expertContactRepository.findAllByOrderByUpdatedAtDesc()
-        }
+    fun listContacts(campaignId: Long?, status: String?, needsAttention: Boolean? = null): List<ExpertContact> =
+        expertContactRepository.findFilteredContacts(campaignId, status, needsAttention)
 
     fun getContactDetail(contactId: Long): ExpertContactDetail {
         val contact = getContact(contactId)
@@ -52,6 +42,8 @@ class ExpertContactManagementService(
         val attachments = mails
             .mapNotNull { it.id }
             .flatMap(mailAttachmentRepository::findAllByMailRecordIdOrderByCreatedAtAsc)
+        val latestManualMailProcessing = inboundMailProcessingRepository
+            .findFirstByExpertContactIdAndProcessStatusOrderByReceivedAtDesc(contactId, "MANUAL_REVIEW")
         return ExpertContactDetail(
             contact = contact,
             mails = mails,
@@ -65,7 +57,8 @@ class ExpertContactManagementService(
                 contact.currentStatus,
                 contact.manualHandoffRequired
             ),
-            meetingSchedules = meetingScheduleRepository.findAllByExpertContactIdOrderByCreatedAtDesc(contactId)
+            meetingSchedules = meetingScheduleRepository.findAllByExpertContactIdOrderByCreatedAtDesc(contactId),
+            latestManualReviewReasonType = latestManualMailProcessing?.reasonType
         )
     }
 
@@ -190,14 +183,13 @@ class ExpertContactManagementService(
         ConversationStatus.MATERIALS_REQUESTED,
         ConversationStatus.MATERIALS_PARTIAL,
         ConversationStatus.MATERIALS_RECEIVED,
-        ConversationStatus.COMPANY_MATCHED,
-        ConversationStatus.CLOSED
+        ConversationStatus.COMPANY_MATCHED
     )
 
     fun promoteToApplication(contactId: Long): ExpertContact {
         val contact = getContact(contactId)
         if (contact.applicationIndexed) return contact
-        require(contact.currentStatus != ConversationStatus.CLOSED.name) { "Cannot promote a closed contact" }
+        require(contact.currentStatus != "CLOSED") { "Cannot promote a closed contact" }
         require(contact.orcidId.isNotBlank()) { "Contact has no ORCID" }
         val firstReplyInstant = if (contact.firstReplyAt != null) {
             contact.firstReplyAt.toInstant(java.time.ZoneId.systemDefault().rules.getOffset(contact.firstReplyAt))
@@ -210,29 +202,123 @@ class ExpertContactManagementService(
             firstReplyAt = firstReplyInstant
         )
         require(ok) { "Failed to promote to application index" }
-        val updated = expertContactRepository.save(contact.copy(applicationIndexed = true))
+        val updated = expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
         return updated
     }
 
-    fun closeContact(contactId: Long, reason: String): ExpertContact {
-        require(reason.isNotBlank()) { "reason is required" }
+    @org.springframework.transaction.annotation.Transactional
+    fun promoteToCandidate(contactId: Long): ExpertContact {
         val contact = getContact(contactId)
-        val updated = conversationStateService.transition(
+        require(contact.currentIndexLevel == "RAW") { "Only RAW contact can be promoted to CANDIDATE" }
+        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+        require(ok) { "Failed to promote contact $contactId to CANDIDATE in ES" }
+        return expertContactRepository.save(contact.copy(currentIndexLevel = "CANDIDATE"))
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun demoteToRaw(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        require(contact.currentIndexLevel != "RAW") { "Contact already in RAW" }
+        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+        require(ok) { "Failed to demote contact $contactId to RAW in ES" }
+        return expertContactRepository.save(contact.copy(
+            currentIndexLevel = "RAW",
+            applicationIndexed = false
+        ))
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun switchToManual(contactId: Long, reason: String?, note: String?): ExpertContact {
+        val contact = getContact(contactId)
+        val actualReason = reason ?: "OPERATOR_SWITCH_TO_MANUAL"
+        val now = LocalDateTime.now()
+        ensureOpenManualHandoff(contactId, actualReason, note, now)
+        if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
+            val fixedContact = if (contact.autoReplyEnabled || !contact.manualHandoffRequired) {
+                expertContactRepository.save(
+                    contact.copy(
+                        autoReplyEnabled = false,
+                        manualHandoffRequired = true
+                    )
+                )
+            } else {
+                contact
+            }
+            if (fixedContact.applicationIndexed) {
+                expertIndexWriterService.syncApplicationStatus(fixedContact, actualReason)
+            }
+            return fixedContact
+        }
+        val updatedContact = conversationStateService.transition(
             contact = contact,
-            toStatus = ConversationStatus.CLOSED,
-            reason = "CLOSE_CONTACT:$reason",
-            source = "MANUAL"
+            toStatus = ConversationStatus.MANUAL_HANDOFF,
+            reason = actualReason,
+            source = "OPERATOR",
+            now = now
         ) {
-            it.copy(
-                manualHandoffRequired = false,
-                autoReplyEnabled = false,
-                closedReason = reason
+            it.copy(autoReplyEnabled = false, manualHandoffRequired = true)
+        }
+        if (updatedContact.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updatedContact, actualReason)
+        }
+        return updatedContact
+    }
+
+    private fun ensureOpenManualHandoff(
+        contactId: Long,
+        reason: String,
+        note: String?,
+        now: LocalDateTime
+    ) {
+        val openHandoffs = manualHandoffRepository.findAllByExpertContactIdAndHandoffStatusIn(
+            contactId, listOf("PENDING", "ASSIGNED")
+        )
+        if (openHandoffs.isNotEmpty()) return
+        manualHandoffRepository.save(
+            ManualHandoff(
+                expertContactId = contactId,
+                reason = reason,
+                handoffStatus = "PENDING",
+                assignedTo = null,
+                note = note,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun switchToAuto(contactId: Long, note: String?): ExpertContact {
+        val contact = getContact(contactId)
+        if (contact.currentStatus != ConversationStatus.MANUAL_HANDOFF.name) {
+            error("Contact $contactId is not in MANUAL_HANDOFF")
+        }
+        val now = LocalDateTime.now()
+        val openHandoffs = manualHandoffRepository.findAllByExpertContactIdAndHandoffStatusIn(
+            contactId, listOf("PENDING", "ASSIGNED")
+        )
+        openHandoffs.forEach { handoff ->
+            manualHandoffRepository.save(
+                handoff.copy(
+                    handoffStatus = "COMPLETED",
+                    note = if (note.isNullOrBlank()) handoff.note else note,
+                    updatedAt = now
+                )
             )
         }
-        if (updated.applicationIndexed) {
-            expertIndexWriterService.markApplicationClosed(updated)
+        val updatedContact = conversationStateService.transition(
+            contact = contact,
+            toStatus = ConversationStatus.WAITING_REPLY,
+            reason = "OPERATOR_SWITCH_TO_AUTO",
+            source = "OPERATOR",
+            now = now
+        ) {
+            it.copy(autoReplyEnabled = true, needsManualAttention = false, manualHandoffRequired = false)
         }
-        return updated
+        if (updatedContact.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(updatedContact, "OPERATOR_SWITCH_TO_AUTO")
+        }
+        return updatedContact
     }
 
     private fun getContact(contactId: Long): ExpertContact =
@@ -253,7 +339,8 @@ data class ExpertContactDetail(
     val latestHandoff: ManualHandoff?,
     val statusHistory: List<ExpertContactStatusHistory>,
     val recommendedNextAction: String,
-    val meetingSchedules: List<MeetingSchedule>
+    val meetingSchedules: List<MeetingSchedule>,
+    val latestManualReviewReasonType: String? = null
 )
 
 data class ManualHandoffCreateCommand(

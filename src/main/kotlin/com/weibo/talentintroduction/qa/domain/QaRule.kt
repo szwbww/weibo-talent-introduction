@@ -14,6 +14,7 @@ data class QaRule(
     val priority: Int = 100,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String? = null,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
     val enabled: Boolean = true,

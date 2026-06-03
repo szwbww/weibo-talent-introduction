@@ -20,6 +20,8 @@ data class ExpertContact(
     val autoReplyEnabled: Boolean = true,
     val firstReplyAt: LocalDateTime? = null,
     val applicationIndexed: Boolean = false,
+    val currentIndexLevel: String = "CANDIDATE",
+    val needsManualAttention: Boolean = false,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )

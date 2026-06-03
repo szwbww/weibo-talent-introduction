@@ -178,6 +178,42 @@ function formValues(form) {
     return Object.fromEntries(Array.from(new FormData(form).entries()).map(([key, value]) => [key, value]));
 }
 
+const conversationStatusLabels = {
+    NEW: "新建",
+    INTRO_SENT: "首封已发送",
+    WAITING_REPLY: "等待回复",
+    INTEREST_CONFIRMED: "已确认意向",
+    QA_AUTO_REPLIED: "QA 已自动回复",
+    MEETING_SCHEDULING: "会议排期中",
+    MEETING_SCHEDULED: "会议已安排",
+    MEETING_DONE: "会议已完成",
+    MEETING_INVITATION_SENT: "会议邀约已发送",
+    WAITING_MEETING_CONFIRMATION: "等待会议确认",
+    MATERIALS_REQUESTED: "已请求材料",
+    MATERIALS_PARTIAL: "材料部分收到",
+    MATERIALS_RECEIVED: "材料已收到",
+    COMPANY_MATCHED: "企业已匹配",
+    APPLICATION_PREPARING: "申请准备中",
+    VIDEO_REQUESTED: "已请求视频",
+    VIDEO_RECEIVED: "视频已收到",
+    COMMITMENT_REQUESTED: "已请求承诺书",
+    COMMITMENT_RECEIVED: "承诺书已收到",
+    SUBMITTED: "已提交",
+    RESULT_PENDING: "等待结果",
+    REJECTED_THIS_ROUND: "本轮未通过",
+    NEXT_ROUND_FOLLOW_UP: "下一轮跟进",
+    MANUAL_HANDOFF: "已转人工"
+};
+
+function optionsFromLabels(labels, includeBlank = false, blankLabel = "全部") {
+    const opts = [];
+    if (includeBlank) opts.push(`<option value="">${escapeHtml(blankLabel)}</option>`);
+    for (const [value, label] of Object.entries(labels)) {
+        opts.push(`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`);
+    }
+    return opts.join("");
+}
+
 function numberValue(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -456,10 +492,51 @@ async function handleQaAction(button) {
 }
 
 async function loadContacts() {
-    const params = new URLSearchParams();
-    params.set("level", $("#expertIndexLevel").value);
-    params.set("size", $("#expertIndexSize").value || "50");
-    state.contacts = await api(`/api/experts?${params}`);
+    const level = $("#expertIndexLevel").value;
+    const size = $("#expertIndexSize").value || "50";
+    const status = $("#contactStatusFilter")?.value || "";
+    const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+
+    let contacts = [];
+    if (status || needsAttention) {
+        const params = new URLSearchParams();
+        if (status) params.set("status", status);
+        if (needsAttention) params.set("needsAttention", needsAttention);
+        const rawContacts = await api(`/api/expert-contacts?${params}`);
+        contacts = rawContacts.map(c => ({
+            orcidId: c.orcidId,
+            email: c.expertEmail,
+            displayName: c.expertName,
+            indexLevel: c.currentIndexLevel,
+            indexLevelName: indexLevelLabels[c.currentIndexLevel] || c.currentIndexLevel,
+            contactId: c.id,
+            contactStatus: c.currentStatus,
+            needsManualAttention: c.needsManualAttention,
+            country: "",
+            employment: "",
+            keyword: ""
+        }));
+    } else {
+        const params = new URLSearchParams();
+        params.set("level", level);
+        params.set("size", size);
+        const rawExperts = await api(`/api/experts?${params}`);
+        contacts = rawExperts.map(e => ({
+            orcidId: e.orcidId,
+            email: e.email,
+            displayName: e.displayName,
+            indexLevel: e.indexLevel,
+            indexLevelName: e.indexLevelName,
+            contactId: e.contactId,
+            contactStatus: e.contactStatus,
+            needsManualAttention: e.needsManualAttention,
+            country: e.country,
+            employment: e.employment,
+            keyword: e.keyword
+        }));
+    }
+    state.contacts = contacts;
+
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.contactId ? labelStatus(contact.contactStatus) : "未联系";
         const statusType = contact.contactStatus === "CLOSED"
@@ -469,8 +546,9 @@ async function loadContacts() {
                 : contact.contactId
                     ? "ok"
                     : "";
+        const needsAttentionClass = contact.needsManualAttention ? "needs-attention" : "";
         return `
-        <div class="list-item expert-list-item ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}">
+        <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}">
             <div class="expert-row-main">
                 <div class="expert-name-block">
                     <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
@@ -762,6 +840,43 @@ async function confirmMeetingSchedule(form) {
     await loadContacts();
 }
 
+function renderManualAttentionBanner(contact) {
+    if (!contact.needsManualAttention) return "";
+    const reasonType = contact.latestManualReviewReasonType;
+    const messages = {
+        QA_NO_MATCH: "该回复未命中任何 QA 规则，自动回复已暂停，请人工答复。",
+        NOT_INTERESTED: "系统判定该专家无意向，请人工确认后退回到原始层或恢复自动回复。",
+        UNCLEAR_INTENT: "该回复意图无法识别，自动回复已暂停，请人工查阅。"
+    };
+    const text = messages[reasonType] || "该联系需要人工介入。";
+    return `
+        <div class="attention-banner" data-reason="${reasonType || ''}">
+            <strong>⚠ 需要人工处理</strong>
+            <span>${escapeHtml(text)}</span>
+            <a href="javascript:void 0" data-action="goto-manual-queue">跳转人工处理队列</a>
+        </div>
+    `;
+}
+
+function renderIndexLevelButtons(contact) {
+    switch (contact.currentIndexLevel) {
+        case "APPLICATION":
+            return `<button class="button danger" data-action="demote-to-raw" data-id="${contact.id}"><span>退回到原始层</span></button>`;
+        case "CANDIDATE":
+            return `
+                <button class="button" data-action="promote-to-application" data-id="${contact.id}"><span>加入有效层</span></button>
+                <button class="button danger" data-action="demote-to-raw" data-id="${contact.id}"><span>退回到原始层</span></button>
+            `;
+        case "RAW":
+            return `
+                <button class="button" data-action="promote-to-candidate" data-id="${contact.id}"><span>加入筛选层</span></button>
+                <button class="button" data-action="promote-to-application" data-id="${contact.id}"><span>加入有效层</span></button>
+            `;
+        default:
+            return "";
+    }
+}
+
 async function loadContactDetail(contactId) {
     const [detail, options] = await Promise.all([
         api(`/api/expert-contacts/${contactId}`),
@@ -774,43 +889,33 @@ async function loadContactDetail(contactId) {
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
         <div class="contact-head-status-actions">
-            <button class="button" data-action="create-handoff" data-id="${contact.id}">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                <span>转人工</span>
+            <button class="button" data-action="toggle-reply-mode"
+                    data-id="${contact.id}"
+                    data-enabled="${contact.autoReplyEnabled}">
+                <span>${contact.autoReplyEnabled ? "切换为人工回复" : "切换为自动回复"}</span>
             </button>
-            <button class="button" data-action="complete-handoff" data-id="${contact.id}">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>完成人工</span>
-            </button>
-            <button class="button danger" data-action="close-contact" data-id="${contact.id}">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                <span>关闭</span>
-            </button>
-            <button class="button" data-action="toggle-auto-reply" data-id="${contact.id}" data-enabled="${contact.autoReplyEnabled}">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>${contact.autoReplyEnabled ? "暂停自动回复" : "恢复自动回复"}</span>
-            </button>
-            ${contact.applicationIndexed ? `<span class="badge ok">已加入有效层</span>` : `<button class="button" data-action="promote-to-application" data-id="${contact.id}"><span>加入有效层</span></button>`}
+            ${renderIndexLevelButtons(contact)}
         </div>
         <div class="contact-head-mail-actions">
-        <select id="manualMailOption" aria-label="选择要发送的邮件">
-            ${options.map((option) => `
-                <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
-                    ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
-                </option>
-            `).join("")}
-        </select>
-        <button class="button primary" data-action="send-manual-mail" data-id="${contact.id}">
-            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <span>发送邮件</span>
-        </button>
+            <select id="manualMailOption" aria-label="选择要发送的邮件">
+                ${options.map((option) => `
+                    <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
+                        ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
+                    </option>
+                `).join("")}
+            </select>
+            <button class="button primary" data-action="send-manual-mail" data-id="${contact.id}">
+                <span>发送邮件</span>
+            </button>
         </div>
     `;
 
+    const banner = renderManualAttentionBanner(contact);
     const contactDetail = $("#contactDetail");
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
+        ${banner}
         <div class="detail">
             <div class="expert-profile-header">
                 <div class="expert-avatar">${escapeHtml(initial)}</div>
@@ -1040,7 +1145,10 @@ async function handleContactAction(element) {
         }
         return;
     }
-    if (action === "select-contact") await loadContactDetail(id);
+    if (action === "select-contact") {
+        await loadContactDetail(id);
+        return;
+    }
     if (action === "send-manual-mail") {
         const selected = $("#manualMailOption")?.value;
         if (!selected) {
@@ -1058,46 +1166,58 @@ async function handleContactAction(element) {
         });
         showStatus("邮件已发送");
         await loadContactDetail(id);
+        return;
     }
-    if (action === "create-handoff") {
-        const reason = prompt("转人工原因", "Needs manual review");
-        if (!reason) return;
-        await api(`/api/expert-contacts/${id}/manual-handoff`, {
-            method: "POST",
-            body: JSON.stringify({ reason, assignedTo: null, note: null })
-        });
+    if (action === "toggle-reply-mode") {
+        const enabled = element.dataset.enabled === "true";
+        if (enabled) {
+            const payload = await openActionDialog("switch-to-manual");
+            if (!payload) return;
+            await api(`/api/expert-contacts/${id}/switch-to-manual`, {
+                method: "POST",
+                body: JSON.stringify({ reason: payload.reason, note: payload.note })
+            });
+            showStatus("已切换为人工回复");
+        } else {
+            const payload = await openActionDialog("switch-to-auto");
+            if (!payload) return;
+            await api(`/api/expert-contacts/${id}/switch-to-auto`, {
+                method: "POST",
+                body: JSON.stringify({ note: payload.note })
+            });
+            showStatus("已恢复自动回复");
+        }
         await loadContactDetail(id);
         await loadContacts();
+        return;
     }
-    if (action === "complete-handoff") {
-        const nextStatus = prompt("完成后状态 (留空保持当前)", "WAITING_REPLY");
-        const resumeAuto = confirm("是否恢复自动回复？");
-        await api(`/api/expert-contacts/${id}/manual-handoff/complete`, {
-            method: "POST",
-            body: JSON.stringify({
-                nextStatus: nextStatus || null,
-                note: "Completed from console",
-                resumeAutoReply: resumeAuto
-            })
-        });
+    if (action === "promote-to-candidate") {
+        await api(`/api/expert-contacts/${id}/promote-to-candidate`, { method: "POST" });
+        showStatus("已加入筛选层");
         await loadContactDetail(id);
         await loadContacts();
+        return;
     }
-    if (action === "close-contact") {
-        const reason = prompt("关闭原因", "Closed from console");
-        if (!reason) return;
-        await api(`/api/expert-contacts/${id}/close`, {
-            method: "POST",
-            body: JSON.stringify({ reason })
-        });
+    if (action === "promote-to-application") {
+        await api(`/api/expert-contacts/${id}/promote-to-application`, { method: "POST" });
+        showStatus("已加入有效层");
+        await loadContactDetail(id);
         await loadContacts();
-        $("#contactHeadActions").hidden = true;
-        $("#contactHeadActions").innerHTML = "";
-        $("#contactDetail").classList.add("detail-empty");
-        $("#contactDetail").innerHTML = `选择一条专家联系记录。`;
+        return;
+    }
+    if (action === "demote-to-raw") {
+        const confirmDemote = await openActionDialog("confirm", { message: "确定要将此专家退回到原始层吗？此操作会同步在应用与候选Elasticsearch索引中删除该数据。" });
+        if (!confirmDemote) return;
+        await api(`/api/expert-contacts/${id}/demote-to-raw`, { method: "POST" });
+        showStatus("已退回到原始层");
+        await loadContactDetail(id);
+        await loadContacts();
+        return;
     }
     if (action === "initiate-meeting-schedule") {
-        const availableText = prompt("专家可沟通时间说明 (若为空，则由手动填写)", "");
+        const payload = await openActionDialog("initiate-meeting-schedule");
+        if (payload === null) return;
+        const availableText = payload.availableText;
         await api(`/api/expert-contacts/${id}/meeting-schedules`, {
             method: "POST",
             body: JSON.stringify({
@@ -1111,6 +1231,7 @@ async function handleContactAction(element) {
         });
         showStatus("已发起会议排期");
         await loadContactDetail(id);
+        return;
     }
     if (action === "save-meeting-schedule") {
         const form = $("#meetingScheduleForm");
@@ -1129,17 +1250,20 @@ async function handleContactAction(element) {
         });
         showStatus("会议排期已更新");
         await loadContactDetail(contactId);
+        return;
     }
     if (action === "cancel-meeting-schedule") {
         const scheduleId = element.dataset.id;
         const contactId = element.dataset.contactId;
-        if (!confirm("确定要取消当前会议排期吗？")) return;
+        const confirmCancel = await openActionDialog("confirm", { message: "确定要取消当前会议排期吗？" });
+        if (!confirmCancel) return;
         await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/cancel`, {
             method: "POST"
         });
         showStatus("会议排期已取消");
         await loadContactDetail(contactId);
         await loadContacts();
+        return;
     }
     if (action === "complete-meeting-schedule") {
         const scheduleId = element.dataset.id;
@@ -1150,20 +1274,7 @@ async function handleContactAction(element) {
         showStatus("已标记会议完成，进入材料准备阶段");
         await loadContactDetail(contactId);
         await loadContacts();
-    }
-    if (action === "toggle-auto-reply") {
-        const enabled = element.dataset.enabled === "true";
-        const endpoint = enabled ? "pause-auto-reply" : "resume-auto-reply";
-        await api(`/api/expert-contacts/${id}/${endpoint}`, { method: "POST" });
-        showStatus(enabled ? "已暂停自动回复" : "已恢复自动回复");
-        await loadContactDetail(id);
-        await loadContacts();
-    }
-    if (action === "promote-to-application") {
-        await api(`/api/expert-contacts/${id}/promote-to-application`, { method: "POST" });
-        showStatus("已加入有效层");
-        await loadContactDetail(id);
-        await loadContacts();
+        return;
     }
 }
 
@@ -1188,53 +1299,92 @@ async function loadTasks() {
     `).join("");
 }
 
-async function updateUnmatchedBadge() {
-    try {
-        const data = await api("/api/mail/unmatched-inbound");
-        const count = data.totalCount || 0;
-        const badge = $("#unmatchedBadge");
-        if (count > 0) {
-            badge.textContent = count > 99 ? "99+" : count;
-            badge.hidden = false;
-        } else {
-            badge.hidden = true;
-        }
-    } catch (e) {
-    }
-}
+const REASON_TYPE_LABELS = {
+    UNMATCHED_CONTACT: "未匹配到专家",
+    QA_NO_MATCH: "QA 未命中",
+    NOT_INTERESTED: "专家不感兴趣",
+    UNCLEAR_INTENT: "意图模糊",
+    MANUAL_RESOLVED: "已人工处理"
+};
+const REASON_TYPE_BADGE_CLASS = {
+    UNMATCHED_CONTACT: "info",       // 蓝
+    QA_NO_MATCH: "warn",             // 橙
+    NOT_INTERESTED: "error",         // 红
+    UNCLEAR_INTENT: "warn-yellow"    // 黄
+};
+const HIGH_PRIORITY_REASON_TYPES = new Set(["NOT_INTERESTED", "QA_NO_MATCH"]);
 
 async function loadUnmatched() {
-    const data = await api("/api/mail/unmatched-inbound");
+    const params = new URLSearchParams();
+    const reason = $("#unmatchedFilterReasonType").value;
+    const email = $("#unmatchedFilterEmail").value.trim();
+    const subject = $("#unmatchedFilterSubject").value.trim();
+    const pageSize = $("#unmatchedPageSize").value || "20";
+    if (reason) params.set("reasonType", reason);
+    if (email) params.set("email", email);
+    if (subject) params.set("subject", subject);
+    params.set("pageSize", pageSize);
+    params.set("pageOffset", state.unmatchedPageOffset || "0");
+    const data = await api(`/api/mail/unmatched-inbound?${params}`);
     state.unmatchedRecords = data.records || [];
-    applyUnmatchedFilters();
+    state.unmatchedCounts = data.countsByReasonType || {};
+    renderUnmatchedTable();
+    updateUnmatchedBadge(data.countsByReasonType);
 }
 
-function applyUnmatchedFilters() {
-    const emailFilter = ($("#unmatchedFilterEmail").value || "").trim().toLowerCase();
-    const subjectFilter = ($("#unmatchedFilterSubject").value || "").trim().toLowerCase();
-    state.unmatchedFiltered = state.unmatchedRecords.filter((r) => {
-        if (emailFilter && !(r.fromEmail || "").toLowerCase().includes(emailFilter)) return false;
-        if (subjectFilter && !(r.subject || "").toLowerCase().includes(subjectFilter)) return false;
-        return true;
-    });
-    renderUnmatchedTable();
+function updateUnmatchedBadge(counts) {
+    if (!counts) {
+        api("/api/mail/unmatched-inbound").then(data => {
+            updateUnmatchedBadge(data.countsByReasonType);
+        }).catch(() => {});
+        return;
+    }
+    const high = Array.from(HIGH_PRIORITY_REASON_TYPES).reduce((s, k) => s + (counts[k] || 0), 0);
+    const normal = ["UNMATCHED_CONTACT", "UNCLEAR_INTENT"].reduce((s, k) => s + (counts[k] || 0), 0);
+    setBadge("#unmatchedBadgeHigh", high);
+    setBadge("#unmatchedBadgeNormal", normal);
+}
+
+function setBadge(sel, n) {
+    const el = $(sel);
+    if (!el) return;
+    if (n > 0) { el.textContent = n > 99 ? "99+" : n; el.hidden = false; }
+    else el.hidden = true;
 }
 
 function renderUnmatchedTable() {
-    const rows = state.unmatchedFiltered.map((r) => `
+    const rows = state.unmatchedRecords.map((r) => `
         <tr>
             <td>${r.id}</td>
             <td>${escapeHtml(r.fromEmail)}</td>
             <td>${escapeHtml(r.subject || "-")}</td>
             <td>${escapeHtml(r.receivedAt || "")}</td>
-            <td>${escapeHtml(r.senderAccountCode)}</td>
-            <td>${badge(r.processReason || "UNKNOWN", "warn")}</td>
-            <td class="actions">
-                <button class="button" data-action="view-unmatched" data-id="${r.id}">查看</button>
-            </td>
+            <td>${renderContactLink(r)}</td>
+            <td>${badge(REASON_TYPE_LABELS[r.reasonType] || "未知",
+                        REASON_TYPE_BADGE_CLASS[r.reasonType] || "warn")}</td>
+            <td class="actions">${renderUnmatchedActions(r)}</td>
         </tr>
     `).join("");
-    $("#unmatchedTable").innerHTML = rows;
+    $("#unmatchedTable").innerHTML = rows || `<tr><td colspan="7" class="text-muted" style="text-align: center;">暂无记录</td></tr>`;
+}
+
+function renderContactLink(record) {
+    if (record.expertContactId) {
+        return `<a href="javascript:void 0" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">
+            ${escapeHtml(record.expertName || "(未命名)")}</a>
+            <div class="text-muted">${labelStatus(record.expertCurrentStatus)}</div>`;
+    }
+    return `<span class="text-muted">未匹配</span>`;
+}
+
+function renderUnmatchedActions(r) {
+    if (!r.expertContactId) {
+        return `<button class="button" data-action="view-unmatched" data-id="${r.id}">绑定专家</button>`;
+    }
+    return `
+        <button class="button" data-action="open-contact-from-unmatched" data-id="${r.expertContactId}">查看专家</button>
+        <button class="button" data-action="mark-unmatched-resolved" data-id="${r.id}">标记已处理</button>
+    `;
 }
 
 async function showUnmatchedDetail(id) {
@@ -1340,19 +1490,44 @@ async function handleUnmatchedAction(element) {
         $("#unmatchedDetailPanel").hidden = true;
         return;
     }
+    if (action === "open-contact-from-unmatched") {
+        setView("contacts");
+        await loadContacts();
+        await loadContactDetail(Number(id));
+        const listItems = $$("#contactList .list-item");
+        listItems.forEach(item => {
+            const isMatch = Number(item.dataset.contactId) === Number(id);
+            item.classList.toggle("active", isMatch);
+            if (isMatch) {
+                state.selectedExpertOrcid = item.dataset.orcid;
+                item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+        });
+        return;
+    }
+    if (action === "mark-unmatched-resolved") {
+        const payload = await openActionDialog("mark-unmatched-resolved");
+        if (!payload) return;
+        await api(`/api/mail/unmatched-inbound/${id}/mark-resolved`, {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        showStatus("已标记为处理完成");
+        await loadUnmatched();
+        return;
+    }
     if (action === "bind-candidate") {
         const contactId = element.dataset.contactId;
-        const resolvedBy = prompt("操作人姓名：");
-        if (!resolvedBy) return;
-        const promote = confirm("是否同时加入有效层？");
+        const payload = await openActionDialog("bind-unmatched-contact");
+        if (!payload) return;
+        const { resolvedBy, promoteToApplication } = payload;
         await api(`/api/mail/unmatched-inbound/${id}/bind`, {
             method: "POST",
-            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication: promote })
+            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication })
         });
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
         await loadUnmatched();
-        updateUnmatchedBadge();
         return;
     }
     if (action === "search-candidates") {
@@ -1393,7 +1568,6 @@ async function handleUnmatchedAction(element) {
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
         await loadUnmatched();
-        updateUnmatchedBadge();
     }
 }
 
@@ -1498,21 +1672,46 @@ function bindEvents() {
         }
     });
     $("#loadUnmatchedBtn").addEventListener("click", loadUnmatched);
-    $("#unmatchedFilterEmail").addEventListener("input", applyUnmatchedFilters);
-    $("#unmatchedFilterSubject").addEventListener("input", applyUnmatchedFilters);
+    $("#unmatchedFilterEmail").addEventListener("input", () => {
+        state.unmatchedPageOffset = 0;
+        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#unmatchedFilterSubject").addEventListener("input", () => {
+        state.unmatchedPageOffset = 0;
+        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#unmatchedFilterReasonType").addEventListener("change", () => {
+        state.unmatchedPageOffset = 0;
+        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#unmatchedPageSize").addEventListener("change", () => {
+        state.unmatchedPageOffset = 0;
+        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#expertIndexLevel").addEventListener("change", loadContacts);
+    $("#expertIndexSize").addEventListener("change", loadContacts);
+    $("#contactNeedsAttentionFilter").addEventListener("change", loadContacts);
+    $("#contactStatusFilter").addEventListener("change", loadContacts);
+
     $("#unmatchedTable").addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-action]");
+        const button = event.target.closest("[data-action]");
         if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
     });
     $("#unmatchedDetailPanel").addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-action]");
+        const button = event.target.closest("[data-action]");
         if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
     });
-    document.addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-action]");
-        if (!button) return;
-        if (button.dataset.action === "add-alias") {
-            const contactId = button.dataset.contactId;
+    document.addEventListener("click", async (event) => {
+        const element = event.target.closest("[data-action]");
+        if (!element) return;
+        const action = element.dataset.action;
+        if (action === "goto-manual-queue") {
+            event.preventDefault();
+            setView("unmatched");
+            return;
+        }
+        if (action === "add-alias") {
+            const contactId = element.dataset.contactId;
             const email = $("#newAliasEmail").value.trim();
             if (!email) { showStatus("请输入邮箱地址", "error"); return; }
             api(`/api/expert-contacts/${contactId}/email-aliases`, {
@@ -1523,10 +1722,11 @@ function bindEvents() {
                 loadContactDetail(contactId);
             }).catch((e) => showStatus(e.message, "error"));
         }
-        if (button.dataset.action === "delete-alias") {
-            const contactId = button.dataset.contactId;
-            const aliasId = button.dataset.aliasId;
-            if (!confirm("确定移除该别名？")) return;
+        if (action === "delete-alias") {
+            const contactId = element.dataset.contactId;
+            const aliasId = element.dataset.aliasId;
+            const confirmDelete = await openActionDialog("confirm", { message: "确定移除该别名？" });
+            if (!confirmDelete) return;
             api(`/api/expert-contacts/${contactId}/email-aliases/${aliasId}`, {
                 method: "DELETE"
             }).then(() => {
@@ -1535,7 +1735,160 @@ function bindEvents() {
             }).catch((e) => showStatus(e.message, "error"));
         }
     });
+
+    $("#contactStatusFilter").innerHTML = optionsFromLabels(conversationStatusLabels, true, "全部状态");
+
     updateUnmatchedBadge();
+}
+
+const ACTION_DIALOG_SCHEMAS = {
+    "mark-unmatched-resolved": {
+        title: "标记为已处理",
+        fields: [
+            { name: "resolvedBy", label: "操作人姓名", type: "text", required: true },
+            { name: "note", label: "处理备注", type: "textarea", required: false }
+        ]
+    },
+    "bind-unmatched-contact": {
+        title: "绑定未匹配来信",
+        fields: [
+            { name: "resolvedBy", label: "操作人姓名", type: "text", required: true },
+            { name: "promoteToApplication", label: "同时加入有效层", type: "checkbox", required: false }
+        ]
+    },
+    "switch-to-manual": {
+        title: "切换为人工回复",
+        fields: [
+            {
+                name: "reason",
+                label: "转人工原因",
+                type: "select",
+                value: "OPERATOR_SWITCH_TO_MANUAL",
+                options: [
+                    { value: "OPERATOR_SWITCH_TO_MANUAL", label: "运营手动转人工" },
+                    { value: "UNCLEAR_INTENT", label: "意图模糊" },
+                    { value: "NOT_INTERESTED", label: "专家不感兴趣" },
+                    { value: "QA_NO_MATCH", label: "QA 未命中" }
+                ],
+                required: true
+            },
+            { name: "note", label: "备注信息", type: "textarea", required: false }
+        ]
+    },
+    "switch-to-auto": {
+        title: "切换为自动回复",
+        fields: [
+            { name: "note", label: "备注信息", type: "textarea", required: false }
+        ]
+    },
+    "initiate-meeting-schedule": {
+        title: "发起会议排期",
+        fields: [
+            { name: "availableText", label: "专家可沟通时间说明", type: "textarea", required: false, placeholder: "留空则由手动填写" }
+        ]
+    },
+    "confirm": {
+        title: "确认操作",
+        fields: [
+            { name: "message", label: "", type: "html", required: false }
+        ]
+    }
+};
+
+function openActionDialog(type, options = {}) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("actionDialog");
+        const form = document.getElementById("actionDialogForm");
+        const titleEl = document.getElementById("actionDialogTitle");
+        const bodyEl = document.getElementById("actionDialogBody");
+
+        const schema = ACTION_DIALOG_SCHEMAS[type];
+        if (!schema) {
+            console.error("Unknown dialog type:", type);
+            resolve(null);
+            return;
+        }
+
+        titleEl.textContent = schema.title;
+
+        // Render fields
+        let html = "";
+        const fields = schema.fields;
+        fields.forEach(field => {
+            if (field.type === "html") {
+                html += `<div>${options.message || ''}</div>`;
+            } else if (field.type === "checkbox") {
+                html += `
+                    <div class="form-group" style="margin-bottom: 12px; display: flex; align-items: center;">
+                        <input type="checkbox" id="dialog_${field.name}" name="${field.name}" ${field.value ? 'checked' : ''} style="margin-right: 8px;">
+                        <label for="dialog_${field.name}">${escapeHtml(field.label)}</label>
+                    </div>
+                `;
+            } else if (field.type === "select") {
+                html += `
+                    <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                        <label style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(field.label)}</label>
+                        <select id="dialog_${field.name}" name="${field.name}" class="input" style="width: 100%; box-sizing: border-box;">
+                            ${field.options.map(opt => `
+                                <option value="${escapeHtml(opt.value)}" ${opt.value === field.value ? 'selected' : ''}>
+                                    ${escapeHtml(opt.label)}
+                                </option>
+                            `).join("")}
+                        </select>
+                    </div>
+                `;
+            } else if (field.type === "textarea") {
+                html += `
+                    <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                        <label style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(field.label)}</label>
+                        <textarea id="dialog_${field.name}" name="${field.name}" rows="3" class="input" style="width: 100%; box-sizing: border-box;">${escapeHtml(field.value || '')}</textarea>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                        <label style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(field.label)}</label>
+                        <input type="${field.type}" id="dialog_${field.name}" name="${field.name}" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}" class="input" style="width: 100%; box-sizing: border-box;" ${field.required ? 'required' : ''}>
+                    </div>
+                `;
+            }
+        });
+        bodyEl.innerHTML = html;
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            const result = {};
+            fields.forEach(field => {
+                const el = document.getElementById(`dialog_${field.name}`);
+                if (!el) return;
+                if (field.type === "checkbox") {
+                    result[field.name] = el.checked;
+                } else {
+                    result[field.name] = el.value;
+                }
+            });
+            cleanup();
+            resolve(result);
+        };
+
+        const cleanup = () => {
+            form.removeEventListener("submit", handleSubmit);
+            const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+            cancelBtn.removeEventListener("click", handleCancel);
+            dialog.close();
+        };
+
+        const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+        cancelBtn.addEventListener("click", handleCancel);
+        form.addEventListener("submit", handleSubmit);
+
+        dialog.showModal();
+    });
 }
 
 bindEvents();

@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.ReasonTypeCount
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -49,15 +50,23 @@ class UnmatchedInboundMailServiceTest {
     )
 
     @Test
-    fun `listUnmatched returns manual review records without contact`() {
+    fun `listManualReviewQueue returns manual review records and counts`() {
         val records = listOf(processing(id = 1L, email = "a@b.com"))
         Mockito.`when`(
-            inboundMailProcessingRepository.findAllByProcessStatusAndExpertContactIdIsNullOrderByReceivedAtDesc("MANUAL_REVIEW")
+            inboundMailProcessingRepository.findManualReviewQueue(null, null, null, 20, 0)
         ).thenReturn(records)
+        Mockito.`when`(
+            inboundMailProcessingRepository.countManualReviewQueue(null, null, null)
+        ).thenReturn(1L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.countGroupedByReasonType()
+        ).thenReturn(listOf(ReasonTypeCount("QA_NO_MATCH", 1L)))
 
-        val result = service.listUnmatched()
-        assertEquals(1, result.size)
-        assertEquals("a@b.com", result[0].fromEmail)
+        val result = service.listManualReviewQueue(null, null, null, 20, 0)
+        assertEquals(1, result.records.size)
+        assertEquals("a@b.com", result.records[0].fromEmail)
+        assertEquals(1L, result.totalCount)
+        assertEquals(1L, result.countsByReasonType["QA_NO_MATCH"])
     }
 
     @Test
@@ -71,6 +80,8 @@ class UnmatchedInboundMailServiceTest {
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
         Mockito.`when`(expertEmailAliasService.bindAlias(contactId, "alias@example.com", "MANUAL_BIND"))
             .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "alias@example.com", normalizedEmail = "alias@example.com"))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { it.getArgument<ExpertContact>(0) }
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
 
@@ -123,6 +134,8 @@ class UnmatchedInboundMailServiceTest {
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
         Mockito.`when`(expertEmailAliasService.bindAlias(contactId, "old@example.com", "MANUAL_BIND"))
             .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "old@example.com", normalizedEmail = "old@example.com"))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { it.getArgument<ExpertContact>(0) }
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
 
@@ -132,5 +145,49 @@ class UnmatchedInboundMailServiceTest {
 
         Mockito.verify(expertEmailAliasService).bindAlias(contactId, "old@example.com", "MANUAL_BIND")
         Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `markResolved resolves record and clears attention if last`() {
+        val recordId = 1L
+        val contactId = 10L
+        val record = processing(id = recordId, email = "expert@example.com", contactId = contactId)
+        val c = contact(contactId, "expert@example.com").copy(needsManualAttention = true)
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(recordId)).thenReturn(Optional.of(record))
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+        Mockito.`when`(inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW"))
+            .thenReturn(0L)
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { it.getArgument<ExpertContact>(0) }
+
+        val result = service.markResolved(recordId, "operator1", "done")
+        assertEquals("PROCESSED", result.processStatus)
+        assertEquals("MANUAL_RESOLVED", result.processReason)
+        Mockito.verify(expertContactRepository).save(Mockito.argThat { !it.needsManualAttention })
+    }
+
+    @Test
+    fun `bindToContact with promoteToApplication throws when ES promotion fails`() {
+        val recordId = 1L
+        val contactId = 10L
+        val record = processing(id = recordId, email = "alias@example.com")
+        val c = contact(contactId, "main@example.com")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(recordId)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
+        Mockito.`when`(expertEmailAliasService.bindAlias(contactId, "alias@example.com", "MANUAL_BIND"))
+            .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "alias@example.com", normalizedEmail = "alias@example.com"))
+        Mockito.`when`(expertIndexWriterService.promoteToApplication(
+            orcid = Mockito.anyString() ?: "",
+            contact = Mockito.any(ExpertContact::class.java) ?: contact(10L, ""),
+            firstReplyAt = Mockito.any() ?: java.time.Instant.now()
+        )).thenReturn(false)
+
+        assertThrows(IllegalStateException::class.java) {
+            service.bindToContact(recordId, contactId, "operator1", promoteToApplication = true)
+        }
     }
 }

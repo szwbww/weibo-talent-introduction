@@ -42,10 +42,12 @@ class ManualExpertMailService(
 
         val qaOptions = qaRuleRepository.findAllEnabledOrdered()
             .map { rule ->
+                val name = rule.displayName?.takeIf { it.isNotBlank() }
+                    ?: "QA 回复 - ${rule.replySubject ?: "Rule #${rule.id}"}"
                 ManualMailOption(
                     optionType = ManualMailOptionType.QA.name,
                     optionValue = rule.id?.toString() ?: "",
-                    optionName = rule.replySubject ?: "QA Rule #${rule.id}",
+                    optionName = name,
                     subject = rule.replySubject,
                     description = "QA 问答邮件"
                 )

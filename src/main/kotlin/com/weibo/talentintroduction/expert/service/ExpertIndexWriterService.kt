@@ -10,6 +10,8 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import java.nio.charset.StandardCharsets
@@ -132,6 +134,87 @@ class ExpertIndexWriterService(
             )
         } catch (e: Exception) {
             log.warn("Failed to sync application status for contact {} (orcid={})", contact.id, orcid, e)
+        }
+    }
+
+    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+
+        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"
+        val rawResponse = try {
+            restTemplate.exchange(
+                getUrl,
+                HttpMethod.GET,
+                HttpEntity(null, headers()),
+                JsonNode::class.java
+            ).body
+        } catch (e: Exception) {
+            log.warn("Failed to get raw expert profile from {} for orcid={}", rawIndex, orcid, e)
+            return false
+        }
+
+        val source = rawResponse?.path("_source") ?: return false
+        val now = LocalDateTime.now().format(dateFormatter)
+
+        val doc = objectMapper.createObjectNode().apply {
+            source.fields().forEachRemaining { (key, value) ->
+                val copy: JsonNode = value.deepCopy()
+                replace(key, copy)
+            }
+            put("candidateValidatedAt", now)
+            put("updatedAt", now)
+        }
+
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        try {
+            restTemplate.exchange(
+                putUrl,
+                HttpMethod.PUT,
+                HttpEntity(toStringMap(doc), headers()),
+                JsonNode::class.java
+            )
+            return true
+        } catch (e: Exception) {
+            log.warn("Failed to PUT candidate profile to {} for orcid={}", candidateIndex, orcid, e)
+            return false
+        }
+    }
+
+    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+
+        val deleteCandidateUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        val deleteApplicationUrl = "${properties.baseUrl}/$applicationIndex/_doc/$orcid"
+
+        try {
+            try {
+                restTemplate.exchange(
+                    deleteCandidateUrl,
+                    HttpMethod.DELETE,
+                    HttpEntity(null, headers()),
+                    JsonNode::class.java
+                )
+            } catch (e: HttpClientErrorException) {
+                if (e.statusCode != HttpStatus.NOT_FOUND) throw e
+            }
+
+            try {
+                restTemplate.exchange(
+                    deleteApplicationUrl,
+                    HttpMethod.DELETE,
+                    HttpEntity(null, headers()),
+                    JsonNode::class.java
+                )
+            } catch (e: HttpClientErrorException) {
+                if (e.statusCode != HttpStatus.NOT_FOUND) throw e
+            }
+
+            return true
+        } catch (e: Exception) {
+            log.warn("Failed to demote orcid={} from ES indices", orcid, e)
+            throw e
         }
     }
 

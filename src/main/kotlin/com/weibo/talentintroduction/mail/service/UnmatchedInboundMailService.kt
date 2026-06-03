@@ -20,11 +20,33 @@ class UnmatchedInboundMailService(
     private val mailRecordRepository: MailRecordRepository,
     private val expertIndexWriterService: ExpertIndexWriterService
 ) {
-    fun listUnmatched(): List<InboundMailProcessing> =
-        inboundMailProcessingRepository.findAllByProcessStatusAndExpertContactIdIsNullOrderByReceivedAtDesc("MANUAL_REVIEW")
-
-    fun countUnmatched(): Long =
-        inboundMailProcessingRepository.countByProcessStatus("MANUAL_REVIEW")
+    fun listManualReviewQueue(
+        reasonType: String? = null,
+        email: String? = null,
+        subject: String? = null,
+        pageSize: Int = 20,
+        pageOffset: Int = 0
+    ): ManualReviewQueueResult {
+        val records = inboundMailProcessingRepository.findManualReviewQueue(
+            reasonType = reasonType,
+            email = email,
+            subject = subject,
+            limit = pageSize,
+            offset = pageOffset
+        )
+        val totalCount = inboundMailProcessingRepository.countManualReviewQueue(
+            reasonType = reasonType,
+            email = email,
+            subject = subject
+        )
+        val counts = inboundMailProcessingRepository.countGroupedByReasonType()
+            .associate { it.reasonType to it.count }
+        return ManualReviewQueueResult(
+            records = records,
+            totalCount = totalCount,
+            countsByReasonType = counts
+        )
+    }
 
     fun getDetail(id: Long): InboundMailProcessing {
         val record = inboundMailProcessingRepository.findById(id)
@@ -112,23 +134,27 @@ class UnmatchedInboundMailService(
             source = "MANUAL_BIND"
         )
 
+        var currentContact = contact
         if (promoteToApplication && !contact.applicationIndexed) {
             val now = record.receivedAt ?: LocalDateTime.now()
-            val updatedContact = expertContactRepository.save(
-                contact.copy(firstReplyAt = now)
+            val updatedContact = contact.copy(firstReplyAt = now)
+            val ok = expertIndexWriterService.promoteToApplication(
+                orcid = contact.orcidId,
+                contact = updatedContact,
+                firstReplyAt = now.toInstant(ZoneId.systemDefault().rules.getOffset(now))
             )
-            try {
-                val ok = expertIndexWriterService.promoteToApplication(
-                    orcid = contact.orcidId,
-                    contact = updatedContact,
-                    firstReplyAt = now.toInstant(ZoneId.systemDefault().rules.getOffset(now))
-                )
-                if (ok) {
-                    expertContactRepository.save(updatedContact.copy(applicationIndexed = true))
-                }
-            } catch (e: Exception) {
+            if (ok) {
+                currentContact = updatedContact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION")
+            } else {
+                error("Failed to promote expert to Application index")
             }
         }
+
+        val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW")
+        if (remaining == 0L && currentContact.needsManualAttention) {
+            currentContact = currentContact.copy(needsManualAttention = false)
+        }
+        expertContactRepository.save(currentContact)
 
         val now = LocalDateTime.now()
         return inboundMailProcessingRepository.save(
@@ -141,6 +167,35 @@ class UnmatchedInboundMailService(
                 updatedAt = now
             )
         )
+    }
+
+    @Transactional
+    fun markResolved(recordId: Long, resolvedBy: String, note: String?): InboundMailProcessing {
+        val record = inboundMailProcessingRepository.findById(recordId)
+            .orElseThrow { error("Inbound mail processing not found: $recordId") }
+        require(record.processStatus == "MANUAL_REVIEW") { "Record $recordId is not in MANUAL_REVIEW" }
+        val now = LocalDateTime.now()
+        val saved = inboundMailProcessingRepository.save(record.copy(
+            processStatus = "PROCESSED",
+            processReason = "MANUAL_RESOLVED",
+            reasonType = "MANUAL_RESOLVED",
+            resolvedBy = resolvedBy,
+            resolvedAt = now,
+            updatedAt = now
+        ))
+
+        val contactId = record.expertContactId
+        if (contactId != null) {
+            val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW")
+            if (remaining == 0L) {
+                expertContactRepository.findById(contactId).ifPresent { contact ->
+                    if (contact.needsManualAttention) {
+                        expertContactRepository.save(contact.copy(needsManualAttention = false))
+                    }
+                }
+            }
+        }
+        return saved
     }
 
     private fun extractNameFromSubject(subject: String): String? {
@@ -158,4 +213,10 @@ data class CandidateSuggestion(
     val contact: ExpertContact,
     val reason: String,
     val confidence: Int
+)
+
+data class ManualReviewQueueResult(
+    val records: List<InboundMailProcessing>,
+    val totalCount: Long,
+    val countsByReasonType: Map<String, Long>
 )

@@ -19,6 +19,7 @@ data class InboundMailProcessing(
     val receivedAt: LocalDateTime,
     val processStatus: String,
     val processReason: String,
+    val reasonType: String? = null,
     val resolvedAt: LocalDateTime? = null,
     val resolvedBy: String? = null,
     val expertContactId: Long?,

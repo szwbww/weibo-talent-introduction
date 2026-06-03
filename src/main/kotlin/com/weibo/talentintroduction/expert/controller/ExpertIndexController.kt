@@ -29,7 +29,14 @@ class ExpertIndexController(
                 val contact = expert.orcidId
                     .takeIf { it.isNotBlank() }
                     ?.let(expertContactRepository::findFirstByOrcidIdOrderByUpdatedAtDesc)
-                ExpertIndexResponse.from(expert, level, contact?.id, contact?.currentStatus)
+                ExpertIndexResponse.from(
+                    expert = expert,
+                    level = level,
+                    contactId = contact?.id,
+                    contactStatus = contact?.currentStatus,
+                    needsManualAttention = contact?.needsManualAttention ?: false,
+                    autoReplyEnabled = contact?.autoReplyEnabled ?: true
+                )
             }
 
     @PostMapping("/reindex-applications")
@@ -51,7 +58,7 @@ class ExpertIndexController(
                 firstReplyAt = firstReply.toInstant(java.time.ZoneId.systemDefault().rules.getOffset(firstReply))
             )
             if (ok) {
-                expertContactRepository.save(contact.copy(applicationIndexed = true))
+                expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
                 success += 1
             } else {
                 failure += 1
@@ -80,14 +87,18 @@ data class ExpertIndexResponse(
     val degree: String?,
     val nationality: String?,
     val contactId: Long?,
-    val contactStatus: String?
+    val contactStatus: String?,
+    val needsManualAttention: Boolean = false,
+    val autoReplyEnabled: Boolean = true
 ) {
     companion object {
         fun from(
             expert: ExpertProfile,
             level: ExpertIndexLevel,
             contactId: Long?,
-            contactStatus: String?
+            contactStatus: String?,
+            needsManualAttention: Boolean = false,
+            autoReplyEnabled: Boolean = true
         ): ExpertIndexResponse =
             ExpertIndexResponse(
                 indexLevel = level.name,
@@ -106,7 +117,9 @@ data class ExpertIndexResponse(
                 degree = expert.degree,
                 nationality = expert.nationality,
                 contactId = contactId,
-                contactStatus = contactStatus
+                contactStatus = contactStatus,
+                needsManualAttention = needsManualAttention,
+                autoReplyEnabled = autoReplyEnabled
             )
     }
 }

@@ -20,15 +20,40 @@ import java.time.LocalDateTime
 @RequestMapping("/api/mail")
 class UnmatchedInboundMailController(
     private val unmatchedInboundMailService: UnmatchedInboundMailService,
-    private val expertEmailAliasService: ExpertEmailAliasService
+    private val expertEmailAliasService: ExpertEmailAliasService,
+    private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 ) {
     @GetMapping("/unmatched-inbound")
-    fun listUnmatched(): UnmatchedListResponse {
-        val records = unmatchedInboundMailService.listUnmatched()
-        val count = unmatchedInboundMailService.countUnmatched()
-        return UnmatchedListResponse(
-            totalCount = count,
-            records = records.map { it.toResponse() }
+    fun list(
+        @RequestParam(required = false) reasonType: String?,
+        @RequestParam(required = false) email: String?,
+        @RequestParam(required = false) subject: String?,
+        @RequestParam(required = false, defaultValue = "20") pageSize: Int,
+        @RequestParam(required = false, defaultValue = "0") pageOffset: Int
+    ): InboundMailProcessingListResponse {
+        val result = unmatchedInboundMailService.listManualReviewQueue(
+            reasonType = reasonType,
+            email = email,
+            subject = subject,
+            pageSize = pageSize,
+            pageOffset = pageOffset
+        )
+        val contactIds = result.records.mapNotNull { it.expertContactId }.distinct()
+        val contactsMap = if (contactIds.isNotEmpty()) {
+            expertContactRepository.findAllById(contactIds).associateBy { it.id }
+        } else {
+            emptyMap()
+        }
+        return InboundMailProcessingListResponse(
+            records = result.records.map { record ->
+                val contact = record.expertContactId?.let { contactsMap[it] }
+                record.toResponse(
+                    expertName = contact?.expertName,
+                    expertCurrentStatus = contact?.currentStatus
+                )
+            },
+            totalCount = result.totalCount,
+            countsByReasonType = result.countsByReasonType
         )
     }
 
@@ -52,6 +77,19 @@ class UnmatchedInboundMailController(
             contactId = request.contactId,
             resolvedBy = request.resolvedBy,
             promoteToApplication = request.promoteToApplication ?: false
+        )
+        return result.toResponse()
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/mark-resolved")
+    fun markResolved(
+        @PathVariable id: Long,
+        @RequestBody request: MarkResolvedRequest
+    ): InboundMailProcessingResponse {
+        val result = unmatchedInboundMailService.markResolved(
+            recordId = id,
+            resolvedBy = request.resolvedBy,
+            note = request.note
         )
         return result.toResponse()
     }
@@ -101,9 +139,10 @@ class ExpertEmailAliasController(
     }
 }
 
-data class UnmatchedListResponse(
+data class InboundMailProcessingListResponse(
+    val records: List<InboundMailProcessingResponse>,
     val totalCount: Long,
-    val records: List<InboundMailProcessingResponse>
+    val countsByReasonType: Map<String, Long>
 )
 
 data class UnmatchedDetailResponse(
@@ -124,9 +163,17 @@ data class InboundMailProcessingResponse(
     val receivedAt: String?,
     val processStatus: String,
     val processReason: String,
+    val reasonType: String?,
     val resolvedAt: String?,
     val resolvedBy: String?,
-    val expertContactId: Long?
+    val expertContactId: Long?,
+    val expertName: String? = null,
+    val expertCurrentStatus: String? = null
+)
+
+data class MarkResolvedRequest(
+    val resolvedBy: String,
+    val note: String?
 )
 
 data class CandidateResponse(
@@ -159,7 +206,10 @@ data class ExpertEmailAliasResponse(
     val createdAt: String?
 )
 
-private fun InboundMailProcessing.toResponse() = InboundMailProcessingResponse(
+private fun InboundMailProcessing.toResponse(
+    expertName: String? = null,
+    expertCurrentStatus: String? = null
+) = InboundMailProcessingResponse(
     id = id,
     senderAccountCode = senderAccountCode,
     imapUid = imapUid,
@@ -172,9 +222,12 @@ private fun InboundMailProcessing.toResponse() = InboundMailProcessingResponse(
     receivedAt = receivedAt.toString(),
     processStatus = processStatus,
     processReason = processReason,
+    reasonType = reasonType,
     resolvedAt = resolvedAt?.toString(),
     resolvedBy = resolvedBy,
-    expertContactId = expertContactId
+    expertContactId = expertContactId,
+    expertName = expertName,
+    expertCurrentStatus = expertCurrentStatus
 )
 
 private fun CandidateSuggestion.toResponse() = CandidateResponse(
