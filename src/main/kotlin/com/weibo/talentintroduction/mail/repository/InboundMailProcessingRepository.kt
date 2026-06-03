@@ -3,10 +3,16 @@ package com.weibo.talentintroduction.mail.repository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
+import java.time.LocalDateTime
 
 data class ReasonTypeCount(
     val reasonType: String,
     val count: Long
+)
+
+data class SenderAccountLastReceived(
+    val senderAccountCode: String,
+    val lastReceivedAt: LocalDateTime?
 )
 
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
@@ -69,4 +75,65 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         GROUP BY reason_type
     """)
     fun countGroupedByReasonType(): List<ReasonTypeCount>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW'
+          AND received_at >= :from AND received_at < :to
+        """
+    )
+    fun countManualReviewBetween(from: LocalDateTime, to: LocalDateTime): Long
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW' AND reason_type = 'UNMATCHED_CONTACT'
+          AND received_at >= :from AND received_at < :to
+        """
+    )
+    fun countUnmatchedBetween(from: LocalDateTime, to: LocalDateTime): Long
+
+    @Query(
+        """
+        SELECT * FROM inbound_mail_processing
+        WHERE received_at >= :from AND received_at < :to
+          AND (:processStatus IS NULL OR process_status = :processStatus)
+          AND (:reasonType IS NULL OR reason_type = :reasonType)
+        ORDER BY received_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listInboundActivity(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        processStatus: String?,
+        reasonType: String?,
+        limit: Int,
+        offset: Int
+    ): List<InboundMailProcessing>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM inbound_mail_processing
+        WHERE received_at >= :from AND received_at < :to
+          AND (:processStatus IS NULL OR process_status = :processStatus)
+          AND (:reasonType IS NULL OR reason_type = :reasonType)
+        """
+    )
+    fun countInboundActivity(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        processStatus: String?,
+        reasonType: String?
+    ): Long
+
+    @Query(
+        """
+        SELECT sender_account_code AS senderAccountCode, MAX(received_at) AS lastReceivedAt
+          FROM inbound_mail_processing
+         GROUP BY sender_account_code
+        """
+    )
+    fun findLastReceivedAtPerAccount(): List<SenderAccountLastReceived>
 }

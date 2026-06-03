@@ -10,7 +10,19 @@ const state = {
     selectedExpertOrcid: null,
     selectedRuleId: null,
     unmatchedRecords: [],
-    unmatchedFiltered: []
+    unmatchedFiltered: [],
+    monitoring: {
+        date: null,
+        summary: null,
+        subTab: "introductions",
+        page: 0,
+        pageSize: 20,
+        rows: [],
+        totalCount: 0,
+        senderHealth: [],
+        lastRefreshedAt: null,
+        autoRefreshTimer: null
+    }
 };
 
 const contextPath = (() => {
@@ -19,10 +31,11 @@ const contextPath = (() => {
 })();
 
 const viewMeta = {
+    monitoring: ["邮件监控", "当日活动概览、自动回复全链路、发件账号健康。"],
     accounts: ["邮箱账号", "维护发送账号、权重、限额和连通性。"],
     qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
-    unmatched: ["未匹配来信", "无法自动匹配专家的来信队列与人工绑定。"],
+    unmatched: ["待处理邮件", "人工待办来信队列与专家绑定。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -51,7 +64,6 @@ const statusLabels = {
     REJECTED_THIS_ROUND: "本轮未通过",
     NEXT_ROUND_FOLLOW_UP: "下一轮跟进",
     MANUAL_HANDOFF: "已转人工",
-    CLOSED: "已关闭",
     RUNNING: "运行中",
     SUCCESS: "成功",
     FAILED: "失败",
@@ -76,7 +88,20 @@ const mailTypeLabels = {
     REPLY: "专家回复",
     QA_REPLY: "QA 自动回复",
     MANUAL_QA_REPLY: "手动 QA 回复",
-    MEETING_INVITATION: "会议邀约"
+    MEETING_INVITATION: "会议邀约",
+    MEETING_CONFIRMATION: "会议确认"
+};
+
+const triggeredByLabels = {
+    SYSTEM: "自动",
+    OPERATOR: "人工"
+};
+
+const promotionStatusLabels = {
+    PENDING: "处理中",
+    SUCCESS: "成功",
+    FAILED: "失败",
+    REVERTED: "已回退"
 };
 
 const documentTypeLabels = {
@@ -220,6 +245,10 @@ function numberValue(value, fallback = 0) {
 }
 
 function setView(view) {
+    if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
+        clearTimeout(state.monitoring.autoRefreshTimer);
+        state.monitoring.autoRefreshTimer = null;
+    }
     state.view = view;
     $$(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
     $$(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
@@ -235,6 +264,7 @@ async function refreshCurrentView() {
         if (state.view === "contacts") await loadContacts();
         if (state.view === "unmatched") await loadUnmatched();
         if (state.view === "tasks") await loadTasks();
+        if (state.view === "monitoring") await loadMonitoring();
     } catch (error) {
         showStatus(error.message, "error");
     }
@@ -539,12 +569,10 @@ async function loadContacts() {
 
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.contactId ? labelStatus(contact.contactStatus) : "未联系";
-        const statusType = contact.contactStatus === "CLOSED"
-            ? "error"
-            : contact.contactStatus === "MANUAL_HANDOFF"
-                ? "warn"
-                : contact.contactId
-                    ? "ok"
+        const statusType = contact.contactStatus === "MANUAL_HANDOFF"
+            ? "warn"
+            : contact.contactId
+                ? "ok"
                     : "";
         const needsAttentionClass = contact.needsManualAttention ? "needs-attention" : "";
         return `
@@ -638,7 +666,7 @@ function showExpertDetail(expert) {
                         <span>阶段状态</span>
                     </div>
                     <div class="metadata-card-value">
-                        ${badge(expert.contactStatus ? labelStatus(expert.contactStatus) : "未联系", expert.contactStatus === "CLOSED" ? "error" : expert.contactStatus === "MANUAL_HANDOFF" ? "warn" : expert.contactId ? "ok" : "")}
+                        ${badge(expert.contactStatus ? labelStatus(expert.contactStatus) : "未联系", expert.contactStatus === "MANUAL_HANDOFF" ? "warn" : expert.contactId ? "ok" : "")}
                     </div>
                 </div>
 
@@ -941,7 +969,7 @@ async function loadContactDetail(contactId) {
                         <span>阶段状态</span>
                     </div>
                     <div class="metadata-card-value">
-                        ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "CLOSED" ? "error" : contact.currentStatus === "MANUAL_HANDOFF" ? "warn" : "ok")}
+                        ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "MANUAL_HANDOFF" ? "warn" : "ok")}
                     </div>
                 </div>
 
@@ -1624,9 +1652,263 @@ function renderEmailAliasSection(contactId) {
     return container;
 }
 
+async function loadMonitoring() {
+    const dateParams = new URLSearchParams();
+    if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
+    const [summary, senderHealth] = await Promise.all([
+        api(`/api/mail-monitoring/summary?${dateParams}`),
+        api(`/api/mail-monitoring/sender-accounts?${dateParams}`)
+    ]);
+    state.monitoring.summary = summary;
+    state.monitoring.senderHealth = senderHealth || [];
+    renderMonitoringCards();
+    renderMonitoringSenderHealth();
+    renderMonitoringSenderOptions();
+    await loadMonitoringSubTab();
+    state.monitoring.lastRefreshedAt = new Date();
+    renderMonitoringLastRefreshed();
+    scheduleMonitoringAutoRefresh();
+}
+
+function monitoringRangeParams() {
+    const params = new URLSearchParams();
+    const date = state.monitoring.date || new Date().toISOString().slice(0, 10);
+    params.set("from", date);
+    params.set("to", date);
+    params.set("pageSize", state.monitoring.pageSize);
+    params.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+    const sender = $("#monitoringSenderAccount")?.value;
+    if (sender && ["introductions", "outbound"].includes(state.monitoring.subTab)) {
+        params.set("senderAccountCode", sender);
+    }
+    return params;
+}
+
+function renderMonitoringCards() {
+    const s = state.monitoring.summary || {};
+    const cards = [
+        ["今日介绍邮件", s.introductions],
+        ["今日收到回复", s.inboundReplies],
+        ["今日回复专家数", s.repliedExperts],
+        ["今日自动回复", s.autoReplies],
+        ["今日人工外发", s.operatorOutbound],
+        ["今日会议邀约", s.meetingInvitations],
+        ["今日人工待办新增", s.manualReviewInbound],
+        ["今日未匹配来信", s.unmatchedInbound],
+        ["今日发送失败", s.failedOutbound],
+        ["今日 APPLICATION 晋级", s.applicationPromotions]
+    ];
+    $("#monitoringCards").innerHTML = cards.map(([label, value]) => `
+        <div class="metric-card">
+            <div class="metric-label">${escapeHtml(label)}</div>
+            <div class="metric-value">${escapeHtml(value ?? 0)}</div>
+        </div>
+    `).join("");
+}
+
+function renderMonitoringSenderOptions() {
+    const select = $("#monitoringSenderAccount");
+    const selected = select.value;
+    select.innerHTML = `<option value="">全部账号</option>` + state.monitoring.senderHealth.map((row) =>
+        `<option value="${escapeHtml(row.accountCode)}">${escapeHtml(row.accountCode)}</option>`
+    ).join("");
+    select.value = selected;
+}
+
+function renderMonitoringSenderHealth() {
+    const table = $("#monitoringSenderHealthTable");
+    table.querySelector("thead").innerHTML = `
+        <tr>
+            <th>账号</th><th>邮箱</th><th>状态</th><th>今日/上限</th>
+            <th>介绍</th><th>自动回复</th><th>失败</th><th>最近发信</th><th>最近收信</th>
+        </tr>
+    `;
+    table.querySelector("tbody").innerHTML = (state.monitoring.senderHealth || []).map((row) => `
+        <tr>
+            <td><strong>${escapeHtml(row.accountCode)}</strong></td>
+            <td>${escapeHtml(row.senderEmail)}</td>
+            <td>${badge(row.enabled ? "启用" : "停用", row.enabled ? "ok" : "error")}</td>
+            <td>${escapeHtml(row.todaySentCount)}/${escapeHtml(row.dailySendLimit)}</td>
+            <td>${escapeHtml(row.introductionCount)}</td>
+            <td>${escapeHtml(row.autoReplyCount)}</td>
+            <td>${escapeHtml(row.failedCount)}</td>
+            <td>${escapeHtml(row.lastSentAt || "-")}</td>
+            <td>${escapeHtml(row.lastReceivedAt || "-")}</td>
+        </tr>
+    `).join("") || `<tr><td colspan="9" class="text-muted" style="text-align:center;">暂无账号数据</td></tr>`;
+}
+
+async function loadMonitoringSubTab() {
+    const tab = state.monitoring.subTab;
+    const params = monitoringRangeParams();
+    let url;
+    if (tab === "introductions") url = `/api/mail-monitoring/introductions?${params}`;
+    if (tab === "inbound") url = `/api/mail-monitoring/inbound?${params}`;
+    if (tab === "outbound") url = `/api/mail-monitoring/outbound-replies?${params}`;
+    if (tab === "pending") {
+        const pendingParams = new URLSearchParams();
+        pendingParams.set("pageSize", state.monitoring.pageSize);
+        pendingParams.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+        url = `/api/mail/unmatched-inbound?${pendingParams}`;
+    }
+    if (tab === "promotions") url = `/api/mail-monitoring/promotions?${params}`;
+    const data = await api(url);
+    state.monitoring.rows = data.records || [];
+    state.monitoring.totalCount = data.totalCount ?? state.monitoring.rows.length;
+    renderMonitoringActivityTable();
+    renderMonitoringPagination();
+}
+
+function renderMonitoringActivityTable() {
+    const table = $("#monitoringActivityTable");
+    const tab = state.monitoring.subTab;
+    const rows = state.monitoring.rows || [];
+    const renderEmpty = (colspan) => `<tr><td colspan="${colspan}" class="text-muted" style="text-align:center;">暂无记录</td></tr>`;
+    if (tab === "introductions") {
+        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>账号</th><th>主题</th><th>状态</th><th>阶段</th><th>已回复</th></tr>`;
+        table.querySelector("tbody").innerHTML = rows.map((r) => `
+            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
+            <td>${escapeHtml(r.subject || "-")}</td><td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td>
+            <td>${escapeHtml(labelStatus(r.contactCurrentStatus) || "-")}</td><td>${escapeHtml(r.replied ? "是" : "否")}</td></tr>
+        `).join("") || renderEmpty(7);
+        return;
+    }
+    if (tab === "inbound") {
+        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>发件邮箱</th><th>主题</th><th>处理</th><th>阶段</th><th>自动回复</th><th>摘要</th></tr>`;
+        table.querySelector("tbody").innerHTML = rows.map((r) => `
+            <tr><td>${escapeHtml(r.receivedAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(r.fromEmail)}</td>
+            <td>${escapeHtml(r.subject || "-")}</td><td>${escapeHtml(r.processStatus)} ${r.reasonType ? badge(r.reasonType, "warn") : ""}</td>
+            <td>${escapeHtml(labelStatus(r.contactCurrentStatus) || "-")}</td><td>${escapeHtml(r.autoReplyEnabled === false ? "暂停" : "开启")}</td>
+            <td>${escapeHtml((r.cleanedBody || "").slice(0, 80))}</td></tr>
+        `).join("") || renderEmpty(8);
+        return;
+    }
+    if (tab === "outbound") {
+        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>触发</th><th>类型</th><th>账号</th><th>主题</th><th>状态</th><th>来源来信</th><th>QA</th></tr>`;
+        table.querySelector("tbody").innerHTML = rows.map((r) => `
+            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(triggeredByLabels[r.triggeredBy] || r.triggeredBy)}</td>
+            <td>${escapeHtml(labelMailType(r.mailType))}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td><td>${escapeHtml(r.subject || "-")}</td>
+            <td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td><td>${escapeHtml(r.sourceInbound?.subject || "-")}</td>
+            <td>${escapeHtml(r.matchedQaRuleDisplayName || r.matchedQaRuleId || "-")}</td></tr>
+        `).join("") || renderEmpty(9);
+        return;
+    }
+    if (tab === "pending") {
+        table.querySelector("thead").innerHTML = `<tr><th>ID</th><th>发件邮箱</th><th>主题</th><th>收信时间</th><th>关联专家</th><th>原因</th><th>操作</th></tr>`;
+        table.querySelector("tbody").innerHTML = rows.map((r) => `
+            <tr><td>${escapeHtml(r.id)}</td><td>${escapeHtml(r.fromEmail)}</td><td>${escapeHtml(r.subject || "-")}</td>
+            <td>${escapeHtml(r.receivedAt || "-")}</td><td>${escapeHtml(r.expertName || "-")}</td><td>${escapeHtml(r.reasonType || r.processReason)}</td>
+            <td><button class="button" data-action="view-unmatched" data-id="${escapeHtml(r.id)}">处理</button></td></tr>
+        `).join("") || renderEmpty(7);
+        return;
+    }
+    table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>触发</th><th>状态</th><th>层级</th><th>来源来信</th><th>错误</th><th>操作</th></tr>`;
+    table.querySelector("tbody").innerHTML = rows.map((r) => `
+        <tr><td>${escapeHtml(r.createdAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(triggeredByLabels[r.triggeredBy] || r.triggeredBy)}</td>
+        <td>${badge(promotionStatusLabels[r.promotionStatus] || r.promotionStatus, r.promotionStatus === "FAILED" ? "error" : "ok")}</td>
+        <td>${escapeHtml(r.fromLevel)} → ${escapeHtml(r.toLevel)}</td><td>${escapeHtml(r.sourceInboundId || "-")}</td><td>${escapeHtml(r.errorMessage || "-")}</td>
+        <td>${r.promotionStatus === "FAILED" ? `<button class="button" data-action="retry-promotion" data-id="${escapeHtml(r.promotionId)}">重试</button>` : ""}</td></tr>
+    `).join("") || renderEmpty(8);
+}
+
+function monitoringContactCell(row) {
+    const label = row.expertName || row.orcidId || row.expertEmail || row.expertContactId || "-";
+    if (!row.expertContactId) return escapeHtml(label);
+    return `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${escapeHtml(row.expertContactId)}">${escapeHtml(label)}</a>`;
+}
+
+function renderMonitoringPagination() {
+    const total = state.monitoring.totalCount || 0;
+    const page = state.monitoring.page;
+    const maxPage = Math.max(0, Math.ceil(total / state.monitoring.pageSize) - 1);
+    $("#monitoringPagination").innerHTML = `
+        <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
+        <button class="button secondary" data-action="monitoring-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
+        <button class="button secondary" data-action="monitoring-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
+    `;
+}
+
+function renderMonitoringLastRefreshed() {
+    $("#monitoringLastRefreshed").textContent = state.monitoring.lastRefreshedAt
+        ? `最近刷新 ${state.monitoring.lastRefreshedAt.toLocaleTimeString()}`
+        : "";
+}
+
+function scheduleMonitoringAutoRefresh() {
+    if (state.monitoring.autoRefreshTimer) clearTimeout(state.monitoring.autoRefreshTimer);
+    if (state.view !== "monitoring") return;
+    state.monitoring.autoRefreshTimer = setTimeout(async () => {
+        try {
+            const params = new URLSearchParams();
+            if (state.monitoring.date) params.set("date", state.monitoring.date);
+            const [summary, senderHealth] = await Promise.all([
+                api(`/api/mail-monitoring/summary?${params}`),
+                api(`/api/mail-monitoring/sender-accounts?${params}`)
+            ]);
+            state.monitoring.summary = summary;
+            state.monitoring.senderHealth = senderHealth || [];
+            renderMonitoringCards();
+            renderMonitoringSenderHealth();
+            state.monitoring.lastRefreshedAt = new Date();
+            renderMonitoringLastRefreshed();
+        } catch (error) {
+            showStatus(error.message, "error");
+        } finally {
+            scheduleMonitoringAutoRefresh();
+        }
+    }, 60000);
+}
+
+function bindMonitoringEvents() {
+    $("#monitoringRefreshBtn").addEventListener("click", () => loadMonitoring().catch((e) => showStatus(e.message, "error")));
+    $("#monitoringDate").addEventListener("change", (event) => {
+        state.monitoring.date = event.target.value || null;
+        state.monitoring.page = 0;
+        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringSenderAccount").addEventListener("change", () => {
+        state.monitoring.page = 0;
+        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringSubTabs").addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-subtab]");
+        if (!tab) return;
+        state.monitoring.subTab = tab.dataset.subtab;
+        state.monitoring.page = 0;
+        $$("#monitoringSubTabs .tab").forEach((item) => item.classList.toggle("active", item === tab));
+        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringPagination").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "monitoring-prev") state.monitoring.page = Math.max(0, state.monitoring.page - 1);
+        if (button.dataset.action === "monitoring-next") state.monitoring.page += 1;
+        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringActivityTable").addEventListener("click", async (event) => {
+        const target = event.target.closest("[data-action]");
+        if (!target) return;
+        if (target.dataset.action === "open-monitoring-contact") {
+            state.selectedExpertOrcid = null;
+            setView("contacts");
+            await loadContactDetail(Number(target.dataset.id));
+        }
+        if (target.dataset.action === "view-unmatched") {
+            setView("unmatched");
+            await showUnmatchedDetail(target.dataset.id);
+        }
+        if (target.dataset.action === "retry-promotion") {
+            await api(`/api/mail-monitoring/promotions/${target.dataset.id}/retry`, { method: "POST" });
+            showStatus("晋级重试已提交");
+            await loadMonitoringSubTab();
+        }
+    });
+}
+
 function bindEvents() {
     $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
     $("#refreshBtn").addEventListener("click", refreshCurrentView);
+    bindMonitoringEvents();
     $("#reloadAccountsBtn").addEventListener("click", loadAccounts);
     $("#newAccountBtn").addEventListener("click", () => fillAccountForm(null, "new"));
     $("#clearAccountFormBtn").addEventListener("click", hideAccountEditor);

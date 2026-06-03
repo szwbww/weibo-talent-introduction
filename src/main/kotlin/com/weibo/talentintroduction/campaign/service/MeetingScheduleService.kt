@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.MeetingSchedule
 import com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -133,6 +134,9 @@ class MeetingScheduleService(
                 expertContactId = contactId,
                 direction = "OUTBOUND",
                 mailType = "MEETING_CONFIRMATION",
+                senderAccountCode = account.accountCode,
+                triggeredBy = TriggeredBy.SYSTEM,
+                sourceInboundId = schedule.sourceMailRecordId,
                 messageId = delivered.messageId,
                 inReplyTo = null,
                 subject = composed.subject,

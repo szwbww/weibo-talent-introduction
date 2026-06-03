@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.springframework.stereotype.Service
@@ -136,12 +137,15 @@ class UnmatchedInboundMailService(
 
         var currentContact = contact
         if (promoteToApplication && !contact.applicationIndexed) {
-            val now = record.receivedAt ?: LocalDateTime.now()
-            val updatedContact = contact.copy(firstReplyAt = now)
+            val now = record.receivedAt
+            val firstReplyAt = contact.firstReplyAt ?: now
+            val updatedContact = contact.copy(firstReplyAt = firstReplyAt)
             val ok = expertIndexWriterService.promoteToApplication(
                 orcid = contact.orcidId,
                 contact = updatedContact,
-                firstReplyAt = now.toInstant(ZoneId.systemDefault().rules.getOffset(now))
+                firstReplyAt = firstReplyAt.toInstant(ZoneId.systemDefault().rules.getOffset(firstReplyAt)),
+                triggeredBy = TriggeredBy.OPERATOR,
+                operatorName = resolvedBy
             )
             if (ok) {
                 currentContact = updatedContact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION")

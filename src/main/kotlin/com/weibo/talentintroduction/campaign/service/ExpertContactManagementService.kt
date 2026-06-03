@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -189,7 +190,6 @@ class ExpertContactManagementService(
     fun promoteToApplication(contactId: Long): ExpertContact {
         val contact = getContact(contactId)
         if (contact.applicationIndexed) return contact
-        require(contact.currentStatus != "CLOSED") { "Cannot promote a closed contact" }
         require(contact.orcidId.isNotBlank()) { "Contact has no ORCID" }
         val firstReplyInstant = if (contact.firstReplyAt != null) {
             contact.firstReplyAt.toInstant(java.time.ZoneId.systemDefault().rules.getOffset(contact.firstReplyAt))
@@ -199,7 +199,8 @@ class ExpertContactManagementService(
         val ok = expertIndexWriterService.promoteToApplication(
             orcid = contact.orcidId,
             contact = contact,
-            firstReplyAt = firstReplyInstant
+            firstReplyAt = firstReplyInstant,
+            triggeredBy = TriggeredBy.OPERATOR
         )
         require(ok) { "Failed to promote to application index" }
         val updated = expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))

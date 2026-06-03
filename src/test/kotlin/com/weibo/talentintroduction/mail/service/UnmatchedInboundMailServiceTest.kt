@@ -183,7 +183,10 @@ class UnmatchedInboundMailServiceTest {
         Mockito.`when`(expertIndexWriterService.promoteToApplication(
             orcid = Mockito.anyString() ?: "",
             contact = Mockito.any(ExpertContact::class.java) ?: contact(10L, ""),
-            firstReplyAt = Mockito.any() ?: java.time.Instant.now()
+            firstReplyAt = Mockito.any() ?: java.time.Instant.now(),
+            sourceInboundId = Mockito.any(),
+            triggeredBy = Mockito.anyString() ?: "",
+            operatorName = Mockito.anyString() ?: ""
         )).thenReturn(false)
 
         assertThrows(IllegalStateException::class.java) {

@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -75,6 +76,9 @@ class ManualExpertMailService(
                 expertContactId = contactId,
                 direction = "OUTBOUND",
                 mailType = composed.mailType,
+                senderAccountCode = account.accountCode,
+                triggeredBy = TriggeredBy.OPERATOR,
+                sourceInboundId = command.sourceInboundId,
                 messageId = delivered.messageId,
                 inReplyTo = null,
                 subject = composed.mail.subject,
@@ -210,7 +214,8 @@ data class ManualMailOption(
 data class ManualMailSendCommand(
     val optionType: String,
     val optionValue: String,
-    val senderAccountCode: String?
+    val senderAccountCode: String?,
+    val sourceInboundId: Long? = null
 )
 
 data class ManualMailSendResult(

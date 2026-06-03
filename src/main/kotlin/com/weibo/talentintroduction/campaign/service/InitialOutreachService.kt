@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -62,6 +63,9 @@ class InitialOutreachService(
                     expertContactId = contact.id ?: error("Saved expert contact id is null"),
                     direction = "OUTBOUND",
                     mailType = "INTRODUCTION",
+                    senderAccountCode = account.accountCode,
+                    triggeredBy = TriggeredBy.SYSTEM,
+                    sourceInboundId = null,
                     messageId = delivered.messageId,
                     inReplyTo = null,
                     subject = mail.subject,

@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.InboundIntent
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -88,7 +89,7 @@ class AutoMailReplyService(
                     else -> "MANUAL_HANDOFF_STATUS"
                 }
                 val cleanedBody = mailBodyCleaner.clean(received.body)
-                val inboundRecord = saveMailRecord(contactId, received, cleanedBody)
+                val inboundRecord = saveMailRecord(account, contactId, received, cleanedBody)
                 val inboundMailRecordId = inboundRecord.id ?: error("Inbound mail record id is required")
                 mailAttachmentService.saveInboundAttachments(
                     expertContactId = contactId,
@@ -135,6 +136,9 @@ class AutoMailReplyService(
                     expertContactId = contactId,
                     direction = "INBOUND",
                     mailType = "REPLY",
+                    senderAccountCode = account.accountCode,
+                    triggeredBy = null,
+                    sourceInboundId = null,
                     messageId = received.messageId,
                     inReplyTo = received.inReplyTo,
                     subject = received.subject,
@@ -176,7 +180,7 @@ class AutoMailReplyService(
             when (intent.autoAction) {
                 AutoIntentAction.MANUAL_REVIEW -> {
                     val reason = manualReviewReason(intent.intentCode)
-                    val promoted = promoteIfFirstReply(contact, received)
+                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                     markManualReview(
                         contact = promoted ?: contact,
                         received = received,
@@ -220,7 +224,7 @@ class AutoMailReplyService(
 
                 AutoIntentAction.SEND_MEETING_INVITATION -> {
                     if (hasMeetingInvitation(contactId)) {
-                        val promoted = promoteIfFirstReply(contact, received)
+                        val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                         markManualReview(
                             contact = promoted ?: contact,
                             received = received,
@@ -240,8 +244,8 @@ class AutoMailReplyService(
                         return@forEach
                     }
 
-                    sendMeetingInvitation(account, contactId, received)
-                    val promoted = promoteIfFirstReply(contact, received)
+                    sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
+                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                     val meetingContact = conversationStateService.transition(
                         contact = promoted ?: contact,
                         toStatus = ConversationStatus.MEETING_SCHEDULING,
@@ -256,7 +260,14 @@ class AutoMailReplyService(
                     if (meetingContact.applicationIndexed) {
                         expertIndexWriterService.syncApplicationStatus(meetingContact, "MEETING_INVITATION_SENT")
                     }
-                    confirmProcessed(account, received, contactId, "PROCESSED", "MEETING_INVITATION_SENT")
+                    confirmProcessed(
+                        account,
+                        received,
+                        contactId,
+                        "PROCESSED",
+                        "AUTO_MEETING_INVITED",
+                        "AUTO_MEETING_INVITED"
+                    )
                     meetingInvitations += 1
                     return@forEach
                 }
@@ -284,7 +295,7 @@ class AutoMailReplyService(
                 manualReview += 1; return@forEach
             }
 
-            val promoted = promoteIfFirstReply(contact, received)
+            val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
             val effectiveContact = promoted ?: contact
             val reply = ComposedMail(
                 to = received.from,
@@ -299,6 +310,9 @@ class AutoMailReplyService(
                     expertContactId = contactId,
                     direction = "OUTBOUND",
                     mailType = "QA_REPLY",
+                    senderAccountCode = account.accountCode,
+                    triggeredBy = TriggeredBy.SYSTEM,
+                    sourceInboundId = inboundMailRecordId,
                     messageId = delivered.messageId,
                     inReplyTo = received.messageId,
                     subject = reply.subject,
@@ -327,7 +341,7 @@ class AutoMailReplyService(
             if (qaContact.applicationIndexed) {
                 expertIndexWriterService.syncApplicationStatus(qaContact, "QA_AUTO_REPLIED")
             }
-            confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED")
+            confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED", "AUTO_QA_REPLIED")
             replied += 1
         }
 
@@ -341,6 +355,7 @@ class AutoMailReplyService(
     }
 
     private fun saveMailRecord(
+        account: MailSenderAccount,
         contactId: Long,
         received: ReceivedMail,
         cleanedBody: String
@@ -349,6 +364,9 @@ class AutoMailReplyService(
             expertContactId = contactId,
             direction = "INBOUND",
             mailType = "REPLY",
+            senderAccountCode = account.accountCode,
+            triggeredBy = null,
+            sourceInboundId = null,
             messageId = received.messageId,
             inReplyTo = received.inReplyTo,
             subject = received.subject,
@@ -362,19 +380,22 @@ class AutoMailReplyService(
         )
     )
 
-    private fun promoteIfFirstReply(contact: ExpertContact, received: ReceivedMail): ExpertContact? {
+    private fun promoteIfFirstReply(contact: ExpertContact, received: ReceivedMail, sourceInboundId: Long): ExpertContact? {
         if (contact.applicationIndexed) return null
         if (contact.orcidId.isBlank()) return null
-        val now = received.receivedAt ?: LocalDateTime.now()
-        val firstReplyInstant = now.toInstant(ZoneId.systemDefault().rules.getOffset(now))
+        val now = received.receivedAt
+        val firstReplyAt = contact.firstReplyAt ?: now
+        val firstReplyInstant = firstReplyAt.toInstant(ZoneId.systemDefault().rules.getOffset(firstReplyAt))
         val saved = expertContactRepository.save(
-            contact.copy(firstReplyAt = now)
+            contact.copy(firstReplyAt = firstReplyAt)
         )
         try {
             val ok = expertIndexWriterService.promoteToApplication(
                 orcid = contact.orcidId,
                 contact = saved,
-                firstReplyAt = firstReplyInstant
+                firstReplyAt = firstReplyInstant,
+                sourceInboundId = sourceInboundId,
+                triggeredBy = TriggeredBy.SYSTEM
             )
             if (ok) {
                 return expertContactRepository.save(saved.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
@@ -501,7 +522,8 @@ class AutoMailReplyService(
     private fun sendMeetingInvitation(
         account: MailSenderAccount,
         contactId: Long,
-        received: ReceivedMail
+        received: ReceivedMail,
+        sourceInboundId: Long
     ) {
         val rendered = mailTemplateService.render(
             templateCode = "MEETING_INVITATION",
@@ -519,6 +541,9 @@ class AutoMailReplyService(
                 expertContactId = contactId,
                 direction = "OUTBOUND",
                 mailType = "MEETING_INVITATION",
+                senderAccountCode = account.accountCode,
+                triggeredBy = TriggeredBy.SYSTEM,
+                sourceInboundId = sourceInboundId,
                 messageId = delivered.messageId,
                 inReplyTo = received.messageId,
                 subject = mail.subject,

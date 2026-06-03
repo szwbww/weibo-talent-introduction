@@ -190,13 +190,15 @@ data class SwitchToAutoRequest(
 data class ManualMailSendRequest(
     val optionType: String,
     val optionValue: String,
-    val senderAccountCode: String?
+    val senderAccountCode: String?,
+    val sourceInboundId: Long? = null
 ) {
     fun toCommand(): ManualMailSendCommand =
         ManualMailSendCommand(
             optionType = optionType,
             optionValue = optionValue,
-            senderAccountCode = senderAccountCode
+            senderAccountCode = senderAccountCode,
+            sourceInboundId = sourceInboundId
         )
 }
 
