@@ -132,6 +132,7 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         """
         SELECT sender_account_code AS senderAccountCode, MAX(received_at) AS lastReceivedAt
           FROM inbound_mail_processing
+         WHERE sender_account_code IS NOT NULL AND sender_account_code <> ''
          GROUP BY sender_account_code
         """
     )
