@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.weibo.talentintroduction.audit.domain.OperatorActionType
+import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.domain.MeetingSchedule
@@ -32,10 +34,11 @@ class ExpertContactManagementService(
     private val conversationStateService: ConversationStateService,
     private val meetingScheduleRepository: MeetingScheduleRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val inboundMailProcessingRepository: InboundMailProcessingRepository
+    private val inboundMailProcessingRepository: InboundMailProcessingRepository,
+    private val operatorActionLogService: OperatorActionLogService
 ) {
-    fun listContacts(campaignId: Long?, status: String?, needsAttention: Boolean? = null): List<ExpertContact> =
-        expertContactRepository.findFilteredContacts(campaignId, status, needsAttention)
+    fun listContacts(campaignId: Long?, status: String?, operatorStatus: String? = null, needsAttention: Boolean? = null): List<ExpertContact> =
+        expertContactRepository.findFilteredContacts(campaignId, status, operatorStatus, needsAttention)
 
     fun getContactDetail(contactId: Long): ExpertContactDetail {
         val contact = getContact(contactId)
@@ -139,8 +142,14 @@ class ExpertContactManagementService(
         return completed
     }
 
-    fun pauseAutoReply(contactId: Long): ExpertContact {
+    fun pauseAutoReply(contactId: Long, operatorName: String? = null): ExpertContact {
         val contact = getContact(contactId)
+        val beforeState = mapOf(
+            "currentStatus" to contact.currentStatus,
+            "autoReplyEnabled" to contact.autoReplyEnabled.toString(),
+            "manualHandoffRequired" to contact.manualHandoffRequired.toString(),
+            "needsManualAttention" to contact.needsManualAttention.toString()
+        )
         val now = LocalDateTime.now()
         val updated = conversationStateService.transition(
             contact = contact,
@@ -154,11 +163,32 @@ class ExpertContactManagementService(
         if (updated.applicationIndexed) {
             expertIndexWriterService.syncApplicationStatus(updated, "AUTO_REPLY_PAUSED")
         }
+        operatorActionLogService.record(
+            targetType = "EXPERT_CONTACT",
+            targetId = contactId,
+            actionType = OperatorActionType.SWITCH_REPLY_MODE,
+            expertContactId = contactId,
+            before = beforeState,
+            after = mapOf(
+                "currentStatus" to updated.currentStatus,
+                "autoReplyEnabled" to updated.autoReplyEnabled.toString(),
+                "manualHandoffRequired" to updated.manualHandoffRequired.toString(),
+                "needsManualAttention" to updated.needsManualAttention.toString()
+            ),
+            operatorName = operatorName,
+            note = "pause auto-reply"
+        )
         return updated
     }
 
-    fun resumeAutoReply(contactId: Long): ExpertContact {
+    fun resumeAutoReply(contactId: Long, operatorName: String? = null): ExpertContact {
         val contact = getContact(contactId)
+        val beforeState = mapOf(
+            "currentStatus" to contact.currentStatus,
+            "autoReplyEnabled" to contact.autoReplyEnabled.toString(),
+            "manualHandoffRequired" to contact.manualHandoffRequired.toString(),
+            "needsManualAttention" to contact.needsManualAttention.toString()
+        )
         val now = LocalDateTime.now()
         val updated = conversationStateService.transition(
             contact = contact,
@@ -172,6 +202,21 @@ class ExpertContactManagementService(
         if (updated.applicationIndexed) {
             expertIndexWriterService.syncApplicationStatus(updated, "AUTO_REPLY_RESUMED")
         }
+        operatorActionLogService.record(
+            targetType = "EXPERT_CONTACT",
+            targetId = contactId,
+            actionType = OperatorActionType.SWITCH_REPLY_MODE,
+            expertContactId = contactId,
+            before = beforeState,
+            after = mapOf(
+                "currentStatus" to updated.currentStatus,
+                "autoReplyEnabled" to updated.autoReplyEnabled.toString(),
+                "manualHandoffRequired" to updated.manualHandoffRequired.toString(),
+                "needsManualAttention" to updated.needsManualAttention.toString()
+            ),
+            operatorName = operatorName,
+            note = "resume auto-reply"
+        )
         return updated
     }
 
@@ -229,10 +274,16 @@ class ExpertContactManagementService(
     }
 
     @org.springframework.transaction.annotation.Transactional
-    fun switchToManual(contactId: Long, reason: String?, note: String?): ExpertContact {
+    fun switchToManual(contactId: Long, reason: String?, note: String?, operatorName: String? = null): ExpertContact {
         val contact = getContact(contactId)
         val actualReason = reason ?: "OPERATOR_SWITCH_TO_MANUAL"
         val now = LocalDateTime.now()
+        val beforeState = mapOf(
+            "currentStatus" to contact.currentStatus,
+            "autoReplyEnabled" to contact.autoReplyEnabled.toString(),
+            "manualHandoffRequired" to contact.manualHandoffRequired.toString(),
+            "needsManualAttention" to contact.needsManualAttention.toString()
+        )
         ensureOpenManualHandoff(contactId, actualReason, note, now)
         if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
             val fixedContact = if (contact.autoReplyEnabled || !contact.manualHandoffRequired) {
@@ -248,6 +299,21 @@ class ExpertContactManagementService(
             if (fixedContact.applicationIndexed) {
                 expertIndexWriterService.syncApplicationStatus(fixedContact, actualReason)
             }
+            operatorActionLogService.record(
+                targetType = "EXPERT_CONTACT",
+                targetId = contactId,
+                actionType = OperatorActionType.SWITCH_REPLY_MODE,
+                expertContactId = contactId,
+                before = beforeState,
+                after = mapOf(
+                    "currentStatus" to fixedContact.currentStatus,
+                    "autoReplyEnabled" to fixedContact.autoReplyEnabled.toString(),
+                    "manualHandoffRequired" to fixedContact.manualHandoffRequired.toString(),
+                    "needsManualAttention" to fixedContact.needsManualAttention.toString()
+                ),
+                operatorName = operatorName,
+                note = note
+            )
             return fixedContact
         }
         val updatedContact = conversationStateService.transition(
@@ -262,6 +328,21 @@ class ExpertContactManagementService(
         if (updatedContact.applicationIndexed) {
             expertIndexWriterService.syncApplicationStatus(updatedContact, actualReason)
         }
+        operatorActionLogService.record(
+            targetType = "EXPERT_CONTACT",
+            targetId = contactId,
+            actionType = OperatorActionType.SWITCH_REPLY_MODE,
+            expertContactId = contactId,
+            before = beforeState,
+            after = mapOf(
+                "currentStatus" to updatedContact.currentStatus,
+                "autoReplyEnabled" to updatedContact.autoReplyEnabled.toString(),
+                "manualHandoffRequired" to updatedContact.manualHandoffRequired.toString(),
+                "needsManualAttention" to updatedContact.needsManualAttention.toString()
+            ),
+            operatorName = operatorName,
+            note = note
+        )
         return updatedContact
     }
 
@@ -289,11 +370,17 @@ class ExpertContactManagementService(
     }
 
     @org.springframework.transaction.annotation.Transactional
-    fun switchToAuto(contactId: Long, note: String?): ExpertContact {
+    fun switchToAuto(contactId: Long, note: String?, operatorName: String? = null): ExpertContact {
         val contact = getContact(contactId)
         if (contact.currentStatus != ConversationStatus.MANUAL_HANDOFF.name) {
             error("Contact $contactId is not in MANUAL_HANDOFF")
         }
+        val beforeState = mapOf(
+            "currentStatus" to contact.currentStatus,
+            "autoReplyEnabled" to contact.autoReplyEnabled.toString(),
+            "manualHandoffRequired" to contact.manualHandoffRequired.toString(),
+            "needsManualAttention" to contact.needsManualAttention.toString()
+        )
         val now = LocalDateTime.now()
         val openHandoffs = manualHandoffRepository.findAllByExpertContactIdAndHandoffStatusIn(
             contactId, listOf("PENDING", "ASSIGNED")
@@ -319,6 +406,21 @@ class ExpertContactManagementService(
         if (updatedContact.applicationIndexed) {
             expertIndexWriterService.syncApplicationStatus(updatedContact, "OPERATOR_SWITCH_TO_AUTO")
         }
+        operatorActionLogService.record(
+            targetType = "EXPERT_CONTACT",
+            targetId = contactId,
+            actionType = OperatorActionType.SWITCH_REPLY_MODE,
+            expertContactId = contactId,
+            before = beforeState,
+            after = mapOf(
+                "currentStatus" to updatedContact.currentStatus,
+                "autoReplyEnabled" to updatedContact.autoReplyEnabled.toString(),
+                "manualHandoffRequired" to updatedContact.manualHandoffRequired.toString(),
+                "needsManualAttention" to updatedContact.needsManualAttention.toString()
+            ),
+            operatorName = operatorName,
+            note = note
+        )
         return updatedContact
     }
 

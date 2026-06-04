@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.domain.MeetingSchedule
 import com.weibo.talentintroduction.campaign.service.ExpertContactDetail
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
+import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.campaign.service.ManualHandoffAssignCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCompleteCommand
 import com.weibo.talentintroduction.campaign.service.ManualHandoffCreateCommand
@@ -34,15 +36,18 @@ import org.springframework.web.bind.annotation.RestController
 class ExpertContactManagementController(
     private val service: ExpertContactManagementService,
     private val manualExpertMailService: ManualExpertMailService,
-    private val meetingScheduleService: MeetingScheduleService
+    private val meetingScheduleService: MeetingScheduleService,
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
+    private val expertIndexLevelOperationService: ExpertIndexLevelOperationService
 ) {
     @GetMapping
     fun listContacts(
         @RequestParam(required = false) campaignId: Long?,
         @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) operatorStatus: String?,
         @RequestParam(required = false) needsAttention: Boolean?
     ): List<ExpertContactResponse> =
-        service.listContacts(campaignId, status, needsAttention).map { it.toResponse() }
+        service.listContacts(campaignId, status, operatorStatus, needsAttention).map { it.toResponse() }
 
     @GetMapping("/{contactId}")
     fun getContactDetail(@PathVariable contactId: Long): ExpertContactDetailResponse =
@@ -79,29 +84,47 @@ class ExpertContactManagementController(
 
     @PostMapping("/{contactId}/promote-to-application")
     fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
-        service.promoteToApplication(contactId).toResponse()
+        expertIndexLevelOperationService.changeLevel(contactId, "APPLICATION", null, null).toResponse()
 
     @PostMapping("/{contactId}/promote-to-candidate")
     fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
-        service.promoteToCandidate(contactId).toResponse()
+        expertIndexLevelOperationService.changeLevel(contactId, "CANDIDATE", null, null).toResponse()
 
     @PostMapping("/{contactId}/demote-to-raw")
     fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
-        service.demoteToRaw(contactId).toResponse()
+        expertIndexLevelOperationService.changeLevel(contactId, "RAW", null, null).toResponse()
 
     @PostMapping("/{contactId}/switch-to-manual")
     fun switchToManual(
         @PathVariable contactId: Long,
         @RequestBody request: SwitchToManualRequest
     ): ExpertContactResponse =
-        service.switchToManual(contactId, request.reason, request.note).toResponse()
+        service.switchToManual(contactId, request.reason, request.note, request.operatorName).toResponse()
 
     @PostMapping("/{contactId}/switch-to-auto")
     fun switchToAuto(
         @PathVariable contactId: Long,
         @RequestBody request: SwitchToAutoRequest
     ): ExpertContactResponse =
-        service.switchToAuto(contactId, request.note).toResponse()
+        service.switchToAuto(contactId, request.note, request.operatorName).toResponse()
+
+    @PostMapping("/{contactId}/operator-status")
+    fun changeOperatorStatus(
+        @PathVariable contactId: Long,
+        @RequestBody request: ChangeOperatorStatusRequest
+    ): ExpertContactResponse =
+        expertOperatorStatusService.changeStatus(
+            contactId, request.operatorStatus, request.operatorName, request.note
+        ).toResponse()
+
+    @PostMapping("/{contactId}/index-level")
+    fun changeIndexLevel(
+        @PathVariable contactId: Long,
+        @RequestBody request: ChangeIndexLevelRequest
+    ): ExpertContactResponse =
+        expertIndexLevelOperationService.changeLevel(
+            contactId, request.targetLevel, request.operatorName, request.note
+        ).toResponse()
 
     @GetMapping("/mail-send-options")
     fun listMailSendOptions(): List<ManualMailOption> =
@@ -180,11 +203,25 @@ data class ManualHandoffCompleteRequest(
 
 data class SwitchToManualRequest(
     val reason: String?,
-    val note: String?
+    val note: String?,
+    val operatorName: String? = null
 )
 
 data class SwitchToAutoRequest(
-    val note: String?
+    val note: String?,
+    val operatorName: String? = null
+)
+
+data class ChangeOperatorStatusRequest(
+    val operatorStatus: String,
+    val operatorName: String? = null,
+    val note: String? = null
+)
+
+data class ChangeIndexLevelRequest(
+    val targetLevel: String,
+    val operatorName: String? = null,
+    val note: String? = null
 )
 
 data class ManualMailSendRequest(
@@ -295,6 +332,7 @@ data class ExpertContactResponse(
     val autoReplyEnabled: Boolean = true,
     val applicationIndexed: Boolean = false,
     val currentIndexLevel: String,
+    val operatorStatus: String,
     val needsManualAttention: Boolean,
     val latestManualReviewReasonType: String? = null
 )
@@ -398,6 +436,7 @@ private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = nul
         autoReplyEnabled = autoReplyEnabled,
         applicationIndexed = applicationIndexed,
         currentIndexLevel = currentIndexLevel,
+        operatorStatus = operatorStatus,
         needsManualAttention = needsManualAttention,
         latestManualReviewReasonType = latestManualReviewReasonType
     )

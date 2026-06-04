@@ -1,5 +1,8 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.weibo.talentintroduction.audit.domain.OperatorActionLog
+import com.weibo.talentintroduction.audit.domain.OperatorActionType
+import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers
 import org.mockito.Mockito
 import java.time.LocalDateTime
 import java.util.Optional
@@ -30,6 +34,7 @@ class ExpertContactManagementServiceTest {
     private val meetingScheduleRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val inboundMailProcessingRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository::class.java)
+    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
@@ -41,8 +46,11 @@ class ExpertContactManagementServiceTest {
         conversationStateService,
         meetingScheduleRepository,
         expertIndexWriterService,
-        inboundMailProcessingRepository
+        inboundMailProcessingRepository,
+        operatorActionLogService
     )
+
+    private val auditLogResult = OperatorActionLog(id = 1L, targetType = "EXPERT_CONTACT", targetId = 1L, actionType = "SWITCH_REPLY_MODE", actionSummary = "test")
 
     @Test
     fun `creates manual handoff and marks contact`() {

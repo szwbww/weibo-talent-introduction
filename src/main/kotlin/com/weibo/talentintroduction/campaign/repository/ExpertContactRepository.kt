@@ -37,12 +37,14 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
         SELECT * FROM expert_contact
         WHERE (:campaignId IS NULL OR campaign_id = :campaignId)
           AND (:status IS NULL OR current_status = :status)
+          AND (:operatorStatus IS NULL OR operator_status = :operatorStatus)
           AND (:needsAttention IS NULL OR needs_manual_attention = :needsAttention)
         ORDER BY updated_at DESC
     """)
     fun findFilteredContacts(
         campaignId: Long?,
         status: String?,
+        operatorStatus: String?,
         needsAttention: Boolean?
     ): List<ExpertContact>
 }
