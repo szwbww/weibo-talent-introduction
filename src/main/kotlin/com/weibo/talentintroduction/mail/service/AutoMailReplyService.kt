@@ -46,115 +46,58 @@ class AutoMailReplyService(
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
-    fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
-        val account = mailSenderAccountService.getEnabledAccount(accountCode)
-        val receivedMails = mailReceiveService.fetchUnread(account, maxMessages)
-        var recorded = 0
-        var replied = 0
-        var manualReview = 0
-        var meetingInvitations = 0
+    @org.springframework.transaction.annotation.Transactional
+    fun processSingle(
+        account: MailSenderAccount,
+        received: ReceivedMail,
+        skipImapAck: Boolean = false
+    ): SinglePipelineResult {
+        val accountCode = account.accountCode
+        if (inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid(accountCode, received.imapUid) != null) {
+            if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
+            return SinglePipelineResult.duplicate(received.imapUid)
+        }
 
-        receivedMails.forEach { received ->
-            if (inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid(accountCode, received.imapUid) != null) {
-                mailReceiveService.markSeen(account, received.imapUid)
-                return@forEach
-            }
-
-            val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
-            if (contact == null) {
-                val cleanedBody = mailBodyCleaner.clean(received.body)
-                confirmManualReviewWithBody(
-                    account = account,
-                    received = received,
-                    expertContactId = null,
-                    reason = "CONTACT_NOT_FOUND",
-                    reasonType = "UNMATCHED_CONTACT",
-                    cleanedBody = cleanedBody
-                )
-                manualReview += 1
-                return@forEach
-            }
-            val contactId = contact.id ?: error("Expert contact id is required")
-            if (!hasIntroductionInquiry(contactId)) {
-                confirmManualReview(account, received, contactId, "INTRODUCTION_NOT_SENT", "UNCLEAR_INTENT")
-                manualReview += 1
-                return@forEach
-            }
-
-            if (!contact.autoReplyEnabled ||
-                contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name
-            ) {
-                val reason = when {
-                    !contact.autoReplyEnabled -> "AUTO_REPLY_DISABLED"
-                    else -> "MANUAL_HANDOFF_STATUS"
-                }
-                val cleanedBody = mailBodyCleaner.clean(received.body)
-                val inboundRecord = saveMailRecord(account, contactId, received, cleanedBody)
-                val inboundMailRecordId = inboundRecord.id ?: error("Inbound mail record id is required")
-                mailAttachmentService.saveInboundAttachments(
-                    expertContactId = contactId,
-                    mailRecordId = inboundMailRecordId,
-                    attachments = received.attachments
-                )
-                val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
-                val intent = effectiveIntent(classifiedIntent, received.attachments)
-                inboundIntentRepository.save(
-                    InboundIntent(
-                        mailRecordId = inboundMailRecordId,
-                        expertContactId = contactId,
-                        intentCode = intent.intentCode.name,
-                        confidence = intent.confidence,
-                        matchedKeywords = intent.matchedKeywords.joinToString(",").ifBlank { null },
-                        autoAction = intent.autoAction.name,
-                        createdAt = LocalDateTime.now()
-                    )
-                )
-                recorded += 1
-                if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
-                    if (!contact.needsManualAttention) {
-                        expertContactRepository.save(contact.copy(needsManualAttention = true))
-                    }
-                    createManualHandoffIfAbsent(contactId, reason, "Auto-reply skipped: contact already in MANUAL_HANDOFF")
-                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
-                } else {
-                    markManualReview(
-                        contact = contact,
-                        received = received,
-                        status = ConversationStatus.MANUAL_HANDOFF,
-                        reason = reason,
-                        note = "Auto-reply skipped: $reason. Status: ${contact.currentStatus}"
-                    )
-                    confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
-                }
-                manualReview += 1
-                return@forEach
-            }
-
+        val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
+        if (contact == null) {
             val cleanedBody = mailBodyCleaner.clean(received.body)
-            val inboundMailRecord = mailRecordRepository.save(
-                MailRecord(
-                    expertContactId = contactId,
-                    direction = "INBOUND",
-                    mailType = "REPLY",
-                    senderAccountCode = account.accountCode,
-                    triggeredBy = null,
-                    sourceInboundId = null,
-                    messageId = received.messageId,
-                    inReplyTo = received.inReplyTo,
-                    subject = received.subject,
-                    body = received.body,
-                    cleanedBody = cleanedBody,
-                    matchedQaRuleId = null,
-                    sendStatus = null,
-                    receivedAt = received.receivedAt,
-                    sentAt = null,
-                    createdAt = LocalDateTime.now()
-                )
+            confirmManualReviewWithBody(
+                account = account,
+                received = received,
+                expertContactId = null,
+                reason = "CONTACT_NOT_FOUND",
+                reasonType = "UNMATCHED_CONTACT",
+                cleanedBody = cleanedBody,
+                skipImapAck = skipImapAck
             )
-            recorded += 1
-            val inboundMailRecordId = inboundMailRecord.id ?: error("Inbound mail record id is required")
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.UNMATCHED_CONTACT,
+                recorded = false,
+                reason = "CONTACT_NOT_FOUND"
+            )
+        }
+        val contactId = contact.id ?: error("Expert contact id is required")
+        if (!hasIntroductionInquiry(contactId)) {
+            confirmManualReview(account, received, contactId, "INTRODUCTION_NOT_SENT", "UNCLEAR_INTENT", skipImapAck)
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.INTRODUCTION_NOT_SENT,
+                recorded = false,
+                expertContactId = contactId,
+                reason = "INTRODUCTION_NOT_SENT"
+            )
+        }
 
-            val savedDocuments = mailAttachmentService.saveInboundAttachments(
+        if (!contact.autoReplyEnabled ||
+            contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name
+        ) {
+            val reason = when {
+                !contact.autoReplyEnabled -> "AUTO_REPLY_DISABLED"
+                else -> "MANUAL_HANDOFF_STATUS"
+            }
+            val cleanedBody = mailBodyCleaner.clean(received.body)
+            val inboundRecord = saveMailRecord(account, contactId, received, cleanedBody)
+            val inboundMailRecordId = inboundRecord.id ?: error("Inbound mail record id is required")
+            mailAttachmentService.saveInboundAttachments(
                 expertContactId = contactId,
                 mailRecordId = inboundMailRecordId,
                 attachments = received.attachments
@@ -172,177 +115,328 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
-
-            if (intent.intentCode == InboundIntentCode.MEETING_TIME_PROVIDED || intent.intentCode == InboundIntentCode.MEETING_REQUESTED) {
-                meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
-            }
-
-            when (intent.autoAction) {
-                AutoIntentAction.MANUAL_REVIEW -> {
-                    val reason = manualReviewReason(intent.intentCode)
-                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
-                    markManualReview(
-                        contact = promoted ?: contact,
-                        received = received,
-                        status = manualReviewStatus(intent.intentCode),
-                        reason = reason,
-                        note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
-                    )
-                    confirmManualReviewWithBody(
-                        account = account,
-                        received = received,
-                        expertContactId = contactId,
-                        reason = reason,
-                        reasonType = "UNCLEAR_INTENT",
-                        cleanedBody = cleanedBody
-                    )
-                    manualReview += 1
-                    return@forEach
+            if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
+                if (!contact.needsManualAttention) {
+                    expertContactRepository.save(contact.copy(needsManualAttention = true))
                 }
-
-                AutoIntentAction.CLOSE -> {
-                    markManualReview(
-                        contact = contact,
-                        received = received,
-                        status = ConversationStatus.MANUAL_HANDOFF,
-                        reason = "INTENT_${intent.intentCode.name}",
-                        note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
-                    )
-                    val reasonType = if (intent.intentCode == InboundIntentCode.NOT_INTERESTED)
-                        "NOT_INTERESTED" else "UNCLEAR_INTENT"
-                    confirmManualReviewWithBody(
-                        account = account,
-                        received = received,
-                        expertContactId = contactId,
-                        reason = "INTENT_${intent.intentCode.name}",
-                        reasonType = reasonType,
-                        cleanedBody = cleanedBody
-                    )
-                    manualReview += 1
-                    return@forEach
-                }
-
-                AutoIntentAction.SEND_MEETING_INVITATION -> {
-                    if (hasMeetingInvitation(contactId)) {
-                        val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
-                        markManualReview(
-                            contact = promoted ?: contact,
-                            received = received,
-                            status = ConversationStatus.MEETING_SCHEDULING,
-                            reason = "CONFIRM_MEETING",
-                            note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
-                        )
-                        confirmManualReviewWithBody(
-                            account = account,
-                            received = received,
-                            expertContactId = contactId,
-                            reason = "MEETING_INVITATION_ALREADY_SENT",
-                            reasonType = "UNCLEAR_INTENT",
-                            cleanedBody = cleanedBody
-                        )
-                        manualReview += 1
-                        return@forEach
-                    }
-
-                    sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
-                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
-                    val meetingContact = conversationStateService.transition(
-                        contact = promoted ?: contact,
-                        toStatus = ConversationStatus.MEETING_SCHEDULING,
-                        reason = "MEETING_INVITATION_SENT",
-                        source = "AUTO_REPLY"
-                    ) {
-                        it.copy(
-                            lastReplyAt = received.receivedAt,
-                            lastMailAt = LocalDateTime.now()
-                        )
-                    }
-                    if (meetingContact.applicationIndexed) {
-                        expertIndexWriterService.syncApplicationStatus(meetingContact, "MEETING_INVITATION_SENT")
-                    }
-                    confirmProcessed(
-                        account,
-                        received,
-                        contactId,
-                        "PROCESSED",
-                        "AUTO_MEETING_INVITED",
-                        "AUTO_MEETING_INVITED"
-                    )
-                    meetingInvitations += 1
-                    return@forEach
-                }
-
-                AutoIntentAction.QA -> Unit
-            }
-
-            val match = qaMatchService.match(cleanedBody)
-            if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
+                createManualHandoffIfAbsent(contactId, reason, "Auto-reply skipped: contact already in MANUAL_HANDOFF")
+                confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT", skipImapAck)
+            } else {
                 markManualReview(
                     contact = contact,
                     received = received,
                     status = ConversationStatus.MANUAL_HANDOFF,
-                    reason = "QA_NO_MATCH",
-                    note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
+                    reason = reason,
+                    note = "Auto-reply skipped: $reason. Status: ${contact.currentStatus}"
+                )
+                confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT", skipImapAck)
+            }
+            return SinglePipelineResult(
+                outcome = if (!contact.autoReplyEnabled) SinglePipelineOutcome.AUTO_REPLY_DISABLED
+                          else SinglePipelineOutcome.MANUAL_HANDOFF_STATUS,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                previousStatus = contact.currentStatus,
+                reason = reason
+            )
+        }
+
+        val cleanedBody = mailBodyCleaner.clean(received.body)
+        val inboundMailRecord = mailRecordRepository.save(
+            MailRecord(
+                expertContactId = contactId,
+                direction = "INBOUND",
+                mailType = "REPLY",
+                senderAccountCode = account.accountCode,
+                triggeredBy = null,
+                sourceInboundId = null,
+                messageId = received.messageId,
+                inReplyTo = received.inReplyTo,
+                subject = received.subject,
+                body = received.body,
+                cleanedBody = cleanedBody,
+                matchedQaRuleId = null,
+                sendStatus = null,
+                receivedAt = received.receivedAt,
+                sentAt = null,
+                createdAt = LocalDateTime.now()
+            )
+        )
+        val inboundMailRecordId = inboundMailRecord.id ?: error("Inbound mail record id is required")
+
+        val savedDocuments = mailAttachmentService.saveInboundAttachments(
+            expertContactId = contactId,
+            mailRecordId = inboundMailRecordId,
+            attachments = received.attachments
+        )
+        val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
+        val intent = effectiveIntent(classifiedIntent, received.attachments)
+        inboundIntentRepository.save(
+            InboundIntent(
+                mailRecordId = inboundMailRecordId,
+                expertContactId = contactId,
+                intentCode = intent.intentCode.name,
+                confidence = intent.confidence,
+                matchedKeywords = intent.matchedKeywords.joinToString(",").ifBlank { null },
+                autoAction = intent.autoAction.name,
+                createdAt = LocalDateTime.now()
+            )
+        )
+
+        if (intent.intentCode == InboundIntentCode.MEETING_TIME_PROVIDED || intent.intentCode == InboundIntentCode.MEETING_REQUESTED) {
+            meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
+        }
+
+        when (intent.autoAction) {
+            AutoIntentAction.MANUAL_REVIEW -> {
+                val reason = manualReviewReason(intent.intentCode)
+                val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
+                markManualReview(
+                    contact = promoted ?: contact,
+                    received = received,
+                    status = manualReviewStatus(intent.intentCode),
+                    reason = reason,
+                    note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
                 )
                 confirmManualReviewWithBody(
                     account = account,
                     received = received,
                     expertContactId = contactId,
-                    reason = "QA_NO_MATCH",
-                    reasonType = "QA_NO_MATCH",
-                    cleanedBody = cleanedBody
+                    reason = reason,
+                    reasonType = "UNCLEAR_INTENT",
+                    cleanedBody = cleanedBody,
+                    skipImapAck = skipImapAck
                 )
-                manualReview += 1; return@forEach
-            }
-
-            val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
-            val effectiveContact = promoted ?: contact
-            val reply = ComposedMail(
-                to = received.from,
-                subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
-                body = match.replyBody
-            )
-            val delivered = mailDeliveryService.send(account, reply)
-            val now = LocalDateTime.now()
-
-            mailRecordRepository.save(
-                MailRecord(
+                return SinglePipelineResult(
+                    outcome = SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,
+                    recorded = true,
                     expertContactId = contactId,
-                    direction = "OUTBOUND",
-                    mailType = "QA_REPLY",
-                    senderAccountCode = account.accountCode,
-                    triggeredBy = TriggeredBy.SYSTEM,
-                    sourceInboundId = inboundMailRecordId,
-                    messageId = delivered.messageId,
-                    inReplyTo = received.messageId,
-                    subject = reply.subject,
-                    body = reply.body,
-                    cleanedBody = null,
-                    matchedQaRuleId = match.ruleId,
-                    sendStatus = delivered.status,
-                    receivedAt = null,
-                    sentAt = now,
-                    createdAt = now
+                    inboundMailRecordId = inboundMailRecordId,
+                    intentCode = intent.intentCode,
+                    autoAction = intent.autoAction,
+                    matchedKeywords = intent.matchedKeywords,
+                    newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                    previousStatus = contact.currentStatus,
+                    reason = reason
                 )
-            )
+            }
 
-            val qaContact = conversationStateService.transition(
-                contact = effectiveContact,
-                toStatus = ConversationStatus.QA_AUTO_REPLIED,
-                reason = "QA_AUTO_REPLIED",
-                source = "AUTO_REPLY",
-                now = now
-            ) {
-                it.copy(
-                    lastReplyAt = received.receivedAt,
-                    lastMailAt = now
+            AutoIntentAction.CLOSE -> {
+                markManualReview(
+                    contact = contact,
+                    received = received,
+                    status = ConversationStatus.MANUAL_HANDOFF,
+                    reason = "INTENT_${intent.intentCode.name}",
+                    note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
+                )
+                val reasonType = if (intent.intentCode == InboundIntentCode.NOT_INTERESTED)
+                    "NOT_INTERESTED" else "UNCLEAR_INTENT"
+                confirmManualReviewWithBody(
+                    account = account,
+                    received = received,
+                    expertContactId = contactId,
+                    reason = "INTENT_${intent.intentCode.name}",
+                    reasonType = reasonType,
+                    cleanedBody = cleanedBody,
+                    skipImapAck = skipImapAck
+                )
+                return SinglePipelineResult(
+                    outcome = SinglePipelineOutcome.CLOSED_BY_INTENT,
+                    recorded = true,
+                    expertContactId = contactId,
+                    inboundMailRecordId = inboundMailRecordId,
+                    intentCode = intent.intentCode,
+                    autoAction = intent.autoAction,
+                    matchedKeywords = intent.matchedKeywords,
+                    newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                    previousStatus = contact.currentStatus,
+                    reason = "INTENT_${intent.intentCode.name}"
                 )
             }
-            if (qaContact.applicationIndexed) {
-                expertIndexWriterService.syncApplicationStatus(qaContact, "QA_AUTO_REPLIED")
+
+            AutoIntentAction.SEND_MEETING_INVITATION -> {
+                if (hasMeetingInvitation(contactId)) {
+                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
+                    markManualReview(
+                        contact = promoted ?: contact,
+                        received = received,
+                        status = ConversationStatus.MEETING_SCHEDULING,
+                        reason = "CONFIRM_MEETING",
+                        note = manualReviewNote(received, cleanedBody, intent, savedDocuments.size)
+                    )
+                    confirmManualReviewWithBody(
+                        account = account,
+                        received = received,
+                        expertContactId = contactId,
+                        reason = "MEETING_INVITATION_ALREADY_SENT",
+                        reasonType = "UNCLEAR_INTENT",
+                        cleanedBody = cleanedBody,
+                        skipImapAck = skipImapAck
+                    )
+                    return SinglePipelineResult(
+                        outcome = SinglePipelineOutcome.MEETING_ALREADY_SENT,
+                        recorded = true,
+                        expertContactId = contactId,
+                        inboundMailRecordId = inboundMailRecordId,
+                        intentCode = intent.intentCode,
+                        autoAction = intent.autoAction,
+                        matchedKeywords = intent.matchedKeywords,
+                        newStatus = ConversationStatus.MEETING_SCHEDULING.name,
+                        previousStatus = contact.currentStatus,
+                        reason = "MEETING_INVITATION_ALREADY_SENT"
+                    )
+                }
+
+                val meetingRecord = sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
+                val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
+                val meetingContact = conversationStateService.transition(
+                    contact = promoted ?: contact,
+                    toStatus = ConversationStatus.MEETING_SCHEDULING,
+                    reason = "MEETING_INVITATION_SENT",
+                    source = "AUTO_REPLY"
+                ) {
+                    it.copy(
+                        lastReplyAt = received.receivedAt,
+                        lastMailAt = LocalDateTime.now()
+                    )
+                }
+                if (meetingContact.applicationIndexed) {
+                    expertIndexWriterService.syncApplicationStatus(meetingContact, "MEETING_INVITATION_SENT")
+                }
+                confirmProcessed(account, received, contactId, "PROCESSED", "AUTO_MEETING_INVITED", "AUTO_MEETING_INVITED", skipImapAck)
+                return SinglePipelineResult(
+                    outcome = SinglePipelineOutcome.MEETING_INVITED,
+                    recorded = true,
+                    expertContactId = contactId,
+                    inboundMailRecordId = inboundMailRecordId,
+                    outboundMailRecordId = meetingRecord.id,
+                    intentCode = intent.intentCode,
+                    autoAction = intent.autoAction,
+                    matchedKeywords = intent.matchedKeywords,
+                    newStatus = ConversationStatus.MEETING_SCHEDULING.name,
+                    previousStatus = contact.currentStatus,
+                    replySendStatus = meetingRecord.sendStatus,
+                    reason = "MEETING_INVITATION_SENT"
+                )
             }
-            confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED", "AUTO_QA_REPLIED")
-            replied += 1
+
+            AutoIntentAction.QA -> Unit
+        }
+
+        val match = qaMatchService.match(cleanedBody)
+        if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
+            markManualReview(
+                contact = contact,
+                received = received,
+                status = ConversationStatus.MANUAL_HANDOFF,
+                reason = "QA_NO_MATCH",
+                note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
+            )
+            confirmManualReviewWithBody(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                reason = "QA_NO_MATCH",
+                reasonType = "QA_NO_MATCH",
+                cleanedBody = cleanedBody,
+                skipImapAck = skipImapAck
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.QA_NO_MATCH,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                previousStatus = contact.currentStatus,
+                reason = "QA_NO_MATCH"
+            )
+        }
+
+        val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
+        val effectiveContact = promoted ?: contact
+        val reply = ComposedMail(
+            to = received.from,
+            subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
+            body = match.replyBody
+        )
+        val delivered = mailDeliveryService.send(account, reply)
+        val now = LocalDateTime.now()
+
+        val outboundRecord = mailRecordRepository.save(
+            MailRecord(
+                expertContactId = contactId,
+                direction = "OUTBOUND",
+                mailType = "QA_REPLY",
+                senderAccountCode = account.accountCode,
+                triggeredBy = TriggeredBy.SYSTEM,
+                sourceInboundId = inboundMailRecordId,
+                messageId = delivered.messageId,
+                inReplyTo = received.messageId,
+                subject = reply.subject,
+                body = reply.body,
+                cleanedBody = null,
+                matchedQaRuleId = match.ruleId,
+                sendStatus = delivered.status,
+                receivedAt = null,
+                sentAt = now,
+                createdAt = now
+            )
+        )
+
+        val qaContact = conversationStateService.transition(
+            contact = effectiveContact,
+            toStatus = ConversationStatus.QA_AUTO_REPLIED,
+            reason = "QA_AUTO_REPLIED",
+            source = "AUTO_REPLY",
+            now = now
+        ) {
+            it.copy(
+                lastReplyAt = received.receivedAt,
+                lastMailAt = now
+            )
+        }
+        if (qaContact.applicationIndexed) {
+            expertIndexWriterService.syncApplicationStatus(qaContact, "QA_AUTO_REPLIED")
+        }
+        confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED", "AUTO_QA_REPLIED", skipImapAck)
+        return SinglePipelineResult(
+            outcome = SinglePipelineOutcome.QA_REPLIED,
+            recorded = true,
+            expertContactId = contactId,
+            inboundMailRecordId = inboundMailRecordId,
+            outboundMailRecordId = outboundRecord.id,
+            intentCode = intent.intentCode,
+            autoAction = intent.autoAction,
+            matchedKeywords = intent.matchedKeywords,
+            newStatus = ConversationStatus.QA_AUTO_REPLIED.name,
+            previousStatus = contact.currentStatus,
+            replySendStatus = delivered.status,
+            reason = "QA_AUTO_REPLIED"
+        )
+    }
+
+    fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
+        val account = mailSenderAccountService.getEnabledAccount(accountCode)
+        val receivedMails = mailReceiveService.fetchUnread(account, maxMessages)
+        var recorded = 0
+        var replied = 0
+        var manualReview = 0
+        var meetingInvitations = 0
+
+        receivedMails.forEach {
+            val r = processSingle(account, it, skipImapAck = false)
+            if (r.recorded) recorded++
+            if (r.outcome == SinglePipelineOutcome.QA_REPLIED) replied++
+            if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
+            if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
         }
 
         return AutoMailReplyBatchResult(
@@ -524,7 +618,7 @@ class AutoMailReplyService(
         contactId: Long,
         received: ReceivedMail,
         sourceInboundId: Long
-    ) {
+    ): MailRecord {
         val rendered = mailTemplateService.render(
             templateCode = "MEETING_INVITATION",
             variables = mailTemplateVariables(account)
@@ -536,7 +630,7 @@ class AutoMailReplyService(
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()
-        mailRecordRepository.save(
+        val saved = mailRecordRepository.save(
             MailRecord(
                 expertContactId = contactId,
                 direction = "OUTBOUND",
@@ -556,6 +650,7 @@ class AutoMailReplyService(
                 createdAt = now
             )
         )
+        return saved
     }
 
     private fun mailTemplateVariables(account: MailSenderAccount): Map<String, String> =
@@ -573,9 +668,10 @@ class AutoMailReplyService(
         received: ReceivedMail,
         expertContactId: Long?,
         reason: String,
-        reasonType: String? = "UNCLEAR_INTENT"
+        reasonType: String? = "UNCLEAR_INTENT",
+        skipImapAck: Boolean = false
     ) {
-        confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason, reasonType)
+        confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason, reasonType, skipImapAck)
     }
 
     private fun confirmManualReviewWithBody(
@@ -584,7 +680,8 @@ class AutoMailReplyService(
         expertContactId: Long?,
         reason: String,
         reasonType: String?,
-        cleanedBody: String
+        cleanedBody: String,
+        skipImapAck: Boolean = false
     ) {
         val now = LocalDateTime.now()
         inboundMailProcessingRepository.save(
@@ -606,7 +703,7 @@ class AutoMailReplyService(
                 updatedAt = now
             )
         )
-        mailReceiveService.markSeen(account, received.imapUid)
+        if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
     }
 
     private fun confirmProcessed(
@@ -615,7 +712,10 @@ class AutoMailReplyService(
         expertContactId: Long?,
         status: String,
         reason: String,
-        reasonType: String? = null
+        reasonType: String? = null,
+        skipImapAck: Boolean = false,
+        body: String? = null,
+        cleanedBody: String? = null
     ) {
         val now = LocalDateTime.now()
         inboundMailProcessingRepository.save(
@@ -626,7 +726,8 @@ class AutoMailReplyService(
                 inReplyTo = received.inReplyTo,
                 fromEmail = received.from,
                 subject = received.subject,
-                body = received.body,
+                body = body ?: received.body,
+                cleanedBody = cleanedBody,
                 receivedAt = received.receivedAt,
                 processStatus = status,
                 processReason = reason,
@@ -636,9 +737,62 @@ class AutoMailReplyService(
                 updatedAt = now
             )
         )
-        mailReceiveService.markSeen(account, received.imapUid)
+        if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
     }
 }
+
+enum class SinglePipelineOutcome {
+    DUPLICATE_IMAP_UID,
+    UNMATCHED_CONTACT,
+    INTRODUCTION_NOT_SENT,
+    AUTO_REPLY_DISABLED,
+    MANUAL_HANDOFF_STATUS,
+    QA_REPLIED,
+    QA_NO_MATCH,
+    MEETING_INVITED,
+    MEETING_ALREADY_SENT,
+    MANUAL_REVIEW_BY_INTENT,
+    CLOSED_BY_INTENT
+}
+
+data class SinglePipelineResult(
+    val outcome: SinglePipelineOutcome,
+    val recorded: Boolean = false,
+    val expertContactId: Long? = null,
+    val inboundMailRecordId: Long? = null,
+    val outboundMailRecordId: Long? = null,
+    val intentCode: InboundIntentCode? = null,
+    val autoAction: AutoIntentAction? = null,
+    val matchedKeywords: List<String> = emptyList(),
+    val newStatus: String? = null,
+    val previousStatus: String? = null,
+    val manualHandoffId: Long? = null,
+    val meetingScheduleId: Long? = null,
+    val reason: String? = null,
+    val replySendStatus: String? = null
+) {
+    companion object {
+        fun duplicate(imapUid: Long) = SinglePipelineResult(
+            outcome = SinglePipelineOutcome.DUPLICATE_IMAP_UID,
+            recorded = false, expertContactId = null, inboundMailRecordId = null,
+            outboundMailRecordId = null, intentCode = null, autoAction = null,
+            matchedKeywords = emptyList(), newStatus = null, previousStatus = null,
+            manualHandoffId = null, meetingScheduleId = null,
+            reason = "DUPLICATE_IMAP_UID:$imapUid", replySendStatus = null
+        )
+    }
+}
+
+val MANUAL_REVIEW_OUTCOMES = setOf(
+    SinglePipelineOutcome.UNMATCHED_CONTACT,
+    SinglePipelineOutcome.INTRODUCTION_NOT_SENT,
+    SinglePipelineOutcome.AUTO_REPLY_DISABLED,
+    SinglePipelineOutcome.MANUAL_HANDOFF_STATUS,
+    SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,
+    SinglePipelineOutcome.QA_NO_MATCH,
+    SinglePipelineOutcome.CLOSED_BY_INTENT,
+    SinglePipelineOutcome.MEETING_ALREADY_SENT
+)
 
 data class AutoMailReplyBatchResult(
     val fetched: Int,

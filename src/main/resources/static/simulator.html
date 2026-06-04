@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>自动回复模拟器</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .sim-grid { display: grid; grid-template-columns: 280px 1fr 380px; gap: 16px; }
+    .sim-col  { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+    .sim-state-node { stroke: #94a3b8; fill: #f8fafc; }
+    .sim-state-node.current { stroke: #2563eb; stroke-width: 3; fill: #dbeafe; }
+    .sim-state-node.expected { stroke-dasharray: 4 4; stroke: #f59e0b; }
+    .sim-timeline-item { border-left: 3px solid #cbd5e1; padding: 6px 10px; margin: 6px 0; }
+    .sim-timeline-item.inbound  { border-color: #10b981; }
+    .sim-timeline-item.outbound { border-color: #3b82f6; }
+    .sim-timeline-item.status   { border-color: #f59e0b; }
+    .sim-timeline-item.handoff  { border-color: #ef4444; }
+    .sim-timeline-item.meeting  { border-color: #8b5cf6; }
+    .assertion.pass { color: #16a34a; }
+    .assertion.fail { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <header><a href="/">&larr; 返回管理台</a><h1>自动回复模拟器</h1></header>
+  <main class="sim-grid">
+    <section class="sim-col" id="sim-contacts">
+      <h2>联系人</h2>
+      <button id="btn-seed">+ 新建测试联系人</button>
+      <ul id="contact-list"></ul>
+      <hr>
+      <button id="btn-reset" disabled>重置当前联系人</button>
+    </section>
+
+    <section class="sim-col" id="sim-center">
+      <h2>状态机</h2>
+      <div id="state-machine-svg"></div>
+
+      <h2>操作</h2>
+      <div id="preset-bar"></div>
+      <label>Subject <input id="sim-subject" type="text"></label>
+      <label>Body <textarea id="sim-body" rows="6"></textarea></label>
+      <label>附件 <input id="sim-attachments" type="file" multiple></label>
+      <fieldset>
+        <legend>断言（可选）</legend>
+        <label>期望意图 <select id="exp-intent"></select></label>
+        <label>期望动作 <select id="exp-action"></select></label>
+        <label>期望新状态 <select id="exp-status"></select></label>
+      </fieldset>
+      <label><input type="checkbox" id="opt-pause-before"> 发前关掉 auto-reply</label>
+      <label><input type="checkbox" id="opt-handoff-before"> 发前切到 MANUAL_HANDOFF</label>
+      <label>覆盖 From <input id="opt-from" type="text" placeholder="留空=用 contact email"></label>
+      <button id="btn-send-inbound">模拟收到此回复</button>
+
+      <h2>本次步骤结果</h2>
+      <pre id="last-result"></pre>
+    </section>
+
+    <section class="sim-col" id="sim-right">
+      <h2>时间线</h2>
+      <div id="timeline"></div>
+      <h2>统计</h2>
+      <div id="stats">0 / 0 / 0 (通过/失败/无断言)</div>
+    </section>
+  </main>
+  <script src="/simulator.js"></script>
+</body>
+</html>

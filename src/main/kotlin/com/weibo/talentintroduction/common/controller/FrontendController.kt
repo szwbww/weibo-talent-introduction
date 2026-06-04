@@ -8,4 +8,8 @@ class FrontendController {
     @GetMapping("/")
     fun index(): String =
         "forward:/index.html"
+
+    @GetMapping("/simulator")
+    fun simulator(): String =
+        "forward:/simulator.html"
 }

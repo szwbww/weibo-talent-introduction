@@ -1,0 +1,16 @@
+spring:
+  config:
+    activate:
+      on-profile: simulator
+
+talent-introduction:
+  simulator:
+    enabled: true
+    campaign-id: 9000
+    sender-account-code: SIMULATOR_NOOP
+    orcid-prefix: "SIM-"
+    email-prefix: "sim+"
+  mail-queue:
+    enabled: false
+  scheduling:
+    enabled: false

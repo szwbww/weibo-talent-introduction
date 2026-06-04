@@ -11,7 +11,8 @@ import org.springframework.web.client.RestTemplate
     CandidateFilterProperties::class,
     MailQueueProperties::class,
     MailSchedulingProperties::class,
-    MailAttachmentStorageProperties::class
+    MailAttachmentStorageProperties::class,
+    SimulatorProperties::class
 )
 class RestTemplateConfig {
     @Bean
