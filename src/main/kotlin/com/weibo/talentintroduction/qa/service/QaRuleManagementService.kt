@@ -74,6 +74,7 @@ class QaRuleManagementService(
                 priority = command.priority,
                 replySubject = command.replySubject,
                 replyBody = command.replyBody,
+                displayName = command.displayName?.trim()?.takeIf { it.isNotEmpty() },
                 autoReplyEnabled = command.autoReplyEnabled,
                 handoffRequired = command.handoffRequired,
                 enabled = command.enabled
@@ -118,6 +119,7 @@ data class QaRuleCreateCommand(
     val priority: Int = 100,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String? = null,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
     val enabled: Boolean = true
@@ -130,6 +132,7 @@ data class QaRuleCreateCommand(
             priority = priority,
             replySubject = replySubject,
             replyBody = replyBody,
+            displayName = displayName?.trim()?.takeIf { it.isNotEmpty() },
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
             enabled = enabled
@@ -143,6 +146,7 @@ data class QaRuleUpdateCommand(
     val priority: Int,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String? = null,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean

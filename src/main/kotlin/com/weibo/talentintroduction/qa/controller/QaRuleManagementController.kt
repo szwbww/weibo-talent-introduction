@@ -83,6 +83,7 @@ data class QaRuleCreateRequest(
     val priority: Int = 100,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String?,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
     val enabled: Boolean = true
@@ -95,6 +96,7 @@ data class QaRuleCreateRequest(
             priority = priority,
             replySubject = replySubject,
             replyBody = replyBody,
+            displayName = displayName,
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
             enabled = enabled
@@ -108,6 +110,7 @@ data class QaRuleUpdateRequest(
     val priority: Int,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String?,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean
@@ -120,6 +123,7 @@ data class QaRuleUpdateRequest(
             priority = priority,
             replySubject = replySubject,
             replyBody = replyBody,
+            displayName = displayName,
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
             enabled = enabled
@@ -144,6 +148,7 @@ data class QaRuleResponse(
     val priority: Int,
     val replySubject: String?,
     val replyBody: String,
+    val displayName: String?,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean
@@ -172,6 +177,7 @@ private fun QaRule.toResponse(category: QaCategory?): QaRuleResponse =
         priority = priority,
         replySubject = replySubject,
         replyBody = replyBody,
+        displayName = displayName,
         autoReplyEnabled = autoReplyEnabled,
         handoffRequired = handoffRequired,
         enabled = enabled

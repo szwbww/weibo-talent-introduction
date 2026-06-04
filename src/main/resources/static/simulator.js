@@ -1,6 +1,8 @@
 const contextPath = (() => {
-    const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
-    return firstSegment ? `/${firstSegment}` : "";
+  const scriptPath = new URL(document.currentScript.src).pathname;
+  return scriptPath.endsWith('/simulator.js')
+    ? scriptPath.slice(0, -'/simulator.js'.length)
+    : '';
 })();
 const API = `${contextPath}/api/simulator`;
 let currentContactId = null;

@@ -435,12 +435,41 @@ async function loadQa() {
             </div>
         </div>
     `).join("");
-    $("#qaRulesTable").innerHTML = rules.map((rule) => `
+
+    // Category filter + form select
+    const filter = $("#qaCategoryFilter");
+    const filterValue = filter.value;
+    filter.innerHTML = `<option value="">全部分类</option>` + categories.map((category) => `
+        <option value="${category.id}">${escapeHtml(category.categoryName)}</option>
+    `).join("");
+    filter.value = filterValue;
+    const formSelect = $("#qaRuleForm").categoryId;
+    const formSelectValue = formSelect.value;
+    formSelect.innerHTML = `<option value="">请选择分类</option>` + categories.map((category) => `
+        <option value="${category.id}">${escapeHtml(category.categoryName)}</option>
+    `).join("");
+    formSelect.value = formSelectValue;
+
+    renderQaRulesTable();
+}
+
+function renderQaRulesTable() {
+    const filterValue = $("#qaCategoryFilter")?.value || "";
+    const rows = state.qaRules.filter((rule) =>
+        !filterValue || String(rule.categoryId) === filterValue
+    );
+    $("#qaRulesTable").innerHTML = rows.map((rule) => {
+        const displayName = rule.displayName?.trim();
+        const nameCell = displayName
+            ? `<strong>${escapeHtml(displayName)}</strong>`
+            : `<span class="muted">（未设置中文名）</span>`;
+        return `
         <tr>
             <td>${rule.id}</td>
-            <td>${escapeHtml(rule.categoryCode || rule.categoryId)}</td>
-            <td>${escapeHtml(rule.keywords)}</td>
-            <td>${rule.matchMode}</td>
+            <td>${nameCell}</td>
+            <td>${escapeHtml(rule.categoryName || rule.categoryCode || rule.categoryId)}</td>
+            <td>${escapeHtml(rule.replySubject || "")}</td>
+            <td class="muted-cell">${escapeHtml(rule.keywords)}</td>
             <td>${rule.priority}</td>
             <td>${badge(rule.enabled ? "启用" : "禁用", rule.enabled ? "ok" : "error")}</td>
             <td class="actions">
@@ -450,7 +479,8 @@ async function loadQa() {
                 </button>
             </td>
         </tr>
-    `).join("");
+    `;
+    }).join("") || `<tr><td colspan="8" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>`;
 }
 
 async function saveCategory(event) {
@@ -469,11 +499,28 @@ async function saveCategory(event) {
     await loadQa();
 }
 
+function showQaRuleEditor() {
+    $("#qaRuleModal").hidden = false;
+    document.body.classList.add("modal-open");
+}
+
+function hideQaRuleEditor() {
+    const form = $("#qaRuleForm");
+    form.reset();
+    $("#qaRuleModal").hidden = true;
+    document.body.classList.remove("modal-open");
+    state.selectedRuleId = null;
+}
+
 function fillQaRuleForm(rule) {
     const form = $("#qaRuleForm");
+    showQaRuleEditor();
     state.selectedRuleId = rule?.id || null;
-    $("#qaRuleEditorTitle").textContent = rule ? `QA 规则：${rule.id}` : "QA 规则";
+    $("#qaRuleEditorTitle").textContent = rule
+        ? `编辑规则：${rule.displayName || `#${rule.id}`}`
+        : "新增 QA 规则";
     form.id.value = rule?.id || "";
+    form.displayName.value = rule?.displayName || "";
     form.categoryId.value = rule?.categoryId || "";
     form.keywords.value = rule?.keywords || "";
     form.matchMode.value = rule?.matchMode || "ANY";
@@ -496,6 +543,7 @@ async function saveQaRule(event) {
         priority: numberValue(values.priority, 100),
         replySubject: values.replySubject || null,
         replyBody: values.replyBody,
+        displayName: values.displayName?.trim() || null,
         autoReplyEnabled: form.autoReplyEnabled.checked,
         handoffRequired: form.handoffRequired.checked,
         enabled: form.enabled.checked
@@ -503,7 +551,7 @@ async function saveQaRule(event) {
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
     showStatus("QA 规则已保存");
-    fillQaRuleForm(null);
+    hideQaRuleEditor();
     await loadQa();
 }
 
@@ -1927,7 +1975,16 @@ function bindEvents() {
     $("#reloadQaBtn").addEventListener("click", loadQa);
     $("#categoryForm").addEventListener("submit", (event) => saveCategory(event).catch((error) => showStatus(error.message, "error")));
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
-    $("#clearQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
+    $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
+    $("#clearQaRuleBtn").addEventListener("click", hideQaRuleEditor);
+    $("#qaRuleModalCloseBtn").addEventListener("click", hideQaRuleEditor);
+    $("#qaRuleModalBackdrop").addEventListener("click", hideQaRuleEditor);
+    $("#qaCategoryFilter").addEventListener("change", renderQaRulesTable);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#qaRuleModal").hidden) {
+            hideQaRuleEditor();
+        }
+    });
     $("#qaRulesTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleQaAction(button).catch((error) => showStatus(error.message, "error"));

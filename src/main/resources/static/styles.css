@@ -1962,3 +1962,16 @@ textarea {
     gap: 8px;
     padding: 12px 0 0;
 }
+
+.muted {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.muted-cell {
+    color: var(--text-muted);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
