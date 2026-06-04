@@ -9,6 +9,25 @@ let currentContactId = null;
 let presets = [];
 let stats = { pass: 0, fail: 0, neutral: 0 };
 
+async function simulatorApi(path, options = {}) {
+  const resp = await fetch(`${API}${path}`, {
+    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    ...options
+  });
+  const text = await resp.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!resp.ok) {
+    throw new Error(data?.message || text || `${resp.status} ${resp.statusText}`);
+  }
+  return data;
+}
+
+function runAction(action) {
+  action().catch(error => {
+    renderLastResult({ error: error.message || String(error) });
+  });
+}
+
 const STATUS_NODES = [
   { id: 'NEW', x: 60, y: 40 },
   { id: 'INTRO_SENT', x: 180, y: 40 },
@@ -22,9 +41,7 @@ const STATUS_NODES = [
 
 async function init() {
   try {
-    const resp = await fetch(`${API}/presets`);
-    if (!resp.ok) { showUnavailable(); return; }
-    presets = await resp.json();
+    presets = await simulatorApi('/presets');
   } catch (e) {
     showUnavailable();
     return;
@@ -43,7 +60,7 @@ function showUnavailable() {
 }
 
 async function refreshContactList() {
-  const list = await (await fetch(`${API}/contacts`)).json();
+  const list = await simulatorApi('/contacts');
   document.querySelector('#contact-list').innerHTML = list
     .map(c => `<li data-id="${c.id}">${esc(c.expertName ?? c.expertEmail)} <small>${c.currentStatus}</small></li>`)
     .join('');
@@ -63,7 +80,7 @@ async function selectContact(id) {
 
 async function refreshSnapshot() {
   if (!currentContactId) return;
-  const snap = await (await fetch(`${API}/contacts/${currentContactId}/snapshot`)).json();
+  const snap = await simulatorApi(`/contacts/${currentContactId}/snapshot`);
   renderStateMachine(snap.contact.currentStatus);
   renderTimeline(snap);
 }
@@ -150,11 +167,10 @@ async function sendInbound() {
     expectedAutoAction: valueOrNull('#exp-action'),
     expectedNewStatus: valueOrNull('#exp-status')
   };
-  const res = await fetch(`${API}/contacts/${currentContactId}/inbound`, {
+  const res = await simulatorApi(`/contacts/${currentContactId}/inbound`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
-  }).then(r => r.json());
+  });
 
   renderLastResult(res);
   updateStats(res.assertion);
@@ -179,9 +195,8 @@ async function resetContact() {
   if (!currentContactId) return;
   if (!confirm(`重置联系人 #${currentContactId}？将删除所有相关数据。`)) return;
   const body = { initialStatus: 'INTRO_SENT', createIntroductionMailRecord: true };
-  await fetch(`${API}/contacts/${currentContactId}/reset`, {
+  await simulatorApi(`/contacts/${currentContactId}/reset`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
   });
   await refreshSnapshot();
@@ -194,7 +209,8 @@ function renderLastResult(res) {
 }
 
 function updateStats(a) {
-  if (a.passed) stats.pass++;
+  if (!a) stats.neutral++;
+  else if (a.passed) stats.pass++;
   else if (Object.values(a).some(v => v === false)) stats.fail++;
   else stats.neutral++;
   document.querySelector('#stats').textContent =
@@ -202,18 +218,19 @@ function updateStats(a) {
 }
 
 async function seedContact() {
-  await fetch(`${API}/contacts`, {
+  const contact = await simulatorApi('/contacts', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({})
   });
   await refreshContactList();
+  await selectContact(contact.id);
+  renderLastResult({ createdContact: contact });
 }
 
 function bindEvents() {
-  document.querySelector('#btn-seed').onclick = seedContact;
-  document.querySelector('#btn-reset').onclick = resetContact;
-  document.querySelector('#btn-send-inbound').onclick = sendInbound;
+  document.querySelector('#btn-seed').onclick = () => runAction(seedContact);
+  document.querySelector('#btn-reset').onclick = () => runAction(resetContact);
+  document.querySelector('#btn-send-inbound').onclick = () => runAction(sendInbound);
   document.querySelector('#preset-bar').addEventListener('click', e => {
     const btn = e.target.closest('.preset-btn');
     if (!btn) return;

@@ -182,7 +182,7 @@ class SimulatorService(
 
     fun listContacts(): List<ExpertContactResponse> =
         expertContactRepository
-            .findFilteredContacts(props.campaignId, status = null, needsAttention = null)
+            .findFilteredContacts(resolveCampaignId(), status = null, needsAttention = null)
             .map { it.toResponse() }
 
     fun snapshot(id: Long): SimulatorSnapshot {

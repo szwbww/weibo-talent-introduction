@@ -460,6 +460,16 @@ p {
     border-color: rgba(226, 232, 240, 0.9);
 }
 
+.simulator-frame {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 128px);
+    min-height: 720px;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+}
+
 .panel-head {
     display: flex;
     align-items: center;
