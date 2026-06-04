@@ -1,4 +1,8 @@
-const API = '/api/simulator';
+const contextPath = (() => {
+    const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
+    return firstSegment ? `/${firstSegment}` : "";
+})();
+const API = `${contextPath}/api/simulator`;
 let currentContactId = null;
 let presets = [];
 let stats = { pass: 0, fail: 0, neutral: 0 };
@@ -158,10 +162,10 @@ async function sendInbound() {
 
 async function applyPreSwitches(id) {
   if (document.querySelector('#opt-pause-before').checked) {
-    await fetch(`/api/expert-contacts/${id}/pause-auto-reply`, { method: 'POST' });
+    await fetch(`${contextPath}/api/expert-contacts/${id}/pause-auto-reply`, { method: 'POST' });
   }
   if (document.querySelector('#opt-handoff-before').checked) {
-    await fetch(`/api/expert-contacts/${id}/switch-to-manual`, {
+    await fetch(`${contextPath}/api/expert-contacts/${id}/switch-to-manual`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'SIMULATOR_TOGGLE', note: 'preset switch' })
