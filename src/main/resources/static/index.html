@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260604-simulator">
+    <link rel="stylesheet" href="styles.css?v=20260604-qa-list">
 </head>
 <body>
 <div class="app-shell">
@@ -47,10 +47,6 @@
             <button class="nav-tab" data-view="tasks">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <span>任务记录</span>
-            </button>
-            <button class="nav-tab" data-view="simulator">
-                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/></svg>
-                <span>模拟器</span>
             </button>
         </nav>
     </aside>
@@ -132,46 +128,30 @@
         <section class="view" id="view-qa">
             <div class="toolbar">
                 <button class="button primary" id="newQaRuleBtn">新增规则</button>
-                <select id="qaCategoryFilter">
-                    <option value="">全部分类</option>
-                </select>
                 <button class="button" id="reloadQaBtn">刷新</button>
             </div>
-            <div class="split-layout qa-layout">
-                <section class="panel">
-                    <div class="panel-head">
-                        <h2>QA 分类</h2>
-                    </div>
-                    <div id="categoryList" class="list"></div>
-                    <form id="categoryForm" class="inline-form">
-                        <input name="categoryCode" placeholder="分类编码" required>
-                        <input name="categoryName" placeholder="分类名称" required>
-                        <button class="button primary" type="submit">新增</button>
-                    </form>
-                </section>
-                <section class="panel">
-                    <div class="panel-head">
-                        <h2>规则列表</h2>
-                    </div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>中文名</th>
-                                <th>分类</th>
-                                <th>英文主题</th>
-                                <th>关键词</th>
-                                <th>优先级</th>
-                                <th>状态</th>
-                                <th>操作</th>
-                            </tr>
-                            </thead>
-                            <tbody id="qaRulesTable"></tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>规则列表</h2>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>中文名</th>
+                            <th>分类</th>
+                            <th>英文主题</th>
+                            <th>关键词</th>
+                            <th>优先级</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="qaRulesTable"></tbody>
+                    </table>
+                </div>
+            </section>
         </section>
 
         <section class="view" id="view-contacts">
@@ -297,9 +277,6 @@
             </section>
         </section>
 
-        <section class="view" id="view-simulator">
-            <iframe class="simulator-frame" src="simulator" title="自动回复模拟器"></iframe>
-        </section>
     </main>
 </div>
 <div class="modal-shell" id="accountModal" hidden>
@@ -381,6 +358,6 @@
         </div>
     </form>
 </dialog>
-<script src="app.js?v=20260604-simulator"></script>
+<script src="app.js?v=20260604-qa-list"></script>
 </body>
 </html>

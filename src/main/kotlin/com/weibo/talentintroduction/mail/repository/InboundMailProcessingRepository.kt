@@ -18,8 +18,6 @@ data class SenderAccountLastReceived(
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
     fun findBySenderAccountCodeAndImapUid(senderAccountCode: String, imapUid: Long): InboundMailProcessing?
 
-    fun findAllByExpertContactIdOrderByReceivedAtAsc(expertContactId: Long): List<InboundMailProcessing>
-
     fun findAllByProcessStatusOrderByReceivedAtDesc(processStatus: String): List<InboundMailProcessing>
 
     fun findAllByProcessStatusAndExpertContactIdIsNullOrderByReceivedAtDesc(processStatus: String): List<InboundMailProcessing>
