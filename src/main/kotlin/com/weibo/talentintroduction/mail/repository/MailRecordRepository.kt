@@ -168,13 +168,13 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
-        SELECT sender_account_code AS senderAccountCode,
-               SUM(CASE WHEN mail_type = 'INTRODUCTION' THEN 1 ELSE 0 END) AS introductionCount,
+        SELECT sender_account_code,
+               SUM(CASE WHEN mail_type = 'INTRODUCTION' THEN 1 ELSE 0 END) AS introduction_count,
                SUM(CASE WHEN triggered_by = 'SYSTEM'
                          AND mail_type IN ('QA_REPLY','MEETING_INVITATION','MEETING_CONFIRMATION')
-                        THEN 1 ELSE 0 END) AS autoReplyCount,
-               SUM(CASE WHEN send_status IS NOT NULL AND send_status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failedCount,
-               MAX(sent_at) AS lastSentAt
+                        THEN 1 ELSE 0 END) AS auto_reply_count,
+               SUM(CASE WHEN send_status IS NOT NULL AND send_status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failed_count,
+               MAX(sent_at) AS last_sent_at
           FROM mail_record
          WHERE direction = 'OUTBOUND'
            AND sender_account_code IS NOT NULL
