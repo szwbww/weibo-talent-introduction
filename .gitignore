@@ -8,3 +8,4 @@ docs/reviews/
 cache/
 docs/.DS_Store
 config/application-local.yml
+.od-skills/
