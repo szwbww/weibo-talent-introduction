@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
@@ -22,7 +24,6 @@ import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
-import java.time.ZoneId
 
 @Service
 class AutoMailReplyService(
@@ -42,7 +43,9 @@ class AutoMailReplyService(
     private val conversationStateService: ConversationStateService,
     private val meetingScheduleService: MeetingScheduleService,
     private val expertEmailAliasService: ExpertEmailAliasService,
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val automaticApplicationPromotionService: AutomaticApplicationPromotionService,
+    private val expertOperatorStatusService: ExpertOperatorStatusService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -102,6 +105,12 @@ class AutoMailReplyService(
                 mailRecordId = inboundMailRecordId,
                 attachments = received.attachments
             )
+            val disabledContact = applyPromotionAndStatus(
+                contact = contact,
+                receivedAt = received.receivedAt,
+                inboundMailRecordId = inboundMailRecordId,
+                attachmentCount = received.attachments.size
+            )
             val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
             val intent = effectiveIntent(classifiedIntent, received.attachments)
             inboundIntentRepository.save(
@@ -115,19 +124,19 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
-            if (contact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
-                if (!contact.needsManualAttention) {
-                    expertContactRepository.save(contact.copy(needsManualAttention = true))
+            if (disabledContact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
+                if (!disabledContact.needsManualAttention) {
+                    expertContactRepository.save(disabledContact.copy(needsManualAttention = true))
                 }
                 createManualHandoffIfAbsent(contactId, reason, "Auto-reply skipped: contact already in MANUAL_HANDOFF")
                 confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT", skipImapAck)
             } else {
                 markManualReview(
-                    contact = contact,
+                    contact = disabledContact,
                     received = received,
                     status = ConversationStatus.MANUAL_HANDOFF,
                     reason = reason,
-                    note = "Auto-reply skipped: $reason. Status: ${contact.currentStatus}"
+                    note = "Auto-reply skipped: $reason. Status: ${disabledContact.currentStatus}"
                 )
                 confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT", skipImapAck)
             }
@@ -141,7 +150,7 @@ class AutoMailReplyService(
                 autoAction = intent.autoAction,
                 matchedKeywords = intent.matchedKeywords,
                 newStatus = ConversationStatus.MANUAL_HANDOFF.name,
-                previousStatus = contact.currentStatus,
+                previousStatus = disabledContact.currentStatus,
                 reason = reason
             )
         }
@@ -174,6 +183,12 @@ class AutoMailReplyService(
             mailRecordId = inboundMailRecordId,
             attachments = received.attachments
         )
+        val effectiveContact = applyPromotionAndStatus(
+            contact = contact,
+            receivedAt = received.receivedAt,
+            inboundMailRecordId = inboundMailRecordId,
+            attachmentCount = savedDocuments.size
+        )
         val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
         val intent = effectiveIntent(classifiedIntent, received.attachments)
         inboundIntentRepository.save(
@@ -195,9 +210,8 @@ class AutoMailReplyService(
         when (intent.autoAction) {
             AutoIntentAction.MANUAL_REVIEW -> {
                 val reason = manualReviewReason(intent.intentCode)
-                val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                 markManualReview(
-                    contact = promoted ?: contact,
+                    contact = effectiveContact,
                     received = received,
                     status = manualReviewStatus(intent.intentCode),
                     reason = reason,
@@ -228,7 +242,7 @@ class AutoMailReplyService(
 
             AutoIntentAction.CLOSE -> {
                 markManualReview(
-                    contact = contact,
+                    contact = effectiveContact,
                     received = received,
                     status = ConversationStatus.MANUAL_HANDOFF,
                     reason = "INTENT_${intent.intentCode.name}",
@@ -261,9 +275,8 @@ class AutoMailReplyService(
 
             AutoIntentAction.SEND_MEETING_INVITATION -> {
                 if (hasMeetingInvitation(contactId)) {
-                    val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                     markManualReview(
-                        contact = promoted ?: contact,
+                        contact = effectiveContact,
                         received = received,
                         status = ConversationStatus.MEETING_SCHEDULING,
                         reason = "CONFIRM_MEETING",
@@ -293,9 +306,8 @@ class AutoMailReplyService(
                 }
 
                 val meetingRecord = sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
-                val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
                 val meetingContact = conversationStateService.transition(
-                    contact = promoted ?: contact,
+                    contact = effectiveContact,
                     toStatus = ConversationStatus.MEETING_SCHEDULING,
                     reason = "MEETING_INVITATION_SENT",
                     source = "AUTO_REPLY"
@@ -308,6 +320,7 @@ class AutoMailReplyService(
                 if (meetingContact.applicationIndexed) {
                     expertIndexWriterService.syncApplicationStatus(meetingContact, "MEETING_INVITATION_SENT")
                 }
+                expertOperatorStatusService.updateAutomatically(meetingContact, OperatorStatus.INVITED, "MEETING_INVITATION_SENT")
                 confirmProcessed(account, received, contactId, "PROCESSED", "AUTO_MEETING_INVITED", "AUTO_MEETING_INVITED", skipImapAck)
                 return SinglePipelineResult(
                     outcome = SinglePipelineOutcome.MEETING_INVITED,
@@ -331,7 +344,7 @@ class AutoMailReplyService(
         val match = qaMatchService.match(cleanedBody)
         if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
             markManualReview(
-                contact = contact,
+                contact = effectiveContact,
                 received = received,
                 status = ConversationStatus.MANUAL_HANDOFF,
                 reason = "QA_NO_MATCH",
@@ -360,8 +373,6 @@ class AutoMailReplyService(
             )
         }
 
-        val promoted = promoteIfFirstReply(contact, received, inboundMailRecordId)
-        val effectiveContact = promoted ?: contact
         val reply = ComposedMail(
             to = received.from,
             subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
@@ -474,30 +485,20 @@ class AutoMailReplyService(
         )
     )
 
-    private fun promoteIfFirstReply(contact: ExpertContact, received: ReceivedMail, sourceInboundId: Long): ExpertContact? {
-        if (contact.applicationIndexed) return null
-        if (contact.orcidId.isBlank()) return null
-        val now = received.receivedAt
-        val firstReplyAt = contact.firstReplyAt ?: now
-        val firstReplyInstant = firstReplyAt.toInstant(ZoneId.systemDefault().rules.getOffset(firstReplyAt))
-        val saved = expertContactRepository.save(
-            contact.copy(firstReplyAt = firstReplyAt)
+    private fun applyPromotionAndStatus(
+        contact: ExpertContact,
+        receivedAt: LocalDateTime,
+        inboundMailRecordId: Long,
+        attachmentCount: Int
+    ): ExpertContact {
+        var promoted = contact
+        promoted = automaticApplicationPromotionService.promoteByMaterialIfNeeded(
+            promoted, receivedAt, inboundMailRecordId, attachmentCount
         )
-        try {
-            val ok = expertIndexWriterService.promoteToApplication(
-                orcid = contact.orcidId,
-                contact = saved,
-                firstReplyAt = firstReplyInstant,
-                sourceInboundId = sourceInboundId,
-                triggeredBy = TriggeredBy.SYSTEM
-            )
-            if (ok) {
-                return expertContactRepository.save(saved.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
-            }
-        } catch (e: Exception) {
-            log.warn("ES promotion failed for contact {} (orcid={}), will retry on reindex", contact.id, contact.orcidId, e)
-        }
-        return saved
+        promoted = automaticApplicationPromotionService.promoteByReplyCountIfNeeded(
+            promoted, receivedAt, inboundMailRecordId
+        )
+        return expertOperatorStatusService.updateAutomatically(promoted, OperatorStatus.REPLIED, "REPLY_RECEIVED")
     }
 
     private fun hasIntroductionInquiry(contactId: Long): Boolean =

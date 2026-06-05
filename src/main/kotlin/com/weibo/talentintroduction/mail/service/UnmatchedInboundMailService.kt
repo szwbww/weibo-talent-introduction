@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.audit.domain.OperatorActionType
+import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
@@ -19,7 +21,8 @@ class UnmatchedInboundMailService(
     private val expertContactRepository: ExpertContactRepository,
     private val expertEmailAliasService: ExpertEmailAliasService,
     private val mailRecordRepository: MailRecordRepository,
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val operatorActionLogService: OperatorActionLogService
 ) {
     fun listManualReviewQueue(
         reasonType: String? = null,
@@ -161,7 +164,7 @@ class UnmatchedInboundMailService(
         expertContactRepository.save(currentContact)
 
         val now = LocalDateTime.now()
-        return inboundMailProcessingRepository.save(
+        val saved = inboundMailProcessingRepository.save(
             record.copy(
                 expertContactId = contactId,
                 processStatus = "PROCESSED",
@@ -171,6 +174,28 @@ class UnmatchedInboundMailService(
                 updatedAt = now
             )
         )
+
+        operatorActionLogService.record(
+            targetType = "INBOUND_MAIL_PROCESSING",
+            targetId = recordId,
+            actionType = OperatorActionType.BIND_INBOUND_MAIL,
+            expertContactId = contactId,
+            inboundProcessingId = recordId,
+            before = mapOf(
+                "expertContactId" to null,
+                "processStatus" to record.processStatus,
+                "processReason" to record.processReason
+            ),
+            after = mapOf(
+                "expertContactId" to contactId,
+                "processStatus" to saved.processStatus,
+                "processReason" to saved.processReason
+            ),
+            operatorName = resolvedBy,
+            note = "Bound unmatched inbound mail to expert contact $contactId"
+        )
+
+        return saved
     }
 
     @Transactional

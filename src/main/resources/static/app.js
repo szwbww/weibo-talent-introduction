@@ -126,6 +126,30 @@ const documentStatusLabels = {
     REJECTED: "已驳回"
 };
 
+const operatorStatusLabels = {
+    NOT_CONTACTED: "未联系",
+    CONTACTED: "已联系",
+    REPLIED: "已回复",
+    MATERIALS_RECEIVED: "已回复材料",
+    INVITED: "已邀约",
+    COMPLETED: "已完成"
+};
+
+const operatorStatusOptions = [
+    ["NOT_CONTACTED", "未联系"],
+    ["CONTACTED", "已联系"],
+    ["REPLIED", "已回复"],
+    ["MATERIALS_RECEIVED", "已回复材料"],
+    ["INVITED", "已邀约"],
+    ["COMPLETED", "已完成"]
+];
+
+const indexLevelOptions = [
+    ["RAW", "原始"],
+    ["CANDIDATE", "筛选"],
+    ["APPLICATION", "有效"]
+];
+
 function labelStatus(value) {
     return statusLabels[value] || value || "";
 }
@@ -235,6 +259,16 @@ function optionsFromLabels(labels, includeBlank = false, blankLabel = "全部") 
     if (includeBlank) opts.push(`<option value="">${escapeHtml(blankLabel)}</option>`);
     for (const [value, label] of Object.entries(labels)) {
         opts.push(`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`);
+    }
+    return opts.join("");
+}
+
+function optionsFromArray(arr, includeBlank = false, blankLabel = "全部", selectedValue = "") {
+    const opts = [];
+    if (includeBlank) opts.push(`<option value="">${escapeHtml(blankLabel)}</option>`);
+    for (const [value, label] of arr) {
+        const sel = selectedValue === value ? " selected" : "";
+        opts.push(`<option value="${escapeHtml(value)}"${sel}>${escapeHtml(label)}</option>`);
     }
     return opts.join("");
 }
@@ -536,13 +570,13 @@ async function handleQaAction(button) {
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = $("#expertIndexSize").value || "50";
-    const status = $("#contactStatusFilter")?.value || "";
+    const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
 
     let contacts = [];
-    if (status || needsAttention) {
+    if (operatorStatus || needsAttention) {
         const params = new URLSearchParams();
-        if (status) params.set("status", status);
+        if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
         const rawContacts = await api(`/api/expert-contacts?${params}`);
         contacts = rawContacts.map(c => ({
@@ -553,6 +587,7 @@ async function loadContacts() {
             indexLevelName: indexLevelLabels[c.currentIndexLevel] || c.currentIndexLevel,
             contactId: c.id,
             contactStatus: c.currentStatus,
+            operatorStatus: c.operatorStatus,
             needsManualAttention: c.needsManualAttention,
             country: "",
             employment: "",
@@ -571,6 +606,7 @@ async function loadContacts() {
             indexLevelName: e.indexLevelName,
             contactId: e.contactId,
             contactStatus: e.contactStatus,
+            operatorStatus: e.operatorStatus,
             needsManualAttention: e.needsManualAttention,
             country: e.country,
             employment: e.employment,
@@ -580,8 +616,12 @@ async function loadContacts() {
     state.contacts = contacts;
 
     $("#contactList").innerHTML = state.contacts.map((contact) => {
-        const status = contact.contactId ? labelStatus(contact.contactStatus) : "未联系";
-        const statusType = contact.contactStatus === "MANUAL_HANDOFF"
+        const status = contact.operatorStatus
+            ? operatorStatusLabels[contact.operatorStatus] || contact.operatorStatus
+            : contact.contactId
+                ? labelStatus(contact.contactStatus)
+                : "未联系";
+        const statusType = contact.operatorStatus === "MANUAL_HANDOFF" || contact.contactStatus === "MANUAL_HANDOFF"
             ? "warn"
             : contact.contactId
                 ? "ok"
@@ -918,9 +958,11 @@ function renderIndexLevelButtons(contact) {
 }
 
 async function loadContactDetail(contactId) {
-    const [detail, options] = await Promise.all([
+    const [detail, options, documents, logs] = await Promise.all([
         api(`/api/expert-contacts/${contactId}`),
-        loadMailSendOptions()
+        loadMailSendOptions(),
+        api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
+        api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] }))
     ]);
     const contact = detail.contact;
     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
@@ -929,12 +971,17 @@ async function loadContactDetail(contactId) {
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
         <div class="contact-head-status-actions">
+            <select id="operatorStatusSelect" data-contact-id="${contact.id}" aria-label="专家状态">
+                ${optionsFromArray(operatorStatusOptions, false, "请选择", contact.operatorStatus || "")}
+            </select>
+            <select id="indexLevelSelect" data-contact-id="${contact.id}" aria-label="专家层级">
+                ${optionsFromArray(indexLevelOptions, false, "请选择", contact.currentIndexLevel || "")}
+            </select>
             <button class="button" data-action="toggle-reply-mode"
                     data-id="${contact.id}"
                     data-enabled="${contact.autoReplyEnabled}">
                 <span>${contact.autoReplyEnabled ? "切换为人工回复" : "切换为自动回复"}</span>
             </button>
-            ${renderIndexLevelButtons(contact)}
         </div>
         <div class="contact-head-mail-actions">
             <select id="manualMailOption" aria-label="选择要发送的邮件">
@@ -1097,6 +1144,14 @@ async function loadContactDetail(contactId) {
                         `).join("") : "<span>暂无阶段流转记录。"}
                     </div>
                 </div>
+
+                <div class="metadata-card span-all" id="expertDocumentsSection">
+                    ${renderExpertDocuments(documents)}
+                </div>
+
+                <div class="metadata-card span-all" id="expertOperatorLogsSection">
+                    ${renderOperatorLogs(logs)}
+                </div>
             </div>
 
         </div>
@@ -1158,6 +1213,80 @@ async function loadEmailAliases(contactId, contact) {
             <div class="metadata-card-header"><span>邮箱别名</span></div>
             <p style="color: var(--text-muted); font-size: 12px;">加载失败。</p>`;
     }
+}
+
+function renderExpertDocuments(documents) {
+    const list = Array.isArray(documents) ? documents : (documents?.records || []);
+    if (list.length === 0) {
+        return `
+            <div class="metadata-card-header">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>专家上传资料</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 12px;">暂无资料文件。</p>
+        `;
+    }
+    return `
+        <div class="metadata-card-header">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>专家上传资料</span>
+        </div>
+        <div class="document-list">
+            ${list.map(doc => `
+                <div class="document-row">
+                    <div>
+                        <strong>${escapeHtml(doc.fileName || "?")}</strong>
+                        <span>${escapeHtml(labelDocumentType(doc.documentType))}&nbsp;·&nbsp;${escapeHtml(labelDocumentStatus(doc.documentStatus))}&nbsp;·&nbsp;${formatFileSize(doc.fileSize)}</span>
+                        ${doc.createdAt ? `<span style="font-size:11px">${escapeHtml(doc.createdAt)}</span>` : ""}
+                    </div>
+                    <div class="document-actions">
+                        ${doc.downloadUrl ? `<a class="button small" href="${contextPath}${escapeHtml(doc.downloadUrl)}" download>下载</a>` : ""}
+                        ${doc.previewable && doc.previewUrl ? `<button class="button small" data-action="preview-document" data-url="${escapeHtml(doc.previewUrl)}">预览</button>` : ""}
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderOperatorLogs(logs) {
+    const list = Array.isArray(logs) ? logs : (logs?.records || []);
+    if (list.length === 0) {
+        return `
+            <div class="metadata-card-header">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>操作日志 (最近50条)</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 12px;">暂无操作日志。</p>
+        `;
+    }
+    return `
+        <div class="metadata-card-header">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>操作日志 (最近50条)</span>
+        </div>
+        <div class="log-list">
+            ${list.map(log => {
+                const beforeInfo = log.beforeValue ? escapeHtml(log.beforeValue).substring(0, 80) : "";
+                const afterInfo = log.afterValue ? escapeHtml(log.afterValue).substring(0, 80) : "";
+                return `
+                <div class="log-row">
+                    <div>
+                        <strong>${escapeHtml(log.actionType || log.action || "?")}</strong>
+                        <span>${escapeHtml(log.operatorName || "-")}&nbsp;·&nbsp;${escapeHtml(log.createdAt || "")}</span>
+                        ${log.note ? `<span style="color:var(--text-muted);font-size:12px">${escapeHtml(log.note)}</span>` : ""}
+                        ${beforeInfo || afterInfo ? `
+                            <details class="log-detail">
+                                <summary>变更详情</summary>
+                                ${beforeInfo ? `<div>前: ${beforeInfo}</div>` : ""}
+                                ${afterInfo ? `<div>后: ${afterInfo}</div>` : ""}
+                            </details>
+                        ` : ""}
+                    </div>
+                </div>
+            `}).join("")}
+        </div>
+    `;
 }
 
 async function loadMailSendOptions() {
@@ -1316,6 +1445,35 @@ async function handleContactAction(element) {
         await loadContacts();
         return;
     }
+    if (action === "preview-document") {
+        const previewUrl = element.dataset.url;
+        if (previewUrl) window.open(`${contextPath}${previewUrl}`, "_blank");
+        return;
+    }
+}
+
+async function handleOperatorStatusChange(contactId, newStatus) {
+    const operatorName = window.localStorage.getItem("operatorName") || "console";
+    if (!newStatus) return;
+    await api(`/api/expert-contacts/${contactId}/operator-status`, {
+        method: "POST",
+        body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+    });
+    showStatus("专家状态已更新");
+    await loadContactDetail(contactId);
+    await loadContacts();
+}
+
+async function handleIndexLevelChange(contactId, newLevel) {
+    const operatorName = window.localStorage.getItem("operatorName") || "console";
+    if (!newLevel) return;
+    await api(`/api/expert-contacts/${contactId}/index-level`, {
+        method: "POST",
+        body: JSON.stringify({ targetLevel: newLevel, operatorName })
+    });
+    showStatus("专家层级已更新");
+    await loadContactDetail(contactId);
+    await loadContacts();
 }
 
 async function loadTasks() {
@@ -1410,48 +1568,123 @@ function renderUnmatchedTable() {
 
 function renderContactLink(record) {
     if (record.expertContactId) {
-        return `<a href="javascript:void 0" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">
+        return `<div>
+            <a href="javascript:void 0" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">
             ${escapeHtml(record.expertName || "(未命名)")}</a>
-            <div class="text-muted">${labelStatus(record.expertCurrentStatus)}</div>`;
+            <div class="text-muted">${operatorStatusLabels[record.expertOperatorStatus] || labelStatus(record.expertCurrentStatus) || "-"}</div>
+            <div class="text-muted">${indexLevelLabels[record.expertIndexLevel] || record.expertIndexLevel || "-"}</div>
+        </div>`;
     }
     return `<span class="text-muted">未匹配</span>`;
 }
 
 function renderUnmatchedActions(r) {
-    if (!r.expertContactId) {
-        return `<button class="button" data-action="view-unmatched" data-id="${r.id}">绑定专家</button>`;
+    const actions = [];
+    actions.push(`<button class="button" data-action="view-unmatched" data-id="${r.id}">查看/处理</button>`);
+    if (r.expertContactId) {
+        actions.push(`<button class="button" data-action="open-contact-from-unmatched" data-id="${r.expertContactId}">查看专家</button>`);
     }
-    return `
-        <button class="button" data-action="open-contact-from-unmatched" data-id="${r.expertContactId}">查看专家</button>
-        <button class="button" data-action="mark-unmatched-resolved" data-id="${r.id}">标记已处理</button>
-    `;
+    actions.push(`<button class="button" data-action="mark-unmatched-resolved" data-id="${r.id}">标记已处理</button>`);
+    return actions.join(" ");
 }
 
 async function showUnmatchedDetail(id) {
-    const data = await api(`/api/mail/unmatched-inbound/${id}`);
+    const [data, options, logs] = await Promise.all([
+        api(`/api/mail/unmatched-inbound/${id}`),
+        loadMailSendOptions(),
+        api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] }))
+    ]);
     const record = data.record;
     const candidates = data.candidates || [];
+    const contact = data.contact;
     const panel = $("#unmatchedDetailPanel");
     panel.hidden = false;
 
-    const candidatesHtml = candidates.map((c) => `
-        <div class="candidate-row" data-contact-id="${c.contactId}">
-            <div class="candidate-info">
-                <strong>${escapeHtml(c.expertName || "?")}</strong>
-                <span>${escapeHtml(c.expertEmail)}</span>
-                <span class="text-muted">${escapeHtml(c.orcidId)}</span>
+    const linkedExpertHtml = record.expertContactId && contact ? `
+        <div class="detail-section">
+            <h3>关联专家</h3>
+            <div class="linked-expert-card">
+                <div class="candidate-info">
+                    <strong>${escapeHtml(contact.expertName || record.expertName || "?")}</strong>
+                    <span>${escapeHtml(contact.expertEmail || "-")}</span>
+                    <span class="text-muted">ORCID: ${escapeHtml(contact.orcidId || "-")}</span>
+                </div>
+                <div class="candidate-meta">
+                    <span>${badge(operatorStatusLabels[contact.operatorStatus] || contact.operatorStatus || "?", "ok")}</span>
+                    <span>${badge(indexLevelLabels[contact.currentIndexLevel] || contact.currentIndexLevel || "?", "")}</span>
+                    <button class="button" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">查看专家详情</button>
+                </div>
             </div>
-            <div class="candidate-meta">
-                <span class="badge ${c.confidence >= 80 ? "ok" : "warn"}">${c.reason}</span>
-                <span>${c.confidence}%</span>
-                <button class="button primary small" data-action="bind-candidate" data-contact-id="${c.contactId}" data-record-id="${record.id}">绑定</button>
+            <div class="detail-section" style="margin-top:12px;">
+                <h3>变更专家状态</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="unmatchedOperatorStatusSelect" data-record-id="${id}" style="flex:1;">
+                        ${optionsFromArray(operatorStatusOptions, false, "请选择", contact.operatorStatus || "")}
+                    </select>
+                    <button class="button" data-action="change-operator-status" data-record-id="${id}">确认变更</button>
+                </div>
+            </div>
+            <div class="detail-section" style="margin-top:12px;">
+                <h3>变更专家层级</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="unmatchedIndexLevelSelect" data-record-id="${id}" style="flex:1;">
+                        ${optionsFromArray(indexLevelOptions, false, "请选择", contact.currentIndexLevel || "")}
+                    </select>
+                    <button class="button" data-action="change-index-level" data-record-id="${id}">确认变更</button>
+                </div>
             </div>
         </div>
-    `).join("") || "<p class='text-muted'>暂无系统推荐，请手动搜索联系人。</p>";
+    ` : `
+        <div class="detail-section">
+            <h3>候选推荐联系人</h3>
+            <div class="candidates-list">${candidates.map((c) => `
+                <div class="candidate-row" data-contact-id="${c.contactId}">
+                    <div class="candidate-info">
+                        <strong>${escapeHtml(c.expertName || "?")}</strong>
+                        <span>${escapeHtml(c.expertEmail)}</span>
+                        <span class="text-muted">${escapeHtml(c.orcidId)}</span>
+                    </div>
+                    <div class="candidate-meta">
+                        <span class="badge ${c.confidence >= 80 ? "ok" : "warn"}">${c.reason}</span>
+                        <span>${c.confidence}%</span>
+                        <button class="button primary small" data-action="bind-candidate" data-contact-id="${c.contactId}" data-record-id="${record.id}">绑定</button>
+                    </div>
+                </div>
+            `).join("") || "<p class='text-muted'>暂无系统推荐，请手动搜索联系人。</p>"}</div>
+            <div class="detail-section" style="margin-top:12px;">
+                <h3>搜索并手动绑定</h3>
+                <div class="search-bind-row">
+                    <input id="unmatchedSearchQuery" placeholder="输入 ORCID、专家姓名或邮箱搜索" style="flex: 1; min-width: 200px;">
+                    <button class="button" data-action="search-candidates" data-record-id="${record.id}">搜索</button>
+                </div>
+                <div id="unmatchedSearchResults" class="candidates-list"></div>
+                <div class="bind-form-row">
+                    <label>操作人: <input id="unmatchedResolvedBy" placeholder="输入操作人姓名" required></label>
+                    <label class="checkbox-row"><input id="bindPromoteCheck" type="checkbox"> 同时加入有效层</label>
+                    <button class="button primary" data-action="bind-manual" data-record-id="${record.id}" id="bindManualBtn" disabled>绑定并添加别名</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const qaOptions = options.filter(o => o.optionType === "QA");
+    const qaReplyHtml = qaOptions.length > 0 ? `
+        <div class="detail-section" style="margin-top:12px;">
+            <h3>QA 邮件回复</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select id="unmatchedQaOption" style="flex:1;">
+                    ${qaOptions.map(o => `
+                        <option value="${escapeHtml(o.optionValue)}">${escapeHtml(o.optionName)}${o.subject ? ` - ${escapeHtml(o.subject)}` : ""}</option>
+                    `).join("")}
+                </select>
+                <button class="button primary" data-action="send-pending-qa-reply" data-record-id="${id}">发送 QA 邮件</button>
+            </div>
+        </div>
+    ` : "";
 
     panel.innerHTML = `
         <div class="panel-head">
-            <h2>来信详情与绑定</h2>
+            <h2>来信详情与处理</h2>
             <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
         </div>
         <div class="unmatched-detail-body">
@@ -1494,23 +1727,26 @@ async function showUnmatchedDetail(id) {
                 <div class="pre">${escapeHtml(record.cleanedBody)}</div>
             </div>` : ""}
 
-            <div class="detail-section">
-                <h3>候选推荐联系人</h3>
-                <div class="candidates-list">${candidatesHtml}</div>
+            ${linkedExpertHtml}
+
+            ${qaReplyHtml}
+
+            <div class="detail-section" style="margin-top:12px;">
+                <h3>人工富文本回复</h3>
+                <input id="manualReplySubject" placeholder="邮件主题" style="margin-bottom:8px;">
+                <div class="rich-toolbar">
+                    <button type="button" data-action="rich-command" data-command="bold"><strong>B</strong></button>
+                    <button type="button" data-action="rich-command" data-command="italic"><em>I</em></button>
+                    <button type="button" data-action="rich-command" data-command="insertUnorderedList">列表</button>
+                    <button type="button" data-action="rich-command" data-command="createLink">链接</button>
+                </div>
+                <div id="manualRichReplyEditor" contenteditable="true" class="rich-editor"></div>
+                <button class="button primary" data-action="send-manual-rich-reply" data-record-id="${id}" style="margin-top:8px;">发送人工回复</button>
             </div>
 
-            <div class="detail-section">
-                <h3>搜索并手动绑定</h3>
-                <div class="search-bind-row">
-                    <input id="unmatchedSearchQuery" placeholder="输入 ORCID、专家姓名或邮箱搜索" style="flex: 1; min-width: 200px;">
-                    <button class="button" data-action="search-candidates" data-record-id="${record.id}">搜索</button>
-                </div>
-                <div id="unmatchedSearchResults" class="candidates-list"></div>
-                <div class="bind-form-row">
-                    <label>操作人: <input id="unmatchedResolvedBy" placeholder="输入操作人姓名" required></label>
-                    <label class="checkbox-row"><input id="bindPromoteCheck" type="checkbox"> 同时加入有效层</label>
-                    <button class="button primary" data-action="bind-manual" data-record-id="${record.id}" id="bindManualBtn" disabled>绑定并添加别名</button>
-                </div>
+            <div class="detail-section" style="margin-top:12px;">
+                <h3>操作日志</h3>
+                ${renderOperatorLogs(logs)}
             </div>
         </div>
     `;
@@ -1608,6 +1844,90 @@ async function handleUnmatchedAction(element) {
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
         await loadUnmatched();
+        return;
+    }
+    if (action === "change-operator-status") {
+        const newStatus = $("#unmatchedOperatorStatusSelect")?.value;
+        if (!newStatus) {
+            showStatus("请选择专家状态", "error");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
+            method: "POST",
+            body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+        });
+        showStatus("专家状态已更新");
+        await showUnmatchedDetail(id);
+        return;
+    }
+    if (action === "change-index-level") {
+        const newLevel = $("#unmatchedIndexLevelSelect")?.value;
+        if (!newLevel) {
+            showStatus("请选择专家层级", "error");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
+            method: "POST",
+            body: JSON.stringify({ targetLevel: newLevel, operatorName })
+        });
+        showStatus("专家层级已更新");
+        await showUnmatchedDetail(id);
+        return;
+    }
+    if (action === "send-pending-qa-reply") {
+        const optionValue = $("#unmatchedQaOption")?.value;
+        if (!optionValue) {
+            showStatus("请选择 QA 回复选项", "error");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        await api(`/api/mail/unmatched-inbound/${id}/qa-reply`, {
+            method: "POST",
+            body: JSON.stringify({ qaRuleId: Number(optionValue), operatorName })
+        });
+        showStatus("QA 邮件已发送");
+        await showUnmatchedDetail(id);
+        await loadUnmatched();
+        return;
+    }
+    if (action === "send-manual-rich-reply") {
+        const editor = $("#manualRichReplyEditor");
+        const subject = $("#manualReplySubject")?.value?.trim();
+        if (!subject) {
+            showStatus("请输入邮件主题", "error");
+            return;
+        }
+        if (!editor || !editor.innerHTML.trim()) {
+            showStatus("请输入邮件正文", "error");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
+            method: "POST",
+            body: JSON.stringify({
+                senderAccountCode: null,
+                subject,
+                htmlBody: editor.innerHTML,
+                textBody: editor.innerText,
+                operatorName
+            })
+        });
+        showStatus("人工回复邮件已发送");
+        await showUnmatchedDetail(id);
+        await loadUnmatched();
+        return;
+    }
+    if (action === "rich-command") {
+        const command = element.dataset.command;
+        if (command === "createLink") {
+            const url = prompt("请输入链接 URL:");
+            if (url) document.execCommand(command, false, url);
+        } else {
+            document.execCommand(command, false, null);
+        }
+        return;
     }
 }
 
@@ -1964,6 +2284,18 @@ function bindEvents() {
         const button = event.target.closest("button[data-action]");
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
     });
+    $("#contactHeadActions").addEventListener("change", async (event) => {
+        const select = event.target.closest("select");
+        if (!select) return;
+        if (select.id === "operatorStatusSelect") {
+            const contactId = select.dataset.contactId;
+            if (contactId) await handleOperatorStatusChange(contactId, select.value).catch((error) => showStatus(error.message, "error"));
+        }
+        if (select.id === "indexLevelSelect") {
+            const contactId = select.dataset.contactId;
+            if (contactId) await handleIndexLevelChange(contactId, select.value).catch((error) => showStatus(error.message, "error"));
+        }
+    });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
     document.addEventListener("submit", (event) => {
         const form = event.target.closest("#meetingScheduleForm");
@@ -2037,7 +2369,7 @@ function bindEvents() {
         }
     });
 
-    $("#contactStatusFilter").innerHTML = optionsFromLabels(conversationStatusLabels, true, "全部状态");
+    $("#contactStatusFilter").innerHTML = optionsFromArray(operatorStatusOptions, true, "全部状态");
 
     updateUnmatchedBadge();
 }

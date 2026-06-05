@@ -168,6 +168,16 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
+        SELECT COUNT(*) FROM mail_record
+        WHERE expert_contact_id = :expertContactId
+          AND direction = 'INBOUND'
+          AND mail_type = 'REPLY'
+        """
+    )
+    fun countInboundReplies(expertContactId: Long): Long
+
+    @Query(
+        """
         SELECT sender_account_code,
                SUM(CASE WHEN mail_type = 'INTRODUCTION' THEN 1 ELSE 0 END) AS introduction_count,
                SUM(CASE WHEN triggered_by = 'SYSTEM'

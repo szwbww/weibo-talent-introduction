@@ -20,7 +20,8 @@ class ExpertIndexLevelOperationService(
         contactId: Long,
         targetLevel: String,
         operatorName: String?,
-        note: String?
+        note: String?,
+        inboundProcessingId: Long? = null
     ): ExpertContact {
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
@@ -45,6 +46,7 @@ class ExpertIndexLevelOperationService(
             targetId = contactId,
             actionType = OperatorActionType.CHANGE_INDEX_LEVEL,
             expertContactId = contactId,
+            inboundProcessingId = inboundProcessingId,
             before = mapOf(
                 "currentIndexLevel" to oldLevel,
                 "applicationIndexed" to oldApplicationIndexed

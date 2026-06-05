@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260604-qa-list">
+    <link rel="stylesheet" href="styles.css?v=20260604-phase6">
 </head>
 <body>
 <div class="app-shell">
@@ -174,6 +174,12 @@
                 </select>
                 <select id="contactStatusFilter">
                     <option value="">全部状态</option>
+                    <option value="NOT_CONTACTED">未联系</option>
+                    <option value="CONTACTED">已联系</option>
+                    <option value="REPLIED">已回复</option>
+                    <option value="MATERIALS_RECEIVED">已回复材料</option>
+                    <option value="INVITED">已邀约</option>
+                    <option value="COMPLETED">已完成</option>
                 </select>
                 <button class="button" id="loadContactsBtn">加载专家</button>
             </div>
@@ -358,6 +364,6 @@
         </div>
     </form>
 </dialog>
-<script src="app.js?v=20260604-qa-list"></script>
+<script src="app.js?v=20260604-phase6"></script>
 </body>
 </html>

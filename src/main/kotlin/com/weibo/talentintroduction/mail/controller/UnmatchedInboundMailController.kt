@@ -1,10 +1,16 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.weibo.talentintroduction.audit.domain.OperatorActionLog
+import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.service.CandidateSuggestion
+import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.mail.service.PendingManualRichReplyRequest
+import com.weibo.talentintroduction.mail.service.PendingMailSendResult
+import com.weibo.talentintroduction.mail.service.PendingQaReplyRequest
 import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -21,7 +27,9 @@ import java.time.LocalDateTime
 class UnmatchedInboundMailController(
     private val unmatchedInboundMailService: UnmatchedInboundMailService,
     private val expertEmailAliasService: ExpertEmailAliasService,
-    private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+    private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository,
+    private val pendingMailOperationService: PendingMailOperationService,
+    private val operatorActionLogService: OperatorActionLogService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -49,7 +57,9 @@ class UnmatchedInboundMailController(
                 val contact = record.expertContactId?.let { contactsMap[it] }
                 record.toResponse(
                     expertName = contact?.expertName,
-                    expertCurrentStatus = contact?.currentStatus
+                    expertCurrentStatus = contact?.currentStatus,
+                    expertOperatorStatus = contact?.operatorStatus,
+                    expertIndexLevel = contact?.currentIndexLevel
                 )
             },
             totalCount = result.totalCount,
@@ -61,9 +71,25 @@ class UnmatchedInboundMailController(
     fun getUnmatchedDetail(@PathVariable id: Long): UnmatchedDetailResponse {
         val record = unmatchedInboundMailService.getDetail(id)
         val candidates = unmatchedInboundMailService.suggestCandidates(record)
+        val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
+        val logs = operatorActionLogService.search(
+            expertContactId = null,
+            inboundProcessingId = id,
+            actionType = null,
+            operatorName = null,
+            start = null,
+            end = null,
+            pageSize = 50,
+            pageOffset = 0
+        ).first
         return UnmatchedDetailResponse(
-            record = record.toResponse(),
-            candidates = candidates.map { it.toResponse() }
+            record = record.toResponse(
+                expertName = contact?.expertName,
+                expertCurrentStatus = contact?.currentStatus
+            ),
+            candidates = candidates.map { it.toResponse() },
+            contact = contact?.toPendingMailContactResponse(),
+            logs = logs.map { it.toResponse() }
         )
     }
 
@@ -85,13 +111,16 @@ class UnmatchedInboundMailController(
     fun markResolved(
         @PathVariable id: Long,
         @RequestBody request: MarkResolvedRequest
-    ): InboundMailProcessingResponse {
-        val result = unmatchedInboundMailService.markResolved(
-            recordId = id,
-            resolvedBy = request.resolvedBy,
+    ) {
+        val actualOperator = request.operatorName?.takeIf { it.isNotBlank() }
+            ?: request.resolvedBy
+            ?: "UNKNOWN"
+        pendingMailOperationService.markResolved(
+            inboundProcessingId = id,
+            resolvedBy = actualOperator,
+            operatorName = actualOperator,
             note = request.note
         )
-        return result.toResponse()
     }
 
     @GetMapping("/unmatched-inbound/search-contacts")
@@ -108,6 +137,60 @@ class UnmatchedInboundMailController(
             )
         }
     }
+
+    @PostMapping("/unmatched-inbound/{id}/operator-status")
+    fun changeOperatorStatus(
+        @PathVariable id: Long,
+        @RequestBody request: OperatorStatusChangeRequest
+    ): PendingMailContactResponse {
+        val contact = pendingMailOperationService.changeOperatorStatus(
+            inboundProcessingId = id,
+            operatorStatus = request.operatorStatus,
+            operatorName = request.operatorName,
+            note = request.note
+        )
+        return contact.toPendingMailContactResponse()
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/index-level")
+    fun changeIndexLevel(
+        @PathVariable id: Long,
+        @RequestBody request: IndexLevelChangeRequest
+    ): PendingMailContactResponse {
+        val contact = pendingMailOperationService.changeIndexLevel(
+            inboundProcessingId = id,
+            targetLevel = request.targetLevel,
+            operatorName = request.operatorName,
+            note = request.note
+        )
+        return contact.toPendingMailContactResponse()
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/qa-reply")
+    fun sendQaReply(
+        @PathVariable id: Long,
+        @RequestBody request: PendingQaReplyRequest
+    ): PendingMailSendResult =
+        pendingMailOperationService.sendQaReply(
+            inboundProcessingId = id,
+            qaRuleId = request.qaRuleId,
+            senderAccountCode = request.senderAccountCode,
+            operatorName = request.operatorName
+        )
+
+    @PostMapping("/unmatched-inbound/{id}/manual-rich-reply")
+    fun sendManualRichReply(
+        @PathVariable id: Long,
+        @RequestBody request: PendingManualRichReplyRequest
+    ): PendingMailSendResult =
+        pendingMailOperationService.sendManualRichReply(
+            inboundProcessingId = id,
+            senderAccountCode = request.senderAccountCode,
+            subject = request.subject,
+            htmlBody = request.htmlBody,
+            textBody = request.textBody,
+            operatorName = request.operatorName
+        )
 }
 
 @RestController
@@ -147,7 +230,9 @@ data class InboundMailProcessingListResponse(
 
 data class UnmatchedDetailResponse(
     val record: InboundMailProcessingResponse,
-    val candidates: List<CandidateResponse>
+    val candidates: List<CandidateResponse>,
+    val contact: PendingMailContactResponse? = null,
+    val logs: List<OperatorActionLogResponse> = emptyList()
 )
 
 data class InboundMailProcessingResponse(
@@ -168,11 +253,37 @@ data class InboundMailProcessingResponse(
     val resolvedBy: String?,
     val expertContactId: Long?,
     val expertName: String? = null,
-    val expertCurrentStatus: String? = null
+    val expertCurrentStatus: String? = null,
+    val expertOperatorStatus: String? = null,
+    val expertIndexLevel: String? = null
+)
+
+data class PendingMailContactResponse(
+    val contactId: Long,
+    val expertName: String?,
+    val expertEmail: String,
+    val orcidId: String,
+    val currentIndexLevel: String,
+    val operatorStatus: String,
+    val currentStatus: String,
+    val autoReplyEnabled: Boolean
 )
 
 data class MarkResolvedRequest(
-    val resolvedBy: String,
+    val resolvedBy: String?,
+    val operatorName: String? = null,
+    val note: String?
+)
+
+data class OperatorStatusChangeRequest(
+    val operatorStatus: String,
+    val operatorName: String?,
+    val note: String?
+)
+
+data class IndexLevelChangeRequest(
+    val targetLevel: String,
+    val operatorName: String?,
     val note: String?
 )
 
@@ -206,9 +317,22 @@ data class ExpertEmailAliasResponse(
     val createdAt: String?
 )
 
+data class OperatorActionLogResponse(
+    val id: Long?,
+    val actionType: String,
+    val actionSummary: String,
+    val beforeValue: String?,
+    val afterValue: String?,
+    val operatorName: String?,
+    val note: String?,
+    val createdAt: String?
+)
+
 private fun InboundMailProcessing.toResponse(
     expertName: String? = null,
-    expertCurrentStatus: String? = null
+    expertCurrentStatus: String? = null,
+    expertOperatorStatus: String? = null,
+    expertIndexLevel: String? = null
 ) = InboundMailProcessingResponse(
     id = id,
     senderAccountCode = senderAccountCode,
@@ -227,7 +351,9 @@ private fun InboundMailProcessing.toResponse(
     resolvedBy = resolvedBy,
     expertContactId = expertContactId,
     expertName = expertName,
-    expertCurrentStatus = expertCurrentStatus
+    expertCurrentStatus = expertCurrentStatus,
+    expertOperatorStatus = expertOperatorStatus,
+    expertIndexLevel = expertIndexLevel
 )
 
 private fun CandidateSuggestion.toResponse() = CandidateResponse(
@@ -246,5 +372,27 @@ private fun ExpertEmailAlias.toResponse() = ExpertEmailAliasResponse(
     normalizedEmail = normalizedEmail,
     source = source,
     verified = verified,
+    createdAt = createdAt?.toString()
+)
+
+private fun ExpertContact.toPendingMailContactResponse() = PendingMailContactResponse(
+    contactId = id ?: 0,
+    expertName = expertName,
+    expertEmail = expertEmail,
+    orcidId = orcidId,
+    currentIndexLevel = currentIndexLevel,
+    operatorStatus = operatorStatus,
+    currentStatus = currentStatus,
+    autoReplyEnabled = autoReplyEnabled
+)
+
+private fun OperatorActionLog.toResponse() = OperatorActionLogResponse(
+    id = id,
+    actionType = actionType,
+    actionSummary = actionSummary,
+    beforeValue = beforeValue,
+    afterValue = afterValue,
+    operatorName = operatorName,
+    note = note,
     createdAt = createdAt?.toString()
 )

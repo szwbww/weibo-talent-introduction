@@ -33,5 +33,6 @@ class IntroductionMailComposer(
 data class ComposedMail(
     val to: String,
     val subject: String,
-    val body: String
+    val body: String,
+    val html: Boolean = false
 )

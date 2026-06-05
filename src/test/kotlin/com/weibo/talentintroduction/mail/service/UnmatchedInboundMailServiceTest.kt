@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.ReasonTypeCount
+import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -23,13 +24,15 @@ class UnmatchedInboundMailServiceTest {
     private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
+    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
 
     private val service = UnmatchedInboundMailService(
         inboundMailProcessingRepository = inboundMailProcessingRepository,
         expertContactRepository = expertContactRepository,
         expertEmailAliasService = expertEmailAliasService,
         mailRecordRepository = mailRecordRepository,
-        expertIndexWriterService = expertIndexWriterService
+        expertIndexWriterService = expertIndexWriterService,
+        operatorActionLogService = operatorActionLogService
     )
 
     private fun contact(id: Long, email: String) = ExpertContact(

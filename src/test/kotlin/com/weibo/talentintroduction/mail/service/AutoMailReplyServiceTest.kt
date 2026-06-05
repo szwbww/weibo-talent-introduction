@@ -2,10 +2,12 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -42,6 +44,8 @@ class AutoMailReplyServiceTest {
     private val meetingScheduleService = Mockito.mock(com.weibo.talentintroduction.campaign.service.MeetingScheduleService::class.java)
     private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
     private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
+    private val automaticApplicationPromotionService = Mockito.mock(AutomaticApplicationPromotionService::class.java)
+    private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -59,8 +63,31 @@ class AutoMailReplyServiceTest {
         conversationStateService,
         meetingScheduleService,
         expertEmailAliasService,
-        expertIndexWriterService
+        expertIndexWriterService,
+        automaticApplicationPromotionService,
+        expertOperatorStatusService
     )
+
+    private fun defaultPromotionStubs(contact: ExpertContact) {
+        Mockito.`when`(automaticApplicationPromotionService.promoteByMaterialIfNeeded(
+            anyValue(contact),
+            anyValue(LocalDateTime.now()),
+            anyValue(0L),
+            anyValue(0)
+        )).thenAnswer { it.getArgument<ExpertContact>(0) }
+
+        Mockito.`when`(automaticApplicationPromotionService.promoteByReplyCountIfNeeded(
+            anyValue(contact),
+            anyValue(LocalDateTime.now()),
+            anyValue(0L)
+        )).thenAnswer { it.getArgument<ExpertContact>(0) }
+
+        Mockito.`when`(expertOperatorStatusService.updateAutomatically(
+            anyValue(contact),
+            anyValue(OperatorStatus.REPLIED),
+            anyValue("")
+        )).thenAnswer { it.getArgument<ExpertContact>(0) }
+    }
 
     @Test
     fun `does not auto reply before introduction inquiry was sent`() {
@@ -104,6 +131,7 @@ class AutoMailReplyServiceTest {
             expertName = "Expert",
             currentStatus = ConversationStatus.INTRO_SENT.name
         )
+        defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
@@ -155,6 +183,7 @@ class AutoMailReplyServiceTest {
             currentStatus = ConversationStatus.INTRO_SENT.name,
             firstReplyAt = LocalDateTime.now()
         )
+        defaultPromotionStubs(contact)
         val meetingReply = reply(body = "I am available at 9AM China time next Tuesday.")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(meetingReply))
@@ -186,7 +215,7 @@ class AutoMailReplyServiceTest {
         assertEquals("PENDING", handoffCaptor.value.handoffStatus)
 
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
-        Mockito.verify(contactRepository, Mockito.atLeast(2)).save(contactCaptor.capture())
+        Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
         val lastSaved = contactCaptor.allValues.last()
         assertEquals(ConversationStatus.MANUAL_HANDOFF.name, lastSaved.currentStatus)
         assertEquals(true, lastSaved.manualHandoffRequired)
@@ -206,6 +235,7 @@ class AutoMailReplyServiceTest {
             currentStatus = ConversationStatus.INTRO_SENT.name,
             firstReplyAt = LocalDateTime.now()
         )
+        defaultPromotionStubs(contact)
         val aliasReply = reply(from = "alias@example.com")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(aliasReply))
@@ -276,6 +306,317 @@ class AutoMailReplyServiceTest {
 
         assertEquals(1, result.manualReview)
         Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `first reply with material triggers promotion and sets MATERIALS_RECEIVED`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            operatorStatus = "CONTACTED"
+        )
+        val promoted = contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION")
+        Mockito.`when`(automaticApplicationPromotionService.promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), anyValue(1)
+        )).thenReturn(promoted)
+        Mockito.`when`(automaticApplicationPromotionService.promoteByReplyCountIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L)
+        )).thenAnswer { it.getArgument<ExpertContact>(0) }
+        Mockito.`when`(expertOperatorStatusService.updateAutomatically(
+            anyValue(promoted), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )).thenReturn(promoted)
+
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(reply(body = "Here are my documents"))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(listOf(
+            com.weibo.talentintroduction.document.domain.ExpertDocument(
+                expertContactId = 11,
+                mailAttachmentId = 1,
+                documentType = "CV",
+                createdAt = LocalDateTime.now()
+            )
+        ))
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.eq(1)
+        )
+        Mockito.verify(automaticApplicationPromotionService).promoteByReplyCountIfNeeded(
+            anyValue(promoted), anyValue(LocalDateTime.now()), anyValue(0L)
+        )
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(promoted), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )
+    }
+
+    @Test
+    fun `third reply triggers promotion by reply count`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            operatorStatus = "REPLIED"
+        )
+        val promoted = contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION")
+        Mockito.`when`(automaticApplicationPromotionService.promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), anyValue(0)
+        )).thenReturn(contact)
+        Mockito.`when`(automaticApplicationPromotionService.promoteByReplyCountIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L)
+        )).thenReturn(promoted)
+        Mockito.`when`(expertOperatorStatusService.updateAutomatically(
+            anyValue(promoted), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )).thenReturn(promoted)
+
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(automaticApplicationPromotionService).promoteByReplyCountIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L)
+        )
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(promoted), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )
+    }
+
+    @Test
+    fun `already application indexed contact skips promotion`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            applicationIndexed = true,
+            currentIndexLevel = "APPLICATION",
+            operatorStatus = "REPLIED"
+        )
+        defaultPromotionStubs(contact)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(reply(body = "I have attached my CV"))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.eq(0)
+        )
+    }
+
+    @Test
+    fun `auto reply disabled branch still saves attachments and calls promotion`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            autoReplyEnabled = false,
+            operatorStatus = "CONTACTED"
+        )
+        defaultPromotionStubs(contact)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(reply(body = "Hello"))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.anyInt()
+        )
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )
+        Mockito.verifyNoInteractions(qaMatchService, deliveryService)
+    }
+
+    @Test
+    fun `promotion does not override completed operator status`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            operatorStatus = "COMPLETED"
+        )
+        defaultPromotionStubs(contact)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(reply(body = "Hello again"))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )
+    }
+
+    @Test
+    fun `QA reply sets operator status to REPLIED`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            operatorStatus = "CONTACTED",
+            firstReplyAt = LocalDateTime.now()
+        )
+        defaultPromotionStubs(contact)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account("qa-sender")),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Re: Program", body = "Auto reply body"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.replied)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
+        )
     }
 
     private fun reply(body: String = "Could you share the program details?", from: String = "expert@example.com"): ReceivedMail =

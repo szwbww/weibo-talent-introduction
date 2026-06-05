@@ -20,7 +20,11 @@ class SmtpMailDeliveryService : MailDeliveryService {
         message.setFrom(account.senderEmail)
         message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
         message.subject = mail.subject
-        message.setText(mail.body, Charsets.UTF_8.name())
+        if (mail.html) {
+            message.setContent(mail.body, "text/html; charset=UTF-8")
+        } else {
+            message.setText(mail.body, Charsets.UTF_8.name())
+        }
 
         sender.send(message)
 

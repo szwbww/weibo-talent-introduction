@@ -18,7 +18,8 @@ class ExpertOperatorStatusService(
         contactId: Long,
         targetStatus: String,
         operatorName: String?,
-        note: String?
+        note: String?,
+        inboundProcessingId: Long? = null
     ): ExpertContact {
         val target = OperatorStatus.fromName(targetStatus)
         val contact = expertContactRepository.findById(contactId)
@@ -30,6 +31,7 @@ class ExpertOperatorStatusService(
             targetId = contactId,
             actionType = OperatorActionType.CHANGE_OPERATOR_STATUS,
             expertContactId = contactId,
+            inboundProcessingId = inboundProcessingId,
             before = mapOf("operatorStatus" to oldStatus),
             after = mapOf("operatorStatus" to target.name),
             operatorName = operatorName,
@@ -46,6 +48,11 @@ class ExpertOperatorStatusService(
     ): ExpertContact {
         val current = OperatorStatus.entries.firstOrNull { it.name == contact.operatorStatus }
         if (current == OperatorStatus.COMPLETED) {
+            return contact
+        }
+        if (targetStatus == OperatorStatus.REPLIED &&
+            current != null &&
+            current.ordinal > OperatorStatus.REPLIED.ordinal) {
             return contact
         }
         val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))

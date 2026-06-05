@@ -5,4 +5,6 @@ import org.springframework.data.repository.CrudRepository
 
 interface ExpertDocumentRepository : CrudRepository<ExpertDocument, Long> {
     fun findAllByExpertContactIdOrderByCreatedAtAsc(expertContactId: Long): List<ExpertDocument>
+
+    fun findFirstByMailAttachmentId(mailAttachmentId: Long): ExpertDocument?
 }
