@@ -1,7 +1,24 @@
-ALTER TABLE expert_contact
-    ADD COLUMN operator_status VARCHAR(32) NOT NULL DEFAULT 'NOT_CONTACTED'
-        COMMENT '运营视角专家状态: NOT_CONTACTED / CONTACTED / REPLIED / MATERIALS_RECEIVED / INVITED / COMPLETED',
-    ADD INDEX idx_expert_contact_operator_status (operator_status, updated_at);
+SELECT COUNT(*) INTO @col_exists FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'expert_contact' AND COLUMN_NAME = 'operator_status';
+
+SET @add_col = 'ALTER TABLE expert_contact ADD COLUMN operator_status VARCHAR(32) NOT NULL DEFAULT ''NOT_CONTACTED'' COMMENT ''运营视角专家状态: NOT_CONTACTED / CONTACTED / REPLIED / MATERIALS_RECEIVED / INVITED / COMPLETED''';
+SET @noop = 'SELECT ''Column operator_status exists, skipping ALTER'' AS msg';
+
+SET @sql = IF(@col_exists = 0, @add_col, @noop);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SELECT COUNT(*) INTO @idx_exists FROM INFORMATION_SCHEMA.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'expert_contact' AND INDEX_NAME = 'idx_expert_contact_operator_status';
+
+SET @add_idx = 'ALTER TABLE expert_contact ADD INDEX idx_expert_contact_operator_status (operator_status, updated_at)';
+SET @skip_idx = 'SELECT ''Index idx_expert_contact_operator_status exists, skipping ALTER'' AS msg';
+
+SET @sql = IF(@idx_exists = 0, @add_idx, @skip_idx);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 UPDATE expert_contact
    SET operator_status = CASE
@@ -12,7 +29,7 @@ UPDATE expert_contact
        ELSE 'NOT_CONTACTED'
    END;
 
-CREATE TABLE operator_action_log (
+CREATE TABLE IF NOT EXISTS operator_action_log (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     target_type VARCHAR(64) NOT NULL COMMENT 'EXPERT_CONTACT / INBOUND_MAIL_PROCESSING / DOCUMENT',
     target_id BIGINT NOT NULL,
