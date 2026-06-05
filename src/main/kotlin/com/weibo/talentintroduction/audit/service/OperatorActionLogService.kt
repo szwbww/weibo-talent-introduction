@@ -38,7 +38,8 @@ class OperatorActionLogService(
             beforeValue = before?.let { objectMapper.writeValueAsString(it) },
             afterValue = after?.let { objectMapper.writeValueAsString(it) },
             operatorName = operatorName,
-            note = note
+            note = note,
+            createdAt = LocalDateTime.now()
         )
         return operatorActionLogRepository.save(log)
     }
