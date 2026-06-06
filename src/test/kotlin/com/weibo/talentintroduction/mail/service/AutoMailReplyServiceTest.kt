@@ -68,6 +68,14 @@ class AutoMailReplyServiceTest {
         expertOperatorStatusService
     )
 
+    @org.junit.jupiter.api.BeforeEach
+    fun setUp() {
+        Mockito.`when`(accountService.getAutoReceiveAccount(Mockito.anyString())).thenAnswer { invocation ->
+            val code = invocation.getArgument<String>(0)
+            accountService.getEnabledAccount(code)
+        }
+    }
+
     private fun defaultPromotionStubs(contact: ExpertContact) {
         Mockito.`when`(automaticApplicationPromotionService.promoteByMaterialIfNeeded(
             anyValue(contact),

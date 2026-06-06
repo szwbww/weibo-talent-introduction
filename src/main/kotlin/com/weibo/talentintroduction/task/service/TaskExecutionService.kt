@@ -53,14 +53,26 @@ class TaskExecutionService(
         return try {
             val result = block()
             val resultValue: Any? = result
-            val summary = TaskResultSummary.from(resultValue)
+            val (successCount, failureCount, status) = when (resultValue) {
+                is TaskExecutionSummaryProvider -> {
+                    val s = resultValue.taskSuccessCount
+                    val f = resultValue.taskFailureCount
+                    val finalStatus = resultValue.taskFinalStatus
+                        ?: if (f > 0 && s == 0) "FAILED" else "SUCCESS"
+                    Triple(s, f, finalStatus)
+                }
+                else -> {
+                    val summary = TaskResultSummary.from(resultValue)
+                    Triple(summary.successCount, summary.failureCount, "SUCCESS")
+                }
+            }
             val finishedAt = LocalDateTime.now()
             repository.save(
                 running.copy(
-                    status = "SUCCESS",
+                    status = status,
                     resultSummary = toJson(resultValue),
-                    successCount = summary.successCount,
-                    failureCount = summary.failureCount,
+                    successCount = successCount,
+                    failureCount = failureCount,
                     finishedAt = finishedAt,
                     updatedAt = finishedAt
                 )

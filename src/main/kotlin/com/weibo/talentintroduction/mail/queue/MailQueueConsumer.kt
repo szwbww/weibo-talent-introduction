@@ -60,7 +60,7 @@ class MailQueueConsumer(
                 dispatchMode = "QUEUE"
             )
         ) {
-            val accounts = mailSenderAccountService.listEnabledAccounts()
+            val accounts = mailSenderAccountService.listAutoReceiveAccounts()
             accounts.forEach { account ->
                 mailQueuePublisher.publishAutoReply(
                     account.accountCode,

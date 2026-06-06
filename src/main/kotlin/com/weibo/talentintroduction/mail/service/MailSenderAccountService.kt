@@ -23,6 +23,21 @@ class MailSenderAccountService(
     fun listEnabledAccounts(): List<MailSenderAccount> =
         repository.findAllByEnabledTrue()
 
+    fun listAutoReceiveAccounts(): List<MailSenderAccount> =
+        repository.findAllByEnabledTrueAndAccountCodeNot(SIMULATOR_ACCOUNT_CODE)
+
+    fun getAutoReceiveAccount(accountCode: String): MailSenderAccount {
+        val account = repository.findByAccountCode(accountCode)
+            ?: error("Mail sender account not found: $accountCode")
+        if (account.accountCode == SIMULATOR_ACCOUNT_CODE) {
+            error("Mail sender account is not allowed for auto receive: $accountCode")
+        }
+        if (!account.enabled) {
+            error("Mail sender account is disabled: $accountCode")
+        }
+        return account
+    }
+
     fun createAccount(command: MailSenderAccountCreateCommand): MailSenderAccount {
         require(command.accountCode.isNotBlank()) { "accountCode is required" }
         require(command.senderEmail.isNotBlank()) { "senderEmail is required" }
@@ -89,6 +104,10 @@ class MailSenderAccountService(
     private fun selectionScore(account: MailSenderAccount): Double {
         val remainingRatio = (account.dailySendLimit - account.todaySentCount).toDouble() / account.dailySendLimit
         return account.strategyWeight * remainingRatio
+    }
+
+    companion object {
+        private const val SIMULATOR_ACCOUNT_CODE = "SIMULATOR_NOOP"
     }
 }
 

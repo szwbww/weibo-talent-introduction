@@ -66,6 +66,7 @@ const statusLabels = {
     MANUAL_HANDOFF: "已转人工",
     RUNNING: "运行中",
     SUCCESS: "成功",
+    PARTIAL_SUCCESS: "部分成功",
     FAILED: "失败",
     PENDING: "待处理",
     ASSIGNED: "已分配",

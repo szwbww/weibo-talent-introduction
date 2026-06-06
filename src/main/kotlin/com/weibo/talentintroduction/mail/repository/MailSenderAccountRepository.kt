@@ -10,6 +10,8 @@ interface MailSenderAccountRepository : CrudRepository<MailSenderAccount, Long> 
 
     fun findAllByEnabledTrue(): List<MailSenderAccount>
 
+    fun findAllByEnabledTrueAndAccountCodeNot(accountCode: String): List<MailSenderAccount>
+
     fun findAllByOrderByAccountCodeAsc(): List<MailSenderAccount>
 
     fun existsByAccountCode(accountCode: String): Boolean

@@ -435,7 +435,7 @@ class AutoMailReplyService(
     }
 
     fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
-        val account = mailSenderAccountService.getEnabledAccount(accountCode)
+        val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
         val receivedMails = mailReceiveService.fetchUnread(account, maxMessages)
         var recorded = 0
         var replied = 0

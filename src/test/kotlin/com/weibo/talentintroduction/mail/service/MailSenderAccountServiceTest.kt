@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 
@@ -86,11 +88,93 @@ class MailSenderAccountServiceTest {
         assertEquals(0, reset.todaySentCount)
     }
 
+    @Test
+    fun `listAutoReceiveAccounts returns enabled real accounts only`() {
+        Mockito.`when`(repository.findAllByEnabledTrueAndAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+            listOf(account("a1"), account("a2"))
+        )
+
+        val result = service.listAutoReceiveAccounts()
+
+        assertEquals(2, result.size)
+        assertTrue(result.all { it.enabled })
+        assertTrue(result.none { it.accountCode == "SIMULATOR_NOOP" })
+    }
+
+    @Test
+    fun `listAutoReceiveAccounts excludes SIMULATOR_NOOP`() {
+        Mockito.`when`(repository.findAllByEnabledTrueAndAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+            emptyList()
+        )
+
+        val result = service.listAutoReceiveAccounts()
+
+        assertEquals(0, result.size)
+    }
+
+    @Test
+    fun `getAutoReceiveAccount returns enabled real account`() {
+        Mockito.`when`(repository.findByAccountCode("real_acct")).thenReturn(
+            account("real_acct", enabled = true)
+        )
+
+        val result = service.getAutoReceiveAccount("real_acct")
+
+        assertEquals("real_acct", result.accountCode)
+    }
+
+    @Test
+    fun `getAutoReceiveAccount rejects SIMULATOR_NOOP`() {
+        Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP")).thenReturn(
+            account("SIMULATOR_NOOP", enabled = false)
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.getAutoReceiveAccount("SIMULATOR_NOOP")
+        }
+        assertTrue(ex.message!!.contains("not allowed"))
+    }
+
+    @Test
+    fun `getAutoReceiveAccount rejects disabled account`() {
+        Mockito.`when`(repository.findByAccountCode("disabled_acct")).thenReturn(
+            account("disabled_acct", enabled = false)
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.getAutoReceiveAccount("disabled_acct")
+        }
+        assertTrue(ex.message!!.contains("disabled"))
+    }
+
+    @Test
+    fun `getAutoReceiveAccount rejects unknown account`() {
+        Mockito.`when`(repository.findByAccountCode("unknown")).thenReturn(null)
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.getAutoReceiveAccount("unknown")
+        }
+        assertTrue(ex.message!!.contains("not found"))
+    }
+
+    @Test
+    fun `listEnabledAccounts unchanged returns all enabled including simulator`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(account("a1"), account("SIMULATOR_NOOP"))
+        )
+
+        val result = service.listEnabledAccounts()
+
+        assertEquals(2, result.size)
+        assertTrue(result.any { it.accountCode == "SIMULATOR_NOOP" })
+    }
+
     private fun account(
         accountCode: String,
-        strategyWeight: Int,
-        dailySendLimit: Int,
-        todaySentCount: Int
+        strategyWeight: Int = 100,
+        dailySendLimit: Int = 100,
+        todaySentCount: Int = 0,
+        enabled: Boolean = true
     ): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
@@ -110,6 +194,7 @@ class MailSenderAccountServiceTest {
             imapPassword = "secret",
             strategyWeight = strategyWeight,
             dailySendLimit = dailySendLimit,
-            todaySentCount = todaySentCount
+            todaySentCount = todaySentCount,
+            enabled = enabled
         )
 }
