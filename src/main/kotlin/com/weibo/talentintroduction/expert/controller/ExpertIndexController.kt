@@ -23,21 +23,23 @@ class ExpertIndexController(
     fun listExperts(
         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
         @RequestParam(defaultValue = "50") size: Int
-    ): List<ExpertIndexResponse> =
-        expertSearchService.searchExperts(size, level)
-            .map { expert ->
-                val contact = expert.orcidId
-                    .takeIf { it.isNotBlank() }
-                    ?.let(expertContactRepository::findFirstByOrcidIdOrderByUpdatedAtDesc)
-                ExpertIndexResponse.from(
-                    expert = expert,
-                    level = level,
-                    contactId = contact?.id,
-                    contactStatus = contact?.currentStatus,
-                    needsManualAttention = contact?.needsManualAttention ?: false,
-                    autoReplyEnabled = contact?.autoReplyEnabled ?: true
-                )
-            }
+    ): ExpertListResponse {
+        val result = expertSearchService.searchExperts(size, level)
+        val experts = result.experts.map { expert ->
+            val contact = expert.orcidId
+                .takeIf { it.isNotBlank() }
+                ?.let(expertContactRepository::findFirstByOrcidIdOrderByUpdatedAtDesc)
+            ExpertIndexResponse.from(
+                expert = expert,
+                level = level,
+                contactId = contact?.id,
+                contactStatus = contact?.currentStatus,
+                needsManualAttention = contact?.needsManualAttention ?: false,
+                autoReplyEnabled = contact?.autoReplyEnabled ?: true
+            )
+        }
+        return ExpertListResponse(experts = experts, totalHits = result.totalHits)
+    }
 
     @PostMapping("/reindex-applications")
     fun reindexApplications(
@@ -67,6 +69,11 @@ class ExpertIndexController(
         return ReindexResult(total = contacts.size, success = success, failure = failure)
     }
 }
+
+data class ExpertListResponse(
+    val experts: List<ExpertIndexResponse>,
+    val totalHits: Long
+)
 
 data class ReindexResult(
     val total: Int,

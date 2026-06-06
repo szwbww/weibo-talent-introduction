@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -7,13 +9,63 @@ import org.springframework.stereotype.Service
 @Service
 class BatchAutoMailReplyService(
     private val mailSenderAccountService: MailSenderAccountService,
-    private val autoMailReplyService: AutoMailReplyService
+    private val autoMailReplyService: AutoMailReplyService,
+    private val mailRecordRepository: MailRecordRepository
 ) {
     private val log = LoggerFactory.getLogger(BatchAutoMailReplyService::class.java)
 
     fun receiveAndAutoReplyAll(maxMessagesPerAccount: Int): BatchAutoMailReplyResult {
         val accounts = mailSenderAccountService.listAutoReceiveAccounts()
-        val results = accounts.map { account ->
+        val startedAt = System.currentTimeMillis()
+        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount)
+        val finishedAt = System.currentTimeMillis()
+
+        return buildResult(perAccountResults, startedAt, finishedAt)
+    }
+
+    fun receiveAndAutoReplyForContacts(
+        contactIds: List<Long>,
+        maxMessagesPerAccount: Int
+    ): BatchAutoMailReplyResult {
+        if (contactIds.isEmpty()) {
+            return receiveAndAutoReplyAll(maxMessagesPerAccount)
+        }
+
+        val accountCodes = mailRecordRepository
+            .findDistinctSenderAccountCodesByExpertContactIds(contactIds)
+
+        if (accountCodes.isEmpty()) {
+            error("No auto-receive account found for selected contacts: ${contactIds.joinToString()}")
+        }
+
+        val resolvedAccounts = accountCodes.map { code ->
+            code to mailSenderAccountService.getAutoReceiveAccountOrNull(code)
+        }
+        val unavailableAccountCodes = resolvedAccounts
+            .filter { it.second == null }
+            .map { it.first }
+
+        if (unavailableAccountCodes.isNotEmpty()) {
+            error(
+                "Selected contacts map to unavailable auto-receive accounts: " +
+                    unavailableAccountCodes.joinToString()
+            )
+        }
+
+        val accounts = resolvedAccounts.map { it.second!! }
+
+        val startedAt = System.currentTimeMillis()
+        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount)
+        val finishedAt = System.currentTimeMillis()
+
+        return buildResult(perAccountResults, startedAt, finishedAt)
+    }
+
+    private fun pollAccounts(
+        accounts: List<MailSenderAccount>,
+        maxMessagesPerAccount: Int
+    ): List<AccountAutoMailReplyResult> =
+        accounts.map { account ->
             try {
                 val result = autoMailReplyService.receiveAndAutoReply(
                     accountCode = account.accountCode,
@@ -26,7 +78,8 @@ class BatchAutoMailReplyService(
                     recorded = result.recorded,
                     replied = result.replied,
                     manualReview = result.manualReview,
-                    errorMessage = null
+                    errorMessage = null,
+                    repliedExperts = result.repliedExperts
                 )
             } catch (ex: Exception) {
                 val errorMessage = sanitizeErrorMessage(
@@ -46,8 +99,13 @@ class BatchAutoMailReplyService(
             }
         }
 
-        val successResults = results.filter { it.status == "SUCCESS" }
-        val failedResults = results.filter { it.status == "FAILED" }
+    private fun buildResult(
+        perAccountResults: List<AccountAutoMailReplyResult>,
+        startedAt: Long,
+        finishedAt: Long
+    ): BatchAutoMailReplyResult {
+        val successResults = perAccountResults.filter { it.status == "SUCCESS" }
+        val failedResults = perAccountResults.filter { it.status == "FAILED" }
         val taskStatus = when {
             failedResults.isEmpty() -> null
             successResults.isEmpty() -> "FAILED"
@@ -55,15 +113,23 @@ class BatchAutoMailReplyService(
         }
 
         return BatchAutoMailReplyResult(
-            accountCount = results.size,
+            accountCount = perAccountResults.size,
             successAccountCount = successResults.size,
             failedAccountCount = failedResults.size,
             fetched = successResults.sumOf { it.fetched },
             recorded = successResults.sumOf { it.recorded },
             replied = successResults.sumOf { it.replied },
             manualReview = successResults.sumOf { it.manualReview },
-            accounts = results,
-            taskFinalStatus = taskStatus
+            accounts = perAccountResults,
+            taskFinalStatus = taskStatus,
+            totalAccountsToPoll = perAccountResults.size,
+            accountsPolled = perAccountResults.size,
+            expertsWithReply = successResults
+                .flatMap { it.repliedExperts }
+                .mapNotNull { it.expertEmail?.trim()?.lowercase() }
+                .distinct(),
+            startedAt = startedAt,
+            finishedAt = finishedAt
         )
     }
 
@@ -85,6 +151,11 @@ data class BatchAutoMailReplyResult(
     val replied: Int,
     val manualReview: Int,
     val accounts: List<AccountAutoMailReplyResult>,
+    val totalAccountsToPoll: Int = 0,
+    val accountsPolled: Int = 0,
+    val expertsWithReply: List<String> = emptyList(),
+    val startedAt: Long = 0,
+    val finishedAt: Long = 0,
     override val taskFinalStatus: String? = null
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = successAccountCount
@@ -98,5 +169,6 @@ data class AccountAutoMailReplyResult(
     val recorded: Int,
     val replied: Int,
     val manualReview: Int,
-    val errorMessage: String?
+    val errorMessage: String?,
+    val repliedExperts: List<RepliedExpertInfo> = emptyList()
 )

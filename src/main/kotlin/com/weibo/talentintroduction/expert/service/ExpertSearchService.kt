@@ -22,7 +22,7 @@ class ExpertSearchService(
     fun searchExperts(
         size: Int,
         level: ExpertIndexLevel
-    ): List<ExpertProfile> {
+    ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
 
         val requestBody = mapOf(
@@ -37,18 +37,20 @@ class ExpertSearchService(
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
-        ).body ?: return emptyList()
+        ).body ?: return ExpertSearchResult(emptyList(), 0L)
 
-        return response.path("hits")
+        val totalHits = response.path("hits").path("total").path("value").asLong(0L)
+        val experts = response.path("hits")
             .path("hits")
             .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
             .map(::toExpertProfile)
+        return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
     fun searchExpertsWithEmail(
         size: Int,
         level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
-    ): List<ExpertProfile> {
+    ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
 
         val requestBody = mapOf(
@@ -69,12 +71,14 @@ class ExpertSearchService(
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
-        ).body ?: return emptyList()
+        ).body ?: return ExpertSearchResult(emptyList(), 0L)
 
-        return response.path("hits")
+        val totalHits = response.path("hits").path("total").path("value").asLong(0L)
+        val experts = response.path("hits")
             .path("hits")
             .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
             .map(::toExpertProfile)
+        return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
     private fun toExpertProfile(source: JsonNode): ExpertProfile =
@@ -143,3 +147,8 @@ class ExpertSearchService(
         return "Basic $encoded"
     }
 }
+
+data class ExpertSearchResult(
+    val experts: List<ExpertProfile>,
+    val totalHits: Long
+)

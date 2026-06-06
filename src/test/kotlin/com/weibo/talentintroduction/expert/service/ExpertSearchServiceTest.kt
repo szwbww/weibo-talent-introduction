@@ -30,11 +30,12 @@ class ExpertSearchServiceTest {
     )
 
     @Test
-    fun `maps elasticsearch hits to expert profiles`() {
+    fun `maps elasticsearch hits to expert profiles with totalHits`() {
         val body = mapper.readTree(
             """
             {
               "hits": {
+                "total": {"value": 123},
                 "hits": [
                   {
                     "_source": {
@@ -64,7 +65,36 @@ class ExpertSearchServiceTest {
 
         val result = service.searchExpertsWithEmail(1)
 
-        assertEquals(1, result.size)
-        assertEquals("Ada Lovelace", result.single().displayName)
+        assertEquals(1, result.experts.size)
+        assertEquals("Ada Lovelace", result.experts.single().displayName)
+        assertEquals(123L, result.totalHits)
+    }
+
+    @Test
+    fun `empty response returns zero totalHits`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 0},
+                "hits": []
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertEquals(0, result.experts.size)
+        assertEquals(0L, result.totalHits)
     }
 }

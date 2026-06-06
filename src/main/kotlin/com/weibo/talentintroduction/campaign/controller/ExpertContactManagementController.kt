@@ -46,8 +46,13 @@ class ExpertContactManagementController(
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) operatorStatus: String?,
         @RequestParam(required = false) needsAttention: Boolean?
-    ): List<ExpertContactResponse> =
-        service.listContacts(campaignId, status, operatorStatus, needsAttention).map { it.toResponse() }
+    ): ExpertContactListResponse {
+        val contacts = service.listContacts(campaignId, status, operatorStatus, needsAttention)
+        return ExpertContactListResponse(
+            contacts = contacts.map { it.toResponse() },
+            totalCount = contacts.size.toLong()
+        )
+    }
 
     @GetMapping("/{contactId}")
     fun getContactDetail(@PathVariable contactId: Long): ExpertContactDetailResponse =
@@ -316,6 +321,11 @@ data class MeetingScheduleResponse(
     val note: String?,
     val createdAt: String?,
     val updatedAt: String?
+)
+
+data class ExpertContactListResponse(
+    val contacts: List<ExpertContactResponse>,
+    val totalCount: Long
 )
 
 data class ExpertContactResponse(

@@ -575,11 +575,14 @@ async function loadContacts() {
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
 
     let contacts = [];
+    let totalHits = 0;
     if (operatorStatus || needsAttention) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
-        const rawContacts = await api(`/api/expert-contacts?${params}`);
+        const data = await api(`/api/expert-contacts?${params}`);
+        const rawContacts = data.contacts || data;
+        totalHits = data.totalCount ?? rawContacts.length;
         contacts = rawContacts.map(c => ({
             orcidId: c.orcidId,
             email: c.expertEmail,
@@ -598,7 +601,9 @@ async function loadContacts() {
         const params = new URLSearchParams();
         params.set("level", level);
         params.set("size", size);
-        const rawExperts = await api(`/api/experts?${params}`);
+        const data = await api(`/api/experts?${params}`);
+        const rawExperts = data.experts || data;
+        totalHits = data.totalHits ?? rawExperts.length;
         contacts = rawExperts.map(e => ({
             orcidId: e.orcidId,
             email: e.email,
@@ -616,6 +621,9 @@ async function loadContacts() {
     }
     state.contacts = contacts;
 
+    $("#contactCountInfo").textContent =
+        `筛选结果: ${totalHits} 位专家，当前显示 ${contacts.length} 位`;
+
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.operatorStatus
             ? operatorStatusLabels[contact.operatorStatus] || contact.operatorStatus
@@ -630,6 +638,9 @@ async function loadContacts() {
         const needsAttentionClass = contact.needsManualAttention ? "needs-attention" : "";
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}">
+            <label class="expert-checkbox" onclick="event.stopPropagation()">
+                <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${!contact.contactId ? 'disabled' : ''}>
+            </label>
             <div class="expert-row-main">
                 <div class="expert-name-block">
                     <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
@@ -649,6 +660,103 @@ async function loadContacts() {
         </div>
     `;
     }).join("");
+}
+
+async function handleCheckReplies() {
+    const checked = $$(".expert-select-cb:checked")
+        .map(cb => Number(cb.dataset.contactId))
+        .filter(id => id > 0);
+
+    if (checked.length === 0) {
+        if (!confirm("没有勾选专家，是否检查所有已联系专家的回复？")) return;
+    }
+
+    const payload = checked.length > 0
+        ? { contactIds: checked }
+        : {};
+
+    const btn = $("#checkRepliesBtn");
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "检查中...";
+
+    try {
+        await api("/api/mail/auto-reply/check-replies", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        showStatus("检查回复失败: " + e.message, "error");
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return;
+    }
+
+    showStatus(checked.length > 0
+        ? `检查完成: 已检查 ${checked.length} 位指定专家的回复`
+        : "检查完成: 已检查所有已联系专家的回复");
+
+    try {
+        await showPollLog();
+    } catch (e) {
+        showStatus("检查已完成，但轮询日志加载失败: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+async function showPollLog() {
+    const data = await api("/api/task-executions/recent-polls?limit=10");
+    const rows = data.map(log => {
+        const triggerLabel = log.triggerType === "SCHEDULED" ? "定时"
+            : log.triggerType === "MANUAL_ALL" ? "手动(全量)"
+            : log.triggerType === "MANUAL_SELECTIVE" ? "手动(指定)" : log.triggerType;
+        const triggerBadge = log.isManualTrigger
+            ? badge("手动", "warn")
+            : badge("定时", "");
+        const statusBadge = badge(log.status === "SUCCESS" ? "成功"
+            : log.status === "PARTIAL_SUCCESS" ? "部分成功"
+            : log.status === "FAILED" ? "失败"
+            : log.status === "RUNNING" ? "运行中" : log.status,
+            log.status === "SUCCESS" ? "ok" : log.status === "FAILED" ? "error" : "warn");
+        const replyCount = log.expertsWithReply?.length || 0;
+        const replyNames = log.expertsWithReply?.join(", ") || "";
+        const progressText = log.status === "RUNNING"
+            ? "执行中"
+            : `${log.accountsPolled ?? log.expertsChecked ?? 0}/${log.totalAccountsToPoll ?? log.totalExpertsToCheck ?? 0}`;
+
+        return `
+        <tr>
+            <td>${triggerBadge} ${escapeHtml(triggerLabel)}</td>
+            <td>${escapeHtml(log.startedAt)}</td>
+            <td>${progressText}</td>
+            <td>${replyCount > 0
+                ? `<details><summary>${replyCount} 位有回复</summary><small>${escapeHtml(replyNames)}</small></details>`
+                : "0"}</td>
+            <td>${log.durationSeconds != null ? log.durationSeconds + " 秒" : "-"}</td>
+            <td>${escapeHtml(log.nextPollAt || "-")}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    }).join("");
+
+    const html = `
+        <div class="dialog-overlay" id="pollLogOverlay" onclick="if(event.target===this)this.remove()">
+            <div class="dialog" style="max-width: 900px; max-height: 80vh; overflow-y: auto;">
+                <h3>自动回复轮询日志 (近10次)</h3>
+                <table class="data-table" style="margin-top: 12px;">
+                    <thead><tr>
+                        <th>触发方式</th><th>开始时间</th><th>轮询进度</th>
+                        <th>发现回复</th><th>耗时</th><th>下次定时</th><th>状态</th>
+                    </tr></thead>
+                    <tbody>${rows || '<tr><td colspan="7" class="text-muted">暂无轮询记录</td></tr>'}</tbody>
+                </table>
+                <div class="dialog-actions" style="margin-top:12px;">
+                    <button class="button secondary" onclick="$('#pollLogOverlay').remove()">关闭</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
 }
 
 function renderKeywords(keywordString) {
@@ -1268,26 +1376,92 @@ function renderOperatorLogs(logs) {
         </div>
         <div class="log-list">
             ${list.map(log => {
-                const beforeInfo = log.beforeValue ? escapeHtml(log.beforeValue).substring(0, 80) : "";
-                const afterInfo = log.afterValue ? escapeHtml(log.afterValue).substring(0, 80) : "";
+                const detail = renderLogDetail(log);
                 return `
                 <div class="log-row">
                     <div>
-                        <strong>${escapeHtml(log.actionType || log.action || "?")}</strong>
+                        <strong>${actionTypeLabel(log.actionType)}</strong>
                         <span>${escapeHtml(log.operatorName || "-")}&nbsp;·&nbsp;${escapeHtml(log.createdAt || "")}</span>
                         ${log.note ? `<span style="color:var(--text-muted);font-size:12px">${escapeHtml(log.note)}</span>` : ""}
-                        ${beforeInfo || afterInfo ? `
-                            <details class="log-detail">
-                                <summary>变更详情</summary>
-                                ${beforeInfo ? `<div>前: ${beforeInfo}</div>` : ""}
-                                ${afterInfo ? `<div>后: ${afterInfo}</div>` : ""}
-                            </details>
-                        ` : ""}
+                        ${detail}
                     </div>
                 </div>
             `}).join("")}
         </div>
     `;
+}
+
+function renderLogDetail(log) {
+    const before = tryParseJson(log.beforeValue);
+    const after = tryParseJson(log.afterValue);
+    switch (log.actionType) {
+        case "SEND_MANUAL_RICH_REPLY":
+            return `<details class="log-detail"><summary>回复详情</summary>
+                <div><strong>主题:</strong> ${escapeHtml(after?.subject || "-")}</div>
+                <div><strong>内容:</strong><br>${escapeHtml(after?.bodyPreviewText || after?.bodyPreview || "-")}</div>
+                <div><strong>发送状态:</strong> ${escapeHtml(after?.sendStatus || "-")}</div>
+            </details>`;
+        case "SEND_QA_REPLY":
+            return `<details class="log-detail"><summary>QA 回复详情</summary>
+                <div><strong>QA 规则:</strong> ${escapeHtml(after?.qaRuleName || after?.qaRuleId || "-")}</div>
+                <div><strong>主题:</strong> ${escapeHtml(after?.subject || "-")}</div>
+                <div><strong>内容:</strong><br>${escapeHtml(after?.bodyPreviewText || after?.bodyPreview || "-")}</div>
+                <div><strong>发送状态:</strong> ${escapeHtml(after?.sendStatus || "-")}</div>
+            </details>`;
+        case "CHANGE_OPERATOR_STATUS":
+            return `<div class="log-transition">
+                ${operatorStatusLabels[before?.operatorStatus] || before?.operatorStatus || "?"}
+                → ${operatorStatusLabels[after?.operatorStatus] || after?.operatorStatus || "?"}
+            </div>`;
+        case "CHANGE_INDEX_LEVEL":
+            return `<div class="log-transition">
+                ${indexLevelLabels[before?.currentIndexLevel] || before?.currentIndexLevel || "?"}
+                → ${indexLevelLabels[after?.currentIndexLevel] || after?.currentIndexLevel || "?"}
+            </div>`;
+        case "SWITCH_REPLY_MODE": {
+            const beforeMode = before?.autoReplyEnabled === true || before?.autoReplyEnabled === "true" ? "自动回复" : "人工回复";
+            const afterMode = after?.autoReplyEnabled === true || after?.autoReplyEnabled === "true" ? "自动回复" : "人工回复";
+            const beforeStatus = labelStatus(before?.currentStatus) || "?";
+            const afterStatus = labelStatus(after?.currentStatus) || "?";
+            return `<div class="log-transition">
+                回复模式: ${beforeMode} → ${afterMode}
+                ${before?.currentStatus !== after?.currentStatus
+                    ? `<br>状态: ${beforeStatus} → ${afterStatus}`
+                    : ""}
+            </div>`;
+        }
+        case "MARK_INBOUND_RESOLVED": {
+            return `<div class="log-transition">
+                ${labelStatus(before?.processStatus) || "?"} → ${labelStatus(after?.processStatus) || "?"}
+            </div>`;
+        }
+        default:
+            return (before || after) ? `
+                <details class="log-detail">
+                    <summary>变更详情</summary>
+                    ${before ? `<div>前: ${escapeHtml(JSON.stringify(before))}</div>` : ""}
+                    ${after ? `<div>后: ${escapeHtml(JSON.stringify(after))}</div>` : ""}
+                </details>
+            ` : "";
+    }
+}
+
+function tryParseJson(str) {
+    if (!str) return null;
+    try { return JSON.parse(str); } catch { return null; }
+}
+
+function actionTypeLabel(type) {
+    const map = {
+        CHANGE_OPERATOR_STATUS: "变更专家状态",
+        CHANGE_INDEX_LEVEL: "变更专家层级",
+        SWITCH_REPLY_MODE: "切换回复模式",
+        BIND_INBOUND_MAIL: "绑定待处理邮件",
+        SEND_QA_REPLY: "发送 QA 邮件",
+        SEND_MANUAL_RICH_REPLY: "人工回复邮件",
+        MARK_INBOUND_RESOLVED: "标记已处理"
+    };
+    return map[type] || type;
 }
 
 async function loadMailSendOptions() {
@@ -1854,11 +2028,16 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
-        await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
-            method: "POST",
-            body: JSON.stringify({ operatorStatus: newStatus, operatorName })
-        });
-        showStatus("专家状态已更新");
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
+                method: "POST",
+                body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+            });
+            alert("专家状态变更成功");
+        } catch (e) {
+            alert("专家状态变更失败: " + e.message);
+            return;
+        }
         await showUnmatchedDetail(id);
         return;
     }
@@ -1869,11 +2048,16 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
-        await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
-            method: "POST",
-            body: JSON.stringify({ targetLevel: newLevel, operatorName })
-        });
-        showStatus("专家层级已更新");
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
+                method: "POST",
+                body: JSON.stringify({ targetLevel: newLevel, operatorName })
+            });
+            alert("专家层级变更成功");
+        } catch (e) {
+            alert("专家层级变更失败: " + e.message);
+            return;
+        }
         await showUnmatchedDetail(id);
         return;
     }
@@ -1884,11 +2068,16 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
-        await api(`/api/mail/unmatched-inbound/${id}/qa-reply`, {
-            method: "POST",
-            body: JSON.stringify({ qaRuleId: Number(optionValue), operatorName })
-        });
-        showStatus("QA 邮件已发送");
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/qa-reply`, {
+                method: "POST",
+                body: JSON.stringify({ qaRuleId: Number(optionValue), operatorName })
+            });
+            alert("QA 邮件发送成功");
+        } catch (e) {
+            alert("QA 邮件发送失败: " + e.message);
+            return;
+        }
         await showUnmatchedDetail(id);
         await loadUnmatched();
         return;
@@ -1905,17 +2094,22 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
-        await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
-            method: "POST",
-            body: JSON.stringify({
-                senderAccountCode: null,
-                subject,
-                htmlBody: editor.innerHTML,
-                textBody: editor.innerText,
-                operatorName
-            })
-        });
-        showStatus("人工回复邮件已发送");
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
+                method: "POST",
+                body: JSON.stringify({
+                    senderAccountCode: null,
+                    subject,
+                    htmlBody: editor.innerHTML,
+                    textBody: editor.innerText,
+                    operatorName
+                })
+            });
+            alert("人工回复邮件发送成功");
+        } catch (e) {
+            alert("人工回复发送失败: " + e.message);
+            return;
+        }
         await showUnmatchedDetail(id);
         await loadUnmatched();
         return;

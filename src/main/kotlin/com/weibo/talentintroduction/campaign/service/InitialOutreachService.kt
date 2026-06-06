@@ -29,7 +29,7 @@ class InitialOutreachService(
 ) {
     @Transactional
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
-        val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE)
+        val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
         val sentResults = mutableListOf<InitialOutreachSendResult>()
         var skipped = 0

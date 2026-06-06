@@ -1,17 +1,21 @@
 package com.weibo.talentintroduction.task.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import java.time.LocalDateTime
 
 class TaskExecutionServiceTest {
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
-    private val service = TaskExecutionService(repository, ObjectMapper())
+    private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
+    private val service = TaskExecutionService(repository, ObjectMapper(), schedulingProperties)
 
     @Test
     fun `lists executions by task type and status`() {
@@ -156,6 +160,69 @@ class TaskExecutionServiceTest {
         assertEquals("SUCCESS", recorded.status)
         assertEquals(1, recorded.successCount)
         assertEquals(0, recorded.failureCount)
+    }
+
+    @Test
+    fun `nextPollTime returns null for dash cron`() {
+        val result = service.nextPollTime()
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `nextPollTime returns future time for valid cron`() {
+        val validCronService = TaskExecutionService(
+            repository, ObjectMapper(),
+            MailSchedulingProperties(autoReplyAllCron = "0 */5 * * * *")
+        )
+        val result = validCronService.nextPollTime()
+        assertNotNull(result)
+        assertTrue(result!!.isAfter(LocalDateTime.now()))
+    }
+
+    @Test
+    fun `nextPollTime returns null for invalid cron`() {
+        val invalidCronService = TaskExecutionService(
+            repository, ObjectMapper(),
+            MailSchedulingProperties(autoReplyAllCron = "not-a-cron")
+        )
+        val result = invalidCronService.nextPollTime()
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `listRecentPolls accepts limit 1`() {
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 1))
+            .thenReturn(listOf(execution("SUCCESS")))
+
+        val result = service.listRecentPolls(1)
+
+        assertEquals(1, result.size)
+    }
+
+    @Test
+    fun `listRecentPolls accepts limit 100`() {
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 100))
+            .thenReturn(emptyList())
+
+        val result = service.listRecentPolls(100)
+
+        assertEquals(0, result.size)
+    }
+
+    @Test
+    fun `listRecentPolls rejects limit 0`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.listRecentPolls(0)
+        }
+        assertTrue(ex.message!!.contains("between 1 and 100"))
+    }
+
+    @Test
+    fun `listRecentPolls rejects limit 101`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.listRecentPolls(101)
+        }
+        assertTrue(ex.message!!.contains("between 1 and 100"))
     }
 
     private fun execution(status: String): TaskExecution =

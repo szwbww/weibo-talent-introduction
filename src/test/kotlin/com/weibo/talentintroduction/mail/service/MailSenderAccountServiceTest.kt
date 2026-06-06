@@ -126,7 +126,7 @@ class MailSenderAccountServiceTest {
     @Test
     fun `getAutoReceiveAccount rejects SIMULATOR_NOOP`() {
         Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP")).thenReturn(
-            account("SIMULATOR_NOOP", enabled = false)
+            account("SIMULATOR_NOOP", enabled = true)
         )
 
         val ex = assertThrows(IllegalStateException::class.java) {

@@ -8,8 +8,11 @@ import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyResult
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyService
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
 import com.weibo.talentintroduction.mail.queue.QueuePublishResult
+import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.service.TaskExecutionService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -20,7 +23,8 @@ class MailAutomationController(
     private val initialOutreachService: InitialOutreachService,
     private val autoMailReplyService: AutoMailReplyService,
     private val batchAutoMailReplyService: BatchAutoMailReplyService,
-    private val mailQueuePublisherProvider: ObjectProvider<MailQueuePublisher>
+    private val mailQueuePublisherProvider: ObjectProvider<MailQueuePublisher>,
+    private val taskExecutionService: TaskExecutionService
 ) {
     @PostMapping("/initial-outreach")
     fun sendInitialOutreach(
@@ -62,7 +66,54 @@ class MailAutomationController(
     ): QueuePublishResult =
         queuePublisher().publishAutoReplyAll(maxMessagesPerAccount)
 
+    @PostMapping("/auto-reply/check-replies")
+    fun checkReplies(
+        @RequestBody request: CheckRepliesRequest
+    ): TaskExecution {
+        val maxMessages = request.maxMessagesPerAccount ?: 20
+        require(maxMessages in 1..100) {
+            "maxMessagesPerAccount must be between 1 and 100"
+        }
+        val contactIds = request.contactIds
+            ?.distinct()
+            .orEmpty()
+
+        if (contactIds.isNotEmpty()) {
+            require(contactIds.all { it > 0 }) {
+                "contactIds must contain positive ids"
+            }
+            require(contactIds.size <= 500) {
+                "contactIds must not contain more than 500 ids"
+            }
+        }
+
+        val normalizedRequest = CheckRepliesRequest(
+            contactIds = contactIds.takeIf { it.isNotEmpty() },
+            maxMessagesPerAccount = maxMessages
+        )
+
+        return taskExecutionService.runAndRecord(
+            taskType = "AUTO_REPLY_ALL",
+            triggerType = if (contactIds.isEmpty()) "MANUAL_ALL" else "MANUAL_SELECTIVE",
+            request = normalizedRequest
+        ) {
+            if (contactIds.isEmpty()) {
+                batchAutoMailReplyService.receiveAndAutoReplyAll(maxMessages)
+            } else {
+                batchAutoMailReplyService.receiveAndAutoReplyForContacts(
+                    contactIds = contactIds,
+                    maxMessagesPerAccount = maxMessages
+                )
+            }
+        }
+    }
+
     private fun queuePublisher(): MailQueuePublisher =
         mailQueuePublisherProvider.getIfAvailable()
             ?: error("Mail queue is not enabled. Set MAIL_QUEUE_ENABLED=true and configure RabbitMQ.")
 }
+
+data class CheckRepliesRequest(
+    val contactIds: List<Long>? = null,
+    val maxMessagesPerAccount: Int? = 20
+)

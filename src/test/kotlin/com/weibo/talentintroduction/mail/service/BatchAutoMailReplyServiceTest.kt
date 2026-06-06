@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -11,7 +13,8 @@ import org.mockito.Mockito
 class BatchAutoMailReplyServiceTest {
     private val accountService = Mockito.mock(MailSenderAccountService::class.java)
     private val autoReplyService = Mockito.mock(AutoMailReplyService::class.java)
-    private val service = BatchAutoMailReplyService(accountService, autoReplyService)
+    private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val service = BatchAutoMailReplyService(accountService, autoReplyService, mailRecordRepository)
 
     @Test
     fun `polls all auto-receive accounts and aggregates results`() {
@@ -143,6 +146,149 @@ class BatchAutoMailReplyServiceTest {
         assertEquals(1, result.successAccountCount)
         assertEquals(0, result.failedAccountCount)
         assertNull(result.taskFinalStatus)
+    }
+
+    @Test
+    fun `selective check polls only mapped account`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+            .thenReturn(listOf("a1"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1"))
+            .thenReturn(account("a1"))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+
+        val result = service.receiveAndAutoReplyForContacts(listOf(1L), 3)
+
+        assertEquals(1, result.accountCount)
+        assertEquals("SUCCESS", result.accounts.first().status)
+        Mockito.verify(accountService, Mockito.never()).listEnabledAccounts()
+        Mockito.verify(accountService, Mockito.never()).listAutoReceiveAccounts()
+    }
+
+    @Test
+    fun `selective check polls multiple accounts`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(listOf("a1", "a2"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a2")).thenReturn(account("a2"))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt()))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+
+        val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
+
+        assertEquals(2, result.accountCount)
+        Mockito.verify(autoReplyService).receiveAndAutoReply("a1", 3)
+        Mockito.verify(autoReplyService).receiveAndAutoReply("a2", 3)
+        Mockito.verify(accountService, Mockito.never()).listAutoReceiveAccounts()
+    }
+
+    @Test
+    fun `selective check deduplicates to same account`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(listOf("a1"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 1))
+
+        val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 5)
+
+        assertEquals(1, result.accountCount)
+        Mockito.verify(autoReplyService, Mockito.times(1)).receiveAndAutoReply("a1", 5)
+    }
+
+    @Test
+    fun `selective check no accounts throws error`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(emptyList())
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
+        }
+        assertTrue(ex.message!!.contains("No auto-receive account"))
+        Mockito.verify(accountService, Mockito.never()).listAutoReceiveAccounts()
+    }
+
+    @Test
+    fun `selective check disabled account throws error`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+            .thenReturn(listOf("disabled"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("disabled")).thenReturn(null)
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.receiveAndAutoReplyForContacts(listOf(1L), 3)
+        }
+        assertTrue(ex.message!!.contains("unavailable"))
+        assertTrue(ex.message!!.contains("disabled"))
+    }
+
+    @Test
+    fun `selective check mixed valid and unavailable accounts fails entirely`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(listOf("a1", "disabled"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("disabled")).thenReturn(null)
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
+        }
+        assertTrue(ex.message!!.contains("disabled"))
+        assertTrue(ex.message!!.contains("unavailable"))
+        // a1 must NOT have been polled
+        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply(
+            Mockito.anyString(), Mockito.anyInt()
+        )
+    }
+
+    @Test
+    fun `selective check SIMULATOR_NOOP excluded`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+            .thenReturn(listOf("SIMULATOR_NOOP"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("SIMULATOR_NOOP")).thenReturn(null)
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.receiveAndAutoReplyForContacts(listOf(1L), 3)
+        }
+        assertTrue(ex.message!!.contains("unavailable"))
+        assertTrue(ex.message!!.contains("SIMULATOR_NOOP"))
+    }
+
+    @Test
+    fun `selective check one account fails others continue`() {
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(listOf("a1", "a2"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
+        Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a2")).thenReturn(account("a2"))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 3))
+            .thenThrow(RuntimeException("IMAP connection timeout"))
+
+        val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
+
+        assertEquals(2, result.accountCount)
+        assertEquals(1, result.successAccountCount)
+        assertEquals(1, result.failedAccountCount)
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+    }
+
+    @Test
+    fun `experts with reply deduplicated by lowercase email`() {
+        val experts = listOf(
+            RepliedExpertInfo(1L, "A@test.com", null, "QA_REPLIED"),
+            RepliedExpertInfo(2L, "a@test.com", null, "QA_REPLIED"),
+            RepliedExpertInfo(3L, "b@test.com", null, "QA_REPLIED")
+        )
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(listOf(account("a1")))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+            .thenReturn(AutoMailReplyBatchResult(
+                fetched = 3, recorded = 3, replied = 3, manualReview = 0, repliedExperts = experts
+            ))
+
+        val result = service.receiveAndAutoReplyAll(3)
+
+        assertEquals(2, result.expertsWithReply.size)
+        assertTrue(result.expertsWithReply.contains("a@test.com"))
+        assertTrue(result.expertsWithReply.contains("b@test.com"))
     }
 
     private fun account(accountCode: String): MailSenderAccount =

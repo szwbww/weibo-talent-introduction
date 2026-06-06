@@ -441,10 +441,24 @@ class AutoMailReplyService(
         var replied = 0
         var manualReview = 0
         var meetingInvitations = 0
+        val repliedExperts = mutableListOf<RepliedExpertInfo>()
 
         receivedMails.forEach {
             val r = processSingle(account, it, skipImapAck = false)
-            if (r.recorded) recorded++
+            if (r.recorded) {
+                recorded++
+                repliedExperts.add(
+                    RepliedExpertInfo(
+                        expertContactId = r.expertContactId,
+                        expertEmail = it.from,
+                        expertName = r.expertContactId
+                            ?.let(expertContactRepository::findById)
+                            ?.map { it.expertName }
+                            ?.orElse(null),
+                        outcome = r.outcome.name
+                    )
+                )
+            }
             if (r.outcome == SinglePipelineOutcome.QA_REPLIED) replied++
             if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
             if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
@@ -455,7 +469,8 @@ class AutoMailReplyService(
             recorded = recorded,
             replied = replied,
             manualReview = manualReview,
-            meetingInvitations = meetingInvitations
+            meetingInvitations = meetingInvitations,
+            repliedExperts = repliedExperts
         )
     }
 
@@ -795,10 +810,18 @@ val MANUAL_REVIEW_OUTCOMES = setOf(
     SinglePipelineOutcome.MEETING_ALREADY_SENT
 )
 
+data class RepliedExpertInfo(
+    val expertContactId: Long?,
+    val expertEmail: String?,
+    val expertName: String?,
+    val outcome: String
+)
+
 data class AutoMailReplyBatchResult(
     val fetched: Int,
     val recorded: Int,
     val replied: Int,
     val manualReview: Int,
-    val meetingInvitations: Int = 0
+    val meetingInvitations: Int = 0,
+    val repliedExperts: List<RepliedExpertInfo> = emptyList()
 )

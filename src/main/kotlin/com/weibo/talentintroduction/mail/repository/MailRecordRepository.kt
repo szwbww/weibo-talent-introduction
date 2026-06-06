@@ -193,4 +193,12 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         """
     )
     fun aggregateSenderAccountStats(from: LocalDateTime, to: LocalDateTime): List<SenderAccountDailyStats>
+
+    @Query(
+        """
+        SELECT DISTINCT sender_account_code FROM mail_record
+        WHERE expert_contact_id IN (:contactIds) AND sender_account_code IS NOT NULL
+        """
+    )
+    fun findDistinctSenderAccountCodesByExpertContactIds(contactIds: List<Long>): List<String>
 }

@@ -38,6 +38,13 @@ class MailSenderAccountService(
         return account
     }
 
+    fun getAutoReceiveAccountOrNull(accountCode: String): MailSenderAccount? =
+        try {
+            getAutoReceiveAccount(accountCode)
+        } catch (_: Exception) {
+            null
+        }
+
     fun createAccount(command: MailSenderAccountCreateCommand): MailSenderAccount {
         require(command.accountCode.isNotBlank()) { "accountCode is required" }
         require(command.senderEmail.isNotBlank()) { "senderEmail is required" }

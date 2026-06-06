@@ -951,12 +951,15 @@
                     </select>
                 </label>
                 <button class="button primary" id="loadContactsBtn">加载专家列表</button>
+                <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
+                <button class="button" id="showPollLogBtn" onclick="showPollLog()">轮询日志</button>
             </div>
 
             <div class="split-layout contacts-layout">
                 <!-- Left panel: candidate list -->
                 <section class="panel" style="width: 320px; flex-shrink: 0;">
                     <div class="panel-head"><h2>专家列表</h2></div>
+                    <div id="contactCountInfo" class="text-muted" style="padding: 4px 12px; font-size: 12px;"></div>
                     <div id="contactList" class="list"></div>
                 </section>
                 <!-- Right panel: detail & timeline view -->

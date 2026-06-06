@@ -25,7 +25,8 @@ class PendingMailOperationService(
     private val mailDeliveryService: MailDeliveryService,
     private val mailRecordRepository: MailRecordRepository,
     private val operatorActionLogService: OperatorActionLogService,
-    private val qaRuleRepository: QaRuleRepository
+    private val qaRuleRepository: QaRuleRepository,
+    private val mailBodyCleaner: MailBodyCleaner
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -128,7 +129,10 @@ class PendingMailOperationService(
             after = mapOf(
                 "mailRecordId" to saved.id,
                 "qaRuleId" to qaRuleId,
-                "sendStatus" to delivered.status
+                "qaRuleName" to rule.displayName,
+                "sendStatus" to delivered.status,
+                "subject" to mail.subject,
+                "bodyPreviewText" to mail.body.take(500)
             ),
             operatorName = operatorName,
             note = "QA reply sent for inbound processing $inboundProcessingId"
@@ -206,7 +210,9 @@ class PendingMailOperationService(
             before = mapOf("inboundProcessingId" to inboundProcessingId),
             after = mapOf(
                 "mailRecordId" to saved.id,
-                "sendStatus" to delivered.status
+                "sendStatus" to delivered.status,
+                "subject" to mail.subject,
+                "bodyPreviewText" to (textBody?.ifBlank { mailBodyCleaner.clean(htmlBody) } ?: mailBodyCleaner.clean(htmlBody)).take(500)
             ),
             operatorName = operatorName,
             note = "Manual rich reply sent for inbound processing $inboundProcessingId"

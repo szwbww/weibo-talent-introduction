@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.task.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.springframework.stereotype.Service
@@ -9,7 +11,8 @@ import java.time.LocalDateTime
 @Service
 class TaskExecutionService(
     private val repository: TaskExecutionRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val schedulingProperties: MailSchedulingProperties
 ) {
     fun listExecutions(taskType: String?, status: String?): List<TaskExecution> =
         when {
@@ -29,6 +32,22 @@ class TaskExecutionService(
     fun getExecution(id: Long): TaskExecution =
         repository.findById(id)
             .orElseThrow { error("Task execution not found: $id") }
+
+    fun listRecentPolls(limit: Int): List<TaskExecution> {
+        require(limit in 1..100) { "limit must be between 1 and 100" }
+        return repository.findRecentByTaskType("AUTO_REPLY_ALL", limit)
+    }
+
+    fun nextPollTime(): LocalDateTime? {
+        val cron = schedulingProperties.autoReplyAllCron
+        if (cron.isBlank() || cron == "-") return null
+        return try {
+            val expr = org.springframework.scheduling.support.CronExpression.parse(cron)
+            expr.next(LocalDateTime.now())
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun <T : Any?> runAndRecord(
         taskType: String,
