@@ -707,7 +707,17 @@ async function handleCheckReplies() {
 }
 
 async function showPollLog() {
-    const data = await api("/api/task-executions/recent-polls?limit=10");
+    let data;
+    try {
+        data = await api("/api/task-executions/recent-polls?limit=10");
+    } catch (e) {
+        showStatus("轮询日志加载失败: " + e.message, "error");
+        return;
+    }
+    if (!Array.isArray(data)) {
+        showStatus("轮询日志接口返回格式异常", "error");
+        return;
+    }
     const rows = data.map(log => {
         const triggerLabel = log.triggerType === "SCHEDULED" ? "定时"
             : log.triggerType === "MANUAL_ALL" ? "手动(全量)"
@@ -721,18 +731,22 @@ async function showPollLog() {
             : log.status === "RUNNING" ? "运行中" : log.status,
             log.status === "SUCCESS" ? "ok" : log.status === "FAILED" ? "error" : "warn");
         const replyCount = log.expertsWithReply?.length || 0;
-        const replyNames = log.expertsWithReply?.join(", ") || "";
         const progressText = log.status === "RUNNING"
-            ? "执行中"
-            : `${log.accountsPolled ?? log.expertsChecked ?? 0}/${log.totalAccountsToPoll ?? log.totalExpertsToCheck ?? 0}`;
+            ? "执行中..."
+            : [
+                `${log.accountsPolled}/${log.totalAccountsToPoll} 账号`,
+                log.totalFetched > 0 ? `拉取 ${log.totalFetched} 封` : null,
+                log.totalReplied > 0 ? `回复 ${log.totalReplied}` : null,
+                log.totalManualReview > 0 ? `转人工 ${log.totalManualReview}` : null
+            ].filter(Boolean).join(" · ") || "无活动";
 
         return `
-        <tr>
+        <tr class="poll-log-row" data-poll-id="${log.id}" style="cursor:pointer;" title="点击查看详情">
             <td>${triggerBadge} ${escapeHtml(triggerLabel)}</td>
             <td>${escapeHtml(log.startedAt)}</td>
             <td>${progressText}</td>
             <td>${replyCount > 0
-                ? `<details><summary>${replyCount} 位有回复</summary><small>${escapeHtml(replyNames)}</small></details>`
+                ? `<span style="color:var(--primary);font-weight:600;">${replyCount}</span> 位`
                 : "0"}</td>
             <td>${log.durationSeconds != null ? log.durationSeconds + " 秒" : "-"}</td>
             <td>${escapeHtml(log.nextPollAt || "-")}</td>
@@ -740,24 +754,125 @@ async function showPollLog() {
         </tr>`;
     }).join("");
 
-    const html = `
-        <div class="dialog-overlay" id="pollLogOverlay" onclick="if(event.target===this)this.remove()">
-            <div class="dialog" style="max-width: 900px; max-height: 80vh; overflow-y: auto;">
-                <h3>自动回复轮询日志 (近10次)</h3>
-                <table class="data-table" style="margin-top: 12px;">
-                    <thead><tr>
-                        <th>触发方式</th><th>开始时间</th><th>轮询进度</th>
-                        <th>发现回复</th><th>耗时</th><th>下次定时</th><th>状态</th>
-                    </tr></thead>
-                    <tbody>${rows || '<tr><td colspan="7" class="text-muted">暂无轮询记录</td></tr>'}</tbody>
-                </table>
-                <div class="dialog-actions" style="margin-top:12px;">
-                    <button class="button secondary" onclick="$('#pollLogOverlay').remove()">关闭</button>
-                </div>
-            </div>
-        </div>`;
-    document.body.insertAdjacentHTML("beforeend", html);
+    const existing = document.getElementById("pollLogDialog");
+    if (existing) existing.remove();
+
+    const dialog = document.createElement("dialog");
+    dialog.id = "pollLogDialog";
+    dialog.className = "action-dialog";
+    dialog.style.maxWidth = "920px";
+    dialog.style.maxHeight = "80vh";
+    dialog.style.overflow = "hidden";
+    dialog.style.display = "flex";
+    dialog.style.flexDirection = "column";
+    dialog.innerHTML = `
+        <h3>自动回复轮询日志 (近10次)</h3>
+        <div style="overflow-y: auto; flex: 1;">
+            <table class="data-table" style="margin-top: 12px;">
+                <thead><tr>
+                    <th>触发方式</th><th>开始时间</th><th>轮询进度</th>
+                    <th>发现回复</th><th>耗时</th><th>下次定时</th><th>状态</th>
+                </tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" class="text-muted">暂无轮询记录</td></tr>'}</tbody>
+            </table>
+        </div>
+        <div class="action-dialog-footer">
+            <button class="button secondary" id="closePollLogBtn">关闭</button>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.querySelector("#closePollLogBtn").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => dialog.remove());
+    dialog.addEventListener("click", (e) => {
+        if (e.target === dialog) dialog.close();
+    });
+    dialog.querySelector("tbody").addEventListener("click", (e) => {
+        const row = e.target.closest("tr.poll-log-row");
+        if (row) togglePollDetail(row).catch(err => showStatus(err.message, "error"));
+    });
+    dialog.showModal();
 }
+
+async function togglePollDetail(row) {
+    const id = row.dataset.pollId;
+    const existingDetail = row.nextElementSibling;
+    if (existingDetail?.classList.contains("poll-detail-row")) {
+        existingDetail.remove();
+        return;
+    }
+
+    const data = await api(`/api/task-executions/recent-polls/${id}/detail`);
+
+    const detailRow = document.createElement("tr");
+    detailRow.className = "poll-detail-row";
+    detailRow.innerHTML = `<td colspan="7" style="padding: 12px 16px; background: var(--surface);">
+        ${data.error ? `<div class="text-muted" style="margin-bottom:8px;">${escapeHtml(data.error)}</div>` : ""}
+        ${data.accounts.map(acct => `
+            <div style="margin-bottom: 14px; padding: 8px; border: 1px solid var(--border); border-radius: 4px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>${escapeHtml(acct.accountCode)}</strong>
+                    ${badge(acct.status === "SUCCESS" ? "成功" : "失败",
+                            acct.status === "SUCCESS" ? "ok" : "error")}
+                    <span class="text-muted" style="font-size:12px;">
+                        拉取 ${acct.fetched} · 记录 ${acct.recorded} · 回复 ${acct.replied} · 转人工 ${acct.manualReview}
+                    </span>
+                </div>
+                ${acct.errorMessage ? `<div style="color:var(--error);font-size:12px;margin-bottom:4px;">${escapeHtml(acct.errorMessage)}</div>` : ""}
+                ${acct.repliedExperts.length > 0 ? `
+                    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                        <thead><tr>
+                            <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);">专家邮箱</th>
+                            <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);">专家姓名</th>
+                            <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);">处理结果</th>
+                        </tr></thead>
+                        <tbody>${acct.repliedExperts.map(e => `
+                            <tr>
+                                <td style="padding:3px 6px;">${escapeHtml(e.expertEmail || "-")}</td>
+                                <td style="padding:3px 6px;">${escapeHtml(e.expertName || "-")}</td>
+                                <td style="padding:3px 6px;">${badge(outcomeLabel(e.outcome), outcomeType(e.outcome))}</td>
+                            </tr>
+                        `).join("")}</tbody>
+                    </table>
+                ` : '<div class="text-muted" style="font-size:12px;margin-top:4px;">该账号未收到新邮件</div>'}
+            </div>
+        `).join("")}
+        ${data.accounts.length === 0 ? '<div class="text-muted">无账号轮询数据</div>' : ""}
+    </td>`;
+    row.after(detailRow);
+}
+
+function outcomeLabel(outcome) {
+    const map = {
+        QA_REPLIED: "QA 自动回复",
+        MEETING_INVITED: "会议邀约",
+        MANUAL_REVIEW_BY_INTENT: "转人工(意图)",
+        QA_NO_MATCH: "转人工(QA未匹配)",
+        CLOSED_BY_INTENT: "关闭(意图)",
+        AUTO_REPLY_DISABLED: "跳过(自动回复关闭)",
+        MANUAL_HANDOFF_STATUS: "跳过(已转人工)",
+        UNMATCHED_CONTACT: "未匹配联系人",
+        DUPLICATE_IMAP_UID: "重复邮件",
+        MEETING_ALREADY_SENT: "会议已发送",
+        INTRODUCTION_NOT_SENT: "未发首封"
+    };
+    return map[outcome] || outcome;
+}
+
+function outcomeType(outcome) {
+    if (outcome === "QA_REPLIED" || outcome === "MEETING_INVITED") return "ok";
+    if (outcome === "CLOSED_BY_INTENT" || outcome === "UNMATCHED_CONTACT") return "error";
+    return "warn";
+}
+
+function formatDateTime(isoStr) {
+    if (!isoStr) return "-";
+    const str = isoStr.replace("T", " ");
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(str)) {
+        return str + ":00";
+    }
+    return str.replace(/\.\d+$/, "").substring(0, 19);
+}
+
 
 function renderKeywords(keywordString) {
     if (!keywordString) return `<span class="text-muted">无关键词</span>`;

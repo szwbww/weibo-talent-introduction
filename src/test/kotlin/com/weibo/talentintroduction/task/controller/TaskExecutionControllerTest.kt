@@ -127,6 +127,69 @@ class TaskExecutionControllerTest {
         assertEquals(0, result[0].totalAccountsToPoll)
     }
 
+    @Test
+    fun `old record with accountCount fallback`() {
+        val json = """{"accountCount":5,"fetched":3,"recorded":3,"replied":2,"manualReview":1,"expertsWithReply":[]}"""
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 1))
+            .thenReturn(listOf(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = json,
+                startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+            )))
+
+        val result = controller.recentPolls(1)
+        assertEquals(5, result[0].totalAccountsToPoll)
+        assertEquals(5, result[0].accountsPolled)
+        assertEquals(3, result[0].totalFetched)
+        assertEquals(2, result[0].totalReplied)
+        assertEquals(1, result[0].totalManualReview)
+    }
+
+    @Test
+    fun `old record with totalExpertsToCheck fallback`() {
+        val json = """{"totalExpertsToCheck":12,"expertsChecked":12,"expertsWithReply":["a@test.com"]}"""
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 1))
+            .thenReturn(listOf(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = json,
+                startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+            )))
+
+        val result = controller.recentPolls(1)
+        assertEquals(12, result[0].totalAccountsToPoll)
+        assertEquals(12, result[0].accountsPolled)
+    }
+
+    @Test
+    fun `new fields take priority over old`() {
+        val json = """{"totalAccountsToPoll":8,"accountsPolled":8,"totalExpertsToCheck":12,"expertsChecked":12,"expertsWithReply":[]}"""
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 1))
+            .thenReturn(listOf(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = json,
+                startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+            )))
+
+        val result = controller.recentPolls(1)
+        assertEquals(8, result[0].totalAccountsToPoll)
+        assertEquals(8, result[0].accountsPolled)
+    }
+
+    @Test
+    fun `zero new field falls through to old`() {
+        val json = """{"totalAccountsToPoll":0,"accountsPolled":0,"totalExpertsToCheck":12,"expertsChecked":12,"expertsWithReply":[]}"""
+        Mockito.`when`(repository.findRecentByTaskType("AUTO_REPLY_ALL", 1))
+            .thenReturn(listOf(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = json,
+                startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+            )))
+
+        val result = controller.recentPolls(1)
+        assertEquals(12, result[0].totalAccountsToPoll)
+        assertEquals(12, result[0].accountsPolled)
+    }
+
     private fun exec(triggerType: String): TaskExecution =
         TaskExecution(
             id = 1L,

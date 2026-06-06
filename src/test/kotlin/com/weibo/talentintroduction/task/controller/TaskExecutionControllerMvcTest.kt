@@ -65,4 +65,65 @@ class TaskExecutionControllerMvcTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.id").value(42))
     }
+
+    @Test
+    fun `poll detail returns accounts and experts`() {
+        val summary = """{"accountCount":2,"accounts":[{"accountCode":"a1","status":"SUCCESS","fetched":3,"recorded":3,"replied":2,"manualReview":0,"repliedExperts":[{"expertContactId":1,"expertEmail":"e@test.com","expertName":"Name","outcome":"QA_REPLIED"}]},{"accountCode":"a2","status":"FAILED","fetched":0,"recorded":0,"replied":0,"manualReview":0,"errorMessage":"timeout","repliedExperts":[]}]}"""
+        Mockito.`when`(taskExecutionService.getExecution(1L))
+            .thenReturn(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = summary,
+                startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+            ))
+
+        mockMvc.perform(get("/api/task-executions/recent-polls/1/detail"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(1))
+            .andExpect(jsonPath("$.accounts[0].accountCode").value("a1"))
+            .andExpect(jsonPath("$.accounts[0].repliedExperts[0].expertEmail").value("e@test.com"))
+            .andExpect(jsonPath("$.accounts[1].status").value("FAILED"))
+            .andExpect(jsonPath("$.accounts[1].errorMessage").value("timeout"))
+    }
+
+    @Test
+    fun `poll detail rejects non poll execution`() {
+        Mockito.`when`(taskExecutionService.getExecution(1L))
+            .thenReturn(TaskExecution(
+                id = 1L, taskType = "INITIAL_OUTREACH", triggerType = "MANUAL",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = null,
+                startedAt = LocalDateTime.now()
+            ))
+
+        mockMvc.perform(get("/api/task-executions/recent-polls/1/detail"))
+            .andExpect(status().is4xxClientError)
+    }
+
+    @Test
+    fun `poll detail null summary returns empty accounts`() {
+        Mockito.`when`(taskExecutionService.getExecution(1L))
+            .thenReturn(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = null,
+                startedAt = LocalDateTime.now()
+            ))
+
+        mockMvc.perform(get("/api/task-executions/recent-polls/1/detail"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.accounts").isEmpty)
+    }
+
+    @Test
+    fun `poll detail corrupt JSON returns error`() {
+        Mockito.`when`(taskExecutionService.getExecution(1L))
+            .thenReturn(TaskExecution(
+                id = 1L, taskType = "AUTO_REPLY_ALL", triggerType = "SCHEDULED",
+                status = "SUCCESS", requestPayload = "{}", resultSummary = "{{{bad",
+                startedAt = LocalDateTime.now()
+            ))
+
+        mockMvc.perform(get("/api/task-executions/recent-polls/1/detail"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.accounts").isEmpty)
+            .andExpect(jsonPath("$.error").isNotEmpty)
+    }
 }
