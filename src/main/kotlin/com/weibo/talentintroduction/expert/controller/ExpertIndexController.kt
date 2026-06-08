@@ -9,6 +9,9 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgressStore
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -23,7 +26,8 @@ class ExpertIndexController(
     private val expertContactRepository: ExpertContactRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val revalidationService: ExpertRevalidationService,
-    private val taskExecutionService: TaskExecutionService
+    private val taskExecutionService: TaskExecutionService,
+    private val progressStore: TaskProgressStore
 ) {
     @GetMapping
     fun listExperts(
@@ -76,26 +80,34 @@ class ExpertIndexController(
     }
 
     @PostMapping("/revalidate-candidates")
-    fun revalidateCandidates(): RevalidationResult {
+    fun revalidateCandidates(): ResponseEntity<Any> {
+        if (progressStore.isRunning("EXPERT_REVALIDATION")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务正在执行中，请等待完成"))
+        }
         val (_, result) = taskExecutionService.runAndRecordWithResult(
             "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates"
         ) {
             revalidationService.revalidateCandidates()
         }
-        return result
+        return ResponseEntity.ok(result)
     }
 
     @PostMapping("/promote-eligible-raw")
     fun promoteEligibleRaw(
         @RequestParam(defaultValue = "1000") maxPromotions: Int
-    ): PromotionScanResult {
+    ): ResponseEntity<Any> {
+        if (progressStore.isRunning("RAW_PROMOTION_SCAN")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务正在执行中，请等待完成"))
+        }
         require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
         val (_, result) = taskExecutionService.runAndRecordWithResult(
             "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions)
         ) {
             revalidationService.promoteEligibleRawExperts(maxPromotions)
         }
-        return result
+        return ResponseEntity.ok(result)
     }
 }
 

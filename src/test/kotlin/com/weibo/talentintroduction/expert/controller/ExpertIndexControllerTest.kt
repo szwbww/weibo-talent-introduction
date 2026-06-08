@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -25,12 +26,13 @@ class ExpertIndexControllerTest {
     private val writerService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
+    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService,
-        revalidationService, taskExecutionService
+        revalidationService, taskExecutionService, progressStore
     )
 
     @Test
@@ -45,7 +47,7 @@ class ExpertIndexControllerTest {
 
         val result = controller.promoteEligibleRaw(maxPromotions = 1)
         assertNotNull(result)
-        assertEquals(0, result.stats.total)
+        assertEquals(0, (result.body as PromotionScanResult).stats.total)
     }
 
     @Test

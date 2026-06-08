@@ -4,6 +4,8 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgressStore
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -15,10 +17,15 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/expert-discovery")
 class ExpertDiscoveryController(
     private val discoveryService: ExpertDiscoveryService,
-    private val taskExecutionService: TaskExecutionService
+    private val taskExecutionService: TaskExecutionService,
+    private val progressStore: TaskProgressStore
 ) {
     @PostMapping("/run")
     fun triggerDiscovery(@RequestBody(required = false) criteria: PaperSearchCriteria?): ResponseEntity<Any> {
+        if (progressStore.isRunning("EXPERT_DISCOVERY")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务正在执行中，请等待完成"))
+        }
         val searchCriteria = criteria ?: PaperSearchCriteria(
             excludeCountries = listOf("CN"),
             openAccessOnly = true
@@ -37,6 +44,10 @@ class ExpertDiscoveryController(
         @RequestParam(defaultValue = "2020") yearFrom: Int,
         @RequestParam(defaultValue = "2026") yearTo: Int
     ): ResponseEntity<Any> {
+        if (progressStore.isRunning("EXPERT_DISCOVERY")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务正在执行中，请等待完成"))
+        }
         val criteria = PaperSearchCriteria(
             keywords = keywords,
             publicationYearFrom = yearFrom,
