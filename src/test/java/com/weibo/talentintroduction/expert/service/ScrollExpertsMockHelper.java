@@ -14,21 +14,34 @@ import java.util.Map;
 @SuppressWarnings("unchecked")
 public class ScrollExpertsMockHelper {
 
+    @SuppressWarnings("rawtypes")
     public static void stubScrollExperts(
         ExpertSearchService mock,
         List<List<ExpertProfile>> batches
     ) {
+        var totalHits = batches.stream().mapToLong(List::size).sum();
+        stubScrollExperts(mock, batches, totalHits);
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static void stubScrollExperts(
+        ExpertSearchService mock,
+        List<List<ExpertProfile>> batches,
+        long totalHits
+    ) {
         Mockito.doAnswer((Answer<Void>) invocation -> {
-            var handler = (kotlin.jvm.functions.Function1<List<ExpertProfile>, Boolean>) invocation.getArguments()[2];
+            var handler = (kotlin.jvm.functions.Function3<List<ExpertProfile>, Integer, Long, Boolean>) invocation.getArguments()[2];
+            var batchNumber = 0;
             for (var batch : batches) {
-                var shouldContinue = handler.invoke(batch);
+                batchNumber++;
+                var shouldContinue = handler.invoke(batch, batchNumber, totalHits);
                 if (!shouldContinue) break;
             }
             return null;
         }).when(mock).scrollExperts(
             Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.class),
             Mockito.anyInt(),
-            Mockito.any()
+            Mockito.any(kotlin.jvm.functions.Function3.class)
         );
     }
 

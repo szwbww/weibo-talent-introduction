@@ -71,31 +71,45 @@ class ExpertDiscoveryService(
 
     private fun discoverFromEuropePmc(criteria: PaperSearchCriteria, stats: DiscoveryStats) {
         var cursor: String? = criteria.cursor
+        var batchNumber = 0
         do {
             val batch = europePmc.searchPapers(criteria.copy(cursor = cursor))
             if (batch.papers.isEmpty()) break
+            batchNumber++
+            var limitReached = false
             for (paper in batch.papers) {
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) return
-                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) return
+                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
+                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
                 stats.totalPapers++
                 processPaper(paper, stats)
             }
+            log.info("EuropePMC发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
+                batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
+                stats.indexed, discoveryProperties.maxAuthorsPerRun)
+            if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
     }
 
     private fun discoverFromOpenAlexViaPmc(openAlex: OpenAlexDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats) {
         var cursor: String? = null
+        var batchNumber = 0
         do {
             val batch = openAlex.searchPapers(criteria.copy(cursor = cursor))
             if (batch.papers.isEmpty()) break
+            batchNumber++
+            var limitReached = false
             for (paper in batch.papers) {
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) return
-                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) return
+                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
+                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
                 if (paper.pmcId == null) continue
                 stats.totalPapers++
                 processPaper(paper, stats)
             }
+            log.info("OpenAlex发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
+                batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
+                stats.indexed, discoveryProperties.maxAuthorsPerRun)
+            if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
     }
@@ -238,10 +252,16 @@ class ExpertDiscoveryService(
         val openAlex = openAlexProvider.getIfAvailable() ?: return EnrichmentResult(0, 0)
         var enriched = 0
         var failed = 0
+        var scanned = 0
 
-        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
+        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+            var limitReached = false
             for (profile in batch) {
-                if (enriched + failed >= maxExperts) return@scrollExperts false
+                if (enriched + failed >= maxExperts) {
+                    limitReached = true
+                    break
+                }
+                scanned++
                 if (profile.hIndex != null) continue
 
                 val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
@@ -258,10 +278,12 @@ class ExpertDiscoveryService(
                     }
                 }
             }
-            true
+            log.info("专家丰富进度: 批次={}, 已丰富={}, 失败={}, 上限={}, 累计扫描={}/{}",
+                batchNumber, enriched, failed, maxExperts, scanned, totalHits)
+            !limitReached && enriched + failed < maxExperts
         }
 
-        log.info("Enrichment complete: enriched={}, failed={}", enriched, failed)
+        log.info("Enrichment complete: enriched={}, failed={}, scanned={}", enriched, failed, scanned)
         return EnrichmentResult(enriched, failed)
     }
 

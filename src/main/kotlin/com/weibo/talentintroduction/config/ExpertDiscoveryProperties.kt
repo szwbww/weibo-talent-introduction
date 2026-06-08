@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConstructorBinding
 @ConstructorBinding
 @ConfigurationProperties(prefix = "talent-introduction.expert-discovery")
 data class ExpertDiscoveryProperties(
-    val enabled: Boolean = false,
+    val enabled: Boolean = true,
     val cron: String = "-",
     val maxPapersPerRun: Int = 500,
     val maxAuthorsPerRun: Int = 2000

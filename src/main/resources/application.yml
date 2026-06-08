@@ -77,7 +77,7 @@ talent-introduction:
   mail-attachment-storage:
     base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
   expert-discovery:
-    enabled: ${EXPERT_DISCOVERY_ENABLED:false}
+    enabled: ${EXPERT_DISCOVERY_ENABLED:true}
     cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
     max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:500}
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:2000}

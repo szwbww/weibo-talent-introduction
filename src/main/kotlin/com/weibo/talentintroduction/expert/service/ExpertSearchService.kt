@@ -86,6 +86,14 @@ class ExpertSearchService(
         batchSize: Int = 500,
         handler: (List<ExpertProfile>) -> Boolean
     ) {
+        scrollExperts(level, batchSize) { batch, _, _ -> handler(batch) }
+    }
+
+    fun scrollExperts(
+        level: ExpertIndexLevel,
+        batchSize: Int = 500,
+        handler: (batch: List<ExpertProfile>, batchNumber: Int, totalHits: Long) -> Boolean
+    ) {
         val index = expertIndexService.indexName(level)
         var scrollId: String? = null
 
@@ -105,16 +113,19 @@ class ExpertSearchService(
             ).body ?: return
 
             scrollId = response.path("_scroll_id").asText()
+            val totalHits = response.path("hits").path("total").path("value").asLong(0)
+            var batchNumber = 0
 
             do {
                 val hits = response.path("hits").path("hits")
                 if (hits.isEmpty) break
 
+                batchNumber++
                 val experts = hits.map { hit ->
                     val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
                     toExpertProfile(source)
                 }
-                val shouldContinue = handler(experts)
+                val shouldContinue = handler(experts, batchNumber, totalHits)
                 if (!shouldContinue) break
                 if (hits.size() < batchSize) break
 

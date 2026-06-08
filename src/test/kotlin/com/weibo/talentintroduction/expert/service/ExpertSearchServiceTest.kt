@@ -293,8 +293,12 @@ class ExpertSearchServiceTest {
         ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
 
         val allExperts = mutableListOf<com.weibo.talentintroduction.expert.domain.ExpertProfile>()
-        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch ->
+        val batchNumbers = mutableListOf<Int>()
+        var capturedTotalHits = -1L
+        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch, batchNumber, totalHits ->
             allExperts.addAll(batch)
+            batchNumbers.add(batchNumber)
+            capturedTotalHits = totalHits
             true
         }
 
@@ -302,6 +306,8 @@ class ExpertSearchServiceTest {
         assertEquals("0001", allExperts[0].orcidId)
         assertEquals("0002", allExperts[1].orcidId)
         assertEquals("0003", allExperts[2].orcidId)
+        assertEquals(listOf(1, 2), batchNumbers)
+        assertEquals(5L, capturedTotalHits)
 
         Mockito.verify(restTemplate, times(1)).exchange(
             eq("https://es.example.com:9200/_search/scroll"),
@@ -347,7 +353,7 @@ class ExpertSearchServiceTest {
         ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
 
         val processed = mutableListOf<String>()
-        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch ->
+        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch, _, _ ->
             processed.addAll(batch.map { it.orcidId })
             false
         }
@@ -399,7 +405,7 @@ class ExpertSearchServiceTest {
         ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
 
         try {
-            service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) {
+            service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { _, _, _ ->
                 error("processing failure")
             }
         } catch (_: Exception) {

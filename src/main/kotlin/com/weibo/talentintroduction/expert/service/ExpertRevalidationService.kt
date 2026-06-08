@@ -20,7 +20,8 @@ class ExpertRevalidationService(
     fun revalidateCandidates(): RevalidationResult {
         val stats = RevalidationStats()
 
-        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
+        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+            val processedBefore = stats.total
             for (profile in batch) {
                 stats.total++
 
@@ -54,6 +55,8 @@ class ExpertRevalidationService(
                     stats.passed++
                 }
             }
+            log.info("重新验证进度: 批次={}, 本批处理={}, 累计已完成={}/{}",
+                batchNumber, stats.total - processedBefore, stats.total, totalHits)
             true
         }
 
@@ -66,10 +69,13 @@ class ExpertRevalidationService(
         val stats = PromotionScanStats()
         if (maxPromotions <= 0) return PromotionScanResult(stats)
 
-        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch ->
+        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+            val processedBefore = stats.total
+            var limitReached = false
             for (profile in batch) {
                 if (stats.promoted >= maxPromotions) {
-                    return@scrollExperts false
+                    limitReached = true
+                    break
                 }
                 stats.total++
 
@@ -103,7 +109,9 @@ class ExpertRevalidationService(
                 val success = promoteRawToCandidate(profile)
                 if (success) stats.promoted++ else stats.promotionFailed++
             }
-            stats.promoted < maxPromotions
+            log.info("RAW晋升扫描进度: 批次={}, 本批处理={}, 累计已完成={}/{}, 已晋升={}",
+                batchNumber, stats.total - processedBefore, stats.total, totalHits, stats.promoted)
+            !limitReached && stats.promoted < maxPromotions
         }
 
         log.info("RAW promotion scan: total={}, promoted={}, filtered={}, emailRejected={}, existenceCheckFailed={}",

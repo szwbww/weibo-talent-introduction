@@ -14,11 +14,13 @@ import com.weibo.talentintroduction.expert.service.EmailValidationService
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
 
 class ExpertDiscoveryServiceTest {
@@ -210,6 +212,37 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `discover respects maxAuthorsPerRun limit`() {
+        val limitedProperties = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 2)
+        val limitedService = ExpertDiscoveryService(
+            europePmc, openAlexProvider, emailValidationService, eligibilityService,
+            indexWriterService, indexService, expertSearchService, restTemplate, esProperties,
+            limitedProperties, objectMapper
+        )
+        val p1 = paper("PMC1", "Paper 1")
+        val p2 = paper("PMC2", "Paper 2")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1, p2), null, 2))
+        DiscoveryMockHelper.stubExtractEmails(europePmc, "PMC1",
+            listOf(
+                AuthorEmail("a1@example.com", "A", "One", false, null, null),
+                AuthorEmail("a2@example.com", "B", "Two", false, null, null)
+            ))
+        DiscoveryMockHelper.stubExtractEmails(europePmc, "PMC2",
+            listOf(AuthorEmail("a3@example.com", "C", "Three", false, null, null)))
+
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "a1@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "a2@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+
+        val result = limitedService.discover(PaperSearchCriteria(), "TEST")
+        assertEquals(2, result.stats.indexed)
+    }
+
+    @Test
     fun `no ORCID expert indexed but not promoted due to MISSING_ORCID`() {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
@@ -228,5 +261,35 @@ class ExpertDiscoveryServiceTest {
         assertEquals(0, result.stats.promoted)
         assertEquals(1, result.stats.filtered)
         assertEquals(1, result.stats.filterReasons["MISSING_ORCID"])
+    }
+
+    @Test
+    fun `enrichExistingExperts stops at maxExperts limit`() {
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.`when`(openAlexProvider.getIfAvailable()).thenReturn(openAlex)
+
+        val experts = (1..5).map { i ->
+            com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = "0000-000$i", email = "e$i@example.com",
+                givenNames = "Test", familyNames = "$i",
+                country = "US", keyword = null, employment = null
+            )
+        }
+        val enrichment = AuthorEnrichment(hIndex = 10, citationCount = 100, worksCount = 5)
+
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(experts))
+
+        Mockito.`when`(openAlex.enrichAuthorByOrcid(Mockito.anyString())).thenReturn(enrichment)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(org.springframework.http.HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        val result = service.enrichExistingExperts(maxExperts = 2)
+        assertEquals(2, result.enriched)
+        assertEquals(0, result.failed)
     }
 }
