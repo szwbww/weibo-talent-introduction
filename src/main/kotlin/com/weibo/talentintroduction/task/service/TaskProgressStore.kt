@@ -17,6 +17,11 @@ class TaskProgressStore {
     fun clear(taskType: String) {
         store.remove(taskType)
     }
+
+    fun isRunning(taskType: String): Boolean {
+        val current = store[taskType] ?: return false
+        return current.status == "RUNNING"
+    }
 }
 
 data class TaskProgress(
@@ -26,7 +31,8 @@ data class TaskProgress(
     val processedCount: Long,
     val totalCount: Long,
     val message: String? = null,
-    val details: Map<String, Any>? = null
+    val details: Map<String, Any>? = null,
+    val errors: List<String>? = null
 ) {
     val percentage: Int
         get() = if (totalCount > 0) ((processedCount * 100) / totalCount).toInt().coerceIn(0, 100) else 0
