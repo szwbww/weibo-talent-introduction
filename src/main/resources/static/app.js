@@ -1277,12 +1277,13 @@ async function loadContactDetail(contactId) {
     const initial = name.charAt(0).toUpperCase();
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
-        <div class="contact-head-status-actions">
+        <div class="contact-head-status-row">
+            <span class="contact-head-label">状态与层级:</span>
             <select id="operatorStatusSelect" data-contact-id="${contact.id}" aria-label="专家状态">
-                ${optionsFromArray(operatorStatusOptions, false, "请选择", contact.operatorStatus || "")}
+                ${optionsFromArray(operatorStatusOptions, false, "请选择状态", contact.operatorStatus || "")}
             </select>
             <select id="indexLevelSelect" data-contact-id="${contact.id}" aria-label="专家层级">
-                ${optionsFromArray(indexLevelOptions, false, "请选择", contact.currentIndexLevel || "")}
+                ${optionsFromArray(indexLevelOptions, false, "请选择层级", contact.currentIndexLevel || "")}
             </select>
             <button class="button" data-action="toggle-reply-mode"
                     data-id="${contact.id}"
@@ -1290,7 +1291,8 @@ async function loadContactDetail(contactId) {
                 <span>${contact.autoReplyEnabled ? "切换为人工回复" : "切换为自动回复"}</span>
             </button>
         </div>
-        <div class="contact-head-mail-actions">
+        <div class="contact-head-mail-row">
+            <span class="contact-head-label">手动发送邮件:</span>
             <select id="manualMailOption" aria-label="选择要发送的邮件">
                 ${options.map((option) => `
                     <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
