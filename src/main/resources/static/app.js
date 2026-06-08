@@ -1057,6 +1057,9 @@ function showExpertDetail(expert) {
     `;
     requestAnimationFrame(() => {
         contactDetail.scrollTop = 0;
+        if (window.innerWidth <= 1024) {
+            document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
+        }
     });
 }
 
@@ -1460,6 +1463,9 @@ async function loadContactDetail(contactId) {
     `;
     requestAnimationFrame(() => {
         contactDetail.scrollTop = 0;
+        if (window.innerWidth <= 1024) {
+            document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
+        }
     });
     if (contact.id) {
         loadEmailAliases(contact.id, contact);
