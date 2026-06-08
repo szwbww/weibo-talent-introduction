@@ -404,8 +404,41 @@ p {
 }
 
 .contacts-layout {
-    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-columns: 360px 6px minmax(0, 1fr);
     align-items: stretch;
+}
+
+/* Resizer Divider */
+.layout-resizer {
+    width: 6px;
+    cursor: col-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    transition: background-color 0.2s ease;
+    user-select: none;
+    align-self: stretch;
+    position: relative;
+    z-index: 10;
+}
+
+.layout-resizer:hover,
+.layout-resizer.dragging {
+    background-color: var(--primary-light);
+}
+
+.resizer-handle {
+    width: 2px;
+    height: 32px;
+    background-color: var(--border);
+    border-radius: 1px;
+    transition: background-color 0.2s ease;
+}
+
+.layout-resizer:hover .resizer-handle,
+.layout-resizer.dragging .resizer-handle {
+    background-color: var(--primary);
 }
 
 /* Panels */
@@ -1891,7 +1924,7 @@ textarea {
     }
 
     .contacts-layout {
-        grid-template-columns: 280px minmax(0, 1fr);
+        grid-template-columns: 280px 6px minmax(0, 1fr);
     }
 
     .contacts-layout .list {
@@ -1937,7 +1970,7 @@ textarea {
     .split-layout,
     .qa-layout,
     .contacts-layout {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
 
     .contact-detail-panel {
@@ -1947,6 +1980,23 @@ textarea {
 
     #contactDetail {
         overflow-y: visible;
+    }
+
+    .layout-resizer {
+        display: none !important;
+    }
+
+    .layout-controls-toolbar {
+        display: none !important;
+    }
+
+    #collapseListBtn,
+    #expandListBtn {
+        display: none !important;
+    }
+
+    .contacts-list-panel {
+        display: block !important;
     }
 
     .form-grid {
