@@ -61,8 +61,37 @@ talent-introduction:
     initial-outreach-cron: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CRON:-}
     initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
+  academic-filter:
+    enable-h-index-filter: ${ACADEMIC_ENABLE_H_INDEX_FILTER:false}
+    min-h-index: ${ACADEMIC_MIN_H_INDEX:5}
+    enable-citation-filter: ${ACADEMIC_ENABLE_CITATION_FILTER:false}
+    min-citation-count: ${ACADEMIC_MIN_CITATION_COUNT:50}
+    enable-activity-filter: ${ACADEMIC_ENABLE_ACTIVITY_FILTER:false}
+    recent-years-threshold: ${ACADEMIC_RECENT_YEARS_THRESHOLD:5}
+  email-validation:
+    enable-mx-check: ${EMAIL_ENABLE_MX_CHECK:true}
+    enable-smtp-verify: ${EMAIL_ENABLE_SMTP_VERIFY:false}
+    cache-ttl-days: ${EMAIL_CACHE_TTL_DAYS:30}
+    disposable-domain-list-path: ${EMAIL_DISPOSABLE_LIST:classpath:email/disposable-domains.txt}
+    mx-lookup-timeout-ms: ${EMAIL_MX_LOOKUP_TIMEOUT_MS:5000}
   mail-attachment-storage:
     base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
+  expert-discovery:
+    enabled: ${EXPERT_DISCOVERY_ENABLED:false}
+    cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
+    max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:500}
+    max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:2000}
+    europe-pmc:
+      enabled: ${EUROPE_PMC_ENABLED:true}
+      base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}
+      request-delay-ms: ${EUROPE_PMC_REQUEST_DELAY_MS:100}
+      connect-timeout-ms: ${EUROPE_PMC_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${EUROPE_PMC_READ_TIMEOUT_MS:30000}
+    openalex:
+      enabled: ${OPENALEX_ENABLED:false}
+      polite-email: ${OPENALEX_POLITE_EMAIL:}
+      base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
+      request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
 
 server:
   port: ${SERVER_PORT:8080}

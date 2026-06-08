@@ -225,6 +225,78 @@ class TaskExecutionServiceTest {
         assertTrue(ex.message!!.contains("between 1 and 100"))
     }
 
+    @Test
+    fun `runAndRecordWithResult returns business result on success`() {
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+
+        val (recorded, result) = service.runAndRecordWithResult(
+            taskType = "EXPERT_REVALIDATION",
+            triggerType = "MANUAL",
+            request = "test"
+        ) {
+            RevalidationTestResult(passed = 42, demoted = 0, demotionFailed = 0, total = 42)
+        }
+
+        assertEquals("SUCCESS", recorded.status)
+        assertEquals(42, result.passed)
+        assertEquals(42, recorded.successCount)
+        assertEquals(0, recorded.failureCount)
+    }
+
+    @Test
+    fun `runAndRecordWithResult saves FAILED and rethrows exception`() {
+        val saveInvocations = mutableListOf<TaskExecution>()
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                saveInvocations.add(execution)
+                execution.copy(id = execution.id ?: 1L)
+            }
+
+        val ex = assertThrows(RuntimeException::class.java) {
+            service.runAndRecordWithResult<Any>(
+                taskType = "EXPERT_REVALIDATION",
+                triggerType = "MANUAL",
+                request = "test"
+            ) {
+                error("ES connection refused")
+            }
+        }
+
+        assertTrue(ex.message!!.contains("ES connection refused"))
+        assertEquals(2, saveInvocations.size)
+        assertEquals("RUNNING", saveInvocations[0].status)
+        assertEquals("FAILED", saveInvocations[1].status)
+        assertEquals(1, saveInvocations[1].failureCount)
+        assertTrue(saveInvocations[1].errorMessage!!.contains("ES connection refused"))
+    }
+
+    @Test
+    fun `runAndRecordWithResult records PARTIAL_SUCCESS from provider`() {
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+
+        val (recorded, result) = service.runAndRecordWithResult(
+            taskType = "EXPERT_REVALIDATION",
+            triggerType = "MANUAL",
+            request = "test"
+        ) {
+            RevalidationTestResult(passed = 5, demoted = 3, demotionFailed = 2, total = 10)
+        }
+
+        assertEquals("PARTIAL_SUCCESS", recorded.status)
+        assertEquals(5, recorded.successCount)
+        assertEquals(5, recorded.failureCount)
+        assertEquals(5, result.passed)
+    }
+
     private fun execution(status: String): TaskExecution =
         TaskExecution(
             id = 1L,
@@ -263,4 +335,21 @@ private class BatchResultWithMailCounts : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int = 1
     override val taskFailureCount: Int = 0
     override val taskFinalStatus: String? = null
+}
+
+private data class RevalidationTestResult(
+    val passed: Int,
+    val demoted: Int,
+    val demotionFailed: Int,
+    val total: Int
+) : TaskExecutionSummaryProvider {
+    override val taskSuccessCount: Int get() = passed
+    override val taskFailureCount: Int get() = demoted + demotionFailed
+    override val taskFinalStatus: String?
+        get() = when {
+            total == 0 -> "SUCCESS"
+            taskFailureCount == 0 -> "SUCCESS"
+            taskSuccessCount == 0 -> "FAILED"
+            else -> "PARTIAL_SUCCESS"
+        }
 }

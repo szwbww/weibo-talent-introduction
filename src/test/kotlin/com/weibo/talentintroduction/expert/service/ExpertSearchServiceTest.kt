@@ -2,15 +2,22 @@ package com.weibo.talentintroduction.expert.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito
+import org.mockito.Mockito.times
 
 class ExpertSearchServiceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -28,6 +35,136 @@ class ExpertSearchServiceTest {
         properties = properties,
         expertIndexService = ExpertIndexService(properties, restTemplate, mapper)
     )
+
+    @Test
+    fun `maps elasticsearch hits to expert profiles including academic fields`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 123},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace",
+                      "country": "United Kingdom",
+                      "keyword": "mathematics",
+                      "employment": "University",
+                      "hIndex": 42,
+                      "citationCount": 1500,
+                      "lastPublicationYear": 2025
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertEquals(1, result.experts.size)
+        assertEquals("Ada Lovelace", result.experts.single().displayName)
+        assertEquals(123L, result.totalHits)
+        assertEquals(42, result.experts.single().hIndex)
+        assertEquals(1500, result.experts.single().citationCount)
+        assertEquals(2025, result.experts.single().lastPublicationYear)
+    }
+
+    @Test
+    fun `academic fields default to null when absent`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace",
+                      "country": "United Kingdom"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertEquals(1, result.experts.size)
+        assertNull(result.experts.single().hIndex)
+        assertNull(result.experts.single().citationCount)
+        assertNull(result.experts.single().lastPublicationYear)
+    }
+
+    @Test
+    fun `explicit null fields map to Kotlin null not zero`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace",
+                      "country": "United Kingdom",
+                      "hIndex": null,
+                      "citationCount": null,
+                      "lastPublicationYear": null
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertEquals(1, result.experts.size)
+        assertNull(result.experts.single().hIndex)
+        assertNull(result.experts.single().citationCount)
+        assertNull(result.experts.single().lastPublicationYear)
+    }
 
     @Test
     fun `maps elasticsearch hits to expert profiles with totalHits`() {
@@ -96,5 +233,344 @@ class ExpertSearchServiceTest {
 
         assertEquals(0, result.experts.size)
         assertEquals(0L, result.totalHits)
+    }
+
+    @Test
+    fun `scroll multi-page processes all batches and cleans up`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "scroll-abc",
+              "hits": {
+                "total": {"value": 5},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}},
+                  {"_source": {"orcidId": "0002", "email": "c@d.com", "givenNames": "C", "familyNames": "D", "country": "US"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val page2 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "scroll-def",
+              "hits": {
+                "total": {"value": 5},
+                "hits": [
+                  {"_source": {"orcidId": "0003", "email": "e@f.com", "givenNames": "E", "familyNames": "F", "country": "FR"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page2, HttpStatus.OK))
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val allExperts = mutableListOf<com.weibo.talentintroduction.expert.domain.ExpertProfile>()
+        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch ->
+            allExperts.addAll(batch)
+            true
+        }
+
+        assertEquals(3, allExperts.size)
+        assertEquals("0001", allExperts[0].orcidId)
+        assertEquals("0002", allExperts[1].orcidId)
+        assertEquals("0003", allExperts[2].orcidId)
+
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `scroll handler early stop still cleans up scroll`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "scroll-xyz",
+              "hits": {
+                "total": {"value": 10},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}},
+                  {"_source": {"orcidId": "0002", "email": "c@d.com", "givenNames": "C", "familyNames": "D", "country": "US"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val processed = mutableListOf<String>()
+        service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) { batch ->
+            processed.addAll(batch.map { it.orcidId })
+            false
+        }
+
+        assertEquals(2, processed.size)
+        assertEquals("0001", processed[0])
+        assertEquals("0002", processed[1])
+
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `scroll exception mid-processing still cleans up scroll`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "scroll-err",
+              "hits": {
+                "total": {"value": 2},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        try {
+            service.scrollExperts(ExpertIndexLevel.CANDIDATE, batchSize = 2) {
+                error("processing failure")
+            }
+        } catch (_: Exception) {
+        }
+
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `maps new academic fields from elasticsearch source`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001-2345-6789",
+                      "email": "test@example.com",
+                      "givenNames": "John",
+                      "familyNames": "Smith",
+                      "country": "GB",
+                      "hIndex": 15,
+                      "citationCount": 500,
+                      "lastPublicationYear": 2024,
+                      "researchFields": "machine learning",
+                      "institution": "University of Oxford",
+                      "emailSource": "PAPER_FULLTEXT",
+                      "emailVerifiedLevel": 3,
+                      "dataSource": "EUROPE_PMC",
+                      "externalIds": {"pmcId": "PMC123"}
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+        val profile = result.experts.single()
+
+        assertEquals(15, profile.hIndex)
+        assertEquals(500, profile.citationCount)
+        assertEquals(2024, profile.lastPublicationYear)
+        assertEquals("machine learning", profile.researchFields)
+        assertEquals("University of Oxford", profile.institution)
+        assertEquals("PAPER_FULLTEXT", profile.emailSource)
+        assertEquals(3, profile.emailVerifiedLevel)
+        assertEquals("EUROPE_PMC", profile.dataSource)
+        assertNotNull(profile.externalIds)
+        assertTrue(profile.externalIds!!.contains("PMC123"))
+    }
+
+    @Test
+    fun `explicit null fields map to Kotlin null not string null`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-99",
+                      "email": null,
+                      "givenNames": "Jane",
+                      "familyNames": "Doe",
+                      "country": null,
+                      "keyword": null,
+                      "employment": null,
+                      "researchFields": null,
+                      "institution": null,
+                      "emailSource": null,
+                      "dataSource": null
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+        val profile = result.experts.single()
+
+        // All explicit nulls should map to Kotlin null, not literal "null"
+        assertNull(profile.email)
+        assertNull(profile.country)
+        assertNull(profile.keyword)
+        assertNull(profile.employment)
+        assertNull(profile.researchFields)
+        assertNull(profile.institution)
+        assertNull(profile.emailSource)
+        assertNull(profile.dataSource)
+    }
+
+    @Test
+    fun `orcidId null falls back to orcid then id`() {
+        val bodyIdOnly = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": null, "orcid": null, "id": "id-only", "givenNames": "A", "familyNames": "B"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(bodyIdOnly, HttpStatus.OK))
+
+        val result1 = service.searchExpertsWithEmail(1)
+        assertEquals("id-only", result1.experts.single().orcidId)
+
+        val bodyOrcidOnly = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": null, "orcid": "0000-orcid", "givenNames": "A", "familyNames": "B"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(bodyOrcidOnly, HttpStatus.OK))
+
+        val result2 = service.searchExpertsWithEmail(1)
+        assertEquals("0000-orcid", result2.experts.single().orcidId)
     }
 }

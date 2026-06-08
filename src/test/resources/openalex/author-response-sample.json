@@ -1,0 +1,11 @@
+{
+  "id": "https://openalex.org/A1234567",
+  "display_name": "John Smith",
+  "orcid": "https://orcid.org/0000-0001-2345-6789",
+  "works_count": 45,
+  "cited_by_count": 1200,
+  "summary_stats": {
+    "h_index": 18,
+    "i10_index": 25
+  }
+}

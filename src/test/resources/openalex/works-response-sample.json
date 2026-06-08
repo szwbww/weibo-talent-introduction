@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "count": 2,
+    "next_cursor": "AoE/EDE5MzM5NTMy"
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W1234567",
+      "doi": "https://doi.org/10.1038/s41586-024-00001-2",
+      "title": "Deep Learning for Climate Prediction",
+      "publication_year": 2024,
+      "primary_location": {
+        "source": {
+          "display_name": "Nature"
+        }
+      },
+      "ids": {
+        "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9876543",
+        "pmid": "https://pubmed.ncbi.nlm.nih.gov/36543210"
+      },
+      "authorships": [
+        {
+          "author": {
+            "id": "https://openalex.org/A1234567",
+            "display_name": "John Smith",
+            "orcid": "https://orcid.org/0000-0001-2345-6789"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I123",
+              "display_name": "University of Oxford"
+            }
+          ],
+          "is_corresponding": true
+        },
+        {
+          "author": {
+            "id": "https://openalex.org/A7654321",
+            "display_name": "Alice Jones",
+            "orcid": null
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I456",
+              "display_name": "MIT, CSAIL"
+            }
+          ],
+          "is_corresponding": false
+        }
+      ]
+    }
+  ]
+}

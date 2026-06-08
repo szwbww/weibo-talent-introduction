@@ -1,0 +1,54 @@
+{
+  "version": "6.8",
+  "hitCount": 2,
+  "nextCursorMark": "AoE/EDE5MzM5NTMy",
+  "resultList": {
+    "result": [
+      {
+        "pmcid": "PMC9876543",
+        "pmid": "36543210",
+        "doi": "10.1038/s41586-024-00001-2",
+        "title": "Deep Learning for Climate Prediction",
+        "pubYear": "2024",
+        "journalTitle": "Nature",
+        "authorList": {
+          "author": [
+            {
+              "firstName": "John",
+              "lastName": "Smith",
+              "authorId": {
+                "type": "ORCID",
+                "value": "0000-0001-2345-6789"
+              },
+              "authorAffiliationDetailsList": {
+                "authorAffiliation": [
+                  {
+                    "affiliation": "University of Oxford, Department of Computer Science"
+                  }
+                ]
+              }
+            },
+            {
+              "firstName": "Alice",
+              "lastName": "Jones",
+              "authorAffiliationDetailsList": {
+                "authorAffiliation": [
+                  {
+                    "affiliation": "MIT, CSAIL"
+                  },
+                  {
+                    "affiliation": "Broad Institute of MIT and Harvard"
+                  }
+                ]
+              }
+            },
+            {
+              "firstName": "Bob",
+              "lastName": "NoAffil"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

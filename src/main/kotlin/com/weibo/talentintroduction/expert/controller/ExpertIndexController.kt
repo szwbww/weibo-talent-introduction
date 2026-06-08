@@ -3,8 +3,12 @@ package com.weibo.talentintroduction.expert.controller
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.PromotionScanResult
+import com.weibo.talentintroduction.expert.domain.RevalidationResult
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.task.service.TaskExecutionService
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -17,7 +21,9 @@ import java.time.Instant
 class ExpertIndexController(
     private val expertSearchService: ExpertSearchService,
     private val expertContactRepository: ExpertContactRepository,
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val revalidationService: ExpertRevalidationService,
+    private val taskExecutionService: TaskExecutionService
 ) {
     @GetMapping
     fun listExperts(
@@ -67,6 +73,29 @@ class ExpertIndexController(
             }
         }
         return ReindexResult(total = contacts.size, success = success, failure = failure)
+    }
+
+    @PostMapping("/revalidate-candidates")
+    fun revalidateCandidates(): RevalidationResult {
+        val (_, result) = taskExecutionService.runAndRecordWithResult(
+            "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates"
+        ) {
+            revalidationService.revalidateCandidates()
+        }
+        return result
+    }
+
+    @PostMapping("/promote-eligible-raw")
+    fun promoteEligibleRaw(
+        @RequestParam(defaultValue = "1000") maxPromotions: Int
+    ): PromotionScanResult {
+        require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
+        val (_, result) = taskExecutionService.runAndRecordWithResult(
+            "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions)
+        ) {
+            revalidationService.promoteEligibleRawExperts(maxPromotions)
+        }
+        return result
     }
 }
 

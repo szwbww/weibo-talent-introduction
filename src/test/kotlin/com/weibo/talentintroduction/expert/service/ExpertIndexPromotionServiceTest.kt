@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -23,7 +24,11 @@ class ExpertIndexPromotionServiceTest {
             Mockito.mock(org.springframework.web.client.RestTemplate::class.java),
             com.fasterxml.jackson.databind.ObjectMapper()
         ),
-        CandidateEligibilityService(CandidateFilterProperties())
+        CandidateEligibilityService(
+            CandidateFilterProperties(),
+            AcademicFilterProperties(),
+            Mockito.mock(EmailValidationService::class.java)
+        )
     )
 
     @Test

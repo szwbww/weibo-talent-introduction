@@ -49,6 +49,79 @@ class TaskExecutionService(
         }
     }
 
+    fun <T : Any?> runAndRecordWithResult(
+        taskType: String,
+        triggerType: String,
+        request: Any,
+        block: () -> T
+    ): Pair<TaskExecution, T> {
+        val startedAt = LocalDateTime.now()
+        val running = repository.save(
+            TaskExecution(
+                taskType = taskType,
+                triggerType = triggerType,
+                status = "RUNNING",
+                requestPayload = toJson(request),
+                resultSummary = null,
+                startedAt = startedAt,
+                createdAt = startedAt,
+                updatedAt = startedAt
+            )
+        )
+
+        return try {
+            val result = block()
+            val resultValue: Any? = result ?: Unit
+            val (successCount, failureCount, status) = when (resultValue) {
+                is TaskExecutionSummaryProvider -> {
+                    val s = resultValue.taskSuccessCount
+                    val f = resultValue.taskFailureCount
+                    val finalStatus = resultValue.taskFinalStatus
+                        ?: when {
+                            f > 0 && s > 0 -> "PARTIAL_SUCCESS"
+                            f > 0 -> "FAILED"
+                            else -> "SUCCESS"
+                        }
+                    Triple(s, f, finalStatus)
+                }
+                else -> {
+                    val summary = TaskResultSummary.from(resultValue)
+                    val status = when {
+                        summary.failureCount > 0 && summary.successCount > 0 -> "PARTIAL_SUCCESS"
+                        summary.failureCount > 0 -> "FAILED"
+                        else -> "SUCCESS"
+                    }
+                    Triple(summary.successCount, summary.failureCount, status)
+                }
+            }
+            val finishedAt = LocalDateTime.now()
+            val saved = repository.save(
+                running.copy(
+                    status = status,
+                    resultSummary = toJson(resultValue),
+                    successCount = successCount,
+                    failureCount = failureCount,
+                    finishedAt = finishedAt,
+                    updatedAt = finishedAt
+                )
+            )
+            @Suppress("UNUSED_EXPRESSION")
+            Pair(saved, result)
+        } catch (ex: Exception) {
+            val finishedAt = LocalDateTime.now()
+            repository.save(
+                running.copy(
+                    status = "FAILED",
+                    failureCount = 1,
+                    errorMessage = ex.message?.take(4000),
+                    finishedAt = finishedAt,
+                    updatedAt = finishedAt
+                )
+            )
+            throw ex
+        }
+    }
+
     fun <T : Any?> runAndRecord(
         taskType: String,
         triggerType: String,
@@ -77,12 +150,21 @@ class TaskExecutionService(
                     val s = resultValue.taskSuccessCount
                     val f = resultValue.taskFailureCount
                     val finalStatus = resultValue.taskFinalStatus
-                        ?: if (f > 0 && s == 0) "FAILED" else "SUCCESS"
+                        ?: when {
+                            f > 0 && s > 0 -> "PARTIAL_SUCCESS"
+                            f > 0 -> "FAILED"
+                            else -> "SUCCESS"
+                        }
                     Triple(s, f, finalStatus)
                 }
                 else -> {
                     val summary = TaskResultSummary.from(resultValue)
-                    Triple(summary.successCount, summary.failureCount, "SUCCESS")
+                    val status = when {
+                        summary.failureCount > 0 && summary.successCount > 0 -> "PARTIAL_SUCCESS"
+                        summary.failureCount > 0 -> "FAILED"
+                        else -> "SUCCESS"
+                    }
+                    Triple(summary.successCount, summary.failureCount, status)
                 }
             }
             val finishedAt = LocalDateTime.now()

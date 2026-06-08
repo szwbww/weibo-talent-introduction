@@ -1,20 +1,57 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
+import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
+import java.time.Year
 import java.util.Locale
 
 @Service
 class CandidateEligibilityService(
-    private val properties: CandidateFilterProperties
+    private val properties: CandidateFilterProperties,
+    private val academicProperties: AcademicFilterProperties,
+    private val emailValidationService: EmailValidationService
 ) {
     fun isEligibleForCandidateIndex(expert: ExpertProfile): Boolean =
-        expert.orcidId.isNotBlank() &&
-            (!properties.requireValidEmail || hasValidEmail(expert.email)) &&
-            (!properties.requireDoctoralDegree || hasDoctoralDegree(expert.degree)) &&
-            (!properties.enableAgeFilter || isUnderMaxAge(expert.age)) &&
-            (!properties.excludeChineseNationality || isNotChineseNationality(expert.nationality ?: expert.country))
+        evaluateEligibility(expert).eligible
+
+    fun evaluateEligibility(expert: ExpertProfile): EligibilityResult {
+        val reasons = mutableListOf<String>()
+
+        if (expert.orcidId.isBlank())
+            reasons += "MISSING_ORCID"
+
+        if (properties.requireValidEmail && !hasValidEmail(expert.email))
+            reasons += "INVALID_EMAIL_FORMAT"
+
+        if (properties.requireValidEmail && expert.email != null && emailValidationService.isDisposableEmail(expert.email))
+            reasons += "DISPOSABLE_EMAIL"
+
+        if (properties.requireDoctoralDegree && !hasDoctoralDegree(expert.degree))
+            reasons += "NO_DOCTORAL_DEGREE"
+
+        if (properties.enableAgeFilter && !isUnderMaxAge(expert.age))
+            reasons += "AGE_EXCEEDED"
+
+        if (properties.excludeChineseNationality && !isNotChineseNationality(expert.nationality ?: expert.country))
+            reasons += "CHINESE_NATIONALITY"
+
+        if (academicProperties.enableHIndexFilter && (expert.hIndex ?: 0) < academicProperties.minHIndex)
+            reasons += "H_INDEX_TOO_LOW"
+
+        if (academicProperties.enableCitationFilter && (expert.citationCount ?: 0) < academicProperties.minCitationCount)
+            reasons += "CITATION_COUNT_TOO_LOW"
+
+        if (academicProperties.enableActivityFilter) {
+            val cutoff = Year.now().value - academicProperties.recentYearsThreshold
+            if ((expert.lastPublicationYear ?: 0) < cutoff)
+                reasons += "INACTIVE"
+        }
+
+        return EligibilityResult(reasons.isEmpty(), reasons)
+    }
 
     fun hasValidEmail(email: String?): Boolean =
         !email.isNullOrBlank() && EMAIL_REGEX.matches(email)

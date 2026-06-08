@@ -1,13 +1,18 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
 
 class CandidateEligibilityServiceTest {
-    private val service = CandidateEligibilityService(CandidateFilterProperties())
+    private val emailValidationService = mock(EmailValidationService::class.java)
+    private val service = CandidateEligibilityService(
+        CandidateFilterProperties(), AcademicFilterProperties(), emailValidationService
+    )
 
     @Test
     fun `candidate must have non chinese country and valid email by default`() {
@@ -19,7 +24,9 @@ class CandidateEligibilityServiceTest {
     @Test
     fun `doctoral degree filter is enforced only when enabled`() {
         val degreeFilteredService = CandidateEligibilityService(
-            CandidateFilterProperties(requireDoctoralDegree = true)
+            CandidateFilterProperties(requireDoctoralDegree = true),
+            AcademicFilterProperties(),
+            emailValidationService
         )
 
         assertTrue(degreeFilteredService.isEligibleForCandidateIndex(expert(degree = "PhD")))
@@ -30,7 +37,9 @@ class CandidateEligibilityServiceTest {
     @Test
     fun `age filter is enforced only when enabled`() {
         val ageFilteredService = CandidateEligibilityService(
-            CandidateFilterProperties(enableAgeFilter = true, maxAgeExclusive = 70)
+            CandidateFilterProperties(enableAgeFilter = true, maxAgeExclusive = 70),
+            AcademicFilterProperties(),
+            emailValidationService
         )
 
         assertTrue(ageFilteredService.isEligibleForCandidateIndex(expert(age = 69)))

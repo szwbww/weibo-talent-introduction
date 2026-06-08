@@ -233,6 +233,99 @@ class ExpertIndexWriterService(
         }
     }
 
+    fun removeFromCandidateIndex(orcid: String): Boolean {
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val deleteUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        return try {
+            restTemplate.exchange(
+                deleteUrl,
+                HttpMethod.DELETE,
+                HttpEntity(null, headers()),
+                JsonNode::class.java
+            )
+            true
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) {
+                true
+            } else {
+                log.warn("Failed to remove orcid={} from candidate index (HTTP {}): {}", orcid, e.statusCode, e.message)
+                false
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to remove orcid={} from candidate index", orcid, e)
+            false
+        }
+    }
+
+    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"
+        return try {
+            restTemplate.exchange(
+                putUrl,
+                HttpMethod.PUT,
+                HttpEntity(profile, headers()),
+                JsonNode::class.java
+            )
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to index orcid={} to raw index", orcid, e)
+            false
+        }
+    }
+
+    fun documentExistsInIndex(indexLevel: ExpertIndexLevel, orcid: String): Boolean {
+        val index = expertIndexService.indexName(indexLevel)
+        val headUrl = "${properties.baseUrl}/$index/_doc/$orcid"
+        return try {
+            restTemplate.exchange(
+                headUrl,
+                HttpMethod.HEAD,
+                HttpEntity(null, headers()),
+                Void::class.java
+            )
+            true
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) false else throw e
+        }
+    }
+
+    fun readRawDocument(orcid: String): Map<String, Any?>? {
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"
+        return try {
+            val response = restTemplate.exchange(
+                getUrl,
+                HttpMethod.GET,
+                HttpEntity(null, headers()),
+                JsonNode::class.java
+            ).body
+            val source = response?.path("_source")
+            if (source == null || source.isMissingNode) null
+            else toStringMap(source)
+        } catch (e: Exception) {
+            log.warn("Failed to read raw document for orcid={}", orcid, e)
+            null
+        }
+    }
+
+    fun writeCandidateDocument(orcid: String, doc: Map<String, Any?>): Boolean {
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        return try {
+            restTemplate.exchange(
+                putUrl,
+                HttpMethod.PUT,
+                HttpEntity(doc, headers()),
+                JsonNode::class.java
+            )
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to write candidate document for orcid={}", orcid, e)
+            false
+        }
+    }
+
     fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
@@ -273,19 +366,21 @@ class ExpertIndexWriterService(
     private fun toStringMap(node: JsonNode): Map<String, Any?> {
         val result = linkedMapOf<String, Any?>()
         node.fields().forEachRemaining { (key, value) ->
-            result[key] = when {
-                value.isTextual -> value.asText()
-                value.isBoolean -> value.asBoolean()
-                value.isInt -> value.asInt()
-                value.isLong -> value.asLong()
-                value.isDouble -> value.asDouble()
-                value.isNull -> null
-                value.isArray -> value.map { it.asText() }
-                value.isObject -> toStringMap(value)
-                else -> value.asText()
-            }
+            result[key] = toAny(value)
         }
         return result
+    }
+
+    private fun toAny(node: JsonNode): Any? = when {
+        node.isNull -> null
+        node.isBoolean -> node.asBoolean()
+        node.isInt -> node.asInt()
+        node.isLong -> node.asLong()
+        node.isDouble -> node.asDouble()
+        node.isTextual -> node.asText()
+        node.isArray -> node.map { toAny(it) }
+        node.isObject -> toStringMap(node)
+        else -> node.asText()
     }
 
     private fun headers(): HttpHeaders =

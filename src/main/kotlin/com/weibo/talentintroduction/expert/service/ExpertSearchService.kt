@@ -81,37 +81,108 @@ class ExpertSearchService(
         return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
+    fun scrollExperts(
+        level: ExpertIndexLevel,
+        batchSize: Int = 500,
+        handler: (List<ExpertProfile>) -> Boolean
+    ) {
+        val index = expertIndexService.indexName(level)
+        var scrollId: String? = null
+
+        try {
+            val initialUrl = "${properties.baseUrl}/$index/_search?scroll=5m"
+            val requestBody = mapOf(
+                "size" to batchSize,
+                "_source" to sourceFields(),
+                "query" to mapOf("match_all" to emptyMap<String, Any>()),
+                "sort" to listOf(mapOf("_doc" to "asc"))
+            )
+            var response = restTemplate.exchange(
+                initialUrl,
+                HttpMethod.POST,
+                HttpEntity(requestBody, headers()),
+                JsonNode::class.java
+            ).body ?: return
+
+            scrollId = response.path("_scroll_id").asText()
+
+            do {
+                val hits = response.path("hits").path("hits")
+                if (hits.isEmpty) break
+
+                val experts = hits.map { hit ->
+                    val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
+                    toExpertProfile(source)
+                }
+                val shouldContinue = handler(experts)
+                if (!shouldContinue) break
+                if (hits.size() < batchSize) break
+
+                response = restTemplate.exchange(
+                    "${properties.baseUrl}/_search/scroll",
+                    HttpMethod.POST,
+                    HttpEntity(mapOf("scroll" to "5m", "scroll_id" to scrollId), headers()),
+                    JsonNode::class.java
+                ).body ?: break
+
+                scrollId = response.path("_scroll_id").asText()
+            } while (true)
+        } finally {
+            if (scrollId != null) {
+                try {
+                    restTemplate.exchange(
+                        "${properties.baseUrl}/_search/scroll",
+                        HttpMethod.DELETE,
+                        HttpEntity(mapOf("scroll_id" to scrollId), headers()),
+                        JsonNode::class.java
+                    )
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     private fun toExpertProfile(source: JsonNode): ExpertProfile =
         ExpertProfile(
-            orcidId = source.path("orcidId").takeUnless(JsonNode::isMissingNode)?.asText()
-                ?: source.path("orcid").takeUnless(JsonNode::isMissingNode)?.asText()
-                ?: source.path("id").takeUnless(JsonNode::isMissingNode)?.asText()
+            orcidId = source.nullableText("orcidId")
+                ?: source.nullableText("orcid")
+                ?: source.nullableText("id")
                 ?: "",
-            email = source.path("email").takeUnless(JsonNode::isMissingNode)?.asText(),
-            givenNames = source.path("givenNames").takeUnless(JsonNode::isMissingNode)?.asText(),
-            familyNames = source.path("familyNames").takeUnless(JsonNode::isMissingNode)?.asText(),
-            country = source.path("country").takeUnless(JsonNode::isMissingNode)?.asText(),
-            keyword = source.path("keyword").takeUnless(JsonNode::isMissingNode)?.asText(),
-            employment = source.path("employment").takeUnless(JsonNode::isMissingNode)?.asText(),
-            age = source.path("age").takeUnless(JsonNode::isMissingNode)?.asInt(),
-            degree = source.path("degree").takeUnless(JsonNode::isMissingNode)?.asText(),
-            nationality = source.path("nationality").takeUnless(JsonNode::isMissingNode)?.asText()
+            email = source.nullableText("email"),
+            givenNames = source.nullableText("givenNames"),
+            familyNames = source.nullableText("familyNames"),
+            country = source.nullableText("country"),
+            keyword = source.nullableText("keyword"),
+            employment = source.nullableText("employment"),
+            age = source.path("age").let { if (it.isInt) it.asInt() else null },
+            degree = source.nullableText("degree"),
+            nationality = source.nullableText("nationality"),
+            hIndex = source.path("hIndex").let { if (it.isInt) it.asInt() else null },
+            citationCount = source.path("citationCount").let { if (it.isInt) it.asInt() else null },
+            lastPublicationYear = source.path("lastPublicationYear").let { if (it.isInt) it.asInt() else null },
+            researchFields = source.nullableText("researchFields"),
+            institution = source.nullableText("institution"),
+            emailSource = source.nullableText("emailSource"),
+            emailVerifiedLevel = source.path("emailVerifiedLevel").let { if (it.isInt) it.asInt() else null },
+            dataSource = source.nullableText("dataSource"),
+            externalIds = source.path("externalIds").let { if (it.isObject) it.toString() else null },
+            worksCount = source.path("worksCount").let { if (it.isInt) it.asInt() else null }
         )
+
+    private fun JsonNode.nullableText(field: String): String? {
+        val node = path(field)
+        return if (node.isMissingNode || node.isNull) null else node.asText()
+    }
 
     private fun sourceFields(): List<String> =
         listOf(
-            "orcidId",
-            "orcid",
-            "id",
-            "email",
-            "givenNames",
-            "familyNames",
-            "country",
-            "keyword",
-            "employment",
-            "age",
-            "degree",
-            "nationality"
+            "orcidId", "orcid", "id",
+            "email", "givenNames", "familyNames",
+            "country", "keyword", "employment",
+            "age", "degree", "nationality",
+            "hIndex", "citationCount", "lastPublicationYear",
+            "researchFields", "institution",
+            "emailSource", "emailVerifiedLevel",
+            "dataSource", "externalIds", "worksCount"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =

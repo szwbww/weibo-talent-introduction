@@ -29,7 +29,20 @@
       "promotionSource": { "type": "keyword" },
       "applicationPromotedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
-      "latestInboundIntent": { "type": "keyword" }
+      "latestInboundIntent": { "type": "keyword" },
+      "hIndex": { "type": "integer" },
+      "citationCount": { "type": "integer" },
+      "lastPublicationYear": { "type": "integer" },
+      "researchFields": { "type": "keyword" },
+      "institution": { "type": "text" },
+      "emailSource": { "type": "keyword" },
+      "emailVerifiedLevel": { "type": "integer" },
+      "dataSource": { "type": "keyword" },
+      "externalIds": { "type": "object", "enabled": false },
+      "worksCount": { "type": "integer" },
+      "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "filterResult": { "type": "keyword" },
+      "filterRejectReason": { "type": "keyword" }
     }
   }
 }

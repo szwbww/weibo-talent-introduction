@@ -706,6 +706,84 @@ async function handleCheckReplies() {
     }
 }
 
+async function handleRevalidateCandidates() {
+    const btn = $("#revalidateBtn");
+    btn.disabled = true;
+    btn.textContent = "验证中...";
+    try {
+        const result = await api("/api/experts/revalidate-candidates", { method: "POST" });
+        const stats = result.stats || result;
+        const failureMsg = stats.demotionFailed > 0 ? `, 降级失败 ${stats.demotionFailed}` : "";
+        showStatus(`候选人重新验证完成: 总数 ${stats.total}, 通过 ${stats.passed}, 降级 ${stats.demoted}${failureMsg}`, "ok");
+    } catch (e) {
+        showStatus("验证失败: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "重新验证候选人";
+    }
+}
+
+async function handlePromoteRaw() {
+    const btn = $("#promoteRawBtn");
+    btn.disabled = true;
+    btn.textContent = "扫描中...";
+    try {
+        const result = await api("/api/experts/promote-eligible-raw?maxPromotions=1000", { method: "POST" });
+        const stats = result.stats || result;
+        const failures = [];
+        if (stats.promotionFailed > 0) failures.push(`晋升失败 ${stats.promotionFailed}`);
+        if (stats.existenceCheckFailed > 0) failures.push(`HEAD 失败 ${stats.existenceCheckFailed}`);
+        const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
+        const hasFailures = stats.promotionFailed > 0 || stats.existenceCheckFailed > 0;
+        showStatus(`RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`, hasFailures ? "warn" : "ok");
+    } catch (e) {
+        showStatus("扫描失败: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "扫描 RAW 可晋升";
+    }
+}
+
+async function handleDiscover() {
+    const keywords = prompt("输入发现关键词（多个用逗号分隔，留空使用默认条件）:");
+    if (keywords === null) return;
+
+    const btn = $("#discoverBtn");
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "发现中...";
+    try {
+        let result;
+        if (keywords.trim()) {
+            const params = new URLSearchParams();
+            keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
+            result = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
+        } else {
+            result = await api("/api/expert-discovery/run", { method: "POST" });
+        }
+        const summary = result.resultSummary ? JSON.parse(result.resultSummary) : result;
+        const stats = summary.stats || summary || {};
+        const failures = [];
+        if (stats.emailRejected > 0) failures.push(`邮箱拒绝 ${stats.emailRejected}`);
+        if (stats.duplicates > 0) failures.push(`重复 ${stats.duplicates}`);
+        if (stats.filtered > 0) failures.push(`过滤 ${stats.filtered}`);
+        if (stats.rawWriteFailed > 0) failures.push(`RAW写入失败 ${stats.rawWriteFailed}`);
+        if (stats.promotionFailed > 0) failures.push(`晋升失败 ${stats.promotionFailed}`);
+        if (stats.dedupErrors > 0) failures.push(`查重错误 ${stats.dedupErrors}`);
+        const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
+        const hasFailures = failures.length > 0;
+        showStatus(
+            `专家发现完成: 论文 ${stats.totalPapers || 0}, 作者 ${stats.totalAuthors || 0}, 收录 ${stats.indexed || 0}, 晋升 ${stats.promoted || 0}${failureMsg}`,
+            hasFailures ? "warn" : "ok"
+        );
+    } catch (e) {
+        showStatus("发现失败: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
 async function showPollLog() {
     let data;
     try {

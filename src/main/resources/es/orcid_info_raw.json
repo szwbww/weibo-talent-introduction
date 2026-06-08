@@ -1,0 +1,37 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 1
+  },
+  "mappings": {
+    "dynamic": false,
+    "properties": {
+      "orcidId": { "type": "keyword" },
+      "orcid": { "type": "keyword" },
+      "id": { "type": "keyword" },
+      "email": { "type": "keyword" },
+      "givenNames": { "type": "text" },
+      "familyNames": { "type": "text" },
+      "country": { "type": "keyword" },
+      "keyword": { "type": "text" },
+      "employment": { "type": "text" },
+      "age": { "type": "integer" },
+      "degree": { "type": "keyword" },
+      "nationality": { "type": "keyword" },
+      "hIndex": { "type": "integer" },
+      "citationCount": { "type": "integer" },
+      "lastPublicationYear": { "type": "integer" },
+      "researchFields": { "type": "keyword" },
+      "institution": { "type": "text" },
+      "emailSource": { "type": "keyword" },
+      "emailVerifiedLevel": { "type": "integer" },
+      "dataSource": { "type": "keyword" },
+      "externalIds": { "type": "object", "enabled": false },
+      "worksCount": { "type": "integer" },
+      "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+      "filterResult": { "type": "keyword" },
+      "filterRejectReason": { "type": "keyword" },
+      "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+    }
+  }
+}
