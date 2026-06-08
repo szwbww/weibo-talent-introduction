@@ -255,6 +255,18 @@
                 <button class="button primary" id="discoverBtn" onclick="handleDiscover()">发现专家</button>
             </div>
 
+            <!-- Task Progress Bar -->
+            <div id="taskProgressBar" class="task-progress-bar" hidden>
+                <div class="task-progress-header">
+                    <span id="taskProgressLabel" class="task-progress-label"></span>
+                    <span id="taskProgressPercent" class="task-progress-percent"></span>
+                </div>
+                <div class="task-progress-track">
+                    <div id="taskProgressFill" class="task-progress-fill" style="width: 0%"></div>
+                </div>
+                <div id="taskProgressDetail" class="task-progress-detail"></div>
+            </div>
+
             <!-- Sub-toolbar for Layout Controls -->
             <div class="toolbar layout-controls-toolbar" style="margin-top: 8px; border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); background-color: var(--panel-bg); display: flex; gap: 8px; align-items: center; padding: 8px 14px; border: 1px solid var(--panel-border);">
                 <span class="muted" style="font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 4px;">布局样式:</span>

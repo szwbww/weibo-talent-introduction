@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import org.mockito.Mockito.*
@@ -18,8 +19,9 @@ class ExpertRevalidationServiceBehaviorTest {
     private val eligibilityService = CandidateEligibilityService(
         CandidateFilterProperties(), AcademicFilterProperties(), emailValidationService
     )
+    private val progressStore = mock(TaskProgressStore::class.java)
     private val service = ExpertRevalidationService(
-        searchService, eligibilityService, emailValidationService, writerService
+        searchService, eligibilityService, emailValidationService, writerService, progressStore
     )
 
     private fun validExpert(orcidId: String, email: String, country: String = "GB"): ExpertProfile =

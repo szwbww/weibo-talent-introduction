@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
+import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -43,10 +44,11 @@ class ExpertDiscoveryServiceTest {
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
     private val objectMapper = ObjectMapper()
+    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val service = ExpertDiscoveryService(
         europePmc, openAlexProvider, emailValidationService, eligibilityService,
         indexWriterService, indexService, expertSearchService, restTemplate, esProperties,
-        discoveryProperties, objectMapper
+        discoveryProperties, objectMapper, progressStore
     )
 
     init {
@@ -106,7 +108,7 @@ class ExpertDiscoveryServiceTest {
         val limitedService = ExpertDiscoveryService(
             europePmc, openAlexProvider, emailValidationService, eligibilityService,
             indexWriterService, indexService, expertSearchService, restTemplate, esProperties,
-            limitedProperties, objectMapper
+            limitedProperties, objectMapper, progressStore
         )
         val papers = (1..5).map { paper("PMC$it", "Paper $it") }
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, 5))
@@ -217,7 +219,7 @@ class ExpertDiscoveryServiceTest {
         val limitedService = ExpertDiscoveryService(
             europePmc, openAlexProvider, emailValidationService, eligibilityService,
             indexWriterService, indexService, expertSearchService, restTemplate, esProperties,
-            limitedProperties, objectMapper
+            limitedProperties, objectMapper, progressStore
         )
         val p1 = paper("PMC1", "Paper 1")
         val p2 = paper("PMC2", "Paper 2")

@@ -11,6 +11,8 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
+import com.weibo.talentintroduction.task.service.TaskProgress
+import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
@@ -43,7 +45,8 @@ class ExpertDiscoveryService(
     private val restTemplate: RestTemplate,
     private val esProperties: ElasticsearchProperties,
     private val discoveryProperties: ExpertDiscoveryProperties,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val progressStore: TaskProgressStore
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -52,19 +55,46 @@ class ExpertDiscoveryService(
 
     fun discover(criteria: PaperSearchCriteria, triggeredBy: String): DiscoveryResult {
         val stats = DiscoveryStats()
-        discoverFromEuropePmc(criteria, stats)
+        progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = discoveryProperties.maxPapersPerRun.toLong(),
+            message = "初始化 EuropePMC 搜索..."
+        ))
 
-        val openAlex = openAlexProvider.getIfAvailable()
-        if (openAlex != null && stats.indexed < discoveryProperties.maxAuthorsPerRun) {
-            discoverFromOpenAlexViaPmc(openAlex, criteria, stats)
+        try {
+            discoverFromEuropePmc(criteria, stats)
+
+            val openAlex = openAlexProvider.getIfAvailable()
+            if (openAlex != null && stats.indexed < discoveryProperties.maxAuthorsPerRun) {
+                discoverFromOpenAlexViaPmc(openAlex, criteria, stats)
+            }
+
+            log.info(
+                "Discovery complete: papers={}, authors={}, indexed={}, promoted={}, emailRejected={}, duplicates={}, filtered={}, rawWriteFailed={}, promotionFailed={}, dedupErrors={}",
+                stats.totalPapers, stats.totalAuthors, stats.indexed, stats.promoted,
+                stats.emailRejected, stats.duplicates, stats.filtered,
+                stats.rawWriteFailed, stats.promotionFailed, stats.dedupErrors
+            )
+
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                taskType = "EXPERT_DISCOVERY", status = "COMPLETED",
+                batchNumber = -1,
+                processedCount = stats.totalPapers.toLong(),
+                totalCount = stats.totalPapers.toLong(),
+                message = "完成: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
+                details = mapOf(
+                    "totalPapers" to stats.totalPapers, "totalAuthors" to stats.totalAuthors,
+                    "indexed" to stats.indexed, "promoted" to stats.promoted
+                )
+            ))
+        } catch (e: Exception) {
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                taskType = "EXPERT_DISCOVERY", status = "FAILED",
+                batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
+                message = "失败: ${e.message}"
+            ))
+            throw e
         }
-
-        log.info(
-            "Discovery complete: papers={}, authors={}, indexed={}, promoted={}, emailRejected={}, duplicates={}, filtered={}, rawWriteFailed={}, promotionFailed={}, dedupErrors={}",
-            stats.totalPapers, stats.totalAuthors, stats.indexed, stats.promoted,
-            stats.emailRejected, stats.duplicates, stats.filtered,
-            stats.rawWriteFailed, stats.promotionFailed, stats.dedupErrors
-        )
 
         return DiscoveryResult(triggeredBy, stats)
     }
@@ -86,6 +116,14 @@ class ExpertDiscoveryService(
             log.info("EuropePMC发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
                 batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
                 stats.indexed, discoveryProperties.maxAuthorsPerRun)
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+                batchNumber = batchNumber,
+                processedCount = stats.totalPapers.toLong(),
+                totalCount = discoveryProperties.maxPapersPerRun.toLong(),
+                message = "EuropePMC 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC")
+            ))
             if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
@@ -109,6 +147,14 @@ class ExpertDiscoveryService(
             log.info("OpenAlex发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
                 batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
                 stats.indexed, discoveryProperties.maxAuthorsPerRun)
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+                batchNumber = batchNumber,
+                processedCount = stats.totalPapers.toLong(),
+                totalCount = discoveryProperties.maxPapersPerRun.toLong(),
+                message = "OpenAlex 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex")
+            ))
             if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
@@ -253,34 +299,60 @@ class ExpertDiscoveryService(
         var enriched = 0
         var failed = 0
         var scanned = 0
+        progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
+            taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = maxExperts.toLong(),
+            message = "初始化中..."
+        ))
 
-        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
-            var limitReached = false
-            for (profile in batch) {
-                if (enriched + failed >= maxExperts) {
-                    limitReached = true
-                    break
-                }
-                scanned++
-                if (profile.hIndex != null) continue
+        try {
+            expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+                var limitReached = false
+                for (profile in batch) {
+                    if (enriched + failed >= maxExperts) {
+                        limitReached = true
+                        break
+                    }
+                    scanned++
+                    if (profile.hIndex != null) continue
 
-                val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
-                if (orcid != null) {
-                    val enrichment = openAlex.enrichAuthorByOrcid(orcid)
-                    if (enrichment != null) {
-                        if (updateExpertAcademicFields(profile.orcidId, enrichment)) {
-                            enriched++
+                    val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
+                    if (orcid != null) {
+                        val enrichment = openAlex.enrichAuthorByOrcid(orcid)
+                        if (enrichment != null) {
+                            if (updateExpertAcademicFields(profile.orcidId, enrichment)) {
+                                enriched++
+                            } else {
+                                failed++
+                            }
                         } else {
                             failed++
                         }
-                    } else {
-                        failed++
                     }
                 }
+                log.info("专家丰富进度: 批次={}, 已丰富={}, 失败={}, 上限={}, 累计扫描={}/{}",
+                    batchNumber, enriched, failed, maxExperts, scanned, totalHits)
+                progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
+                    taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
+                    batchNumber = batchNumber, processedCount = enriched.toLong(), totalCount = maxExperts.toLong(),
+                    message = "批次 $batchNumber: 已丰富 $enriched/$maxExperts",
+                    details = mapOf("enriched" to enriched, "failed" to failed, "scanned" to scanned)
+                ))
+                !limitReached && enriched + failed < maxExperts
             }
-            log.info("专家丰富进度: 批次={}, 已丰富={}, 失败={}, 上限={}, 累计扫描={}/{}",
-                batchNumber, enriched, failed, maxExperts, scanned, totalHits)
-            !limitReached && enriched + failed < maxExperts
+
+            progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
+                taskType = "EXPERT_ENRICHMENT", status = "COMPLETED",
+                batchNumber = -1, processedCount = enriched.toLong(), totalCount = enriched.toLong(),
+                message = "完成: 丰富 $enriched, 失败 $failed"
+            ))
+        } catch (e: Exception) {
+            progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
+                taskType = "EXPERT_ENRICHMENT", status = "FAILED",
+                batchNumber = -1, processedCount = enriched.toLong(), totalCount = 0,
+                message = "失败: ${e.message}"
+            ))
+            throw e
         }
 
         log.info("Enrichment complete: enriched={}, failed={}, scanned={}", enriched, failed, scanned)

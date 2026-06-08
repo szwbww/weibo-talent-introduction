@@ -183,6 +183,60 @@ function formatFileSize(size) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+let progressPollingTimer = null;
+
+function startProgressPolling(taskType, label) {
+    const bar = $("#taskProgressBar");
+    const labelEl = $("#taskProgressLabel");
+    const percentEl = $("#taskProgressPercent");
+    const fillEl = $("#taskProgressFill");
+    const detailEl = $("#taskProgressDetail");
+
+    bar.hidden = false;
+    bar.className = "task-progress-bar";
+    labelEl.textContent = label;
+    percentEl.textContent = "0%";
+    fillEl.style.width = "0%";
+    detailEl.textContent = "初始化中...";
+
+    stopProgressPolling();
+
+    progressPollingTimer = setInterval(async () => {
+        try {
+            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+            if (response.status === 204) return;
+            if (!response.ok) return;
+            const progress = await response.json();
+
+            percentEl.textContent = progress.percentage + "%";
+            fillEl.style.width = progress.percentage + "%";
+            detailEl.textContent = progress.message || "";
+
+            if (progress.status === "COMPLETED") {
+                bar.className = "task-progress-bar completed";
+                stopProgressPolling();
+            } else if (progress.status === "FAILED") {
+                bar.className = "task-progress-bar failed";
+                stopProgressPolling();
+            }
+        } catch (e) {
+        }
+    }, 1000);
+}
+
+function stopProgressPolling() {
+    if (progressPollingTimer) {
+        clearInterval(progressPollingTimer);
+        progressPollingTimer = null;
+    }
+}
+
+function hideProgressBar() {
+    stopProgressPolling();
+    const bar = $("#taskProgressBar");
+    setTimeout(() => { bar.hidden = true; }, 2000);
+}
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -712,6 +766,7 @@ async function handleRevalidateCandidates() {
     const btn = $("#revalidateBtn");
     btn.disabled = true;
     btn.textContent = "验证中...";
+    startProgressPolling("EXPERT_REVALIDATION", "重新验证候选人");
     try {
         const result = await api("/api/experts/revalidate-candidates", { method: "POST" });
         const stats = result.stats || result;
@@ -722,6 +777,7 @@ async function handleRevalidateCandidates() {
     } finally {
         btn.disabled = false;
         btn.textContent = "重新验证候选人";
+        hideProgressBar();
     }
 }
 
@@ -729,6 +785,7 @@ async function handlePromoteRaw() {
     const btn = $("#promoteRawBtn");
     btn.disabled = true;
     btn.textContent = "扫描中...";
+    startProgressPolling("RAW_PROMOTION_SCAN", "扫描 RAW 可晋升");
     try {
         const result = await api("/api/experts/promote-eligible-raw?maxPromotions=1000", { method: "POST" });
         const stats = result.stats || result;
@@ -743,6 +800,7 @@ async function handlePromoteRaw() {
     } finally {
         btn.disabled = false;
         btn.textContent = "扫描 RAW 可晋升";
+        hideProgressBar();
     }
 }
 
@@ -754,6 +812,7 @@ async function handleDiscover() {
     btn.disabled = true;
     const originalText = btn.textContent;
     btn.textContent = "发现中...";
+    startProgressPolling("EXPERT_DISCOVERY", "发现专家");
     try {
         let result;
         if (keywords.trim()) {
@@ -783,6 +842,7 @@ async function handleDiscover() {
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
+        hideProgressBar();
     }
 }
 
@@ -1279,16 +1339,18 @@ async function loadContactDetail(contactId) {
     $("#contactHeadActions").innerHTML = `
         <div class="contact-head-status-row">
             <span class="contact-head-label">状态与层级:</span>
-            <select id="operatorStatusSelect" data-contact-id="${contact.id}" aria-label="专家状态">
+            <select id="operatorStatusSelect" data-contact-id="${contact.id}" data-original="${contact.operatorStatus || ""}" aria-label="专家状态">
                 ${optionsFromArray(operatorStatusOptions, false, "请选择状态", contact.operatorStatus || "")}
             </select>
-            <select id="indexLevelSelect" data-contact-id="${contact.id}" aria-label="专家层级">
+            <select id="indexLevelSelect" data-contact-id="${contact.id}" data-original="${contact.currentIndexLevel || ""}" aria-label="专家层级">
                 ${optionsFromArray(indexLevelOptions, false, "请选择层级", contact.currentIndexLevel || "")}
             </select>
-            <button class="button" data-action="toggle-reply-mode"
-                    data-id="${contact.id}"
-                    data-enabled="${contact.autoReplyEnabled}">
-                <span>${contact.autoReplyEnabled ? "切换为人工回复" : "切换为自动回复"}</span>
+            <select id="autoReplySelect" data-contact-id="${contact.id}" data-original="${contact.autoReplyEnabled ? "auto" : "manual"}" aria-label="回复模式">
+                <option value="auto" ${contact.autoReplyEnabled ? "selected" : ""}>自动回复</option>
+                <option value="manual" ${!contact.autoReplyEnabled ? "selected" : ""}>人工回复</option>
+            </select>
+            <button class="button primary" id="saveContactChangesBtn" data-contact-id="${contact.id}" disabled>
+                保存变更
             </button>
         </div>
         <div class="contact-head-mail-row">
@@ -1837,9 +1899,6 @@ async function handleOperatorStatusChange(contactId, newStatus) {
         method: "POST",
         body: JSON.stringify({ operatorStatus: newStatus, operatorName })
     });
-    showStatus("专家状态已更新");
-    await loadContactDetail(contactId);
-    await loadContacts();
 }
 
 async function handleIndexLevelChange(contactId, newLevel) {
@@ -1849,9 +1908,33 @@ async function handleIndexLevelChange(contactId, newLevel) {
         method: "POST",
         body: JSON.stringify({ targetLevel: newLevel, operatorName })
     });
-    showStatus("专家层级已更新");
-    await loadContactDetail(contactId);
-    await loadContacts();
+}
+
+function updateSaveButtonState() {
+    const saveBtn = $("#saveContactChangesBtn");
+    if (!saveBtn) return;
+
+    const statusSelect = $("#operatorStatusSelect");
+    const levelSelect = $("#indexLevelSelect");
+    const replySelect = $("#autoReplySelect");
+
+    const hasChanges =
+        (statusSelect && statusSelect.value !== statusSelect.dataset.original) ||
+        (levelSelect && levelSelect.value !== levelSelect.dataset.original) ||
+        (replySelect && replySelect.value !== replySelect.dataset.original);
+
+    saveBtn.disabled = !hasChanges;
+
+    [statusSelect, levelSelect, replySelect].forEach(sel => {
+        if (!sel) return;
+        if (sel.value !== sel.dataset.original) {
+            sel.style.borderColor = "var(--warning)";
+            sel.style.boxShadow = "0 0 0 1px var(--warning)";
+        } else {
+            sel.style.borderColor = "";
+            sel.style.boxShadow = "";
+        }
+    });
 }
 
 async function loadTasks() {
@@ -2678,20 +2761,83 @@ function bindEvents() {
         const button = event.target.closest("button[data-action]");
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
     });
-    $("#contactHeadActions").addEventListener("click", (event) => {
+    $("#contactHeadActions").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-action]");
-        if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+        if (button) {
+            handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+            return;
+        }
+
+        if (event.target.closest("#saveContactChangesBtn")) {
+            const saveBtn = $("#saveContactChangesBtn");
+            const contactId = saveBtn.dataset.contactId;
+            if (!contactId || saveBtn.disabled) return;
+
+            const statusSelect = $("#operatorStatusSelect");
+            const levelSelect = $("#indexLevelSelect");
+            const replySelect = $("#autoReplySelect");
+
+            const changes = [];
+            if (statusSelect && statusSelect.value !== statusSelect.dataset.original) {
+                const oldLabel = operatorStatusOptions.find(o => o[0] === statusSelect.dataset.original)?.[1] || statusSelect.dataset.original;
+                const newLabel = operatorStatusOptions.find(o => o[0] === statusSelect.value)?.[1] || statusSelect.value;
+                changes.push(`状态: ${oldLabel} → ${newLabel}`);
+            }
+            if (levelSelect && levelSelect.value !== levelSelect.dataset.original) {
+                const oldLabel = indexLevelOptions.find(o => o[0] === levelSelect.dataset.original)?.[1] || levelSelect.dataset.original;
+                const newLabel = indexLevelOptions.find(o => o[0] === levelSelect.value)?.[1] || levelSelect.value;
+                changes.push(`层级: ${oldLabel} → ${newLabel}`);
+            }
+            if (replySelect && replySelect.value !== replySelect.dataset.original) {
+                const oldLabel = replySelect.dataset.original === "auto" ? "自动回复" : "人工回复";
+                const newLabel = replySelect.value === "auto" ? "自动回复" : "人工回复";
+                changes.push(`回复模式: ${oldLabel} → ${newLabel}`);
+            }
+
+            if (changes.length === 0) return;
+
+            const confirmed = await openActionDialog("confirm", {
+                message: `确认以下变更？\n\n${changes.join("\n")}`
+            });
+            if (!confirmed) return;
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = "保存中...";
+            try {
+                if (statusSelect && statusSelect.value !== statusSelect.dataset.original) {
+                    await handleOperatorStatusChange(contactId, statusSelect.value);
+                }
+                if (levelSelect && levelSelect.value !== levelSelect.dataset.original) {
+                    await handleIndexLevelChange(contactId, levelSelect.value);
+                }
+                if (replySelect && replySelect.value !== replySelect.dataset.original) {
+                    if (replySelect.value === "manual") {
+                        await api(`/api/expert-contacts/${contactId}/switch-to-manual`, {
+                            method: "POST",
+                            body: JSON.stringify({ reason: "OPERATOR_MANUAL", note: "控制台手动切换" })
+                        });
+                    } else {
+                        await api(`/api/expert-contacts/${contactId}/switch-to-auto`, {
+                            method: "POST",
+                            body: JSON.stringify({ note: "控制台手动切换" })
+                        });
+                    }
+                }
+                showStatus("变更已保存", "ok");
+                await loadContactDetail(contactId);
+                await loadContacts();
+            } catch (e) {
+                showStatus("保存失败: " + e.message, "error");
+                saveBtn.disabled = false;
+                saveBtn.textContent = "保存变更";
+            }
+        }
     });
-    $("#contactHeadActions").addEventListener("change", async (event) => {
+    $("#contactHeadActions").addEventListener("change", (event) => {
         const select = event.target.closest("select");
         if (!select) return;
-        if (select.id === "operatorStatusSelect") {
-            const contactId = select.dataset.contactId;
-            if (contactId) await handleOperatorStatusChange(contactId, select.value).catch((error) => showStatus(error.message, "error"));
-        }
-        if (select.id === "indexLevelSelect") {
-            const contactId = select.dataset.contactId;
-            if (contactId) await handleIndexLevelChange(contactId, select.value).catch((error) => showStatus(error.message, "error"));
+        if (select.id === "operatorStatusSelect" || select.id === "indexLevelSelect" || select.id === "autoReplySelect") {
+            updateSaveButtonState();
         }
     });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
