@@ -2918,5 +2918,109 @@ function openActionDialog(type, options = {}) {
     });
 }
 
+function initLayoutResizer() {
+    const resizer = document.getElementById("contactsLayoutResizer");
+    const container = document.querySelector(".contacts-layout");
+    const listPanel = document.querySelector(".contacts-list-panel");
+    const collapseBtn = document.getElementById("collapseListBtn");
+    const expandBtn = document.getElementById("expandListBtn");
+    
+    if (!resizer || !container || !listPanel) return;
+
+    let isDragging = false;
+
+    // Load saved layout width or default
+    const savedWidth = localStorage.getItem("contacts-list-width");
+    const isCollapsed = localStorage.getItem("contacts-list-collapsed") === "true";
+
+    function setListWidth(width, updateStorage = true) {
+        if (width < 150) {
+            collapseList(updateStorage);
+            return;
+        }
+        
+        // Ensure within reasonable boundaries
+        const maxWidth = Math.min(800, window.innerWidth * 0.6);
+        const targetWidth = Math.max(200, Math.min(maxWidth, width));
+        
+        container.style.gridTemplateColumns = `${targetWidth}px 6px minmax(0, 1fr)`;
+        listPanel.style.display = "";
+        resizer.style.display = "";
+        expandBtn.hidden = true;
+        
+        if (updateStorage) {
+            localStorage.setItem("contacts-list-width", targetWidth);
+            localStorage.setItem("contacts-list-collapsed", "false");
+        }
+    }
+
+    function collapseList(updateStorage = true) {
+        container.style.gridTemplateColumns = `0px 0px minmax(0, 1fr)`;
+        listPanel.style.display = "none";
+        resizer.style.display = "none";
+        expandBtn.hidden = false;
+        
+        if (updateStorage) {
+            localStorage.setItem("contacts-list-collapsed", "true");
+        }
+    }
+
+    function resetToDefault() {
+        setListWidth(360);
+    }
+
+    // Event listeners for dragging
+    resizer.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        resizer.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        
+        // Calculate X coordinate relative to container
+        const containerRect = container.getBoundingClientRect();
+        const newWidth = e.clientX - containerRect.left;
+        setListWidth(newWidth);
+    });
+
+    document.addEventListener("mouseup", () => {
+        if (isDragging) {
+            isDragging = false;
+            resizer.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        }
+    });
+
+    // Toggle buttons
+    collapseBtn.addEventListener("click", () => collapseList(true));
+    expandBtn.addEventListener("click", () => {
+        const lastWidth = parseInt(localStorage.getItem("contacts-list-width")) || 360;
+        setListWidth(lastWidth, true);
+    });
+
+    // Preset buttons
+    document.getElementById("btnLayoutCollapse")?.addEventListener("click", () => collapseList(true));
+    document.getElementById("btnLayoutDefault")?.addEventListener("click", resetToDefault);
+    document.getElementById("btnLayoutWideList")?.addEventListener("click", () => setListWidth(500));
+    document.getElementById("btnLayoutSplit")?.addEventListener("click", () => {
+        const containerWidth = container.getBoundingClientRect().width;
+        setListWidth(Math.floor(containerWidth / 2) - 3);
+    });
+
+    // Initialize state
+    if (isCollapsed) {
+        collapseList(false);
+    } else if (savedWidth) {
+        setListWidth(parseInt(savedWidth), false);
+    } else {
+        resetToDefault();
+    }
+}
+
 bindEvents();
+initLayoutResizer();
 refreshCurrentView();
