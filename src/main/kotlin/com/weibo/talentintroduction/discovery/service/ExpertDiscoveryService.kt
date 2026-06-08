@@ -166,7 +166,13 @@ class ExpertDiscoveryService(
             stats.noEmailPapers++
             return
         }
-        val authorEmails = europePmc.extractEmailsFromFullText(pmcId)
+        val authorEmails = try {
+            europePmc.extractEmailsFromFullText(pmcId)
+        } catch (e: Exception) {
+            stats.errors += "PMC $pmcId 提取失败: ${e.message ?: e.javaClass.simpleName}"
+            log.warn("Failed to extract emails from PMC {}", pmcId, e)
+            return
+        }
         if (authorEmails.isEmpty()) {
             stats.noEmailPapers++
             return
