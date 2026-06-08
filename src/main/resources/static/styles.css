@@ -851,40 +851,67 @@ textarea {
 
 .contact-head-actions {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
     width: 100%;
-    flex-wrap: wrap;
 }
 
-.contact-head-status-actions,
-.contact-head-mail-actions {
+.contact-head-status-row,
+.contact-head-mail-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
-}
-
-.contact-head-status-actions {
-    flex: 0 0 auto;
     flex-wrap: wrap;
 }
 
-.contact-head-mail-actions {
-    flex: 1 1 320px;
-    justify-content: flex-end;
-    flex-wrap: nowrap;
+.contact-head-status-row {
+    flex: 1 1 auto;
+}
+
+.contact-head-mail-row {
+    flex: 1 1 auto;
+}
+
+.contact-head-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    width: 85px;
+    min-width: 85px;
+    white-space: nowrap;
 }
 
 .contact-head-actions select {
-    flex: 1 1 200px;
-    max-width: 400px;
     height: 28px;
     min-height: 28px;
     font-size: 11px;
-    min-width: 160px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-main);
+    color: var(--text-main);
+    padding: 0 8px;
+    box-sizing: border-box;
+}
+
+#operatorStatusSelect {
+    width: 140px;
+    flex: 0 0 140px;
+}
+
+#indexLevelSelect {
+    width: 120px;
+    flex: 0 0 120px;
+}
+
+#manualMailOption {
+    flex: 1;
+    min-width: 120px;
+    max-width: 320px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .contact-head-actions .button {
@@ -1852,8 +1879,10 @@ textarea {
 /* Expert checkbox */
 .expert-checkbox {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    align-self: flex-start;
     padding: 2px 4px 0 0;
+    margin-top: 1px;
     flex-shrink: 0;
 }
 
@@ -2020,15 +2049,14 @@ textarea {
         flex-wrap: wrap;
     }
 
-    .contact-head-status-actions,
-    .contact-head-mail-actions {
+    .contact-head-status-row,
+    .contact-head-mail-row {
         width: 100%;
         flex-wrap: wrap;
         justify-content: flex-start;
     }
 
     .contact-head-actions select {
-        flex: 1 1 200px;
         max-width: none;
     }
 
@@ -2095,10 +2123,66 @@ textarea {
         font-size: 12px;
     }
 
-    .contact-head-status-actions,
-    .contact-head-mail-actions {
+    .contact-head-status-row,
+    .contact-head-mail-row {
         width: 100%;
         justify-content: flex-start;
         flex-wrap: wrap;
+    }
+}
+
+/* Responsive constraints added for Expert Detail and Scheduler */
+@media (max-width: 768px) {
+    .contact-head-status-row,
+    .contact-head-mail-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+    .contact-head-status-row select,
+    .contact-head-mail-row select,
+    .contact-head-status-row .button,
+    .contact-head-mail-row .button {
+        width: 100% !important;
+        max-width: none !important;
+        flex: none !important;
+    }
+    .contact-head-label {
+        width: auto !important;
+        min-width: 0 !important;
+        margin-bottom: 2px;
+    }
+}
+
+@media (max-width: 600px) {
+    .meeting-schedule-panel .form-row {
+        flex-direction: column !important;
+        gap: 6px !important;
+    }
+    .meeting-schedule-panel .form-group {
+        flex: none !important;
+        width: 100% !important;
+    }
+    .meeting-schedule-panel .panel-actions {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 6px !important;
+    }
+    .meeting-schedule-panel .panel-actions .button {
+        width: 100% !important;
+        margin-left: 0 !important;
+    }
+}
+
+@media (max-width: 500px) {
+    .attention-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .attention-banner strong,
+    .attention-banner span,
+    .attention-banner a {
+        width: 100%;
     }
 }
