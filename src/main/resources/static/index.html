@@ -255,17 +255,46 @@
                 <button class="button primary" id="discoverBtn" onclick="handleDiscover()">发现专家</button>
             </div>
 
+            <!-- Sub-toolbar for Layout Controls -->
+            <div class="toolbar layout-controls-toolbar" style="margin-top: 8px; border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); background-color: var(--panel-bg); display: flex; gap: 8px; align-items: center; padding: 8px 14px; border: 1px solid var(--panel-border);">
+                <span class="muted" style="font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 4px;">布局样式:</span>
+                <button class="button small" id="btnLayoutCollapse" title="隐藏专家列表" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">隐藏列表</button>
+                <button class="button small" id="btnLayoutDefault" title="恢复默认分栏 (360px)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">默认比例</button>
+                <button class="button small" id="btnLayoutWideList" title="宽列表分栏 (500px)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">宽列表</button>
+                <button class="button small" id="btnLayoutSplit" title="左右平分 (1:1)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">等宽分栏</button>
+            </div>
+
             <div class="split-layout contacts-layout">
                 <!-- Left panel: candidate list -->
                 <section class="panel contacts-list-panel">
-                    <div class="panel-head"><h2>专家列表</h2></div>
+                    <div class="panel-head" style="display: flex; align-items: center; justify-content: space-between;">
+                        <h2>专家列表</h2>
+                        <button class="icon-button" id="collapseListBtn" title="折叠列表" style="border: none; background: transparent; padding: 2px; height: auto; width: auto; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center;">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                        </button>
+                    </div>
                     <div id="contactCountInfo" class="text-muted" style="padding: 4px 12px; font-size: 12px;"></div>
                     <div id="contactList" class="list"></div>
                 </section>
+
+                <!-- Resizer Divider -->
+                <div class="layout-resizer" id="contactsLayoutResizer">
+                    <div class="resizer-handle"></div>
+                </div>
+
                 <!-- Right panel: detail & timeline view -->
                 <section class="panel contact-detail-panel">
                     <div class="panel-head contact-detail-head">
-                        <h2>引进状态演进与往来邮件时间线</h2>
+                        <div style="display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px;">
+                            <button class="icon-button" id="expandListBtn" title="展开列表" hidden style="border: none; background: transparent; padding: 2px; height: auto; width: auto; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 4px;">
+                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 18 15 12 9 6"/>
+                                </svg>
+                            </button>
+                            <h2 style="flex: 1; margin: 0;">引进状态演进与往来邮件时间线</h2>
+                        </div>
                         <div class="contact-head-actions" id="contactHeadActions" hidden></div>
                     </div>
                     <div id="contactDetail" class="detail-empty">
