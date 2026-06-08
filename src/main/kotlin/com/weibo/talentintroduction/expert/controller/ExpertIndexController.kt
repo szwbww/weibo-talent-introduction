@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -81,33 +82,57 @@ class ExpertIndexController(
 
     @PostMapping("/revalidate-candidates")
     fun revalidateCandidates(): ResponseEntity<Any> {
-        if (progressStore.isRunning("EXPERT_REVALIDATION")) {
+        if (!progressStore.tryStart("EXPERT_REVALIDATION", TaskProgress(
+                taskType = "EXPERT_REVALIDATION", status = "RUNNING",
+                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+            ))) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
-        val (_, result) = taskExecutionService.runAndRecordWithResult(
-            "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates"
-        ) {
-            revalidationService.revalidateCandidates()
+        try {
+            val (_, result) = taskExecutionService.runAndRecordWithResult(
+                "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates"
+            ) {
+                revalidationService.revalidateCandidates()
+            }
+            return ResponseEntity.ok(result)
+        } catch (ex: Exception) {
+            progressStore.update("EXPERT_REVALIDATION", TaskProgress(
+                taskType = "EXPERT_REVALIDATION", status = "FAILED",
+                batchNumber = 0, processedCount = 0, totalCount = 0,
+                message = ex.message ?: "初始化失败"
+            ))
+            throw ex
         }
-        return ResponseEntity.ok(result)
     }
 
     @PostMapping("/promote-eligible-raw")
     fun promoteEligibleRaw(
         @RequestParam(defaultValue = "1000") maxPromotions: Int
     ): ResponseEntity<Any> {
-        if (progressStore.isRunning("RAW_PROMOTION_SCAN")) {
+        require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
+        if (!progressStore.tryStart("RAW_PROMOTION_SCAN", TaskProgress(
+                taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
+                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+            ))) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
-        require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
-        val (_, result) = taskExecutionService.runAndRecordWithResult(
-            "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions)
-        ) {
-            revalidationService.promoteEligibleRawExperts(maxPromotions)
+        try {
+            val (_, result) = taskExecutionService.runAndRecordWithResult(
+                "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions)
+            ) {
+                revalidationService.promoteEligibleRawExperts(maxPromotions)
+            }
+            return ResponseEntity.ok(result)
+        } catch (ex: Exception) {
+            progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
+                taskType = "RAW_PROMOTION_SCAN", status = "FAILED",
+                batchNumber = 0, processedCount = 0, totalCount = 0,
+                message = ex.message ?: "初始化失败"
+            ))
+            throw ex
         }
-        return ResponseEntity.ok(result)
     }
 }
 

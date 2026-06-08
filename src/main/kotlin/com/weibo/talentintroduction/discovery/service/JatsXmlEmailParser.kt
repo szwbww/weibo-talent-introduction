@@ -5,6 +5,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
 import java.util.Locale
+import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
 object JatsXmlEmailParser {
@@ -22,9 +23,12 @@ object JatsXmlEmailParser {
     fun parse(bytes: ByteArray): List<AuthorEmail> {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
             setFeature("http://xml.org/sax/features/external-general-entities", false)
             setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
         }
         val builder = factory.newDocumentBuilder()
         val doc = builder.parse(ByteArrayInputStream(bytes))

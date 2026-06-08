@@ -183,14 +183,31 @@ function formatFileSize(size) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-let progressPollingTimer = null;
+const progressTimers = {};
+const shownErrors = new Set();
+const taskButtonOriginalTexts = {
+    revalidateBtn: "重新验证候选人",
+    promoteRawBtn: "扫描 RAW 可晋升",
+    discoverBtn: "发现专家"
+};
 
-function startProgressPolling(taskType, label) {
+function stopAllProgressPolling() {
+    Object.keys(progressTimers).forEach(stopProgressPollingFor);
+}
+
+function hasActiveProgressPolling() {
+    return Object.keys(progressTimers).length > 0;
+}
+
+function startProgressPolling(taskType, label, btnId) {
     const bar = $("#taskProgressBar");
     const labelEl = $("#taskProgressLabel");
     const percentEl = $("#taskProgressPercent");
     const fillEl = $("#taskProgressFill");
     const detailEl = $("#taskProgressDetail");
+
+    // 停止其他任务轮询，确保单一进度条
+    stopAllProgressPolling();
 
     bar.hidden = false;
     bar.className = "task-progress-bar";
@@ -199,9 +216,21 @@ function startProgressPolling(taskType, label) {
     fillEl.style.width = "0%";
     detailEl.textContent = "初始化中...";
 
-    stopProgressPolling();
+    clearTaskErrorLog();
+    shownErrors.clear();
 
-    progressPollingTimer = setInterval(async () => {
+    // 恢复所有任务按钮状态
+    Object.keys(taskButtonOriginalTexts).forEach(restoreTaskButton);
+
+    if (btnId) {
+        const btn = $(`#${btnId}`);
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "执行中...";
+        }
+    }
+
+    progressTimers[taskType] = setInterval(async () => {
         try {
             const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
             if (response.status === 204) return;
@@ -212,29 +241,89 @@ function startProgressPolling(taskType, label) {
             fillEl.style.width = progress.percentage + "%";
             detailEl.textContent = progress.message || "";
 
+            if (progress.errors && progress.errors.length > 0) {
+                progress.errors.forEach((err) => {
+                    if (!shownErrors.has(err)) {
+                        shownErrors.add(err);
+                        showTaskErrorLog(err);
+                    }
+                });
+            }
+
             if (progress.status === "COMPLETED") {
                 bar.className = "task-progress-bar completed";
-                stopProgressPolling();
+                stopProgressPollingFor(taskType);
+                if (shownErrors.size > 0) {
+                    showStatus(`${label} 完成，但有 ${shownErrors.size} 处局部错误`, "warn");
+                } else {
+                    setTimeout(() => { bar.hidden = true; }, 2000);
+                }
+                if (btnId) restoreTaskButton(btnId);
             } else if (progress.status === "FAILED") {
                 bar.className = "task-progress-bar failed";
-                stopProgressPolling();
+                stopProgressPollingFor(taskType);
+                showTaskErrorLog(progress.message || "未知错误");
+                if (btnId) restoreTaskButton(btnId);
             }
         } catch (e) {
+            // 轮询失败静默忽略
         }
     }, 1000);
 }
 
-function stopProgressPolling() {
-    if (progressPollingTimer) {
-        clearInterval(progressPollingTimer);
-        progressPollingTimer = null;
+function stopProgressPollingFor(taskType) {
+    if (progressTimers[taskType]) {
+        clearInterval(progressTimers[taskType]);
+        delete progressTimers[taskType];
     }
 }
 
+function restoreTaskButton(btnId) {
+    const btn = $(`#${btnId}`);
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = taskButtonOriginalTexts[btnId] || btn.textContent;
+    }
+}
+
+function showTaskErrorLog(message) {
+    const logPanel = $("#taskErrorLog");
+    const logContent = $("#taskErrorLogContent");
+    logPanel.hidden = false;
+    const timestamp = new Date().toLocaleTimeString();
+    logContent.textContent += `[${timestamp}] ${message}\n`;
+}
+
+function clearTaskErrorLog() {
+    const logPanel = $("#taskErrorLog");
+    const logContent = $("#taskErrorLogContent");
+    logPanel.hidden = true;
+    logContent.textContent = "";
+}
+
 function hideProgressBar() {
-    stopProgressPolling();
     const bar = $("#taskProgressBar");
     setTimeout(() => { bar.hidden = true; }, 2000);
+}
+
+async function resumeProgressPollingIfNeeded() {
+    const taskTypes = [
+        { type: "EXPERT_REVALIDATION", label: "重新验证候选人", btnId: "revalidateBtn" },
+        { type: "RAW_PROMOTION_SCAN", label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
+        { type: "EXPERT_DISCOVERY", label: "发现专家", btnId: "discoverBtn" }
+    ];
+
+    for (const task of taskTypes) {
+        try {
+            const response = await fetch(`${contextPath}/api/task-progress/${task.type}`);
+            if (response.status === 204 || !response.ok) continue;
+            const progress = await response.json();
+            if (progress.status === "RUNNING") {
+                startProgressPolling(task.type, task.label, task.btnId);
+                break;
+            }
+        } catch (e) { /* 静默 */ }
+    }
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -344,6 +433,11 @@ function setView(view) {
     $("#viewTitle").textContent = viewMeta[view][0];
     $("#viewSubtitle").textContent = viewMeta[view][1];
     refreshCurrentView();
+    if (view === "contacts") {
+        resumeProgressPollingIfNeeded();
+    } else {
+        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(stopProgressPollingFor);
+    }
 }
 
 async function refreshCurrentView() {
@@ -763,29 +857,35 @@ async function handleCheckReplies() {
 }
 
 async function handleRevalidateCandidates() {
-    const btn = $("#revalidateBtn");
-    btn.disabled = true;
-    btn.textContent = "验证中...";
-    startProgressPolling("EXPERT_REVALIDATION", "重新验证候选人");
+    if (hasActiveProgressPolling()) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+    startProgressPolling("EXPERT_REVALIDATION", "重新验证候选人", "revalidateBtn");
     try {
         const result = await api("/api/experts/revalidate-candidates", { method: "POST" });
         const stats = result.stats || result;
         const failureMsg = stats.demotionFailed > 0 ? `, 降级失败 ${stats.demotionFailed}` : "";
         showStatus(`候选人重新验证完成: 总数 ${stats.total}, 通过 ${stats.passed}, 降级 ${stats.demoted}${failureMsg}`, "ok");
     } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            return;
+        }
         showStatus("验证失败: " + e.message, "error");
-    } finally {
-        btn.disabled = false;
-        btn.textContent = "重新验证候选人";
+        showTaskErrorLog(e.message);
+        stopProgressPollingFor("EXPERT_REVALIDATION");
+        restoreTaskButton("revalidateBtn");
         hideProgressBar();
     }
 }
 
 async function handlePromoteRaw() {
-    const btn = $("#promoteRawBtn");
-    btn.disabled = true;
-    btn.textContent = "扫描中...";
-    startProgressPolling("RAW_PROMOTION_SCAN", "扫描 RAW 可晋升");
+    if (hasActiveProgressPolling()) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+    startProgressPolling("RAW_PROMOTION_SCAN", "扫描 RAW 可晋升", "promoteRawBtn");
     try {
         const result = await api("/api/experts/promote-eligible-raw?maxPromotions=1000", { method: "POST" });
         const stats = result.stats || result;
@@ -796,23 +896,27 @@ async function handlePromoteRaw() {
         const hasFailures = stats.promotionFailed > 0 || stats.existenceCheckFailed > 0;
         showStatus(`RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`, hasFailures ? "warn" : "ok");
     } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            return;
+        }
         showStatus("扫描失败: " + e.message, "error");
-    } finally {
-        btn.disabled = false;
-        btn.textContent = "扫描 RAW 可晋升";
+        showTaskErrorLog(e.message);
+        stopProgressPollingFor("RAW_PROMOTION_SCAN");
+        restoreTaskButton("promoteRawBtn");
         hideProgressBar();
     }
 }
 
 async function handleDiscover() {
+    if (hasActiveProgressPolling()) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
     const keywords = prompt("输入发现关键词（多个用逗号分隔，留空使用默认条件）:");
     if (keywords === null) return;
 
-    const btn = $("#discoverBtn");
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = "发现中...";
-    startProgressPolling("EXPERT_DISCOVERY", "发现专家");
+    startProgressPolling("EXPERT_DISCOVERY", "发现专家", "discoverBtn");
     try {
         let result;
         if (keywords.trim()) {
@@ -838,10 +942,14 @@ async function handleDiscover() {
             hasFailures ? "warn" : "ok"
         );
     } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            return;
+        }
         showStatus("发现失败: " + e.message, "error");
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+        showTaskErrorLog(e.message);
+        stopProgressPollingFor("EXPERT_DISCOVERY");
+        restoreTaskButton("discoverBtn");
         hideProgressBar();
     }
 }

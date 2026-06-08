@@ -22,10 +22,6 @@ class ExpertRevalidationService(
 
     fun revalidateCandidates(): RevalidationResult {
         val stats = RevalidationStats()
-        progressStore.update("EXPERT_REVALIDATION", TaskProgress(
-            taskType = "EXPERT_REVALIDATION", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-        ))
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
@@ -98,10 +94,6 @@ class ExpertRevalidationService(
     fun promoteEligibleRawExperts(maxPromotions: Int = 1000): PromotionScanResult {
         val stats = PromotionScanStats()
         if (maxPromotions <= 0) return PromotionScanResult(stats)
-        progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
-            taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-        ))
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->

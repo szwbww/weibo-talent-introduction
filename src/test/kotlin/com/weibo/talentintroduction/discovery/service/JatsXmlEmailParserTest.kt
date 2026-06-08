@@ -407,4 +407,82 @@ class JatsXmlEmailParserTest {
             assertEquals("Test", it.familyNames)
         }
     }
+
+    @Test
+    fun `parses email from XML with DOCTYPE declaration`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.2 20190208//EN" "https://jats.nlm.nih.gov/publishing/1.2/JATS-journalpublishing1.dtd">
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group>
+                    <contrib contrib-type="author" corresp="yes">
+                      <name><surname>Doe</surname><given-names>Jane</given-names></name>
+                      <email>jane.doe@institute.org</email>
+                    </contrib>
+                  </contrib-group>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent()
+
+        val results = JatsXmlEmailParser.parse(xml)
+        assertEquals(1, results.size)
+        assertEquals("jane.doe@institute.org", results[0].email)
+    }
+
+    @Test
+    fun `external entities are not expanded`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE article [
+              <!ENTITY xxe SYSTEM "file:///etc/passwd">
+            ]>
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group>
+                    <contrib contrib-type="author" corresp="yes">
+                      <name><surname>Test</surname><given-names>XXE</given-names></name>
+                      <email>safe@example.com</email>
+                    </contrib>
+                  </contrib-group>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent()
+
+        val results = JatsXmlEmailParser.parse(xml)
+        assertEquals(1, results.size)
+        assertEquals("safe@example.com", results[0].email)
+        assertFalse(results[0].email.contains("root"))
+    }
+
+    @Test
+    fun `parameter entities are not expanded`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE article [
+              <!ENTITY % pe SYSTEM "file:///etc/passwd">
+              %pe;
+            ]>
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group>
+                    <contrib contrib-type="author" corresp="yes">
+                      <name><surname>Test</surname><given-names>PE</given-names></name>
+                      <email>safe2@example.com</email>
+                    </contrib>
+                  </contrib-group>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent()
+
+        val results = JatsXmlEmailParser.parse(xml)
+        assertEquals(1, results.size)
+        assertEquals("safe2@example.com", results[0].email)
+    }
 }

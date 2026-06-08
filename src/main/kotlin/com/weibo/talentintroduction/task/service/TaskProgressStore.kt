@@ -22,6 +22,17 @@ class TaskProgressStore {
         val current = store[taskType] ?: return false
         return current.status == "RUNNING"
     }
+
+    /**
+     * 原子抢占：如果当前没有同类型任务在运行，写入 initial 并返回 true；
+     * 否则保留现有状态并返回 false。
+     */
+    fun tryStart(taskType: String, initial: TaskProgress): Boolean {
+        val result = store.compute(taskType) { _, current ->
+            if (current?.status == "RUNNING") current else initial
+        }
+        return result === initial
+    }
 }
 
 data class TaskProgress(

@@ -1,0 +1,169 @@
+package com.weibo.talentintroduction.discovery.controller
+
+import com.weibo.talentintroduction.config.MailSchedulingProperties
+import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
+import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
+import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
+import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgress
+import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
+import org.mockito.Mockito
+
+class ExpertDiscoveryControllerTest {
+    private val discoveryService = Mockito.mock(ExpertDiscoveryService::class.java)
+    private val repository = Mockito.mock(TaskExecutionRepository::class.java)
+    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+    private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
+    private val objectMapper = ObjectMapper()
+    private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
+    private val controller = ExpertDiscoveryController(
+        discoveryService, taskExecutionService, progressStore
+    )
+
+    private fun anyTaskProgress(): TaskProgress {
+        return Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+    }
+
+    @Test
+    fun `triggerDiscovery returns 409 when task is running`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(false)
+
+        val result = controller.triggerDiscovery(null)
+        assertEquals(409, result.statusCodeValue)
+    }
+
+    @Test
+    fun `triggerDiscoveryByKeyword returns 409 when task is running`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(false)
+
+        val result = controller.triggerDiscoveryByKeyword(listOf("ai"), 2020, 2026)
+        assertEquals(409, result.statusCodeValue)
+    }
+
+    @Test
+    fun `triggerDiscovery returns 500 when execution status is FAILED`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(true)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doThrow(RuntimeException("Europe PMC unavailable")).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString()
+        )
+
+        val result = controller.triggerDiscovery(null)
+        assertEquals(500, result.statusCodeValue)
+        val body = result.body as Map<*, *>
+        assertTrue((body["message"] as String).contains("Europe PMC unavailable"))
+    }
+
+    @Test
+    fun `triggerDiscoveryByKeyword returns 500 when execution status is FAILED`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(true)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doThrow(RuntimeException("OpenAlex timeout")).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString()
+        )
+
+        val result = controller.triggerDiscoveryByKeyword(listOf("ml"), 2020, 2026)
+        assertEquals(500, result.statusCodeValue)
+        val body = result.body as Map<*, *>
+        assertTrue((body["message"] as String).contains("OpenAlex timeout"))
+    }
+
+    @Test
+    fun `triggerDiscovery writes FAILED to progressStore when repository save fails`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(true)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenThrow(RuntimeException("DB connection lost"))
+
+        val ex = assertThrows(RuntimeException::class.java) {
+            controller.triggerDiscovery(null)
+        }
+        assertEquals("DB connection lost", ex.message)
+        Mockito.verify(progressStore).update(
+            Mockito.anyString(),
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+        )
+    }
+
+    @Test
+    fun `triggerDiscovery returns ok on success`() {
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(true)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString()
+        )
+
+        val result = controller.triggerDiscovery(null)
+        assertEquals(200, result.statusCodeValue)
+        assertNotNull(result.body)
+    }
+
+    @Test
+    fun `triggerDiscovery preserves existing errors on FAILED`() {
+        val existing = TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = 2, processedCount = 10, totalCount = 100,
+            message = "批次2", errors = listOf("paper A failed", "paper B timeout")
+        )
+        val captured = mutableListOf<TaskProgress>()
+        Mockito.doAnswer { invocation ->
+            captured.add(invocation.getArgument(1) as TaskProgress)
+            null
+        }.`when`(progressStore).update(
+            Mockito.anyString(),
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+        )
+        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(true)
+        Mockito.`when`(progressStore.get("EXPERT_DISCOVERY"))
+            .thenReturn(existing)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doThrow(RuntimeException("Europe PMC down")).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString()
+        )
+
+        val result = controller.triggerDiscovery(null)
+        assertEquals(500, result.statusCodeValue)
+
+        assertEquals(1, captured.size)
+        assertEquals(listOf("paper A failed", "paper B timeout"), captured[0].errors)
+        assertEquals(2, captured[0].batchNumber)
+        assertEquals(10, captured[0].processedCount)
+        assertEquals(100, captured[0].totalCount)
+    }
+}

@@ -267,6 +267,15 @@
                 <div id="taskProgressDetail" class="task-progress-detail"></div>
             </div>
 
+            <!-- Task Error Log -->
+            <div id="taskErrorLog" class="task-error-log" hidden>
+                <div class="task-error-log-header">
+                    <span>错误日志</span>
+                    <button class="button small" onclick="document.getElementById('taskErrorLog').hidden = true">关闭</button>
+                </div>
+                <div id="taskErrorLogContent" class="task-error-log-content"></div>
+            </div>
+
             <!-- Sub-toolbar for Layout Controls -->
             <div class="toolbar layout-controls-toolbar" style="margin-top: 8px; border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); background-color: var(--panel-bg); display: flex; gap: 8px; align-items: center; padding: 8px 14px; border: 1px solid var(--panel-border);">
                 <span class="muted" style="font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 4px;">布局样式:</span>

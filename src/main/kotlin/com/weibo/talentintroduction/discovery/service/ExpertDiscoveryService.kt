@@ -53,13 +53,15 @@ class ExpertDiscoveryService(
 
     private enum class DedupResult { EXISTS, NOT_FOUND, ERROR }
 
+    private fun snapshotErrors(stats: DiscoveryStats): List<String> {
+        return stats.errors.asSequence()
+            .map { it.take(500) }
+            .take(100)
+            .toList()
+    }
+
     fun discover(criteria: PaperSearchCriteria, triggeredBy: String): DiscoveryResult {
         val stats = DiscoveryStats()
-        progressStore.update("EXPERT_DISCOVERY", TaskProgress(
-            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = discoveryProperties.maxPapersPerRun.toLong(),
-            message = "初始化 EuropePMC 搜索..."
-        ))
 
         try {
             discoverFromEuropePmc(criteria, stats)
@@ -85,13 +87,15 @@ class ExpertDiscoveryService(
                 details = mapOf(
                     "totalPapers" to stats.totalPapers, "totalAuthors" to stats.totalAuthors,
                     "indexed" to stats.indexed, "promoted" to stats.promoted
-                )
+                ),
+                errors = snapshotErrors(stats)
             ))
         } catch (e: Exception) {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
-                message = "失败: ${e.message}"
+                message = "失败: ${e.message}",
+                errors = snapshotErrors(stats)
             ))
             throw e
         }
@@ -122,7 +126,8 @@ class ExpertDiscoveryService(
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "EuropePMC 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC", "errors" to stats.errors.toList())
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC"),
+                errors = snapshotErrors(stats)
             ))
             if (limitReached) return
             cursor = batch.nextCursor
@@ -153,7 +158,8 @@ class ExpertDiscoveryService(
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "OpenAlex 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex", "errors" to stats.errors.toList())
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex"),
+                errors = snapshotErrors(stats)
             ))
             if (limitReached) return
             cursor = batch.nextCursor
