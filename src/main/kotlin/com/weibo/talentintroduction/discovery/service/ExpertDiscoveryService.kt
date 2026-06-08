@@ -122,7 +122,7 @@ class ExpertDiscoveryService(
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "EuropePMC 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC")
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC", "errors" to stats.errors.toList())
             ))
             if (limitReached) return
             cursor = batch.nextCursor
@@ -153,7 +153,7 @@ class ExpertDiscoveryService(
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "OpenAlex 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex")
+                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex", "errors" to stats.errors.toList())
             ))
             if (limitReached) return
             cursor = batch.nextCursor

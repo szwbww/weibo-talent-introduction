@@ -12,5 +12,6 @@ data class DiscoveryStats(
     var promotionFailed: Int = 0,
     var filtered: Int = 0,
     var dedupErrors: Int = 0,
-    val filterReasons: MutableMap<String, Int> = mutableMapOf()
+    val filterReasons: MutableMap<String, Int> = mutableMapOf(),
+    val errors: MutableList<String> = mutableListOf()
 )
