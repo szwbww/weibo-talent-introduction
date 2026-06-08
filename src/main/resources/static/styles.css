@@ -399,12 +399,12 @@ p {
     align-items: start;
 }
 
-.qa-layout,
-.contacts-layout {
+.qa-layout {
     grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
 }
 
 .contacts-layout {
+    grid-template-columns: 320px minmax(0, 1fr);
     align-items: stretch;
 }
 
@@ -1886,9 +1886,12 @@ textarea {
         grid-template-columns: minmax(0, 1fr) minmax(280px, 0.6fr);
     }
 
-    .qa-layout,
-    .contacts-layout {
+    .qa-layout {
         grid-template-columns: minmax(200px, 0.7fr) minmax(0, 1.3fr);
+    }
+
+    .contacts-layout {
+        grid-template-columns: 280px minmax(0, 1fr);
     }
 
     .contacts-layout .list {
@@ -1927,12 +1930,23 @@ textarea {
 
     .main {
         padding: 16px;
+        max-height: none;
+        overflow-y: visible;
     }
 
     .split-layout,
     .qa-layout,
     .contacts-layout {
         grid-template-columns: 1fr;
+    }
+
+    .contact-detail-panel {
+        height: auto;
+        min-height: 400px;
+    }
+
+    #contactDetail {
+        overflow-y: visible;
     }
 
     .form-grid {
