@@ -2,4 +2,4 @@
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| Task 1 | Update styles.css with `#autoReplySelect` width style | todo |
+| Task 1 | Update styles.css with `#autoReplySelect` width style | done |
