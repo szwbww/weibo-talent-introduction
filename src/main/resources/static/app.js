@@ -641,21 +641,23 @@ async function loadContacts() {
             <label class="expert-checkbox" onclick="event.stopPropagation()">
                 <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${!contact.contactId ? 'disabled' : ''}>
             </label>
-            <div class="expert-row-main">
-                <div class="expert-name-block">
-                    <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
-                    <div class="list-item-meta expert-meta">
-                        <span>${escapeHtml(indexLevelLabels[contact.indexLevel] || contact.indexLevelName || contact.indexLevel)}</span>
-                        <span>${escapeHtml(contact.country || "国家未知")}</span>
-                        <span>${escapeHtml(contact.email || "邮箱未知")}</span>
+            <div class="expert-content-wrapper" style="flex: 1; min-width: 0;">
+                <div class="expert-row-main">
+                    <div class="expert-name-block">
+                        <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
+                        <div class="list-item-meta expert-meta">
+                            <span>${escapeHtml(indexLevelLabels[contact.indexLevel] || contact.indexLevelName || contact.indexLevel)}</span>
+                            <span>${escapeHtml(contact.country || "国家未知")}</span>
+                            <span>${escapeHtml(contact.email || "邮箱未知")}</span>
+                        </div>
                     </div>
+                    ${badge(status, statusType)}
                 </div>
-                ${badge(status, statusType)}
-            </div>
-            <div class="expert-row-sub">
-                <span>ORCID: ${escapeHtml(contact.orcidId || "-")}</span>
-                ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
-                ${contact.keyword ? `<span>${escapeHtml(contact.keyword)}</span>` : ""}
+                <div class="expert-row-sub">
+                    <span>ORCID: ${escapeHtml(contact.orcidId || "-")}</span>
+                    ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
+                    ${contact.keyword ? `<span>${escapeHtml(contact.keyword)}</span>` : ""}
+                </div>
             </div>
         </div>
     `;
@@ -2922,8 +2924,7 @@ function initLayoutResizer() {
     const resizer = document.getElementById("contactsLayoutResizer");
     const container = document.querySelector(".contacts-layout");
     const listPanel = document.querySelector(".contacts-list-panel");
-    const collapseBtn = document.getElementById("collapseListBtn");
-    const expandBtn = document.getElementById("expandListBtn");
+
     
     if (!resizer || !container || !listPanel) return;
 
@@ -2931,42 +2932,23 @@ function initLayoutResizer() {
 
     // Load saved layout width or default
     const savedWidth = localStorage.getItem("contacts-list-width");
-    const isCollapsed = localStorage.getItem("contacts-list-collapsed") === "true";
 
     function setListWidth(width, updateStorage = true) {
-        if (width < 150) {
-            collapseList(updateStorage);
-            return;
-        }
-        
-        // Ensure within reasonable boundaries
+        // Ensure within reasonable boundaries: min 200px, max 60% window width
         const maxWidth = Math.min(800, window.innerWidth * 0.6);
         const targetWidth = Math.max(200, Math.min(maxWidth, width));
         
         container.style.gridTemplateColumns = `${targetWidth}px 6px minmax(0, 1fr)`;
         listPanel.style.display = "";
         resizer.style.display = "";
-        expandBtn.hidden = true;
         
         if (updateStorage) {
             localStorage.setItem("contacts-list-width", targetWidth);
-            localStorage.setItem("contacts-list-collapsed", "false");
-        }
-    }
-
-    function collapseList(updateStorage = true) {
-        container.style.gridTemplateColumns = `0px 0px minmax(0, 1fr)`;
-        listPanel.style.display = "none";
-        resizer.style.display = "none";
-        expandBtn.hidden = false;
-        
-        if (updateStorage) {
-            localStorage.setItem("contacts-list-collapsed", "true");
         }
     }
 
     function resetToDefault() {
-        setListWidth(360);
+        setListWidth(260);
     }
 
     // Event listeners for dragging
@@ -2995,15 +2977,7 @@ function initLayoutResizer() {
         }
     });
 
-    // Toggle buttons
-    collapseBtn.addEventListener("click", () => collapseList(true));
-    expandBtn.addEventListener("click", () => {
-        const lastWidth = parseInt(localStorage.getItem("contacts-list-width")) || 360;
-        setListWidth(lastWidth, true);
-    });
-
     // Preset buttons
-    document.getElementById("btnLayoutCollapse")?.addEventListener("click", () => collapseList(true));
     document.getElementById("btnLayoutDefault")?.addEventListener("click", resetToDefault);
     document.getElementById("btnLayoutWideList")?.addEventListener("click", () => setListWidth(500));
     document.getElementById("btnLayoutSplit")?.addEventListener("click", () => {
@@ -3012,9 +2986,7 @@ function initLayoutResizer() {
     });
 
     // Initialize state
-    if (isCollapsed) {
-        collapseList(false);
-    } else if (savedWidth) {
+    if (savedWidth) {
         setListWidth(parseInt(savedWidth), false);
     } else {
         resetToDefault();
