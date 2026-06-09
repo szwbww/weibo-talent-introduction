@@ -185,6 +185,7 @@ function formatFileSize(size) {
 
 const shownErrors = new Set();
 const taskButtonOriginalTexts = {
+    checkRepliesBtn: "检查回复",
     revalidateBtn: "重新验证候选人",
     promoteRawBtn: "扫描 RAW 可晋升",
     discoverBtn: "发现专家"
@@ -362,6 +363,7 @@ function stopTaskModalPolling() {
 
 async function handleCancelTask() {
     if (!currentTaskModal) return;
+    if (!confirm("确定要取消正在执行的任务吗？")) return;
     const taskType = currentTaskModal.taskType;
     const cancelBtn = $("#taskModalCancelBtn");
     cancelBtn.disabled = true;
@@ -894,13 +896,16 @@ async function loadContacts() {
             country: "",
             employment: "",
             keyword: "",
-            tags: c.tags || []
+            tags: c.tags || [],
+            updatedAt: c.updatedAt || null
         }));
     } else {
         const params = new URLSearchParams();
         params.set("level", level);
         params.set("size", size);
         if (tag) params.set("tag", tag);
+        const sortBy = $("#expertSortBy")?.value || "";
+        if (sortBy) params.set("sortBy", sortBy);
         const data = await api(`/api/experts?${params}`);
         const rawExperts = data.experts || data;
         totalHits = data.totalHits ?? rawExperts.length;
@@ -917,8 +922,18 @@ async function loadContacts() {
             country: e.country,
             employment: e.employment,
             keyword: e.keyword,
-            tags: e.tags || []
+            tags: e.tags || [],
+            updatedAt: e.updatedAt || null
         }));
+    }
+
+    const sortBy = $("#expertSortBy")?.value || "";
+    if ((operatorStatus || needsAttention) && sortBy === "updatedAt") {
+        contacts.sort((a, b) => {
+            if (!a.updatedAt) return 1;
+            if (!b.updatedAt) return -1;
+            return new Date(b.updatedAt) - new Date(a.updatedAt);
+        });
     }
     state.contacts = contacts;
 
@@ -970,13 +985,13 @@ async function loadContacts() {
 }
 
 async function handleCheckReplies() {
+    openTaskLaunchModal("CHECK_REPLIES");
+}
+
+async function executeCheckReplies() {
     const checked = $$(".expert-select-cb:checked")
         .map(cb => Number(cb.dataset.contactId))
         .filter(id => id > 0);
-
-    if (checked.length === 0) {
-        if (!confirm("没有勾选专家，是否检查所有已联系专家的回复？")) return;
-    }
 
     const payload = checked.length > 0
         ? { contactIds: checked }
@@ -1013,6 +1028,78 @@ async function handleCheckReplies() {
     }
 }
 
+// ---- 操作确认弹窗 ----
+const taskLaunchConfigs = {
+    CHECK_REPLIES: {
+        title: "检查回复",
+        desc: "扫描已勾选（或全部）专家的来信回复，触发自动回复流程。",
+        btnId: "checkRepliesBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        run: executeCheckReplies
+    },
+    EXPERT_REVALIDATION: {
+        title: "重新验证候选人",
+        desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。",
+        btnId: "revalidateBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        run: executeRevalidate
+    },
+    RAW_PROMOTION_SCAN: {
+        title: "扫描 RAW 可晋升",
+        desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
+        btnId: "promoteRawBtn",
+        showKeyword: false,
+        showMaxPromotions: true,
+        run: executePromoteRaw
+    },
+    EXPERT_DISCOVERY: {
+        title: "发现专家",
+        desc: "从外部数据源搜索并导入新专家到系统中。",
+        btnId: "discoverBtn",
+        showKeyword: true,
+        showMaxPromotions: false,
+        run: executeDiscover
+    }
+};
+
+function openTaskLaunchModal(taskType) {
+    const config = taskLaunchConfigs[taskType];
+    if (!config) return;
+
+    const modal = $("#taskLaunchModal");
+    $("#taskLaunchTitle").textContent = config.title;
+
+    if (taskType === "CHECK_REPLIES") {
+        const checked = $$(".expert-select-cb:checked").filter(cb => Number(cb.dataset.contactId) > 0);
+        $("#taskLaunchDesc").textContent = checked.length > 0
+            ? `将检查已勾选的 ${checked.length} 位专家的来信回复。`
+            : "未勾选专家，将检查所有已联系专家的回复。";
+    } else {
+        $("#taskLaunchDesc").textContent = config.desc;
+    }
+    $("#taskLaunchKeywordRow").hidden = !config.showKeyword;
+    $("#taskLaunchMaxPromotionsRow").hidden = !config.showMaxPromotions;
+    if (config.showKeyword) $("#taskLaunchKeywordInput").value = "";
+    if (config.showMaxPromotions) $("#taskLaunchMaxPromotions").value = "1000";
+
+    const runBtn = $("#taskLaunchRunBtn");
+    runBtn.onclick = () => {
+        if (!confirm(`确定要执行「${config.title}」吗？`)) return;
+        closeTaskLaunchModal();
+        config.run();
+    };
+
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+}
+
+function closeTaskLaunchModal() {
+    $("#taskLaunchModal").hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
 async function handleRevalidateCandidates() {
     const taskType = "EXPERT_REVALIDATION";
     const running = await isTaskRunning(taskType);
@@ -1020,6 +1107,11 @@ async function handleRevalidateCandidates() {
         openTaskModal(taskType, "重新验证候选人", "revalidateBtn");
         return;
     }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeRevalidate() {
+    const taskType = "EXPERT_REVALIDATION";
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
@@ -1051,6 +1143,12 @@ async function handlePromoteRaw() {
         openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
         return;
     }
+    openTaskLaunchModal(taskType);
+}
+
+async function executePromoteRaw() {
+    const taskType = "RAW_PROMOTION_SCAN";
+    const maxPromotions = parseInt($("#taskLaunchMaxPromotions")?.value) || 1000;
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
@@ -1058,7 +1156,7 @@ async function handlePromoteRaw() {
     }
     openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
     try {
-        const result = await api("/api/experts/promote-eligible-raw?maxPromotions=1000", { method: "POST" });
+        const result = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
         const stats = result.stats || result;
         const failures = [];
         if (stats.promotionFailed > 0) failures.push(`晋升失败 ${stats.promotionFailed}`);
@@ -1086,18 +1184,21 @@ async function handleDiscover() {
         openTaskModal(taskType, "发现专家", "discoverBtn");
         return;
     }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeDiscover() {
+    const taskType = "EXPERT_DISCOVERY";
+    const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    const keywords = prompt("输入发现关键词（多个用逗号分隔，留空使用默认条件）:");
-    if (keywords === null) return;
-
     openTaskModal(taskType, "发现专家", "discoverBtn");
     try {
         let result;
-        if (keywords.trim()) {
+        if (keywords) {
             const params = new URLSearchParams();
             keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
             result = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
@@ -3156,6 +3257,7 @@ function bindEvents() {
     $("#contactNeedsAttentionFilter").addEventListener("change", loadContacts);
     $("#contactStatusFilter").addEventListener("change", loadContacts);
     $("#expertTagFilter").addEventListener("change", loadContacts);
+    $("#expertSortBy").addEventListener("change", loadContacts);
 
     $("#unmatchedTable").addEventListener("click", (event) => {
         const button = event.target.closest("[data-action]");
@@ -3223,6 +3325,9 @@ function bindEvents() {
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && currentTaskModal) {
             closeTaskModal();
+        }
+        if (event.key === "Escape" && !$("#taskLaunchModal").hidden) {
+            closeTaskLaunchModal();
         }
     });
 

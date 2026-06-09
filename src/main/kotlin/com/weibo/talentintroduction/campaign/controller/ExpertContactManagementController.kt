@@ -344,7 +344,8 @@ data class ExpertContactResponse(
     val currentIndexLevel: String,
     val operatorStatus: String,
     val needsManualAttention: Boolean,
-    val latestManualReviewReasonType: String? = null
+    val latestManualReviewReasonType: String? = null,
+    val updatedAt: String? = null
 )
 
 data class MailRecordResponse(
@@ -448,7 +449,8 @@ private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = nul
         currentIndexLevel = currentIndexLevel,
         operatorStatus = operatorStatus,
         needsManualAttention = needsManualAttention,
-        latestManualReviewReasonType = latestManualReviewReasonType
+        latestManualReviewReasonType = latestManualReviewReasonType,
+        updatedAt = updatedAt?.toString()
     )
 
 private fun MailRecord.toResponse(): MailRecordResponse =

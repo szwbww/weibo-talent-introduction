@@ -211,6 +211,13 @@
         <section class="view" id="view-contacts">
             <div class="toolbar">
                 <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+                    排序:
+                    <select id="expertSortBy">
+                        <option value="">默认排序</option>
+                        <option value="updatedAt">按修改时间</option>
+                    </select>
+                </label>
+                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
                     漏斗层级:
                     <select id="expertIndexLevel">
                         <option value="RAW">RAW - 原始数据层</option>
@@ -416,6 +423,36 @@
             </section>
         </section>
     </main>
+</div>
+
+<!-- Task Launch Modal (操作确认弹窗) -->
+<div id="taskLaunchModal" class="modal-overlay" hidden>
+    <div class="modal-content task-launch-modal">
+        <div class="modal-header">
+            <h3 id="taskLaunchTitle"></h3>
+            <button class="button small" onclick="closeTaskLaunchModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="taskLaunchDesc" class="text-muted"></p>
+            <div id="taskLaunchKeywordRow" hidden>
+                <label style="font-size: 12px; font-weight: 500;">
+                    发现关键词（多个用逗号分隔，留空使用默认条件）:
+                    <input type="text" id="taskLaunchKeywordInput" style="width: 100%; margin-top: 4px;">
+                </label>
+            </div>
+            <div id="taskLaunchMaxPromotionsRow" hidden>
+                <label style="font-size: 12px; font-weight: 500;">
+                    最大晋升数量:
+                    <input type="number" id="taskLaunchMaxPromotions" value="1000" min="1" max="10000"
+                           style="width: 120px; margin-top: 4px;">
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="button secondary" onclick="closeTaskLaunchModal()">取消</button>
+            <button class="button primary" id="taskLaunchRunBtn">开始执行</button>
+        </div>
+    </div>
 </div>
 
 <!-- Task Progress Modal -->

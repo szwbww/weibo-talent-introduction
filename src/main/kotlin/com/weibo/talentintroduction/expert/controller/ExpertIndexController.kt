@@ -34,9 +34,10 @@ class ExpertIndexController(
     fun listExperts(
         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
         @RequestParam(defaultValue = "50") size: Int,
-        @RequestParam(required = false) tag: String?
+        @RequestParam(required = false) tag: String?,
+        @RequestParam(required = false) sortBy: String?
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag)
+        val result = expertSearchService.searchExperts(size, level, tag, sortBy)
         val experts = result.experts.map { expert ->
             val contact = expert.orcidId
                 .takeIf { it.isNotBlank() }
@@ -190,7 +191,8 @@ data class ExpertIndexResponse(
     val contactStatus: String?,
     val needsManualAttention: Boolean = false,
     val autoReplyEnabled: Boolean = true,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val updatedAt: String? = null
 ) {
     companion object {
         fun from(
@@ -221,7 +223,8 @@ data class ExpertIndexResponse(
                 contactStatus = contactStatus,
                 needsManualAttention = needsManualAttention,
                 autoReplyEnabled = autoReplyEnabled,
-                tags = expert.tags.orEmpty()
+                tags = expert.tags.orEmpty(),
+                updatedAt = expert.updatedAt
             )
     }
 }

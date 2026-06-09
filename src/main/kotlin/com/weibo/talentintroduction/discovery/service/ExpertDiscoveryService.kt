@@ -333,6 +333,7 @@ class ExpertDiscoveryService(
             "dataSource" to profile.dataSource,
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
             "discoveredAt" to now,
+            "updatedAt" to now,
             "filterResult" to filterResult,
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")

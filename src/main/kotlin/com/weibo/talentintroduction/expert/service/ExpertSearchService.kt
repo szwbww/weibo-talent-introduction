@@ -22,7 +22,8 @@ class ExpertSearchService(
     fun searchExperts(
         size: Int,
         level: ExpertIndexLevel,
-        tag: String? = null
+        tag: String? = null,
+        sortBy: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
 
@@ -38,11 +39,17 @@ class ExpertSearchService(
             )
         }
 
+        val sort = if (sortBy == "updatedAt") {
+            listOf(dateSort("updatedAt"))
+        } else {
+            sortFields(level)
+        }
+
         val requestBody = mapOf(
             "size" to size,
             "_source" to sourceFields(),
             "query" to query,
-            "sort" to sortFields(level)
+            "sort" to sort
         )
 
         val response = restTemplate.exchange(
@@ -192,7 +199,8 @@ class ExpertSearchService(
             worksCount = source.path("worksCount").let { if (it.isInt) it.asInt() else null },
             tags = source.path("tags").takeIf { it.isArray }
                 ?.map { it.asText() }
-                ?.filter { it.isNotBlank() }
+                ?.filter { it.isNotBlank() },
+            updatedAt = source.nullableText("updatedAt")
         )
 
     private fun JsonNode.nullableText(field: String): String? {
@@ -210,7 +218,8 @@ class ExpertSearchService(
             "researchFields", "institution",
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount",
-            "tags"
+            "tags",
+            "updatedAt"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
