@@ -112,7 +112,8 @@ class ExpertIndexService(
         "hIndex", "citationCount", "lastPublicationYear",
         "researchFields", "institution", "emailSource", "emailVerifiedLevel",
         "dataSource", "externalIds", "discoveredAt", "filterResult", "filterRejectReason",
-        "updatedAt", "worksCount"
+        "updatedAt", "worksCount",
+        "tags"
     )
 
     private fun loadMappingProperties(resource: String): Map<String, Any>? {

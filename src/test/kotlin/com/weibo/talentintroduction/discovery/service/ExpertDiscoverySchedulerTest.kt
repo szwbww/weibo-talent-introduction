@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.config.MailSchedulingProperties
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 
 class ExpertDiscoverySchedulerTest {
@@ -32,10 +33,13 @@ class ExpertDiscoverySchedulerTest {
         return Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
     }
 
+    private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
+    private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
+
     @Test
     fun `scheduleDiscovery does nothing when task already running`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(false)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
 
         scheduler.scheduleDiscovery()
 
@@ -47,8 +51,8 @@ class ExpertDiscoverySchedulerTest {
 
     @Test
     fun `scheduleDiscovery writes FAILED to progressStore when repository save fails`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenThrow(RuntimeException("DB connection lost"))
 
@@ -56,14 +60,15 @@ class ExpertDiscoverySchedulerTest {
 
         Mockito.verify(progressStore).update(
             Mockito.anyString(),
-            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
+            Mockito.any()
         )
     }
 
     @Test
     fun `scheduleDiscovery runs successfully`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
                 val execution = invocation.arguments[0] as TaskExecution
@@ -80,5 +85,37 @@ class ExpertDiscoverySchedulerTest {
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
             Mockito.anyString()
         )
+    }
+
+    @Test
+    fun `scheduleDiscovery clears execution context on success`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = 99L)
+            }
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString()
+        )
+
+        scheduler.scheduleDiscovery()
+
+        Mockito.verify(progressStore).bindExecutionId("EXPERT_DISCOVERY", -1L, 99L)
+        Mockito.verify(progressStore).clearExecutionContext("EXPERT_DISCOVERY", 99L)
+    }
+
+    @Test
+    fun `scheduleDiscovery clears token context when save fails`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenThrow(RuntimeException("DB connection lost"))
+
+        scheduler.scheduleDiscovery()
+
+        Mockito.verify(progressStore).clearExecutionContext("EXPERT_DISCOVERY", -1L)
     }
 }

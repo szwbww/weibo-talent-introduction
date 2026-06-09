@@ -290,6 +290,42 @@ class ExpertIndexWriterService(
         }
     }
 
+    fun addTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+        val index = expertIndexService.indexName(level)
+        val script = mapOf(
+            "script" to mapOf(
+                "source" to "if (ctx._source.tags == null) ctx._source.tags = []; if (!ctx._source.tags.contains(params.tag)) ctx._source.tags.add(params.tag)",
+                "params" to mapOf("tag" to tag)
+            )
+        )
+        val url = "${properties.baseUrl}/$index/_update/$docId"
+        return try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(script, headers()), JsonNode::class.java)
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to add tag '{}' to {} in {}: {}", tag, docId, level, e.message)
+            false
+        }
+    }
+
+    fun removeTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+        val index = expertIndexService.indexName(level)
+        val script = mapOf(
+            "script" to mapOf(
+                "source" to "if (ctx._source.tags != null) ctx._source.tags.removeIf(t -> t == params.tag)",
+                "params" to mapOf("tag" to tag)
+            )
+        )
+        val url = "${properties.baseUrl}/$index/_update/$docId"
+        return try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(script, headers()), JsonNode::class.java)
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to remove tag '{}' from {} in {}: {}", tag, docId, level, e.message)
+            false
+        }
+    }
+
     fun readRawDocument(orcid: String): Map<String, Any?>? {
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
         val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"

@@ -50,12 +50,12 @@ class MailAutomationControllerTest {
         capturedRequest = null
 
         Mockito.`when`(taskExecutionService.runAndRecord(
-            anyValue(""), anyValue(""), anyValue(Any()), anyValue { null }
+            anyValue(""), anyValue(""), anyValue(Any()), anyValue<(Long) -> Unit> { }, anyValue { null }
         )).thenAnswer { invocation ->
             capturedTriggerType = invocation.getArgument(1)
             capturedRequest = invocation.getArgument(2)
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.getArgument<() -> Any?>(3)
+            val block = invocation.getArgument<() -> Any?>(4)
             try { block() } catch (_: Exception) {}
             TaskExecution(
                 id = 1L,

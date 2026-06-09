@@ -21,14 +21,27 @@ class ExpertSearchService(
 ) {
     fun searchExperts(
         size: Int,
-        level: ExpertIndexLevel
+        level: ExpertIndexLevel,
+        tag: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
+
+        val query = if (tag.isNullOrBlank()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf(
+                "bool" to mapOf(
+                    "filter" to listOf(
+                        mapOf("term" to mapOf("tags" to tag))
+                    )
+                )
+            )
+        }
 
         val requestBody = mapOf(
             "size" to size,
             "_source" to sourceFields(),
-            "query" to mapOf("match_all" to emptyMap<String, Any>()),
+            "query" to query,
             "sort" to sortFields(level)
         )
 
@@ -176,7 +189,10 @@ class ExpertSearchService(
             emailVerifiedLevel = source.path("emailVerifiedLevel").let { if (it.isInt) it.asInt() else null },
             dataSource = source.nullableText("dataSource"),
             externalIds = source.path("externalIds").let { if (it.isObject) it.toString() else null },
-            worksCount = source.path("worksCount").let { if (it.isInt) it.asInt() else null }
+            worksCount = source.path("worksCount").let { if (it.isInt) it.asInt() else null },
+            tags = source.path("tags").takeIf { it.isArray }
+                ?.map { it.asText() }
+                ?.filter { it.isNotBlank() }
         )
 
     private fun JsonNode.nullableText(field: String): String? {
@@ -193,7 +209,8 @@ class ExpertSearchService(
             "hIndex", "citationCount", "lastPublicationYear",
             "researchFields", "institution",
             "emailSource", "emailVerifiedLevel",
-            "dataSource", "externalIds", "worksCount"
+            "dataSource", "externalIds", "worksCount",
+            "tags"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =

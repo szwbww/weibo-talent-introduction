@@ -40,6 +40,9 @@ class ExpertIndexControllerTest {
         return Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
     }
 
+    private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
+    private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
+
     @Test
     fun `promoteEligibleRaw accepts maxPromotions 1`() {
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
@@ -47,8 +50,8 @@ class ExpertIndexControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(revalidationService.promoteEligibleRawExperts(1))
             .thenReturn(PromotionScanResult(PromotionScanStats(total = 0)))
 
@@ -64,8 +67,8 @@ class ExpertIndexControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(revalidationService.promoteEligibleRawExperts(10000))
             .thenReturn(PromotionScanResult(PromotionScanStats(total = 0)))
 
@@ -75,8 +78,8 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `revalidateCandidates returns 409 when task is running`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(false)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
 
         val result = controller.revalidateCandidates()
         assertEquals(409, result.statusCodeValue)
@@ -84,38 +87,38 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `promoteEligibleRaw returns 409 when task is running`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(false)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
 
         val result = controller.promoteEligibleRaw(maxPromotions = 1)
         assertEquals(409, result.statusCodeValue)
     }
 
     @Test
-    fun `promoteEligibleRaw rejects maxPromotions 0 and does not call tryStart`() {
+    fun `promoteEligibleRaw rejects maxPromotions 0 and does not call tryStartWithToken`() {
         val ex = assertThrows(IllegalArgumentException::class.java) {
             controller.promoteEligibleRaw(maxPromotions = 0)
         }
         assertTrue(ex.message!!.contains("between 1 and 10000"))
-        Mockito.verify(progressStore, Mockito.never()).tryStart(Mockito.anyString(), anyTaskProgress())
+        Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
     }
 
     @Test
-    fun `promoteEligibleRaw rejects negative maxPromotions and does not call tryStart`() {
+    fun `promoteEligibleRaw rejects negative maxPromotions and does not call tryStartWithToken`() {
         val ex = assertThrows(IllegalArgumentException::class.java) {
             controller.promoteEligibleRaw(maxPromotions = -1)
         }
         assertTrue(ex.message!!.contains("between 1 and 10000"))
-        Mockito.verify(progressStore, Mockito.never()).tryStart(Mockito.anyString(), anyTaskProgress())
+        Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
     }
 
     @Test
-    fun `promoteEligibleRaw rejects maxPromotions 10001 and does not call tryStart`() {
+    fun `promoteEligibleRaw rejects maxPromotions 10001 and does not call tryStartWithToken`() {
         val ex = assertThrows(IllegalArgumentException::class.java) {
             controller.promoteEligibleRaw(maxPromotions = 10001)
         }
         assertTrue(ex.message!!.contains("between 1 and 10000"))
-        Mockito.verify(progressStore, Mockito.never()).tryStart(Mockito.anyString(), anyTaskProgress())
+        Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
     }
 
     @Test
@@ -129,8 +132,8 @@ class ExpertIndexControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(revalidationService.promoteEligibleRawExperts(1))
             .thenReturn(PromotionScanResult(PromotionScanStats(total = 0)))
 
@@ -141,8 +144,8 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `revalidateCandidates writes FAILED to progressStore when repository save fails`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenThrow(RuntimeException("DB connection lost"))
 
@@ -152,14 +155,15 @@ class ExpertIndexControllerTest {
         assertEquals("DB connection lost", ex.message)
         Mockito.verify(progressStore).update(
             Mockito.anyString(),
-            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
+            Mockito.any()
         )
     }
 
     @Test
     fun `promoteEligibleRaw writes FAILED to progressStore when repository save fails`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenThrow(RuntimeException("DB connection lost"))
 
@@ -169,7 +173,8 @@ class ExpertIndexControllerTest {
         assertEquals("DB connection lost", ex.message)
         Mockito.verify(progressStore).update(
             Mockito.anyString(),
-            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
+            Mockito.any()
         )
     }
 }

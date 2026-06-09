@@ -32,11 +32,12 @@ class MailQueueConsumerTest {
                 eqValue("AUTO_REPLY_ALL_DISPATCH"),
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
+                anyValue<(Long) -> Unit> { },
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[3] as () -> QueueFanOutResult
+            val block = invocation.arguments[4] as () -> QueueFanOutResult
             block()
             taskExecution()
         }
@@ -57,11 +58,12 @@ class MailQueueConsumerTest {
                 eqValue("AUTO_REPLY_ALL_DISPATCH"),
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
+                anyValue<(Long) -> Unit> { },
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[3] as () -> QueueFanOutResult
+            val block = invocation.arguments[4] as () -> QueueFanOutResult
             block()
             taskExecution()
         }
@@ -85,11 +87,12 @@ class MailQueueConsumerTest {
                 eqValue("AUTO_REPLY_ALL_DISPATCH"),
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
+                anyValue<(Long) -> Unit> { },
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[3] as () -> QueueFanOutResult
+            val block = invocation.arguments[4] as () -> QueueFanOutResult
             val result = block()
             assertEquals(3, result.dispatched)
             taskExecution()

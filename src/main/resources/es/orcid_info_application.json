@@ -42,7 +42,8 @@
       "worksCount": { "type": "integer" },
       "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
       "filterResult": { "type": "keyword" },
-      "filterRejectReason": { "type": "keyword" }
+      "filterRejectReason": { "type": "keyword" },
+      "tags": { "type": "keyword" }
     }
   }
 }

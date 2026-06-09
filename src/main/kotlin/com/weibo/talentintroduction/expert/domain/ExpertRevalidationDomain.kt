@@ -7,16 +7,19 @@ data class RevalidationStats(
     var passed: Int = 0,
     var demoted: Int = 0,
     var demotionFailed: Int = 0,
+    var tagFailed: Int = 0,
     val demotionReasons: MutableMap<String, Int> = mutableMapOf()
 )
 
 data class RevalidationResult(
-    val stats: RevalidationStats
+    val stats: RevalidationStats,
+    val wasCancelled: Boolean = false
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = stats.passed
-    override val taskFailureCount: Int get() = stats.demoted + stats.demotionFailed
+    override val taskFailureCount: Int get() = stats.demoted + stats.demotionFailed + stats.tagFailed
     override val taskFinalStatus: String?
         get() = when {
+            wasCancelled -> "CANCELLED"
             stats.total == 0 -> "SUCCESS"
             taskFailureCount == 0 -> "SUCCESS"
             taskSuccessCount == 0 -> "FAILED"
@@ -35,12 +38,14 @@ data class PromotionScanStats(
 )
 
 data class PromotionScanResult(
-    val stats: PromotionScanStats
+    val stats: PromotionScanStats,
+    val wasCancelled: Boolean = false
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = stats.promoted
     override val taskFailureCount: Int get() = stats.filtered + stats.emailRejected + stats.promotionFailed + stats.existenceCheckFailed
     override val taskFinalStatus: String?
         get() = when {
+            wasCancelled -> "CANCELLED"
             stats.total == 0 -> "SUCCESS"
             taskFailureCount == 0 -> "SUCCESS"
             taskSuccessCount == 0 -> "FAILED"

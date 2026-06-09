@@ -247,6 +247,15 @@
                         <option value="false">仅看自动流转中</option>
                     </select>
                 </label>
+                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+                    标签筛选:
+                    <select id="expertTagFilter">
+                        <option value="">全部标签</option>
+                        <option value="auto_promoted">自动晋升</option>
+                        <option value="verified">已验证</option>
+                        <option value="discovered">新发现</option>
+                    </select>
+                </label>
                 <button class="button primary" id="loadContactsBtn">加载专家列表</button>
                 <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                 <button class="button" id="showPollLogBtn" onclick="showPollLog()">轮询日志</button>
@@ -407,6 +416,57 @@
             </section>
         </section>
     </main>
+</div>
+
+<!-- Task Progress Modal -->
+<div id="taskProgressModal" class="modal-overlay" hidden>
+    <div class="modal-content task-modal">
+        <div class="modal-header">
+            <h3 id="taskModalTitle">任务进度</h3>
+            <button class="button small" onclick="closeTaskModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <!-- 进度条 -->
+            <div class="task-modal-progress">
+                <div class="task-progress-header">
+                    <span id="taskModalStatus" class="task-modal-status"></span>
+                    <span id="taskModalPercent" class="task-progress-percent">0%</span>
+                </div>
+                <div class="task-progress-track">
+                    <div id="taskModalFill" class="task-progress-fill" style="width: 0%"></div>
+                </div>
+                <div id="taskModalMessage" class="task-progress-detail"></div>
+            </div>
+            <!-- 操作按钮 -->
+            <div class="task-modal-actions">
+                <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
+            </div>
+            <!-- 批次日志表格 -->
+            <div class="task-modal-logs">
+                <h4>批次处理明细</h4>
+                <div class="task-modal-log-table-wrapper">
+                    <table class="data-table compact">
+                        <thead>
+                            <tr>
+                                <th>批次</th>
+                                <th>本批处理</th>
+                                <th>通过</th>
+                                <th>拒绝</th>
+                                <th>累计进度</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="taskModalLogBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- 错误日志 -->
+            <div class="task-modal-errors" id="taskModalErrors" hidden>
+                <h4>错误日志</h4>
+                <pre id="taskModalErrorContent" class="task-error-log-content"></pre>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Modal 1: Account Edit Dialog -->

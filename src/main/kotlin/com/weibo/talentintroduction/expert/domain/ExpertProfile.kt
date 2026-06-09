@@ -20,7 +20,8 @@ data class ExpertProfile(
     val emailVerifiedLevel: Int? = null,
     val dataSource: String? = null,
     val externalIds: String? = null,
-    val worksCount: Int? = null
+    val worksCount: Int? = null,
+    val tags: List<String>? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

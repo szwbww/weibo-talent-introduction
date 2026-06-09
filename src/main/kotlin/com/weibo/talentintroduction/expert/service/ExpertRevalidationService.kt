@@ -22,10 +22,18 @@ class ExpertRevalidationService(
 
     fun revalidateCandidates(): RevalidationResult {
         val stats = RevalidationStats()
+        val taskType = "EXPERT_REVALIDATION"
+        val execId = progressStore.getCurrentExecutionId(taskType)
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+                if (progressStore.isCancelled(taskType)) {
+                    log.info("重新验证任务已取消，当前批次={}", batchNumber)
+                    return@scrollExperts false
+                }
                 val processedBefore = stats.total
+                val passedBefore = stats.passed
+                val demotedBefore = stats.demoted
                 for (profile in batch) {
                     stats.total++
 
@@ -57,34 +65,58 @@ class ExpertRevalidationService(
                         }
                     } else {
                         stats.passed++
+                        val tagged = expertIndexWriterService.addTag(profile.orcidId, "verified", ExpertIndexLevel.CANDIDATE)
+                        if (!tagged) {
+                            log.warn("Failed to add verified tag to candidate {}", profile.orcidId)
+                            stats.tagFailed++
+                        }
                     }
                 }
+                val batchProcessed = stats.total - processedBefore
+                val batchPassed = stats.passed - passedBefore
+                val batchRejected = stats.demoted - demotedBefore
                 log.info("重新验证进度: 批次={}, 本批处理={}, 累计已完成={}/{}",
-                    batchNumber, stats.total - processedBefore, stats.total, totalHits)
-                progressStore.update("EXPERT_REVALIDATION", TaskProgress(
-                    taskType = "EXPERT_REVALIDATION", status = "RUNNING",
+                    batchNumber, batchProcessed, stats.total, totalHits)
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "RUNNING",
                     batchNumber = batchNumber, processedCount = stats.total.toLong(), totalCount = totalHits,
                     message = "批次 $batchNumber: 已处理 ${stats.total}/$totalHits",
-                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted)
-                ))
+                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "tagFailed" to stats.tagFailed),
+                    errors = if (stats.tagFailed > 0) listOf("${stats.tagFailed} 个标签写入失败") else null,
+                    batchProcessed = batchProcessed,
+                    batchPassed = batchPassed,
+                    batchRejected = batchRejected
+                ), execId)
                 true
             }
 
-            log.info("Revalidation complete: total={}, passed={}, demoted={}, demotionFailed={}",
-                stats.total, stats.passed, stats.demoted, stats.demotionFailed)
+            if (progressStore.isCancelled(taskType)) {
+                log.info("Revalidation cancelled: total={}, passed={}, demoted={}, demotionFailed={}, tagFailed={}",
+                    stats.total, stats.passed, stats.demoted, stats.demotionFailed, stats.tagFailed)
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "CANCELLED",
+                    batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
+                    message = "已取消: 通过 ${stats.passed}, 降级 ${stats.demoted}",
+                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed)
+                ), execId)
+                return RevalidationResult(stats, wasCancelled = true)
+            }
 
-            progressStore.update("EXPERT_REVALIDATION", TaskProgress(
-                taskType = "EXPERT_REVALIDATION", status = "COMPLETED",
+            log.info("Revalidation complete: total={}, passed={}, demoted={}, demotionFailed={}, tagFailed={}",
+                stats.total, stats.passed, stats.demoted, stats.demotionFailed, stats.tagFailed)
+
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "COMPLETED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
                 message = "完成: 通过 ${stats.passed}, 降级 ${stats.demoted}",
-                details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed)
-            ))
+                details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed)
+            ), execId)
         } catch (e: Exception) {
-            progressStore.update("EXPERT_REVALIDATION", TaskProgress(
-                taskType = "EXPERT_REVALIDATION", status = "FAILED",
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "FAILED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = 0,
                 message = "失败: ${e.message}"
-            ))
+            ), execId)
             throw e
         }
 
@@ -94,10 +126,17 @@ class ExpertRevalidationService(
     fun promoteEligibleRawExperts(maxPromotions: Int = 1000): PromotionScanResult {
         val stats = PromotionScanStats()
         if (maxPromotions <= 0) return PromotionScanResult(stats)
+        val taskType = "RAW_PROMOTION_SCAN"
+        val execId = progressStore.getCurrentExecutionId(taskType)
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+                if (progressStore.isCancelled(taskType)) {
+                    log.info("RAW晋升扫描任务已取消，当前批次={}", batchNumber)
+                    return@scrollExperts false
+                }
                 val processedBefore = stats.total
+                val promotedBefore = stats.promoted
                 var limitReached = false
                 for (profile in batch) {
                     if (stats.promoted >= maxPromotions) {
@@ -134,30 +173,51 @@ class ExpertRevalidationService(
                     }
 
                     val success = promoteRawToCandidate(profile)
-                    if (success) stats.promoted++ else stats.promotionFailed++
+                    if (success) {
+                        stats.promoted++
+                    } else {
+                        stats.promotionFailed++
+                    }
                 }
+                val batchProcessed = stats.total - processedBefore
+                val batchPassed = stats.promoted - promotedBefore
+                val batchRejected = batchProcessed - batchPassed
                 log.info("RAW晋升扫描进度: 批次={}, 本批处理={}, 累计已完成={}/{}, 已晋升={}",
-                    batchNumber, stats.total - processedBefore, stats.total, totalHits, stats.promoted)
-                progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
-                    taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
+                    batchNumber, batchProcessed, stats.total, totalHits, stats.promoted)
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "RUNNING",
                     batchNumber = batchNumber, processedCount = stats.total.toLong(), totalCount = totalHits,
                     message = "批次 $batchNumber: 已处理 ${stats.total}/$totalHits, 已晋升 ${stats.promoted}",
-                    details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered)
-                ))
+                    details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered),
+                    batchProcessed = batchProcessed,
+                    batchPassed = batchPassed,
+                    batchRejected = batchRejected
+                ), execId)
                 !limitReached && stats.promoted < maxPromotions
             }
 
-            progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
-                taskType = "RAW_PROMOTION_SCAN", status = "COMPLETED",
+            if (progressStore.isCancelled(taskType)) {
+                log.info("RAW promotion scan cancelled: total={}, promoted={}, filtered={}, emailRejected={}, existenceCheckFailed={}",
+                    stats.total, stats.promoted, stats.filtered, stats.emailRejected, stats.existenceCheckFailed)
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "CANCELLED",
+                    batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
+                    message = "已取消: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}"
+                ), execId)
+                return PromotionScanResult(stats, wasCancelled = true)
+            }
+
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "COMPLETED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
                 message = "完成: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}"
-            ))
+            ), execId)
         } catch (e: Exception) {
-            progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
-                taskType = "RAW_PROMOTION_SCAN", status = "FAILED",
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "FAILED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = 0,
                 message = "失败: ${e.message}"
-            ))
+            ), execId)
             throw e
         }
 
@@ -173,9 +233,13 @@ class ExpertRevalidationService(
         val now = java.time.LocalDateTime.now()
             .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
 
+        val existingTags = (rawDoc["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val newTags = (existingTags + "auto_promoted").distinct()
+
         val doc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now)
             put("updatedAt", now)
+            put("tags", newTags)
         }
 
         return expertIndexWriterService.writeCandidateDocument(profile.orcidId, doc)

@@ -2289,3 +2289,175 @@ textarea {
         width: 100%;
     }
 }
+
+/* Task Progress Modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+}
+
+.modal-content.task-modal {
+    background-color: var(--panel-bg);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--panel-border);
+    box-shadow: var(--shadow-xl);
+    width: 100%;
+    max-width: 700px;
+    max-height: 80vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.modal-header h3 {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.modal-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.task-modal-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.task-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.task-modal-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.task-modal-logs h4 {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-main);
+}
+
+.task-modal-log-table-wrapper {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+}
+
+.task-modal-status {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: var(--surface);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.task-modal-status.running {
+    background-color: var(--info-bg);
+    color: var(--info);
+    border: 1px solid var(--info-border);
+}
+
+.task-modal-status.completed {
+    background-color: var(--success-bg);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+
+.task-modal-status.failed {
+    background-color: var(--error-bg);
+    color: var(--error);
+    border: 1px solid var(--error-border);
+}
+
+.task-modal-status.cancelled {
+    background-color: var(--warning-bg);
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+}
+
+.task-modal-errors {
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--error-bg);
+    overflow: hidden;
+}
+
+.task-modal-errors h4 {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--error);
+    font-family: var(--font-mono);
+    border-bottom: 1px solid var(--error-border);
+    margin: 0;
+}
+
+.task-modal-errors pre {
+    padding: 12px;
+    font-size: 11px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+    color: var(--error);
+}
+
+/* Running task button indicator */
+.btn-running-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-running-indicator::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--success);
+    animation: pulse-green 1.5s infinite;
+}
+
+@keyframes pulse-green {
+    0% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4); }
+    70% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(52, 199, 89, 0); }
+    100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
+}
+
+/* Expert tags */
+.expert-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    line-height: 16px;
+}

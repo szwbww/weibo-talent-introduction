@@ -33,9 +33,10 @@ class ExpertIndexController(
     @GetMapping
     fun listExperts(
         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
-        @RequestParam(defaultValue = "50") size: Int
+        @RequestParam(defaultValue = "50") size: Int,
+        @RequestParam(required = false) tag: String?
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level)
+        val result = expertSearchService.searchExperts(size, level, tag)
         val experts = result.experts.map { expert ->
             val contact = expert.orcidId
                 .takeIf { it.isNotBlank() }
@@ -82,16 +83,22 @@ class ExpertIndexController(
 
     @PostMapping("/revalidate-candidates")
     fun revalidateCandidates(): ResponseEntity<Any> {
-        if (!progressStore.tryStart("EXPERT_REVALIDATION", TaskProgress(
-                taskType = "EXPERT_REVALIDATION", status = "RUNNING",
-                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-            ))) {
+        val (started, token) = progressStore.tryStartWithToken("EXPERT_REVALIDATION", TaskProgress(
+            taskType = "EXPERT_REVALIDATION", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+        ))
+        if (!started) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
+        var executionId: Long? = null
         try {
             val (_, result) = taskExecutionService.runAndRecordWithResult(
-                "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates"
+                "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates",
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId("EXPERT_REVALIDATION", token, id)
+                }
             ) {
                 revalidationService.revalidateCandidates()
             }
@@ -101,8 +108,15 @@ class ExpertIndexController(
                 taskType = "EXPERT_REVALIDATION", status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
                 message = ex.message ?: "初始化失败"
-            ))
+            ), executionId)
             throw ex
+        } finally {
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext("EXPERT_REVALIDATION", execId)
+            } else {
+                progressStore.clearExecutionContext("EXPERT_REVALIDATION", token)
+            }
         }
     }
 
@@ -111,16 +125,22 @@ class ExpertIndexController(
         @RequestParam(defaultValue = "1000") maxPromotions: Int
     ): ResponseEntity<Any> {
         require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
-        if (!progressStore.tryStart("RAW_PROMOTION_SCAN", TaskProgress(
-                taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
-                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-            ))) {
+        val (started, token) = progressStore.tryStartWithToken("RAW_PROMOTION_SCAN", TaskProgress(
+            taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+        ))
+        if (!started) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
+        var executionId: Long? = null
         try {
             val (_, result) = taskExecutionService.runAndRecordWithResult(
-                "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions)
+                "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions),
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId("RAW_PROMOTION_SCAN", token, id)
+                }
             ) {
                 revalidationService.promoteEligibleRawExperts(maxPromotions)
             }
@@ -130,8 +150,15 @@ class ExpertIndexController(
                 taskType = "RAW_PROMOTION_SCAN", status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
                 message = ex.message ?: "初始化失败"
-            ))
+            ), executionId)
             throw ex
+        } finally {
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext("RAW_PROMOTION_SCAN", execId)
+            } else {
+                progressStore.clearExecutionContext("RAW_PROMOTION_SCAN", token)
+            }
         }
     }
 }
@@ -162,7 +189,8 @@ data class ExpertIndexResponse(
     val contactId: Long?,
     val contactStatus: String?,
     val needsManualAttention: Boolean = false,
-    val autoReplyEnabled: Boolean = true
+    val autoReplyEnabled: Boolean = true,
+    val tags: List<String> = emptyList()
 ) {
     companion object {
         fun from(
@@ -192,7 +220,8 @@ data class ExpertIndexResponse(
                 contactId = contactId,
                 contactStatus = contactStatus,
                 needsManualAttention = needsManualAttention,
-                autoReplyEnabled = autoReplyEnabled
+                autoReplyEnabled = autoReplyEnabled,
+                tags = expert.tags.orEmpty()
             )
     }
 }

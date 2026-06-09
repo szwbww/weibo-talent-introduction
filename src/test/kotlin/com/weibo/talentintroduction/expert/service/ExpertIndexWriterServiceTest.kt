@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -279,5 +280,95 @@ class ExpertIndexWriterServiceTest {
         )
         val result = service.promoteToCandidate("0001", contact)
         assertTrue(result)
+    }
+
+    @Test
+    fun `addTag sends correct update script and returns true`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val result = service.addTag("0001", "verified", ExpertIndexLevel.CANDIDATE)
+        assertTrue(result)
+    }
+
+    @Test
+    fun `addTag returns false on ES error`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("ES timeout"))
+
+        val result = service.addTag("0001", "verified", ExpertIndexLevel.CANDIDATE)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `removeTag sends correct update script and returns true`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val result = service.removeTag("0001", "verified", ExpertIndexLevel.CANDIDATE)
+        assertTrue(result)
+    }
+
+    @Test
+    fun `removeTag returns false on ES error`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("ES timeout"))
+
+        val result = service.removeTag("0001", "verified", ExpertIndexLevel.CANDIDATE)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `readRawDocument returns parsed map with tags`() {
+        val body = mapper.readTree(
+            """
+            {
+              "_index": "orcid_info",
+              "_id": "0001",
+              "_source": {
+                "orcidId": "0001",
+                "email": "a@b.com",
+                "tags": ["discovered", "verified"]
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info/_doc/0001"),
+                eq(HttpMethod.GET),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.readRawDocument("0001")
+        assertNotNull(result)
+        assertEquals("a@b.com", result!!["email"])
+        assertEquals(listOf("discovered", "verified"), result["tags"])
     }
 }

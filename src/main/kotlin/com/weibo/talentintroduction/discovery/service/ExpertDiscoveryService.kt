@@ -62,6 +62,7 @@ class ExpertDiscoveryService(
 
     fun discover(criteria: PaperSearchCriteria, triggeredBy: String): DiscoveryResult {
         val stats = DiscoveryStats()
+        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
 
         try {
             discoverFromEuropePmc(criteria, stats)
@@ -69,6 +70,26 @@ class ExpertDiscoveryService(
             val openAlex = openAlexProvider.getIfAvailable()
             if (openAlex != null && stats.indexed < discoveryProperties.maxAuthorsPerRun) {
                 discoverFromOpenAlexViaPmc(openAlex, criteria, stats)
+            }
+
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                log.info(
+                    "Discovery cancelled: papers={}, authors={}, indexed={}, promoted={}",
+                    stats.totalPapers, stats.totalAuthors, stats.indexed, stats.promoted
+                )
+                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                    taskType = "EXPERT_DISCOVERY", status = "CANCELLED",
+                    batchNumber = -1,
+                    processedCount = stats.totalPapers.toLong(),
+                    totalCount = stats.totalPapers.toLong(),
+                    message = "已取消: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
+                    details = mapOf(
+                        "totalPapers" to stats.totalPapers, "totalAuthors" to stats.totalAuthors,
+                        "indexed" to stats.indexed, "promoted" to stats.promoted
+                    ),
+                    errors = snapshotErrors(stats)
+                ), execId)
+                return DiscoveryResult(triggeredBy, stats, wasCancelled = true)
             }
 
             log.info(
@@ -89,14 +110,14 @@ class ExpertDiscoveryService(
                     "indexed" to stats.indexed, "promoted" to stats.promoted
                 ),
                 errors = snapshotErrors(stats)
-            ))
+            ), execId)
         } catch (e: Exception) {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
                 message = "失败: ${e.message}",
                 errors = snapshotErrors(stats)
-            ))
+            ), execId)
             throw e
         }
 
@@ -106,10 +127,18 @@ class ExpertDiscoveryService(
     private fun discoverFromEuropePmc(criteria: PaperSearchCriteria, stats: DiscoveryStats) {
         var cursor: String? = criteria.cursor
         var batchNumber = 0
+        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         do {
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                log.info("专家发现任务已取消，当前批次={}", batchNumber)
+                return
+            }
             val batch = europePmc.searchPapers(criteria.copy(cursor = cursor))
             if (batch.papers.isEmpty()) break
             batchNumber++
+            val totalPapersBefore = stats.totalPapers
+            val indexedBefore = stats.indexed
+            val totalAuthorsBefore = stats.totalAuthors
             var limitReached = false
             for (paper in batch.papers) {
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
@@ -117,6 +146,9 @@ class ExpertDiscoveryService(
                 stats.totalPapers++
                 processPaper(paper, stats)
             }
+            val batchProcessed = stats.totalPapers - totalPapersBefore
+            val batchPassed = stats.indexed - indexedBefore
+            val batchRejected = (stats.totalAuthors - totalAuthorsBefore) - batchPassed
             log.info("EuropePMC发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
                 batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
                 stats.indexed, discoveryProperties.maxAuthorsPerRun)
@@ -127,8 +159,11 @@ class ExpertDiscoveryService(
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "EuropePMC 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
                 details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC"),
-                errors = snapshotErrors(stats)
-            ))
+                errors = snapshotErrors(stats),
+                batchProcessed = batchProcessed,
+                batchPassed = batchPassed,
+                batchRejected = batchRejected.coerceAtLeast(0)
+            ), execId)
             if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
@@ -137,10 +172,18 @@ class ExpertDiscoveryService(
     private fun discoverFromOpenAlexViaPmc(openAlex: OpenAlexDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats) {
         var cursor: String? = null
         var batchNumber = 0
+        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         do {
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                log.info("专家发现任务已取消，当前批次={}", batchNumber)
+                return
+            }
             val batch = openAlex.searchPapers(criteria.copy(cursor = cursor))
             if (batch.papers.isEmpty()) break
             batchNumber++
+            val totalPapersBefore = stats.totalPapers
+            val indexedBefore = stats.indexed
+            val totalAuthorsBefore = stats.totalAuthors
             var limitReached = false
             for (paper in batch.papers) {
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
@@ -149,6 +192,9 @@ class ExpertDiscoveryService(
                 stats.totalPapers++
                 processPaper(paper, stats)
             }
+            val batchProcessed = stats.totalPapers - totalPapersBefore
+            val batchPassed = stats.indexed - indexedBefore
+            val batchRejected = (stats.totalAuthors - totalAuthorsBefore) - batchPassed
             log.info("OpenAlex发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
                 batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
                 stats.indexed, discoveryProperties.maxAuthorsPerRun)
@@ -159,8 +205,11 @@ class ExpertDiscoveryService(
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "OpenAlex 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
                 details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex"),
-                errors = snapshotErrors(stats)
-            ))
+                errors = snapshotErrors(stats),
+                batchProcessed = batchProcessed,
+                batchPassed = batchPassed,
+                batchRejected = batchRejected.coerceAtLeast(0)
+            ), execId)
             if (limitReached) return
             cursor = batch.nextCursor
         } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
@@ -285,7 +334,8 @@ class ExpertDiscoveryService(
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
             "discoveredAt" to now,
             "filterResult" to filterResult,
-            "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; ")
+            "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
+            "tags" to listOf("discovered")
         )
     }
 
@@ -295,6 +345,8 @@ class ExpertDiscoveryService(
         val candidateDoc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now)
             put("updatedAt", now)
+            val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            put("tags", (existingTags + "discovered").distinct())
         }
         val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/$esDocId"
         return try {
@@ -311,11 +363,12 @@ class ExpertDiscoveryService(
         var enriched = 0
         var failed = 0
         var scanned = 0
+        val execId = progressStore.getCurrentExecutionId("EXPERT_ENRICHMENT")
         progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
             taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = maxExperts.toLong(),
             message = "初始化中..."
-        ))
+        ), execId)
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
@@ -349,7 +402,7 @@ class ExpertDiscoveryService(
                     batchNumber = batchNumber, processedCount = enriched.toLong(), totalCount = maxExperts.toLong(),
                     message = "批次 $batchNumber: 已丰富 $enriched/$maxExperts",
                     details = mapOf("enriched" to enriched, "failed" to failed, "scanned" to scanned)
-                ))
+                ), execId)
                 !limitReached && enriched + failed < maxExperts
             }
 
@@ -357,13 +410,13 @@ class ExpertDiscoveryService(
                 taskType = "EXPERT_ENRICHMENT", status = "COMPLETED",
                 batchNumber = -1, processedCount = enriched.toLong(), totalCount = enriched.toLong(),
                 message = "完成: 丰富 $enriched, 失败 $failed"
-            ))
+            ), execId)
         } catch (e: Exception) {
             progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
                 taskType = "EXPERT_ENRICHMENT", status = "FAILED",
                 batchNumber = -1, processedCount = enriched.toLong(), totalCount = 0,
                 message = "失败: ${e.message}"
-            ))
+            ), execId)
             throw e
         }
 

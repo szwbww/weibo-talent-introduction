@@ -34,10 +34,13 @@ class ExpertDiscoveryControllerTest {
         return Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
     }
 
+    private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
+    private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
+
     @Test
     fun `triggerDiscovery returns 409 when task is running`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(false)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
 
         val result = controller.triggerDiscovery(null)
         assertEquals(409, result.statusCodeValue)
@@ -45,8 +48,8 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `triggerDiscoveryByKeyword returns 409 when task is running`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(false)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
 
         val result = controller.triggerDiscoveryByKeyword(listOf("ai"), 2020, 2026)
         assertEquals(409, result.statusCodeValue)
@@ -54,8 +57,8 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `triggerDiscovery returns 500 when execution status is FAILED`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
                 val execution = invocation.arguments[0] as TaskExecution
@@ -74,8 +77,8 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `triggerDiscoveryByKeyword returns 500 when execution status is FAILED`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
                 val execution = invocation.arguments[0] as TaskExecution
@@ -94,8 +97,8 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `triggerDiscovery writes FAILED to progressStore when repository save fails`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenThrow(RuntimeException("DB connection lost"))
 
@@ -105,14 +108,15 @@ class ExpertDiscoveryControllerTest {
         assertEquals("DB connection lost", ex.message)
         Mockito.verify(progressStore).update(
             Mockito.anyString(),
-            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
+            Mockito.any()
         )
     }
 
     @Test
     fun `triggerDiscovery returns ok on success`() {
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
                 val execution = invocation.arguments[0] as TaskExecution
@@ -141,10 +145,11 @@ class ExpertDiscoveryControllerTest {
             null
         }.`when`(progressStore).update(
             Mockito.anyString(),
-            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+            Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
+            Mockito.any()
         )
-        Mockito.`when`(progressStore.tryStart(Mockito.anyString(), anyTaskProgress()))
-            .thenReturn(true)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
         Mockito.`when`(progressStore.get("EXPERT_DISCOVERY"))
             .thenReturn(existing)
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))

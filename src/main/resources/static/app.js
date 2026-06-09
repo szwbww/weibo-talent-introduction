@@ -183,7 +183,6 @@ function formatFileSize(size) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const progressTimers = {};
 const shownErrors = new Set();
 const taskButtonOriginalTexts = {
     revalidateBtn: "重新验证候选人",
@@ -191,98 +190,17 @@ const taskButtonOriginalTexts = {
     discoverBtn: "发现专家"
 };
 
-function stopAllProgressPolling() {
-    Object.keys(progressTimers).forEach(stopProgressPollingFor);
-}
-
-function hasActiveProgressPolling() {
-    return Object.keys(progressTimers).length > 0;
-}
-
-function startProgressPolling(taskType, label, btnId) {
-    const bar = $("#taskProgressBar");
-    const labelEl = $("#taskProgressLabel");
-    const percentEl = $("#taskProgressPercent");
-    const fillEl = $("#taskProgressFill");
-    const detailEl = $("#taskProgressDetail");
-
-    // 停止其他任务轮询，确保单一进度条
-    stopAllProgressPolling();
-
-    bar.hidden = false;
-    bar.className = "task-progress-bar";
-    labelEl.textContent = label;
-    percentEl.textContent = "0%";
-    fillEl.style.width = "0%";
-    detailEl.textContent = "初始化中...";
-
-    clearTaskErrorLog();
-    shownErrors.clear();
-
-    // 恢复所有任务按钮状态
-    Object.keys(taskButtonOriginalTexts).forEach(restoreTaskButton);
-
-    if (btnId) {
-        const btn = $(`#${btnId}`);
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = "执行中...";
-        }
-    }
-
-    progressTimers[taskType] = setInterval(async () => {
-        try {
-            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
-            if (response.status === 204) return;
-            if (!response.ok) return;
-            const progress = await response.json();
-
-            percentEl.textContent = progress.percentage + "%";
-            fillEl.style.width = progress.percentage + "%";
-            detailEl.textContent = progress.message || "";
-
-            if (progress.errors && progress.errors.length > 0) {
-                progress.errors.forEach((err) => {
-                    if (!shownErrors.has(err)) {
-                        shownErrors.add(err);
-                        showTaskErrorLog(err);
-                    }
-                });
-            }
-
-            if (progress.status === "COMPLETED") {
-                bar.className = "task-progress-bar completed";
-                stopProgressPollingFor(taskType);
-                if (shownErrors.size > 0) {
-                    showStatus(`${label} 完成，但有 ${shownErrors.size} 处局部错误`, "warn");
-                } else {
-                    setTimeout(() => { bar.hidden = true; }, 2000);
-                }
-                if (btnId) restoreTaskButton(btnId);
-            } else if (progress.status === "FAILED") {
-                bar.className = "task-progress-bar failed";
-                stopProgressPollingFor(taskType);
-                showTaskErrorLog(progress.message || "未知错误");
-                if (btnId) restoreTaskButton(btnId);
-            }
-        } catch (e) {
-            // 轮询失败静默忽略
-        }
-    }, 1000);
-}
-
-function stopProgressPollingFor(taskType) {
-    if (progressTimers[taskType]) {
-        clearInterval(progressTimers[taskType]);
-        delete progressTimers[taskType];
-    }
-}
+const taskButtonMapping = {
+    EXPERT_REVALIDATION: { label: "重新验证候选人", btnId: "revalidateBtn" },
+    RAW_PROMOTION_SCAN: { label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
+    EXPERT_DISCOVERY: { label: "发现专家", btnId: "discoverBtn" }
+};
 
 function restoreTaskButton(btnId) {
     const btn = $(`#${btnId}`);
     if (btn) {
         btn.disabled = false;
-        btn.textContent = taskButtonOriginalTexts[btnId] || btn.textContent;
+        btn.innerHTML = escapeHtml(taskButtonOriginalTexts[btnId] || btn.textContent);
     }
 }
 
@@ -307,23 +225,225 @@ function hideProgressBar() {
 }
 
 async function resumeProgressPollingIfNeeded() {
-    const taskTypes = [
-        { type: "EXPERT_REVALIDATION", label: "重新验证候选人", btnId: "revalidateBtn" },
-        { type: "RAW_PROMOTION_SCAN", label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
-        { type: "EXPERT_DISCOVERY", label: "发现专家", btnId: "discoverBtn" }
-    ];
-
-    for (const task of taskTypes) {
+    for (const taskType of Object.keys(taskButtonMapping)) {
         try {
-            const response = await fetch(`${contextPath}/api/task-progress/${task.type}`);
+            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
             if (response.status === 204 || !response.ok) continue;
             const progress = await response.json();
-            if (progress.status === "RUNNING") {
-                startProgressPolling(task.type, task.label, task.btnId);
-                break;
+            if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
+                const mapping = taskButtonMapping[taskType];
+                if (mapping) setTaskButtonRunning(mapping.btnId);
             }
         } catch (e) { /* 静默 */ }
     }
+}
+
+let currentTaskModal = null; // { taskType, label, btnId, progressTimer, logTimer, executionId }
+
+async function progressStoreHasRunningTask() {
+    for (const taskType of Object.keys(taskButtonMapping)) {
+        if (await isTaskRunning(taskType)) return true;
+    }
+    return false;
+}
+
+async function isTaskRunning(taskType) {
+    try {
+        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        if (!response.ok) return false;
+        const progress = await response.json();
+        return progress.status === "RUNNING" || progress.status === "CANCELLING";
+    } catch (e) { return false; }
+}
+
+function setTaskButtonRunning(btnId) {
+    const btn = $(`#${btnId}`);
+    if (!btn) return;
+    btn.disabled = false;
+    btn.innerHTML = `<span class="btn-running-indicator">执行中</span>`;
+}
+
+function openTaskModal(taskType, label, btnId) {
+    // 关闭旧弹窗
+    if (currentTaskModal) {
+        closeTaskModal();
+    }
+
+    const modal = $("#taskProgressModal");
+    const titleEl = $("#taskModalTitle");
+    const statusEl = $("#taskModalStatus");
+    const percentEl = $("#taskModalPercent");
+    const fillEl = $("#taskModalFill");
+    const messageEl = $("#taskModalMessage");
+    const cancelBtn = $("#taskModalCancelBtn");
+    const logBody = $("#taskModalLogBody");
+    const errorsDiv = $("#taskModalErrors");
+    const errorContent = $("#taskModalErrorContent");
+
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    titleEl.textContent = label;
+    statusEl.textContent = "RUNNING";
+    statusEl.className = "task-modal-status running";
+    percentEl.textContent = "0%";
+    fillEl.style.width = "0%";
+    messageEl.textContent = "初始化中...";
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "取消任务";
+    logBody.innerHTML = "";
+    errorsDiv.hidden = true;
+    errorContent.textContent = "";
+
+    // 禁用按钮并显示执行中
+    if (btnId) {
+        const btn = $(`#${btnId}`);
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "执行中...";
+        }
+    }
+
+    currentTaskModal = { taskType, label, btnId, progressTimer: null, logTimer: null, executionId: null };
+
+    // 启动进度轮询（每 1s）
+    const progressTimer = setInterval(async () => {
+        try {
+            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+            if (response.status === 204) return;
+            if (!response.ok) return;
+            const progress = await response.json();
+            if (progress.executionId && currentTaskModal && !currentTaskModal.executionId) {
+                currentTaskModal.executionId = progress.executionId;
+            }
+            updateTaskModalFromProgress(progress);
+        } catch (e) { /* 静默 */ }
+    }, 1000);
+
+    // 启动日志轮询（每 3s）
+    const logTimer = setInterval(async () => {
+        try {
+            const execId = currentTaskModal?.executionId;
+            const url = execId
+                ? `${contextPath}/api/task-progress/${taskType}/logs?executionId=${execId}`
+                : `${contextPath}/api/task-progress/${taskType}/logs`;
+            const response = await fetch(url);
+            if (!response.ok) return;
+            const logs = await response.json();
+            updateTaskModalLogs(logs);
+        } catch (e) { /* 静默 */ }
+    }, 3000);
+
+    currentTaskModal.progressTimer = progressTimer;
+    currentTaskModal.logTimer = logTimer;
+
+    // 立即加载一次日志
+    fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
+        .then(r => r.ok ? r.json() : [])
+        .then(logs => updateTaskModalLogs(logs))
+        .catch(() => {});
+}
+
+function closeTaskModal() {
+    if (!currentTaskModal) return;
+    stopTaskModalPolling();
+    $("#taskProgressModal").hidden = true;
+    document.body.classList.remove("modal-open");
+    currentTaskModal = null;
+}
+
+function stopTaskModalPolling() {
+    if (currentTaskModal) {
+        if (currentTaskModal.progressTimer) clearInterval(currentTaskModal.progressTimer);
+        if (currentTaskModal.logTimer) clearInterval(currentTaskModal.logTimer);
+        currentTaskModal.progressTimer = null;
+        currentTaskModal.logTimer = null;
+    }
+}
+
+async function handleCancelTask() {
+    if (!currentTaskModal) return;
+    const taskType = currentTaskModal.taskType;
+    const cancelBtn = $("#taskModalCancelBtn");
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = "取消中...";
+    try {
+        await api(`/api/task-progress/${taskType}/cancel`, { method: "POST" });
+        showStatus("已发送取消请求", "ok");
+    } catch (e) {
+        showStatus("取消失败: " + e.message, "error");
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = "取消任务";
+    }
+}
+
+function updateTaskModalFromProgress(progress) {
+    const statusEl = $("#taskModalStatus");
+    const percentEl = $("#taskModalPercent");
+    const fillEl = $("#taskModalFill");
+    const messageEl = $("#taskModalMessage");
+    const cancelBtn = $("#taskModalCancelBtn");
+    const errorsDiv = $("#taskModalErrors");
+    const errorContent = $("#taskModalErrorContent");
+
+    statusEl.textContent = progress.status;
+    statusEl.className = `task-modal-status ${progress.status.toLowerCase()}`;
+    percentEl.textContent = progress.percentage + "%";
+    fillEl.style.width = progress.percentage + "%";
+    messageEl.textContent = progress.message || "";
+
+    if (progress.errors && progress.errors.length > 0) {
+        errorsDiv.hidden = false;
+        errorContent.textContent = progress.errors.join("\n");
+    }
+
+    if (progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
+        if (currentTaskModal && currentTaskModal.btnId) {
+            restoreTaskButton(currentTaskModal.btnId);
+        }
+        // 2s 后可关闭弹窗提示
+        setTimeout(() => {
+            if (progress.status === "COMPLETED") {
+                showStatus(`${currentTaskModal?.label || "任务"} 完成`, "ok");
+            }
+        }, 500);
+    }
+
+    // 同步旧进度条
+    const bar = $("#taskProgressBar");
+    const oldPercentEl = $("#taskProgressPercent");
+    const oldFillEl = $("#taskProgressFill");
+    const oldDetailEl = $("#taskProgressDetail");
+    if (bar && !bar.hidden) {
+        oldPercentEl.textContent = progress.percentage + "%";
+        oldFillEl.style.width = progress.percentage + "%";
+        oldDetailEl.textContent = progress.message || "";
+        if (progress.status === "COMPLETED") bar.className = "task-progress-bar completed";
+        if (progress.status === "FAILED" || progress.status === "CANCELLED") bar.className = "task-progress-bar failed";
+    }
+}
+
+function updateTaskModalLogs(logs) {
+    const logBody = $("#taskModalLogBody");
+    if (!logs || logs.length === 0) {
+        logBody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+        return;
+    }
+    logBody.innerHTML = logs.map(log => {
+        const time = log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : "";
+        const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
+        return `
+            <tr>
+                <td>${log.batchNumber}</td>
+                <td>${log.batchProcessed}</td>
+                <td>${log.batchPassed}</td>
+                <td>${log.batchRejected}</td>
+                <td>${log.processedCount}/${log.totalCount} ${pct}</td>
+                <td>${time}</td>
+            </tr>
+        `;
+    }).join("");
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -716,11 +836,41 @@ async function handleQaAction(button) {
     }
 }
 
+const expertTagLabels = {
+    auto_promoted: "自动晋升",
+    verified: "已验证",
+    discovered: "新发现"
+};
+
+const expertTagColors = {
+    auto_promoted: "#3b82f6",
+    verified: "#22c55e",
+    discovered: "#f59e0b"
+};
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = $("#expertIndexSize").value || "50";
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+    let tag = $("#expertTagFilter")?.value || "";
+
+    const tagFilterEl = $("#expertTagFilter");
+    if (operatorStatus || needsAttention) {
+        tag = "";
+        if (tagFilterEl) {
+            tagFilterEl.value = "";
+            tagFilterEl.disabled = true;
+            tagFilterEl.parentElement.style.opacity = "0.5";
+            tagFilterEl.parentElement.title = "标签筛选仅在 ES 查询模式下可用";
+        }
+    } else {
+        if (tagFilterEl) {
+            tagFilterEl.disabled = false;
+            tagFilterEl.parentElement.style.opacity = "1";
+            tagFilterEl.parentElement.title = "";
+        }
+    }
 
     let contacts = [];
     let totalHits = 0;
@@ -743,12 +893,14 @@ async function loadContacts() {
             needsManualAttention: c.needsManualAttention,
             country: "",
             employment: "",
-            keyword: ""
+            keyword: "",
+            tags: c.tags || []
         }));
     } else {
         const params = new URLSearchParams();
         params.set("level", level);
         params.set("size", size);
+        if (tag) params.set("tag", tag);
         const data = await api(`/api/experts?${params}`);
         const rawExperts = data.experts || data;
         totalHits = data.totalHits ?? rawExperts.length;
@@ -764,7 +916,8 @@ async function loadContacts() {
             needsManualAttention: e.needsManualAttention,
             country: e.country,
             employment: e.employment,
-            keyword: e.keyword
+            keyword: e.keyword,
+            tags: e.tags || []
         }));
     }
     state.contacts = contacts;
@@ -784,6 +937,9 @@ async function loadContacts() {
                 ? "ok"
                     : "";
         const needsAttentionClass = contact.needsManualAttention ? "needs-attention" : "";
+        const tagsHtml = (contact.tags || []).map(tag =>
+            `<span class="expert-tag" style="background:${expertTagColors[tag] || '#6b7280'}20; color:${expertTagColors[tag] || '#6b7280'}; border: 1px solid ${expertTagColors[tag] || '#6b7280'}40;">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
+        ).join("");
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}">
             <label class="expert-checkbox" onclick="event.stopPropagation()">
@@ -806,6 +962,7 @@ async function loadContacts() {
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
                     ${contact.keyword ? `<span>${escapeHtml(contact.keyword)}</span>` : ""}
                 </div>
+                ${tagsHtml ? `<div class="expert-row-tags" style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">${tagsHtml}</div>` : ""}
             </div>
         </div>
     `;
@@ -857,11 +1014,18 @@ async function handleCheckReplies() {
 }
 
 async function handleRevalidateCandidates() {
-    if (hasActiveProgressPolling()) {
+    const taskType = "EXPERT_REVALIDATION";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "重新验证候选人", "revalidateBtn");
+        return;
+    }
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    startProgressPolling("EXPERT_REVALIDATION", "重新验证候选人", "revalidateBtn");
+    openTaskModal(taskType, "重新验证候选人", "revalidateBtn");
     try {
         const result = await api("/api/experts/revalidate-candidates", { method: "POST" });
         const stats = result.stats || result;
@@ -874,18 +1038,25 @@ async function handleRevalidateCandidates() {
         }
         showStatus("验证失败: " + e.message, "error");
         showTaskErrorLog(e.message);
-        stopProgressPollingFor("EXPERT_REVALIDATION");
+        stopTaskModalPolling();
         restoreTaskButton("revalidateBtn");
         hideProgressBar();
     }
 }
 
 async function handlePromoteRaw() {
-    if (hasActiveProgressPolling()) {
+    const taskType = "RAW_PROMOTION_SCAN";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
+        return;
+    }
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    startProgressPolling("RAW_PROMOTION_SCAN", "扫描 RAW 可晋升", "promoteRawBtn");
+    openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
     try {
         const result = await api("/api/experts/promote-eligible-raw?maxPromotions=1000", { method: "POST" });
         const stats = result.stats || result;
@@ -902,21 +1073,28 @@ async function handlePromoteRaw() {
         }
         showStatus("扫描失败: " + e.message, "error");
         showTaskErrorLog(e.message);
-        stopProgressPollingFor("RAW_PROMOTION_SCAN");
+        stopTaskModalPolling();
         restoreTaskButton("promoteRawBtn");
         hideProgressBar();
     }
 }
 
 async function handleDiscover() {
-    if (hasActiveProgressPolling()) {
+    const taskType = "EXPERT_DISCOVERY";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "发现专家", "discoverBtn");
+        return;
+    }
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
     const keywords = prompt("输入发现关键词（多个用逗号分隔，留空使用默认条件）:");
     if (keywords === null) return;
 
-    startProgressPolling("EXPERT_DISCOVERY", "发现专家", "discoverBtn");
+    openTaskModal(taskType, "发现专家", "discoverBtn");
     try {
         let result;
         if (keywords.trim()) {
@@ -948,7 +1126,7 @@ async function handleDiscover() {
         }
         showStatus("发现失败: " + e.message, "error");
         showTaskErrorLog(e.message);
-        stopProgressPollingFor("EXPERT_DISCOVERY");
+        stopTaskModalPolling();
         restoreTaskButton("discoverBtn");
         hideProgressBar();
     }
@@ -2977,6 +3155,7 @@ function bindEvents() {
     $("#expertIndexSize").addEventListener("change", loadContacts);
     $("#contactNeedsAttentionFilter").addEventListener("change", loadContacts);
     $("#contactStatusFilter").addEventListener("change", loadContacts);
+    $("#expertTagFilter").addEventListener("change", loadContacts);
 
     $("#unmatchedTable").addEventListener("click", (event) => {
         const button = event.target.closest("[data-action]");
@@ -3022,6 +3201,30 @@ function bindEvents() {
     });
 
     $("#contactStatusFilter").innerHTML = optionsFromArray(operatorStatusOptions, true, "全部状态");
+
+    // 旧进度条点击打开弹窗
+    $("#taskProgressBar")?.addEventListener("click", async () => {
+        if (currentTaskModal) return;
+        for (const [taskType, mapping] of Object.entries(taskButtonMapping)) {
+            try {
+                const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+                if (!response.ok) continue;
+                const progress = await response.json();
+                if (progress.status === "RUNNING" || progress.status === "CANCELLING" ||
+                    progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
+                    openTaskModal(taskType, mapping.label, mapping.btnId);
+                    break;
+                }
+            } catch (e) {}
+        }
+    });
+
+    // 弹窗 ESC 关闭
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && currentTaskModal) {
+            closeTaskModal();
+        }
+    });
 
     updateUnmatchedBadge();
 }

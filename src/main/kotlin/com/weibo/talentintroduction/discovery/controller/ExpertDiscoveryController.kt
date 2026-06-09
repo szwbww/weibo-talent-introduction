@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.controller
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
+import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -23,19 +24,26 @@ class ExpertDiscoveryController(
 ) {
     @PostMapping("/run")
     fun triggerDiscovery(@RequestBody(required = false) criteria: PaperSearchCriteria?): ResponseEntity<Any> {
-        if (!progressStore.tryStart("EXPERT_DISCOVERY", TaskProgress(
-                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-            ))) {
+        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+        ))
+        if (!started) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
+        var execution: TaskExecution? = null
+        var executionId: Long? = null
         try {
-            val execution = taskExecutionService.runAndRecord(
+            execution = taskExecutionService.runAndRecord(
                 "EXPERT_DISCOVERY", "MANUAL", criteria ?: PaperSearchCriteria(
                     excludeCountries = listOf("CN"),
                     openAccessOnly = true
-                )
+                ),
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+                }
             ) {
                 discoveryService.discover(criteria ?: PaperSearchCriteria(
                     excludeCountries = listOf("CN"),
@@ -51,7 +59,7 @@ class ExpertDiscoveryController(
                     taskType = "EXPERT_DISCOVERY", status = "FAILED",
                     batchNumber = 0, processedCount = 0, totalCount = 0,
                     message = execution.errorMessage ?: "任务执行失败"
-                ))
+                ), executionId)
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(mapOf("message" to (execution.errorMessage ?: "任务执行失败")))
             }
@@ -65,8 +73,15 @@ class ExpertDiscoveryController(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
                 message = ex.message ?: "初始化失败"
-            ))
+            ), executionId)
             throw ex
+        } finally {
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+            } else {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+            }
         }
     }
 
@@ -76,13 +91,16 @@ class ExpertDiscoveryController(
         @RequestParam(defaultValue = "2020") yearFrom: Int,
         @RequestParam(defaultValue = "2026") yearTo: Int
     ): ResponseEntity<Any> {
-        if (!progressStore.tryStart("EXPERT_DISCOVERY", TaskProgress(
-                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-            ))) {
+        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+        ))
+        if (!started) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
+        var execution: TaskExecution? = null
+        var executionId: Long? = null
         try {
             val criteria = PaperSearchCriteria(
                 keywords = keywords,
@@ -91,8 +109,12 @@ class ExpertDiscoveryController(
                 excludeCountries = listOf("CN"),
                 openAccessOnly = true
             )
-            val execution = taskExecutionService.runAndRecord(
-                "EXPERT_DISCOVERY", "MANUAL", criteria
+            execution = taskExecutionService.runAndRecord(
+                "EXPERT_DISCOVERY", "MANUAL", criteria,
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+                }
             ) {
                 discoveryService.discover(criteria, "MANUAL")
             }
@@ -105,7 +127,7 @@ class ExpertDiscoveryController(
                     taskType = "EXPERT_DISCOVERY", status = "FAILED",
                     batchNumber = 0, processedCount = 0, totalCount = 0,
                     message = execution.errorMessage ?: "任务执行失败"
-                ))
+                ), executionId)
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(mapOf("message" to (execution.errorMessage ?: "任务执行失败")))
             }
@@ -119,8 +141,15 @@ class ExpertDiscoveryController(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
                 message = ex.message ?: "初始化失败"
-            ))
+            ), executionId)
             throw ex
+        } finally {
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+            } else {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+            }
         }
     }
 
@@ -128,11 +157,21 @@ class ExpertDiscoveryController(
     fun enrichExperts(
         @RequestParam(defaultValue = "500") maxExperts: Int
     ): ResponseEntity<Any> {
-        val execution = taskExecutionService.runAndRecord(
-            "EXPERT_ENRICHMENT", "MANUAL", mapOf("maxExperts" to maxExperts)
-        ) {
-            discoveryService.enrichExistingExperts(maxExperts)
+        var execution: TaskExecution? = null
+        try {
+            execution = taskExecutionService.runAndRecord(
+                "EXPERT_ENRICHMENT", "MANUAL", mapOf("maxExperts" to maxExperts),
+                onStarted = { executionId -> progressStore.setCurrentExecutionId("EXPERT_ENRICHMENT", executionId) }
+            ) {
+                discoveryService.enrichExistingExperts(maxExperts)
+            }
+            return ResponseEntity.ok(execution)
+        } finally {
+            if (execution?.id != null) {
+                progressStore.clearExecutionContext("EXPERT_ENRICHMENT", execution.id!!)
+            } else {
+                progressStore.clear("EXPERT_ENRICHMENT")
+            }
         }
-        return ResponseEntity.ok(execution)
     }
 }

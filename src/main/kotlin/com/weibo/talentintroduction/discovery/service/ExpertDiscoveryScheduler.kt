@@ -19,18 +19,25 @@ class ExpertDiscoveryScheduler(
 ) {
     @Scheduled(cron = "\${talent-introduction.expert-discovery.cron:-}")
     fun scheduleDiscovery() {
-        if (!progressStore.tryStart("EXPERT_DISCOVERY", TaskProgress(
-                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-                batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化 EuropePMC 搜索..."
-            ))) {
+        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化 EuropePMC 搜索..."
+        ))
+        if (!started) {
             return
         }
+        var executionId: Long? = null
         try {
             val criteria = PaperSearchCriteria(
                 excludeCountries = listOf("CN"),
                 openAccessOnly = true
             )
-            taskExecutionService.runAndRecord("EXPERT_DISCOVERY", "SCHEDULED", criteria) {
+            taskExecutionService.runAndRecord("EXPERT_DISCOVERY", "SCHEDULED", criteria,
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+                }
+            ) {
                 discoveryService.discover(criteria, "SCHEDULED")
             }
         } catch (ex: Exception) {
@@ -38,7 +45,14 @@ class ExpertDiscoveryScheduler(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
                 message = ex.message ?: "定时发现初始化失败"
-            ))
+            ), executionId)
+        } finally {
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+            } else {
+                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+            }
         }
     }
 }

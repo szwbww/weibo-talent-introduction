@@ -53,6 +53,7 @@ class TaskExecutionService(
         taskType: String,
         triggerType: String,
         request: Any,
+        onStarted: ((executionId: Long) -> Unit)? = null,
         block: () -> T
     ): Pair<TaskExecution, T> {
         val startedAt = LocalDateTime.now()
@@ -68,6 +69,8 @@ class TaskExecutionService(
                 updatedAt = startedAt
             )
         )
+
+        onStarted?.invoke(running.id!!)
 
         return try {
             val result = block()
@@ -126,6 +129,7 @@ class TaskExecutionService(
         taskType: String,
         triggerType: String,
         request: Any,
+        onStarted: ((executionId: Long) -> Unit)? = null,
         block: () -> T
     ): TaskExecution {
         val startedAt = LocalDateTime.now()
@@ -141,6 +145,8 @@ class TaskExecutionService(
                 updatedAt = startedAt
             )
         )
+
+        onStarted?.invoke(running.id!!)
 
         return try {
             val result = block()
