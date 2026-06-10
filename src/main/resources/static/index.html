@@ -425,82 +425,85 @@
     </main>
 </div>
 
-<!-- Task Launch Modal (操作确认弹窗) -->
-<div id="taskLaunchModal" class="modal-overlay" hidden>
-    <div class="modal-content task-launch-modal">
-        <div class="modal-header">
-            <h3 id="taskLaunchTitle"></h3>
-            <button class="button small" onclick="closeTaskLaunchModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p id="taskLaunchDesc" class="text-muted"></p>
-            <div id="taskLaunchKeywordRow" hidden>
-                <label style="font-size: 12px; font-weight: 500;">
-                    发现关键词（多个用逗号分隔，留空使用默认条件）:
-                    <input type="text" id="taskLaunchKeywordInput" style="width: 100%; margin-top: 4px;">
-                </label>
-            </div>
-            <div id="taskLaunchMaxPromotionsRow" hidden>
-                <label style="font-size: 12px; font-weight: 500;">
-                    最大晋升数量:
-                    <input type="number" id="taskLaunchMaxPromotions" value="1000" min="1" max="10000"
-                           style="width: 120px; margin-top: 4px;">
-                </label>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="button secondary" onclick="closeTaskLaunchModal()">取消</button>
-            <button class="button primary" id="taskLaunchRunBtn">开始执行</button>
-        </div>
-    </div>
-</div>
-
-<!-- Task Progress Modal -->
+<!-- Task Progress & Launch Modal (统一任务管理弹窗) -->
 <div id="taskProgressModal" class="modal-overlay" hidden>
     <div class="modal-content task-modal">
         <div class="modal-header">
-            <h3 id="taskModalTitle">任务进度</h3>
+            <h3 id="taskModalTitle">任务管理</h3>
             <button class="button small" onclick="closeTaskModal()">×</button>
         </div>
-        <div class="modal-body">
-            <!-- 进度条 -->
-            <div class="task-modal-progress">
-                <div class="task-progress-header">
-                    <span id="taskModalStatus" class="task-modal-status"></span>
-                    <span id="taskModalPercent" class="task-progress-percent">0%</span>
+        <div class="modal-body" style="gap: 20px;">
+            <!-- Configuration Section (visible when starting task) -->
+            <div id="taskModalConfigSection" class="task-modal-config-section">
+                <p id="taskLaunchDesc" class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted);"></p>
+                
+                <div id="taskLaunchKeywordRow" hidden>
+                    <label class="task-modal-input-label">
+                        发现关键词 (多个用逗号分隔，留空使用默认条件):
+                        <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
+                    </label>
                 </div>
-                <div class="task-progress-track">
-                    <div id="taskModalFill" class="task-progress-fill" style="width: 0%"></div>
+                
+                <div id="taskLaunchMaxPromotionsRow" hidden>
+                    <label class="task-modal-input-label">
+                        最大晋升数量:
+                        <input type="number" id="taskLaunchMaxPromotions" class="task-modal-input-field" value="1000" min="1" max="10000" style="width: 120px;">
+                    </label>
                 </div>
-                <div id="taskModalMessage" class="task-progress-detail"></div>
+                
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                    <button class="button secondary" onclick="closeTaskModal()">取消</button>
+                    <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, #4facfe 100%); border: none; color: white;">开始执行</button>
+                </div>
             </div>
-            <!-- 操作按钮 -->
-            <div class="task-modal-actions">
-                <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
+
+            <!-- Progress Section (visible when task is running) -->
+            <div id="taskModalProgressSection" class="task-modal-progress-section" hidden>
+                <div class="task-modal-progress">
+                    <div class="task-progress-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span id="taskModalStatus" class="task-modal-status">RUNNING</span>
+                        <span id="taskModalPercent" class="task-progress-percent" style="font-weight: 600; font-size: 13px;">0%</span>
+                    </div>
+                    <div class="task-progress-track" style="height: 8px; background-color: var(--panel-border); border-radius: 4px; overflow: hidden; position: relative;">
+                        <div id="taskModalFill" class="task-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, #4facfe 100%); transition: width 0.3s ease;"></div>
+                    </div>
+                    <div id="taskModalMessage" class="task-progress-detail" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">初始化中...</div>
+                </div>
+                <div class="task-modal-actions" style="display: flex; justify-content: flex-end;">
+                    <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
+                </div>
             </div>
-            <!-- 批次日志表格 -->
-            <div class="task-modal-logs">
-                <h4>批次处理明细</h4>
-                <div class="task-modal-log-table-wrapper">
-                    <table class="data-table compact">
+
+            <!-- Divider Line -->
+            <div class="task-modal-divider"></div>
+
+            <!-- Batch Logs Table (Always visible) -->
+            <div class="task-modal-logs" style="display: flex; flex-direction: column; gap: 10px;">
+                <h4 class="task-modal-logs-title">
+                    <span class="task-modal-logs-title-indicator"></span>
+                    批次处理明细 (最近执行记录)
+                </h4>
+                <div class="task-modal-log-table-wrapper" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-sm); background-color: var(--surface);">
+                    <table class="data-table compact" style="width: 100%; border-collapse: collapse; font-size: 12px;">
                         <thead>
-                            <tr>
-                                <th>批次</th>
-                                <th>本批处理</th>
-                                <th>通过</th>
-                                <th>拒绝</th>
-                                <th>累计进度</th>
-                                <th>时间</th>
+                            <tr style="background-color: var(--panel-bg); border-bottom: 1px solid var(--panel-border);">
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">批次</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">本批处理</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">通过</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">拒绝</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">累计进度</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">时间</th>
                             </tr>
                         </thead>
                         <tbody id="taskModalLogBody"></tbody>
                     </table>
                 </div>
             </div>
-            <!-- 错误日志 -->
-            <div class="task-modal-errors" id="taskModalErrors" hidden>
-                <h4>错误日志</h4>
-                <pre id="taskModalErrorContent" class="task-error-log-content"></pre>
+
+            <!-- Error Logs (visible on errors) -->
+            <div class="task-modal-errors" id="taskModalErrors" hidden style="border: 1px solid var(--error-border); border-radius: var(--radius-sm); background-color: var(--error-bg); overflow: hidden; margin-top: 10px;">
+                <h4 style="margin: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--error); border-bottom: 1px solid var(--error-border); background-color: rgba(255, 59, 48, 0.05);">错误日志</h4>
+                <pre id="taskModalErrorContent" class="task-error-log-content" style="margin: 0; padding: 12px; font-size: 11px; max-height: 150px; overflow-y: auto; color: var(--error); white-space: pre-wrap; font-family: var(--font-mono);"></pre>
             </div>
         </div>
     </div>

@@ -265,46 +265,59 @@ function setTaskButtonRunning(btnId) {
 }
 
 function openTaskModal(taskType, label, btnId) {
-    // 关闭旧弹窗
-    if (currentTaskModal) {
-        closeTaskModal();
-    }
+    try {
+        // 停止旧轮询但不关闭弹窗
+        stopTaskModalPolling();
 
-    const modal = $("#taskProgressModal");
-    const titleEl = $("#taskModalTitle");
-    const statusEl = $("#taskModalStatus");
-    const percentEl = $("#taskModalPercent");
-    const fillEl = $("#taskModalFill");
-    const messageEl = $("#taskModalMessage");
-    const cancelBtn = $("#taskModalCancelBtn");
-    const logBody = $("#taskModalLogBody");
-    const errorsDiv = $("#taskModalErrors");
-    const errorContent = $("#taskModalErrorContent");
-
-    modal.hidden = false;
-    document.body.classList.add("modal-open");
-    titleEl.textContent = label;
-    statusEl.textContent = "RUNNING";
-    statusEl.className = "task-modal-status running";
-    percentEl.textContent = "0%";
-    fillEl.style.width = "0%";
-    messageEl.textContent = "初始化中...";
-    cancelBtn.disabled = false;
-    cancelBtn.textContent = "取消任务";
-    logBody.innerHTML = "";
-    errorsDiv.hidden = true;
-    errorContent.textContent = "";
-
-    // 禁用按钮并显示执行中
-    if (btnId) {
-        const btn = $(`#${btnId}`);
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = "执行中...";
+        const modal = $("#taskProgressModal");
+        if (!modal) {
+            console.error("#taskProgressModal not found!");
+            return;
         }
-    }
+        
+        const titleEl = $("#taskModalTitle");
+        const statusEl = $("#taskModalStatus");
+        const percentEl = $("#taskModalPercent");
+        const fillEl = $("#taskModalFill");
+        const messageEl = $("#taskModalMessage");
+        const cancelBtn = $("#taskModalCancelBtn");
+        const errorsDiv = $("#taskModalErrors");
+        const errorContent = $("#taskModalErrorContent");
 
-    currentTaskModal = { taskType, label, btnId, progressTimer: null, logTimer: null, executionId: null };
+        // Hide config section, show progress section
+        const configSection = $("#taskModalConfigSection");
+        if (configSection) configSection.hidden = true;
+        
+        const progressSection = $("#taskModalProgressSection");
+        if (progressSection) progressSection.hidden = false;
+
+        modal.hidden = false;
+        document.body.classList.add("modal-open");
+        if (titleEl) titleEl.textContent = label;
+        if (statusEl) {
+            statusEl.textContent = "RUNNING";
+            statusEl.className = "task-modal-status running";
+        }
+        if (percentEl) percentEl.textContent = "0%";
+        if (fillEl) fillEl.style.width = "0%";
+        if (messageEl) messageEl.textContent = "初始化中...";
+        if (cancelBtn) {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = "取消任务";
+        }
+        if (errorsDiv) errorsDiv.hidden = true;
+        if (errorContent) errorContent.textContent = "";
+
+        // 禁用按钮并显示执行中
+        if (btnId) {
+            const btn = $(`#${btnId}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "执行中...";
+            }
+        }
+
+        currentTaskModal = { taskType, label, btnId, progressTimer: null, logTimer: null, executionId: null };
 
     // 启动进度轮询（每 1s）
     const progressTimer = setInterval(async () => {
@@ -337,11 +350,14 @@ function openTaskModal(taskType, label, btnId) {
     currentTaskModal.progressTimer = progressTimer;
     currentTaskModal.logTimer = logTimer;
 
-    // 立即加载一次日志
-    fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
-        .then(r => r.ok ? r.json() : [])
-        .then(logs => updateTaskModalLogs(logs))
-        .catch(() => {});
+        // 立即加载一次日志
+        fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
+            .then(r => r.ok ? r.json() : [])
+            .then(logs => updateTaskModalLogs(logs))
+            .catch((e) => console.error("Error fetching logs in openTaskModal:", e));
+    } catch (e) {
+        console.error("Exception in openTaskModal:", e);
+    }
 }
 
 function closeTaskModal() {
@@ -1068,8 +1084,12 @@ function openTaskLaunchModal(taskType) {
     const config = taskLaunchConfigs[taskType];
     if (!config) return;
 
-    const modal = $("#taskLaunchModal");
-    $("#taskLaunchTitle").textContent = config.title;
+    const modal = $("#taskProgressModal");
+    $("#taskModalTitle").textContent = config.title;
+
+    // Show config section, hide progress section
+    $("#taskModalConfigSection").hidden = false;
+    $("#taskModalProgressSection").hidden = true;
 
     if (taskType === "CHECK_REPLIES") {
         const checked = $$(".expert-select-cb:checked").filter(cb => Number(cb.dataset.contactId) > 0);
@@ -1086,18 +1106,31 @@ function openTaskLaunchModal(taskType) {
 
     const runBtn = $("#taskLaunchRunBtn");
     runBtn.onclick = () => {
-        if (!confirm(`确定要执行「${config.title}」吗？`)) return;
-        closeTaskLaunchModal();
+        // Toggle view to progress immediately, then run the task
+        $("#taskModalConfigSection").hidden = true;
+        $("#taskModalProgressSection").hidden = false;
         config.run();
     };
 
+    $("#taskModalLogBody").innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
+    $("#taskModalErrors").hidden = true;
+    $("#taskModalErrorContent").textContent = "";
+
     modal.hidden = false;
     document.body.classList.add("modal-open");
+
+    // Initialize currentTaskModal structure to fetch logs
+    currentTaskModal = { taskType, label: config.title, btnId: config.btnId, progressTimer: null, logTimer: null, executionId: null };
+
+    // Immediately load logs once
+    fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
+        .then(r => r.ok ? r.json() : [])
+        .then(logs => updateTaskModalLogs(logs))
+        .catch(() => {});
 }
 
 function closeTaskLaunchModal() {
-    $("#taskLaunchModal").hidden = true;
-    document.body.classList.remove("modal-open");
+    closeTaskModal();
 }
 
 async function handleRevalidateCandidates() {
@@ -3325,9 +3358,6 @@ function bindEvents() {
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && currentTaskModal) {
             closeTaskModal();
-        }
-        if (event.key === "Escape" && !$("#taskLaunchModal").hidden) {
-            closeTaskLaunchModal();
         }
     });
 
