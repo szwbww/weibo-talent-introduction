@@ -389,8 +389,9 @@ p {
     cursor: not-allowed;
 }
 
-/* 筛选折叠开关（仅移动端显示，见响应式段落） */
-.filter-toggle {
+/* 筛选折叠开关（仅移动端显示，见响应式段落）
+   注意: 选择器带 .toolbar 前缀以压过后方 .button 的 display 规则 */
+.toolbar .filter-toggle {
     display: none;
 }
 
