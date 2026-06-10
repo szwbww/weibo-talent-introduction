@@ -23,9 +23,11 @@ class ExpertSearchService(
         size: Int,
         level: ExpertIndexLevel,
         tag: String? = null,
-        sortBy: String? = null
+        sortBy: String? = null,
+        from: Int = 0
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
+        require(from >= 0) { "from must be >= 0" }
 
         val query = if (tag.isNullOrBlank()) {
             mapOf("match_all" to emptyMap<String, Any>())
@@ -46,6 +48,7 @@ class ExpertSearchService(
         }
 
         val requestBody = mapOf(
+            "from" to from,
             "size" to size,
             "_source" to sourceFields(),
             "query" to query,

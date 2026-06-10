@@ -35,9 +35,10 @@ class ExpertIndexController(
         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
         @RequestParam(defaultValue = "50") size: Int,
         @RequestParam(required = false) tag: String?,
-        @RequestParam(required = false) sortBy: String?
+        @RequestParam(required = false) sortBy: String?,
+        @RequestParam(defaultValue = "0") from: Int
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag, sortBy)
+        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from)
         val experts = result.experts.map { expert ->
             val contact = expert.orcidId
                 .takeIf { it.isNotBlank() }

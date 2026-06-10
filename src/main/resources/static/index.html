@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260610-unified-modal">
+    <link rel="stylesheet" href="styles.css?v=20260610-experts-ui">
 </head>
 <body>
 <div class="app-shell">
@@ -209,66 +209,81 @@
 
         <!-- View 4: Expert Contacts funnel & timelines -->
         <section class="view" id="view-contacts">
-            <div class="toolbar">
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    排序:
-                    <select id="expertSortBy">
-                        <option value="">默认排序</option>
-                        <option value="updatedAt">按修改时间</option>
-                    </select>
-                </label>
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    漏斗层级:
-                    <select id="expertIndexLevel">
-                        <option value="RAW">RAW - 原始数据层</option>
-                        <option value="CANDIDATE" selected>CANDIDATE - 待筛选层</option>
-                        <option value="APPLICATION">APPLICATION - 已回复意向层</option>
-                    </select>
-                </label>
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    显示行数:
-                    <select id="expertIndexSize">
-                        <option value="10">10 条/页</option>
-                        <option value="20">20 条/页</option>
-                        <option value="50" selected>50 条/页</option>
-                        <option value="100">100 条/页</option>
-                    </select>
-                </label>
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    跟进状态:
-                    <select id="contactStatusFilter">
-                        <option value="">全部状态</option>
-                        <option value="NOT_CONTACTED">未联系</option>
-                        <option value="CONTACTED">已联系</option>
-                        <option value="REPLIED">已回复</option>
-                        <option value="MATERIALS_RECEIVED">已回复材料</option>
-                        <option value="INVITED">已邀约</option>
-                        <option value="COMPLETED">已完成</option>
-                    </select>
-                </label>
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    人工干预:
-                    <select id="contactNeedsAttentionFilter">
-                        <option value="">全部人工待办</option>
-                        <option value="true">仅看需要干预</option>
-                        <option value="false">仅看自动流转中</option>
-                    </select>
-                </label>
-                <label style="font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    标签筛选:
-                    <select id="expertTagFilter">
-                        <option value="">全部标签</option>
-                        <option value="auto_promoted">自动晋升</option>
-                        <option value="verified">已验证</option>
-                        <option value="discovered">新发现</option>
-                    </select>
-                </label>
-                <button class="button primary" id="loadContactsBtn">加载专家列表</button>
-                <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
-                <button class="button" id="showPollLogBtn" onclick="showPollLog()">轮询日志</button>
-                <button class="button" id="revalidateBtn" onclick="handleRevalidateCandidates()">重新验证候选人</button>
-                <button class="button" id="promoteRawBtn" onclick="handlePromoteRaw()">扫描 RAW 可晋升</button>
-                <button class="button primary" id="discoverBtn" onclick="handleDiscover()">发现专家</button>
+            <div class="toolbar contacts-toolbar">
+                <div class="toolbar-group toolbar-filters">
+                    <label class="toolbar-label">
+                        排序:
+                        <select id="expertSortBy">
+                            <option value="">默认排序</option>
+                            <option value="updatedAt">按修改时间</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        漏斗层级:
+                        <select id="expertIndexLevel">
+                            <option value="RAW">RAW - 原始数据层</option>
+                            <option value="CANDIDATE" selected>CANDIDATE - 待筛选层</option>
+                            <option value="APPLICATION">APPLICATION - 已回复意向层</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        显示行数:
+                        <select id="expertIndexSize">
+                            <option value="10">10 条/页</option>
+                            <option value="20">20 条/页</option>
+                            <option value="50" selected>50 条/页</option>
+                            <option value="100">100 条/页</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        跟进状态:
+                        <select id="contactStatusFilter">
+                            <option value="">全部状态</option>
+                            <option value="NOT_CONTACTED">未联系</option>
+                            <option value="CONTACTED">已联系</option>
+                            <option value="REPLIED">已回复</option>
+                            <option value="MATERIALS_RECEIVED">已回复材料</option>
+                            <option value="INVITED">已邀约</option>
+                            <option value="COMPLETED">已完成</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        人工干预:
+                        <select id="contactNeedsAttentionFilter">
+                            <option value="">全部人工待办</option>
+                            <option value="true">仅看需要干预</option>
+                            <option value="false">仅看自动流转中</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        标签筛选:
+                        <select id="expertTagFilter">
+                            <option value="">全部标签</option>
+                            <option value="auto_promoted">自动晋升</option>
+                            <option value="verified">已验证</option>
+                            <option value="discovered">新发现</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="toolbar-group toolbar-actions">
+                    <button class="button" id="loadContactsBtn" title="筛选条件修改后会自动刷新，此按钮用于手动重新加载">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        刷新
+                    </button>
+                    <div class="dropdown" id="taskMenuDropdown">
+                        <button class="button" id="taskMenuToggle" aria-haspopup="true" aria-expanded="false">
+                            后台任务
+                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="dropdown-menu" id="taskMenu" hidden>
+                            <button class="dropdown-item" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
+                            <button class="dropdown-item" id="showPollLogBtn" onclick="showPollLog()">轮询日志</button>
+                            <button class="dropdown-item" id="revalidateBtn" onclick="handleRevalidateCandidates()">重新验证候选人</button>
+                            <button class="dropdown-item" id="promoteRawBtn" onclick="handlePromoteRaw()">扫描 RAW 可晋升</button>
+                        </div>
+                    </div>
+                    <button class="button primary" id="discoverBtn" onclick="handleDiscover()">发现专家</button>
+                </div>
             </div>
 
             <!-- Task Progress Bar -->
@@ -292,26 +307,28 @@
                 <div id="taskErrorLogContent" class="task-error-log-content"></div>
             </div>
 
-            <!-- Sub-toolbar for Layout Controls -->
-            <div class="toolbar layout-controls-toolbar" style="margin-top: 8px; border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); background-color: var(--panel-bg); display: flex; gap: 8px; align-items: center; padding: 8px 14px; border: 1px solid var(--panel-border);">
-                <span class="muted" style="font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 4px;">布局样式:</span>
-                <button class="button small" id="btnLayoutDefault" title="恢复默认分栏 (260px)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">默认比例</button>
-                <button class="button small" id="btnLayoutWideList" title="宽列表分栏 (500px)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">宽列表</button>
-                <button class="button small" id="btnLayoutSplit" title="左右平分 (1:1)" style="height: 26px; min-height: 26px; font-size: 11px; padding: 0 8px;">等宽分栏</button>
-            </div>
-
             <div class="split-layout contacts-layout">
                 <!-- Left panel: candidate list -->
                 <section class="panel contacts-list-panel">
                     <div class="panel-head">
                         <h2>专家列表</h2>
+                        <div class="layout-preset-group" title="调整左右分栏比例（也可拖拽中缝，双击恢复默认）">
+                            <button class="layout-preset-btn" id="btnLayoutDefault" title="默认分栏 (260px)">▏</button>
+                            <button class="layout-preset-btn" id="btnLayoutWideList" title="宽列表 (500px)">▎</button>
+                            <button class="layout-preset-btn" id="btnLayoutSplit" title="左右等宽 (1:1)">▌</button>
+                        </div>
                     </div>
-                    <div id="contactCountInfo" class="text-muted" style="padding: 4px 12px; font-size: 12px;"></div>
+                    <div id="contactCountInfo" class="contact-count-info text-muted"></div>
                     <div id="contactList" class="list"></div>
+                    <div id="contactPager" class="list-pager" hidden>
+                        <button class="button small" id="contactPrevPage">上一页</button>
+                        <span id="contactPageInfo" class="list-pager-info"></span>
+                        <button class="button small" id="contactNextPage">下一页</button>
+                    </div>
                 </section>
 
                 <!-- Resizer Divider -->
-                <div class="layout-resizer" id="contactsLayoutResizer">
+                <div class="layout-resizer" id="contactsLayoutResizer" title="拖拽调整宽度，双击恢复默认">
                     <div class="resizer-handle"></div>
                 </div>
 
@@ -595,6 +612,6 @@
 </dialog>
 
 <!-- App Core controller -->
-<script src="app.js?v=20260610-unified-modal"></script>
+<script src="app.js?v=20260610-experts-ui"></script>
 </body>
 </html>

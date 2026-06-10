@@ -4,6 +4,8 @@ const state = {
     categories: [],
     qaRules: [],
     contacts: [],
+    contactsPage: 0,
+    contactsTotalHits: 0,
     mailSendOptions: [],
     selectedAccount: null,
     accountEditorMode: null,
@@ -866,12 +868,38 @@ const expertTagColors = {
     discovered: "#f59e0b"
 };
 
+function renderContactListSkeleton() {
+    $("#contactList").innerHTML = Array.from({ length: 6 }, () => `
+        <div class="list-item skeleton-item">
+            <div class="skeleton-line" style="width: 55%;"></div>
+            <div class="skeleton-line" style="width: 85%;"></div>
+            <div class="skeleton-line" style="width: 40%;"></div>
+        </div>
+    `).join("");
+    $("#contactPager").hidden = true;
+}
+
+function renderContactPager(size) {
+    const pager = $("#contactPager");
+    const totalHits = state.contactsTotalHits;
+    const totalPages = Math.max(1, Math.ceil(totalHits / size));
+    if (totalHits <= size) {
+        pager.hidden = true;
+        return;
+    }
+    pager.hidden = false;
+    $("#contactPageInfo").textContent = `第 ${state.contactsPage + 1} / ${totalPages} 页`;
+    $("#contactPrevPage").disabled = state.contactsPage <= 0;
+    $("#contactNextPage").disabled = state.contactsPage >= totalPages - 1;
+}
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
-    const size = $("#expertIndexSize").value || "50";
+    const size = Number($("#expertIndexSize").value || "50");
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
+    renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
     if (operatorStatus || needsAttention) {
@@ -892,13 +920,16 @@ async function loadContacts() {
 
     let contacts = [];
     let totalHits = 0;
+    try {
     if (operatorStatus || needsAttention) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
         const data = await api(`/api/expert-contacts?${params}`);
-        const rawContacts = data.contacts || data;
+        let rawContacts = data.contacts || data;
         totalHits = data.totalCount ?? rawContacts.length;
+        // MySQL 接口暂无分页，前端切片
+        rawContacts = rawContacts.slice(state.contactsPage * size, (state.contactsPage + 1) * size);
         contacts = rawContacts.map(c => ({
             orcidId: c.orcidId,
             email: c.expertEmail,
@@ -919,6 +950,7 @@ async function loadContacts() {
         const params = new URLSearchParams();
         params.set("level", level);
         params.set("size", size);
+        params.set("from", state.contactsPage * size);
         if (tag) params.set("tag", tag);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
@@ -942,6 +974,17 @@ async function loadContacts() {
             updatedAt: e.updatedAt || null
         }));
     }
+    } catch (e) {
+        state.contacts = [];
+        $("#contactPager").hidden = true;
+        $("#contactList").innerHTML = `
+            <div class="list-empty">
+                <span class="list-empty-title">加载失败</span>
+                <span class="list-empty-hint">${escapeHtml(e.message || "请求出错")}，请点击「刷新」重试。</span>
+            </div>`;
+        $("#contactCountInfo").textContent = "";
+        throw e;
+    }
 
     const sortBy = $("#expertSortBy")?.value || "";
     if ((operatorStatus || needsAttention) && sortBy === "updatedAt") {
@@ -952,9 +995,20 @@ async function loadContacts() {
         });
     }
     state.contacts = contacts;
+    state.contactsTotalHits = totalHits;
 
     $("#contactCountInfo").textContent =
         `筛选结果: ${totalHits} 位专家，当前显示 ${contacts.length} 位`;
+    renderContactPager(size);
+
+    if (contacts.length === 0) {
+        $("#contactList").innerHTML = `
+            <div class="list-empty">
+                <span class="list-empty-title">没有符合条件的专家</span>
+                <span class="list-empty-hint">试试切换漏斗层级或清除筛选条件。</span>
+            </div>`;
+        return;
+    }
 
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.operatorStatus
@@ -962,21 +1016,21 @@ async function loadContacts() {
             : contact.contactId
                 ? labelStatus(contact.contactStatus)
                 : "未联系";
-        const statusType = contact.operatorStatus === "MANUAL_HANDOFF" || contact.contactStatus === "MANUAL_HANDOFF"
-            ? "warn"
-            : contact.contactId
-                ? "ok"
-                    : "";
+        const statusType = contactBadgeType(contact);
         const needsAttentionClass = contact.needsManualAttention ? "needs-attention" : "";
         const tagsHtml = (contact.tags || []).map(tag =>
-            `<span class="expert-tag" style="background:${expertTagColors[tag] || '#6b7280'}20; color:${expertTagColors[tag] || '#6b7280'}; border: 1px solid ${expertTagColors[tag] || '#6b7280'}40;">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
+            `<span class="expert-tag tag-${escapeHtml(tag)}">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
         ).join("");
+        const hoverInfo = [
+            contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
+            contact.keyword || ""
+        ].filter(Boolean).join("\n");
         return `
-        <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}">
+        <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}" ${hoverInfo ? `title="${escapeHtml(hoverInfo)}"` : ""}>
             <label class="expert-checkbox" onclick="event.stopPropagation()">
                 <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${!contact.contactId ? 'disabled' : ''}>
             </label>
-            <div class="expert-content-wrapper" style="flex: 1; min-width: 0;">
+            <div class="expert-content-wrapper">
                 <div class="expert-row-main">
                     <div class="expert-name-block">
                         <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
@@ -988,16 +1042,27 @@ async function loadContacts() {
                     </div>
                     ${badge(status, statusType)}
                 </div>
+                ${contact.employment || tagsHtml ? `
                 <div class="expert-row-sub">
-                    <span>ORCID: ${escapeHtml(contact.orcidId || "-")}</span>
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
-                    ${contact.keyword ? `<span>${escapeHtml(contact.keyword)}</span>` : ""}
-                </div>
-                ${tagsHtml ? `<div class="expert-row-tags" style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">${tagsHtml}</div>` : ""}
+                    ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
+                </div>` : ""}
             </div>
         </div>
     `;
     }).join("");
+}
+
+function contactBadgeType(contact) {
+    const op = contact.operatorStatus;
+    const cs = contact.contactStatus;
+    if (op === "MANUAL_HANDOFF" || cs === "MANUAL_HANDOFF") return "warn";
+    if (op === "COMPLETED") return "ok";
+    if (op === "INVITED" || op === "MATERIALS_RECEIVED"
+        || cs === "MEETING_INVITATION_SENT" || cs === "WAITING_MEETING_CONFIRMATION") return "primary";
+    if (op === "REPLIED" || cs === "QA_AUTO_REPLIED") return "info";
+    if (contact.contactId) return "ok";
+    return "";
 }
 
 async function handleCheckReplies() {
@@ -3172,7 +3237,9 @@ function bindEvents() {
         const button = event.target.closest("button[data-action]");
         if (button) handleQaAction(button).catch((error) => showStatus(error.message, "error"));
     });
-    $("#loadContactsBtn").addEventListener("click", loadContacts);
+    $("#loadContactsBtn").addEventListener("click", () => {
+        loadContacts().catch((e) => showStatus(e.message, "error"));
+    });
     $("#contactList").addEventListener("click", (event) => {
         const item = event.target.closest("[data-action]");
         if (item) handleContactAction(item).catch((error) => showStatus(error.message, "error"));
@@ -3285,12 +3352,47 @@ function bindEvents() {
         state.unmatchedPageOffset = 0;
         loadUnmatched().catch((e) => showStatus(e.message, "error"));
     });
-    $("#expertIndexLevel").addEventListener("change", loadContacts);
-    $("#expertIndexSize").addEventListener("change", loadContacts);
-    $("#contactNeedsAttentionFilter").addEventListener("change", loadContacts);
-    $("#contactStatusFilter").addEventListener("change", loadContacts);
-    $("#expertTagFilter").addEventListener("change", loadContacts);
-    $("#expertSortBy").addEventListener("change", loadContacts);
+    const reloadContactsFromStart = () => {
+        state.contactsPage = 0;
+        loadContacts().catch((e) => showStatus(e.message, "error"));
+    };
+    ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter",
+        "contactStatusFilter", "expertTagFilter", "expertSortBy"].forEach((id) => {
+        $(`#${id}`).addEventListener("change", reloadContactsFromStart);
+    });
+    $("#contactPrevPage").addEventListener("click", () => {
+        if (state.contactsPage > 0) {
+            state.contactsPage -= 1;
+            loadContacts().catch((e) => showStatus(e.message, "error"));
+        }
+    });
+    $("#contactNextPage").addEventListener("click", () => {
+        state.contactsPage += 1;
+        loadContacts().catch((e) => showStatus(e.message, "error"));
+    });
+
+    // 后台任务下拉菜单
+    const taskMenuToggle = $("#taskMenuToggle");
+    const taskMenu = $("#taskMenu");
+    if (taskMenuToggle && taskMenu) {
+        taskMenuToggle.addEventListener("click", (event) => {
+            event.stopPropagation();
+            taskMenu.hidden = !taskMenu.hidden;
+            taskMenuToggle.setAttribute("aria-expanded", String(!taskMenu.hidden));
+        });
+        document.addEventListener("click", (event) => {
+            if (!taskMenu.hidden && !event.target.closest("#taskMenuDropdown")) {
+                taskMenu.hidden = true;
+                taskMenuToggle.setAttribute("aria-expanded", "false");
+            }
+        });
+        taskMenu.addEventListener("click", (event) => {
+            if (event.target.closest(".dropdown-item")) {
+                taskMenu.hidden = true;
+                taskMenuToggle.setAttribute("aria-expanded", "false");
+            }
+        });
+    }
 
     $("#unmatchedTable").addEventListener("click", (event) => {
         const button = event.target.closest("[data-action]");
@@ -3544,6 +3646,9 @@ function initLayoutResizer() {
     function resetToDefault() {
         setListWidth(260);
     }
+
+    // Double-click resizer to reset
+    resizer.addEventListener("dblclick", resetToDefault);
 
     // Event listeners for dragging
     resizer.addEventListener("mousedown", (e) => {
