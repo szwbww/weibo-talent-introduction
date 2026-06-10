@@ -882,13 +882,18 @@ function renderContactListSkeleton() {
 function renderContactPager(size) {
     const pager = $("#contactPager");
     const totalHits = state.contactsTotalHits;
-    const totalPages = Math.max(1, Math.ceil(totalHits / size));
+    let totalPages = Math.max(1, Math.ceil(totalHits / size));
+    // ES max_result_window 限制: from+size 不能超过 10000，深分页页码截断
+    const maxPages = Math.floor(10000 / size);
+    const capped = totalPages > maxPages;
+    if (capped) totalPages = maxPages;
     if (totalHits <= size) {
         pager.hidden = true;
         return;
     }
     pager.hidden = false;
-    $("#contactPageInfo").textContent = `第 ${state.contactsPage + 1} / ${totalPages} 页`;
+    $("#contactPageInfo").textContent =
+        `第 ${state.contactsPage + 1} / ${totalPages} 页${capped ? "（仅可翻前 1 万条）" : ""}`;
     $("#contactPrevPage").disabled = state.contactsPage <= 0;
     $("#contactNextPage").disabled = state.contactsPage >= totalPages - 1;
 }

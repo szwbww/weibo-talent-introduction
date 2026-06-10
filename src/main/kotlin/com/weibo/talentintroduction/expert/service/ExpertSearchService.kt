@@ -50,6 +50,9 @@ class ExpertSearchService(
         val requestBody = mapOf(
             "from" to from,
             "size" to size,
+            // ES 默认 track_total_hits=10000，超过 1 万条时 total 固定为 10000（relation=gte）；
+            // 这里需要精确总数用于前端分页
+            "track_total_hits" to true,
             "_source" to sourceFields(),
             "query" to query,
             "sort" to sort
