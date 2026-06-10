@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260610-experts-ui">
+    <link rel="stylesheet" href="styles.css?v=20260610-responsive">
 </head>
 <body>
 <div class="app-shell">
@@ -210,7 +210,12 @@
         <!-- View 4: Expert Contacts funnel & timelines -->
         <section class="view" id="view-contacts">
             <div class="toolbar contacts-toolbar">
-                <div class="toolbar-group toolbar-filters">
+                <button class="button filter-toggle" id="filterToggleBtn" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    筛选
+                    <span class="filter-count-badge" id="filterActiveCount" hidden></span>
+                </button>
+                <div class="toolbar-group toolbar-filters" id="contactsFilterGroup">
                     <label class="toolbar-label">
                         排序:
                         <select id="expertSortBy">
@@ -612,6 +617,6 @@
 </dialog>
 
 <!-- App Core controller -->
-<script src="app.js?v=20260610-experts-ui"></script>
+<script src="app.js?v=20260610-responsive"></script>
 </body>
 </html>

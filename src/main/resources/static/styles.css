@@ -217,8 +217,15 @@ button, input, select, textarea {
     flex-direction: column;
     gap: 20px;
     overflow-y: auto;
+    height: 100vh;
     max-height: 100vh;
     min-width: 0;
+}
+
+/* contacts 视图占满剩余视口，内部面板各自滚动（不再用 100vh 减魔法数估高） */
+#view-contacts.active {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .topbar {
@@ -382,6 +389,33 @@ p {
     cursor: not-allowed;
 }
 
+/* 筛选折叠开关（仅移动端显示，见响应式段落） */
+.filter-toggle {
+    display: none;
+}
+
+.filter-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* 返回列表按钮（仅单列布局显示，见响应式段落） */
+.back-to-list {
+    display: none;
+    align-self: flex-start;
+    margin-bottom: 8px;
+}
+
 /* Buttons */
 .button {
     display: inline-flex;
@@ -481,12 +515,15 @@ p {
 .contacts-layout {
     grid-template-columns: 260px 6px minmax(0, 1fr);
     align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 320px;
 }
 
 /* Resizer Divider */
 .layout-resizer {
     width: 6px;
     cursor: col-resize;
+    touch-action: none;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -780,9 +817,8 @@ textarea {
     overflow-y: auto;
 }
 
-/* 列表面板与右侧详情面板等高，列表区在面板内弹性伸缩 */
+/* 列表面板与右侧详情面板由网格拉伸等高，列表区在面板内弹性伸缩 */
 .contacts-list-panel {
-    height: clamp(400px, calc(100vh - 200px), 760px);
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -1027,7 +1063,6 @@ textarea {
 }
 
 .contact-detail-panel {
-    height: clamp(400px, calc(100vh - 200px), 760px);
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -2295,8 +2330,13 @@ textarea {
 
     .main {
         padding: 16px;
+        height: auto;
         max-height: none;
         overflow-y: visible;
+    }
+
+    .back-to-list {
+        display: inline-flex;
     }
 
     .split-layout,
@@ -2385,11 +2425,6 @@ textarea {
 }
 
 @media (max-height: 760px) {
-    .contact-detail-panel,
-    .contacts-list-panel {
-        height: calc(100vh - 160px);
-    }
-
     .contact-detail-head {
         gap: 6px;
         padding: 10px 14px;
@@ -2417,11 +2452,6 @@ textarea {
 }
 
 @media (max-height: 620px) {
-    .contact-detail-panel,
-    .contacts-list-panel {
-        height: calc(100vh - 120px);
-    }
-
     .contact-detail-head {
         padding: 8px 12px;
     }
@@ -2446,38 +2476,41 @@ textarea {
         align-items: stretch;
         gap: 6px;
     }
-    .contact-head-status-row select,
-    .contact-head-mail-row select,
+    /* id 选择器对齐基础规则特异性，替代原 !important */
+    #operatorStatusSelect,
+    #indexLevelSelect,
+    #autoReplySelect,
+    #manualMailOption,
     .contact-head-status-row .button,
     .contact-head-mail-row .button {
-        width: 100% !important;
-        max-width: none !important;
-        flex: none !important;
+        width: 100%;
+        max-width: none;
+        flex: none;
     }
     .contact-head-label {
-        width: auto !important;
-        min-width: 0 !important;
+        width: auto;
+        min-width: 0;
         margin-bottom: 2px;
     }
 }
 
 @media (max-width: 600px) {
     .meeting-schedule-panel .form-row {
-        flex-direction: column !important;
-        gap: 6px !important;
+        flex-direction: column;
+        gap: 6px;
     }
-    .meeting-schedule-panel .form-group {
-        flex: none !important;
-        width: 100% !important;
+    .meeting-schedule-panel .form-row .form-group {
+        flex: none;
+        width: 100%;
     }
     .meeting-schedule-panel .panel-actions {
-        flex-direction: column !important;
-        align-items: stretch !important;
-        gap: 6px !important;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
     }
     .meeting-schedule-panel .panel-actions .button {
-        width: 100% !important;
-        margin-left: 0 !important;
+        width: 100%;
+        margin-left: 0;
     }
 }
 
@@ -2573,8 +2606,13 @@ textarea {
 .task-modal-log-table-wrapper {
     max-height: 300px;
     overflow-y: auto;
+    overflow-x: auto;
     border: 1px solid var(--panel-border);
     border-radius: var(--radius-sm);
+}
+
+.task-modal-log-table-wrapper table {
+    min-width: 520px;
 }
 
 .task-modal-status {
@@ -2755,4 +2793,249 @@ textarea {
     background: rgba(245, 158, 11, 0.13);
     color: #f59e0b;
     border-color: rgba(245, 158, 11, 0.25);
+}
+
+/* 会议排期面板（原内联样式收敛于此，颜色走主题变量） */
+.meeting-schedule-panel {
+    margin-top: 16px;
+    border: 1px solid var(--warning-border);
+    background: var(--warning-bg);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.meeting-schedule-panel.status-confirmed {
+    border-color: var(--success-border);
+    background: var(--success-bg);
+}
+
+.meeting-schedule-panel.status-none {
+    border: 1px dashed var(--border);
+    background: transparent;
+}
+
+.meeting-schedule-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--warning-border);
+}
+
+.meeting-schedule-panel.status-confirmed .panel-header {
+    border-bottom-color: var(--success-border);
+}
+
+.meeting-schedule-panel.status-none .panel-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    color: var(--text-muted);
+}
+
+.meeting-schedule-panel .header-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--warning);
+}
+
+.meeting-schedule-panel.status-confirmed .header-title {
+    color: var(--success);
+}
+
+.meeting-schedule-panel .header-title h3,
+.meeting-schedule-panel .panel-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.meeting-schedule-panel .empty-state {
+    text-align: center;
+    padding: 16px;
+}
+
+.meeting-schedule-panel .empty-state p {
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    font-size: 13px;
+}
+
+.meeting-schedule-panel .form-group {
+    margin-bottom: 12px;
+}
+
+.meeting-schedule-panel .form-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.meeting-schedule-panel .form-row .form-group {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.meeting-schedule-panel label {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.meeting-schedule-panel .pre-text {
+    background: rgba(0, 0, 0, 0.03);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    color: var(--text-main);
+}
+
+.meeting-schedule-panel input,
+.meeting-schedule-panel select,
+.meeting-schedule-panel textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+    background: var(--bg-main);
+    color: var(--text-main);
+}
+
+.meeting-schedule-panel textarea {
+    resize: vertical;
+}
+
+.meeting-schedule-panel .panel-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    justify-content: flex-end;
+}
+
+/* ============================================================
+   专家联系页 — 移动端响应式（统一维护，新增规则请加在这里）
+   断点约定: 1280(窄桌面) / 1024(单列) / 768(手机横/平板竖) / 600(手机)
+   ============================================================ */
+
+@media (max-width: 768px) {
+    /* 筛选器收进抽屉，默认折叠 */
+    .contacts-toolbar .filter-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .contacts-toolbar .toolbar-filters {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+    }
+
+    .contacts-toolbar .toolbar-filters.open {
+        display: flex;
+    }
+
+    .contacts-toolbar .toolbar-label {
+        justify-content: space-between;
+        font-size: 13px;
+    }
+
+    .contacts-toolbar .toolbar-label select {
+        flex: 1;
+        max-width: 65%;
+    }
+
+    /* 动作组允许换行铺满，不再横向溢出 */
+    .contacts-toolbar .toolbar-actions {
+        width: 100%;
+        margin-left: 0;
+        flex-wrap: wrap;
+    }
+
+    .contacts-toolbar .toolbar-actions .button,
+    .contacts-toolbar .toolbar-actions .dropdown {
+        flex: 1 1 auto;
+    }
+
+    .contacts-toolbar .toolbar-actions .dropdown .button {
+        width: 100%;
+    }
+
+    /* 触达区放大 */
+    .toolbar .button,
+    .list-pager .button {
+        min-height: 40px;
+    }
+
+    .list-pager .button {
+        flex: 1;
+        max-width: 160px;
+    }
+
+    .dropdown-item {
+        padding: 12px 10px;
+        font-size: 13px;
+    }
+
+    .expert-checkbox {
+        padding: 6px 10px 6px 2px;
+    }
+
+    .expert-select-cb {
+        width: 18px;
+        height: 18px;
+    }
+
+    /* 可读性：列表字号上调 */
+    .expert-title {
+        font-size: 14px;
+    }
+
+    .list-item-meta,
+    .expert-row-sub {
+        font-size: 12px;
+    }
+
+    .contact-count-info {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 600px) {
+    /* 弹窗近全屏 */
+    .modal-overlay {
+        padding: 8px;
+    }
+
+    .modal-content,
+    .modal-content.task-modal {
+        max-width: none;
+        max-height: calc(100vh - 16px);
+    }
+
+    .modal-header {
+        padding: 12px 14px;
+    }
+
+    .modal-body {
+        padding: 14px;
+        gap: 12px;
+    }
+
+    /* iOS 聚焦防自动放大: 表单控件 >=16px */
+    .toolbar select,
+    .toolbar input,
+    .task-modal-input-field {
+        font-size: 16px;
+    }
 }

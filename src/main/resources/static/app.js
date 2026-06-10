@@ -1513,6 +1513,18 @@ function renderKeywords(keywordString) {
     </div>`;
 }
 
+function backToListBtnHtml() {
+    return `
+        <button class="button small back-to-list" onclick="scrollBackToContactsList()">
+            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            返回列表
+        </button>`;
+}
+
+function scrollBackToContactsList() {
+    document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
@@ -1522,6 +1534,7 @@ function showExpertDetail(expert) {
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
+        ${backToListBtnHtml()}
         <div class="detail">
             <div class="expert-profile-header">
                 <div class="expert-avatar">${escapeHtml(initial)}</div>
@@ -1674,13 +1687,15 @@ function renderMeetingSchedule(detail) {
         const isSchedulingState = detail.contact.currentStatus === "MEETING_SCHEDULING" || detail.contact.currentStatus === "INTEREST_CONFIRMED" || detail.contact.currentStatus === "WAITING_REPLY";
         if (!isSchedulingState) return "";
         return `
-            <div class="meeting-schedule-panel card span-all" style="margin-top: 16px; border: 1px dashed #d1d5db; border-radius: 8px; padding: 16px;">
-                <div class="panel-header" style="display: flex; align-items: center; gap: 6px; color: #4b5563; margin-bottom: 12px;">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="panel-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <h3 style="margin: 0; font-size: 14px; font-weight: 600;">会议日程安排</h3>
+            <div class="meeting-schedule-panel card span-all status-none">
+                <div class="panel-header">
+                    <div class="header-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="panel-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <h3>会议日程安排</h3>
+                    </div>
                 </div>
-                <div class="panel-body empty-state" style="text-align: center; padding: 16px;">
-                    <p style="color: #6b7280; margin-bottom: 12px; font-size: 13px;">目前没有活动的会议安排。</p>
+                <div class="panel-body empty-state">
+                    <p>目前没有活动的会议安排。</p>
                     <button class="button primary" data-action="initiate-meeting-schedule" data-id="${contactId}">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                         发起会议排期
@@ -1695,31 +1710,31 @@ function renderMeetingSchedule(detail) {
     const statusText = isPending ? "安排中" : "已确认";
 
     return `
-        <div class="meeting-schedule-panel card span-all ${statusClass}" style="margin-top: 16px; border: 1px solid ${isPending ? '#fde68a' : '#a7f3d0'}; background: ${isPending ? '#fffbef' : '#f0fdf4'}; border-radius: 8px; padding: 16px;">
-            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed ${isPending ? '#fcd34d' : '#6ee7b7'};">
-                <div class="header-title" style="display: flex; align-items: center; gap: 6px; color: ${isPending ? '#92400e' : '#065f46'};">
+        <div class="meeting-schedule-panel card span-all ${statusClass}">
+            <div class="panel-header">
+                <div class="header-title">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="panel-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <h3 style="margin: 0; font-size: 14px; font-weight: 600;">会议日程排期</h3>
+                    <h3>会议日程排期</h3>
                 </div>
                 <span class="badge ${isPending ? 'warn' : 'ok'}">${statusText}</span>
             </div>
             <div class="panel-body">
                 ${activeSchedule.expertAvailableText ? `
-                    <div class="form-group readonly" style="margin-bottom: 12px;">
-                        <label style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">专家可沟通时间 (邮件提取)</label>
-                        <div class="pre-text" style="background: rgba(0,0,0,0.03); padding: 8px; border-radius: 4px; font-size: 13px; font-family: monospace; white-space: pre-wrap; color: #1f2937;">${escapeHtml(activeSchedule.expertAvailableText)}</div>
+                    <div class="form-group readonly">
+                        <label>专家可沟通时间 (邮件提取)</label>
+                        <div class="pre-text">${escapeHtml(activeSchedule.expertAvailableText)}</div>
                     </div>
                 ` : ""}
 
                 <form id="meetingScheduleForm" data-schedule-id="${activeSchedule.id}" data-contact-id="${contactId}">
-                    <div class="form-row" style="display: flex; gap: 12px; margin-bottom: 12px;">
-                        <div class="form-group flex-1" style="flex: 1;">
-                            <label for="chinaTime" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">中国时间 (China Time)</label>
-                            <input type="text" id="chinaTime" name="chinaTime" value="${escapeHtml(activeSchedule.chinaTime || '')}" placeholder="例如: 2026-06-01 10:00 AM" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;" ${!isPending ? 'disabled' : ''} required>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="chinaTime">中国时间 (China Time)</label>
+                            <input type="text" id="chinaTime" name="chinaTime" value="${escapeHtml(activeSchedule.chinaTime || '')}" placeholder="例如: 2026-06-01 10:00 AM" ${!isPending ? 'disabled' : ''} required>
                         </div>
-                        <div class="form-group flex-1" style="flex: 1;">
-                            <label for="meetingTool" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">会议工具</label>
-                            <select id="meetingTool" name="meetingTool" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; background: white;" ${!isPending ? 'disabled' : ''} required>
+                        <div class="form-group flex-1">
+                            <label for="meetingTool">会议工具</label>
+                            <select id="meetingTool" name="meetingTool" ${!isPending ? 'disabled' : ''} required>
                                 <option value="Zoom" ${activeSchedule.meetingTool === 'Zoom' ? 'selected' : ''}>Zoom</option>
                                 <option value="Teams" ${activeSchedule.meetingTool === 'Teams' ? 'selected' : ''}>Teams</option>
                                 <option value="Webex" ${activeSchedule.meetingTool === 'Webex' ? 'selected' : ''}>Webex</option>
@@ -1728,16 +1743,16 @@ function renderMeetingSchedule(detail) {
                             </select>
                         </div>
                     </div>
-                    <div class="form-group" style="margin-bottom: 12px;">
-                        <label for="meetingLink" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">会议链接 (Meeting Link)</label>
-                        <input type="url" id="meetingLink" name="meetingLink" value="${escapeHtml(activeSchedule.meetingLink || '')}" placeholder="https://..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;" ${!isPending ? 'disabled' : ''} required>
+                    <div class="form-group">
+                        <label for="meetingLink">会议链接 (Meeting Link)</label>
+                        <input type="url" id="meetingLink" name="meetingLink" value="${escapeHtml(activeSchedule.meetingLink || '')}" placeholder="https://..." ${!isPending ? 'disabled' : ''} required>
                     </div>
-                    <div class="form-group" style="margin-bottom: 12px;">
-                        <label for="note" style="font-weight: 600; font-size: 12px; color: #4b5563; display: block; margin-bottom: 4px;">备注</label>
-                        <textarea id="note" name="note" rows="2" placeholder="输入会议注意事项..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; resize: vertical;" ${!isPending ? 'disabled' : ''}>${escapeHtml(activeSchedule.note || '')}</textarea>
+                    <div class="form-group">
+                        <label for="note">备注</label>
+                        <textarea id="note" name="note" rows="2" placeholder="输入会议注意事项..." ${!isPending ? 'disabled' : ''}>${escapeHtml(activeSchedule.note || '')}</textarea>
                     </div>
 
-                    <div class="panel-actions" style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
+                    <div class="panel-actions">
                         ${isPending ? `
                             <button type="button" class="button" data-action="save-meeting-schedule" data-id="${activeSchedule.id}" data-contact-id="${contactId}">仅保存更新</button>
                             <button type="submit" class="button primary" data-action="confirm-meeting-schedule" data-id="${activeSchedule.id}">
@@ -1863,6 +1878,7 @@ async function loadContactDetail(contactId) {
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
+        ${backToListBtnHtml()}
         ${banner}
         <div class="detail">
             <div class="expert-profile-header">
@@ -3357,13 +3373,33 @@ function bindEvents() {
         state.unmatchedPageOffset = 0;
         loadUnmatched().catch((e) => showStatus(e.message, "error"));
     });
+    const updateFilterBadge = () => {
+        const active = [
+            $("#expertSortBy").value !== "",
+            $("#expertIndexLevel").value !== "CANDIDATE",
+            $("#expertIndexSize").value !== "50",
+            $("#contactStatusFilter").value !== "",
+            $("#contactNeedsAttentionFilter").value !== "",
+            $("#expertTagFilter").value !== ""
+        ].filter(Boolean).length;
+        const countEl = $("#filterActiveCount");
+        countEl.hidden = active === 0;
+        countEl.textContent = active;
+    };
     const reloadContactsFromStart = () => {
         state.contactsPage = 0;
+        updateFilterBadge();
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
+    });
+    updateFilterBadge();
+    $("#filterToggleBtn").addEventListener("click", () => {
+        const group = $("#contactsFilterGroup");
+        const open = group.classList.toggle("open");
+        $("#filterToggleBtn").setAttribute("aria-expanded", String(open));
     });
     $("#contactPrevPage").addEventListener("click", () => {
         if (state.contactsPage > 0) {
@@ -3655,31 +3691,35 @@ function initLayoutResizer() {
     // Double-click resizer to reset
     resizer.addEventListener("dblclick", resetToDefault);
 
-    // Event listeners for dragging
-    resizer.addEventListener("mousedown", (e) => {
+    // Pointer events: 同时支持鼠标和触屏拖拽
+    resizer.addEventListener("pointerdown", (e) => {
         isDragging = true;
+        resizer.setPointerCapture(e.pointerId);
         resizer.classList.add("dragging");
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
     });
 
-    document.addEventListener("mousemove", (e) => {
+    resizer.addEventListener("pointermove", (e) => {
         if (!isDragging) return;
-        
-        // Calculate X coordinate relative to container
         const containerRect = container.getBoundingClientRect();
         const newWidth = e.clientX - containerRect.left;
         setListWidth(newWidth);
     });
 
-    document.addEventListener("mouseup", () => {
+    const endDrag = (e) => {
         if (isDragging) {
             isDragging = false;
+            if (resizer.hasPointerCapture?.(e.pointerId)) {
+                resizer.releasePointerCapture(e.pointerId);
+            }
             resizer.classList.remove("dragging");
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
         }
-    });
+    };
+    resizer.addEventListener("pointerup", endDrag);
+    resizer.addEventListener("pointercancel", endDrag);
 
     // Preset buttons
     document.getElementById("btnLayoutDefault")?.addEventListener("click", resetToDefault);
