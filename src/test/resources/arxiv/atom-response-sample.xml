@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">2</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001</id>
+    <title>Deep Learning Approaches for Climate Prediction</title>
+    <published>2024-01-15T10:00:00Z</published>
+    <author>
+      <name>John Smith</name>
+    </author>
+    <author>
+      <name>Alice Jones</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002</id>
+    <title>Advances in Quantum Computing</title>
+    <published>2024-01-16T10:00:00Z</published>
+    <author>
+      <name>Bob Wilson</name>
+    </author>
+  </entry>
+</feed>

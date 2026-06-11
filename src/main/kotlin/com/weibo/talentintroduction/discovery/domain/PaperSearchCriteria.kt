@@ -8,5 +8,6 @@ data class PaperSearchCriteria(
     val publicationYearTo: Int = 2026,
     val openAccessOnly: Boolean = true,
     val pageSize: Int = 100,
-    val cursor: String? = null
+    val cursor: String? = null,
+    val sources: List<String> = emptyList()
 )

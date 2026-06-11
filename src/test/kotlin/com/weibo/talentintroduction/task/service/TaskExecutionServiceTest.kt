@@ -297,6 +297,48 @@ class TaskExecutionServiceTest {
         assertEquals(5, result.passed)
     }
 
+    @Test
+    fun `records DiscoveryResult with summaryText and bySource in resultSummary`() {
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+
+        val stats = com.weibo.talentintroduction.discovery.domain.DiscoveryStats()
+        val sourceStats = stats.getOrCreateSourceStats("EUROPE_PMC", "FULLTEXT_XML")
+        sourceStats.papersSearched = 5
+        sourceStats.indexed = 3
+        sourceStats.promoted = 2
+        stats.refreshGlobalCounts()
+
+        val discoveryResult = com.weibo.talentintroduction.discovery.domain.DiscoveryResult(
+            triggeredBy = "MANUAL",
+            stats = stats,
+            summaryText = "完成: 论文 5, 收录 3, 晋升 2"
+        )
+
+        val recorded = service.runAndRecord(
+            taskType = "EXPERT_DISCOVERY",
+            triggerType = "MANUAL",
+            request = com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria()
+        ) {
+            discoveryResult
+        }
+
+        assertEquals("SUCCESS", recorded.status)
+        assertNotNull(recorded.resultSummary)
+        val summary = ObjectMapper().readTree(recorded.resultSummary)
+        assertTrue(summary.has("summaryText"))
+        assertEquals("完成: 论文 5, 收录 3, 晋升 2", summary.get("summaryText").asText())
+        assertTrue(summary.has("stats"))
+        assertTrue(summary.get("stats").has("bySource"))
+        val bySource = summary.get("stats").get("bySource")
+        assertTrue(bySource.has("EUROPE_PMC"))
+        assertEquals(5, bySource.get("EUROPE_PMC").get("papersSearched").asInt())
+        assertEquals(3, bySource.get("EUROPE_PMC").get("indexed").asInt())
+    }
+
     private fun execution(status: String): TaskExecution =
         TaskExecution(
             id = 1L,

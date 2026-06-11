@@ -7,6 +7,7 @@ import org.hamcrest.CoreMatchers.containsString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
@@ -175,11 +176,7 @@ class EuropePmcDataSourceTest {
         ).thenThrow(RuntimeException("API unavailable"))
 
         val criteria = PaperSearchCriteria(keywords = listOf("test"))
-        val result = dataSource.searchPapers(criteria)
-
-        assertEquals(0, result.papers.size)
-        assertNull(result.nextCursor)
-        assertEquals(0L, result.totalResults)
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(criteria) }
     }
 
     @Test
@@ -215,11 +212,7 @@ class EuropePmcDataSourceTest {
         ).thenThrow(org.springframework.web.client.ResourceAccessException("Connection timed out"))
 
         val criteria = PaperSearchCriteria(keywords = listOf("test"))
-        val result = dataSource.searchPapers(criteria)
-
-        assertEquals(0, result.papers.size)
-        assertNull(result.nextCursor)
-        assertEquals(0L, result.totalResults)
+        org.junit.jupiter.api.Assertions.assertThrows(java.lang.Exception::class.java) { dataSource.searchPapers(criteria) }
     }
 
     @Test

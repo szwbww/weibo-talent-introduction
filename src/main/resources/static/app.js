@@ -276,7 +276,7 @@ function openTaskModal(taskType, label, btnId) {
             console.error("#taskProgressModal not found!");
             return;
         }
-        
+
         const titleEl = $("#taskModalTitle");
         const statusEl = $("#taskModalStatus");
         const percentEl = $("#taskModalPercent");
@@ -289,7 +289,7 @@ function openTaskModal(taskType, label, btnId) {
         // Hide config section, show progress section
         const configSection = $("#taskModalConfigSection");
         if (configSection) configSection.hidden = true;
-        
+
         const progressSection = $("#taskModalProgressSection");
         if (progressSection) progressSection.hidden = false;
 
@@ -416,6 +416,16 @@ function updateTaskModalFromProgress(progress) {
         errorContent.textContent = progress.errors.join("\n");
     }
 
+    if (progress.details && progress.details.bySource) {
+        const bySourceDiv = $("#taskModalBySource");
+        const contentDiv = $("#taskModalBySourceContent");
+        bySourceDiv.hidden = false;
+        renderBySourceTable(progress.details.bySource, contentDiv);
+        if (progress.details.summaryText) {
+            contentDiv.innerHTML += `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">${escapeHtml(progress.details.summaryText)}</div>`;
+        }
+    }
+
     if (progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
         cancelBtn.disabled = true;
         cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
@@ -451,7 +461,7 @@ function updateTaskModalLogs(logs) {
         return;
     }
     logBody.innerHTML = logs.map(log => {
-        const time = log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : "";
+        const time = log.createdAt ? formatDateTime(log.createdAt) : "";
         const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
         return `
             <tr>
@@ -464,6 +474,47 @@ function updateTaskModalLogs(logs) {
             </tr>
         `;
     }).join("");
+}
+
+function renderBySourceTable(bySource, container) {
+    if (!bySource || Object.keys(bySource).length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+    const rows = Object.entries(bySource).map(([name, stats]) => {
+        const failures = stats.failureReasons ? Object.entries(stats.failureReasons)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([reason, count]) => `${reason}:${count}`)
+            .join(", ") : "-";
+        return `
+            <tr>
+                <td style="padding:3px 8px;">${escapeHtml(name)}</td>
+                <td style="padding:3px 8px;">${escapeHtml(stats.extractionMethod || "-")}</td>
+                <td style="padding:3px 8px;">${stats.papersSearched || 0}</td>
+                <td style="padding:3px 8px;">${stats.authorsExtracted || 0}</td>
+                <td style="padding:3px 8px;">${stats.emailsValid || 0}</td>
+                <td style="padding:3px 8px;">${stats.indexed || 0}</td>
+                <td style="padding:3px 8px;">${stats.promoted || 0}</td>
+                <td style="padding:3px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(failures)}</td>
+            </tr>
+        `;
+    }).join("");
+    container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="background:var(--panel-bg);border-bottom:1px solid var(--panel-border);">
+                <th style="padding:4px 8px;text-align:left;">平台</th>
+                <th style="padding:4px 8px;text-align:left;">方式</th>
+                <th style="padding:4px 8px;text-align:left;">论文</th>
+                <th style="padding:4px 8px;text-align:left;">邮箱</th>
+                <th style="padding:4px 8px;text-align:left;">有效</th>
+                <th style="padding:4px 8px;text-align:left;">收录</th>
+                <th style="padding:4px 8px;text-align:left;">晋升</th>
+                <th style="padding:4px 8px;text-align:left;">失败原因</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -1174,6 +1225,15 @@ function openTaskLaunchModal(taskType) {
     if (config.showKeyword) $("#taskLaunchKeywordInput").value = "";
     if (config.showMaxPromotions) $("#taskLaunchMaxPromotions").value = "1000";
 
+    const sourcesRow = $("#taskLaunchSourcesRow");
+    if (taskType === "EXPERT_DISCOVERY") {
+        sourcesRow.hidden = false;
+        fetchSources().catch(() => {});
+    } else {
+        sourcesRow.hidden = true;
+    }
+    $("#taskModalBySource").hidden = true;
+
     const runBtn = $("#taskLaunchRunBtn");
     runBtn.onclick = () => {
         // Toggle view to progress immediately, then run the task
@@ -1290,6 +1350,30 @@ async function handleDiscover() {
     openTaskLaunchModal(taskType);
 }
 
+async function fetchSources() {
+    try {
+        const sources = await api(`/api/expert-discovery/sources`);
+        const container = $("#taskLaunchSources");
+        container.innerHTML = sources.map(s => `
+            <label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" value="${escapeHtml(s.sourceName)}"
+                    ${s.enabled ? "checked" : "disabled"}
+                    class="source-cb">
+                ${escapeHtml(s.sourceName)}
+                <span class="text-muted" style="font-size:10px;">(${escapeHtml(s.extractionMethod)})</span>
+            </label>
+        `).join("");
+    } catch (e) {
+        console.error("Failed to fetch sources:", e);
+    }
+}
+
+function getSelectedSources() {
+    const cbs = $$(".source-cb:checked:not([disabled])");
+    if (cbs.length === 0) return [];
+    return cbs.map(cb => cb.value);
+}
+
 async function executeDiscover() {
     const taskType = "EXPERT_DISCOVERY";
     const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
@@ -1300,13 +1384,16 @@ async function executeDiscover() {
     }
     openTaskModal(taskType, "发现专家", "discoverBtn");
     try {
+        const selectedSources = getSelectedSources();
         let result;
         if (keywords) {
             const params = new URLSearchParams();
             keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
+            if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
             result = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
         } else {
-            result = await api("/api/expert-discovery/run", { method: "POST" });
+            const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
+            result = await api("/api/expert-discovery/run", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
         }
         const summary = result.resultSummary ? JSON.parse(result.resultSummary) : result;
         const stats = summary.stats || summary || {};
@@ -1650,7 +1737,7 @@ function renderMailItem(mail) {
 
     // Choose appropriate SVG icon
     const isOutbound = mail.direction === "OUTBOUND";
-    const mailIcon = isOutbound 
+    const mailIcon = isOutbound
         ? `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`
         : `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`;
 
@@ -1918,7 +2005,7 @@ async function loadContactDetail(contactId) {
                         ${escapeHtml(detail.recommendedNextAction || "请人工确认下一步动作。")}
                     </div>
                 </div>
-                
+
                 <!-- Manual Review Card -->
                 <div class="metadata-card">
                     <div class="metadata-card-header">
@@ -2443,6 +2530,29 @@ function updateSaveButtonState() {
     });
 }
 
+function normalizeDiscoveryResultSummary(resultSummary) {
+    if (!resultSummary) return null;
+    var summary;
+    try {
+        summary = typeof resultSummary === "string"
+            ? JSON.parse(resultSummary)
+            : resultSummary;
+    } catch (e) {
+        return null;
+    }
+    if (!summary) return null;
+    if (!summary.stats) return summary;
+    return {
+        ...summary.stats,
+        summaryText: summary.summaryText ?? summary.stats.summaryText
+    };
+}
+
+function renderDiscoverySummaryText(summaryText) {
+    if (!summaryText) return "";
+    return `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">${escapeHtml(summaryText)}</div>`;
+}
+
 async function loadTasks() {
     const params = new URLSearchParams();
     const taskType = $("#taskTypeFilter").value;
@@ -2452,7 +2562,7 @@ async function loadTasks() {
     const suffix = params.toString() ? `?${params}` : "";
     const tasks = await api(`/api/task-executions${suffix}`);
     $("#tasksTable").innerHTML = tasks.map((task) => `
-        <tr>
+        <tr class="task-row" data-task-id="${task.id}" data-task-type="${escapeHtml(task.taskType)}" onclick="toggleTaskDetail(this)" style="cursor:pointer;">
             <td>${task.id}</td>
             <td>${escapeHtml(task.taskType)}</td>
             <td>${escapeHtml(task.triggerType)}</td>
@@ -2462,6 +2572,42 @@ async function loadTasks() {
             <td>${escapeHtml(task.errorMessage || "")}</td>
         </tr>
     `).join("");
+}
+
+async function toggleTaskDetail(row) {
+    const existingDetail = row.nextElementSibling;
+    if (existingDetail?.classList.contains("task-detail-row")) {
+        existingDetail.remove();
+        return;
+    }
+    const taskId = row.dataset.taskId;
+    const taskType = row.dataset.taskType;
+    let data;
+    if (taskType === "EXPERT_DISCOVERY") {
+        try {
+            const task = await api(`/api/task-executions/${taskId}`);
+            if (task && task.resultSummary) {
+                data = normalizeDiscoveryResultSummary(task.resultSummary);
+            }
+        } catch (e) { data = null; }
+    } else {
+        try {
+            data = await api(`/api/task-executions/recent-polls/${taskId}/detail`);
+        } catch (e) { data = null; }
+    }
+    let bySourceHtml = "";
+    if (data && data.bySource) {
+        const container = document.createElement("div");
+        renderBySourceTable(data.bySource, container);
+        bySourceHtml = container.innerHTML;
+    }
+    if (data && data.summaryText) {
+        bySourceHtml += renderDiscoverySummaryText(data.summaryText);
+    }
+    const detailRow = document.createElement("tr");
+    detailRow.className = "task-detail-row";
+    detailRow.innerHTML = `<td colspan="7" style="padding:12px 16px;background:var(--surface);">${bySourceHtml || '<div class="text-muted">暂无明细</div>'}</td>`;
+    row.after(detailRow);
 }
 
 const REASON_TYPE_LABELS = {
@@ -3662,7 +3808,7 @@ function initLayoutResizer() {
     const container = document.querySelector(".contacts-layout");
     const listPanel = document.querySelector(".contacts-list-panel");
 
-    
+
     if (!resizer || !container || !listPanel) return;
 
     let isDragging = false;
@@ -3674,11 +3820,11 @@ function initLayoutResizer() {
         // Ensure within reasonable boundaries: min 200px, max 60% window width
         const maxWidth = Math.min(800, window.innerWidth * 0.6);
         const targetWidth = Math.max(200, Math.min(maxWidth, width));
-        
+
         container.style.gridTemplateColumns = `${targetWidth}px 6px minmax(0, 1fr)`;
         listPanel.style.display = "";
         resizer.style.display = "";
-        
+
         if (updateStorage) {
             localStorage.setItem("contacts-list-width", targetWidth);
         }

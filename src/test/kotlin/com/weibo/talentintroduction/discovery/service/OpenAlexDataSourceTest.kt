@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -13,6 +14,8 @@ import org.springframework.web.client.RestTemplate
 
 class OpenAlexDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
+    private val europePmc = Mockito.mock(EuropePmcDataSource::class.java)
+    private val pdfExtractor = Mockito.mock(PdfEmailExtractor::class.java)
     private val properties = OpenAlexProperties(
         enabled = true,
         politeEmail = "",
@@ -20,7 +23,7 @@ class OpenAlexDataSourceTest {
         requestDelayMs = 0
     )
     private val mapper = ObjectMapper()
-    private val dataSource = OpenAlexDataSource(restTemplate, properties)
+    private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor)
 
     @Test
     fun `searchPapers parses OpenAlex works response`() {
@@ -108,9 +111,6 @@ class OpenAlexDataSourceTest {
             restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(RuntimeException("API unavailable"))
 
-        val result = dataSource.searchPapers(PaperSearchCriteria())
-        assertEquals(0, result.papers.size)
-        assertNull(result.nextCursor)
-        assertEquals(0L, result.totalResults)
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
     }
 }

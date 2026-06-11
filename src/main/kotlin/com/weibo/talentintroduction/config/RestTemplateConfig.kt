@@ -19,7 +19,14 @@ import java.time.Duration
     AcademicFilterProperties::class,
     EuropePmcProperties::class,
     ExpertDiscoveryProperties::class,
-    OpenAlexProperties::class
+    OpenAlexProperties::class,
+    CrossrefProperties::class,
+    ArxivProperties::class,
+    UnpaywallProperties::class,
+    PdfExtractionProperties::class,
+    PmcOaProperties::class,
+    OrcidProperties::class,
+    CoreProperties::class
 )
 class RestTemplateConfig {
 
@@ -35,5 +42,16 @@ class RestTemplateConfig {
         builder
             .setConnectTimeout(Duration.ofMillis(europePmcProperties.connectTimeoutMs.toLong()))
             .setReadTimeout(Duration.ofMillis(europePmcProperties.readTimeoutMs.toLong()))
+            .build()
+
+    @Bean
+    @Qualifier("pdfDownloadRestTemplate")
+    fun pdfDownloadRestTemplate(
+        pdfExtractionProperties: PdfExtractionProperties,
+        builder: RestTemplateBuilder
+    ): RestTemplate =
+        builder
+            .setConnectTimeout(Duration.ofMillis(10_000L))
+            .setReadTimeout(Duration.ofMillis(pdfExtractionProperties.downloadTimeoutMs))
             .build()
 }

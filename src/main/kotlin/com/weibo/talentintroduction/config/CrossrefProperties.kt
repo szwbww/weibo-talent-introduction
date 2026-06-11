@@ -4,11 +4,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
 
 @ConstructorBinding
-@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.openalex")
-data class OpenAlexProperties(
+@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.crossref")
+data class CrossrefProperties(
     val enabled: Boolean = false,
+    val baseUrl: String = "https://api.crossref.org",
     val politeEmail: String = "",
-    val baseUrl: String = "https://api.openalex.org",
-    val requestDelayMs: Long = 100,
-    val maxPapersPerSource: Int = 500
+    val requestDelayMs: Long = 200,
+    val maxPapersPerSource: Int = 300
 )

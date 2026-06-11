@@ -4,11 +4,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
 
 @ConstructorBinding
-@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.openalex")
-data class OpenAlexProperties(
+@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.orcid")
+data class OrcidProperties(
     val enabled: Boolean = false,
-    val politeEmail: String = "",
-    val baseUrl: String = "https://api.openalex.org",
+    val baseUrl: String = "https://pub.orcid.org/v3.0",
     val requestDelayMs: Long = 100,
-    val maxPapersPerSource: Int = 500
+    val maxRecordsPerRun: Int = 1000
 )

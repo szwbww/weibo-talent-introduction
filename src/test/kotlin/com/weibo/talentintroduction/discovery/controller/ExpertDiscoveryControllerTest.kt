@@ -1,10 +1,17 @@
 package com.weibo.talentintroduction.discovery.controller
 
+import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.service.ArxivDataSource
+import com.weibo.talentintroduction.discovery.service.CoreDataSource
+import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
+import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
+import com.weibo.talentintroduction.discovery.service.OrcidDataSource
+import com.weibo.talentintroduction.discovery.service.PmcOaDataSource
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
@@ -16,8 +23,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
+import org.springframework.beans.factory.ObjectProvider
 
 class ExpertDiscoveryControllerTest {
     private val discoveryService = Mockito.mock(ExpertDiscoveryService::class.java)
@@ -26,8 +33,23 @@ class ExpertDiscoveryControllerTest {
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
+    @Suppress("UNCHECKED_CAST")
+    private val openAlexProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<OpenAlexDataSource>
+    @Suppress("UNCHECKED_CAST")
+    private val crossrefProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<CrossrefDataSource>
+    @Suppress("UNCHECKED_CAST")
+    private val arxivProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<ArxivDataSource>
+    @Suppress("UNCHECKED_CAST")
+    private val pmcOaProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<PmcOaDataSource>
+    @Suppress("UNCHECKED_CAST")
+    private val orcidProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<OrcidDataSource>
+    @Suppress("UNCHECKED_CAST")
+    private val coreProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<CoreDataSource>
+    private val europePmcProperties = EuropePmcProperties()
     private val controller = ExpertDiscoveryController(
-        discoveryService, taskExecutionService, progressStore
+        discoveryService, taskExecutionService, progressStore,
+        openAlexProvider, crossrefProvider, arxivProvider,
+        pmcOaProvider, orcidProvider, coreProvider, europePmcProperties
     )
 
     private fun anyTaskProgress(): TaskProgress {
@@ -170,5 +192,28 @@ class ExpertDiscoveryControllerTest {
         assertEquals(2, captured[0].batchNumber)
         assertEquals(10, captured[0].processedCount)
         assertEquals(100, captured[0].totalCount)
+    }
+
+    @Test
+    fun `getAvailableSources reflects Europe PMC enabled state`() {
+        val disabledProps = EuropePmcProperties(enabled = false)
+        val disabledController = ExpertDiscoveryController(
+            discoveryService, taskExecutionService, progressStore,
+            openAlexProvider, crossrefProvider, arxivProvider,
+            pmcOaProvider, orcidProvider, coreProvider, disabledProps
+        )
+        val sources = disabledController.getAvailableSources()
+        val europePmc = sources.find { it["sourceName"] == "EUROPE_PMC" }
+        assertEquals(false, europePmc?.get("enabled"))
+    }
+
+    @Test
+    fun `getAvailableSources marks new sources disabled by default`() {
+        val sources = controller.getAvailableSources()
+        val newSources = listOf("PMC_OA", "OPENALEX", "CROSSREF", "CORE", "ARXIV", "ORCID")
+        for (name in newSources) {
+            val source = sources.find { it["sourceName"] == name }
+            assertEquals(false, source?.get("enabled"), "$name should be disabled by default")
+        }
     }
 }

@@ -5,7 +5,8 @@ import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 data class DiscoveryResult(
     val triggeredBy: String,
     val stats: DiscoveryStats,
-    val wasCancelled: Boolean = false
+    val wasCancelled: Boolean = false,
+    val summaryText: String? = null
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = stats.indexed
     override val taskFailureCount: Int

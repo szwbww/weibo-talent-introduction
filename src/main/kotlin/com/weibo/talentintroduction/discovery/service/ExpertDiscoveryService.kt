@@ -6,8 +6,11 @@ import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
+import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SourceStats
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
@@ -27,6 +30,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -37,6 +41,11 @@ import java.util.Locale
 class ExpertDiscoveryService(
     private val europePmc: EuropePmcDataSource,
     private val openAlexProvider: ObjectProvider<OpenAlexDataSource>,
+    private val crossrefProvider: ObjectProvider<CrossrefDataSource>,
+    private val arxivProvider: ObjectProvider<ArxivDataSource>,
+    private val pmcOaProvider: ObjectProvider<PmcOaDataSource>,
+    private val orcidProvider: ObjectProvider<OrcidDataSource>,
+    private val coreProvider: ObjectProvider<CoreDataSource>,
     private val emailValidationService: EmailValidationService,
     private val eligibilityService: CandidateEligibilityService,
     private val expertIndexWriterService: ExpertIndexWriterService,
@@ -54,286 +63,524 @@ class ExpertDiscoveryService(
     private enum class DedupResult { EXISTS, NOT_FOUND, ERROR }
 
     private fun snapshotErrors(stats: DiscoveryStats): List<String> {
-        return stats.errors.asSequence()
-            .map { it.take(500) }
-            .take(100)
-            .toList()
+        return stats.errors.asSequence().map { it.take(500) }.take(100).toList()
+    }
+
+    private fun snapshotFailureReasons(sourceStats: SourceStats): Map<String, Int> {
+        return sourceStats.failureReasons.entries.sortedByDescending { it.value }.take(20)
+            .associate { it.key to it.value }
+    }
+
+    private fun snapshotFilterReasons(sourceStats: SourceStats): Map<String, Int> {
+        return sourceStats.filterReasons.entries.sortedByDescending { it.value }.take(20)
+            .associate { it.key to it.value }
+    }
+
+    private fun buildBySourceDetails(stats: DiscoveryStats): Map<String, Any> {
+        val bySource = mutableMapOf<String, Any>()
+        stats.bySource.forEach { (name, ss) ->
+            bySource[name] = mapOf(
+                "extractionMethod" to ss.extractionMethod,
+                "papersSearched" to ss.papersSearched,
+                "papersSkippedNoId" to ss.papersSkippedNoId,
+                "fulltextAttempted" to ss.fulltextAttempted,
+                "fulltextObtained" to ss.fulltextObtained,
+                "pdfDownloadFailed" to ss.pdfDownloadFailed,
+                "pdfParseFailed" to ss.pdfParseFailed,
+                "noEmailInFulltext" to ss.noEmailInFulltext,
+                "authorsExtracted" to ss.authorsExtracted,
+                "emailsValid" to ss.emailsValid,
+                "emailsRejected" to ss.emailsRejected,
+                "duplicates" to ss.duplicates,
+                "dedupErrors" to ss.dedupErrors,
+                "indexed" to ss.indexed,
+                "rawWriteFailed" to ss.rawWriteFailed,
+                "promoted" to ss.promoted,
+                "promotionFailed" to ss.promotionFailed,
+                "filtered" to ss.filtered,
+                "filterReasons" to snapshotFilterReasons(ss),
+                "failureReasons" to snapshotFailureReasons(ss),
+                "elapsedMs" to ss.elapsedMs,
+                "apiRequests" to ss.apiRequests
+            )
+        }
+        return bySource
+    }
+
+    private fun buildSummaryText(stats: DiscoveryStats, totalElapsed: Long): String {
+        val sourceSummaries = stats.bySource.map { (name, ss) ->
+            "$name 收录 ${ss.indexed}/晋升 ${ss.promoted}"
+        }.joinToString(", ")
+        return "发现任务完成: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | 合计: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+    }
+
+    private fun buildProgressDetails(stats: DiscoveryStats, sourceName: String? = null, method: String? = null): Map<String, Any> {
+        val details = mutableMapOf<String, Any>(
+            "indexed" to stats.indexed,
+            "promoted" to stats.promoted,
+            "bySource" to buildBySourceDetails(stats)
+        )
+        if (sourceName != null) details["currentSource"] = sourceName
+        if (method != null) details["currentMethod"] = method
+        return details
+    }
+
+    private fun resolveEnabledSources(criteria: PaperSearchCriteria): List<AcademicDataSource> {
+        val sources = mutableListOf<AcademicDataSource>()
+        fun add(provider: () -> AcademicDataSource?, name: String) {
+            val src = provider()
+            if (src != null && (criteria.sources.isEmpty() || criteria.sources.contains(name))) {
+                sources.add(src)
+            }
+        }
+        add({ europePmc }, europePmc.sourceName)
+        add({ pmcOaProvider.getIfAvailable() }, "PMC_OA")
+        add({ openAlexProvider.getIfAvailable() }, "OPENALEX")
+        add({ crossrefProvider.getIfAvailable() }, "CROSSREF")
+        add({ coreProvider.getIfAvailable() }, "CORE")
+        add({ arxivProvider.getIfAvailable() }, "ARXIV")
+        return sources
     }
 
     fun discover(criteria: PaperSearchCriteria, triggeredBy: String): DiscoveryResult {
         val stats = DiscoveryStats()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val sources = resolveEnabledSources(criteria)
+        val startTime = System.currentTimeMillis()
+
+        log.info("发现任务启动: 启用平台=${sources.map { it.sourceName }}, 关键词=${criteria.keywords}, " +
+            "年份=${criteria.publicationYearFrom}-${criteria.publicationYearTo}, " +
+            "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}")
 
         try {
-            discoverFromEuropePmc(criteria, stats)
-
-            val openAlex = openAlexProvider.getIfAvailable()
-            if (openAlex != null && stats.indexed < discoveryProperties.maxAuthorsPerRun) {
-                discoverFromOpenAlexViaPmc(openAlex, criteria, stats)
+            for (source in sources) {
+                if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+                stats.refreshGlobalCounts()
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
+                discoverFromSource(source, criteria, stats)
             }
+            discoverFromOrcid(criteria, stats)
+            stats.refreshGlobalCounts()
+
+            val totalElapsed = System.currentTimeMillis() - startTime
+            val details = buildProgressDetails(stats).toMutableMap()
+            details["summaryText"] = buildSummaryText(stats, totalElapsed)
 
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
-                log.info(
-                    "Discovery cancelled: papers={}, authors={}, indexed={}, promoted={}",
-                    stats.totalPapers, stats.totalAuthors, stats.indexed, stats.promoted
-                )
+                log.info("发现任务取消: 论文=${stats.totalPapers}, 收录=${stats.indexed}, 晋升=${stats.promoted}")
                 progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                     taskType = "EXPERT_DISCOVERY", status = "CANCELLED",
-                    batchNumber = -1,
-                    processedCount = stats.totalPapers.toLong(),
+                    batchNumber = -1, processedCount = stats.totalPapers.toLong(),
                     totalCount = stats.totalPapers.toLong(),
                     message = "已取消: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
-                    details = mapOf(
-                        "totalPapers" to stats.totalPapers, "totalAuthors" to stats.totalAuthors,
-                        "indexed" to stats.indexed, "promoted" to stats.promoted
-                    ),
-                    errors = snapshotErrors(stats)
+                    details = details, errors = snapshotErrors(stats)
                 ), execId)
-                return DiscoveryResult(triggeredBy, stats, wasCancelled = true)
+                val cancelSummary = buildSummaryText(stats, totalElapsed)
+                return DiscoveryResult(triggeredBy, stats, wasCancelled = true, summaryText = cancelSummary)
             }
 
-            log.info(
-                "Discovery complete: papers={}, authors={}, indexed={}, promoted={}, emailRejected={}, duplicates={}, filtered={}, rawWriteFailed={}, promotionFailed={}, dedupErrors={}",
-                stats.totalPapers, stats.totalAuthors, stats.indexed, stats.promoted,
-                stats.emailRejected, stats.duplicates, stats.filtered,
-                stats.rawWriteFailed, stats.promotionFailed, stats.dedupErrors
-            )
+            val totalValidEmails = stats.bySource.values.sumOf { it.emailsValid }
+            val sourceSummaries = stats.bySource.map { (name, ss) -> "$name 收录 ${ss.indexed}/晋升 ${ss.promoted}" }.joinToString(", ")
+            log.info("发现任务完成: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
+                "合计: 论文 ${stats.totalPapers}, 作者候选 ${stats.totalAuthors}, " +
+                "邮箱有效 $totalValidEmails (无效 ${stats.emailRejected}), 收录 ${stats.indexed}, 晋升 ${stats.promoted}")
 
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "COMPLETED",
-                batchNumber = -1,
-                processedCount = stats.totalPapers.toLong(),
+                batchNumber = -1, processedCount = stats.totalPapers.toLong(),
                 totalCount = stats.totalPapers.toLong(),
                 message = "完成: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
-                details = mapOf(
-                    "totalPapers" to stats.totalPapers, "totalAuthors" to stats.totalAuthors,
-                    "indexed" to stats.indexed, "promoted" to stats.promoted
-                ),
-                errors = snapshotErrors(stats)
+                details = details, errors = snapshotErrors(stats)
             ), execId)
         } catch (e: Exception) {
+            stats.refreshGlobalCounts()
+            val totalElapsed = System.currentTimeMillis() - startTime
+            val details = buildProgressDetails(stats).toMutableMap()
+            details["summaryText"] = buildSummaryText(stats, totalElapsed)
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
                 message = "失败: ${e.message}",
-                errors = snapshotErrors(stats)
+                details = details, errors = snapshotErrors(stats)
             ), execId)
             throw e
         }
-
-        return DiscoveryResult(triggeredBy, stats)
+        val finalElapsed = System.currentTimeMillis() - startTime
+        return DiscoveryResult(triggeredBy, stats, summaryText = buildSummaryText(stats, finalElapsed))
     }
 
-    private fun discoverFromEuropePmc(criteria: PaperSearchCriteria, stats: DiscoveryStats) {
+    private fun getSourceLimit(source: AcademicDataSource): Int {
+        return source.maxPapersPerSource
+    }
+
+    private fun discoverFromSource(source: AcademicDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats) {
+        val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
+        val sourceStartTime = System.currentTimeMillis()
+        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val sourceLimit = getSourceLimit(source)
+
+        log.info("[{}] 开始: 方式={}, 本源限额={}", source.sourceName, source.emailExtractionMethod, sourceLimit)
+
         var cursor: String? = criteria.cursor
         var batchNumber = 0
-        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        var sourcePapersProcessed = 0
+        var consecutiveFailures = 0
+        var circuitBreakerTripped = false
+
         do {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
-                log.info("专家发现任务已取消，当前批次={}", batchNumber)
-                return
+                log.info("[{}] 已取消, 当前批次={}", source.sourceName, batchNumber)
+                break
             }
-            val batch = europePmc.searchPapers(criteria.copy(cursor = cursor))
-            if (batch.papers.isEmpty()) break
+            stats.refreshGlobalCounts()
+            if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+            if (sourcePapersProcessed >= sourceLimit) break
+
+            sourceStats.apiRequests++
+
+            var batch: PaperSearchResult? = null
+            try {
+                batch = source.searchPapers(criteria.copy(cursor = cursor))
+            } catch (e: HttpStatusCodeException) {
+                val code = e.statusCode.value()
+                if (code == 429 || code == 503) {
+                    consecutiveFailures++
+                    sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
+                    if (consecutiveFailures >= 5) {
+                        sourceStats.failureReasons["CIRCUIT_BREAKER"] = 1
+                        circuitBreakerTripped = true
+                        log.warn("[{}] 连续 5 次限流/不可用，熔断", source.sourceName)
+                        break
+                    }
+                    Thread.sleep(1000)
+                    continue
+                }
+                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                break
+            } catch (e: Exception) {
+                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                log.error("[{}] 搜索失败: {}", source.sourceName, e.message)
+                break
+            }
+            if (batch == null || batch.papers.isEmpty()) break
+            consecutiveFailures = 0
             batchNumber++
-            val totalPapersBefore = stats.totalPapers
-            val indexedBefore = stats.indexed
-            val totalAuthorsBefore = stats.totalAuthors
+
+            val papersBefore = sourceStats.papersSearched
+            val indexedBefore = sourceStats.indexed
+
             var limitReached = false
+            var processedInBatch = 0
             for (paper in batch.papers) {
+                if (processedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
+                stats.refreshGlobalCounts()
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
-                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
-                stats.totalPapers++
-                processPaper(paper, stats)
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
+                if (sourcePapersProcessed >= sourceLimit) { limitReached = true; break }
+                sourceStats.papersSearched++
+                sourcePapersProcessed++
+                processedInBatch++
+                processPaper(paper, source, stats, sourceStats)
             }
-            val batchProcessed = stats.totalPapers - totalPapersBefore
-            val batchPassed = stats.indexed - indexedBefore
-            val batchRejected = (stats.totalAuthors - totalAuthorsBefore) - batchPassed
-            log.info("EuropePMC发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
-                batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
-                stats.indexed, discoveryProperties.maxAuthorsPerRun)
+
+            val batchProcessed = sourceStats.papersSearched - papersBefore
+            val batchPassed = sourceStats.indexed - indexedBefore
+            val batchRejected = batchProcessed - batchPassed
+
+            log.info("[{}] 批次 {}: 论文 +{} (累计 {}/{}), 获全文 {}, 抽到邮箱 {}, 有效 {}, 重复 {}, 收录 {}, 晋升 {}",
+                source.sourceName, batchNumber, batchProcessed,
+                sourceStats.papersSearched, sourceLimit,
+                sourceStats.fulltextObtained, sourceStats.authorsExtracted,
+                sourceStats.emailsValid, sourceStats.duplicates,
+                sourceStats.indexed, sourceStats.promoted)
+
+            stats.refreshGlobalCounts()
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "RUNNING",
                 batchNumber = batchNumber,
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
-                message = "EuropePMC 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "EuropePMC"),
+                message = "[${source.sourceName}] 批次 $batchNumber: 论文 ${sourceStats.papersSearched}/$sourceLimit, 收录 ${sourceStats.indexed}, 晋升 ${sourceStats.promoted}",
+                details = buildProgressDetails(stats, source.sourceName, source.emailExtractionMethod),
                 errors = snapshotErrors(stats),
                 batchProcessed = batchProcessed,
                 batchPassed = batchPassed,
                 batchRejected = batchRejected.coerceAtLeast(0)
             ), execId)
-            if (limitReached) return
-            cursor = batch.nextCursor
-        } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
+
+            if (limitReached || circuitBreakerTripped) break
+            cursor = batch?.nextCursor
+        } while (cursor != null)
+
+        val elapsed = System.currentTimeMillis() - sourceStartTime
+        sourceStats.elapsedMs = elapsed
+
+        log.info("[{}] 完成: 耗时 ${elapsed}ms, API请求 ${sourceStats.apiRequests} 次 | " +
+            "漏斗: 搜索 ${sourceStats.papersSearched} → 尝试全文 ${sourceStats.fulltextAttempted} → 获全文 ${sourceStats.fulltextObtained}" +
+            " (PDF下载失败 ${sourceStats.pdfDownloadFailed}, 解析失败 ${sourceStats.pdfParseFailed})" +
+            " → 抽到邮箱 ${sourceStats.authorsExtracted} (无邮箱 ${sourceStats.noEmailInFulltext})" +
+            " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
+            " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
+            " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
+            " (资格淘汰 ${sourceStats.filtered})",
+            source.sourceName, elapsed, sourceStats.apiRequests,
+            sourceStats.papersSearched, sourceStats.fulltextAttempted, sourceStats.fulltextObtained,
+            sourceStats.pdfDownloadFailed, sourceStats.pdfParseFailed,
+            sourceStats.authorsExtracted, sourceStats.noEmailInFulltext,
+            sourceStats.emailsValid, sourceStats.emailsRejected,
+            sourceStats.indexed, sourceStats.duplicates,
+            sourceStats.indexed, sourceStats.promoted,
+            sourceStats.filtered)
     }
 
-    private fun discoverFromOpenAlexViaPmc(openAlex: OpenAlexDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats) {
-        var cursor: String? = null
+    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats) {
+        val orcid = orcidProvider.getIfAvailable() ?: return
+        if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return
+
+        val sourceStats = stats.getOrCreateSourceStats(orcid.sourceName, "API_FIELD")
+        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val sourceStartTime = System.currentTimeMillis()
+
+        log.info("[{}] 开始: 方式=API_FIELD", orcid.sourceName)
+
+        val orcidLimit = orcid.maxRecordsPerRun
+        var cursor: String? = criteria.cursor ?: "0"
         var batchNumber = 0
-        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        var recordsProcessed = 0
+
         do {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
-                log.info("专家发现任务已取消，当前批次={}", batchNumber)
+                log.info("[{}] 已取消", orcid.sourceName)
                 return
             }
-            val batch = openAlex.searchPapers(criteria.copy(cursor = cursor))
-            if (batch.papers.isEmpty()) break
-            batchNumber++
-            val totalPapersBefore = stats.totalPapers
-            val indexedBefore = stats.indexed
-            val totalAuthorsBefore = stats.totalAuthors
-            var limitReached = false
-            for (paper in batch.papers) {
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
-                if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
-                if (paper.pmcId == null) continue
-                stats.totalPapers++
-                processPaper(paper, stats)
+            stats.refreshGlobalCounts()
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+            if (recordsProcessed >= orcidLimit) break
+
+            sourceStats.apiRequests++
+
+            val records = try {
+                orcid.searchOrcidRecords(criteria.copy(cursor = cursor))
+            } catch (e: Exception) {
+                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                log.error("[{}] 搜索失败: {}", orcid.sourceName, e.message)
+                break
             }
-            val batchProcessed = stats.totalPapers - totalPapersBefore
-            val batchPassed = stats.indexed - indexedBefore
-            val batchRejected = (stats.totalAuthors - totalAuthorsBefore) - batchPassed
-            log.info("OpenAlex发现进度: 批次={}, 论文累计={}/{}, 收录={}/{}",
-                batchNumber, stats.totalPapers, discoveryProperties.maxPapersPerRun,
-                stats.indexed, discoveryProperties.maxAuthorsPerRun)
+            if (records.isEmpty()) break
+            batchNumber++
+
+            val indexedBefore = sourceStats.indexed
+            val recordsProcessedBeforeBatch = recordsProcessed
+
+            for (record in records) {
+                if (recordsProcessed >= orcidLimit) break
+                stats.refreshGlobalCounts()
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                sourceStats.papersSearched++
+                sourceStats.fulltextObtained++
+                recordsProcessed++
+
+                val authorEmails = orcid.orcidRecordToAuthorEmails(record)
+
+                for (authorEmail in authorEmails) {
+                    stats.refreshGlobalCounts()
+                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                    sourceStats.authorsExtracted++
+
+                    val emailResult = emailValidationService.validate(authorEmail.email)
+                    if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
+                    sourceStats.emailsValid++
+
+                    when (existsInRawIndexByEmail(authorEmail.email)) {
+                        DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
+                        DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
+                        DedupResult.NOT_FOUND -> {}
+                    }
+                    if (authorEmail.orcidId != null) {
+                        when (existsInRawIndexByOrcid(authorEmail.orcidId)) {
+                            DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
+                            DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
+                            DedupResult.NOT_FOUND -> {}
+                        }
+                    }
+
+                    val profile = buildOrcidProfile(record, authorEmail, emailResult.level)
+                    val esDocId = authorEmail.orcidId ?: "ORCID-${record.orcidId}"
+                    val eligibility = eligibilityService.evaluateEligibility(profile)
+                    val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
+                    val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
+
+                    val profileMap = toIndexMap(profile, null, esDocId, filterResult, rejectReasons)
+                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+                    sourceStats.indexed++
+
+                    if (eligibility.eligible) {
+                        if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
+                        else sourceStats.promotionFailed++
+                    } else {
+                        sourceStats.filtered++
+                        for (reason in rejectReasons) {
+                            sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
+                        }
+                    }
+                }
+            }
+
+            val batchProcessed = recordsProcessed - recordsProcessedBeforeBatch
+            val batchPassed = sourceStats.indexed - indexedBefore
+            val batchRejected = batchProcessed - batchPassed
+
+            stats.refreshGlobalCounts()
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "RUNNING",
                 batchNumber = batchNumber,
-                processedCount = stats.totalPapers.toLong(),
-                totalCount = discoveryProperties.maxPapersPerRun.toLong(),
-                message = "OpenAlex 批次 $batchNumber: 论文 ${stats.totalPapers}/${discoveryProperties.maxPapersPerRun}, 收录 ${stats.indexed}",
-                details = mapOf("indexed" to stats.indexed, "promoted" to stats.promoted, "source" to "OpenAlex"),
+                processedCount = recordsProcessed.toLong(),
+                totalCount = orcidLimit.toLong(),
+                message = "[${orcid.sourceName}] 批次 $batchNumber: 记录 $recordsProcessed/$orcidLimit, 收录 ${sourceStats.indexed}, 晋升 ${sourceStats.promoted}",
+                details = buildProgressDetails(stats, orcid.sourceName, "API_FIELD"),
                 errors = snapshotErrors(stats),
                 batchProcessed = batchProcessed,
                 batchPassed = batchPassed,
                 batchRejected = batchRejected.coerceAtLeast(0)
             ), execId)
-            if (limitReached) return
-            cursor = batch.nextCursor
-        } while (cursor != null && stats.totalPapers < discoveryProperties.maxPapersPerRun && stats.indexed < discoveryProperties.maxAuthorsPerRun)
+
+            cursor = (cursor?.toIntOrNull()?.plus(records.size))?.toString()
+        } while (cursor != null)
+
+        val elapsed = System.currentTimeMillis() - sourceStartTime
+        sourceStats.elapsedMs = elapsed
+
+        log.info("[{}] 完成: 耗时 ${elapsed}ms | " +
+            "漏斗: 记录 ${recordsProcessed} → 邮箱 ${sourceStats.authorsExtracted}" +
+            " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
+            " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
+            " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
+            " (资格淘汰 ${sourceStats.filtered})",
+            orcid.sourceName, elapsed, recordsProcessed, sourceStats.authorsExtracted,
+            sourceStats.emailsValid, sourceStats.emailsRejected,
+            sourceStats.indexed, sourceStats.duplicates,
+            sourceStats.indexed, sourceStats.promoted, sourceStats.filtered)
     }
 
-    private fun processPaper(paper: PaperMetadata, stats: DiscoveryStats) {
-        val pmcId = paper.pmcId
-        if (pmcId == null) {
-            stats.noEmailPapers++
-            return
-        }
-        val authorEmails = try {
-            europePmc.extractEmailsFromFullText(pmcId)
+    private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
+        return ExpertProfile(
+            orcidId = record.orcidId,
+            email = authorEmail.email.lowercase(Locale.ROOT),
+            givenNames = record.givenNames,
+            familyNames = record.familyNames,
+            country = record.country,
+            keyword = null, employment = record.institutionName,
+            institution = record.institutionName, lastPublicationYear = null,
+            emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID"
+        )
+    }
+
+    private fun processPaper(paper: PaperMetadata, source: AcademicDataSource, stats: DiscoveryStats, sourceStats: SourceStats) {
+        sourceStats.fulltextAttempted++
+        val outcome = try {
+            source.extractAuthorEmails(paper)
         } catch (e: Exception) {
-            stats.errors += "PMC $pmcId 提取失败: ${e.message ?: e.javaClass.simpleName}"
-            log.warn("Failed to extract emails from PMC {}", pmcId, e)
+            stats.errors += "[${source.sourceName}] 提取失败: ${e.message ?: e.javaClass.simpleName}"
+            sourceStats.failureReasons.merge("EXTRACTION_EXCEPTION", 1) { a, b -> a + b }
             return
         }
-        if (authorEmails.isEmpty()) {
-            stats.noEmailPapers++
+
+        sourceStats.apiRequests += outcome.httpRequests
+
+        if (outcome.failureReason != null) {
+            sourceStats.failureReasons.merge(outcome.failureReason, 1) { a, b -> a + b }
+            if (outcome.failureReason == "PDF_DOWNLOAD_FAILED") sourceStats.pdfDownloadFailed++
+            if (outcome.failureReason == "PDF_PARSE_FAILED") sourceStats.pdfParseFailed++
+        }
+
+        if (outcome.emails.isEmpty()) {
+            if (outcome.failureReason == "NO_PMC_ID" || outcome.failureReason == "NO_DOI") {
+                sourceStats.papersSkippedNoId++
+            } else if (outcome.failureReason == null ||
+                       outcome.failureReason == "NO_EMAIL_IN_FULLTEXT" ||
+                       outcome.failureReason == "NO_EMAIL_IN_TEXT") {
+                sourceStats.noEmailInFulltext++
+                sourceStats.fulltextObtained++
+            } else {
+                // PDF_DOWNLOAD_FAILED, PDF_PARSE_FAILED, NO_FULLTEXT, etc. — fulltext not obtained
+            }
             return
         }
-        for (authorEmail in authorEmails) {
-            if (stats.indexed >= discoveryProperties.maxAuthorsPerRun) return
-            stats.totalAuthors++
+
+        sourceStats.fulltextObtained++
+
+        for (authorEmail in outcome.emails) {
+            stats.refreshGlobalCounts()
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) return
+            sourceStats.authorsExtracted++
 
             val emailResult = emailValidationService.validate(authorEmail.email)
-            if (!emailResult.valid) {
-                stats.emailRejected++
-                continue
-            }
+            if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
+            sourceStats.emailsValid++
 
             when (existsInRawIndexByEmail(authorEmail.email)) {
-                DedupResult.EXISTS -> { stats.duplicates++; continue }
-                DedupResult.ERROR -> { stats.dedupErrors++; continue }
+                DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
+                DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
                 DedupResult.NOT_FOUND -> {}
             }
-
             if (authorEmail.orcidId != null) {
                 when (existsInRawIndexByOrcid(authorEmail.orcidId)) {
-                    DedupResult.EXISTS -> { stats.duplicates++; continue }
-                    DedupResult.ERROR -> { stats.dedupErrors++; continue }
+                    DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
+                    DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
                     DedupResult.NOT_FOUND -> {}
                 }
             }
 
             val profile = buildProfile(paper, authorEmail, emailResult.level)
-            val esDocId = if (authorEmail.orcidId != null) authorEmail.orcidId
-                else generateIdFromEmail(authorEmail.email)
+            val esDocId = authorEmail.orcidId ?: generateIdFromEmail(authorEmail.email)
             val eligibility = eligibilityService.evaluateEligibility(profile)
             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
 
             val profileMap = toIndexMap(profile, paper, esDocId, filterResult, rejectReasons)
-            val indexed = expertIndexWriterService.indexToRaw(esDocId, profileMap)
-            if (!indexed) {
-                stats.rawWriteFailed++
-                continue
-            }
-            stats.indexed++
+            if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+            sourceStats.indexed++
 
             if (eligibility.eligible) {
-                if (promoteDiscoveredToCandidate(esDocId, profileMap)) {
-                    stats.promoted++
-                } else {
-                    stats.promotionFailed++
-                }
+                if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
+                else sourceStats.promotionFailed++
             } else {
-                stats.filtered++
+                sourceStats.filtered++
                 for (reason in rejectReasons) {
-                    stats.filterReasons.merge(reason, 1) { a, b -> a + b }
+                    sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
                 }
             }
         }
     }
 
-    private fun buildProfile(
-        paper: PaperMetadata,
-        authorEmail: AuthorEmail,
-        emailVerifiedLevel: Int
-    ): ExpertProfile {
-        val orcidId = authorEmail.orcidId ?: ""
-
+    private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
         return ExpertProfile(
-            orcidId = orcidId,
+            orcidId = authorEmail.orcidId ?: "",
             email = authorEmail.email.lowercase(Locale.ROOT),
-            givenNames = authorEmail.givenNames,
-            familyNames = authorEmail.familyNames,
+            givenNames = authorEmail.givenNames, familyNames = authorEmail.familyNames,
             country = inferCountryFromAffiliation(authorEmail.affiliation),
-            keyword = null,
-            employment = authorEmail.affiliation,
-            institution = authorEmail.affiliation,
-            lastPublicationYear = paper.pubYear,
-            emailSource = "PAPER_FULLTEXT",
-            emailVerifiedLevel = emailVerifiedLevel,
-            dataSource = paper.source,
+            keyword = null, employment = authorEmail.affiliation, institution = authorEmail.affiliation,
+            lastPublicationYear = paper.pubYear, emailSource = "PAPER_FULLTEXT",
+            emailVerifiedLevel = emailVerifiedLevel, dataSource = paper.source,
             externalIds = buildExternalIds(paper, authorEmail)
         )
     }
 
-    private fun toIndexMap(
-        profile: ExpertProfile,
-        paper: PaperMetadata,
-        esDocId: String,
-        filterResult: String,
-        rejectReasons: List<String>
-    ): Map<String, Any?> {
+    private fun toIndexMap(profile: ExpertProfile, paper: PaperMetadata?, esDocId: String,
+                           filterResult: String, rejectReasons: List<String>): Map<String, Any?> {
         val now = LocalDateTime.now().format(dateFormatter)
         return mapOf(
-            "orcidId" to profile.orcidId,
-            "email" to profile.email,
-            "givenNames" to profile.givenNames,
-            "familyNames" to profile.familyNames,
-            "country" to profile.country,
-            "keyword" to profile.keyword,
-            "employment" to profile.employment,
-            "institution" to profile.institution,
+            "orcidId" to profile.orcidId, "email" to profile.email,
+            "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
+            "country" to profile.country, "keyword" to profile.keyword,
+            "employment" to profile.employment, "institution" to profile.institution,
             "lastPublicationYear" to profile.lastPublicationYear,
-            "emailSource" to profile.emailSource,
-            "emailVerifiedLevel" to profile.emailVerifiedLevel,
+            "emailSource" to profile.emailSource, "emailVerifiedLevel" to profile.emailVerifiedLevel,
             "dataSource" to profile.dataSource,
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
-            "discoveredAt" to now,
-            "updatedAt" to now,
+            "discoveredAt" to now, "updatedAt" to now,
             "filterResult" to filterResult,
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")
@@ -344,14 +591,14 @@ class ExpertDiscoveryService(
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val now = LocalDateTime.now().format(dateFormatter)
         val candidateDoc = rawDoc.toMutableMap().apply {
-            put("candidateValidatedAt", now)
-            put("updatedAt", now)
+            put("candidateValidatedAt", now); put("updatedAt", now)
             val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
             put("tags", (existingTags + "discovered").distinct())
         }
         val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/$esDocId"
         return try {
-            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()), com.fasterxml.jackson.databind.JsonNode::class.java)
+            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()),
+                com.fasterxml.jackson.databind.JsonNode::class.java)
             true
         } catch (e: Exception) {
             log.warn("Failed to promote discovered expert {} to candidate: {}", esDocId, e.message)
@@ -361,43 +608,28 @@ class ExpertDiscoveryService(
 
     fun enrichExistingExperts(maxExperts: Int = 500): EnrichmentResult {
         val openAlex = openAlexProvider.getIfAvailable() ?: return EnrichmentResult(0, 0)
-        var enriched = 0
-        var failed = 0
-        var scanned = 0
+        var enriched = 0; var failed = 0; var scanned = 0
         val execId = progressStore.getCurrentExecutionId("EXPERT_ENRICHMENT")
         progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
             taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = maxExperts.toLong(),
-            message = "初始化中..."
+            batchNumber = 0, processedCount = 0, totalCount = maxExperts.toLong(), message = "初始化中..."
         ), execId)
 
         try {
             expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
                 var limitReached = false
                 for (profile in batch) {
-                    if (enriched + failed >= maxExperts) {
-                        limitReached = true
-                        break
-                    }
+                    if (enriched + failed >= maxExperts) { limitReached = true; break }
                     scanned++
                     if (profile.hIndex != null) continue
-
                     val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
                     if (orcid != null) {
                         val enrichment = openAlex.enrichAuthorByOrcid(orcid)
                         if (enrichment != null) {
-                            if (updateExpertAcademicFields(profile.orcidId, enrichment)) {
-                                enriched++
-                            } else {
-                                failed++
-                            }
-                        } else {
-                            failed++
-                        }
+                            if (updateExpertAcademicFields(profile.orcidId, enrichment)) enriched++ else failed++
+                        } else failed++
                     }
                 }
-                log.info("专家丰富进度: 批次={}, 已丰富={}, 失败={}, 上限={}, 累计扫描={}/{}",
-                    batchNumber, enriched, failed, maxExperts, scanned, totalHits)
                 progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
                     taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
                     batchNumber = batchNumber, processedCount = enriched.toLong(), totalCount = maxExperts.toLong(),
@@ -406,7 +638,6 @@ class ExpertDiscoveryService(
                 ), execId)
                 !limitReached && enriched + failed < maxExperts
             }
-
             progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
                 taskType = "EXPERT_ENRICHMENT", status = "COMPLETED",
                 batchNumber = -1, processedCount = enriched.toLong(), totalCount = enriched.toLong(),
@@ -420,7 +651,6 @@ class ExpertDiscoveryService(
             ), execId)
             throw e
         }
-
         log.info("Enrichment complete: enriched={}, failed={}, scanned={}", enriched, failed, scanned)
         return EnrichmentResult(enriched, failed)
     }
@@ -428,62 +658,50 @@ class ExpertDiscoveryService(
     private fun updateExpertAcademicFields(orcidId: String, enrichment: AuthorEnrichment): Boolean {
         val now = LocalDateTime.now().format(dateFormatter)
         var candidateUpdated = false
-
-        val doc = mutableMapOf<String, Any?>(
-            "hIndex" to enrichment.hIndex,
-            "citationCount" to enrichment.citationCount,
-            "updatedAt" to now
-        )
+        val doc = mutableMapOf<String, Any?>("hIndex" to enrichment.hIndex, "citationCount" to enrichment.citationCount, "updatedAt" to now)
         enrichment.worksCount?.let { doc["worksCount"] = it }
         val updateBody = mapOf("doc" to doc)
-
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             try {
                 val index = expertIndexService.indexName(level)
                 val updateUrl = "${esProperties.baseUrl}/$index/_update/$orcidId"
-                restTemplate.exchange(updateUrl, HttpMethod.POST, HttpEntity(updateBody, esHeaders()), com.fasterxml.jackson.databind.JsonNode::class.java)
+                restTemplate.exchange(updateUrl, HttpMethod.POST, HttpEntity(updateBody, esHeaders()),
+                    com.fasterxml.jackson.databind.JsonNode::class.java)
                 if (level == ExpertIndexLevel.CANDIDATE) candidateUpdated = true
             } catch (e: Exception) {
                 log.warn("Failed to update academic fields for {} in index {}: {}", orcidId, level, e.message)
             }
         }
-
         return candidateUpdated
     }
 
     private fun existsInRawIndexByOrcid(orcid: String): DedupResult {
-        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
-        val url = "${esProperties.baseUrl}/$rawIndex/_doc/$orcid"
+        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
         return try {
             restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
             DedupResult.EXISTS
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NOT_FOUND else DedupResult.ERROR
-        } catch (e: Exception) {
-            DedupResult.ERROR
-        }
+        } catch (e: Exception) { DedupResult.ERROR }
     }
 
     private fun existsInRawIndexByEmail(email: String): DedupResult {
-        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_search"
         val query = mapOf("query" to mapOf("term" to mapOf("email" to email.lowercase(Locale.ROOT))), "size" to 0)
-        val url = "${esProperties.baseUrl}/$rawIndex/_search"
         return try {
-            val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()), com.fasterxml.jackson.databind.JsonNode::class.java).body
+            val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()),
+                com.fasterxml.jackson.databind.JsonNode::class.java).body
             val total = response?.path("hits")?.path("total")?.path("value")?.asInt(0) ?: 0
             if (total > 0) DedupResult.EXISTS else DedupResult.NOT_FOUND
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NOT_FOUND else DedupResult.ERROR
-        } catch (e: Exception) {
-            DedupResult.ERROR
-        }
+        } catch (e: Exception) { DedupResult.ERROR }
     }
 
     private fun generateIdFromEmail(email: String): String {
         val hash = java.security.MessageDigest.getInstance("SHA-256")
             .digest(email.lowercase(Locale.ROOT).toByteArray())
-            .joinToString("") { "%02x".format(it) }
-            .take(19)
+            .joinToString("") { "%02x".format(it) }.take(19)
         return "EMAIL-$hash"
     }
 
@@ -505,15 +723,11 @@ class ExpertDiscoveryService(
     private fun esHeaders(): HttpHeaders = HttpHeaders().apply {
         contentType = MediaType.APPLICATION_JSON
         val raw = "${esProperties.username}:${esProperties.password}"
-        val encoded = Base64.getEncoder().encodeToString(raw.toByteArray(Charsets.UTF_8))
-        set(HttpHeaders.AUTHORIZATION, "Basic $encoded")
+        set(HttpHeaders.AUTHORIZATION, "Basic ${Base64.getEncoder().encodeToString(raw.toByteArray(Charsets.UTF_8))}")
     }
 }
 
-data class EnrichmentResult(
-    val enriched: Int,
-    val failed: Int
-) : TaskExecutionSummaryProvider {
+data class EnrichmentResult(val enriched: Int, val failed: Int) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = enriched
     override val taskFailureCount: Int get() = failed
     override val taskFinalStatus: String? get() = null

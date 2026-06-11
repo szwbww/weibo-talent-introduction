@@ -8,5 +8,7 @@ data class PaperMetadata(
     val pubYear: Int,
     val journal: String?,
     val authors: List<PaperAuthor>,
-    val source: String
+    val source: String,
+    val fullText: String? = null,
+    val downloadUrl: String? = null
 )

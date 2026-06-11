@@ -1,14 +1,23 @@
 package com.weibo.talentintroduction.discovery.controller
 
+import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.service.ArxivDataSource
+import com.weibo.talentintroduction.discovery.service.CoreDataSource
+import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
+import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
+import com.weibo.talentintroduction.discovery.service.OrcidDataSource
+import com.weibo.talentintroduction.discovery.service.PmcOaDataSource
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -20,8 +29,31 @@ import org.springframework.web.bind.annotation.RestController
 class ExpertDiscoveryController(
     private val discoveryService: ExpertDiscoveryService,
     private val taskExecutionService: TaskExecutionService,
-    private val progressStore: TaskProgressStore
+    private val progressStore: TaskProgressStore,
+    private val openAlexProvider: ObjectProvider<OpenAlexDataSource>,
+    private val crossrefProvider: ObjectProvider<CrossrefDataSource>,
+    private val arxivProvider: ObjectProvider<ArxivDataSource>,
+    private val pmcOaProvider: ObjectProvider<PmcOaDataSource>,
+    private val orcidProvider: ObjectProvider<OrcidDataSource>,
+    private val coreProvider: ObjectProvider<CoreDataSource>,
+    private val europePmcProperties: EuropePmcProperties
 ) {
+    @GetMapping("/sources")
+    fun getAvailableSources(): List<Map<String, Any>> {
+        val all = listOf(
+            Triple("EUROPE_PMC", europePmcProperties.enabled, "FULLTEXT_XML"),
+            Triple("PMC_OA", pmcOaProvider.getIfAvailable() != null, "FULLTEXT_XML"),
+            Triple("OPENALEX", openAlexProvider.getIfAvailable() != null, "FULLTEXT_XML"),
+            Triple("CROSSREF", crossrefProvider.getIfAvailable() != null, "PDF_PARSE"),
+            Triple("CORE", coreProvider.getIfAvailable() != null, "FULLTEXT_TEXT"),
+            Triple("ARXIV", arxivProvider.getIfAvailable() != null, "PDF_PARSE"),
+            Triple("ORCID", orcidProvider.getIfAvailable() != null, "API_FIELD")
+        )
+        return all.map { (name, enabled, method) ->
+            mapOf("sourceName" to name, "enabled" to enabled, "extractionMethod" to method)
+        }
+    }
+
     @PostMapping("/run")
     fun triggerDiscovery(@RequestBody(required = false) criteria: PaperSearchCriteria?): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
@@ -89,7 +121,8 @@ class ExpertDiscoveryController(
     fun triggerDiscoveryByKeyword(
         @RequestParam keywords: List<String>,
         @RequestParam(defaultValue = "2020") yearFrom: Int,
-        @RequestParam(defaultValue = "2026") yearTo: Int
+        @RequestParam(defaultValue = "2026") yearTo: Int,
+        @RequestParam(required = false) sources: List<String>? = null
     ): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
             taskType = "EXPERT_DISCOVERY", status = "RUNNING",
@@ -107,7 +140,8 @@ class ExpertDiscoveryController(
                 publicationYearFrom = yearFrom,
                 publicationYearTo = yearTo,
                 excludeCountries = listOf("CN"),
-                openAccessOnly = true
+                openAccessOnly = true,
+                sources = sources ?: emptyList()
             )
             execution = taskExecutionService.runAndRecord(
                 "EXPERT_DISCOVERY", "MANUAL", criteria,

@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.discovery.service;
 
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail;
+import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome;
+import com.weibo.talentintroduction.discovery.domain.PaperMetadata;
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria;
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult;
 import com.weibo.talentintroduction.expert.domain.EligibilityResult;
@@ -9,10 +11,14 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile;
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService;
 import com.weibo.talentintroduction.expert.service.EmailValidationService;
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService;
+import com.weibo.talentintroduction.task.service.TaskProgress;
+import com.weibo.talentintroduction.task.service.TaskProgressStore;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -36,6 +42,16 @@ public class DiscoveryMockHelper {
 
     public static void stubExtractEmails(EuropePmcDataSource mock, String pmcId, List<AuthorEmail> emails) {
         Mockito.when(mock.extractEmailsFromFullText(pmcId)).thenReturn(emails);
+    }
+
+    public static void stubExtractAuthorEmails(AcademicDataSource mock, List<AuthorEmail> emails) {
+        Mockito.when(mock.extractAuthorEmails(Mockito.any(PaperMetadata.class)))
+            .thenReturn(new EmailExtractionOutcome(emails, "FULLTEXT_XML", null));
+    }
+
+    public static void stubExtractAuthorEmailsEmpty(AcademicDataSource mock, String failureReason) {
+        Mockito.when(mock.extractAuthorEmails(Mockito.any(PaperMetadata.class)))
+            .thenReturn(new EmailExtractionOutcome(Collections.emptyList(), "FULLTEXT_XML", failureReason));
     }
 
     public static void stubValidateEmail(EmailValidationService mock, String email, EmailValidationResult result) {
@@ -89,16 +105,77 @@ public class DiscoveryMockHelper {
     }
 
     public static void stubEsHeadNotFound(RestTemplate mock) {
-        Mockito.when(mock.exchange(
-            Mockito.contains("/_doc/"), Mockito.eq(HttpMethod.HEAD), Mockito.any(),
-            Mockito.eq(Void.class)
-        )).thenThrow(new HttpClientErrorException(HttpStatus.NOT_FOUND));
+        Mockito.doThrow(new HttpClientErrorException(HttpStatus.NOT_FOUND))
+            .when(mock).exchange(
+                Mockito.contains("/_doc/"), Mockito.eq(HttpMethod.HEAD), Mockito.any(),
+                Mockito.eq(Void.class)
+            );
     }
 
     public static void stubEsDedupSearchError(RestTemplate mock) {
-        Mockito.when(mock.exchange(
-            Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
-            Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
-        )).thenThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR));
+        Mockito.doThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
+            .when(mock).exchange(
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+            );
+    }
+
+    public static void stubSourceInfo(EuropePmcDataSource mock) {
+        Mockito.doReturn("EUROPE_PMC").when(mock).getSourceName();
+        Mockito.doReturn("FULLTEXT_XML").when(mock).getEmailExtractionMethod();
+        Mockito.doReturn(500).when(mock).getMaxPapersPerSource();
+    }
+
+    public static void stubMaxPapersPerSource(AcademicDataSource mock, int value) {
+        Mockito.doReturn(value).when(mock).getMaxPapersPerSource();
+    }
+
+    public static void stubExtractAuthorEmailsOutcome(AcademicDataSource mock, EmailExtractionOutcome outcome) {
+        Mockito.when(mock.extractAuthorEmails(Mockito.any(PaperMetadata.class))).thenReturn(outcome);
+    }
+
+    public static void stubSearchPapersThrows(AcademicDataSource mock, Exception exception) {
+        Mockito.doThrow(exception).when(mock).searchPapers(Mockito.any(PaperSearchCriteria.class));
+    }
+
+    public static void stubOrcidSourceName(OrcidDataSource mock) {
+        Mockito.doReturn("ORCID").when(mock).getSourceName();
+    }
+
+    public static void stubOrcidMaxRecordsPerRun(OrcidDataSource mock, int value) {
+        Mockito.doReturn(value).when(mock).getMaxRecordsPerRun();
+    }
+
+    public static void stubOrcidSearchRecords(OrcidDataSource mock, java.util.List<OrcidDataSource.OrcidRecord> records) {
+        Mockito.doReturn(records)
+            .doReturn(java.util.Collections.emptyList())
+            .when(mock).searchOrcidRecords(Mockito.any(PaperSearchCriteria.class));
+    }
+
+    public static void stubOrcidRecordToAuthorEmails(OrcidDataSource mock) {
+        Mockito.doAnswer(invocation -> {
+            OrcidDataSource.OrcidRecord record = invocation.getArgument(0);
+            return record.getEmails().stream()
+                .map(email -> new AuthorEmail(email, record.getGivenNames(), record.getFamilyNames(),
+                    false, record.getInstitutionName(), record.getOrcidId()))
+                .collect(java.util.stream.Collectors.toList());
+        }).when(mock).orcidRecordToAuthorEmails(Mockito.any(OrcidDataSource.OrcidRecord.class));
+    }
+
+    /**
+     * Creates an answer that captures all TaskProgress objects into the given list.
+     * Usage: helper.captureProgressUpdates(progressStore, capturedList)
+     */
+    @SuppressWarnings("unchecked")
+    public static void captureProgressUpdates(TaskProgressStore mock, List<TaskProgress> captured) {
+        Mockito.doAnswer(invocation -> {
+            TaskProgress progress = invocation.getArgument(1);
+            captured.add(progress);
+            return null;
+        }).when(mock).update(
+            Mockito.anyString(),
+            Mockito.any(TaskProgress.class),
+            Mockito.any()
+        );
     }
 }

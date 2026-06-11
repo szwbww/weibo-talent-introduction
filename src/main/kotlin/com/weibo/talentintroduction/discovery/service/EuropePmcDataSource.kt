@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
@@ -24,6 +25,9 @@ class EuropePmcDataSource(
     private val log = LoggerFactory.getLogger(EuropePmcDataSource::class.java)
 
     override val sourceName = "EUROPE_PMC"
+    override val emailExtractionMethod = "FULLTEXT_XML"
+    override val maxPapersPerSource: Int
+        get() = properties.maxPapersPerSource
 
     override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
         if (!properties.enabled) {
@@ -46,7 +50,7 @@ class EuropePmcDataSource(
             restTemplate.getForObject(uri, JsonNode::class.java)
         } catch (e: Exception) {
             log.error("Europe PMC search failed: {}", e.message)
-            return PaperSearchResult(emptyList(), null, 0)
+            throw e
         }
 
         return parsePaperSearchResult(response)
@@ -81,6 +85,21 @@ class EuropePmcDataSource(
             log.debug("Failed to parse JATS XML for {}: {}", pmcId, e.message)
             emptyList()
         }
+    }
+
+    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+        if (!properties.enabled) {
+            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "SOURCE_DISABLED")
+        }
+        val pmcId = paper.pmcId
+        if (pmcId == null) {
+            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
+        }
+        val emails = extractEmailsFromFullText(pmcId)
+        if (emails.isEmpty()) {
+            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_EMAIL_IN_FULLTEXT", httpRequests = 1)
+        }
+        return EmailExtractionOutcome(emails, emailExtractionMethod, null, httpRequests = 1)
     }
 
     private fun buildQuery(criteria: PaperSearchCriteria): String {
