@@ -154,12 +154,15 @@
                             <arguments>
                                 <argument>--test</argument>
                                 <argument>src/test/js/normalizeDiscoveryResultSummary.test.js</argument>
+                                <argument>src/test/js/taskModalTwoLevelUi.test.js</argument>
+                                <argument>src/test/js/taskModalStateMachine.test.js</argument>
+                                <argument>src/test/js/taskModalLifecycleIntegration.test.js</argument>
                             </arguments>
                             <skip>${skipNodeTests}</skip>
                         </configuration>
                     </execution>
                     <execution>
-                        <id>node-check</id>
+                        <id>node-check-app</id>
                         <phase>test</phase>
                         <goals>
                             <goal>exec</goal>
@@ -169,6 +172,21 @@
                             <arguments>
                                 <argument>--check</argument>
                                 <argument>src/main/resources/static/app.js</argument>
+                            </arguments>
+                            <skip>${skipNodeTests}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>node-check-task-modal-runtime</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>node</executable>
+                            <arguments>
+                                <argument>--check</argument>
+                                <argument>src/main/resources/static/task-modal-runtime.js</argument>
                             </arguments>
                             <skip>${skipNodeTests}</skip>
                         </configuration>

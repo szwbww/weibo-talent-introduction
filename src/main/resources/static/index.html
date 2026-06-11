@@ -507,25 +507,27 @@
             <!-- Divider Line -->
             <div class="task-modal-divider"></div>
 
-            <!-- Batch Logs Table (Always visible) -->
+            <!-- Execution Records (Two-level: click to expand batch details) -->
             <div class="task-modal-logs" style="display: flex; flex-direction: column; gap: 10px;">
                 <h4 class="task-modal-logs-title">
                     <span class="task-modal-logs-title-indicator"></span>
-                    批次处理明细 (最近执行记录)
+                    执行记录（点击行展开批次明细）
                 </h4>
-                <div class="task-modal-log-table-wrapper" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-sm); background-color: var(--surface);">
+                <div class="task-modal-log-table-wrapper" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-sm); background-color: var(--surface);">
                     <table class="data-table compact" style="width: 100%; border-collapse: collapse; font-size: 12px;">
                         <thead>
                             <tr style="background-color: var(--panel-bg); border-bottom: 1px solid var(--panel-border);">
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">批次</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">本批处理</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted); width: 24px;"></th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">开始时间</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">触发</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">状态</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">总处理</th>
                                 <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">通过</th>
                                 <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">拒绝</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">累计进度</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">时间</th>
+                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">耗时</th>
                             </tr>
                         </thead>
-                        <tbody id="taskModalLogBody"></tbody>
+                        <tbody id="taskModalRunBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -625,6 +627,7 @@
 </dialog>
 
 <!-- App Core controller -->
+<script src="task-modal-runtime.js"></script>
 <script src="app.js?v=20260610-responsive"></script>
 </body>
 </html>

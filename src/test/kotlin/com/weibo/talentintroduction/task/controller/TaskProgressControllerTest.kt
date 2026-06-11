@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.task.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
+import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -22,11 +24,17 @@ class TaskProgressControllerTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
+    @Autowired
+    private lateinit var objectMapper: ObjectMapper
+
     @MockBean
     private lateinit var progressStore: TaskProgressStore
 
     @MockBean
     private lateinit var progressLogRepository: TaskProgressLogRepository
+
+    @MockBean
+    private lateinit var taskExecutionRepository: TaskExecutionRepository
 
     @Test
     fun `getProgress returns progress when present`() {

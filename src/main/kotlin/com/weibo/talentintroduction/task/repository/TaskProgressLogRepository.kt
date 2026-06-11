@@ -7,4 +7,5 @@ interface TaskProgressLogRepository : CrudRepository<TaskProgressLog, Long> {
     fun findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId: Long): List<TaskProgressLog>
     fun findAllByTaskTypeOrderByIdDesc(taskType: String): List<TaskProgressLog>
     fun findTopByTaskTypeOrderByIdDesc(taskType: String): TaskProgressLog?
+    fun findTopByTaskExecutionIdOrderByIdDesc(taskExecutionId: Long): TaskProgressLog?
 }
