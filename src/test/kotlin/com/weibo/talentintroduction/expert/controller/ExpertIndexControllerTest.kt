@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -57,7 +58,10 @@ class ExpertIndexControllerTest {
 
         val result = controller.promoteEligibleRaw(maxPromotions = 1)
         assertNotNull(result)
-        assertEquals(0, (result.body as PromotionScanResult).stats.total)
+        val body = result.body as TaskLaunchResponse<*>
+        val scanResult = body.result as PromotionScanResult
+        assertEquals(0, scanResult.stats.total)
+        assertEquals(1L, body.executionId)
     }
 
     @Test
@@ -139,7 +143,10 @@ class ExpertIndexControllerTest {
 
         val result = controller.promoteEligibleRaw(maxPromotions = 1)
         assertNotNull(result)
-        assertEquals(0, (result.body as PromotionScanResult).stats.total)
+        val body = result.body as TaskLaunchResponse<*>
+        val scanResult = body.result as PromotionScanResult
+        assertEquals(0, scanResult.stats.total)
+        assertEquals(1L, body.executionId)
     }
 
     @Test

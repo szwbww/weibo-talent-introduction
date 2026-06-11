@@ -47,6 +47,9 @@ class EuropePmcDataSource(
             .toUri()
 
         val response = try {
+            if (properties.requestDelayMs > 0) {
+                Thread.sleep(properties.requestDelayMs)
+            }
             restTemplate.getForObject(uri, JsonNode::class.java)
         } catch (e: Exception) {
             log.error("Europe PMC search failed: {}", e.message)

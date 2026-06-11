@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -95,7 +96,7 @@ class ExpertIndexController(
         }
         var executionId: Long? = null
         try {
-            val (_, result) = taskExecutionService.runAndRecordWithResult(
+            val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
                 "EXPERT_REVALIDATION", "MANUAL", "revalidate-candidates",
                 onStarted = { id ->
                     executionId = id
@@ -104,7 +105,7 @@ class ExpertIndexController(
             ) {
                 revalidationService.revalidateCandidates()
             }
-            return ResponseEntity.ok(result)
+            return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
         } catch (ex: Exception) {
             progressStore.update("EXPERT_REVALIDATION", TaskProgress(
                 taskType = "EXPERT_REVALIDATION", status = "FAILED",
@@ -137,7 +138,7 @@ class ExpertIndexController(
         }
         var executionId: Long? = null
         try {
-            val (_, result) = taskExecutionService.runAndRecordWithResult(
+            val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
                 "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions),
                 onStarted = { id ->
                     executionId = id
@@ -146,7 +147,7 @@ class ExpertIndexController(
             ) {
                 revalidationService.promoteEligibleRawExperts(maxPromotions)
             }
-            return ResponseEntity.ok(result)
+            return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
         } catch (ex: Exception) {
             progressStore.update("RAW_PROMOTION_SCAN", TaskProgress(
                 taskType = "RAW_PROMOTION_SCAN", status = "FAILED",

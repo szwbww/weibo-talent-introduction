@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
 import com.weibo.talentintroduction.discovery.service.OrcidDataSource
 import com.weibo.talentintroduction.discovery.service.PmcOaDataSource
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -151,7 +152,10 @@ class ExpertDiscoveryControllerTest {
 
         val result = controller.triggerDiscovery(null)
         assertEquals(200, result.statusCodeValue)
-        assertNotNull(result.body)
+        val body = result.body as TaskLaunchResponse<*>
+        assertEquals(1L, body.executionId)
+        val exec = body.result as TaskExecution
+        assertEquals("EXPERT_DISCOVERY", exec.taskType)
     }
 
     @Test

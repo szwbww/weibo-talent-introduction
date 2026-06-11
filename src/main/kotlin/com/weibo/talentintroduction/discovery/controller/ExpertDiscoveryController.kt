@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
 import com.weibo.talentintroduction.discovery.service.OrcidDataSource
 import com.weibo.talentintroduction.discovery.service.PmcOaDataSource
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -95,7 +96,7 @@ class ExpertDiscoveryController(
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(mapOf("message" to (execution.errorMessage ?: "任务执行失败")))
             }
-            return ResponseEntity.ok(execution)
+            return ResponseEntity.ok(TaskLaunchResponse(execution.id!!, execution))
         } catch (ex: Exception) {
             val existing = progressStore.get("EXPERT_DISCOVERY")
             progressStore.update("EXPERT_DISCOVERY", existing?.copy(
@@ -165,7 +166,7 @@ class ExpertDiscoveryController(
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(mapOf("message" to (execution.errorMessage ?: "任务执行失败")))
             }
-            return ResponseEntity.ok(execution)
+            return ResponseEntity.ok(TaskLaunchResponse(execution.id!!, execution))
         } catch (ex: Exception) {
             val existing = progressStore.get("EXPERT_DISCOVERY")
             progressStore.update("EXPERT_DISCOVERY", existing?.copy(
