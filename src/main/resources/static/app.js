@@ -236,12 +236,134 @@ async function resumeProgressPollingIfNeeded() {
             if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
                 const mapping = taskButtonMapping[taskType];
                 if (mapping) setTaskButtonRunning(mapping.btnId);
+                startTaskWatcher(taskType);
             }
         } catch (e) { /* 静默 */ }
     }
 }
 
-let currentTaskModal = null; // { taskType, label, btnId, progressTimer, logTimer, executionId }
+// taskModalGenerationSequence, createTaskModalContext, currentTaskModal,
+// isProgressTerminal, isExecutionTerminal, isCurrentTaskModal, bindTaskModalExecution,
+// fetchJsonForCurrentTaskModal, fetchAndCacheBatchLogs are defined in task-modal-runtime.js
+
+const TASK_WATCHER_INTERVAL_MS = 3000;
+const TASK_WATCHER_LAUNCH_GRACE_MS = 30000;
+const TASK_WATCHER_MAX_INITIAL_204 = 10;
+
+const taskWatchers = {}; // taskType -> watcher state
+
+function isCurrentTaskWatcher(taskType, watcher) {
+    return watcher != null && taskWatchers[taskType] === watcher;
+}
+
+async function pollTaskWatcher(taskType) {
+    const watcher = taskWatchers[taskType];
+    if (!watcher) return;
+
+    try {
+        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        if (!isCurrentTaskWatcher(taskType, watcher)) return;
+
+        if (response.status === 204) {
+            watcher.noProgressCount += 1;
+
+            const graceExpired =
+                Date.now() - watcher.startedAt >= TASK_WATCHER_LAUNCH_GRACE_MS
+                || watcher.noProgressCount >= TASK_WATCHER_MAX_INITIAL_204;
+
+            if (watcher.awaitingLaunch && !watcher.observedActive && !graceExpired) {
+                return;
+            }
+
+            stopTaskWatcher(taskType, true, watcher);
+            return;
+        }
+
+        if (!response.ok) return;
+
+        const progress = await response.json();
+        if (!isCurrentTaskWatcher(taskType, watcher)) return;
+
+        watcher.noProgressCount = 0;
+
+        if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
+            watcher.awaitingLaunch = false;
+            watcher.observedActive = true;
+            return;
+        }
+
+        if (isProgressTerminal(progress.status)) {
+            stopTaskWatcher(taskType, true, watcher);
+            const mapping = taskButtonMapping[taskType];
+            const label = mapping?.label || taskType;
+            const verb = progress.status === "CANCELLED" ? "已取消"
+                       : progress.status === "COMPLETED" ? "已完成" : "已结束";
+            notifyTaskCompletionOnce({
+                taskType,
+                executionId: progress.executionId,
+                status: progress.status,
+                message: `${label} ${verb}`,
+                level: progress.status === "FAILED" ? "error" : "ok"
+            });
+        }
+    } catch (e) {
+        // 网络抖动：保留 watcher，下轮重试
+    }
+}
+
+function startTaskWatcher(taskType, options = {}) {
+    let watcher = taskWatchers[taskType];
+    if (!watcher) {
+        watcher = {
+            intervalId: null,
+            awaitingLaunch: !!options.awaitingLaunch,
+            startedAt: Date.now(),
+            noProgressCount: 0,
+            observedActive: false
+        };
+        taskWatchers[taskType] = watcher;
+        pollTaskWatcher(taskType);
+        watcher.intervalId = setInterval(() => pollTaskWatcher(taskType), TASK_WATCHER_INTERVAL_MS);
+    } else {
+        if (options.awaitingLaunch) {
+            watcher.awaitingLaunch = true;
+            watcher.startedAt = Date.now();
+            watcher.noProgressCount = 0;
+        }
+    }
+}
+
+function stopTaskWatcher(taskType, restoreButton, expectedWatcher) {
+    const watcher = taskWatchers[taskType];
+    if (expectedWatcher && watcher !== expectedWatcher) {
+        return false;
+    }
+
+    if (watcher) {
+        if (watcher.intervalId) {
+            clearInterval(watcher.intervalId);
+        }
+        delete taskWatchers[taskType];
+    }
+    if (restoreButton) {
+        const mapping = taskButtonMapping[taskType];
+        if (mapping) restoreTaskButton(mapping.btnId);
+    }
+    return true;
+}
+
+function markTaskWatcherLaunchSucceeded(taskType, capturedGeneration) {
+    if (!isCurrentTaskModal(taskType, capturedGeneration)) {
+        const watcher = taskWatchers[taskType];
+        if (watcher) {
+            watcher.awaitingLaunch = false;
+            watcher.observedActive = true;
+            watcher.noProgressCount = 0;
+        } else {
+            startTaskWatcher(taskType);
+        }
+    }
+}
 
 async function progressStoreHasRunningTask() {
     for (const taskType of Object.keys(taskButtonMapping)) {
@@ -266,10 +388,17 @@ function setTaskButtonRunning(btnId) {
     btn.innerHTML = `<span class="btn-running-indicator">执行中</span>`;
 }
 
-function openTaskModal(taskType, label, btnId) {
+function openTaskModal(taskType, label, btnId, options = {}) {
     try {
-        // 停止旧轮询但不关闭弹窗
+        if (typeof options === "boolean") {
+            options = { launchRequested: options };
+        }
+        const launchRequested = options.launchRequested === true;
+        const knownActiveAtOpen = options.knownActiveAtOpen === true;
+
+        // 停止旧轮询但不关闭弹窗；停止后台 watcher，由弹窗接管
         stopTaskModalPolling();
+        stopTaskWatcher(taskType, false);
 
         const modal = $("#taskProgressModal");
         if (!modal) {
@@ -310,53 +439,59 @@ function openTaskModal(taskType, label, btnId) {
         if (errorsDiv) errorsDiv.hidden = true;
         if (errorContent) errorContent.textContent = "";
 
-        // 禁用按钮并显示执行中
+        // 显示执行中（可点击重新打开弹窗）
         if (btnId) {
-            const btn = $(`#${btnId}`);
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = "执行中...";
-            }
+            setTaskButtonRunning(btnId);
         }
 
-        currentTaskModal = { taskType, label, btnId, progressTimer: null, logTimer: null, executionId: null };
+        currentTaskModal = createTaskModalContext(taskType, label, btnId, "PROGRESS");
+        currentTaskModal.launchRequested = launchRequested;
+        currentTaskModal.knownActiveAtOpen = knownActiveAtOpen;
+        const capturedGeneration = currentTaskModal.generation;
 
     // 启动进度轮询（每 1s）
     const progressTimer = setInterval(async () => {
         try {
-            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
-            if (response.status === 204) return;
-            if (!response.ok) return;
-            const progress = await response.json();
+            const url = `${contextPath}/api/task-progress/${taskType}`;
+            const progress = await fetchJsonForCurrentTaskModal(taskType, capturedGeneration, url);
+            if (!progress) return;
             if (progress.executionId && currentTaskModal && !currentTaskModal.executionId) {
                 currentTaskModal.executionId = progress.executionId;
+                if (currentTaskModal.expandedExecutionId == null) {
+                    currentTaskModal.expandedExecutionId = progress.executionId;
+                    fetchRunList(taskType, capturedGeneration);
+                }
             }
-            updateTaskModalFromProgress(progress);
+            updateTaskModalFromProgress(progress, capturedGeneration);
         } catch (e) { /* 静默 */ }
     }, 1000);
 
-    // 启动日志轮询（每 3s）
+    // 启动日志轮询（每 3s）—— 仅当有展开的活动执行时拉取批次日志
     const logTimer = setInterval(async () => {
         try {
-            const execId = currentTaskModal?.executionId;
-            const url = execId
-                ? `${contextPath}/api/task-progress/${taskType}/logs?executionId=${execId}`
-                : `${contextPath}/api/task-progress/${taskType}/logs`;
-            const response = await fetch(url);
-            if (!response.ok) return;
-            const logs = await response.json();
-            updateTaskModalLogs(logs);
+            if (!isCurrentTaskModal(taskType, capturedGeneration)) return;
+            const expandedExecId = currentTaskModal?.expandedExecutionId;
+            if (!expandedExecId) return;
+            const cachedStatus = currentTaskModal?.runStatusByExecutionId?.[expandedExecId];
+            if (!cachedStatus || (cachedStatus !== "RUNNING" && cachedStatus !== "CANCELLING")) return;
+            await fetchAndCacheBatchLogs(taskType, expandedExecId, capturedGeneration);
         } catch (e) { /* 静默 */ }
     }, 3000);
 
+    // 启动执行列表轮询（每 5s）
+    const runListTimer = setInterval(async () => {
+        try {
+            if (!isCurrentTaskModal(taskType, capturedGeneration)) return;
+            await fetchRunList(taskType, capturedGeneration);
+        } catch (e) { /* 静默 */ }
+    }, 5000);
+
     currentTaskModal.progressTimer = progressTimer;
     currentTaskModal.logTimer = logTimer;
+    currentTaskModal.runListTimer = runListTimer;
 
-        // 立即加载一次日志
-        fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
-            .then(r => r.ok ? r.json() : [])
-            .then(logs => updateTaskModalLogs(logs))
-            .catch((e) => console.error("Error fetching logs in openTaskModal:", e));
+        // 立即加载执行列表和日志
+        fetchRunList(taskType, capturedGeneration);
     } catch (e) {
         console.error("Exception in openTaskModal:", e);
     }
@@ -364,18 +499,31 @@ function openTaskModal(taskType, label, btnId) {
 
 function closeTaskModal() {
     if (!currentTaskModal) return;
+    const taskType = currentTaskModal.taskType;
+    const shouldWatch = shouldStartTaskWatcherOnClose(currentTaskModal);
+    const awaitingLaunch = currentTaskModal.mode === "PROGRESS"
+        && currentTaskModal.launchRequested
+        && currentTaskModal.lastProgressStatus == null
+        && currentTaskModal.executionId == null;
+
     stopTaskModalPolling();
     $("#taskProgressModal").hidden = true;
     document.body.classList.remove("modal-open");
     currentTaskModal = null;
+    // 仅当已知活动状态时启动后台监视器；终态不启动，避免重复弹提示
+    if (shouldWatch) {
+        startTaskWatcher(taskType, { awaitingLaunch });
+    }
 }
 
 function stopTaskModalPolling() {
     if (currentTaskModal) {
         if (currentTaskModal.progressTimer) clearInterval(currentTaskModal.progressTimer);
         if (currentTaskModal.logTimer) clearInterval(currentTaskModal.logTimer);
+        if (currentTaskModal.runListTimer) clearInterval(currentTaskModal.runListTimer);
         currentTaskModal.progressTimer = null;
         currentTaskModal.logTimer = null;
+        currentTaskModal.runListTimer = null;
     }
 }
 
@@ -396,7 +544,42 @@ async function handleCancelTask() {
     }
 }
 
-function updateTaskModalFromProgress(progress) {
+// refreshRunListUntilExecutionTerminal is defined in task-modal-runtime.js
+
+function renderRunList(runs, taskType, generation) {
+    if (!isCurrentTaskModal(taskType, generation)) return;
+    const runBody = $("#taskModalRunBody");
+    if (!runBody) return;
+    runBody.innerHTML = runs.length > 0
+        ? runs.map(r => renderRunRow(r, taskType)).join("")
+        : `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">暂无执行记录</td></tr>`;
+    if (currentTaskModal) {
+        runs.forEach(r => {
+            currentTaskModal.runStatusByExecutionId[r.executionId] = r.status;
+        });
+    }
+}
+
+function updateExpandedFromCache(taskType, generation) {
+    if (!isCurrentTaskModal(taskType, generation)) return;
+    const expandedExecId = currentTaskModal?.expandedExecutionId;
+    if (expandedExecId == null) return;
+    const detailRow = document.getElementById(`detail-row-${expandedExecId}`);
+    if (!detailRow) {
+        const runRow = document.querySelector(`.run-row[data-execution-id="${expandedExecId}"]`);
+        if (runRow) {
+            const arrowCell = runRow.querySelector("td");
+            if (arrowCell) arrowCell.textContent = "▼";
+            runRow.insertAdjacentHTML("afterend", renderBatchDetailRow(expandedExecId));
+        }
+    }
+    const cachedLogs = currentTaskModal?.batchLogsByExecutionId?.[expandedExecId];
+    if (cachedLogs) {
+        updateTaskModalLogs(expandedExecId, cachedLogs);
+    }
+}
+
+function updateTaskModalFromProgress(progress, generation) {
     const statusEl = $("#taskModalStatus");
     const percentEl = $("#taskModalPercent");
     const fillEl = $("#taskModalFill");
@@ -426,18 +609,28 @@ function updateTaskModalFromProgress(progress) {
         }
     }
 
-    if (progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
-        cancelBtn.disabled = true;
-        cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
-        if (currentTaskModal && currentTaskModal.btnId) {
-            restoreTaskButton(currentTaskModal.btnId);
-        }
-        // 2s 后可关闭弹窗提示
-        setTimeout(() => {
-            if (progress.status === "COMPLETED") {
-                showStatus(`${currentTaskModal?.label || "任务"} 完成`, "ok");
+    if (currentTaskModal) {
+        const justObservedTerminal = observeTaskModalProgress(progress, generation);
+        if (justObservedTerminal) {
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
+            if (currentTaskModal.btnId) {
+                restoreTaskButton(currentTaskModal.btnId);
             }
-        }, 500);
+            stopTaskWatcher(currentTaskModal.taskType, false);
+
+            // Stop progress and log timers immediately
+            if (currentTaskModal.progressTimer) {
+                clearInterval(currentTaskModal.progressTimer);
+                currentTaskModal.progressTimer = null;
+            }
+            if (currentTaskModal.logTimer) {
+                clearInterval(currentTaskModal.logTimer);
+                currentTaskModal.logTimer = null;
+            }
+
+            finalizeCurrentTaskModalTerminal(currentTaskModal.taskType, generation);
+        }
     }
 
     // 同步旧进度条
@@ -454,14 +647,19 @@ function updateTaskModalFromProgress(progress) {
     }
 }
 
-function updateTaskModalLogs(logs) {
-    const logBody = $("#taskModalLogBody");
+function updateTaskModalLogs(executionId, logs) {
+    // 刷新第一层执行行的内嵌批次表
+    const batchBody = document.getElementById(`batch-body-${executionId}`);
+    if (!batchBody) return;
+    batchBody.innerHTML = renderBatchTable(logs);
+}
+
+function renderBatchTable(logs) {
     if (!logs || logs.length === 0) {
-        logBody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
-        return;
+        return `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
     }
-    logBody.innerHTML = logs.map(log => {
-        const time = log.createdAt ? formatDateTime(log.createdAt) : "";
+    return logs.map(log => {
+        const time = formatDateTime(log.createdAt);
         const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
         return `
             <tr>
@@ -474,6 +672,116 @@ function updateTaskModalLogs(logs) {
             </tr>
         `;
     }).join("");
+}
+
+function renderRunRow(run, taskType) {
+    const statusBadge = badge(
+        run.status === "RUNNING" ? "运行中"
+            : run.status === "CANCELLING" ? "取消中"
+            : run.status === "SUCCESS" ? "成功"
+            : run.status === "PARTIAL_SUCCESS" ? "部分成功"
+            : run.status === "CANCELLED" ? "已取消"
+            : run.status === "FAILED" ? "失败" : run.status,
+        run.status === "RUNNING" || run.status === "CANCELLING" ? ""
+            : run.status === "SUCCESS" ? "ok" : run.status === "FAILED" ? "error" : "warn"
+    );
+    const triggerLabel = run.triggerType === "SCHEDULED" ? "定时" : run.triggerType === "MANUAL" ? "手动" : run.triggerType;
+    const duration = run.durationSeconds != null ? run.durationSeconds + "秒" : "-";
+    const expanded = currentTaskModal?.expandedExecutionId === run.executionId;
+    const arrow = expanded ? "▼" : "▶";
+    return `
+        <tr class="run-row" data-execution-id="${run.executionId}" data-status="${escapeHtml(run.status)}" onclick="toggleRunDetail('${escapeHtml(taskType)}', ${run.executionId})" style="cursor:pointer;">
+            <td style="width:24px;text-align:center;">${arrow}</td>
+            <td>${escapeHtml(run.startedAt)}</td>
+            <td>${escapeHtml(triggerLabel)}</td>
+            <td>${statusBadge}</td>
+            <td>${run.totalProcessed}</td>
+            <td>${run.totalPassed}</td>
+            <td>${run.totalRejected}</td>
+            <td>${escapeHtml(duration)}</td>
+        </tr>
+    `;
+}
+
+function renderBatchDetailRow(executionId) {
+    return `
+        <tr class="run-detail-row" id="detail-row-${executionId}">
+            <td colspan="8" style="padding:0;">
+                <div style="max-height:200px;overflow-y:auto;margin:4px 0;">
+                    <table class="data-table compact" style="width:100%;border-collapse:collapse;font-size:11px;">
+                        <thead>
+                            <tr style="background-color:var(--panel-bg);">
+                                <th style="padding:6px;">批次</th>
+                                <th style="padding:6px;">本批处理</th>
+                                <th style="padding:6px;">通过</th>
+                                <th style="padding:6px;">拒绝</th>
+                                <th style="padding:6px;">累计进度</th>
+                                <th style="padding:6px;">时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-body-${executionId}">
+                            <tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+async function toggleRunDetail(taskType, executionId) {
+    if (!currentTaskModal) return;
+    const prevExpanded = currentTaskModal.expandedExecutionId;
+    const generation = currentTaskModal.generation;
+
+    if (prevExpanded != null) {
+        const prevRow = document.getElementById(`detail-row-${prevExpanded}`);
+        if (prevRow) prevRow.remove();
+        const prevRunRow = document.querySelector(`.run-row[data-execution-id="${prevExpanded}"]`);
+        if (prevRunRow) {
+            const arrowCell = prevRunRow.querySelector("td");
+            if (arrowCell) arrowCell.textContent = "▶";
+        }
+    }
+
+    if (prevExpanded === executionId) {
+        currentTaskModal.expandedExecutionId = null;
+        return;
+    }
+
+    currentTaskModal.expandedExecutionId = executionId;
+    const cachedStatus = currentTaskModal.runStatusByExecutionId?.[executionId];
+    const runRow = document.querySelector(`.run-row[data-execution-id="${executionId}"]`);
+    if (runRow) {
+        const arrowCell = runRow.querySelector("td");
+        if (arrowCell) arrowCell.textContent = "▼";
+        runRow.insertAdjacentHTML("afterend", renderBatchDetailRow(executionId));
+    }
+
+    // Use cache for historical (terminal) executions
+    const cachedLogs = currentTaskModal.batchLogsByExecutionId?.[executionId];
+    if (cachedLogs && cachedStatus && isExecutionTerminal(cachedStatus)) {
+        updateTaskModalLogs(executionId, cachedLogs);
+        return;
+    }
+
+    try {
+        await fetchAndCacheBatchLogs(taskType, executionId, generation);
+    } catch (e) { /* 静默 */ }
+}
+
+async function fetchRunList(taskType, generation) {
+    try {
+        const url = `${contextPath}/api/task-progress/${taskType}/executions?limit=10`;
+        const runs = await fetchJsonForCurrentTaskModal(taskType, generation, url);
+        if (!runs) return;
+        const selectedRun = selectExecutionForCurrentModal(runs, currentTaskModal);
+        if (selectedRun && isCurrentTaskModal(taskType, generation)) {
+            await adoptTaskModalExecution(taskType, generation, selectedRun.executionId, "RUN_LIST");
+        }
+        renderRunList(runs, taskType, generation);
+        updateExpandedFromCache(taskType, generation);
+    } catch (e) { /* 静默 */ }
 }
 
 function renderBySourceTable(bySource, container) {
@@ -1242,7 +1550,7 @@ function openTaskLaunchModal(taskType) {
         config.run();
     };
 
-    $("#taskModalLogBody").innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
+    $("#taskModalRunBody").innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
     $("#taskModalErrors").hidden = true;
     $("#taskModalErrorContent").textContent = "";
 
@@ -1250,13 +1558,11 @@ function openTaskLaunchModal(taskType) {
     document.body.classList.add("modal-open");
 
     // Initialize currentTaskModal structure to fetch logs
-    currentTaskModal = { taskType, label: config.title, btnId: config.btnId, progressTimer: null, logTimer: null, executionId: null };
+    currentTaskModal = createTaskModalContext(taskType, config.title, config.btnId, "CONFIG");
+    const capturedGeneration = currentTaskModal.generation;
 
-    // Immediately load logs once
-    fetch(`${contextPath}/api/task-progress/${taskType}/logs`)
-        .then(r => r.ok ? r.json() : [])
-        .then(logs => updateTaskModalLogs(logs))
-        .catch(() => {});
+    // Immediately load execution list
+    fetchRunList(taskType, capturedGeneration);
 }
 
 function closeTaskLaunchModal() {
@@ -1267,7 +1573,7 @@ async function handleRevalidateCandidates() {
     const taskType = "EXPERT_REVALIDATION";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "重新验证候选人", "revalidateBtn");
+        openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -1280,21 +1586,34 @@ async function executeRevalidate() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "重新验证候选人", "revalidateBtn");
+    openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
     try {
-        const result = await api("/api/experts/revalidate-candidates", { method: "POST" });
+        const response = await api("/api/experts/revalidate-candidates", { method: "POST" });
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+        const result = response.result || response;
         const stats = result.stats || result;
         const failureMsg = stats.demotionFailed > 0 ? `, 降级失败 ${stats.demotionFailed}` : "";
-        showStatus(`候选人重新验证完成: 总数 ${stats.total}, 通过 ${stats.passed}, 降级 ${stats.demoted}${failureMsg}`, "ok");
+        notifyTaskCompletionOnce({
+            taskType,
+            executionId: response.executionId,
+            status: "COMPLETED",
+            message: `候选人重新验证完成: 总数 ${stats.total}, 通过 ${stats.passed}, 降级 ${stats.demoted}${failureMsg}`,
+            level: "ok"
+        });
     } catch (e) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
             return;
         }
         showStatus("验证失败: " + e.message, "error");
         showTaskErrorLog(e.message);
         stopTaskModalPolling();
-        restoreTaskButton("revalidateBtn");
+        stopTaskWatcher(taskType, true);
         hideProgressBar();
     }
 }
@@ -1303,7 +1622,7 @@ async function handlePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
+        openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -1317,25 +1636,38 @@ async function executePromoteRaw() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn");
+    openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
     try {
-        const result = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
+        const response = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+        const result = response.result || response;
         const stats = result.stats || result;
         const failures = [];
         if (stats.promotionFailed > 0) failures.push(`晋升失败 ${stats.promotionFailed}`);
         if (stats.existenceCheckFailed > 0) failures.push(`HEAD 失败 ${stats.existenceCheckFailed}`);
         const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
         const hasFailures = stats.promotionFailed > 0 || stats.existenceCheckFailed > 0;
-        showStatus(`RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`, hasFailures ? "warn" : "ok");
+        notifyTaskCompletionOnce({
+            taskType,
+            executionId: response.executionId,
+            status: "COMPLETED",
+            message: `RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
+            level: hasFailures ? "warn" : "ok"
+        });
     } catch (e) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
             return;
         }
         showStatus("扫描失败: " + e.message, "error");
         showTaskErrorLog(e.message);
         stopTaskModalPolling();
-        restoreTaskButton("promoteRawBtn");
+        stopTaskWatcher(taskType, true);
         hideProgressBar();
     }
 }
@@ -1344,7 +1676,7 @@ async function handleDiscover() {
     const taskType = "EXPERT_DISCOVERY";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "发现专家", "discoverBtn");
+        openTaskModal(taskType, "发现专家", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -1382,19 +1714,25 @@ async function executeDiscover() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "发现专家", "discoverBtn");
+    openTaskModal(taskType, "发现专家", "discoverBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
     try {
         const selectedSources = getSelectedSources();
-        let result;
+        let response;
         if (keywords) {
             const params = new URLSearchParams();
             keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
             if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
-            result = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
+            response = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
         } else {
             const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
-            result = await api("/api/expert-discovery/run", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
+            response = await api("/api/expert-discovery/run", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
         }
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+        const result = response.result || response;
         const summary = result.resultSummary ? JSON.parse(result.resultSummary) : result;
         const stats = summary.stats || summary || {};
         const failures = [];
@@ -1406,19 +1744,23 @@ async function executeDiscover() {
         if (stats.dedupErrors > 0) failures.push(`查重错误 ${stats.dedupErrors}`);
         const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
         const hasFailures = failures.length > 0;
-        showStatus(
-            `专家发现完成: 论文 ${stats.totalPapers || 0}, 作者 ${stats.totalAuthors || 0}, 收录 ${stats.indexed || 0}, 晋升 ${stats.promoted || 0}${failureMsg}`,
-            hasFailures ? "warn" : "ok"
-        );
+        notifyTaskCompletionOnce({
+            taskType,
+            executionId: response.executionId,
+            status: "COMPLETED",
+            message: `专家发现完成: 论文 ${stats.totalPapers || 0}, 作者 ${stats.totalAuthors || 0}, 收录 ${stats.indexed || 0}, 晋升 ${stats.promoted || 0}${failureMsg}`,
+            level: hasFailures ? "warn" : "ok"
+        });
     } catch (e) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
             return;
         }
         showStatus("发现失败: " + e.message, "error");
         showTaskErrorLog(e.message);
         stopTaskModalPolling();
-        restoreTaskButton("discoverBtn");
+        stopTaskWatcher(taskType, true);
         hideProgressBar();
     }
 }
@@ -3636,7 +3978,9 @@ function bindEvents() {
                 const progress = await response.json();
                 if (progress.status === "RUNNING" || progress.status === "CANCELLING" ||
                     progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
-                    openTaskModal(taskType, mapping.label, mapping.btnId);
+                    openTaskModal(taskType, mapping.label, mapping.btnId, {
+                        knownActiveAtOpen: progress.status === "RUNNING" || progress.status === "CANCELLING"
+                    });
                     break;
                 }
             } catch (e) {}

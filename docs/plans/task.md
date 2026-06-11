@@ -1,5 +1,6 @@
-# Task Tracking: Adjust Manual Reply Dropdown Width
+# Task List: 2026-06-11-task-modal-js-trailing-whitespace-cleanup-plan
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| Task 1 | Update styles.css with `#autoReplySelect` width style | done |
+| Task-01 | Clean up trailing whitespace in `src/test/js/taskModalStateMachine.test.js` | in_progress |
+| Task-02 | Run git diff --check and all tests to verify cleanliness | not_started |
