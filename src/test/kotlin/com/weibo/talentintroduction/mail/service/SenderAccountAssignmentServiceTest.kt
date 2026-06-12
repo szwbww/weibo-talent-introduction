@@ -34,7 +34,23 @@ class SenderAccountAssignmentServiceTest {
         assertEquals("zoe", selected.accountCode)
     }
 
-    private fun account(accountCode: String, strategyWeight: Int): MailSenderAccount =
+    @Test
+    fun `excludes simulator account`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("SIMULATOR_NOOP", strategyWeight = 100),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States")
+        )
+
+        assertEquals("zoe", selected.accountCode)
+    }
+
+    private fun account(accountCode: String, strategyWeight: Int = 100): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
             senderEmail = "$accountCode@qftechtalent.com",

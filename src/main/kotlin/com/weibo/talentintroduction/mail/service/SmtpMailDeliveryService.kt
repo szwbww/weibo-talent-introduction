@@ -16,7 +16,17 @@ class SmtpMailDeliveryService : MailDeliveryService {
             javaMailProperties = smtpProperties(account.smtpPort)
         }
 
-        val message = sender.createMimeMessage()
+        val mailSession = sender.session
+        val message = if (mail.messageId != null) {
+            object : javax.mail.internet.MimeMessage(mailSession) {
+                override fun updateMessageID() {
+                    setHeader("Message-ID", mail.messageId)
+                }
+            }
+        } else {
+            sender.createMimeMessage()
+        }
+
         message.setFrom(account.senderEmail)
         message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
         message.subject = mail.subject
@@ -29,7 +39,7 @@ class SmtpMailDeliveryService : MailDeliveryService {
         sender.send(message)
 
         return DeliveredMail(
-            messageId = message.messageID,
+            messageId = message.messageID ?: mail.messageId,
             status = "SENT"
         )
     }

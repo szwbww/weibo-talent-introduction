@@ -30,7 +30,7 @@ class TaskProgressController(
 ) {
 
     private val log = LoggerFactory.getLogger(TaskProgressController::class.java)
-    private val allowedTaskTypes = setOf("EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY")
+    private val allowedTaskTypes = setOf("EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY", "MANUAL_INITIAL_OUTREACH")
 
     @GetMapping("/{taskType}")
     fun getProgress(@PathVariable taskType: String): ResponseEntity<TaskProgress> {
@@ -138,6 +138,11 @@ class TaskProgressController(
                             summaryText = summaryText
                         )
                     }
+                    "MANUAL_INITIAL_OUTREACH" -> ExecutionTotals(
+                        totalProcessed = stats.path("total").asLong(0),
+                        totalPassed = stats.path("sent").asLong(0),
+                        totalRejected = stats.path("failed").asLong(0)
+                    )
                     else -> ExecutionTotals()
                 }
             } catch (e: Exception) {
@@ -170,6 +175,10 @@ class TaskProgressController(
                     "EXPERT_DISCOVERY" -> {
                         passed = details.path("indexed").asLong(0)
                         rejected = 0
+                    }
+                    "MANUAL_INITIAL_OUTREACH" -> {
+                        passed = details.path("sent").asLong(0)
+                        rejected = details.path("failed").asLong(0)
                     }
                     else -> {
                         passed = 0; rejected = 0

@@ -26,7 +26,8 @@ import java.time.Duration
     PdfExtractionProperties::class,
     PmcOaProperties::class,
     OrcidProperties::class,
-    CoreProperties::class
+    CoreProperties::class,
+    ManualOutreachProperties::class
 )
 class RestTemplateConfig {
 

@@ -104,7 +104,7 @@ class MailSenderAccountService(
 
     fun selectAccountForSending(): MailSenderAccount =
         repository.findAllByEnabledTrue()
-            .filter { it.todaySentCount < it.dailySendLimit }
+            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != SIMULATOR_ACCOUNT_CODE }
             .maxWithOrNull(compareBy<MailSenderAccount> { selectionScore(it) }.thenBy { it.id ?: 0L })
             ?: error("No available mail sender account")
 
@@ -114,7 +114,7 @@ class MailSenderAccountService(
     }
 
     companion object {
-        private const val SIMULATOR_ACCOUNT_CODE = "SIMULATOR_NOOP"
+        const val SIMULATOR_ACCOUNT_CODE = "SIMULATOR_NOOP"
     }
 }
 

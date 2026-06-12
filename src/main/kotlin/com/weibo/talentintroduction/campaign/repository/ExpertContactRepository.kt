@@ -6,6 +6,9 @@ import org.springframework.data.repository.CrudRepository
 
 interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
     fun existsByCampaignIdAndOrcidId(campaignId: Long, orcidId: String): Boolean
+    fun existsByOrcidId(orcidId: String): Boolean
+    fun findAllByCurrentStatus(currentStatus: String): List<ExpertContact>
+    fun findByCampaignIdAndOrcidId(campaignId: Long, orcidId: String): ExpertContact?
 
     fun findFirstByExpertEmailOrderByUpdatedAtDesc(expertEmail: String): ExpertContact?
 

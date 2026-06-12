@@ -22,6 +22,8 @@ import com.weibo.talentintroduction.mail.service.ManualExpertMailService
 import com.weibo.talentintroduction.mail.service.ManualMailOption
 import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.ManualMailSendResult
+import com.weibo.talentintroduction.campaign.service.AutoReplySummary
+import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -86,6 +88,16 @@ class ExpertContactManagementController(
     @PostMapping("/{contactId}/resume-auto-reply")
     fun resumeAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
         service.resumeAutoReply(contactId).toResponse()
+
+    @GetMapping("/auto-reply/summary")
+    fun getAutoReplySummary(): AutoReplySummary =
+        service.getAutoReplySummary()
+
+    @PostMapping("/auto-reply/bulk")
+    fun bulkUpdateAutoReply(
+        @RequestBody request: BulkAutoReplyRequest
+    ): BulkAutoReplyResult =
+        service.bulkUpdateAutoReply(request.enabled, request.operatorName)
 
     @PostMapping("/{contactId}/promote-to-application")
     fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
@@ -361,6 +373,7 @@ data class MailRecordResponse(
     val sendStatus: String?,
     val receivedAt: String?,
     val sentAt: String?,
+    val errorSummary: String? = null,
     val createdAt: String?
 )
 
@@ -467,8 +480,18 @@ private fun MailRecord.toResponse(): MailRecordResponse =
         sendStatus = sendStatus,
         receivedAt = receivedAt?.toString(),
         sentAt = sentAt?.toString(),
+        errorSummary = sanitizeErrorSummary(errorSummary),
         createdAt = createdAt?.toString()
     )
+
+private fun sanitizeErrorSummary(summary: String?): String? {
+    if (summary == null) return null
+    val truncated = if (summary.length > 200) summary.take(200) + "..." else summary
+    return truncated
+        .replace(Regex("(?i)password=[^&\\s,;]+"), "password=******")
+        .replace(Regex("(?i)api-key=[^&\\s,;]+"), "api-key=******")
+        .replace(Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"), "[EMAIL]")
+}
 
 private fun MailAttachment.toResponse(): MailAttachmentResponse =
     MailAttachmentResponse(
@@ -513,3 +536,8 @@ private fun ExpertContactStatusHistory.toResponse(): ExpertContactStatusHistoryR
         source = source,
         createdAt = createdAt?.toString()
     )
+
+data class BulkAutoReplyRequest(
+    val enabled: Boolean,
+    val operatorName: String? = null
+)

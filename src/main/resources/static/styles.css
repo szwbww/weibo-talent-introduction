@@ -1821,6 +1821,7 @@ textarea {
     border-radius: var(--radius-md);
     padding: 20px;
     width: min(500px, 90vw);
+    margin: auto;
     background: var(--panel-bg);
     color: var(--text-main);
 }

@@ -432,7 +432,57 @@ class ExpertContactManagementService(
         manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(
             contactId, listOf("PENDING", "ASSIGNED")
         ) ?: error("No open manual handoff found for expert contact: $contactId")
+
+    fun getAutoReplySummary(): AutoReplySummary {
+        val allContacts = expertContactRepository.findAll().toList()
+        val total = allContacts.size
+        val enabled = allContacts.count { it.autoReplyEnabled }
+        val disabled = allContacts.count { !it.autoReplyEnabled }
+        val handoffLocked = allContacts.count { !it.autoReplyEnabled && it.manualHandoffRequired }
+        return AutoReplySummary(
+            total = total,
+            enabled = enabled,
+            disabled = disabled,
+            handoffLocked = handoffLocked
+        )
+    }
+
+    fun bulkUpdateAutoReply(enabled: Boolean, operatorName: String? = null): BulkAutoReplyResult {
+        val allContacts = expertContactRepository.findAll().toList()
+        var updated = 0
+        var skipped = 0
+        allContacts.forEach { contact ->
+            if (enabled) {
+                if (!contact.autoReplyEnabled) {
+                    if (!contact.manualHandoffRequired) {
+                        resumeAutoReply(contact.id ?: error("contact id is null"), operatorName)
+                        updated++
+                    } else {
+                        skipped++
+                    }
+                }
+            } else {
+                if (contact.autoReplyEnabled) {
+                    pauseAutoReply(contact.id ?: error("contact id is null"), operatorName)
+                    updated++
+                }
+            }
+        }
+        return BulkAutoReplyResult(updated = updated, skipped = skipped)
+    }
 }
+
+data class AutoReplySummary(
+    val total: Int,
+    val enabled: Int,
+    val disabled: Int,
+    val handoffLocked: Int
+)
+
+data class BulkAutoReplyResult(
+    val updated: Int,
+    val skipped: Int
+)
 
 data class ExpertContactDetail(
     val contact: ExpertContact,

@@ -260,6 +260,34 @@ class ExpertSearchService(
         val encoded = Base64.getEncoder().encodeToString(raw.toByteArray(StandardCharsets.UTF_8))
         return "Basic $encoded"
     }
+
+    fun searchByOrcidIds(
+        orcidIds: List<String>,
+        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+    ): List<ExpertProfile> {
+        if (orcidIds.isEmpty()) return emptyList()
+        val index = expertIndexService.indexName(level)
+        val requestBody = mapOf(
+            "size" to orcidIds.size,
+            "_source" to sourceFields(),
+            "query" to mapOf(
+                "terms" to mapOf(
+                    "orcidId" to orcidIds
+                )
+            )
+        )
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/$index/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        return response.path("hits")
+            .path("hits")
+            .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
+            .map(::toExpertProfile)
+    }
 }
 
 data class ExpertSearchResult(

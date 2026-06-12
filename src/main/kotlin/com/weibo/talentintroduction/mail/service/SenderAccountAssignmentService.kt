@@ -16,13 +16,13 @@ class SenderAccountAssignmentService(
     ): MailSenderAccount {
         val distributionKey = distributionKey(expert)
         return repository.findAllByEnabledTrue()
-            .filter { it.todaySentCount < it.dailySendLimit }
+            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
             .maxWithOrNull(
                 compareBy<MailSenderAccount> { account ->
                     assignmentScore(account, distributionKey, currentBatchAssignments)
                 }.thenBy { it.id ?: 0L }
             )
-            ?: error("No available mail sender account")
+            ?: throw NoAvailableSenderAccountException("No available mail sender account")
     }
 
     private fun assignmentScore(
@@ -52,3 +52,5 @@ data class SenderExpertAssignment(
     val expertId: String,
     val distributionKey: String
 )
+
+class NoAvailableSenderAccountException(message: String) : RuntimeException(message)

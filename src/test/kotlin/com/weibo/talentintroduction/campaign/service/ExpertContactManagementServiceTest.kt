@@ -231,6 +231,56 @@ class ExpertContactManagementServiceTest {
         assertFalse(updated.applicationIndexed)
     }
 
+    @Test
+    fun `getAutoReplySummary returns correct counts`() {
+        val contacts = listOf(
+            contact().copy(id = 1L, autoReplyEnabled = true),
+            contact().copy(id = 2L, autoReplyEnabled = false, manualHandoffRequired = false),
+            contact().copy(id = 3L, autoReplyEnabled = false, manualHandoffRequired = true)
+        )
+        Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
+
+        val summary = service.getAutoReplySummary()
+        assertEquals(3, summary.total)
+        assertEquals(1, summary.enabled)
+        assertEquals(2, summary.disabled)
+        assertEquals(1, summary.handoffLocked)
+    }
+
+    @Test
+    fun `bulkUpdateAutoReply turns off all enabled auto replies`() {
+        val contacts = listOf(
+            contact().copy(id = 1L, autoReplyEnabled = true),
+            contact().copy(id = 2L, autoReplyEnabled = false)
+        )
+        Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contacts[0]))
+        Mockito.`when`(expertContactRepository.findById(2L)).thenReturn(Optional.of(contacts[1]))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val result = service.bulkUpdateAutoReply(enabled = false)
+        assertEquals(1, result.updated)
+        assertEquals(0, result.skipped)
+    }
+
+    @Test
+    fun `bulkUpdateAutoReply turns on all disabled auto replies except handoffLocked`() {
+        val contacts = listOf(
+            contact().copy(id = 1L, autoReplyEnabled = false, manualHandoffRequired = false),
+            contact().copy(id = 2L, autoReplyEnabled = false, manualHandoffRequired = true)
+        )
+        Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contacts[0]))
+        Mockito.`when`(expertContactRepository.findById(2L)).thenReturn(Optional.of(contacts[1]))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val result = service.bulkUpdateAutoReply(enabled = true)
+        assertEquals(1, result.updated)
+        assertEquals(1, result.skipped)
+    }
+
     private fun contact(): ExpertContact =
         ExpertContact(
             id = 1L,

@@ -21,6 +21,11 @@ import org.mockito.Mockito.verify
 import org.springframework.beans.factory.ObjectProvider
 import java.time.LocalDateTime
 
+import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
+import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.task.service.TaskProgress
+import java.util.concurrent.Executor
+
 class MailAutomationControllerTest {
     private val initialOutreachService = Mockito.mock(InitialOutreachService::class.java)
     private val autoMailReplyService = Mockito.mock(AutoMailReplyService::class.java)
@@ -28,6 +33,9 @@ class MailAutomationControllerTest {
     @Suppress("UNCHECKED_CAST")
     private val mailQueuePublisherProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<MailQueuePublisher>
     private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
+    private val manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
+    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+    private val manualOutreachExecutor = Mockito.mock(Executor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
 
     private var capturedTriggerType: String? = null
@@ -38,16 +46,28 @@ class MailAutomationControllerTest {
         autoMailReplyService,
         batchAutoMailReplyService,
         mailQueuePublisherProvider,
-        taskExecutionService
+        taskExecutionService,
+        manualInitialOutreachService,
+        progressStore,
+        manualOutreachExecutor
     )
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
 
+    private fun <T> eqValue(value: T): T =
+        Mockito.eq(value) ?: value
+
     @BeforeEach
     fun setUp() {
         capturedTriggerType = null
         capturedRequest = null
+
+        Mockito.doAnswer { invocation ->
+            val runnable = invocation.getArgument<Runnable>(0)
+            runnable.run()
+            null
+        }.`when`(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
 
         Mockito.`when`(taskExecutionService.runAndRecord(
             anyValue(""), anyValue(""), anyValue(Any()), anyValue<(Long) -> Unit> { }, anyValue { null }
@@ -221,6 +241,58 @@ class MailAutomationControllerTest {
         val normalized = capturedRequest as CheckRepliesRequest
         assertNull(normalized.contactIds)
         assertEquals(20, normalized.maxMessagesPerAccount)
+    }
+
+    @Test
+    fun `startManualOutreach returns 202 and runs bulk outreach successfully`() {
+        Mockito.doReturn(Pair(true, 12345L))
+            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
+
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val onStarted = invocation.getArgument<(Long) -> Unit>(3)
+            onStarted(99L)
+            @Suppress("UNCHECKED_CAST")
+            val block = invocation.getArgument<() -> Any?>(4)
+            block()
+        }.`when`(taskExecutionService).runAndRecordWithResult<Any>(
+            eqValue("MANUAL_INITIAL_OUTREACH"), eqValue("MANUAL"), eqValue("manual-outreach"),
+            anyValue<(Long) -> Unit> { }, anyValue<() -> Any> { Any() }
+        )
+
+        val response = controller.startManualOutreach()
+        assertEquals(org.springframework.http.HttpStatus.ACCEPTED, response.statusCode)
+        assertEquals("已启动", response.body?.get("message"))
+
+        Mockito.verify(progressStore).bindExecutionId("MANUAL_INITIAL_OUTREACH", 12345L, 99L)
+        Mockito.verify(manualInitialOutreachService).runBulkOutreach(99L)
+        Mockito.verify(progressStore).clearExecutionContext("MANUAL_INITIAL_OUTREACH", 99L)
+    }
+
+    @Test
+    fun `startManualOutreach returns 409 when task is already running`() {
+        Mockito.doReturn(Pair(false, 0L))
+            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
+
+        val response = controller.startManualOutreach()
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+        assertEquals("任务正在执行中", response.body?.get("message"))
+    }
+
+    @Test
+    fun `startManualOutreach handles RejectedExecutionException, returns 500, updates progress and clears token`() {
+        Mockito.doReturn(Pair(true, 12345L))
+            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
+
+        Mockito.doThrow(java.util.concurrent.RejectedExecutionException("Queue full"))
+            .`when`(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
+
+        val response = controller.startManualOutreach()
+        assertEquals(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode)
+        assertTrue(response.body?.get("message")!!.contains("启动失败"))
+
+        Mockito.verify(progressStore).update(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)), eqValue(12345L))
+        Mockito.verify(progressStore).clearExecutionContext("MANUAL_INITIAL_OUTREACH", 12345L)
     }
 
     private fun emptyBatchResult() = BatchAutoMailReplyResult(

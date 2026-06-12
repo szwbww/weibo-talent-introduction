@@ -196,7 +196,8 @@ const taskButtonOriginalTexts = {
 const taskButtonMapping = {
     EXPERT_REVALIDATION: { label: "重新验证候选人", btnId: "revalidateBtn" },
     RAW_PROMOTION_SCAN: { label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
-    EXPERT_DISCOVERY: { label: "发现专家", btnId: "discoverBtn" }
+    EXPERT_DISCOVERY: { label: "发现专家", btnId: "discoverBtn" },
+    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" }
 };
 
 function restoreTaskButton(btnId) {
@@ -234,8 +235,13 @@ async function resumeProgressPollingIfNeeded() {
             if (response.status === 204 || !response.ok) continue;
             const progress = await response.json();
             if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
-                const mapping = taskButtonMapping[taskType];
-                if (mapping) setTaskButtonRunning(mapping.btnId);
+                if (taskType === "MANUAL_INITIAL_OUTREACH") {
+                    setOutreachButtonRunning();
+                    updateOutreachProgressPanel(progress);
+                } else {
+                    const mapping = taskButtonMapping[taskType];
+                    if (mapping) setTaskButtonRunning(mapping.btnId);
+                }
                 startTaskWatcher(taskType);
             }
         } catch (e) { /* 静默 */ }
@@ -265,6 +271,11 @@ async function pollTaskWatcher(taskType) {
         if (!isCurrentTaskWatcher(taskType, watcher)) return;
 
         if (response.status === 204) {
+            if (taskType === "MANUAL_INITIAL_OUTREACH") {
+                stopTaskWatcher(taskType, true, watcher);
+                restoreOutreachButton();
+                return;
+            }
             watcher.noProgressCount += 1;
 
             const graceExpired =
@@ -286,25 +297,46 @@ async function pollTaskWatcher(taskType) {
 
         watcher.noProgressCount = 0;
 
+        if (taskType === "MANUAL_INITIAL_OUTREACH") {
+            updateOutreachProgressPanel(progress);
+        }
+
         if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
             watcher.awaitingLaunch = false;
             watcher.observedActive = true;
+            if (taskType === "MANUAL_INITIAL_OUTREACH") {
+                setOutreachButtonRunning();
+            }
             return;
         }
 
         if (isProgressTerminal(progress.status)) {
             stopTaskWatcher(taskType, true, watcher);
-            const mapping = taskButtonMapping[taskType];
-            const label = mapping?.label || taskType;
-            const verb = progress.status === "CANCELLED" ? "已取消"
-                       : progress.status === "COMPLETED" ? "已完成" : "已结束";
-            notifyTaskCompletionOnce({
-                taskType,
-                executionId: progress.executionId,
-                status: progress.status,
-                message: `${label} ${verb}`,
-                level: progress.status === "FAILED" ? "error" : "ok"
-            });
+            if (taskType === "MANUAL_INITIAL_OUTREACH") {
+                restoreOutreachButton();
+                loadContacts();
+                const verb = progress.status === "CANCELLED" ? "已取消"
+                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
+                notifyTaskCompletionOnce({
+                    taskType,
+                    executionId: progress.executionId,
+                    status: progress.status,
+                    message: `批量发送介绍邮件 ${verb}`,
+                    level: progress.status === "FAILED" ? "error" : "ok"
+                });
+            } else {
+                const mapping = taskButtonMapping[taskType];
+                const label = mapping?.label || taskType;
+                const verb = progress.status === "CANCELLED" ? "已取消"
+                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
+                notifyTaskCompletionOnce({
+                    taskType,
+                    executionId: progress.executionId,
+                    status: progress.status,
+                    message: `${label} ${verb}`,
+                    level: progress.status === "FAILED" ? "error" : "ok"
+                });
+            }
         }
     } catch (e) {
         // 网络抖动：保留 watcher，下轮重试
@@ -1413,8 +1445,9 @@ async function loadContacts() {
                 </div>` : ""}
             </div>
         </div>
-    `;
+        `;
     }).join("");
+    refreshAutoReplySummary().catch(() => {});
 }
 
 function contactBadgeType(contact) {
@@ -1430,14 +1463,19 @@ function contactBadgeType(contact) {
 }
 
 async function handleCheckReplies() {
-    openTaskLaunchModal("CHECK_REPLIES");
-}
-
-async function executeCheckReplies() {
     const checked = $$(".expert-select-cb:checked")
         .map(cb => Number(cb.dataset.contactId))
         .filter(id => id > 0);
 
+    if (checked.length === 0) {
+        const confirmed = confirm("未勾选专家，将检查所有已联系专家的回复，继续？");
+        if (!confirmed) return;
+    }
+
+    await executeCheckReplies(checked);
+}
+
+async function executeCheckReplies(checked = []) {
     const payload = checked.length > 0
         ? { contactIds: checked }
         : {};
@@ -1452,37 +1490,26 @@ async function executeCheckReplies() {
             method: "POST",
             body: JSON.stringify(payload)
         });
+        showStatus(checked.length > 0
+            ? `检查完成: 已检查 ${checked.length} 位指定专家的回复`
+            : "检查完成: 已检查所有已联系专家的回复", "ok");
     } catch (e) {
         showStatus("检查回复失败: " + e.message, "error");
+        return;
+    } finally {
         btn.disabled = false;
         btn.textContent = originalText;
-        return;
     }
-
-    showStatus(checked.length > 0
-        ? `检查完成: 已检查 ${checked.length} 位指定专家的回复`
-        : "检查完成: 已检查所有已联系专家的回复");
 
     try {
         await showPollLog();
     } catch (e) {
         showStatus("检查已完成，但轮询日志加载失败: " + e.message, "error");
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
     }
 }
 
 // ---- 操作确认弹窗 ----
 const taskLaunchConfigs = {
-    CHECK_REPLIES: {
-        title: "检查回复",
-        desc: "扫描已勾选（或全部）专家的来信回复，触发自动回复流程。",
-        btnId: "checkRepliesBtn",
-        showKeyword: false,
-        showMaxPromotions: false,
-        run: executeCheckReplies
-    },
     EXPERT_REVALIDATION: {
         title: "重新验证候选人",
         desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。",
@@ -1520,14 +1547,7 @@ function openTaskLaunchModal(taskType) {
     $("#taskModalConfigSection").hidden = false;
     $("#taskModalProgressSection").hidden = true;
 
-    if (taskType === "CHECK_REPLIES") {
-        const checked = $$(".expert-select-cb:checked").filter(cb => Number(cb.dataset.contactId) > 0);
-        $("#taskLaunchDesc").textContent = checked.length > 0
-            ? `将检查已勾选的 ${checked.length} 位专家的来信回复。`
-            : "未勾选专家，将检查所有已联系专家的回复。";
-    } else {
-        $("#taskLaunchDesc").textContent = config.desc;
-    }
+    $("#taskLaunchDesc").textContent = config.desc;
     $("#taskLaunchKeywordRow").hidden = !config.showKeyword;
     $("#taskLaunchMaxPromotionsRow").hidden = !config.showMaxPromotions;
     if (config.showKeyword) $("#taskLaunchKeywordInput").value = "";
@@ -1813,43 +1833,15 @@ async function showPollLog() {
         </tr>`;
     }).join("");
 
-    const existing = document.getElementById("pollLogDialog");
-    if (existing) existing.remove();
-
-    const dialog = document.createElement("dialog");
-    dialog.id = "pollLogDialog";
-    dialog.className = "action-dialog";
-    dialog.style.maxWidth = "920px";
-    dialog.style.maxHeight = "80vh";
-    dialog.style.overflow = "hidden";
-    dialog.style.display = "flex";
-    dialog.style.flexDirection = "column";
-    dialog.innerHTML = `
-        <h3>自动回复轮询日志 (近10次)</h3>
-        <div style="overflow-y: auto; flex: 1;">
-            <table class="data-table" style="margin-top: 12px;">
-                <thead><tr>
-                    <th>触发方式</th><th>开始时间</th><th>轮询进度</th>
-                    <th>发现回复</th><th>耗时</th><th>下次定时</th><th>状态</th>
-                </tr></thead>
-                <tbody>${rows || '<tr><td colspan="7" class="text-muted">暂无轮询记录</td></tr>'}</tbody>
-            </table>
-        </div>
-        <div class="action-dialog-footer">
-            <button class="button secondary" id="closePollLogBtn">关闭</button>
-        </div>
-    `;
-    document.body.appendChild(dialog);
-    dialog.querySelector("#closePollLogBtn").addEventListener("click", () => dialog.close());
-    dialog.addEventListener("close", () => dialog.remove());
-    dialog.addEventListener("click", (e) => {
-        if (e.target === dialog) dialog.close();
-    });
-    dialog.querySelector("tbody").addEventListener("click", (e) => {
-        const row = e.target.closest("tr.poll-log-row");
-        if (row) togglePollDetail(row).catch(err => showStatus(err.message, "error"));
-    });
-    dialog.showModal();
+    const panel = $("#pollLogPanel");
+    if (panel) {
+        const tbody = $("#pollLogBody");
+        if (tbody) {
+            tbody.innerHTML = rows || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:12px;">暂无轮询记录</td></tr>';
+        }
+        panel.hidden = false;
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
 }
 
 async function togglePollDetail(row) {
@@ -2096,6 +2088,11 @@ function renderMailItem(mail) {
                 </div>
             </div>
             <div class="mail-subject">${escapeHtml(mail.subject || "无主题")}</div>
+            ${mail.sendStatus === "FAILED" && mail.errorSummary ? `
+                <div class="mail-error-summary" style="margin-top: 4px; font-size: 0.9em; color: var(--color-status-error, #d93838);">
+                    <strong>失败原因：</strong>${escapeHtml(mail.errorSummary)}
+                </div>
+            ` : ""}
             <div class="mail-preview">${escapeHtml(compactBody || "无正文")}</div>
             ${shouldCollapse ? `
                 <details class="mail-body-detail">
@@ -3972,6 +3969,7 @@ function bindEvents() {
     $("#taskProgressBar")?.addEventListener("click", async () => {
         if (currentTaskModal) return;
         for (const [taskType, mapping] of Object.entries(taskButtonMapping)) {
+            if (taskType === "MANUAL_INITIAL_OUTREACH") continue;
             try {
                 const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
                 if (!response.ok) continue;
@@ -4144,6 +4142,220 @@ function openActionDialog(type, options = {}) {
         form.addEventListener("submit", handleSubmit);
 
         dialog.showModal();
+    });
+
+    initManualOutreach();
+    initBulkAutoReply();
+    initPollLogPanel();
+}
+
+let lastAutoReplySummary = null;
+
+async function refreshAutoReplySummary() {
+    const btn = $("#bulkAutoReplyBtn");
+    if (!btn) return;
+    try {
+        const summary = await api("/api/expert-contacts/auto-reply/summary");
+        lastAutoReplySummary = summary;
+        const total = summary.total;
+        const enabled = summary.enabled;
+        const disabled = summary.disabled;
+        if (total === 0) {
+            btn.textContent = "自动回复：无专家";
+            btn.disabled = true;
+        } else if (enabled === total) {
+            btn.textContent = "自动回复：全部开启 ✓（点击全部关闭）";
+            btn.disabled = false;
+        } else if (disabled === total) {
+            btn.textContent = "自动回复：全部关闭（点击全部开启）";
+            btn.disabled = false;
+        } else {
+            btn.textContent = `自动回复：部分开启 ${enabled}/${total}（点击全部开启）`;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        btn.textContent = "自动回复：加载失败";
+        console.error("加载自动回复汇总失败", e);
+    }
+}
+
+function initBulkAutoReply() {
+    const btn = $("#bulkAutoReplyBtn");
+    if (!btn) return;
+
+    btn.addEventListener("click", async () => {
+        if (!lastAutoReplySummary) return;
+        const total = lastAutoReplySummary.total;
+        const enabled = lastAutoReplySummary.enabled;
+        const handoffLocked = lastAutoReplySummary.handoffLocked;
+
+        let targetEnabled = true;
+        let confirmMsg = "";
+
+        if (enabled === total) {
+            targetEnabled = false;
+            confirmMsg = "是否确认关闭所有专家的自动回复？";
+        } else {
+            targetEnabled = true;
+            if (handoffLocked > 0) {
+                confirmMsg = `是否确认开启所有专家的自动回复？\n\n注意：将跳过 ${handoffLocked} 位人工接管中（需要人工处理）的专家。`;
+            } else {
+                confirmMsg = "是否确认开启所有专家的自动回复？";
+            }
+        }
+
+        const confirmed = confirm(confirmMsg);
+        if (!confirmed) return;
+
+        btn.disabled = true;
+        btn.textContent = "正在更新...";
+        try {
+            const res = await api("/api/expert-contacts/auto-reply/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: targetEnabled, operatorName: "OPERATOR" })
+            });
+            showStatus(`已更新 ${res.updated} 位专家的自动回复设置` + (res.skipped ? `，跳过 ${res.skipped} 位` : ""), "ok");
+        } catch (e) {
+            showStatus("更新失败: " + e.message, "error");
+        } finally {
+            await refreshAutoReplySummary();
+            await loadContacts();
+        }
+    });
+}
+
+function initManualOutreach() {
+    const btn = $("#bulkOutreachBtn");
+    if (!btn) return;
+
+    btn.addEventListener("click", async () => {
+        if (btn.classList.contains("danger")) {
+            const confirmed = confirm("是否确认停止批量发送介绍邮件？");
+            if (!confirmed) return;
+            btn.disabled = true;
+            btn.textContent = "停止中...";
+            try {
+                await api(`/api/task-progress/MANUAL_INITIAL_OUTREACH/cancel`, { method: "POST" });
+                showStatus("已发送停止请求", "ok");
+            } catch (e) {
+                showStatus("停止发送失败: " + e.message, "error");
+                btn.disabled = false;
+                btn.textContent = "停止发送";
+            }
+            return;
+        }
+
+        btn.disabled = true;
+        try {
+            const countRes = await api("/api/mail/manual-outreach/pending-count");
+            const totalPending = countRes.pending;
+            const totalRetryable = countRes.retryable;
+            if (totalPending === 0 && totalRetryable === 0) {
+                showStatus("没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）", "info");
+                btn.disabled = false;
+                return;
+            }
+
+            const confirmed = confirm(`将向 ${totalPending} 位未联系专家发送介绍邮件（含 ${totalRetryable} 位上次失败待补发），是否开始？`);
+            if (!confirmed) {
+                btn.disabled = false;
+                return;
+            }
+
+            await api("/api/mail/manual-outreach/start", { method: "POST" });
+            showStatus("手动批量首发邮件已启动", "ok");
+
+            const panel = $("#outreachProgressPanel");
+            if (panel) {
+                panel.hidden = false;
+                $("#outreachCounters").textContent = `待发送 ${totalPending + totalRetryable} · 已发送 0 · 失败 0`;
+                $("#outreachProgressPercent").textContent = "0%";
+                $("#outreachProgressFill").style.width = "0%";
+                $("#outreachProgressDetail").textContent = "正在启动...";
+                $("#outreachErrors").hidden = true;
+                $("#outreachErrors").textContent = "";
+            }
+
+            setOutreachButtonRunning();
+            startTaskWatcher("MANUAL_INITIAL_OUTREACH", { awaitingLaunch: true });
+        } catch (e) {
+            showStatus("启动失败: " + e.message, "error");
+            btn.disabled = false;
+        }
+    });
+
+    $("#closeOutreachProgressBtn")?.addEventListener("click", () => {
+        $("#outreachProgressPanel").hidden = true;
+    });
+}
+
+function setOutreachButtonRunning() {
+    const btn = $("#bulkOutreachBtn");
+    if (!btn) return;
+    btn.disabled = false;
+    btn.textContent = "停止发送";
+    btn.className = "button danger";
+}
+
+function restoreOutreachButton() {
+    const btn = $("#bulkOutreachBtn");
+    if (!btn) return;
+    btn.disabled = false;
+    btn.textContent = "批量发送介绍邮件";
+    btn.className = "button primary";
+}
+
+function updateOutreachProgressPanel(progress) {
+    const panel = $("#outreachProgressPanel");
+    if (!panel) return;
+    panel.hidden = false;
+
+    const details = progress.details || {};
+    const pending = details.pending || 0;
+    const sent = details.sent || 0;
+    const failed = details.failed || 0;
+    const unknown = details.unknown || 0;
+    const total = progress.totalCount || (pending + sent + failed + unknown);
+    const percent = progress.percentage != null ? progress.percentage : (total > 0 ? Math.round((sent + failed + unknown) * 100 / total) : 0);
+
+    let countersText = `待发送 ${pending} · 已发送 ${sent} · 失败 ${failed}`;
+    if (unknown > 0) {
+        countersText += ` · 状态不确定 ${unknown}`;
+    }
+    $("#outreachCounters").textContent = countersText;
+    $("#outreachProgressPercent").textContent = `${percent}%`;
+    $("#outreachProgressFill").style.width = `${percent}%`;
+    $("#outreachProgressDetail").textContent = progress.message || "";
+
+    const errors = progress.errors || [];
+    const errorsDiv = $("#outreachErrors");
+    if (errorsDiv) {
+        if (errors.length > 0 || unknown > 0) {
+            errorsDiv.hidden = false;
+            let html = errors.map(err => `<div>${escapeHtml(err)}</div>`).join("");
+            if (unknown > 0) {
+                html += `<div style="color: var(--color-status-error, #d93838); font-weight: bold; margin-top: 8px;">
+                    警告：有 ${unknown} 封邮件的发送状态无法确定（可能已投递但本地记录更新失败），发送任务已挂起。请人工核对 SMTP 发送日志，切勿盲目重新开始！
+                </div>`;
+            }
+            errorsDiv.innerHTML = html;
+        } else {
+            errorsDiv.hidden = true;
+        }
+    }
+}
+
+function initPollLogPanel() {
+    const tbody = $("#pollLogBody");
+    if (tbody) {
+        tbody.addEventListener("click", (e) => {
+            const row = e.target.closest("tr.poll-log-row");
+            if (row) togglePollDetail(row).catch(err => showStatus(err.message, "error"));
+        });
+    }
+    $("#closePollLogPanelBtn")?.addEventListener("click", () => {
+        $("#pollLogPanel").hidden = true;
     });
 }
 

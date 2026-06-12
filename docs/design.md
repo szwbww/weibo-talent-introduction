@@ -120,6 +120,16 @@ Index Promotion and Demotion rules:
 - Promoted to `APPLICATION`: Promoted automatically on first reply (except for QA_NO_MATCH and NOT_INTERESTED intents) or manual click on "加入有效层".
 - Demoted to `RAW`: Only manually via "退回到原始层" button. This deletes the expert from both CANDIDATE and APPLICATION indices.
 
+## Background Tasks & Campaigns
+
+### Manual Bulk Outreach (`MANUAL_INITIAL_OUTREACH`)
+- Triggered manually from the Expert Management toolbar.
+- Scans for all uncontacted candidates (no `expert_contact` record) and emails them.
+- Runs as an asynchronous single-threaded task with persistent `TaskProgress` stored in MySQL.
+- Supports manual cancellation/stopping during execution.
+- Automatically retries previously failed contacts (which stay in `NEW` state).
+- Integrates with a dedicated campaign using `campaign_code = 'MANUAL_OUTREACH'` linked to a real, enabled mail account.
+
 ## QA Strategy
 
 The provided workbook `QA.xlsm` currently acts as an answer bank. The first implementation converts it into keyword-driven English QA rules.
