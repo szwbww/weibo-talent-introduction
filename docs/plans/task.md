@@ -3,7 +3,7 @@
 | Task ID | Task Description | Status |
 |---|---|---|
 | Task-01 | Add H2 test dependency and configure test application.yml | done |
-| Task-02 | Refactor V23 migration script and domain entities | not_started |
+| Task-02 | Refactor V23 migration script and domain entities | done |
 | Task-03 | Implement Database/Migration Integration Test | not_started |
 | Task-04 | Refactor Attempt Status, Transition logic and Outreach Service | not_started |
 | Task-05 | Implement UNKNOWN query and Reconcile API | not_started |

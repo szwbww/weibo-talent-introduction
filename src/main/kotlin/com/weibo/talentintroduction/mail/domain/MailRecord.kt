@@ -24,5 +24,6 @@ data class MailRecord(
     val receivedAt: LocalDateTime?,
     val sentAt: LocalDateTime?,
     val errorSummary: String? = null,
+    val mailSendAttemptId: Long? = null,
     val createdAt: LocalDateTime? = null
 )
