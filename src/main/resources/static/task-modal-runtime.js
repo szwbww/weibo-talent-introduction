@@ -99,6 +99,7 @@ async function fetchJsonForCurrentTaskModal(taskType, generation, url, options) 
     if (!isCurrentTaskModal(taskType, generation)) return null;
     try {
         const response = await fetch(url, options);
+        await handleAuthResponse(response);
         if (!isCurrentTaskModal(taskType, generation)) return null;
         if (!response.ok) return null;
         if (response.status === 204) return null;
@@ -284,6 +285,44 @@ if (typeof module !== 'undefined' && module.exports) {
         getCurrentTaskModal: () => currentTaskModal,
         setCurrentTaskModal: (val) => { currentTaskModal = val; },
         setTaskModalGenerationSequence: (val) => { taskModalGenerationSequence = val; },
-        resetTaskCompletionNotifications: () => { taskCompletionNotifications = new Set(); }
+        resetTaskCompletionNotifications: () => { taskCompletionNotifications = new Set(); },
+        handleAuthResponse
     };
+}
+
+async function handleAuthResponse(response) {
+    if (response.status === 401) {
+        if (typeof window !== 'undefined' && window.stopAuthenticatedApp) {
+            window.stopAuthenticatedApp();
+        }
+        if (typeof document !== 'undefined') {
+            const loginOverlay = document.getElementById("loginOverlay");
+            const changePasswordOverlay = document.getElementById("changePasswordOverlay");
+            if (loginOverlay) loginOverlay.hidden = false;
+            if (changePasswordOverlay) changePasswordOverlay.hidden = true;
+        }
+        throw new Error("UNAUTHORIZED");
+    }
+    if (response.status === 403) {
+        let data = null;
+        try {
+            const clone = response.clone();
+            data = await clone.json();
+        } catch (e) {
+            // ignore
+        }
+        if (data && data.code === "PASSWORD_CHANGE_REQUIRED") {
+            if (typeof window !== 'undefined' && window.stopAuthenticatedApp) {
+                window.stopAuthenticatedApp();
+            }
+            if (typeof document !== 'undefined') {
+                const loginOverlay = document.getElementById("loginOverlay");
+                const changePasswordOverlay = document.getElementById("changePasswordOverlay");
+                if (loginOverlay) loginOverlay.hidden = true;
+                if (changePasswordOverlay) changePasswordOverlay.hidden = false;
+            }
+            throw new Error("PASSWORD_CHANGE_REQUIRED");
+        }
+    }
+    return response;
 }

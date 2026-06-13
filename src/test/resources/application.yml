@@ -25,7 +25,7 @@ spring:
 
 talent-introduction:
   auth:
-    enabled: ${AUTH_ENABLED:true}
+    enabled: false
   elasticsearch:
     base-url: ${ES_BASE_URL:https://es-fcxvip4d.public.tencentelasticsearch.com:9200}
     username: ${ES_USERNAME:elastic}
@@ -81,23 +81,23 @@ talent-introduction:
   mail-attachment-storage:
     base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
   expert-discovery:
-    enabled: ${EXPERT_DISCOVERY_ENABLED:true}
+    enabled: ${EXPERT_DISCOVERY_ENABLED:false}
     cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
     max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:500}
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:2000}
     europe-pmc:
-      enabled: ${EUROPE_PMC_ENABLED:true}
+      enabled: ${EUROPE_PMC_ENABLED:false}
       base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}
       request-delay-ms: ${EUROPE_PMC_REQUEST_DELAY_MS:1000}
       connect-timeout-ms: ${EUROPE_PMC_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${EUROPE_PMC_READ_TIMEOUT_MS:30000}
     openalex:
-      enabled: ${OPENALEX_ENABLED:true}
+      enabled: ${OPENALEX_ENABLED:false}
       polite-email: ${OPENALEX_POLITE_EMAIL:}
       base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
       request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
     crossref:
-      enabled: ${CROSSREF_ENABLED:true}
+      enabled: ${CROSSREF_ENABLED:false}
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}
       polite-email: ${CROSSREF_POLITE_EMAIL:}
       request-delay-ms: ${CROSSREF_REQUEST_DELAY_MS:200}
@@ -107,7 +107,7 @@ talent-introduction:
       email: ${UNPAYWALL_EMAIL:}
       request-delay-ms: ${UNPAYWALL_REQUEST_DELAY_MS:200}
     arxiv:
-      enabled: ${ARXIV_ENABLED:true}
+      enabled: ${ARXIV_ENABLED:false}
       base-url: ${ARXIV_BASE_URL:http://export.arxiv.org/api}
       request-delay-ms: ${ARXIV_REQUEST_DELAY_MS:3000}
       max-papers-per-source: ${ARXIV_MAX_PAPERS:100}
@@ -116,18 +116,18 @@ talent-introduction:
       download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
       max-pages: 2
     pmc-oa:
-      enabled: ${PMC_OA_ENABLED:true}
+      enabled: ${PMC_OA_ENABLED:false}
       base-url: ${PMC_OA_BASE_URL:https://eutils.ncbi.nlm.nih.gov/entrez/eutils}
       api-key: ${PMC_OA_API_KEY:}
       request-delay-ms: ${PMC_OA_REQUEST_DELAY_MS:350}
       max-papers-per-source: ${PMC_OA_MAX_PAPERS:500}
     orcid:
-      enabled: ${ORCID_ENABLED:true}
+      enabled: ${ORCID_ENABLED:false}
       base-url: ${ORCID_BASE_URL:https://pub.orcid.org/v3.0}
       request-delay-ms: ${ORCID_REQUEST_DELAY_MS:100}
       max-records-per-run: ${ORCID_MAX_RECORDS:1000}
     core:
-      enabled: ${CORE_ENABLED:true}
+      enabled: ${CORE_ENABLED:false}
       base-url: ${CORE_BASE_URL:https://api.core.ac.uk/v3}
       api-key: ${CORE_API_KEY:}
       request-delay-ms: ${CORE_REQUEST_DELAY_MS:600}

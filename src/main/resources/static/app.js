@@ -236,6 +236,7 @@ async function resumeProgressPollingIfNeeded() {
     for (const taskType of Object.keys(taskButtonMapping)) {
         try {
             const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+            await handleAuthResponse(response);
             if (response.status === 204 || !response.ok) continue;
             const progress = await response.json();
             if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
@@ -272,6 +273,7 @@ async function pollTaskWatcher(taskType) {
 
     try {
         const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        await handleAuthResponse(response);
         if (!isCurrentTaskWatcher(taskType, watcher)) return;
 
         if (response.status === 204) {
@@ -411,6 +413,7 @@ async function progressStoreHasRunningTask() {
 async function isTaskRunning(taskType) {
     try {
         const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        await handleAuthResponse(response);
         if (!response.ok) return false;
         const progress = await response.json();
         return progress.status === "RUNNING" || progress.status === "CANCELLING";
@@ -869,6 +872,7 @@ async function api(path, options = {}) {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
         ...options
     });
+    await handleAuthResponse(response);
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
@@ -3662,7 +3666,9 @@ function scheduleMonitoringAutoRefresh() {
         } catch (error) {
             showStatus(error.message, "error");
         } finally {
-            scheduleMonitoringAutoRefresh();
+            if (appStarted === true && state.view === "monitoring") {
+                scheduleMonitoringAutoRefresh();
+            }
         }
     }, 60000);
 }
@@ -3976,6 +3982,7 @@ function bindEvents() {
             if (taskType === "MANUAL_INITIAL_OUTREACH") continue;
             try {
                 const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+                await handleAuthResponse(response);
                 if (!response.ok) continue;
                 const progress = await response.json();
                 if (progress.status === "RUNNING" || progress.status === "CANCELLING" ||
@@ -3996,7 +4003,6 @@ function bindEvents() {
         }
     });
 
-    updateUnmatchedBadge();
 }
 
 const ACTION_DIALOG_SCHEMAS = {
@@ -4457,9 +4463,170 @@ function initLayoutResizer() {
     }
 }
 
-bindEvents();
-initManualOutreach();
-initBulkAutoReply();
-initPollLogPanel();
-initLayoutResizer();
-refreshCurrentView();
+let appStarted = false;
+
+function startAuthenticatedApp(username) {
+    $("#loginOverlay").hidden = true;
+    $("#changePasswordOverlay").hidden = true;
+    const userDisplay = $("#currentUserDisplay");
+    if (userDisplay) {
+        userDisplay.textContent = username;
+    }
+    const shell = $(".app-shell");
+    if (shell) {
+        shell.style.display = "grid";
+    }
+    if (!appStarted) {
+        appStarted = true;
+        updateUnmatchedBadge();
+        resumeProgressPollingIfNeeded().catch(() => {});
+        refreshCurrentView();
+    }
+}
+
+function stopAuthenticatedApp() {
+    appStarted = false;
+    const shell = $(".app-shell");
+    if (shell) {
+        shell.style.display = "none";
+    }
+    stopAllWatchers();
+    if (currentTaskModal) {
+        stopTaskModalPolling();
+        $("#taskProgressModal").hidden = true;
+        document.body.classList.remove("modal-open");
+        currentTaskModal = null;
+    }
+    if (state.monitoring.autoRefreshTimer) {
+        clearTimeout(state.monitoring.autoRefreshTimer);
+        state.monitoring.autoRefreshTimer = null;
+    }
+}
+
+window.stopAuthenticatedApp = stopAuthenticatedApp;
+
+function stopAllWatchers() {
+    if (typeof taskWatchers === 'object' && taskWatchers) {
+        for (const taskType of Object.keys(taskWatchers)) {
+            stopTaskWatcher(taskType, true);
+        }
+    }
+}
+
+async function checkAuth() {
+    try {
+        const res = await api("/api/auth/me");
+        if (res.authenticated) {
+            if (res.mustChangePassword) {
+                stopAuthenticatedApp();
+                $("#changePasswordOverlay").hidden = false;
+                $("#loginOverlay").hidden = true;
+            } else {
+                startAuthenticatedApp(res.username);
+            }
+        } else {
+            stopAuthenticatedApp();
+            $("#loginOverlay").hidden = false;
+            $("#changePasswordOverlay").hidden = true;
+        }
+    } catch (e) {
+        stopAuthenticatedApp();
+        $("#loginOverlay").hidden = false;
+        $("#loginError").textContent = "无法连接至服务器: " + e.message;
+        $("#loginError").hidden = false;
+    }
+}
+
+function bindAuthEvents() {
+    $("#loginForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const username = $("#loginUsername").value.trim();
+        const password = $("#loginPassword").value;
+        const errDiv = $("#loginError");
+        errDiv.hidden = true;
+
+        if (!username || !password) {
+            errDiv.textContent = "用户名和密码不能为空";
+            errDiv.hidden = false;
+            return;
+        }
+
+        try {
+            const res = await api("/api/auth/login", {
+                method: "POST",
+                body: JSON.stringify({ username, password })
+            });
+            if (res.mustChangePassword) {
+                stopAuthenticatedApp();
+                $("#loginOverlay").hidden = true;
+                $("#changePasswordOverlay").hidden = false;
+                $("#changePasswordError").hidden = true;
+            } else {
+                startAuthenticatedApp(res.username);
+            }
+        } catch (err) {
+            errDiv.textContent = err.message || "登录失败，请检查用户名或密码";
+            errDiv.hidden = false;
+        }
+    });
+
+    $("#changePasswordForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const oldPassword = $("#oldPassword").value;
+        const newPassword = $("#newPassword").value;
+        const confirmPassword = $("#confirmNewPassword").value;
+        const errDiv = $("#changePasswordError");
+        errDiv.hidden = true;
+
+        if (!oldPassword || !newPassword || !confirmPassword) {
+            errDiv.textContent = "密码字段不能为空";
+            errDiv.hidden = false;
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            errDiv.textContent = "新密码长度不能少于8位";
+            errDiv.hidden = false;
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            errDiv.textContent = "两次输入的新密码不一致";
+            errDiv.hidden = false;
+            return;
+        }
+
+        try {
+            await api("/api/auth/change-password", {
+                method: "POST",
+                body: JSON.stringify({ oldPassword, newPassword })
+            });
+            showStatus("密码修改成功");
+            await checkAuth();
+        } catch (err) {
+            errDiv.textContent = err.message || "密码修改失败";
+            errDiv.hidden = false;
+        }
+    });
+
+    $("#logoutBtn")?.addEventListener("click", async () => {
+        try {
+            await api("/api/auth/logout", { method: "POST" });
+        } catch (e) {
+        } finally {
+            location.reload();
+        }
+    });
+}
+
+function bootstrap() {
+    bindEvents();
+    initManualOutreach();
+    initBulkAutoReply();
+    initPollLogPanel();
+    initLayoutResizer();
+    bindAuthEvents();
+    checkAuth();
+}
+
+bootstrap();

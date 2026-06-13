@@ -96,3 +96,22 @@ When verifying or fixing changes, always use the fix-v skill. Key rules:
 - No new classes, states, or interfaces during fixes
 - Every fix must be checked against the plan's design constraints before applying
 - Never modify applied database migrations
+
+### Decision Log Protocol
+
+Fix plans accumulate over multiple verification rounds. To prevent later rounds from re-raising issues that were already decided, follow this protocol:
+
+**Before generating a fix plan**, the verifier MUST:
+1. Read the original plan.
+2. Read ALL existing fix plans under `docs/plans/fix/` that reference the same original plan (match by filename or `复验对象` header).
+3. Build a **decision log** from the fix plans: any section titled "不适用", "已有决策", "不做", "降级", or crossed-out (`~~`) items are **closed decisions**. These override the corresponding items in the original plan.
+4. Do NOT report closed decisions as open issues. Do NOT propose tasks that contradict closed decisions.
+
+**When outputting a fix plan**:
+- If a fix plan amends an original plan requirement (e.g., drops H2, changes migration version, changes API behavior), the verifier MUST also append a `## 修正记录` section to the **original plan** file, listing each amendment with a one-line rationale and a reference to the fix plan that decided it. This ensures future verification rounds see the amendment at the source.
+- Distinguish severity accurately: "original plan says X but code doesn't do X and no decision overrides it" is P1. "Original plan says X, a prior fix plan closed it, code doesn't do X" is not a finding.
+- Do NOT escalate test quality preferences (recursive scanning depth, DOM sandbox fidelity, config file style) to P1 when there is no proven production defect. These are P2 at most.
+
+**Scope discipline**:
+- A fix plan for feature X must not include tasks for unrelated code hygiene (test config structure, unrelated formatting, general refactoring). Note them as observations if relevant, but do not create tasks.
+- If the verifier believes a closed decision was wrong, it should note the concern as an **observation** (not a task) and flag it for human review, not unilaterally reopen it.
