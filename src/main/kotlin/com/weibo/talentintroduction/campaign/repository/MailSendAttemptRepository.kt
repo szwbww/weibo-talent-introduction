@@ -7,5 +7,4 @@ import org.springframework.stereotype.Repository
 @Repository
 interface MailSendAttemptRepository : CrudRepository<MailSendAttempt, Long> {
     fun findByOrcidIdAndMailType(orcidId: String, mailType: String): MailSendAttempt?
-    fun findByMessageId(messageId: String): MailSendAttempt?
 }

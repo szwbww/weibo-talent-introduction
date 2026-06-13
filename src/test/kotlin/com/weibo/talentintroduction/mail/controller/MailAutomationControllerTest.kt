@@ -42,14 +42,14 @@ class MailAutomationControllerTest {
     private var capturedRequest: Any? = null
 
     private val controller = MailAutomationController(
-        initialOutreachService,
-        autoMailReplyService,
-        batchAutoMailReplyService,
-        mailQueuePublisherProvider,
-        taskExecutionService,
-        manualInitialOutreachService,
-        progressStore,
-        manualOutreachExecutor
+        initialOutreachService = initialOutreachService,
+        autoMailReplyService = autoMailReplyService,
+        batchAutoMailReplyService = batchAutoMailReplyService,
+        mailQueuePublisherProvider = mailQueuePublisherProvider,
+        taskExecutionService = taskExecutionService,
+        manualInitialOutreachService = manualInitialOutreachService,
+        progressStore = progressStore,
+        manualOutreachExecutor = manualOutreachExecutor
     )
 
     private fun <T> anyValue(defaultValue: T): T =

@@ -96,8 +96,11 @@ class ExpertContactManagementController(
     @PostMapping("/auto-reply/bulk")
     fun bulkUpdateAutoReply(
         @RequestBody request: BulkAutoReplyRequest
-    ): BulkAutoReplyResult =
-        service.bulkUpdateAutoReply(request.enabled, request.operatorName)
+    ): BulkAutoReplyResult {
+        val operatorName = request.operatorName?.trim()
+        require(!operatorName.isNullOrBlank()) { "operatorName is required" }
+        return service.bulkUpdateAutoReply(request.enabled, operatorName)
+    }
 
     @PostMapping("/{contactId}/promote-to-application")
     fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =

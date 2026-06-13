@@ -259,7 +259,7 @@ class ExpertContactManagementServiceTest {
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
 
-        val result = service.bulkUpdateAutoReply(enabled = false)
+        val result = service.bulkUpdateAutoReply(enabled = false, operatorName = "admin")
         assertEquals(1, result.updated)
         assertEquals(0, result.skipped)
     }
@@ -276,9 +276,17 @@ class ExpertContactManagementServiceTest {
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
 
-        val result = service.bulkUpdateAutoReply(enabled = true)
+        val result = service.bulkUpdateAutoReply(enabled = true, operatorName = "admin")
         assertEquals(1, result.updated)
         assertEquals(1, result.skipped)
+    }
+
+    @Test
+    fun `bulkUpdateAutoReply rejects blank operator name`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.bulkUpdateAutoReply(enabled = false, operatorName = "   ")
+        }
+        assertTrue(ex.message!!.contains("operatorName"))
     }
 
     private fun contact(): ExpertContact =

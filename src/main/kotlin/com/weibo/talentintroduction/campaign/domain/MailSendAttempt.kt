@@ -12,8 +12,14 @@ data class MailSendAttempt(
     val mailType: String,
     val accountCode: String,
     val messageId: String,
-    val status: String, // PREPARE_FAILED, DELIVERY_UNKNOWN, SENT, FAILED_SAFE_TO_RETRY
+    val status: String,
+    val recipient: String? = null,
+    val subject: String? = null,
+    val body: String? = null,
+    val contentType: String? = null,
     val errorSummary: String? = null,
+    val quotaCounted: Boolean = false,
+    val accountCountedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime = LocalDateTime.now(),
     val updatedAt: LocalDateTime = LocalDateTime.now()
 )

@@ -14,6 +14,7 @@ data class SenderAccountDailyStats(
 )
 
 interface MailRecordRepository : CrudRepository<MailRecord, Long> {
+    fun findByMailSendAttemptId(mailSendAttemptId: Long): MailRecord?
     fun findAllByExpertContactIdOrderByCreatedAtAsc(expertContactId: Long): List<MailRecord>
 
     fun existsByExpertContactIdAndDirectionAndMailType(

@@ -2,20 +2,21 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.Campaign
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
-import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
-import com.weibo.talentintroduction.mail.domain.MailRecord
-import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
@@ -23,12 +24,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
-
-import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
-import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
-import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException
 import java.util.UUID
 
 @Service
@@ -41,21 +37,45 @@ class ManualInitialOutreachService(
     private val campaignRepository: CampaignRepository,
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
+    private val mailSendAttemptRepository: MailSendAttemptRepository,
     private val progressStore: TaskProgressStore,
     private val properties: ManualOutreachProperties,
-    private val txHelper: ManualOutreachTxHelper,
-    private val mailSendAttemptRepository: MailSendAttemptRepository
+    private val txHelper: ManualOutreachTxHelper
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
+    /**
+     * Count experts pending outreach: new candidates from ES + retryable contacts (NEW status without SENT mail record).
+     */
     fun countPending(): PendingOutreachSummary {
+        val seenOrcids = mutableSetOf<String>()
         var pending = 0
+        var retryable = 0
+
+        // 1. Count retryable: NEW contacts in MANUAL_OUTREACH campaign without a SENT introduction
+        val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
+        if (campaign != null) {
+            val campaignId = campaign.id ?: error("Campaign ID is null")
+            val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+            for (contact in newContacts) {
+                val normOrcid = normalizeOrcid(contact.orcidId)
+                if (seenOrcids.add(normOrcid)) {
+                    // Only retryable if no SENT introduction exists
+                    val hasSentIntro = hasSentIntroduction(contact.id!!)
+                    if (!hasSentIntro) {
+                        retryable++
+                    }
+                }
+            }
+        }
+
+        // 2. Count new candidates from ES
         expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
             for (expert in batch) {
                 if (!expert.email.isNullOrBlank()) {
-                    if (!expertContactRepository.existsByOrcidId(expert.orcidId)) {
-                        val attempt = mailSendAttemptRepository.findByOrcidIdAndMailType(expert.orcidId, "INTRODUCTION")
-                        if (attempt == null || attempt.status == "PREPARE_FAILED" || attempt.status == "FAILED_SAFE_TO_RETRY") {
+                    val normOrcid = normalizeOrcid(expert.orcidId)
+                    if (seenOrcids.add(normOrcid)) {
+                        if (!expertContactRepository.existsByOrcidId(normOrcid)) {
                             pending++
                         }
                     }
@@ -63,464 +83,236 @@ class ManualInitialOutreachService(
             }
             true
         }
-        val retryableContacts = expertContactRepository.findAllByCurrentStatus("NEW")
-        val retryable = retryableContacts.count { contact ->
-            val attempt = mailSendAttemptRepository.findByOrcidIdAndMailType(contact.orcidId, "INTRODUCTION")
-            attempt == null || attempt.status == "PREPARE_FAILED" || attempt.status == "FAILED_SAFE_TO_RETRY"
-        }
         return PendingOutreachSummary(pending = pending, retryable = retryable)
     }
 
     fun runBulkOutreach(executionId: Long): ManualOutreachResult {
-        log.info("Starting manual bulk outreach task execution: {}", executionId)
+        log.info("Starting manual bulk outreach, executionId={}", executionId)
         val campaign = getOrCreateManualCampaign()
         val campaignId = campaign.id ?: error("Campaign ID is null")
 
-        // 1. Scan retryable contacts (NEW status)
-        val retryableContacts = expertContactRepository.findAllByCurrentStatus("NEW").filter { contact ->
-            val attempt = mailSendAttemptRepository.findByOrcidIdAndMailType(contact.orcidId, "INTRODUCTION")
-            attempt == null || attempt.status == "PREPARE_FAILED" || attempt.status == "FAILED_SAFE_TO_RETRY"
+        val snapshot = buildSnapshot(campaignId)
+        val totalCount = snapshot.size
+        log.info("Outreach snapshot: {} targets", totalCount)
+
+        if (totalCount == 0) {
+            updateProgress(executionId, 0, 0, 0, 0, 0, totalCount, "COMPLETED", "没有需要发送的专家", emptyList())
+            return ManualOutreachResult(total = 0, sent = 0, failed = 0, skippedNoAccount = 0, wasCancelled = false)
         }
-        val retryableOrcidIds = retryableContacts.map { it.orcidId }
-        val retryableProfiles = if (retryableOrcidIds.isNotEmpty()) {
-            expertSearchService.searchByOrcidIds(retryableOrcidIds)
-        } else {
-            emptyList()
-        }
-        val profileMap = retryableProfiles.associateBy { it.orcidId }
-        val retryableList = retryableContacts.mapNotNull { contact ->
-            val profile = profileMap[contact.orcidId]
-            if (profile != null) {
-                Pair(contact, profile)
-            } else {
-                null
+
+        var sentCount = 0
+        var failedCount = 0
+        var wasCancelled = false
+        val errors = mutableListOf<String>()
+        val assignments = mutableListOf<SenderExpertAssignment>()
+
+        for ((index, target) in snapshot.withIndex()) {
+            val (existingContact, expert) = target
+
+            // Check cancellation
+            if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                log.info("Cancelled at {}/{}", index, totalCount)
+                wasCancelled = true
+                break
+            }
+
+            val normOrcid = normalizeOrcid(expert.orcidId)
+
+            // Select account
+            val account = try {
+                senderAccountAssignmentService.selectAccount(expert, assignments)
+            } catch (e: NoAvailableSenderAccountException) {
+                val processed = sentCount + failedCount
+                val remaining = totalCount - processed
+                updateProgress(executionId, sentCount, failedCount, processed, remaining, totalCount, totalCount,
+                    "COMPLETED", "发件账号今日额度耗尽，已停止；可在账号页重置后继续", errors)
+                return ManualOutreachResult(total = totalCount, sent = sentCount, failed = failedCount,
+                    skippedNoAccount = remaining, wasCancelled = false, stopReason = "NO_CAPACITY", remaining = remaining)
+            } catch (e: Exception) {
+                log.error("System error selecting account", e)
+                val processed = sentCount + failedCount
+                updateProgress(executionId, sentCount, failedCount, processed, totalCount - processed, totalCount, totalCount,
+                    "FAILED", "系统错误: ${e.message}", errors + (e.message ?: "Unknown error"))
+                return ManualOutreachResult(total = totalCount, sent = sentCount, failed = failedCount,
+                    skippedNoAccount = 0, wasCancelled = false, finalStatus = "FAILED", remaining = totalCount - processed)
+            }
+
+            try {
+                // 1. Create or reuse contact (occupy the slot)
+                val contact = existingContact ?: run {
+                    val now = LocalDateTime.now()
+                    expertContactRepository.save(ExpertContact(
+                        campaignId = campaignId, orcidId = normOrcid,
+                        expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
+                        currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
+                        createdAt = now, updatedAt = now
+                    ))
+                }
+
+                // 2. Double-check: skip if SENT introduction already exists (anti-duplicate)
+                if (hasSentIntroduction(contact.id!!)) {
+                    log.info("SENT introduction already exists for contact {}, skipping", contact.id)
+                    continue
+                }
+
+                // 3. Compose mail
+                val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
+                val mail = introductionMailComposer.compose(account.accountCode, expert).copy(messageId = messageId)
+
+                // 4. Persist attempt as PREPARED (audit trail) — upsert to respect UNIQUE(orcid_id, mail_type)
+                val now = LocalDateTime.now()
+                val existingAttempt = mailSendAttemptRepository.findByOrcidIdAndMailType(normOrcid, "INTRODUCTION")
+                val attempt = mailSendAttemptRepository.save(
+                    if (existingAttempt != null) {
+                        existingAttempt.copy(
+                            accountCode = account.accountCode, messageId = messageId,
+                            status = MailSendAttemptStatus.PREPARED, errorSummary = null,
+                            updatedAt = now
+                        )
+                    } else {
+                        MailSendAttempt(
+                            orcidId = normOrcid, mailType = "INTRODUCTION",
+                            accountCode = account.accountCode, messageId = messageId,
+                            status = MailSendAttemptStatus.PREPARED,
+                            createdAt = now, updatedAt = now
+                        )
+                    }
+                )
+
+                // 5. Send via SMTP
+                val delivered = mailDeliveryService.send(account, mail)
+                if (delivered.status == "SENT") {
+                    // 6. Record success atomically
+                    txHelper.recordSuccess(
+                        contact = contact, accountCode = account.accountCode,
+                        deliveredMessageId = messageId, subject = mail.subject,
+                        body = mail.body, attemptId = attempt.id!!
+                    )
+                    sentCount++
+                } else {
+                    // Non-SENT delivery status
+                    txHelper.recordFailure(
+                        contactId = contact.id, accountCode = account.accountCode,
+                        messageId = messageId, errorSummary = "Delivery status: ${delivered.status}",
+                        subject = mail.subject, body = mail.body, attemptId = attempt.id
+                    )
+                    failedCount++
+                    errors.add("发送失败 (${expert.email}): ${delivered.status}")
+                    if (errors.size > 20) errors.removeAt(0)
+                }
+            } catch (e: Exception) {
+                log.error("Failed to process ORCID: {}", normOrcid, e)
+                failedCount++
+                errors.add("发送异常 (${expert.email}): ${e.message ?: "Unknown error"}")
+                if (errors.size > 20) errors.removeAt(0)
+                // Continue to next expert — don't stop the whole task
+            }
+
+            // Track assignment for account balancing
+            assignments.add(SenderExpertAssignment(
+                accountCode = account.accountCode, expertId = normOrcid,
+                distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+            ))
+
+            // Update progress
+            val processed = sentCount + failedCount
+            updateProgress(executionId, sentCount, failedCount, processed, totalCount - processed, totalCount, totalCount,
+                "RUNNING", "正在发送：${expert.email}", errors)
+
+            // Throttle
+            if (properties.sendIntervalMs > 0 && index < totalCount - 1) {
+                try { Thread.sleep(properties.sendIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }
         }
 
-        // 2. Scan new candidates from ES
-        val newCandidates = mutableListOf<ExpertProfile>()
+        // Final progress
+        val finalStatus = if (wasCancelled) "CANCELLED" else "COMPLETED"
+        val finalMessage = if (wasCancelled) "发送任务已被取消" else "发送任务已完成"
+        val finalProcessed = sentCount + failedCount
+        updateProgress(executionId, sentCount, failedCount, finalProcessed, totalCount - finalProcessed, totalCount, totalCount,
+            finalStatus, finalMessage, errors)
+
+        return ManualOutreachResult(total = totalCount, sent = sentCount, failed = failedCount,
+            skippedNoAccount = 0, wasCancelled = wasCancelled, remaining = totalCount - finalProcessed)
+    }
+
+    // ──── Private helpers ────
+
+    private fun normalizeOrcid(orcid: String) = orcid.trim().uppercase()
+
+    /** Check if a SENT outbound INTRODUCTION mail record exists for this contact. */
+    private fun hasSentIntroduction(contactId: Long): Boolean {
+        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        return records.any { it.direction == "OUTBOUND" && it.mailType == "INTRODUCTION" && it.sendStatus == "SENT" }
+    }
+
+    private fun buildSnapshot(campaignId: Long): List<Pair<ExpertContact?, ExpertProfile>> {
+        val seenOrcids = mutableSetOf<String>()
+        val snapshot = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
+
+        // 1. Retryable contacts: NEW status without SENT introduction
+        val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+        if (newContacts.isNotEmpty()) {
+            val retryableContacts = newContacts.filter { !hasSentIntroduction(it.id!!) }
+            val orcidIds = retryableContacts.map { it.orcidId }
+            val profiles = if (orcidIds.isNotEmpty()) expertSearchService.searchByOrcidIds(orcidIds) else emptyList()
+            val profileMap = profiles.associateBy { normalizeOrcid(it.orcidId) }
+            for (contact in retryableContacts) {
+                val normOrcid = normalizeOrcid(contact.orcidId)
+                val profile = profileMap[normOrcid]
+                if (profile != null && seenOrcids.add(normOrcid)) {
+                    snapshot.add(Pair(contact, profile))
+                }
+            }
+        }
+
+        // 2. New candidates from ES
         expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
             for (expert in batch) {
                 if (!expert.email.isNullOrBlank()) {
-                    if (!expertContactRepository.existsByOrcidId(expert.orcidId)) {
-                        val attempt = mailSendAttemptRepository.findByOrcidIdAndMailType(expert.orcidId, "INTRODUCTION")
-                        if (attempt == null || attempt.status == "PREPARE_FAILED" || attempt.status == "FAILED_SAFE_TO_RETRY") {
-                            newCandidates.add(expert)
-                        }
+                    val normOrcid = normalizeOrcid(expert.orcidId)
+                    if (seenOrcids.add(normOrcid) && !expertContactRepository.existsByOrcidId(normOrcid)) {
+                        snapshot.add(Pair(null, expert))
                     }
                 }
             }
             true
         }
 
-        // 3. Assemble snapshot
-        val snapshot = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
-        for (pair in retryableList) {
-            snapshot.add(Pair(pair.first, pair.second))
-        }
-        for (profile in newCandidates) {
-            snapshot.add(Pair(null, profile))
-        }
-
-        val totalCount = snapshot.size
-        log.info("Outreach snapshot built. Total targets to process: {}", totalCount)
-
-        if (totalCount == 0) {
-            val progress = TaskProgress(
-                taskType = "MANUAL_INITIAL_OUTREACH",
-                status = "COMPLETED",
-                batchNumber = 0,
-                processedCount = 0,
-                totalCount = 0,
-                message = "没有需要发送的专家",
-                details = mapOf("pending" to 0, "sent" to 0, "failed" to 0),
-                executionId = executionId
-            )
-            progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-            return ManualOutreachResult(0, 0, 0, 0, 0, false)
-        }
-
-        var sentCount = 0
-        var failedCount = 0
-        var unknownCount = 0
-        var wasCancelled = false
-        val errors = mutableListOf<String>()
-        val assignments = mutableListOf<SenderExpertAssignment>()
-
-        for (index in 0 until totalCount) {
-            val (existingContact, expert) = snapshot[index]
-
-            if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
-                log.info("Manual bulk outreach cancelled at index {} of {}", index, totalCount)
-                wasCancelled = true
-                break
-            }
-
-            // Check existing attempt status
-            var attempt = mailSendAttemptRepository.findByOrcidIdAndMailType(expert.orcidId, "INTRODUCTION")
-            if (attempt != null && (attempt.status == "SENT" || attempt.status == "DELIVERY_UNKNOWN")) {
-                log.warn("Attempt already SENT or DELIVERY_UNKNOWN for ORCID: {}. Skipping.", expert.orcidId)
-                continue
-            }
-
-            val messageId = attempt?.messageId ?: "<manual-outreach-${expert.orcidId}-${UUID.randomUUID()}@weibo.com>"
-
-            // Select account
-            val account = try {
-                senderAccountAssignmentService.selectAccount(expert, assignments)
-            } catch (e: NoAvailableSenderAccountException) {
-                val remaining = totalCount - index
-                log.warn("Account quota exhausted or no account available. Stopping manual outreach. Remaining: {}", remaining)
-                val progress = TaskProgress(
-                    taskType = "MANUAL_INITIAL_OUTREACH",
-                    status = "COMPLETED",
-                    batchNumber = index,
-                    processedCount = (sentCount + failedCount + unknownCount).toLong(),
-                    totalCount = totalCount.toLong(),
-                    message = "发件账号今日额度耗尽，已停止；可在账号页重置后继续",
-                    details = mapOf(
-                        "pending" to remaining,
-                        "sent" to sentCount,
-                        "failed" to failedCount,
-                        "unknown" to unknownCount
-                    ),
-                    errors = errors.toList(),
-                    batchPassed = sentCount,
-                    batchRejected = failedCount + unknownCount,
-                    executionId = executionId
-                )
-                progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-                return ManualOutreachResult(totalCount, sentCount, failedCount, unknownCount, remaining, false)
-            } catch (e: Exception) {
-                log.error("System error during account selection. Failing task.", e)
-                val remaining = totalCount - index
-                val progress = TaskProgress(
-                    taskType = "MANUAL_INITIAL_OUTREACH",
-                    status = "FAILED",
-                    batchNumber = index,
-                    processedCount = (sentCount + failedCount + unknownCount).toLong(),
-                    totalCount = totalCount.toLong(),
-                    message = "系统错误: ${e.message}",
-                    details = mapOf(
-                        "pending" to remaining,
-                        "sent" to sentCount,
-                        "failed" to failedCount,
-                        "unknown" to unknownCount
-                    ),
-                    errors = errors.toList() + (e.message ?: "Unknown error during account selection"),
-                    batchPassed = sentCount,
-                    batchRejected = failedCount + unknownCount,
-                    executionId = executionId
-                )
-                progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-                return ManualOutreachResult(totalCount, sentCount, failedCount, unknownCount, remaining, false)
-            }
-
-            var contact: ExpertContact? = null
-            var mailSentAttempted = false
-            try {
-                // Pre-create or reuse contact
-                contact = if (existingContact != null) {
-                    existingContact
-                } else {
-                    val now = LocalDateTime.now()
-                    expertContactRepository.save(
-                        ExpertContact(
-                            campaignId = campaignId,
-                            orcidId = expert.orcidId,
-                            expertEmail = expert.email.orEmpty(),
-                            expertName = expert.displayName,
-                            currentStatus = "NEW",
-                            operatorStatus = "NOT_CONTACTED",
-                            createdAt = now,
-                            updatedAt = now
-                        )
-                    )
-                }
-
-                val mail = introductionMailComposer.compose(account.accountCode, expert).copy(messageId = messageId)
-
-                // Persist attempt as DELIVERY_UNKNOWN before calling SMTP
-                attempt = mailSendAttemptRepository.save(
-                    (attempt ?: MailSendAttempt(
-                        orcidId = expert.orcidId,
-                        mailType = "INTRODUCTION",
-                        accountCode = account.accountCode,
-                        messageId = messageId,
-                        status = "DELIVERY_UNKNOWN",
-                        createdAt = LocalDateTime.now(),
-                        updatedAt = LocalDateTime.now()
-                    )).copy(
-                        status = "DELIVERY_UNKNOWN",
-                        accountCode = account.accountCode,
-                        updatedAt = LocalDateTime.now()
-                    )
-                )
-
-                mailSentAttempted = true
-                val delivered = mailDeliveryService.send(account, mail)
-                if (delivered.status == "SENT") {
-                    try {
-                        txHelper.recordSuccess(
-                            contact = contact!!,
-                            accountCode = account.accountCode,
-                            deliveredMessageId = messageId,
-                            subject = mail.subject,
-                            body = mail.body
-                        )
-                        mailSendAttemptRepository.save(attempt.copy(
-                            status = "SENT",
-                            updatedAt = LocalDateTime.now()
-                        ))
-                        sentCount++
-                    } catch (dbEx: Exception) {
-                        log.error("SMTP sent successfully but post-processing database update failed for ORCID: {}", expert.orcidId, dbEx)
-                        mailSendAttemptRepository.save(attempt.copy(
-                            status = "DELIVERY_UNKNOWN",
-                            errorSummary = "SMTP sent but DB update failed: ${dbEx.message}",
-                            updatedAt = LocalDateTime.now()
-                        ))
-                        throw dbEx
-                    }
-                } else {
-                    val errSummary = "Mail delivery status: ${delivered.status}"
-                    attempt = mailSendAttemptRepository.save(attempt.copy(
-                        status = "DELIVERY_UNKNOWN",
-                        errorSummary = errSummary,
-                        updatedAt = LocalDateTime.now()
-                    ))
-                    txHelper.recordFailure(
-                        contactId = contact!!.id ?: error("Contact ID is null"),
-                        accountCode = account.accountCode,
-                        errorSummary = errSummary,
-                        subject = mail.subject,
-                        body = mail.body
-                    )
-                    unknownCount++
-                    val errMessage = "发送失败 (${expert.email}): ${delivered.status}"
-                    errors.add(errMessage)
-                    if (errors.size > 20) errors.removeAt(0)
-
-                    // Stop task for uncertain delivery status
-                    log.warn("Uncertain delivery status: {}. Stopping manual outreach.", delivered.status)
-                    val remaining = totalCount - (sentCount + failedCount + unknownCount)
-                    val progress = TaskProgress(
-                        taskType = "MANUAL_INITIAL_OUTREACH",
-                        status = "FAILED",
-                        batchNumber = index + 1,
-                        processedCount = (sentCount + failedCount + unknownCount).toLong(),
-                        totalCount = totalCount.toLong(),
-                        message = "发送失败 (${expert.email}): ${delivered.status}。任务已停止以防重复发送，需人工核对。",
-                        details = mapOf("pending" to remaining, "sent" to sentCount, "failed" to failedCount, "unknown" to unknownCount),
-                        errors = errors.toList(),
-                        batchPassed = sentCount,
-                        batchRejected = failedCount + unknownCount,
-                        executionId = executionId
-                    )
-                    progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-                    return ManualOutreachResult(totalCount, sentCount, failedCount, unknownCount, remaining, false)
-                }
-            } catch (e: Exception) {
-                val isSafe = !mailSentAttempted || isSafeToRetry(e)
-                val attemptStatus = if (!mailSentAttempted) {
-                    "PREPARE_FAILED"
-                } else if (isSafe) {
-                    "FAILED_SAFE_TO_RETRY"
-                } else {
-                    "DELIVERY_UNKNOWN"
-                }
-
-                log.error("Failed to process outreach for ORCID: {}, status: {}, safe to retry: {}", expert.orcidId, attemptStatus, isSafe, e)
-
-                val currentAttempt = attempt ?: MailSendAttempt(
-                    orcidId = expert.orcidId,
-                    mailType = "INTRODUCTION",
-                    accountCode = account.accountCode,
-                    messageId = messageId,
-                    status = attemptStatus,
-                    createdAt = LocalDateTime.now(),
-                    updatedAt = LocalDateTime.now()
-                )
-
-                attempt = mailSendAttemptRepository.save(currentAttempt.copy(
-                    status = attemptStatus,
-                    errorSummary = e.message ?: "Unknown error",
-                    updatedAt = LocalDateTime.now()
-                ))
-
-                if (contact != null) {
-                    try {
-                        val mailSubject = try {
-                            introductionMailComposer.compose(account.accountCode, expert).subject
-                        } catch (_: Exception) {
-                            "Research Collaboration Opportunity"
-                        }
-                        txHelper.recordFailure(
-                            contactId = contact.id ?: error("Contact ID is null"),
-                            accountCode = account.accountCode,
-                            errorSummary = e.message ?: "Unknown error",
-                            subject = mailSubject,
-                            body = ""
-                        )
-                    } catch (dbEx: Exception) {
-                        log.error("Failed to record failure in DB for ORCID: {}", expert.orcidId, dbEx)
-                    }
-                }
-
-                if (isSafe) {
-                    failedCount++
-                } else {
-                    unknownCount++
-                }
-                val errMessage = "发送异常 (${expert.email}): ${e.message ?: "Unknown error"}"
-                errors.add(errMessage)
-                if (errors.size > 20) errors.removeAt(0)
-
-                if (!isSafe) {
-                    log.warn("Uncertain delivery exception. Stopping manual outreach.")
-                    val remaining = totalCount - (sentCount + failedCount + unknownCount)
-                    val progress = TaskProgress(
-                        taskType = "MANUAL_INITIAL_OUTREACH",
-                        status = "FAILED",
-                        batchNumber = index + 1,
-                        processedCount = (sentCount + failedCount + unknownCount).toLong(),
-                        totalCount = totalCount.toLong(),
-                        message = "发送异常 (${expert.email}): ${e.message ?: "Unknown error"}。任务已停止以防重复发送，需人工核对。",
-                        details = mapOf("pending" to remaining, "sent" to sentCount, "failed" to failedCount, "unknown" to unknownCount),
-                        errors = errors.toList(),
-                        batchPassed = sentCount,
-                        batchRejected = failedCount + unknownCount,
-                        executionId = executionId
-                    )
-                    progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-                    return ManualOutreachResult(totalCount, sentCount, failedCount, unknownCount, remaining, false)
-                }
-            }
-
-            assignments.add(
-                SenderExpertAssignment(
-                    accountCode = account.accountCode,
-                    expertId = expert.orcidId,
-                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
-                )
-            )
-
-            val processed = sentCount + failedCount + unknownCount
-            val remaining = totalCount - processed
-            val progress = TaskProgress(
-                taskType = "MANUAL_INITIAL_OUTREACH",
-                status = "RUNNING",
-                batchNumber = index + 1,
-                processedCount = processed.toLong(),
-                totalCount = totalCount.toLong(),
-                message = "正在发送：${expert.email}",
-                details = mapOf(
-                    "pending" to remaining,
-                    "sent" to sentCount,
-                    "failed" to failedCount,
-                    "unknown" to unknownCount
-                ),
-                errors = errors.toList(),
-                batchPassed = sentCount,
-                batchRejected = failedCount + unknownCount,
-                executionId = executionId
-            )
-            progressStore.update("MANUAL_INITIAL_OUTREACH", progress, executionId)
-
-            val interval = properties.sendIntervalMs
-            if (interval > 0 && index < totalCount - 1) {
-                try {
-                    Thread.sleep(interval)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                }
-            }
-        }
-
-        val finalStatus = if (wasCancelled) "CANCELLED" else "COMPLETED"
-        val finalMessage = if (wasCancelled) "发送任务已被取消" else "发送任务已完成"
-        val finalProcessed = sentCount + failedCount + unknownCount
-        val finalRemaining = totalCount - finalProcessed
-
-        val finalProgress = TaskProgress(
-            taskType = "MANUAL_INITIAL_OUTREACH",
-            status = finalStatus,
-            batchNumber = finalProcessed,
-            processedCount = finalProcessed.toLong(),
-            totalCount = totalCount.toLong(),
-            message = finalMessage,
-            details = mapOf(
-                "pending" to finalRemaining,
-                "sent" to sentCount,
-                "failed" to failedCount,
-                "unknown" to unknownCount
-            ),
-            errors = errors.toList(),
-            batchPassed = sentCount,
-            batchRejected = failedCount + unknownCount,
-            executionId = executionId
-        )
-        progressStore.update("MANUAL_INITIAL_OUTREACH", finalProgress, executionId)
-
-        return ManualOutreachResult(
-            total = totalCount,
-            sent = sentCount,
-            failed = failedCount,
-            unknown = unknownCount,
-            skippedNoAccount = 0,
-            wasCancelled = wasCancelled
-        )
+        log.info("Snapshot: {} retryable, {} new, {} total",
+            snapshot.count { it.first != null }, snapshot.count { it.first == null }, snapshot.size)
+        return snapshot
     }
 
     private fun getOrCreateManualCampaign(): Campaign {
-        val campaignCode = "MANUAL_OUTREACH"
-        val existing = campaignRepository.findByCampaignCode(campaignCode)
-        if (existing != null) {
-            return existing
-        }
+        val existing = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
+        if (existing != null) return existing
 
         val enabledAccounts = mailSenderAccountRepository.findAllByEnabledTrue()
             .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
-        if (enabledAccounts.isEmpty()) {
-            error("No enabled real mail accounts available to create campaign")
-        }
-        val account = enabledAccounts.first()
+        if (enabledAccounts.isEmpty()) error("No enabled real mail accounts available to create campaign")
 
         val now = LocalDateTime.now()
-        val newCampaign = Campaign(
-            campaignCode = campaignCode,
-            campaignName = "Manual Outreach Campaign",
+        return campaignRepository.save(Campaign(
+            campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach Campaign",
             description = "Created automatically for manual bulk outreach",
-            status = "ACTIVE",
-            senderAccountId = account.id ?: error("Account ID is null"),
-            createdAt = now,
-            updatedAt = now
-        )
-        return campaignRepository.save(newCampaign)
+            status = "ACTIVE", senderAccountId = enabledAccounts.first().id ?: error("Account ID is null"),
+            createdAt = now, updatedAt = now
+        ))
     }
 
-    private fun isSafeToRetry(e: Throwable): Boolean {
-        var cause: Throwable? = e
-        while (cause != null) {
-            val name = cause.javaClass.name
-            if (name.contains("AuthenticationFailedException") ||
-                name.contains("MailAuthenticationException") ||
-                name.contains("MailConnectException") ||
-                name.contains("ConnectException") ||
-                name.contains("UnknownHostException") ||
-                name.contains("NoRouteToHostException")
-            ) {
-                return true
-            }
-            if (cause is org.springframework.mail.MailSendException) {
-                val subExceptions = cause.failedMessages
-                if (subExceptions.isNotEmpty() && subExceptions.values.all { isSafeToRetry(it) }) {
-                    return true
-                }
-            }
-            cause = cause.cause
-        }
-        return false
+    private fun updateProgress(
+        executionId: Long, sent: Int, failed: Int, processed: Int, remaining: Int,
+        total: Int, totalCount: Int, status: String, message: String, errors: List<String>
+    ) {
+        progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
+            taskType = "MANUAL_INITIAL_OUTREACH", status = status,
+            batchNumber = processed, processedCount = processed.toLong(), totalCount = totalCount.toLong(),
+            message = message,
+            details = mapOf("pending" to remaining, "sent" to sent, "failed" to failed),
+            errors = errors.toList(), batchPassed = sent, batchRejected = failed,
+            executionId = executionId
+        ), executionId)
     }
 }
 
@@ -533,11 +325,18 @@ data class ManualOutreachResult(
     val total: Int,
     val sent: Int,
     val failed: Int,
-    val unknown: Int,
     val skippedNoAccount: Int,
-    val wasCancelled: Boolean
+    val wasCancelled: Boolean,
+    val finalStatus: String? = null,
+    val stopReason: String? = null,
+    val remaining: Int = 0
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = sent
-    override val taskFailureCount: Int get() = failed + unknown
-    override val taskFinalStatus: String? get() = if (wasCancelled) "CANCELLED" else null
+    override val taskFailureCount: Int get() = failed
+    override val taskFinalStatus: String? get() = finalStatus ?: when {
+        wasCancelled -> "CANCELLED"
+        failed > 0 && sent > 0 -> "PARTIAL_SUCCESS"
+        failed > 0 -> "FAILED"
+        else -> "SUCCESS"
+    }
 }

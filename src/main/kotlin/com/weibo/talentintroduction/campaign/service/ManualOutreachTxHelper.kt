@@ -1,10 +1,10 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
-import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
-import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.stereotype.Service
@@ -16,18 +16,25 @@ class ManualOutreachTxHelper(
     private val conversationStateService: ConversationStateService,
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
-    private val expertContactRepository: ExpertContactRepository
+    private val mailSendAttemptRepository: MailSendAttemptRepository
 ) {
+    /**
+     * Atomically records a successful send: transition contact NEW→INTRO_SENT,
+     * create SENT mail record, increment account counter, mark attempt SENT.
+     */
     @Transactional
     fun recordSuccess(
         contact: ExpertContact,
         accountCode: String,
         deliveredMessageId: String?,
-        subject: String,
-        body: String
+        subject: String?,
+        body: String?,
+        attemptId: Long
     ) {
         val now = LocalDateTime.now()
-        val updatedContact = conversationStateService.transition(
+
+        // 1. Transition contact state: NEW → INTRO_SENT
+        conversationStateService.transition(
             contact = contact,
             toStatus = ConversationStatus.INTRO_SENT,
             reason = "MANUAL_BULK_OUTREACH",
@@ -37,9 +44,10 @@ class ManualOutreachTxHelper(
             it.copy(operatorStatus = "CONTACTED", lastMailAt = now)
         }
 
+        // 2. Create mail record
         mailRecordRepository.save(
             MailRecord(
-                expertContactId = updatedContact.id ?: error("Saved expert contact id is null"),
+                expertContactId = contact.id ?: error("Contact ID is null"),
                 direction = "OUTBOUND",
                 mailType = "INTRODUCTION",
                 senderAccountCode = accountCode,
@@ -53,29 +61,39 @@ class ManualOutreachTxHelper(
                 sendStatus = "SENT",
                 receivedAt = null,
                 sentAt = now,
+                mailSendAttemptId = attemptId,
                 createdAt = now
             )
         )
 
-        val account = mailSenderAccountRepository.findByAccountCode(accountCode)
-            ?: error("Account not found: $accountCode")
-        mailSenderAccountRepository.save(
-            account.copy(
-                todaySentCount = account.todaySentCount + 1,
-                lastSentAt = now
-            )
-        )
+        // 3. Increment account daily counter
+        mailSenderAccountRepository.incrementTodaySentCount(accountCode, now)
+
+        // 4. Mark attempt as SENT
+        val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+        if (attempt != null) {
+            mailSendAttemptRepository.save(attempt.copy(
+                status = MailSendAttemptStatus.SENT,
+                updatedAt = now
+            ))
+        }
     }
 
+    /**
+     * Records a failed send: create FAILED mail record, mark attempt FAILED.
+     */
     @Transactional
     fun recordFailure(
         contactId: Long,
         accountCode: String,
+        messageId: String?,
         errorSummary: String?,
-        subject: String,
-        body: String
+        subject: String?,
+        body: String?,
+        attemptId: Long?
     ) {
         val now = LocalDateTime.now()
+
         mailRecordRepository.save(
             MailRecord(
                 expertContactId = contactId,
@@ -84,7 +102,7 @@ class ManualOutreachTxHelper(
                 senderAccountCode = accountCode,
                 triggeredBy = "MANUAL",
                 sourceInboundId = null,
-                messageId = null,
+                messageId = messageId,
                 inReplyTo = null,
                 subject = subject,
                 body = body,
@@ -93,8 +111,20 @@ class ManualOutreachTxHelper(
                 errorSummary = errorSummary?.take(1000),
                 receivedAt = null,
                 sentAt = null,
+                mailSendAttemptId = attemptId,
                 createdAt = now
             )
         )
+
+        if (attemptId != null) {
+            val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+            if (attempt != null) {
+                mailSendAttemptRepository.save(attempt.copy(
+                    status = MailSendAttemptStatus.FAILED,
+                    errorSummary = errorSummary?.take(1000),
+                    updatedAt = now
+                ))
+            }
+        }
     }
 }

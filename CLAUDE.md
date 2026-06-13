@@ -77,3 +77,22 @@ exclude_paths:
   - docs/multi-ai-runs
 
 frontend_enabled: true
+
+## Development Workflow (Superpowers)
+
+This project uses [Superpowers](https://github.com/obra/superpowers) for agentic development. Standard workflow:
+
+1. **Brainstorm** → Write spec via `superpowers:brainstorming`
+2. **Plan** → Write plan via `superpowers:writing-plans`, save to `docs/superpowers/plans/`
+3. **Execute** → Implement via `superpowers:subagent-driven-development`
+4. **Verify** → Run `fix-v` skill (global skill, auto-discovered)
+5. **Finish** → Merge via `superpowers:finishing-a-development-branch`
+
+### Verification Rules
+
+When verifying or fixing changes, always use the fix-v skill. Key rules:
+- Max 3 fix rounds — after that, stop and report root cause
+- Fixes limited to erroring file + direct dependencies only
+- No new classes, states, or interfaces during fixes
+- Every fix must be checked against the plan's design constraints before applying
+- Never modify applied database migrations

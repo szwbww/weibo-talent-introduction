@@ -448,6 +448,8 @@ class ExpertContactManagementService(
     }
 
     fun bulkUpdateAutoReply(enabled: Boolean, operatorName: String? = null): BulkAutoReplyResult {
+        require(!operatorName.isNullOrBlank()) { "operatorName is required" }
+        val actualOperator = operatorName.trim()
         val allContacts = expertContactRepository.findAll().toList()
         var updated = 0
         var skipped = 0
@@ -455,7 +457,7 @@ class ExpertContactManagementService(
             if (enabled) {
                 if (!contact.autoReplyEnabled) {
                     if (!contact.manualHandoffRequired) {
-                        resumeAutoReply(contact.id ?: error("contact id is null"), operatorName)
+                        resumeAutoReply(contact.id ?: error("contact id is null"), actualOperator)
                         updated++
                     } else {
                         skipped++
@@ -463,7 +465,7 @@ class ExpertContactManagementService(
                 }
             } else {
                 if (contact.autoReplyEnabled) {
-                    pauseAutoReply(contact.id ?: error("contact id is null"), operatorName)
+                    pauseAutoReply(contact.id ?: error("contact id is null"), actualOperator)
                     updated++
                 }
             }

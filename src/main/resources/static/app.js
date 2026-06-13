@@ -173,6 +173,10 @@ function labelDocumentStatus(value) {
     return documentStatusLabels[value] || value || "";
 }
 
+function getConfiguredOperatorName() {
+    return window.localStorage.getItem("operatorName")?.trim() || "";
+}
+
 function formatStatusTransition(history) {
     const from = history.fromStatus ? labelStatus(history.fromStatus) : "初始";
     return `${from} → ${labelStatus(history.toStatus)}`;
@@ -4144,12 +4148,10 @@ function openActionDialog(type, options = {}) {
         dialog.showModal();
     });
 
-    initManualOutreach();
-    initBulkAutoReply();
-    initPollLogPanel();
 }
 
 let lastAutoReplySummary = null;
+
 
 async function refreshAutoReplySummary() {
     const btn = $("#bulkAutoReplyBtn");
@@ -4207,13 +4209,20 @@ function initBulkAutoReply() {
         const confirmed = confirm(confirmMsg);
         if (!confirmed) return;
 
+        const operatorName = getConfiguredOperatorName();
+        if (!operatorName) {
+            showStatus("请先设置操作员姓名", "error");
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = "正在更新...";
+
         try {
             const res = await api("/api/expert-contacts/auto-reply/bulk", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ enabled: targetEnabled, operatorName: "OPERATOR" })
+                body: JSON.stringify({ enabled: targetEnabled, operatorName })
             });
             showStatus(`已更新 ${res.updated} 位专家的自动回复设置` + (res.skipped ? `，跳过 ${res.skipped} 位` : ""), "ok");
         } catch (e) {
@@ -4249,15 +4258,14 @@ function initManualOutreach() {
         btn.disabled = true;
         try {
             const countRes = await api("/api/mail/manual-outreach/pending-count");
-            const totalPending = countRes.pending;
-            const totalRetryable = countRes.retryable;
-            if (totalPending === 0 && totalRetryable === 0) {
-                showStatus("没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）", "info");
+            const pendingSummary = summarizeManualOutreachPending(countRes);
+            if (pendingSummary.total === 0) {
+                showStatus(pendingSummary.emptyMessage, "info");
                 btn.disabled = false;
                 return;
             }
 
-            const confirmed = confirm(`将向 ${totalPending} 位未联系专家发送介绍邮件（含 ${totalRetryable} 位上次失败待补发），是否开始？`);
+            const confirmed = confirm(pendingSummary.confirmMessage);
             if (!confirmed) {
                 btn.disabled = false;
                 return;
@@ -4269,7 +4277,7 @@ function initManualOutreach() {
             const panel = $("#outreachProgressPanel");
             if (panel) {
                 panel.hidden = false;
-                $("#outreachCounters").textContent = `待发送 ${totalPending + totalRetryable} · 已发送 0 · 失败 0`;
+                $("#outreachCounters").textContent = `待发送 ${pendingSummary.total} · 已发送 0 · 失败 0`;
                 $("#outreachProgressPercent").textContent = "0%";
                 $("#outreachProgressFill").style.width = "0%";
                 $("#outreachProgressDetail").textContent = "正在启动...";
@@ -4288,6 +4296,26 @@ function initManualOutreach() {
     $("#closeOutreachProgressBtn")?.addEventListener("click", () => {
         $("#outreachProgressPanel").hidden = true;
     });
+}
+
+function summarizeManualOutreachPending(countRes) {
+    const pending = Number(countRes?.pending || 0);
+    const retryable = Number(countRes?.retryable || 0);
+    const profileMissing = Number(countRes?.profileMissing || 0);
+    const total = pending + retryable;
+    const missingNote = profileMissing > 0
+        ? `；另有 ${profileMissing} 位待补发专家因资料缺失将跳过`
+        : "";
+    return {
+        pending,
+        retryable,
+        profileMissing,
+        total,
+        confirmMessage: `将向 ${total} 位专家发送介绍邮件（${pending} 位未联系，${retryable} 位上次失败待补发${missingNote}），是否开始？`,
+        emptyMessage: profileMissing > 0
+            ? `没有可发送的专家；${profileMissing} 位待补发专家因资料缺失已跳过`
+            : "没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）"
+    };
 }
 
 function setOutreachButtonRunning() {
@@ -4315,15 +4343,10 @@ function updateOutreachProgressPanel(progress) {
     const pending = details.pending || 0;
     const sent = details.sent || 0;
     const failed = details.failed || 0;
-    const unknown = details.unknown || 0;
-    const total = progress.totalCount || (pending + sent + failed + unknown);
-    const percent = progress.percentage != null ? progress.percentage : (total > 0 ? Math.round((sent + failed + unknown) * 100 / total) : 0);
+    const total = progress.totalCount || (pending + sent + failed);
+    const percent = progress.percentage != null ? progress.percentage : (total > 0 ? Math.round((sent + failed) * 100 / total) : 0);
 
-    let countersText = `待发送 ${pending} · 已发送 ${sent} · 失败 ${failed}`;
-    if (unknown > 0) {
-        countersText += ` · 状态不确定 ${unknown}`;
-    }
-    $("#outreachCounters").textContent = countersText;
+    $("#outreachCounters").textContent = `待发送 ${pending} · 已发送 ${sent} · 失败 ${failed}`;
     $("#outreachProgressPercent").textContent = `${percent}%`;
     $("#outreachProgressFill").style.width = `${percent}%`;
     $("#outreachProgressDetail").textContent = progress.message || "";
@@ -4331,20 +4354,15 @@ function updateOutreachProgressPanel(progress) {
     const errors = progress.errors || [];
     const errorsDiv = $("#outreachErrors");
     if (errorsDiv) {
-        if (errors.length > 0 || unknown > 0) {
+        if (errors.length > 0) {
             errorsDiv.hidden = false;
-            let html = errors.map(err => `<div>${escapeHtml(err)}</div>`).join("");
-            if (unknown > 0) {
-                html += `<div style="color: var(--color-status-error, #d93838); font-weight: bold; margin-top: 8px;">
-                    警告：有 ${unknown} 封邮件的发送状态无法确定（可能已投递但本地记录更新失败），发送任务已挂起。请人工核对 SMTP 发送日志，切勿盲目重新开始！
-                </div>`;
-            }
-            errorsDiv.innerHTML = html;
+            errorsDiv.innerHTML = errors.map(err => `<div>${escapeHtml(err)}</div>`).join("");
         } else {
             errorsDiv.hidden = true;
         }
     }
 }
+
 
 function initPollLogPanel() {
     const tbody = $("#pollLogBody");
@@ -4440,5 +4458,8 @@ function initLayoutResizer() {
 }
 
 bindEvents();
+initManualOutreach();
+initBulkAutoReply();
+initPollLogPanel();
 initLayoutResizer();
 refreshCurrentView();
