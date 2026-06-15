@@ -80,7 +80,7 @@ class MailAutomationController(
     @PostMapping("/auto-reply/check-replies")
     fun checkReplies(
         @RequestBody request: CheckRepliesRequest
-    ): TaskExecution {
+    ): ResponseEntity<Map<String, Any>> {
         val maxMessages = request.maxMessagesPerAccount ?: 20
         require(maxMessages in 1..100) {
             "maxMessagesPerAccount must be between 1 and 100"
@@ -103,20 +103,151 @@ class MailAutomationController(
             maxMessagesPerAccount = maxMessages
         )
 
-        return taskExecutionService.runAndRecord(
-            taskType = "AUTO_REPLY_ALL",
-            triggerType = if (contactIds.isEmpty()) "MANUAL_ALL" else "MANUAL_SELECTIVE",
-            request = normalizedRequest
-        ) {
-            if (contactIds.isEmpty()) {
-                batchAutoMailReplyService.receiveAndAutoReplyAll(maxMessages)
-            } else {
-                batchAutoMailReplyService.receiveAndAutoReplyForContacts(
-                    contactIds = contactIds,
-                    maxMessagesPerAccount = maxMessages
-                )
-            }
+        val initialProgress = TaskProgress(
+            taskType = "CHECK_REPLIES",
+            status = "RUNNING",
+            batchNumber = 0,
+            processedCount = 0,
+            totalCount = 0,
+            message = "正在初始化检查任务..."
+        )
+
+        val (started, pendingToken) = progressStore.tryStartWithToken("CHECK_REPLIES", initialProgress)
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "检查回复任务正在执行中"))
         }
+
+        try {
+            manualOutreachExecutor.execute {
+                var executionId: Long? = null
+                try {
+                    taskExecutionService.runAndRecordWithResult(
+                        "CHECK_REPLIES",
+                        if (contactIds.isEmpty()) "MANUAL_ALL" else "MANUAL_SELECTIVE",
+                        normalizedRequest,
+                        onStarted = { id ->
+                            executionId = id
+                            progressStore.bindExecutionId("CHECK_REPLIES", pendingToken, id)
+                        }
+                    ) {
+                        var runningFetched = 0
+                        var runningReplied = 0
+                        var runningManualReview = 0
+                        var runningSuccess = 0
+                        var runningFailed = 0
+
+                        val onProgress: (com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult, Int, Int) -> Unit = { accountResult, processed, total ->
+                            if (accountResult.status == "SUCCESS") {
+                                runningSuccess++
+                                runningFetched += accountResult.fetched
+                                runningReplied += accountResult.replied
+                                runningManualReview += accountResult.manualReview
+                            } else {
+                                runningFailed++
+                            }
+                            val currentExecId = executionId
+                            val token = currentExecId ?: pendingToken
+                            progressStore.update("CHECK_REPLIES", TaskProgress(
+                                taskType = "CHECK_REPLIES",
+                                status = "RUNNING",
+                                batchNumber = processed,
+                                processedCount = processed.toLong(),
+                                totalCount = total.toLong(),
+                                message = "正在检查邮箱: ${accountResult.accountCode} (${processed}/${total})",
+                                details = mapOf(
+                                    "totalAccountsToPoll" to total,
+                                    "accountsPolled" to processed,
+                                    "successAccountCount" to runningSuccess,
+                                    "failedAccountCount" to runningFailed,
+                                    "fetched" to runningFetched,
+                                    "replied" to runningReplied,
+                                    "manualReview" to runningManualReview
+                                ),
+                                executionId = currentExecId
+                            ), token)
+                            Unit
+                        }
+
+                        val isCancelled: () -> Boolean = {
+                            val currentExecId = executionId
+                            if (currentExecId != null) {
+                                progressStore.isCancelled("CHECK_REPLIES", currentExecId)
+                            } else {
+                                progressStore.isCancelled("CHECK_REPLIES", pendingToken)
+                            }
+                        }
+
+                        val result = if (contactIds.isEmpty()) {
+                            batchAutoMailReplyService.receiveAndAutoReplyAll(maxMessages, onProgress, isCancelled)
+                        } else {
+                            batchAutoMailReplyService.receiveAndAutoReplyForContacts(
+                                contactIds = contactIds,
+                                maxMessagesPerAccount = maxMessages,
+                                onProgress = onProgress,
+                                isCancelled = isCancelled
+                            )
+                        }
+
+                        val finalStatus = result.taskFinalStatus ?: "COMPLETED"
+                        val finalMessage = when (result.taskFinalStatus) {
+                            "CANCELLED" -> "检查回复已被取消：共检查 ${result.accountsPolled}/${result.totalAccountsToPoll} 个邮箱账号，获取 ${result.fetched} 封邮件，自动回复 ${result.replied} 封，转人工 ${result.manualReview} 封"
+                            "FAILED" -> "检查回复失败：共检查 ${result.accountsPolled}/${result.totalAccountsToPoll} 个邮箱账号均失败，错误信息请查看日志"
+                            "PARTIAL_SUCCESS" -> "检查回复部分成功：共检查 ${result.accountsPolled}/${result.totalAccountsToPoll} 个邮箱账号，成功 ${result.successAccountCount} 个，失败 ${result.failedAccountCount} 个"
+                            else -> "检查回复完成：共检查 ${result.accountsPolled}/${result.totalAccountsToPoll} 个邮箱账号，获取 ${result.fetched} 封邮件，自动回复 ${result.replied} 封，转人工 ${result.manualReview} 封"
+                        }
+
+                        // update final progress
+                        progressStore.update("CHECK_REPLIES", TaskProgress(
+                            taskType = "CHECK_REPLIES",
+                            status = finalStatus,
+                            batchNumber = result.accountsPolled,
+                            processedCount = result.accountsPolled.toLong(),
+                            totalCount = result.totalAccountsToPoll.toLong(),
+                            message = finalMessage,
+                            details = mapOf(
+                                "totalAccountsToPoll" to result.totalAccountsToPoll,
+                                "accountsPolled" to result.accountsPolled,
+                                "successAccountCount" to result.successAccountCount,
+                                "failedAccountCount" to result.failedAccountCount,
+                                "fetched" to result.fetched,
+                                "replied" to result.replied,
+                                "manualReview" to result.manualReview
+                            ),
+                            executionId = executionId!!
+                        ), executionId!!)
+
+                        result
+                    }
+                } catch (ex: Exception) {
+                    progressStore.update("CHECK_REPLIES", TaskProgress(
+                        taskType = "CHECK_REPLIES",
+                        status = "FAILED",
+                        batchNumber = 0, processedCount = 0, totalCount = 0,
+                        message = "检查回复失败: ${ex.message}",
+                        executionId = executionId
+                    ), executionId)
+                } finally {
+                    val execId = executionId
+                    if (execId != null) {
+                        progressStore.clearExecutionContext("CHECK_REPLIES", execId)
+                    } else {
+                        progressStore.clearExecutionContext("CHECK_REPLIES", pendingToken)
+                    }
+                }
+            }
+        } catch (reEx: java.util.concurrent.RejectedExecutionException) {
+            progressStore.update("CHECK_REPLIES", TaskProgress(
+                taskType = "CHECK_REPLIES", status = "FAILED",
+                batchNumber = 0, processedCount = 0, totalCount = 0,
+                message = "启动失败: ${reEx.message}"
+            ), pendingToken)
+            progressStore.clearExecutionContext("CHECK_REPLIES", pendingToken)
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("message" to "启动失败: 线程池满或已关闭"))
+        }
+
+        return ResponseEntity.accepted().body(mapOf("message" to "已启动"))
     }
 
     @GetMapping("/manual-outreach/pending-count")

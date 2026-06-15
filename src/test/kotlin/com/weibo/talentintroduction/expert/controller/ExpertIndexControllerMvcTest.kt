@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.expert.controller
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
@@ -46,6 +47,9 @@ class ExpertIndexControllerMvcTest {
 
     @MockBean
     private lateinit var progressStore: TaskProgressStore
+
+    @MockBean
+    private lateinit var expertIndexService: ExpertIndexService
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue

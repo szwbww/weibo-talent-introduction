@@ -14,6 +14,8 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
 
     fun findFirstByOrcidIdOrderByUpdatedAtDesc(orcidId: String): ExpertContact?
 
+    fun findByOrcidIdIn(orcidIds: List<String>): List<ExpertContact>
+
     fun findAllByOrderByUpdatedAtDesc(): List<ExpertContact>
 
     fun findAllByCurrentStatusOrderByUpdatedAtDesc(currentStatus: String): List<ExpertContact>

@@ -2254,6 +2254,10 @@ textarea {
     background-color: var(--error);
 }
 
+.task-progress-bar.warning .task-progress-fill {
+    background-color: var(--warning);
+}
+
 /* Task Error Log */
 .task-error-log {
     border: 1px solid var(--error-border);
@@ -3132,4 +3136,45 @@ textarea {
 .logout-btn {
     width: 100%;
     text-align: left;
+}
+
+/* Split button container */
+.split-button {
+    display: inline-flex;
+    position: relative;
+    vertical-align: middle;
+}
+
+.split-button .button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.split-button .button.split-arrow {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+}
+
+.split-button .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: auto;
+    min-width: 180px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    padding: 4px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }

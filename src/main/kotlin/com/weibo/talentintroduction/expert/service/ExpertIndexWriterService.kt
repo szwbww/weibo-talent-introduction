@@ -62,6 +62,120 @@ class ExpertIndexWriterService(
         }
     }
 
+    fun syncCandidateOperatorStatus(orcidId: String, operatorStatus: String) {
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val now = LocalDateTime.now().format(dateFormatter)
+        try {
+            val body: Map<String, Any>
+            if (operatorStatus == "NOT_CONTACTED") {
+                body = mapOf(
+                    "script" to mapOf(
+                        "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
+                        "params" to mapOf("updatedAt" to now)
+                    )
+                )
+            } else {
+                body = mapOf(
+                    "doc" to mapOf(
+                        "operatorStatus" to operatorStatus,
+                        "updatedAt" to now
+                    ),
+                    "doc_as_upsert" to false
+                )
+            }
+            val updateUrl = "${properties.baseUrl}/$candidateIndex/_update/$orcidId"
+            restTemplate.exchange(
+                updateUrl, HttpMethod.POST,
+                HttpEntity(body, headers()),
+                JsonNode::class.java
+            )
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) {
+                log.debug("Candidate doc not found for orcid={}, skip operatorStatus sync", orcidId)
+            } else {
+                log.warn("Failed to sync operatorStatus for orcid={}", orcidId, e)
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to sync operatorStatus for orcid={}", orcidId, e)
+        }
+    }
+
+    fun syncCandidateOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
+        val overallResult = BulkSyncResult()
+        if (updates.isEmpty()) return overallResult
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val now = LocalDateTime.now().format(dateFormatter)
+        val batches = updates.chunked(500)
+        for (batch in batches) {
+            try {
+                val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, operatorStatus) ->
+                    val meta = mapOf("update" to mapOf("_id" to orcidId, "_index" to candidateIndex))
+                    val data = if (operatorStatus == "NOT_CONTACTED") {
+                        mapOf(
+                            "script" to mapOf(
+                                "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
+                                "params" to mapOf("updatedAt" to now)
+                            )
+                        )
+                    } else {
+                        mapOf(
+                            "doc" to mapOf(
+                                "operatorStatus" to operatorStatus,
+                                "updatedAt" to now
+                            ),
+                            "doc_as_upsert" to false
+                        )
+                    }
+                    "${objectMapper.writeValueAsString(meta)}\n${objectMapper.writeValueAsString(data)}"
+                }
+                val bulkUrl = "${properties.baseUrl}/_bulk"
+                val bulkHeaders = HttpHeaders().apply {
+                    contentType = MediaType.valueOf("application/x-ndjson")
+                    set(HttpHeaders.AUTHORIZATION, basicAuthHeader())
+                }
+                val responseNode = restTemplate.exchange(
+                    bulkUrl, HttpMethod.POST,
+                    HttpEntity(bulkBody, bulkHeaders),
+                    JsonNode::class.java
+                ).body
+                if (responseNode != null) {
+                    val items = responseNode.path("items")
+                    if (items.isArray) {
+                        for (item in items) {
+                            val updateNode = item.path("update")
+                            val status = updateNode.path("status").asInt(200)
+                            val orcidId = updateNode.path("_id").asText("")
+                            overallResult.total++
+                            if (status in 200..299) {
+                                overallResult.success++
+                            } else if (status == 404) {
+                                overallResult.skipped++
+                            } else {
+                                overallResult.failure++
+                                val errReason = updateNode.path("error").path("reason").asText("Unknown error")
+                                overallResult.errors.add("orcid=$orcidId error: $errReason")
+                            }
+                        }
+                    } else {
+                        overallResult.total += batch.size
+                        overallResult.failure += batch.size
+                        overallResult.errors.add("Bulk response items path is not an array")
+                    }
+                } else {
+                    overallResult.total += batch.size
+                    overallResult.failure += batch.size
+                    overallResult.errors.add("Empty bulk response from ES")
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to batch sync operatorStatus", e)
+                overallResult.total += batch.size
+                overallResult.failure += batch.size
+                overallResult.errors.add("Bulk request failed: ${e.message}")
+            }
+        }
+        return overallResult
+    }
+
     fun promoteToApplication(
         orcid: String,
         contact: ExpertContact,
@@ -472,3 +586,11 @@ class ExpertIndexWriterService(
         )
     }
 }
+
+data class BulkSyncResult(
+    var total: Int = 0,
+    var success: Int = 0,
+    var failure: Int = 0,
+    var skipped: Int = 0,
+    val errors: MutableList<String> = mutableListOf()
+)

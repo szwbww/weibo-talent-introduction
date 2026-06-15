@@ -80,10 +80,13 @@ class ManualInitialOutreachServiceTest {
         stubScrolledExperts(listOf(expert("0001", "a@b.com"), expert("0002", "c@d.com")))
         Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
         Mockito.`when`(expertContactRepository.existsByOrcidId("0002")).thenReturn(true)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())))
+            .thenReturn(1L)
 
         val summary = service.countPending()
         assertEquals(1, summary.pending) // only 0001 has no contact
         assertEquals(0, summary.retryable)
+        assertEquals(1, summary.totalSendable)
     }
 
     @Test
@@ -101,6 +104,7 @@ class ManualInitialOutreachServiceTest {
         val summary = service.countPending()
         assertEquals(0, summary.pending)
         assertEquals(1, summary.retryable)
+        assertEquals(1, summary.totalSendable)
     }
 
     @Test
@@ -122,6 +126,7 @@ class ManualInitialOutreachServiceTest {
         val summary = service.countPending()
         assertEquals(0, summary.pending)
         assertEquals(0, summary.retryable)
+        assertEquals(0, summary.totalSendable)
     }
 
     @Test
@@ -134,6 +139,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(1, summary.pending)
         assertEquals(0, summary.retryable)
+        assertEquals(1, summary.totalSendable)
         Mockito.verify(campaignRepository, Mockito.never()).save(Mockito.any(Campaign::class.java))
     }
 
@@ -373,14 +379,20 @@ class ManualInitialOutreachServiceTest {
     private fun stubScrolledExperts(experts: List<ExpertProfile>) {
         Mockito.doAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(2)
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
             handler(experts)
             null
-        }.`when`(expertSearchService).scrollExperts(
+        }.`when`(expertSearchService).scrollExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()),
             anyInt(),
             anyValue<(List<ExpertProfile>) -> Boolean> { true }
         )
+
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList())
+        )).thenReturn(experts.size.toLong())
     }
 
     private fun account(accountCode: String): MailSenderAccount =

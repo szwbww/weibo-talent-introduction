@@ -192,16 +192,17 @@ function formatFileSize(size) {
 const shownErrors = new Set();
 const taskButtonOriginalTexts = {
     checkRepliesBtn: "检查回复",
-    revalidateBtn: "重新验证候选人",
-    promoteRawBtn: "扫描 RAW 可晋升",
-    discoverBtn: "发现专家"
+    revalidateBtn: "重新验证",
+    discoverBtn: "发现专家",
+    bulkOutreachBtn: "批量发送"
 };
 
 const taskButtonMapping = {
-    EXPERT_REVALIDATION: { label: "重新验证候选人", btnId: "revalidateBtn" },
-    RAW_PROMOTION_SCAN: { label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
-    EXPERT_DISCOVERY: { label: "发现专家", btnId: "discoverBtn" },
-    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" }
+    EXPERT_REVALIDATION: { label: "重新验证", btnId: "revalidateBtn" },
+    RAW_PROMOTION_SCAN: { label: "发现专家（快速）", btnId: "discoverBtn" },
+    EXPERT_DISCOVERY: { label: "发现专家（深度）", btnId: "discoverBtn" },
+    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
+    CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
 };
 
 function restoreTaskButton(btnId) {
@@ -240,13 +241,8 @@ async function resumeProgressPollingIfNeeded() {
             if (response.status === 204 || !response.ok) continue;
             const progress = await response.json();
             if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
-                if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                    setOutreachButtonRunning();
-                    updateOutreachProgressPanel(progress);
-                } else {
-                    const mapping = taskButtonMapping[taskType];
-                    if (mapping) setTaskButtonRunning(mapping.btnId);
-                }
+                const mapping = taskButtonMapping[taskType];
+                if (mapping) setTaskButtonRunning(mapping.btnId);
                 startTaskWatcher(taskType);
             }
         } catch (e) { /* 静默 */ }
@@ -254,7 +250,7 @@ async function resumeProgressPollingIfNeeded() {
 }
 
 // taskModalGenerationSequence, createTaskModalContext, currentTaskModal,
-// isProgressTerminal, isExecutionTerminal, isCurrentTaskModal, bindTaskModalExecution,
+// isProgressTerminal, getProgressStatusMeta, isExecutionTerminal, isCurrentTaskModal, bindTaskModalExecution,
 // fetchJsonForCurrentTaskModal, fetchAndCacheBatchLogs are defined in task-modal-runtime.js
 
 const TASK_WATCHER_INTERVAL_MS = 3000;
@@ -277,11 +273,6 @@ async function pollTaskWatcher(taskType) {
         if (!isCurrentTaskWatcher(taskType, watcher)) return;
 
         if (response.status === 204) {
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                stopTaskWatcher(taskType, true, watcher);
-                restoreOutreachButton();
-                return;
-            }
             watcher.noProgressCount += 1;
 
             const graceExpired =
@@ -303,45 +294,26 @@ async function pollTaskWatcher(taskType) {
 
         watcher.noProgressCount = 0;
 
-        if (taskType === "MANUAL_INITIAL_OUTREACH") {
-            updateOutreachProgressPanel(progress);
-        }
-
         if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
             watcher.awaitingLaunch = false;
             watcher.observedActive = true;
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                setOutreachButtonRunning();
-            }
             return;
         }
 
         if (isProgressTerminal(progress.status)) {
             stopTaskWatcher(taskType, true, watcher);
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                restoreOutreachButton();
+            const mapping = taskButtonMapping[taskType];
+            const label = mapping?.label || taskType;
+            const meta = getProgressStatusMeta(progress.status);
+            notifyTaskCompletionOnce({
+                taskType,
+                executionId: progress.executionId,
+                status: progress.status,
+                message: `${label} ${meta.label}`,
+                level: meta.level
+            });
+            if (taskType === "MANUAL_INITIAL_OUTREACH" || taskType === "RAW_PROMOTION_SCAN" || taskType === "EXPERT_DISCOVERY" || taskType === "EXPERT_REVALIDATION") {
                 loadContacts();
-                const verb = progress.status === "CANCELLED" ? "已取消"
-                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
-                notifyTaskCompletionOnce({
-                    taskType,
-                    executionId: progress.executionId,
-                    status: progress.status,
-                    message: `批量发送介绍邮件 ${verb}`,
-                    level: progress.status === "FAILED" ? "error" : "ok"
-                });
-            } else {
-                const mapping = taskButtonMapping[taskType];
-                const label = mapping?.label || taskType;
-                const verb = progress.status === "CANCELLED" ? "已取消"
-                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
-                notifyTaskCompletionOnce({
-                    taskType,
-                    executionId: progress.executionId,
-                    status: progress.status,
-                    message: `${label} ${verb}`,
-                    level: progress.status === "FAILED" ? "error" : "ok"
-                });
             }
         }
     } catch (e) {
@@ -652,7 +624,8 @@ function updateTaskModalFromProgress(progress, generation) {
         const justObservedTerminal = observeTaskModalProgress(progress, generation);
         if (justObservedTerminal) {
             cancelBtn.disabled = true;
-            cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
+            const meta = getProgressStatusMeta(progress.status);
+            cancelBtn.textContent = meta.label;
             if (currentTaskModal.btnId) {
                 restoreTaskButton(currentTaskModal.btnId);
             }
@@ -681,8 +654,13 @@ function updateTaskModalFromProgress(progress, generation) {
         oldPercentEl.textContent = progress.percentage + "%";
         oldFillEl.style.width = progress.percentage + "%";
         oldDetailEl.textContent = progress.message || "";
-        if (progress.status === "COMPLETED") bar.className = "task-progress-bar completed";
-        if (progress.status === "FAILED" || progress.status === "CANCELLED") bar.className = "task-progress-bar failed";
+        if (progress.status === "COMPLETED") {
+            bar.className = "task-progress-bar completed";
+        } else if (progress.status === "PARTIAL_SUCCESS") {
+            bar.className = "task-progress-bar warning";
+        } else {
+            bar.className = "task-progress-bar failed";
+        }
     }
 }
 
@@ -1306,7 +1284,7 @@ async function loadContacts() {
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
-    if (operatorStatus || needsAttention) {
+    if (needsAttention) {
         tag = "";
         if (tagFilterEl) {
             tagFilterEl.value = "";
@@ -1325,10 +1303,10 @@ async function loadContacts() {
     let contacts = [];
     let totalHits = 0;
     try {
-    if (operatorStatus || needsAttention) {
+    if (needsAttention) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
-        if (needsAttention) params.set("needsAttention", needsAttention);
+        params.set("needsAttention", needsAttention);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
         totalHits = data.totalCount ?? rawContacts.length;
@@ -1356,6 +1334,7 @@ async function loadContacts() {
         params.set("size", size);
         params.set("from", state.contactsPage * size);
         if (tag) params.set("tag", tag);
+        if (operatorStatus) params.set("operatorStatus", operatorStatus);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const data = await api(`/api/experts?${params}`);
@@ -1471,48 +1450,53 @@ function contactBadgeType(contact) {
 }
 
 async function handleCheckReplies() {
+    const taskType = "CHECK_REPLIES";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "检查回复", "checkRepliesBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeCheckReplies() {
+    const taskType = "CHECK_REPLIES";
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+
     const checked = $$(".expert-select-cb:checked")
         .map(cb => Number(cb.dataset.contactId))
         .filter(id => id > 0);
 
-    if (checked.length === 0) {
-        const confirmed = confirm("未勾选专家，将检查所有已联系专家的回复，继续？");
-        if (!confirmed) return;
-    }
-
-    await executeCheckReplies(checked);
-}
-
-async function executeCheckReplies(checked = []) {
     const payload = checked.length > 0
         ? { contactIds: checked }
         : {};
 
-    const btn = $("#checkRepliesBtn");
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = "检查中...";
-
+    openTaskModal(taskType, "检查回复", "checkRepliesBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
     try {
-        await api("/api/mail/auto-reply/check-replies", {
+        const response = await api("/api/mail/auto-reply/check-replies", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showStatus(checked.length > 0
-            ? `检查完成: 已检查 ${checked.length} 位指定专家的回复`
-            : "检查完成: 已检查所有已联系专家的回复", "ok");
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
     } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
+            return;
+        }
         showStatus("检查回复失败: " + e.message, "error");
-        return;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-
-    try {
-        await showPollLog();
-    } catch (e) {
-        showStatus("检查已完成，但轮询日志加载失败: " + e.message, "error");
+        showTaskErrorLog(e.message);
+        stopTaskModalPolling();
+        stopTaskWatcher(taskType, true);
+        hideProgressBar();
     }
 }
 
@@ -1527,24 +1511,54 @@ const taskLaunchConfigs = {
         run: executeRevalidate
     },
     RAW_PROMOTION_SCAN: {
-        title: "扫描 RAW 可晋升",
+        title: "发现专家（快速）",
         desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
-        btnId: "promoteRawBtn",
+        btnId: "discoverBtn",
         showKeyword: false,
         showMaxPromotions: true,
         run: executePromoteRaw
     },
     EXPERT_DISCOVERY: {
-        title: "发现专家",
+        title: "发现专家（深度）",
         desc: "从外部数据源搜索并导入新专家到系统中。",
         btnId: "discoverBtn",
         showKeyword: true,
         showMaxPromotions: false,
         run: executeDiscover
+    },
+    MANUAL_INITIAL_OUTREACH: {
+        title: "批量发送介绍邮件",
+        desc: "",
+        btnId: "bulkOutreachBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        preload: async () => {
+            const countRes = await api("/api/mail/manual-outreach/pending-count");
+            const summary = summarizeManualOutreachPending(countRes);
+            return { desc: summary.confirmMessage, canRun: summary.total > 0 };
+        },
+        run: executeManualOutreach
+    },
+    CHECK_REPLIES: {
+        title: "检查回复",
+        desc: "检查所有已联系专家的邮箱回复。",
+        btnId: "checkRepliesBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        preload: async () => {
+            const checked = $$(".expert-select-cb:checked")
+                .map(cb => Number(cb.dataset.contactId))
+                .filter(id => id > 0);
+            if (checked.length > 0) {
+                return { desc: `将检查已勾选的 ${checked.length} 位专家的邮件回复。`, canRun: true };
+            }
+            return { desc: "将检查全部已联系候选人的邮件回复。", canRun: true };
+        },
+        run: executeCheckReplies
     }
 };
 
-function openTaskLaunchModal(taskType) {
+async function openTaskLaunchModal(taskType) {
     const config = taskLaunchConfigs[taskType];
     if (!config) return;
 
@@ -1555,7 +1569,24 @@ function openTaskLaunchModal(taskType) {
     $("#taskModalConfigSection").hidden = false;
     $("#taskModalProgressSection").hidden = true;
 
-    $("#taskLaunchDesc").textContent = config.desc;
+    $("#taskLaunchDesc").textContent = config.desc || "";
+
+    const runBtn = $("#taskLaunchRunBtn");
+    runBtn.disabled = false;
+
+    if (config.preload) {
+        $("#taskLaunchDesc").textContent = "正在准备任务信息...";
+        runBtn.disabled = true;
+        try {
+            const pre = await config.preload();
+            $("#taskLaunchDesc").textContent = pre.desc;
+            runBtn.disabled = !pre.canRun;
+        } catch (e) {
+            $("#taskLaunchDesc").textContent = "加载任务信息失败: " + e.message;
+            return;
+        }
+    }
+
     $("#taskLaunchKeywordRow").hidden = !config.showKeyword;
     $("#taskLaunchMaxPromotionsRow").hidden = !config.showMaxPromotions;
     if (config.showKeyword) $("#taskLaunchKeywordInput").value = "";
@@ -1570,7 +1601,6 @@ function openTaskLaunchModal(taskType) {
     }
     $("#taskModalBySource").hidden = true;
 
-    const runBtn = $("#taskLaunchRunBtn");
     runBtn.onclick = () => {
         // Toggle view to progress immediately, then run the task
         $("#taskModalConfigSection").hidden = true;
@@ -1595,6 +1625,36 @@ function openTaskLaunchModal(taskType) {
 
 function closeTaskLaunchModal() {
     closeTaskModal();
+}
+
+async function handleBackfillOperatorStatus() {
+    const btn = $("#backfillOperatorStatusBtn");
+    if (btn) btn.disabled = true;
+    showStatus("正在回刷 ES operatorStatus...", "info");
+    try {
+        const response = await api("/api/experts/backfill-operator-status", { method: "POST" });
+        const total = Number(response.total || 0);
+        const success = Number(response.success || 0);
+        const failure = Number(response.failure || 0);
+        const skipped = Number(response.skipped || 0);
+
+        let msg = `回刷处理完成：总数 ${total}, 成功 ${success}, 失败 ${failure}, 跳过 ${skipped}`;
+        if (skipped > 0) {
+            msg += ` (CANDIDATE 文档不存在)`;
+        }
+
+        if (failure === 0) {
+            showStatus(msg, "ok");
+        } else if (success > 0) {
+            showStatus(msg, "warn");
+        } else {
+            showStatus(msg, "error");
+        }
+    } catch (e) {
+        showStatus("回刷失败: " + e.message, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function handleRevalidateCandidates() {
@@ -1650,10 +1710,37 @@ async function handlePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
+}
+
+async function handleDiscover() {
+    const taskType = "EXPERT_DISCOVERY";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function handleDiscoverClick() {
+    const runningQuick = await isTaskRunning("RAW_PROMOTION_SCAN");
+    if (runningQuick) {
+        openTaskModal("RAW_PROMOTION_SCAN", "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    await handleDiscover();
+}
+
+async function handleDiscoverOption(mode) {
+    if (mode === 'quick') {
+        await handlePromoteRaw();
+    } else {
+        await handleDiscover();
+    }
 }
 
 async function executePromoteRaw() {
@@ -1664,7 +1751,7 @@ async function executePromoteRaw() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { launchRequested: true });
+    openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const response = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
@@ -1683,7 +1770,7 @@ async function executePromoteRaw() {
             taskType,
             executionId: response.executionId,
             status: "COMPLETED",
-            message: `RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
+            message: `发现专家（快速）完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
             level: hasFailures ? "warn" : "ok"
         });
     } catch (e) {
@@ -1698,16 +1785,6 @@ async function executePromoteRaw() {
         stopTaskWatcher(taskType, true);
         hideProgressBar();
     }
-}
-
-async function handleDiscover() {
-    const taskType = "EXPERT_DISCOVERY";
-    const running = await isTaskRunning(taskType);
-    if (running) {
-        openTaskModal(taskType, "发现专家", "discoverBtn", { knownActiveAtOpen: true });
-        return;
-    }
-    openTaskLaunchModal(taskType);
 }
 
 async function fetchSources() {
@@ -1742,7 +1819,7 @@ async function executeDiscover() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "发现专家", "discoverBtn", { launchRequested: true });
+    openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const selectedSources = getSelectedSources();
@@ -1786,6 +1863,45 @@ async function executeDiscover() {
             return;
         }
         showStatus("发现失败: " + e.message, "error");
+        showTaskErrorLog(e.message);
+        stopTaskModalPolling();
+        stopTaskWatcher(taskType, true);
+        hideProgressBar();
+    }
+}
+
+async function handleBulkOutreach() {
+    const taskType = "MANUAL_INITIAL_OUTREACH";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeManualOutreach() {
+    const taskType = "MANUAL_INITIAL_OUTREACH";
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+    openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
+    try {
+        const response = await api("/api/mail/manual-outreach/start", { method: "POST" });
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+    } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
+            return;
+        }
+        showStatus("启动发送失败: " + e.message, "error");
         showTaskErrorLog(e.message);
         stopTaskModalPolling();
         stopTaskWatcher(taskType, true);
@@ -3907,25 +4023,25 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     });
 
-    // 后台任务下拉菜单
-    const taskMenuToggle = $("#taskMenuToggle");
-    const taskMenu = $("#taskMenu");
-    if (taskMenuToggle && taskMenu) {
-        taskMenuToggle.addEventListener("click", (event) => {
+    // 发现专家 split button 下拉菜单
+    const discoverModeToggle = $("#discoverModeToggle");
+    const discoverModeMenu = $("#discoverModeMenu");
+    if (discoverModeToggle && discoverModeMenu) {
+        discoverModeToggle.addEventListener("click", (event) => {
             event.stopPropagation();
-            taskMenu.hidden = !taskMenu.hidden;
-            taskMenuToggle.setAttribute("aria-expanded", String(!taskMenu.hidden));
+            discoverModeMenu.hidden = !discoverModeMenu.hidden;
+            discoverModeToggle.setAttribute("aria-expanded", String(!discoverModeMenu.hidden));
         });
         document.addEventListener("click", (event) => {
-            if (!taskMenu.hidden && !event.target.closest("#taskMenuDropdown")) {
-                taskMenu.hidden = true;
-                taskMenuToggle.setAttribute("aria-expanded", "false");
+            if (!discoverModeMenu.hidden && !event.target.closest("#discoverBtnGroup")) {
+                discoverModeMenu.hidden = true;
+                discoverModeToggle.setAttribute("aria-expanded", "false");
             }
         });
-        taskMenu.addEventListener("click", (event) => {
+        discoverModeMenu.addEventListener("click", (event) => {
             if (event.target.closest(".dropdown-item")) {
-                taskMenu.hidden = true;
-                taskMenuToggle.setAttribute("aria-expanded", "false");
+                discoverModeMenu.hidden = true;
+                discoverModeToggle.setAttribute("aria-expanded", "false");
             }
         });
     }
@@ -3985,8 +4101,7 @@ function bindEvents() {
                 await handleAuthResponse(response);
                 if (!response.ok) continue;
                 const progress = await response.json();
-                if (progress.status === "RUNNING" || progress.status === "CANCELLING" ||
-                    progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
+                if (progress.status === "RUNNING" || progress.status === "CANCELLING" || isProgressTerminal(progress.status)) {
                     openTaskModal(taskType, mapping.label, mapping.btnId, {
                         knownActiveAtOpen: progress.status === "RUNNING" || progress.status === "CANCELLING"
                     });
@@ -4240,134 +4355,27 @@ function initBulkAutoReply() {
     });
 }
 
-function initManualOutreach() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
 
-    btn.addEventListener("click", async () => {
-        if (btn.classList.contains("danger")) {
-            const confirmed = confirm("是否确认停止批量发送介绍邮件？");
-            if (!confirmed) return;
-            btn.disabled = true;
-            btn.textContent = "停止中...";
-            try {
-                await api(`/api/task-progress/MANUAL_INITIAL_OUTREACH/cancel`, { method: "POST" });
-                showStatus("已发送停止请求", "ok");
-            } catch (e) {
-                showStatus("停止发送失败: " + e.message, "error");
-                btn.disabled = false;
-                btn.textContent = "停止发送";
-            }
-            return;
-        }
-
-        btn.disabled = true;
-        try {
-            const countRes = await api("/api/mail/manual-outreach/pending-count");
-            const pendingSummary = summarizeManualOutreachPending(countRes);
-            if (pendingSummary.total === 0) {
-                showStatus(pendingSummary.emptyMessage, "info");
-                btn.disabled = false;
-                return;
-            }
-
-            const confirmed = confirm(pendingSummary.confirmMessage);
-            if (!confirmed) {
-                btn.disabled = false;
-                return;
-            }
-
-            await api("/api/mail/manual-outreach/start", { method: "POST" });
-            showStatus("手动批量首发邮件已启动", "ok");
-
-            const panel = $("#outreachProgressPanel");
-            if (panel) {
-                panel.hidden = false;
-                $("#outreachCounters").textContent = `待发送 ${pendingSummary.total} · 已发送 0 · 失败 0`;
-                $("#outreachProgressPercent").textContent = "0%";
-                $("#outreachProgressFill").style.width = "0%";
-                $("#outreachProgressDetail").textContent = "正在启动...";
-                $("#outreachErrors").hidden = true;
-                $("#outreachErrors").textContent = "";
-            }
-
-            setOutreachButtonRunning();
-            startTaskWatcher("MANUAL_INITIAL_OUTREACH", { awaitingLaunch: true });
-        } catch (e) {
-            showStatus("启动失败: " + e.message, "error");
-            btn.disabled = false;
-        }
-    });
-
-    $("#closeOutreachProgressBtn")?.addEventListener("click", () => {
-        $("#outreachProgressPanel").hidden = true;
-    });
-}
 
 function summarizeManualOutreachPending(countRes) {
     const pending = Number(countRes?.pending || 0);
     const retryable = Number(countRes?.retryable || 0);
-    const profileMissing = Number(countRes?.profileMissing || 0);
-    const total = pending + retryable;
-    const missingNote = profileMissing > 0
-        ? `；另有 ${profileMissing} 位待补发专家因资料缺失将跳过`
+    const totalSendable = Number(countRes?.totalSendable ?? (pending + retryable));
+    const missingNote = retryable > 0
+        ? `（含 ${retryable} 位上次失败待补发）`
         : "";
     return {
         pending,
         retryable,
-        profileMissing,
-        total,
-        confirmMessage: `将向 ${total} 位专家发送介绍邮件（${pending} 位未联系，${retryable} 位上次失败待补发${missingNote}），是否开始？`,
-        emptyMessage: profileMissing > 0
-            ? `没有可发送的专家；${profileMissing} 位待补发专家因资料缺失已跳过`
+        totalSendable,
+        total: totalSendable,
+        confirmMessage: `将向 ${totalSendable} 位专家发送介绍邮件（${pending} 位未联系）${missingNote}，是否开始？`,
+        emptyMessage: totalSendable > 0
+            ? ""
             : "没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）"
     };
 }
 
-function setOutreachButtonRunning() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
-    btn.disabled = false;
-    btn.textContent = "停止发送";
-    btn.className = "button danger";
-}
-
-function restoreOutreachButton() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
-    btn.disabled = false;
-    btn.textContent = "批量发送介绍邮件";
-    btn.className = "button primary";
-}
-
-function updateOutreachProgressPanel(progress) {
-    const panel = $("#outreachProgressPanel");
-    if (!panel) return;
-    panel.hidden = false;
-
-    const details = progress.details || {};
-    const pending = details.pending || 0;
-    const sent = details.sent || 0;
-    const failed = details.failed || 0;
-    const total = progress.totalCount || (pending + sent + failed);
-    const percent = progress.percentage != null ? progress.percentage : (total > 0 ? Math.round((sent + failed) * 100 / total) : 0);
-
-    $("#outreachCounters").textContent = `待发送 ${pending} · 已发送 ${sent} · 失败 ${failed}`;
-    $("#outreachProgressPercent").textContent = `${percent}%`;
-    $("#outreachProgressFill").style.width = `${percent}%`;
-    $("#outreachProgressDetail").textContent = progress.message || "";
-
-    const errors = progress.errors || [];
-    const errorsDiv = $("#outreachErrors");
-    if (errorsDiv) {
-        if (errors.length > 0) {
-            errorsDiv.hidden = false;
-            errorsDiv.innerHTML = errors.map(err => `<div>${escapeHtml(err)}</div>`).join("");
-        } else {
-            errorsDiv.hidden = true;
-        }
-    }
-}
 
 
 function initPollLogPanel() {
@@ -4621,7 +4629,6 @@ function bindAuthEvents() {
 
 function bootstrap() {
     bindEvents();
-    initManualOutreach();
     initBulkAutoReply();
     initPollLogPanel();
     initLayoutResizer();

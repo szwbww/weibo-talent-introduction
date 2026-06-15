@@ -113,7 +113,7 @@ class ExpertIndexService(
         "researchFields", "institution", "emailSource", "emailVerifiedLevel",
         "dataSource", "externalIds", "discoveredAt", "filterResult", "filterRejectReason",
         "updatedAt", "worksCount",
-        "tags"
+        "tags", "operatorStatus"
     )
 
     private fun loadMappingProperties(resource: String): Map<String, Any>? {
@@ -138,6 +138,35 @@ class ExpertIndexService(
         } catch (e: Exception) {
             log.warn("Failed to load mapping from {}: {}", resource, e.message)
             null
+        }
+    }
+
+    fun checkCandidateOperatorStatusMapping(): Boolean {
+        val candidateIndex = indexName(ExpertIndexLevel.CANDIDATE)
+        val url = "${properties.baseUrl}/$candidateIndex/_mapping/field/operatorStatus"
+        return try {
+            val response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                HttpEntity(null, headers()),
+                JsonNode::class.java
+            ).body ?: return false
+            var isKeyword = false
+            response.fields().forEachRemaining { (_, indexNode) ->
+                val type = indexNode.path("mappings")
+                    .path("operatorStatus")
+                    .path("mapping")
+                    .path("operatorStatus")
+                    .path("type")
+                    .asText()
+                if (type == "keyword") {
+                    isKeyword = true
+                }
+            }
+            isKeyword
+        } catch (e: Exception) {
+            log.warn("Failed to check candidate operatorStatus mapping", e)
+            false
         }
     }
 

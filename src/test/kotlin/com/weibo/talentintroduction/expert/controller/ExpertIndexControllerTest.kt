@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -29,12 +30,13 @@ class ExpertIndexControllerTest {
     private val revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+    private val indexService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexService::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService,
-        revalidationService, taskExecutionService, progressStore
+        revalidationService, taskExecutionService, progressStore, indexService
     )
 
     private fun anyTaskProgress(): TaskProgress {
@@ -183,5 +185,40 @@ class ExpertIndexControllerTest {
             Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0),
             Mockito.any()
         )
+    }
+
+    @Test
+    fun `backfillOperatorStatus returns 400 when mapping check fails`() {
+        Mockito.`when`(indexService.checkCandidateOperatorStatusMapping()).thenReturn(false)
+        val response = controller.backfillOperatorStatus()
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, response.statusCode)
+        val body = response.body as Map<*, *>
+        assertTrue(body["message"].toString().contains("CANDIDATE 索引缺少 keyword"))
+    }
+
+    @Test
+    fun `backfillOperatorStatus processes latest contact per orcid and returns ok`() {
+        Mockito.`when`(indexService.checkCandidateOperatorStatusMapping()).thenReturn(true)
+        val contact1 = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = 1L, orcidId = "orcid-1", operatorStatus = "CONTACTED",
+            campaignId = 1L, expertEmail = "test1@example.com", expertName = "Test 1"
+        )
+        val contact2 = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = 2L, orcidId = "orcid-1", operatorStatus = "REPLIED",
+            campaignId = 1L, expertEmail = "test2@example.com", expertName = "Test 2"
+        )
+        Mockito.`when`(contactRepository.findAllByOrderByUpdatedAtDesc())
+            .thenReturn(listOf(contact2, contact1)) // contact2 is newer
+
+        Mockito.`when`(writerService.syncCandidateOperatorStatusBatch(listOf("orcid-1" to "REPLIED")))
+            .thenReturn(BulkSyncResult(total = 1, success = 1, failure = 0, skipped = 0))
+
+        val response = controller.backfillOperatorStatus()
+        assertEquals(org.springframework.http.HttpStatus.OK, response.statusCode)
+        val body = response.body as BackfillResult
+        assertEquals(1, body.total)
+        assertEquals(1, body.success)
+        assertEquals(0, body.failure)
+        assertEquals(0, body.skipped)
     }
 }

@@ -38,7 +38,22 @@ function createTaskModalContext(taskType, label, btnId, mode) {
 }
 
 function isProgressTerminal(status) {
-    return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
+    return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED" || status === "PARTIAL_SUCCESS";
+}
+
+function getProgressStatusMeta(status) {
+    switch (status) {
+        case "COMPLETED":
+            return { label: "已完成", level: "ok" };
+        case "PARTIAL_SUCCESS":
+            return { label: "部分成功", level: "warn" };
+        case "FAILED":
+            return { label: "失败", level: "error" };
+        case "CANCELLED":
+            return { label: "已取消", level: "warn" };
+        default:
+            return { label: "失败", level: "error" };
+    }
 }
 
 function isExecutionTerminal(status) {
@@ -216,15 +231,17 @@ async function runTerminalFinalization(taskType, generation, executionId) {
         } catch (e) {}
     }
 
-    if (modal.terminalProgressSnapshot && modal.terminalProgressSnapshot.status === "COMPLETED") {
+    const termStatus = modal.terminalProgressSnapshot ? modal.terminalProgressSnapshot.status : null;
+    if (termStatus === "COMPLETED" || termStatus === "PARTIAL_SUCCESS" || termStatus === "FAILED") {
         setTimeout(() => {
             if (isCurrentTaskModal(taskType, generation)) {
+                const meta = getProgressStatusMeta(termStatus);
                 notifyTaskCompletionOnce({
                     taskType,
                     executionId,
-                    status: modal.terminalProgressSnapshot.status,
-                    message: `${modal.label || "任务"} 完成`,
-                    level: "ok",
+                    status: termStatus,
+                    message: `${modal.label || "任务"} ${meta.label}`,
+                    level: meta.level,
                     preferDetailed: modal.launchRequested
                 });
             }
@@ -282,6 +299,7 @@ if (typeof module !== 'undefined' && module.exports) {
         runTerminalFinalization,
         shouldStartTaskWatcherOnClose,
         notifyTaskCompletionOnce,
+        getProgressStatusMeta,
         getCurrentTaskModal: () => currentTaskModal,
         setCurrentTaskModal: (val) => { currentTaskModal = val; },
         setTaskModalGenerationSequence: (val) => { taskModalGenerationSequence = val; },

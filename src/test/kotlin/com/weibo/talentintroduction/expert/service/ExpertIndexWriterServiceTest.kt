@@ -371,4 +371,69 @@ class ExpertIndexWriterServiceTest {
         assertEquals("a@b.com", result!!["email"])
         assertEquals(listOf("discovered", "verified"), result["tags"])
     }
+
+    @Test
+    fun `syncCandidateOperatorStatus sends correct update post request`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        service.syncCandidateOperatorStatus("0001", "CONTACTED")
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_update/0001"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `syncCandidateOperatorStatusBatch sends correct bulk request`() {
+        val responseNode = mapper.readTree(
+            """
+            {
+              "took": 1,
+              "errors": true,
+              "items": [
+                { "update": { "_index": "orcid_info_candidate", "_id": "0001", "status": 200 } },
+                { "update": { "_index": "orcid_info_candidate", "_id": "0002", "status": 404 } },
+                { "update": { "_index": "orcid_info_candidate", "_id": "0003", "status": 500, "error": { "reason": "conflict" } } }
+              ]
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val result = service.syncCandidateOperatorStatusBatch(listOf(
+            "0001" to "CONTACTED",
+            "0002" to "REPLIED",
+            "0003" to "REPLIED"
+        ))
+
+        assertEquals(3, result.total)
+        assertEquals(1, result.success)
+        assertEquals(1, result.skipped)
+        assertEquals(1, result.failure)
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors[0].contains("conflict"))
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
 }

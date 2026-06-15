@@ -19,26 +19,49 @@ class ExpertSearchService(
     private val properties: ElasticsearchProperties,
     private val expertIndexService: ExpertIndexService
 ) {
+    companion object {
+        fun notContactedWithEmailFilters(): List<Map<String, Any>> = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf("bool" to mapOf(
+                "must_not" to listOf(
+                    mapOf("exists" to mapOf("field" to "operatorStatus"))
+                )
+            ))
+        )
+    }
+
     fun searchExperts(
         size: Int,
         level: ExpertIndexLevel,
         tag: String? = null,
         sortBy: String? = null,
-        from: Int = 0
+        from: Int = 0,
+        operatorStatus: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
-        val query = if (tag.isNullOrBlank()) {
+        val filters = mutableListOf<Map<String, Any>>()
+
+        if (!tag.isNullOrBlank()) {
+            filters.add(mapOf("term" to mapOf("tags" to tag)))
+        }
+
+        if (!operatorStatus.isNullOrBlank()) {
+            when (operatorStatus) {
+                "NOT_CONTACTED" -> {
+                    filters.addAll(notContactedWithEmailFilters())
+                }
+                else -> {
+                    filters.add(mapOf("term" to mapOf("operatorStatus" to operatorStatus)))
+                }
+            }
+        }
+
+        val query = if (filters.isEmpty()) {
             mapOf("match_all" to emptyMap<String, Any>())
         } else {
-            mapOf(
-                "bool" to mapOf(
-                    "filter" to listOf(
-                        mapOf("term" to mapOf("tags" to tag))
-                    )
-                )
-            )
+            mapOf("bool" to mapOf("filter" to filters))
         }
 
         val sort = if (sortBy == "updatedAt") {
@@ -206,7 +229,8 @@ class ExpertSearchService(
             tags = source.path("tags").takeIf { it.isArray }
                 ?.map { it.asText() }
                 ?.filter { it.isNotBlank() },
-            updatedAt = source.nullableText("updatedAt")
+            updatedAt = source.nullableText("updatedAt"),
+            operatorStatus = source.nullableText("operatorStatus")
         )
 
     private fun JsonNode.nullableText(field: String): String? {
@@ -225,7 +249,8 @@ class ExpertSearchService(
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount",
             "tags",
-            "updatedAt"
+            "updatedAt",
+            "operatorStatus"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
@@ -287,6 +312,95 @@ class ExpertSearchService(
             .path("hits")
             .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
             .map(::toExpertProfile)
+    }
+
+    fun countExperts(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>> = emptyList()
+    ): Long {
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+        val requestBody = mapOf("query" to query)
+        val index = expertIndexService.indexName(level)
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/$index/_count",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body
+        return response?.path("count")?.asLong(0L) ?: 0L
+    }
+
+    fun scrollExpertsFiltered(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        batchSize: Int = 500,
+        handler: (List<ExpertProfile>) -> Boolean
+    ) {
+        val index = expertIndexService.indexName(level)
+        var scrollId: String? = null
+
+        try {
+            val initialUrl = "${properties.baseUrl}/$index/_search?scroll=5m"
+            val query = if (filters.isEmpty()) {
+                mapOf("match_all" to emptyMap<String, Any>())
+            } else {
+                mapOf("bool" to mapOf("filter" to filters))
+            }
+            val requestBody = mapOf(
+                "size" to batchSize,
+                "_source" to sourceFields(),
+                "query" to query,
+                "sort" to listOf(mapOf("_doc" to "asc"))
+            )
+            var response = restTemplate.exchange(
+                initialUrl,
+                HttpMethod.POST,
+                HttpEntity(requestBody, headers()),
+                JsonNode::class.java
+            ).body ?: return
+
+            scrollId = response.path("_scroll_id").asText()
+            val totalHits = response.path("hits").path("total").path("value").asLong(0)
+            var batchNumber = 0
+
+            do {
+                val hits = response.path("hits").path("hits")
+                if (hits.isEmpty) break
+
+                batchNumber++
+                val experts = hits.map { hit ->
+                    val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
+                    toExpertProfile(source)
+                }
+                val shouldContinue = handler(experts)
+                if (!shouldContinue) break
+                if (hits.size() < batchSize) break
+
+                response = restTemplate.exchange(
+                    "${properties.baseUrl}/_search/scroll",
+                    HttpMethod.POST,
+                    HttpEntity(mapOf("scroll" to "5m", "scroll_id" to scrollId), headers()),
+                    JsonNode::class.java
+                ).body ?: break
+
+                scrollId = response.path("_scroll_id").asText()
+            } while (true)
+        } finally {
+            if (scrollId != null) {
+                try {
+                    restTemplate.exchange(
+                        "${properties.baseUrl}/_search/scroll",
+                        HttpMethod.DELETE,
+                        HttpEntity(mapOf("scroll_id" to scrollId), headers()),
+                        JsonNode::class.java
+                    )
+                } catch (_: Exception) {}
+            }
+        }
     }
 }
 

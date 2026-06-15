@@ -16,6 +16,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
+import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,6 +30,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
 
 class ExpertDiscoveryServiceTest {
+    private lateinit var revalidationService: ExpertRevalidationService
     private lateinit var europePmc: EuropePmcDataSource
     private lateinit var openAlexProvider: ObjectProvider<OpenAlexDataSource>
     private lateinit var crossrefProvider: ObjectProvider<CrossrefDataSource>
@@ -75,6 +77,7 @@ class ExpertDiscoveryServiceTest {
         indexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
         indexService = Mockito.mock(ExpertIndexService::class.java)
         expertSearchService = Mockito.mock(ExpertSearchService::class.java)
+        revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
         restTemplate = Mockito.mock(RestTemplate::class.java)
         progressStore = Mockito.mock(TaskProgressStore::class.java)
 
@@ -99,7 +102,7 @@ class ExpertDiscoveryServiceTest {
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
-            indexWriterService, indexService, expertSearchService, restTemplate, esProperties,
+            indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
             props, objectMapper, progressStore
         )
     }
@@ -629,5 +632,344 @@ class ExpertDiscoveryServiceTest {
         val result = svc.enrichExistingExperts(maxExperts = 2)
         assertEquals(2, result.enriched)
         assertEquals(0, result.failed)
+    }
+
+    @Test
+    fun `promoteRawToCandidateWithEmail skips when CANDIDATE already exists`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubEsCandidateHeadExists(restTemplate)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"),
+            Mockito.eq(org.springframework.http.HttpMethod.PUT),
+            Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `tryGetEmailFromOrcid skips when orcidId does not match record`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubEsCandidateHeadExists(restTemplate)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val mismatchedRecord = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0009-other", givenNames = "Other", familyNames = "Person",
+            emails = listOf("other@example.com"), institutionName = "OtherUniv", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(mismatchedRecord))
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("orcid_info/_update/"),
+            Mockito.eq(org.springframework.http.HttpMethod.POST),
+            Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `backfillRawEmailsAndPromote stops at 100 attempts when CANDIDATE already exists`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubEsCandidateHeadExists(restTemplate)
+
+        val experts = (1..101).map { i ->
+            com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = "0000-00%02d-raw".format(i), email = null,
+                givenNames = "Test", familyNames = "$i",
+                country = "US", keyword = null, employment = null
+            )
+        }
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(experts))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyOrcidSearchRecordsCalled(orcid, 100)
+    }
+
+    @Test
+    fun `promoteRawToCandidateWithEmail promotes when CANDIDATE does not exist`() {
+        val svc = createService()
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
+        DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyCandidatePutCalled(restTemplate, 1)
+    }
+
+    @Test
+    fun `promoteRawToCandidateWithEmail fails closed on HEAD server error`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubEsHeadServerError(restTemplate)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyCandidatePutNeverCalled(restTemplate)
+    }
+
+    @Test
+    fun `tryGetEmailFromOrcid matches URL form orcidId`() {
+        val svc = createService()
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "https://orcid.org/0000-0001-2345", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val matchedRecord = OrcidDataSource.OrcidRecord(
+            orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
+    }
+
+    @Test
+    fun `backfillRawEmailsAndPromote selects first valid email`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubEsCandidateHeadExists(restTemplate)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("invalid@tmp.com", "valid@uni.edu"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "invalid@tmp.com", EmailValidationResult(0, false))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "valid@uni.edu", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
+    }
+
+    @Test
+    fun `cancel after ORCID returns does not write RAW or CANDIDATE`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubCancelledAfterNCalls(progressStore, 2)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 0)
+    }
+
+    @Test
+    fun `cancel after RAW update does not touch CANDIDATE`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubCancelledAfterNCalls(progressStore, 4)
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-raw", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val record = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
+        DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyCandidatePutNeverCalled(restTemplate)
+    }
+
+    @Test
+    fun `tryGetEmailFromOrcid matches bare orcidId against URL result`() {
+        val svc = createService()
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0001-2345", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val matchedRecord = OrcidDataSource.OrcidRecord(
+            orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
+    }
+
+    @Test
+    fun `tryGetEmailFromOrcid matches URL orcidId against bare result`() {
+        val svc = createService()
+
+        val rawExpert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "https://orcid.org/0000-0001-2345", email = null,
+            givenNames = "Test", familyNames = "User",
+            country = "US", keyword = null, employment = null
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(rawExpert)))
+
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        val matchedRecord = OrcidDataSource.OrcidRecord(
+            orcidId = "0000-0001-2345", givenNames = "Test", familyNames = "User",
+            emails = listOf("test@example.com"), institutionName = "Univ", country = null
+        )
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
     }
 }
