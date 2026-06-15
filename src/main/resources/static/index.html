@@ -349,9 +349,10 @@
                         <div class="dropdown-menu" id="discoverModeMenu" hidden style="right: auto; left: 0;">
                             <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速扫描（本地 RAW）</button>
                             <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（含外部平台）</button>
+                            <hr class="dropdown-divider">
+                            <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
                     </div>
-                    <button class="button" id="revalidateBtn" onclick="handleRevalidateCandidates()">重新验证</button>
                     <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
                     <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                     <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>

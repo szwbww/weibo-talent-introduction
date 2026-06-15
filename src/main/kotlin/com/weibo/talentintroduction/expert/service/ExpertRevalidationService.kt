@@ -136,6 +136,7 @@ class ExpertRevalidationService(
         try {
             val requireValidEmail = eligibilityFilterService.getCandidateFilter().requireValidEmail
             expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+                stats.totalHits = totalHits
                 if (progressStore.isCancelled(taskType)) {
                     log.info("RAW晋升扫描任务已取消，当前批次={}", batchNumber)
                     return@scrollExperts false
@@ -212,8 +213,8 @@ class ExpertRevalidationService(
                     stats.total, stats.promoted, stats.filtered, stats.emailRejected, stats.existenceCheckFailed)
                 progressStore.update(taskType, TaskProgress(
                     taskType = taskType, status = "CANCELLED",
-                    batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
-                    message = "已取消: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
+                    batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.totalHits,
+                    message = "已取消: 已处理 ${stats.total}/${stats.totalHits}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
                     details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered, "emailRejected" to stats.emailRejected, "filterReasons" to stats.filterReasons)
                 ), execId)
                 return PromotionScanResult(stats, wasCancelled = true)
@@ -221,15 +222,15 @@ class ExpertRevalidationService(
 
             progressStore.update(taskType, TaskProgress(
                 taskType = taskType, status = "COMPLETED",
-                batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
-                message = "完成: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
+                batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.totalHits,
+                message = "完成: 已处理 ${stats.total}/${stats.totalHits}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
                 details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered, "emailRejected" to stats.emailRejected, "filterReasons" to stats.filterReasons)
             ), execId)
         } catch (e: Exception) {
             progressStore.update(taskType, TaskProgress(
                 taskType = taskType, status = "FAILED",
-                batchNumber = -1, processedCount = stats.total.toLong(), totalCount = 0,
-                message = "失败: ${e.message}"
+                batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.totalHits,
+                message = "失败: 已处理 ${stats.total}/${stats.totalHits}, ${e.message}"
             ), execId)
             throw e
         }

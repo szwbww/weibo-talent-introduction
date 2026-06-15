@@ -192,13 +192,12 @@ function formatFileSize(size) {
 const shownErrors = new Set();
 const taskButtonOriginalTexts = {
     checkRepliesBtn: "检查回复",
-    revalidateBtn: "重新验证",
     discoverBtn: "发现专家",
     bulkOutreachBtn: "批量发送"
 };
 
 const taskButtonMapping = {
-    EXPERT_REVALIDATION: { label: "重新验证", btnId: "revalidateBtn" },
+    EXPERT_REVALIDATION: { label: "重新验证", btnId: "discoverBtn" },
     RAW_PROMOTION_SCAN: { label: "发现专家（快速）", btnId: "discoverBtn" },
     EXPERT_DISCOVERY: { label: "发现专家（深度）", btnId: "discoverBtn" },
     MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
@@ -234,6 +233,7 @@ function hideProgressBar() {
 }
 
 async function resumeProgressPollingIfNeeded() {
+    let firstRunningTask = null;
     for (const taskType of Object.keys(taskButtonMapping)) {
         try {
             const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
@@ -244,8 +244,15 @@ async function resumeProgressPollingIfNeeded() {
                 const mapping = taskButtonMapping[taskType];
                 if (mapping) setTaskButtonRunning(mapping.btnId);
                 startTaskWatcher(taskType);
+                if (!firstRunningTask) {
+                    firstRunningTask = { taskType, mapping };
+                }
             }
         } catch (e) { /* 静默 */ }
+    }
+    if (firstRunningTask && !currentTaskModal) {
+        const { taskType, mapping } = firstRunningTask;
+        openTaskModal(taskType, mapping.label, mapping.btnId, { knownActiveAtOpen: true });
     }
 }
 
@@ -960,7 +967,7 @@ function setView(view) {
     if (view === "contacts") {
         resumeProgressPollingIfNeeded();
     } else {
-        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(stopProgressPollingFor);
+        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(t => stopTaskWatcher(t, true));
     }
 }
 
@@ -1699,7 +1706,7 @@ const taskLaunchConfigs = {
     EXPERT_REVALIDATION: {
         title: "重新验证候选人",
         desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。",
-        btnId: "revalidateBtn",
+        btnId: "discoverBtn",
         showKeyword: false,
         showMaxPromotions: false,
         showFilters: true,
@@ -1884,7 +1891,7 @@ async function handleRevalidateCandidates() {
     const taskType = "EXPERT_REVALIDATION";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "重新验证候选人", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -1897,7 +1904,7 @@ async function executeRevalidate() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { launchRequested: true });
+    openTaskModal(taskType, "重新验证候选人", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const response = await api("/api/experts/revalidate-candidates", { method: "POST" });
@@ -1950,6 +1957,11 @@ async function handleDiscover() {
 }
 
 async function handleDiscoverClick() {
+    const runningRevalidate = await isTaskRunning("EXPERT_REVALIDATION");
+    if (runningRevalidate) {
+        openTaskModal("EXPERT_REVALIDATION", "重新验证候选人", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
     const runningQuick = await isTaskRunning("RAW_PROMOTION_SCAN");
     if (runningQuick) {
         openTaskModal("RAW_PROMOTION_SCAN", "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
@@ -1961,6 +1973,8 @@ async function handleDiscoverClick() {
 async function handleDiscoverOption(mode) {
     if (mode === 'quick') {
         await handlePromoteRaw();
+    } else if (mode === 'revalidate') {
+        await handleRevalidateCandidates();
     } else {
         await handleDiscover();
     }
@@ -1989,11 +2003,13 @@ async function executePromoteRaw() {
         if (stats.existenceCheckFailed > 0) failures.push(`HEAD 失败 ${stats.existenceCheckFailed}`);
         const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
         const hasFailures = stats.promotionFailed > 0 || stats.existenceCheckFailed > 0;
+        const totalHits = stats.totalHits || stats.total;
+        const coverageMsg = totalHits > stats.total ? `已处理 ${stats.total}/${totalHits}` : `总数 ${stats.total}`;
         notifyTaskCompletionOnce({
             taskType,
             executionId: response.executionId,
             status: "COMPLETED",
-            message: `发现专家（快速）完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
+            message: `发现专家（快速）完成: ${coverageMsg}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
             level: hasFailures ? "warn" : "ok"
         });
     } catch (e) {

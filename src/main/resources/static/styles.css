@@ -389,6 +389,12 @@ p {
     cursor: not-allowed;
 }
 
+.dropdown-divider {
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 4px 0;
+}
+
 /* 筛选折叠开关（仅移动端显示，见响应式段落）
    注意: 选择器带 .toolbar 前缀以压过后方 .button 的 display 规则 */
 .toolbar .filter-toggle {

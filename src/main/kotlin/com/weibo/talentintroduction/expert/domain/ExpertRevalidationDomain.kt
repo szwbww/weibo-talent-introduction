@@ -29,6 +29,7 @@ data class RevalidationResult(
 
 data class PromotionScanStats(
     var total: Int = 0,
+    var totalHits: Long = 0,
     var promoted: Int = 0,
     var filtered: Int = 0,
     var emailRejected: Int = 0,
