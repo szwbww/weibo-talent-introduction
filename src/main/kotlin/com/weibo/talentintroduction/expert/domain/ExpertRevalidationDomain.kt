@@ -34,7 +34,8 @@ data class PromotionScanStats(
     var emailRejected: Int = 0,
     var alreadyPromoted: Int = 0,
     var promotionFailed: Int = 0,
-    var existenceCheckFailed: Int = 0
+    var existenceCheckFailed: Int = 0,
+    val filterReasons: MutableMap<String, Int> = mutableMapOf()
 )
 
 data class PromotionScanResult(

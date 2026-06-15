@@ -16,12 +16,14 @@ class ExpertRevalidationServiceBehaviorTest {
     private val emailValidationService = mock(EmailValidationService::class.java).also {
         `when`(it.isDisposableEmail(anyString())).thenReturn(false)
     }
-    private val eligibilityService = CandidateEligibilityService(
-        CandidateFilterProperties(), AcademicFilterProperties(), emailValidationService
-    )
+    private val filterService = mock(EligibilityFilterService::class.java).also {
+        `when`(it.getCandidateFilter()).thenReturn(CandidateFilterProperties())
+        `when`(it.getAcademicFilter()).thenReturn(AcademicFilterProperties())
+    }
+    private val eligibilityService = CandidateEligibilityService(filterService, emailValidationService)
     private val progressStore = mock(TaskProgressStore::class.java)
     private val service = ExpertRevalidationService(
-        searchService, eligibilityService, emailValidationService, writerService, progressStore
+        searchService, eligibilityService, emailValidationService, writerService, progressStore, filterService
     )
 
     private fun validExpert(orcidId: String, email: String, country: String = "GB"): ExpertProfile =
@@ -180,5 +182,45 @@ class ExpertRevalidationServiceBehaviorTest {
         val result = service.revalidateCandidates()
         assertEquals(5, result.stats.total)
         assertEquals(5, result.stats.passed)
+    }
+
+    private fun serviceWithEmailFilterOff(): ExpertRevalidationService {
+        val fs = mock(EligibilityFilterService::class.java).also {
+            `when`(it.getCandidateFilter()).thenReturn(CandidateFilterProperties(requireValidEmail = false))
+            `when`(it.getAcademicFilter()).thenReturn(AcademicFilterProperties())
+        }
+        val elig = CandidateEligibilityService(fs, emailValidationService)
+        return ExpertRevalidationService(searchService, elig, emailValidationService, writerService, progressStore, fs)
+    }
+
+    @Test
+    fun `revalidate skips email validation when requireValidEmail is false`() {
+        val svc = serviceWithEmailFilterOff()
+        val expert = validExpert("0001", "bad-email")
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
+
+        val result = svc.revalidateCandidates()
+        assertEquals(1, result.stats.total)
+        assertEquals(1, result.stats.passed)
+        assertEquals(0, result.stats.demoted)
+        verify(emailValidationService, never()).validate(anyString())
+    }
+
+    @Test
+    fun `promoteRaw does not count emailRejected when requireValidEmail is false`() {
+        val svc = serviceWithEmailFilterOff()
+        val expert = validExpert("0001", "bad-email")
+        val emptyResult = com.weibo.talentintroduction.expert.domain.EmailValidationResult(0, false, "INVALID_FORMAT")
+        `when`(emailValidationService.validate("bad-email")).thenReturn(emptyResult)
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0001")).thenReturn(false)
+        ScrollExpertsMockHelper.stubReadRawDocument(writerService,
+            mapOf("orcidId" to "x", "email" to "x@x.com", "givenNames" to "A", "familyNames" to "B"))
+        ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
+
+        val result = svc.promoteEligibleRawExperts(5)
+        assertEquals(1, result.stats.promoted)
+        assertEquals(0, result.stats.emailRejected)
+        verify(emailValidationService, never()).validate(anyString())
     }
 }

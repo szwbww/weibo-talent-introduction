@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.RevalidationResult
+import com.weibo.talentintroduction.expert.service.EligibilityFilterService
+import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
@@ -17,6 +19,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -31,7 +35,8 @@ class ExpertIndexController(
     private val revalidationService: ExpertRevalidationService,
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
-    private val expertIndexService: ExpertIndexService
+    private val expertIndexService: ExpertIndexService,
+    private val eligibilityFilterService: EligibilityFilterService
 ) {
     @GetMapping
     fun listExperts(
@@ -191,6 +196,17 @@ class ExpertIndexController(
             failure = result.failure,
             skipped = result.skipped
         ))
+    }
+
+    @GetMapping("/eligibility-filters")
+    fun getEligibilityFilters(): ResponseEntity<EligibilityFiltersResponse> {
+        return ResponseEntity.ok(eligibilityFilterService.getAll())
+    }
+
+    @PutMapping("/eligibility-filters")
+    fun updateEligibilityFilters(@RequestBody updates: Map<String, String>): ResponseEntity<EligibilityFiltersResponse> {
+        updates.forEach { (key, value) -> eligibilityFilterService.update(key, value) }
+        return ResponseEntity.ok(eligibilityFilterService.getAll())
     }
 }
 

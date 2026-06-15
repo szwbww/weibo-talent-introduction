@@ -16,7 +16,8 @@ class ExpertRevalidationService(
     private val eligibilityService: CandidateEligibilityService,
     private val emailValidationService: EmailValidationService,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val progressStore: TaskProgressStore
+    private val progressStore: TaskProgressStore,
+    private val eligibilityFilterService: EligibilityFilterService
 ) {
     private val log = LoggerFactory.getLogger(ExpertRevalidationService::class.java)
 
@@ -34,20 +35,23 @@ class ExpertRevalidationService(
                 val processedBefore = stats.total
                 val passedBefore = stats.passed
                 val demotedBefore = stats.demoted
+                val requireValidEmail = eligibilityFilterService.getCandidateFilter().requireValidEmail
                 for (profile in batch) {
                     stats.total++
 
-                    val emailResult = emailValidationService.validate(profile.email.orEmpty())
-                    if (!emailResult.valid) {
-                        val deleted = expertIndexWriterService.removeFromCandidateIndex(profile.orcidId)
-                        if (deleted) {
-                            stats.demoted++
-                            stats.demotionReasons.merge("EMAIL:${emailResult.rejectReason}", 1) { a, b -> a + b }
-                        } else {
-                            stats.demotionFailed++
-                            log.warn("Failed to remove candidate {} with invalid email", profile.orcidId)
+                    if (requireValidEmail) {
+                        val emailResult = emailValidationService.validate(profile.email.orEmpty())
+                        if (!emailResult.valid) {
+                            val deleted = expertIndexWriterService.removeFromCandidateIndex(profile.orcidId)
+                            if (deleted) {
+                                stats.demoted++
+                                stats.demotionReasons.merge("EMAIL:${emailResult.rejectReason}", 1) { a, b -> a + b }
+                            } else {
+                                stats.demotionFailed++
+                                log.warn("Failed to remove candidate {} with invalid email", profile.orcidId)
+                            }
+                            continue
                         }
-                        continue
                     }
 
                     val eligibility = eligibilityService.evaluateEligibility(profile)
@@ -81,7 +85,7 @@ class ExpertRevalidationService(
                     taskType = taskType, status = "RUNNING",
                     batchNumber = batchNumber, processedCount = stats.total.toLong(), totalCount = totalHits,
                     message = "批次 $batchNumber: 已处理 ${stats.total}/$totalHits",
-                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "tagFailed" to stats.tagFailed),
+                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "tagFailed" to stats.tagFailed, "demotionReasons" to stats.demotionReasons),
                     errors = if (stats.tagFailed > 0) listOf("${stats.tagFailed} 个标签写入失败") else null,
                     batchProcessed = batchProcessed,
                     batchPassed = batchPassed,
@@ -97,7 +101,7 @@ class ExpertRevalidationService(
                     taskType = taskType, status = "CANCELLED",
                     batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
                     message = "已取消: 通过 ${stats.passed}, 降级 ${stats.demoted}",
-                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed)
+                    details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed, "demotionReasons" to stats.demotionReasons)
                 ), execId)
                 return RevalidationResult(stats, wasCancelled = true)
             }
@@ -109,7 +113,7 @@ class ExpertRevalidationService(
                 taskType = taskType, status = "COMPLETED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
                 message = "完成: 通过 ${stats.passed}, 降级 ${stats.demoted}",
-                details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed)
+                details = mapOf("passed" to stats.passed, "demoted" to stats.demoted, "demotionFailed" to stats.demotionFailed, "tagFailed" to stats.tagFailed, "demotionReasons" to stats.demotionReasons)
             ), execId)
         } catch (e: Exception) {
             progressStore.update(taskType, TaskProgress(
@@ -130,6 +134,7 @@ class ExpertRevalidationService(
         val execId = progressStore.getCurrentExecutionId(taskType)
 
         try {
+            val requireValidEmail = eligibilityFilterService.getCandidateFilter().requireValidEmail
             expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
                 if (progressStore.isCancelled(taskType)) {
                     log.info("RAW晋升扫描任务已取消，当前批次={}", batchNumber)
@@ -148,6 +153,9 @@ class ExpertRevalidationService(
                     val eligibility = eligibilityService.evaluateEligibility(profile)
                     if (!eligibility.eligible) {
                         stats.filtered++
+                        for (reason in eligibility.rejectReasons) {
+                            stats.filterReasons.merge(reason, 1) { a, b -> a + b }
+                        }
                         continue
                     }
 
@@ -166,10 +174,13 @@ class ExpertRevalidationService(
                         continue
                     }
 
-                    val emailResult = emailValidationService.validate(profile.email.orEmpty())
-                    if (!emailResult.valid) {
-                        stats.emailRejected++
-                        continue
+                    if (requireValidEmail) {
+                        val emailResult = emailValidationService.validate(profile.email.orEmpty())
+                        if (!emailResult.valid) {
+                            stats.emailRejected++
+                            stats.filterReasons.merge("EMAIL:${emailResult.rejectReason}", 1) { a, b -> a + b }
+                            continue
+                        }
                     }
 
                     val success = promoteRawToCandidate(profile)
@@ -188,7 +199,7 @@ class ExpertRevalidationService(
                     taskType = taskType, status = "RUNNING",
                     batchNumber = batchNumber, processedCount = stats.total.toLong(), totalCount = totalHits,
                     message = "批次 $batchNumber: 已处理 ${stats.total}/$totalHits, 已晋升 ${stats.promoted}",
-                    details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered),
+                    details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered, "filterReasons" to stats.filterReasons),
                     batchProcessed = batchProcessed,
                     batchPassed = batchPassed,
                     batchRejected = batchRejected
@@ -202,7 +213,8 @@ class ExpertRevalidationService(
                 progressStore.update(taskType, TaskProgress(
                     taskType = taskType, status = "CANCELLED",
                     batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
-                    message = "已取消: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}"
+                    message = "已取消: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
+                    details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered, "emailRejected" to stats.emailRejected, "filterReasons" to stats.filterReasons)
                 ), execId)
                 return PromotionScanResult(stats, wasCancelled = true)
             }
@@ -210,7 +222,8 @@ class ExpertRevalidationService(
             progressStore.update(taskType, TaskProgress(
                 taskType = taskType, status = "COMPLETED",
                 batchNumber = -1, processedCount = stats.total.toLong(), totalCount = stats.total.toLong(),
-                message = "完成: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}"
+                message = "完成: 晋升 ${stats.promoted}, 过滤 ${stats.filtered}",
+                details = mapOf("promoted" to stats.promoted, "filtered" to stats.filtered, "emailRejected" to stats.emailRejected, "filterReasons" to stats.filterReasons)
             ), execId)
         } catch (e: Exception) {
             progressStore.update(taskType, TaskProgress(

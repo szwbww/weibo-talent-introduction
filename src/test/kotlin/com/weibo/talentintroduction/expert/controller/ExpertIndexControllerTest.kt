@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
+import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
@@ -31,12 +32,13 @@ class ExpertIndexControllerTest {
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val indexService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexService::class.java)
+    private val filterService = Mockito.mock(EligibilityFilterService::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService,
-        revalidationService, taskExecutionService, progressStore, indexService
+        revalidationService, taskExecutionService, progressStore, indexService, filterService
     )
 
     private fun anyTaskProgress(): TaskProgress {

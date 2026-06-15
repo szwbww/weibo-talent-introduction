@@ -573,6 +573,11 @@
                     <div id="taskLaunchSources" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
                 </div>
 
+                <div id="taskLaunchFiltersRow" hidden>
+                    <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
+                    <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
                     <button class="button secondary" onclick="closeTaskModal()">取消</button>
                     <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, #4facfe 100%); border: none; color: white;">开始执行</button>

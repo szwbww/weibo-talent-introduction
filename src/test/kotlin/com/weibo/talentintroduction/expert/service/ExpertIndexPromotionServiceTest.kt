@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.mockito.Mockito.`when`
 
 class ExpertIndexPromotionServiceTest {
     private val properties = ElasticsearchProperties(
@@ -25,8 +26,10 @@ class ExpertIndexPromotionServiceTest {
             com.fasterxml.jackson.databind.ObjectMapper()
         ),
         CandidateEligibilityService(
-            CandidateFilterProperties(),
-            AcademicFilterProperties(),
+            Mockito.mock(EligibilityFilterService::class.java).also { f ->
+                `when`(f.getCandidateFilter()).thenReturn(CandidateFilterProperties())
+                `when`(f.getAcademicFilter()).thenReturn(AcademicFilterProperties())
+            },
             Mockito.mock(EmailValidationService::class.java)
         )
     )

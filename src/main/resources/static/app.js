@@ -620,6 +620,13 @@ function updateTaskModalFromProgress(progress, generation) {
         }
     }
 
+    if (progress.details && progress.details.filterReasons != null) {
+        messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.filterReasons);
+    }
+    if (progress.details && progress.details.demotionReasons != null) {
+        messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.demotionReasons);
+    }
+
     if (currentTaskModal) {
         const justObservedTerminal = observeTaskModalProgress(progress, generation);
         if (justObservedTerminal) {
@@ -1501,6 +1508,193 @@ async function executeCheckReplies() {
 }
 
 // ---- 操作确认弹窗 ----
+const filterReasonLabels = {
+    MISSING_ORCID: "缺少 ORCID",
+    INVALID_EMAIL_FORMAT: "邮箱格式无效",
+    DISPOSABLE_EMAIL: "一次性邮箱",
+    NO_DOCTORAL_DEGREE: "无博士学位",
+    AGE_EXCEEDED: "超龄",
+    CHINESE_NATIONALITY: "中国国籍",
+    H_INDEX_TOO_LOW: "H-Index 过低",
+    CITATION_COUNT_TOO_LOW: "引用数过低",
+    INACTIVE: "近期无发表",
+    "EMAIL:NO_MX_RECORD": "邮箱 MX 记录不存在",
+    "EMAIL:INVALID_FORMAT": "邮箱格式无效",
+    "EMAIL:DISPOSABLE_EMAIL": "一次性邮箱域名",
+    "EMAIL:EMPTY_EMAIL": "邮箱为空"
+};
+
+const filterItems = [
+    { key: "candidate.requireValidEmail",        label: "要求有效邮箱",  type: "bool" },
+    { key: "candidate.requireDoctoralDegree",     label: "要求博士学位",  type: "bool" },
+    { key: "candidate.excludeChineseNationality", label: "排除中国国籍",  type: "bool" },
+    { key: "candidate.enableAgeFilter",           label: "年龄限制",     type: "bool" },
+    { key: "candidate.maxAgeExclusive",           label: "最大年龄",     type: "number", dependsOn: "candidate.enableAgeFilter" },
+    { key: "academic.enableHIndexFilter",         label: "H-Index 门槛", type: "bool" },
+    { key: "academic.minHIndex",                  label: "最低 H-Index", type: "number", dependsOn: "academic.enableHIndexFilter" },
+    { key: "academic.enableCitationFilter",       label: "引用数门槛",   type: "bool" },
+    { key: "academic.minCitationCount",           label: "最低引用数",   type: "number", dependsOn: "academic.enableCitationFilter" },
+    { key: "academic.enableActivityFilter",       label: "活跃度过滤",   type: "bool" },
+    { key: "academic.recentYearsThreshold",       label: "近 N 年有发表", type: "number", dependsOn: "academic.enableActivityFilter" },
+    { key: "email.enableMxCheck",                 label: "MX 邮箱验证",  type: "bool" }
+];
+
+function flattenFilters(filters) {
+    const flat = {};
+    if (!filters) return flat;
+    Object.entries(filters.candidateFilter || {}).forEach(([k, v]) => {
+        flat["candidate." + k] = v;
+    });
+    Object.entries(filters.academicFilter || {}).forEach(([k, v]) => {
+        flat["academic." + k] = v;
+    });
+    Object.entries(filters.emailValidation || {}).forEach(([k, v]) => {
+        flat["email." + k] = v;
+    });
+    return flat;
+}
+
+function renderFilterPanel(filters, preFlat) {
+    var flat = preFlat || flattenFilters(filters);
+    return filterItems.map(function(item) {
+        const value = flat[item.key];
+        if (item.type === "bool") {
+            const checked = value === true || value === "true";
+            return `<label class="filter-toggle">
+                <input type="checkbox" data-filter-key="${item.key}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(item.label)}</span>
+            </label>`;
+        } else {
+            const parentEnabled = item.dependsOn ? (flat[item.dependsOn] === true || flat[item.dependsOn] === "true") : true;
+            return `<label class="filter-number ${parentEnabled ? "" : "filter-disabled"}">
+                <span>${escapeHtml(item.label)}:</span>
+                <input type="number" data-filter-key="${item.key}" value="${value}" min="1" ${parentEnabled ? "" : "disabled"}>
+            </label>`;
+        }
+    }).join("");
+}
+
+var filterUpdateDebounceTimer = null;
+var filterSaveInFlightPromise = null;
+var filterSaveInFlightPayload = null;
+var lastFilterPayload = null;
+
+function collectFilterPayload() {
+    var payload = {};
+    var panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return payload;
+    panel.querySelectorAll("[data-filter-key]").forEach(function(input) {
+        var key = input.dataset.filterKey;
+        if (input.type === "checkbox") {
+            payload[key] = input.checked ? "true" : "false";
+        } else {
+            payload[key] = String(input.value);
+        }
+    });
+    return payload;
+}
+
+function payloadsEqual(a, b) {
+    var aKeys = Object.keys(a).sort();
+    var bKeys = Object.keys(b).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (var i = 0; i < aKeys.length; i++) {
+        if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[aKeys[i]]) return false;
+    }
+    return true;
+}
+
+function sendFilterSaveRequest(payload) {
+    return api("/api/experts/eligibility-filters", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+}
+
+function triggerFilterSave() {
+    if (filterSaveInFlightPromise != null) return filterSaveInFlightPromise;
+    if (lastFilterPayload == null) return Promise.resolve();
+    var payload = {};
+    var keys = Object.keys(lastFilterPayload);
+    for (var i = 0; i < keys.length; i++) {
+        payload[keys[i]] = lastFilterPayload[keys[i]];
+    }
+    filterSaveInFlightPayload = payload;
+    filterSaveInFlightPromise = sendFilterSaveRequest(payload).then(function() {
+        filterSaveInFlightPromise = null;
+        if (lastFilterPayload != null && !payloadsEqual(lastFilterPayload, filterSaveInFlightPayload)) {
+            filterSaveInFlightPayload = null;
+            return triggerFilterSave();
+        }
+        lastFilterPayload = null;
+        filterSaveInFlightPayload = null;
+    }).catch(function(e) {
+        filterSaveInFlightPromise = null;
+        filterSaveInFlightPayload = null;
+        throw e;
+    });
+    return filterSaveInFlightPromise;
+}
+
+function flushFilterSave() {
+    if (filterUpdateDebounceTimer) {
+        clearTimeout(filterUpdateDebounceTimer);
+        filterUpdateDebounceTimer = null;
+    }
+    if (lastFilterPayload == null || Object.keys(lastFilterPayload).length === 0) return Promise.resolve();
+    return triggerFilterSave();
+}
+
+function bindFilterToggleEvents() {
+    var panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return;
+    panel.querySelectorAll("[data-filter-key]").forEach(function(el) {
+        el.addEventListener("change", function() {
+            lastFilterPayload = collectFilterPayload();
+            if (filterUpdateDebounceTimer) clearTimeout(filterUpdateDebounceTimer);
+            filterUpdateDebounceTimer = setTimeout(function() {
+                triggerFilterSave().catch(function(e) {
+                    console.error("Failed to update filter settings:", e);
+                });
+            }, 300);
+            renderFilterPanelFromUpdates();
+        });
+    });
+}
+
+function renderFilterPanelFromUpdates() {
+    const panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return;
+    const updateEls = panel.querySelectorAll("[data-filter-key]");
+    if (updateEls.length === 0) return;
+    const flat = {};
+    updateEls.forEach(function(el) {
+        flat[el.dataset.filterKey] = el.type === "checkbox" ? el.checked : el.value;
+    });
+    panel.innerHTML = renderFilterPanel({ candidateFilter: {}, academicFilter: {}, emailValidation: {} }, flat);
+    bindFilterToggleEvents();
+}
+
+function renderFilterReasonsTable(filterReasons) {
+    if (!filterReasons || Object.keys(filterReasons).length === 0) return "";
+    var entries = [];
+    for (var key in filterReasons) {
+        if (Object.prototype.hasOwnProperty.call(filterReasons, key)) {
+            entries.push({ key: key, count: filterReasons[key] });
+        }
+    }
+    entries.sort(function(a, b) { return b.count - a.count; });
+    return `<table class="filter-reasons-table">
+        <caption>过滤原因分布</caption>
+        <tbody>
+            ${entries.map(function(e) {
+                return `<tr><td>${escapeHtml(filterReasonLabels[e.key] || e.key)}</td><td>${e.count.toLocaleString()}</td></tr>`;
+            }).join("")}
+        </tbody>
+    </table>`;
+}
+
 const taskLaunchConfigs = {
     EXPERT_REVALIDATION: {
         title: "重新验证候选人",
@@ -1508,6 +1702,11 @@ const taskLaunchConfigs = {
         btnId: "revalidateBtn",
         showKeyword: false,
         showMaxPromotions: false,
+        showFilters: true,
+        preload: async () => {
+            var filters = await api("/api/experts/eligibility-filters");
+            return { desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。", canRun: true, filters: filters };
+        },
         run: executeRevalidate
     },
     RAW_PROMOTION_SCAN: {
@@ -1516,6 +1715,11 @@ const taskLaunchConfigs = {
         btnId: "discoverBtn",
         showKeyword: false,
         showMaxPromotions: true,
+        showFilters: true,
+        preload: async () => {
+            var filters = await api("/api/experts/eligibility-filters");
+            return { desc: "将扫描 RAW 层专家，符合以下筛选条件的将被晋升到 CANDIDATE 层。", canRun: true, filters: filters };
+        },
         run: executePromoteRaw
     },
     EXPERT_DISCOVERY: {
@@ -1574,6 +1778,9 @@ async function openTaskLaunchModal(taskType) {
     const runBtn = $("#taskLaunchRunBtn");
     runBtn.disabled = false;
 
+    const filtersRow = $("#taskLaunchFiltersRow");
+    filtersRow.hidden = true;
+
     if (config.preload) {
         $("#taskLaunchDesc").textContent = "正在准备任务信息...";
         runBtn.disabled = true;
@@ -1581,6 +1788,11 @@ async function openTaskLaunchModal(taskType) {
             const pre = await config.preload();
             $("#taskLaunchDesc").textContent = pre.desc;
             runBtn.disabled = !pre.canRun;
+            if (pre.filters && config.showFilters) {
+                $("#taskLaunchFiltersPanel").innerHTML = renderFilterPanel(pre.filters);
+                filtersRow.hidden = false;
+                bindFilterToggleEvents();
+            }
         } catch (e) {
             $("#taskLaunchDesc").textContent = "加载任务信息失败: " + e.message;
             return;
@@ -1601,7 +1813,18 @@ async function openTaskLaunchModal(taskType) {
     }
     $("#taskModalBySource").hidden = true;
 
-    runBtn.onclick = () => {
+    runBtn.onclick = async () => {
+        if (config.showFilters) {
+            runBtn.disabled = true;
+            try {
+                await flushFilterSave();
+            } catch (e) {
+                showStatus("筛选条件保存失败: " + e.message, "error");
+                runBtn.disabled = false;
+                return;
+            }
+            runBtn.disabled = false;
+        }
         // Toggle view to progress immediately, then run the task
         $("#taskModalConfigSection").hidden = true;
         $("#taskModalProgressSection").hidden = false;
@@ -4287,13 +4510,13 @@ async function refreshAutoReplySummary() {
             btn.textContent = "自动回复：无专家";
             btn.disabled = true;
         } else if (enabled === total) {
-            btn.textContent = "自动回复：全部开启 ✓（点击全部关闭）";
+            btn.textContent = "自动回复：全部开启 ✓";
             btn.disabled = false;
         } else if (disabled === total) {
-            btn.textContent = "自动回复：全部关闭（点击全部开启）";
+            btn.textContent = "自动回复：全部关闭";
             btn.disabled = false;
         } else {
-            btn.textContent = `自动回复：部分开启 ${enabled}/${total}（点击全部开启）`;
+            btn.textContent = `自动回复：${enabled}/${total} 开启`;
             btn.disabled = false;
         }
     } catch (e) {
@@ -4330,11 +4553,7 @@ function initBulkAutoReply() {
         const confirmed = confirm(confirmMsg);
         if (!confirmed) return;
 
-        const operatorName = getConfiguredOperatorName();
-        if (!operatorName) {
-            showStatus("请先设置操作员姓名", "error");
-            return;
-        }
+        const operatorName = $("#currentUserDisplay")?.textContent?.trim() || "console";
 
         btn.disabled = true;
         btn.textContent = "正在更新...";

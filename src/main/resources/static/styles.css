@@ -3178,3 +3178,97 @@ textarea {
     flex-direction: column;
     gap: 2px;
 }
+
+/* ---- 筛选条件面板 (Eligibility Filter Panel) ---- */
+.task-modal-filters-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary, #f3f4f6);
+    color: var(--text-muted);
+    transition: background 0.15s;
+}
+
+.filter-toggle input[type="checkbox"]:checked + span {
+    color: var(--success-text, #166534);
+}
+
+.filter-toggle:has(input[type="checkbox"]:checked) {
+    background: var(--success-bg, #dcfce7);
+    border-color: var(--success-border, #bbf7d0);
+    color: var(--success-text, #166534);
+}
+
+.filter-number {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary, #f3f4f6);
+    color: var(--text-muted);
+    transition: opacity 0.15s;
+}
+
+.filter-number.filter-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.filter-number input[type="number"] {
+    width: 52px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 12px;
+    text-align: right;
+    background: var(--panel-bg);
+    color: var(--text);
+}
+
+.filter-reasons-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.filter-reasons-table caption {
+    text-align: left;
+    font-weight: 600;
+    padding: 4px 0;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.filter-reasons-table th,
+.filter-reasons-table td {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--panel-border);
+    text-align: left;
+}
+
+.filter-reasons-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}

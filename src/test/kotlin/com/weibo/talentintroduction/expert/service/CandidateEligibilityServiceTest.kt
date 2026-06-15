@@ -7,44 +7,43 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class CandidateEligibilityServiceTest {
     private val emailValidationService = mock(EmailValidationService::class.java)
-    private val service = CandidateEligibilityService(
-        CandidateFilterProperties(), AcademicFilterProperties(), emailValidationService
-    )
+
+    private fun service(
+        candidate: CandidateFilterProperties = CandidateFilterProperties(),
+        academic: AcademicFilterProperties = AcademicFilterProperties()
+    ): CandidateEligibilityService {
+        val filterService = mock(EligibilityFilterService::class.java)
+        `when`(filterService.getCandidateFilter()).thenReturn(candidate)
+        `when`(filterService.getAcademicFilter()).thenReturn(academic)
+        return CandidateEligibilityService(filterService, emailValidationService)
+    }
 
     @Test
     fun `candidate must have non chinese country and valid email by default`() {
-        assertTrue(service.isEligibleForCandidateIndex(expert(age = null, degree = null)))
-        assertFalse(service.isEligibleForCandidateIndex(expert(nationality = "China")))
-        assertFalse(service.isEligibleForCandidateIndex(expert(email = "invalid-email")))
+        val svc = service()
+        assertTrue(svc.isEligibleForCandidateIndex(expert(age = null, degree = null)))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(nationality = "China")))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(email = "invalid-email")))
     }
 
     @Test
     fun `doctoral degree filter is enforced only when enabled`() {
-        val degreeFilteredService = CandidateEligibilityService(
-            CandidateFilterProperties(requireDoctoralDegree = true),
-            AcademicFilterProperties(),
-            emailValidationService
-        )
-
-        assertTrue(degreeFilteredService.isEligibleForCandidateIndex(expert(degree = "PhD")))
-        assertFalse(degreeFilteredService.isEligibleForCandidateIndex(expert(degree = null)))
-        assertFalse(degreeFilteredService.isEligibleForCandidateIndex(expert(degree = "Master")))
+        val svc = service(CandidateFilterProperties(requireDoctoralDegree = true))
+        assertTrue(svc.isEligibleForCandidateIndex(expert(degree = "PhD")))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(degree = null)))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(degree = "Master")))
     }
 
     @Test
     fun `age filter is enforced only when enabled`() {
-        val ageFilteredService = CandidateEligibilityService(
-            CandidateFilterProperties(enableAgeFilter = true, maxAgeExclusive = 70),
-            AcademicFilterProperties(),
-            emailValidationService
-        )
-
-        assertTrue(ageFilteredService.isEligibleForCandidateIndex(expert(age = 69)))
-        assertFalse(ageFilteredService.isEligibleForCandidateIndex(expert(age = 70)))
-        assertFalse(ageFilteredService.isEligibleForCandidateIndex(expert(age = null)))
+        val svc = service(CandidateFilterProperties(enableAgeFilter = true, maxAgeExclusive = 70))
+        assertTrue(svc.isEligibleForCandidateIndex(expert(age = 69)))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(age = 70)))
+        assertFalse(svc.isEligibleForCandidateIndex(expert(age = null)))
     }
 
     private fun expert(
