@@ -133,7 +133,7 @@ class ExpertIndexControllerMvcTest {
         Mockito.`when`(taskExecutionService.runAndRecordWithResult<Any>(
             eqValue("RAW_PROMOTION_SCAN"),
             eqValue("MANUAL"),
-            anyValue(Any()),
+            eqValue("promote-eligible-raw"),
             anyValue<(Long) -> Unit> { },
             anyValue { Any() }
         )).thenAnswer { invocation ->
@@ -142,7 +142,7 @@ class ExpertIndexControllerMvcTest {
             Pair(taskExecution, scanResult)
         }
 
-        mockMvc.perform(post("/api/experts/promote-eligible-raw").param("maxPromotions", "100"))
+        mockMvc.perform(post("/api/experts/promote-eligible-raw"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.executionId").value(43))
             .andExpect(jsonPath("$.result.stats.promoted").value(3))

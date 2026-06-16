@@ -159,7 +159,7 @@ class ExpertDiscoveryService(
             if (includeRawScan) {
                 log.info("开始执行 RAW 晋升扫描与邮箱补全...")
                 try {
-                    revalidationService.promoteEligibleRawExperts(1000)
+                    revalidationService.promoteEligibleRawExperts()
                 } catch (e: Exception) {
                     log.warn("Failed to run RAW promotion scan during discovery", e)
                 }

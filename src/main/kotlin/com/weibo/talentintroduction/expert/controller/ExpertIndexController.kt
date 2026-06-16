@@ -137,10 +137,7 @@ class ExpertIndexController(
     }
 
     @PostMapping("/promote-eligible-raw")
-    fun promoteEligibleRaw(
-        @RequestParam(defaultValue = "1000") maxPromotions: Int
-    ): ResponseEntity<Any> {
-        require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
+    fun promoteEligibleRaw(): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("RAW_PROMOTION_SCAN", TaskProgress(
             taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
@@ -152,13 +149,13 @@ class ExpertIndexController(
         var executionId: Long? = null
         try {
             val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
-                "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions),
+                "RAW_PROMOTION_SCAN", "MANUAL", "promote-eligible-raw",
                 onStarted = { id ->
                     executionId = id
                     progressStore.bindExecutionId("RAW_PROMOTION_SCAN", token, id)
                 }
             ) {
-                revalidationService.promoteEligibleRawExperts(maxPromotions)
+                revalidationService.promoteEligibleRawExperts()
             }
             return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
         } catch (ex: Exception) {

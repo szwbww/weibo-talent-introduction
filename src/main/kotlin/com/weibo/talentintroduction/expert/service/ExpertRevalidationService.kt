@@ -127,9 +127,8 @@ class ExpertRevalidationService(
         return RevalidationResult(stats)
     }
 
-    fun promoteEligibleRawExperts(maxPromotions: Int = 1000): PromotionScanResult {
+    fun promoteEligibleRawExperts(): PromotionScanResult {
         val stats = PromotionScanStats()
-        if (maxPromotions <= 0) return PromotionScanResult(stats)
         val taskType = "RAW_PROMOTION_SCAN"
         val execId = progressStore.getCurrentExecutionId(taskType)
 
@@ -143,12 +142,7 @@ class ExpertRevalidationService(
                 }
                 val processedBefore = stats.total
                 val promotedBefore = stats.promoted
-                var limitReached = false
                 for (profile in batch) {
-                    if (stats.promoted >= maxPromotions) {
-                        limitReached = true
-                        break
-                    }
                     stats.total++
 
                     val eligibility = eligibilityService.evaluateEligibility(profile)
@@ -205,7 +199,7 @@ class ExpertRevalidationService(
                     batchPassed = batchPassed,
                     batchRejected = batchRejected
                 ), execId)
-                !limitReached && stats.promoted < maxPromotions
+                true
             }
 
             if (progressStore.isCancelled(taskType)) {

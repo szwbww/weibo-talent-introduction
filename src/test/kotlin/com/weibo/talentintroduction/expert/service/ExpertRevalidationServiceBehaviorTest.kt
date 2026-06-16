@@ -101,7 +101,7 @@ class ExpertRevalidationServiceBehaviorTest {
         `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0001")).thenReturn(true)
         ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
 
-        val result = service.promoteEligibleRawExperts(5)
+        val result = service.promoteEligibleRawExperts()
         assertEquals(1, result.stats.alreadyPromoted)
         assertEquals(0, result.stats.promoted)
     }
@@ -115,7 +115,7 @@ class ExpertRevalidationServiceBehaviorTest {
             .thenThrow(RuntimeException("ES 5xx"))
         ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
 
-        val result = service.promoteEligibleRawExperts(5)
+        val result = service.promoteEligibleRawExperts()
         assertEquals(1, result.stats.existenceCheckFailed)
         assertEquals(0, result.stats.promoted)
     }
@@ -127,7 +127,7 @@ class ExpertRevalidationServiceBehaviorTest {
             .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
         ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
 
-        val result = service.promoteEligibleRawExperts(5)
+        val result = service.promoteEligibleRawExperts()
         assertEquals(1, result.stats.filtered)
         assertEquals(0, result.stats.promoted)
         assertEquals(0, result.stats.existenceCheckFailed)
@@ -143,30 +143,9 @@ class ExpertRevalidationServiceBehaviorTest {
         `when`(writerService.readRawDocument("0001")).thenReturn(null)
         ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
 
-        val result = service.promoteEligibleRawExperts(5)
+        val result = service.promoteEligibleRawExperts()
         assertEquals(1, result.stats.promotionFailed)
         assertEquals(0, result.stats.promoted)
-    }
-
-    @Test
-    fun `stops at maxPromotions limit`() {
-        val experts = (1..5).map { validExpert("000$it", "user$it@oxford.ac.uk") }
-        experts.forEach { e ->
-            `when`(emailValidationService.validate(e.email!!))
-                .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
-        }
-        // first 3 get checked, only first 2 promoted before hitting limit
-        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0001")).thenReturn(false)
-        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0002")).thenReturn(false)
-        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0003")).thenReturn(false)
-        ScrollExpertsMockHelper.stubReadRawDocument(writerService,
-            mapOf("orcidId" to "x", "email" to "x@x.com", "givenNames" to "A", "familyNames" to "B"))
-        ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, true)
-        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(experts.take(3), experts.drop(3)))
-
-        val result = service.promoteEligibleRawExperts(maxPromotions = 2)
-        assertEquals(2, result.stats.promoted)
-        assertEquals(2, result.stats.total)
     }
 
     @Test
@@ -218,7 +197,7 @@ class ExpertRevalidationServiceBehaviorTest {
         ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, true)
         ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
 
-        val result = svc.promoteEligibleRawExperts(5)
+        val result = svc.promoteEligibleRawExperts()
         assertEquals(1, result.stats.promoted)
         assertEquals(0, result.stats.emailRejected)
         verify(emailValidationService, never()).validate(anyString())

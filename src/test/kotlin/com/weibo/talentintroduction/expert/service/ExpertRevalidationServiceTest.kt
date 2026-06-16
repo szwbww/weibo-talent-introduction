@@ -29,13 +29,6 @@ class ExpertRevalidationServiceTest {
     }
 
     @Test
-    fun `PromotionScanStats with maxPromotions zero returns empty result`() {
-        val stats = PromotionScanStats()
-        assertNotNull(stats)
-        assertEquals(0, stats.total)
-    }
-
-    @Test
     fun `RevalidationStats tracks demotion reasons`() {
         val stats = RevalidationStats()
         stats.demotionReasons.merge("INVALID_EMAIL_FORMAT", 1) { a, b -> a + b }

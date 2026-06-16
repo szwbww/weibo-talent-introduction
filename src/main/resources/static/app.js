@@ -1721,7 +1721,7 @@ const taskLaunchConfigs = {
         desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
         btnId: "discoverBtn",
         showKeyword: false,
-        showMaxPromotions: true,
+        showMaxPromotions: false,
         showFilters: true,
         preload: async () => {
             var filters = await api("/api/experts/eligibility-filters");
@@ -1982,7 +1982,6 @@ async function handleDiscoverOption(mode) {
 
 async function executePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
-    const maxPromotions = parseInt($("#taskLaunchMaxPromotions")?.value) || 1000;
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
@@ -1991,7 +1990,7 @@ async function executePromoteRaw() {
     openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const response = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
+        const response = await api("/api/experts/promote-eligible-raw", { method: "POST" });
         if (response && response.executionId != null) {
             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
         }
