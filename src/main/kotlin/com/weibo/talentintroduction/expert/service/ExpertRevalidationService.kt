@@ -42,7 +42,8 @@ class ExpertRevalidationService(
                     if (requireValidEmail) {
                         val emailResult = emailValidationService.validate(profile.email.orEmpty())
                         if (!emailResult.valid) {
-                            val deleted = expertIndexWriterService.removeFromCandidateIndex(profile.orcidId)
+                            val docId = profile.esDocId ?: profile.orcidId
+                            val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
                             if (deleted) {
                                 stats.demoted++
                                 stats.demotionReasons.merge("EMAIL:${emailResult.rejectReason}", 1) { a, b -> a + b }
@@ -56,7 +57,8 @@ class ExpertRevalidationService(
 
                     val eligibility = eligibilityService.evaluateEligibility(profile)
                     if (!eligibility.eligible) {
-                        val deleted = expertIndexWriterService.removeFromCandidateIndex(profile.orcidId)
+                        val docId = profile.esDocId ?: profile.orcidId
+                        val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
                         if (deleted) {
                             stats.demoted++
                             for (reason in eligibility.rejectReasons) {
@@ -69,7 +71,8 @@ class ExpertRevalidationService(
                         }
                     } else {
                         stats.passed++
-                        val tagged = expertIndexWriterService.addTag(profile.orcidId, "verified", ExpertIndexLevel.CANDIDATE)
+                        val docId = profile.esDocId ?: profile.orcidId
+                        val tagged = expertIndexWriterService.addTag(docId, "verified", ExpertIndexLevel.CANDIDATE)
                         if (!tagged) {
                             log.warn("Failed to add verified tag to candidate {}", profile.orcidId)
                             stats.tagFailed++
@@ -156,8 +159,9 @@ class ExpertRevalidationService(
 
                     val exists: Boolean
                     try {
+                        val docId = profile.esDocId ?: profile.orcidId
                         exists = expertIndexWriterService.documentExistsInIndex(
-                            ExpertIndexLevel.CANDIDATE, profile.orcidId
+                            ExpertIndexLevel.CANDIDATE, docId
                         )
                     } catch (e: Exception) {
                         stats.existenceCheckFailed++
@@ -235,7 +239,8 @@ class ExpertRevalidationService(
     }
 
     private fun promoteRawToCandidate(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        val rawDoc = expertIndexWriterService.readRawDocument(profile.orcidId)
+        val docId = profile.esDocId ?: profile.orcidId
+        val rawDoc = expertIndexWriterService.readRawDocument(docId)
             ?: return false
 
         val now = java.time.LocalDateTime.now()
@@ -245,11 +250,12 @@ class ExpertRevalidationService(
         val newTags = (existingTags + "auto_promoted").distinct()
 
         val doc = rawDoc.toMutableMap().apply {
+            put("orcidId", docId)
             put("candidateValidatedAt", now)
             put("updatedAt", now)
             put("tags", newTags)
         }
 
-        return expertIndexWriterService.writeCandidateDocument(profile.orcidId, doc)
+        return expertIndexWriterService.writeCandidateDocument(docId, doc)
     }
 }

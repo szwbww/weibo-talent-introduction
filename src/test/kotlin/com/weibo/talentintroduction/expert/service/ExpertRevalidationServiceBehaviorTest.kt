@@ -26,9 +26,9 @@ class ExpertRevalidationServiceBehaviorTest {
         searchService, eligibilityService, emailValidationService, writerService, progressStore, filterService
     )
 
-    private fun validExpert(orcidId: String, email: String, country: String = "GB"): ExpertProfile =
+    private fun validExpert(orcidId: String, email: String, country: String = "GB", esDocId: String? = null): ExpertProfile =
         ExpertProfile(
-            orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
+            esDocId = esDocId, orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
             country = country, keyword = null, employment = null
         )
 
@@ -44,6 +44,26 @@ class ExpertRevalidationServiceBehaviorTest {
         assertEquals(1, result.stats.total)
         assertEquals(1, result.stats.demoted)
         assertEquals(0, result.stats.demotionFailed)
+    }
+
+    @Test
+    fun `revalidate deletes and tags by esDocId when present`() {
+        val invalidExpert = validExpert("0001", "bad-email", esDocId = "ORCID-0001")
+        val validExpert = validExpert("0002", "john@oxford.ac.uk", esDocId = "EMAIL-abcd")
+        `when`(emailValidationService.validate("bad-email"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(0, false, "INVALID_FORMAT"))
+        `when`(emailValidationService.validate("john@oxford.ac.uk"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
+        `when`(writerService.removeFromCandidateIndex("ORCID-0001")).thenReturn(true)
+        `when`(writerService.addTag("EMAIL-abcd", "verified", ExpertIndexLevel.CANDIDATE)).thenReturn(true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(invalidExpert, validExpert)))
+
+        service.revalidateCandidates()
+
+        verify(writerService).removeFromCandidateIndex("ORCID-0001")
+        verify(writerService, never()).removeFromCandidateIndex("0001")
+        verify(writerService).addTag("EMAIL-abcd", "verified", ExpertIndexLevel.CANDIDATE)
+        verify(writerService, never()).addTag("0002", "verified", ExpertIndexLevel.CANDIDATE)
     }
 
     @Test
@@ -104,6 +124,28 @@ class ExpertRevalidationServiceBehaviorTest {
         val result = service.promoteEligibleRawExperts()
         assertEquals(1, result.stats.alreadyPromoted)
         assertEquals(0, result.stats.promoted)
+    }
+
+    @Test
+    fun `promote raw uses esDocId for HEAD read and write`() {
+        val expert = validExpert("0001", "user@oxford.ac.uk", esDocId = "ORCID-0001")
+        `when`(emailValidationService.validate("user@oxford.ac.uk"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "ORCID-0001")).thenReturn(false)
+        `when`(writerService.readRawDocument("ORCID-0001"))
+            .thenReturn(mapOf("orcidId" to "0001", "email" to "user@oxford.ac.uk", "givenNames" to "A", "familyNames" to "B"))
+        ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
+
+        val result = service.promoteEligibleRawExperts()
+
+        assertEquals(1, result.stats.promoted)
+        verify(writerService).documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "ORCID-0001")
+        verify(writerService, never()).documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "0001")
+        verify(writerService).readRawDocument("ORCID-0001")
+        verify(writerService, never()).readRawDocument("0001")
+        ScrollExpertsMockHelper.verifyWriteCandidateDocumentWithDocIdAndOrcid(writerService, "ORCID-0001", "ORCID-0001")
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "0001")
     }
 
     @Test

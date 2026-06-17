@@ -746,4 +746,41 @@ class ExpertSearchServiceTest {
             eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
     }
+
+    @Test
+    fun `maps esDocId from _id field in ES hit`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_id": "ORCID-0000-0001-0002-0003",
+                    "_source": {
+                      "orcidId": "0000-0001-0002-0003",
+                      "email": "expert@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+        assertEquals(1, result.experts.size)
+        assertEquals("ORCID-0000-0001-0002-0003", result.experts.single().esDocId)
+    }
 }

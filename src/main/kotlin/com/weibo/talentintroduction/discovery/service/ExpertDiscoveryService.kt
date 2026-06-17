@@ -18,6 +18,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
+import com.weibo.talentintroduction.expert.service.ExpertIdGenerator
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -424,7 +425,7 @@ class ExpertDiscoveryService(
                     }
 
                     val profile = buildOrcidProfile(record, authorEmail, emailResult.level)
-                    val esDocId = authorEmail.orcidId ?: "ORCID-${record.orcidId}"
+                    val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId ?: record.orcidId, authorEmail.email)
                     val eligibility = eligibilityService.evaluateEligibility(profile)
                     val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
                     val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
@@ -551,7 +552,7 @@ class ExpertDiscoveryService(
             }
 
             val profile = buildProfile(paper, authorEmail, emailResult.level)
-            val esDocId = authorEmail.orcidId ?: generateIdFromEmail(authorEmail.email)
+            val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId, authorEmail.email)
             val eligibility = eligibilityService.evaluateEligibility(profile)
             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
@@ -589,7 +590,7 @@ class ExpertDiscoveryService(
                            filterResult: String, rejectReasons: List<String>): Map<String, Any?> {
         val now = LocalDateTime.now().format(dateFormatter)
         return mapOf(
-            "orcidId" to profile.orcidId, "email" to profile.email,
+            "orcidId" to esDocId, "email" to profile.email,
             "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
             "country" to profile.country, "keyword" to profile.keyword,
             "employment" to profile.employment, "institution" to profile.institution,
@@ -713,13 +714,6 @@ class ExpertDiscoveryService(
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NOT_FOUND else DedupResult.ERROR
         } catch (e: Exception) { DedupResult.ERROR }
-    }
-
-    private fun generateIdFromEmail(email: String): String {
-        val hash = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(email.lowercase(Locale.ROOT).toByteArray())
-            .joinToString("") { "%02x".format(it) }.take(19)
-        return "EMAIL-$hash"
     }
 
     private fun inferCountryFromAffiliation(affiliation: String?): String? {

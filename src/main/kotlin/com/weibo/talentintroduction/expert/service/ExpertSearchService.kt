@@ -91,8 +91,7 @@ class ExpertSearchService(
         val totalHits = response.path("hits").path("total").path("value").asLong(0L)
         val experts = response.path("hits")
             .path("hits")
-            .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
-            .map(::toExpertProfile)
+            .map { hit -> toExpertProfile(hit) }
         return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
@@ -125,8 +124,7 @@ class ExpertSearchService(
         val totalHits = response.path("hits").path("total").path("value").asLong(0L)
         val experts = response.path("hits")
             .path("hits")
-            .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
-            .map(::toExpertProfile)
+            .map { hit -> toExpertProfile(hit) }
         return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
@@ -170,10 +168,7 @@ class ExpertSearchService(
                 if (hits.isEmpty) break
 
                 batchNumber++
-                val experts = hits.map { hit ->
-                    val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
-                    toExpertProfile(source)
-                }
+                val experts = hits.map { hit -> toExpertProfile(hit) }
                 val shouldContinue = handler(experts, batchNumber, totalHits)
                 if (!shouldContinue) break
                 if (hits.size() < batchSize) break
@@ -201,8 +196,11 @@ class ExpertSearchService(
         }
     }
 
-    private fun toExpertProfile(source: JsonNode): ExpertProfile =
-        ExpertProfile(
+    private fun toExpertProfile(hit: JsonNode): ExpertProfile {
+        val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
+        val esDocId = hit.path("_id").asText(null)
+        return ExpertProfile(
+            esDocId = esDocId,
             orcidId = source.nullableText("orcidId")
                 ?: source.nullableText("orcid")
                 ?: source.nullableText("id")
@@ -232,6 +230,7 @@ class ExpertSearchService(
             updatedAt = source.nullableText("updatedAt"),
             operatorStatus = source.nullableText("operatorStatus")
         )
+    }
 
     private fun JsonNode.nullableText(field: String): String? {
         val node = path(field)
@@ -310,8 +309,7 @@ class ExpertSearchService(
 
         return response.path("hits")
             .path("hits")
-            .mapNotNull { hit -> hit.path("_source").takeUnless(JsonNode::isMissingNode) }
-            .map(::toExpertProfile)
+            .map { hit -> toExpertProfile(hit) }
     }
 
     fun countExperts(
@@ -372,10 +370,7 @@ class ExpertSearchService(
                 if (hits.isEmpty) break
 
                 batchNumber++
-                val experts = hits.map { hit ->
-                    val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
-                    toExpertProfile(source)
-                }
+                val experts = hits.map { hit -> toExpertProfile(hit) }
                 val shouldContinue = handler(experts)
                 if (!shouldContinue) break
                 if (hits.size() < batchSize) break

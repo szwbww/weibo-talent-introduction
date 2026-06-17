@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.expert.domain
 
 data class ExpertProfile(
+    val esDocId: String? = null,
     val orcidId: String,
     val email: String?,
     val givenNames: String?,
