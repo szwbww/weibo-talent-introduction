@@ -1,0 +1,143 @@
+spring:
+  application:
+    name: weibo-talent-introduction
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/talent_introduction?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 3
+          multiplier: 2
+
+talent-introduction:
+  auth:
+    enabled: false
+  elasticsearch:
+    base-url: ${ES_BASE_URL:https://es-fcxvip4d.public.tencentelasticsearch.com:9200}
+    username: ${ES_USERNAME:elastic}
+    password: ${ES_PASSWORD:}
+    raw-index-name: ${ES_RAW_INDEX_NAME:orcid_info}
+    candidate-index-name: ${ES_CANDIDATE_INDEX_NAME:orcid_info_candidate}
+    application-index-name: ${ES_APPLICATION_INDEX_NAME:orcid_info_application}
+  candidate-filter:
+    require-doctoral-degree: ${CANDIDATE_REQUIRE_DOCTORAL_DEGREE:false}
+    require-valid-email: ${CANDIDATE_REQUIRE_VALID_EMAIL:true}
+    exclude-chinese-nationality: ${CANDIDATE_EXCLUDE_CHINESE_NATIONALITY:true}
+    enable-age-filter: ${CANDIDATE_ENABLE_AGE_FILTER:false}
+    max-age-exclusive: ${CANDIDATE_MAX_AGE_EXCLUSIVE:70}
+  mail-queue:
+    enabled: ${MAIL_QUEUE_ENABLED:false}
+    exchange: ${MAIL_QUEUE_EXCHANGE:talent.mail.exchange}
+    dead-letter-exchange: ${MAIL_QUEUE_DEAD_LETTER_EXCHANGE:talent.mail.dlx}
+    initial-outreach-queue: ${MAIL_QUEUE_INITIAL_OUTREACH_QUEUE:talent.mail.initial-outreach}
+    auto-reply-account-queue: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_QUEUE:talent.mail.auto-reply.account}
+    auto-reply-all-accounts-queue: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_QUEUE:talent.mail.auto-reply.all}
+    initial-outreach-dead-letter-queue: ${MAIL_QUEUE_INITIAL_OUTREACH_DLQ:talent.mail.initial-outreach.dlq}
+    auto-reply-account-dead-letter-queue: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_DLQ:talent.mail.auto-reply.account.dlq}
+    auto-reply-all-accounts-dead-letter-queue: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_DLQ:talent.mail.auto-reply.all.dlq}
+    initial-outreach-routing-key: ${MAIL_QUEUE_INITIAL_OUTREACH_ROUTING_KEY:mail.initial-outreach}
+    auto-reply-account-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_ROUTING_KEY:mail.auto-reply.account}
+    auto-reply-all-accounts-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_ROUTING_KEY:mail.auto-reply.all}
+    initial-outreach-dead-letter-routing-key: ${MAIL_QUEUE_INITIAL_OUTREACH_DLX_ROUTING_KEY:mail.initial-outreach.dlq}
+    auto-reply-account-dead-letter-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_DLX_ROUTING_KEY:mail.auto-reply.account.dlq}
+    auto-reply-all-accounts-dead-letter-routing-key: ${MAIL_QUEUE_AUTO_REPLY_ALL_ACCOUNTS_DLX_ROUTING_KEY:mail.auto-reply.all.dlq}
+    auto-reply-account-concurrency: ${MAIL_QUEUE_AUTO_REPLY_ACCOUNT_CONCURRENCY:2-8}
+  scheduling:
+    enabled: ${MAIL_SCHEDULING_ENABLED:false}
+    auto-reply-all-cron: ${MAIL_SCHEDULING_AUTO_REPLY_ALL_CRON:-}
+    auto-reply-max-messages-per-account: ${MAIL_SCHEDULING_AUTO_REPLY_MAX_MESSAGES_PER_ACCOUNT:20}
+    initial-outreach-cron: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CRON:-}
+    initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
+    initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
+  manual-outreach:
+    send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
+  academic-filter:
+    enable-h-index-filter: ${ACADEMIC_ENABLE_H_INDEX_FILTER:false}
+    min-h-index: ${ACADEMIC_MIN_H_INDEX:5}
+    enable-citation-filter: ${ACADEMIC_ENABLE_CITATION_FILTER:false}
+    min-citation-count: ${ACADEMIC_MIN_CITATION_COUNT:50}
+    enable-activity-filter: ${ACADEMIC_ENABLE_ACTIVITY_FILTER:false}
+    recent-years-threshold: ${ACADEMIC_RECENT_YEARS_THRESHOLD:5}
+  email-validation:
+    enable-mx-check: ${EMAIL_ENABLE_MX_CHECK:true}
+    enable-smtp-verify: ${EMAIL_ENABLE_SMTP_VERIFY:false}
+    cache-ttl-days: ${EMAIL_CACHE_TTL_DAYS:30}
+    disposable-domain-list-path: ${EMAIL_DISPOSABLE_LIST:classpath:email/disposable-domains.txt}
+    mx-lookup-timeout-ms: ${EMAIL_MX_LOOKUP_TIMEOUT_MS:5000}
+  mail-attachment-storage:
+    base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
+  expert-discovery:
+    enabled: ${EXPERT_DISCOVERY_ENABLED:false}
+    cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
+    max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:500}
+    max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:2000}
+    europe-pmc:
+      enabled: ${EUROPE_PMC_ENABLED:false}
+      base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}
+      request-delay-ms: ${EUROPE_PMC_REQUEST_DELAY_MS:1000}
+      connect-timeout-ms: ${EUROPE_PMC_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${EUROPE_PMC_READ_TIMEOUT_MS:30000}
+    openalex:
+      enabled: ${OPENALEX_ENABLED:false}
+      polite-email: ${OPENALEX_POLITE_EMAIL:}
+      base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
+      request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
+    crossref:
+      enabled: ${CROSSREF_ENABLED:false}
+      base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}
+      polite-email: ${CROSSREF_POLITE_EMAIL:}
+      request-delay-ms: ${CROSSREF_REQUEST_DELAY_MS:200}
+      max-papers-per-source: ${CROSSREF_MAX_PAPERS:300}
+    unpaywall:
+      base-url: ${UNPAYWALL_BASE_URL:https://api.unpaywall.org/v2}
+      email: ${UNPAYWALL_EMAIL:}
+      request-delay-ms: ${UNPAYWALL_REQUEST_DELAY_MS:200}
+    arxiv:
+      enabled: ${ARXIV_ENABLED:false}
+      base-url: ${ARXIV_BASE_URL:http://export.arxiv.org/api}
+      request-delay-ms: ${ARXIV_REQUEST_DELAY_MS:3000}
+      max-papers-per-source: ${ARXIV_MAX_PAPERS:100}
+    pdf-extraction:
+      max-pdf-size-bytes: ${PDF_MAX_SIZE:10485760}
+      download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
+      max-pages: 2
+    pmc-oa:
+      enabled: ${PMC_OA_ENABLED:false}
+      base-url: ${PMC_OA_BASE_URL:https://eutils.ncbi.nlm.nih.gov/entrez/eutils}
+      api-key: ${PMC_OA_API_KEY:}
+      request-delay-ms: ${PMC_OA_REQUEST_DELAY_MS:350}
+      max-papers-per-source: ${PMC_OA_MAX_PAPERS:500}
+    orcid:
+      enabled: ${ORCID_ENABLED:false}
+      base-url: ${ORCID_BASE_URL:https://pub.orcid.org/v3.0}
+      request-delay-ms: ${ORCID_REQUEST_DELAY_MS:100}
+      max-records-per-run: ${ORCID_MAX_RECORDS:1000}
+    core:
+      enabled: ${CORE_ENABLED:false}
+      base-url: ${CORE_BASE_URL:https://api.core.ac.uk/v3}
+      api-key: ${CORE_API_KEY:}
+      request-delay-ms: ${CORE_REQUEST_DELAY_MS:600}
+      max-papers-per-source: ${CORE_MAX_PAPERS:300}
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        http-only: true
+        same-site: lax

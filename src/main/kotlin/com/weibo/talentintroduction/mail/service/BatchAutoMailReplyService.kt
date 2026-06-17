@@ -14,21 +14,27 @@ class BatchAutoMailReplyService(
 ) {
     private val log = LoggerFactory.getLogger(BatchAutoMailReplyService::class.java)
 
-    fun receiveAndAutoReplyAll(maxMessagesPerAccount: Int): BatchAutoMailReplyResult {
+    fun receiveAndAutoReplyAll(
+        maxMessagesPerAccount: Int,
+        onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
+        isCancelled: (() -> Boolean)? = null
+    ): BatchAutoMailReplyResult {
         val accounts = mailSenderAccountService.listAutoReceiveAccounts()
         val startedAt = System.currentTimeMillis()
-        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount)
+        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount, onProgress, isCancelled)
         val finishedAt = System.currentTimeMillis()
 
-        return buildResult(perAccountResults, startedAt, finishedAt)
+        return buildResult(perAccountResults, startedAt, finishedAt, isCancelled?.invoke() ?: false, accounts.size)
     }
 
     fun receiveAndAutoReplyForContacts(
         contactIds: List<Long>,
-        maxMessagesPerAccount: Int
+        maxMessagesPerAccount: Int,
+        onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
+        isCancelled: (() -> Boolean)? = null
     ): BatchAutoMailReplyResult {
         if (contactIds.isEmpty()) {
-            return receiveAndAutoReplyAll(maxMessagesPerAccount)
+            return receiveAndAutoReplyAll(maxMessagesPerAccount, onProgress, isCancelled)
         }
 
         val accountCodes = mailRecordRepository
@@ -55,18 +61,26 @@ class BatchAutoMailReplyService(
         val accounts = resolvedAccounts.map { it.second!! }
 
         val startedAt = System.currentTimeMillis()
-        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount)
+        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount, onProgress, isCancelled)
         val finishedAt = System.currentTimeMillis()
 
-        return buildResult(perAccountResults, startedAt, finishedAt)
+        return buildResult(perAccountResults, startedAt, finishedAt, isCancelled?.invoke() ?: false, accounts.size)
     }
 
     private fun pollAccounts(
         accounts: List<MailSenderAccount>,
-        maxMessagesPerAccount: Int
-    ): List<AccountAutoMailReplyResult> =
-        accounts.map { account ->
-            try {
+        maxMessagesPerAccount: Int,
+        onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
+        isCancelled: (() -> Boolean)? = null
+    ): List<AccountAutoMailReplyResult> {
+        val results = mutableListOf<AccountAutoMailReplyResult>()
+        val total = accounts.size
+        for ((index, account) in accounts.withIndex()) {
+            if (isCancelled?.invoke() == true) {
+                log.info("Check replies task cancelled, stopping at account {}/{}", index, total)
+                break
+            }
+            val accountResult = try {
                 val result = autoMailReplyService.receiveAndAutoReply(
                     accountCode = account.accountCode,
                     maxMessages = maxMessagesPerAccount
@@ -97,23 +111,30 @@ class BatchAutoMailReplyService(
                     errorMessage = errorMessage
                 )
             }
+            results.add(accountResult)
+            onProgress?.invoke(accountResult, results.size, total)
         }
+        return results
+    }
 
     private fun buildResult(
         perAccountResults: List<AccountAutoMailReplyResult>,
         startedAt: Long,
-        finishedAt: Long
+        finishedAt: Long,
+        wasCancelled: Boolean = false,
+        totalAccountsToPoll: Int = perAccountResults.size
     ): BatchAutoMailReplyResult {
         val successResults = perAccountResults.filter { it.status == "SUCCESS" }
         val failedResults = perAccountResults.filter { it.status == "FAILED" }
         val taskStatus = when {
+            wasCancelled -> "CANCELLED"
             failedResults.isEmpty() -> null
             successResults.isEmpty() -> "FAILED"
             else -> "PARTIAL_SUCCESS"
         }
 
         return BatchAutoMailReplyResult(
-            accountCount = perAccountResults.size,
+            accountCount = totalAccountsToPoll,
             successAccountCount = successResults.size,
             failedAccountCount = failedResults.size,
             fetched = successResults.sumOf { it.fetched },
@@ -122,14 +143,15 @@ class BatchAutoMailReplyService(
             manualReview = successResults.sumOf { it.manualReview },
             accounts = perAccountResults,
             taskFinalStatus = taskStatus,
-            totalAccountsToPoll = perAccountResults.size,
+            totalAccountsToPoll = totalAccountsToPoll,
             accountsPolled = perAccountResults.size,
             expertsWithReply = successResults
                 .flatMap { it.repliedExperts }
                 .mapNotNull { it.expertEmail?.trim()?.lowercase() }
                 .distinct(),
             startedAt = startedAt,
-            finishedAt = finishedAt
+            finishedAt = finishedAt,
+            wasCancelled = wasCancelled
         )
     }
 
@@ -156,7 +178,8 @@ data class BatchAutoMailReplyResult(
     val expertsWithReply: List<String> = emptyList(),
     val startedAt: Long = 0,
     val finishedAt: Long = 0,
-    override val taskFinalStatus: String? = null
+    override val taskFinalStatus: String? = null,
+    val wasCancelled: Boolean = false
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = successAccountCount
     override val taskFailureCount: Int get() = failedAccountCount

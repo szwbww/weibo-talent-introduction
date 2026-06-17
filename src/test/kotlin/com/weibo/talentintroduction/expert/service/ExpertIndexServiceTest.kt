@@ -163,6 +163,166 @@ class ExpertIndexServiceTest {
         )
     }
 
+    @Test
+    fun `bootstrapMappings puts operatorStatus keyword only for candidate index`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.HEAD),
+                Mockito.any(),
+                Mockito.eq(Void::class.java)
+            )
+        ).thenReturn(ResponseEntity(HttpStatus.OK))
+
+        val urlCaptor = ArgumentCaptor.forClass(String::class.java)
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                urlCaptor.capture(),
+                Mockito.eq(HttpMethod.PUT),
+                entityCaptor.capture(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        service.bootstrapMappings()
+
+        val capturedUrls = urlCaptor.allValues
+        val capturedEntities = entityCaptor.allValues
+
+        var candidateFound = false
+        var rawFound = false
+        var appFound = false
+
+        for (i in capturedUrls.indices) {
+            val url = capturedUrls[i]
+            val entity = capturedEntities[i]
+            val body = entity.body as Map<*, *>
+            val properties = body["properties"] as Map<*, *>
+
+            if (url.contains("orcid_info_candidate")) {
+                candidateFound = true
+                assertFieldExists(properties, "operatorStatus")
+                val opStatusField = properties["operatorStatus"] as Map<*, *>
+                org.junit.jupiter.api.Assertions.assertEquals("keyword", opStatusField["type"])
+            } else if (url.contains("orcid_info_application")) {
+                appFound = true
+                assertFieldMissing(properties, "operatorStatus")
+            } else if (url.contains("orcid_info") && !url.contains("candidate") && !url.contains("application")) {
+                rawFound = true
+                assertFieldMissing(properties, "operatorStatus")
+            }
+        }
+
+        org.junit.jupiter.api.Assertions.assertTrue(candidateFound, "Candidate index PUT mapping not called")
+        org.junit.jupiter.api.Assertions.assertTrue(rawFound, "Raw index PUT mapping not called")
+        org.junit.jupiter.api.Assertions.assertTrue(appFound, "Application index PUT mapping not called")
+    }
+
+    @Test
+    fun `checkCandidateOperatorStatusMapping returns true when keyword type matches`() {
+        val responseJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "operatorStatus": {
+                    "mapping": {
+                      "operatorStatus": {
+                        "type": "keyword"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val node = mapper.readTree(responseJson)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+
+        val result = service.checkCandidateOperatorStatusMapping()
+        org.junit.jupiter.api.Assertions.assertTrue(result)
+    }
+
+    @Test
+    fun `checkCandidateOperatorStatusMapping returns false when type is not keyword`() {
+        val responseJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "operatorStatus": {
+                    "mapping": {
+                      "operatorStatus": {
+                        "type": "text"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val node = mapper.readTree(responseJson)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+
+        val result = service.checkCandidateOperatorStatusMapping()
+        org.junit.jupiter.api.Assertions.assertFalse(result)
+    }
+
+    @Test
+    fun `checkCandidateOperatorStatusMapping returns false when field is missing`() {
+        val responseJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {}
+              }
+            }
+        """.trimIndent()
+        val node = mapper.readTree(responseJson)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+
+        val result = service.checkCandidateOperatorStatusMapping()
+        org.junit.jupiter.api.Assertions.assertFalse(result)
+    }
+
+    @Test
+    fun `checkCandidateOperatorStatusMapping returns false when HTTP error occurs`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+
+        val result = service.checkCandidateOperatorStatusMapping()
+        org.junit.jupiter.api.Assertions.assertFalse(result)
+    }
+
     private fun assertFieldExists(properties: Map<*, *>, field: String) {
         org.junit.jupiter.api.Assertions.assertTrue(
             properties.containsKey(field),

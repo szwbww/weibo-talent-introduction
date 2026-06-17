@@ -192,16 +192,16 @@ function formatFileSize(size) {
 const shownErrors = new Set();
 const taskButtonOriginalTexts = {
     checkRepliesBtn: "检查回复",
-    revalidateBtn: "重新验证候选人",
-    promoteRawBtn: "扫描 RAW 可晋升",
-    discoverBtn: "发现专家"
+    discoverBtn: "发现专家",
+    bulkOutreachBtn: "批量发送"
 };
 
 const taskButtonMapping = {
-    EXPERT_REVALIDATION: { label: "重新验证候选人", btnId: "revalidateBtn" },
-    RAW_PROMOTION_SCAN: { label: "扫描 RAW 可晋升", btnId: "promoteRawBtn" },
-    EXPERT_DISCOVERY: { label: "发现专家", btnId: "discoverBtn" },
-    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" }
+    EXPERT_REVALIDATION: { label: "重新验证", btnId: "discoverBtn" },
+    RAW_PROMOTION_SCAN: { label: "发现专家（快速）", btnId: "discoverBtn" },
+    EXPERT_DISCOVERY: { label: "发现专家（深度）", btnId: "discoverBtn" },
+    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
+    CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
 };
 
 function restoreTaskButton(btnId) {
@@ -233,27 +233,31 @@ function hideProgressBar() {
 }
 
 async function resumeProgressPollingIfNeeded() {
+    let firstRunningTask = null;
     for (const taskType of Object.keys(taskButtonMapping)) {
         try {
             const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+            await handleAuthResponse(response);
             if (response.status === 204 || !response.ok) continue;
             const progress = await response.json();
             if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
-                if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                    setOutreachButtonRunning();
-                    updateOutreachProgressPanel(progress);
-                } else {
-                    const mapping = taskButtonMapping[taskType];
-                    if (mapping) setTaskButtonRunning(mapping.btnId);
-                }
+                const mapping = taskButtonMapping[taskType];
+                if (mapping) setTaskButtonRunning(mapping.btnId);
                 startTaskWatcher(taskType);
+                if (!firstRunningTask) {
+                    firstRunningTask = { taskType, mapping };
+                }
             }
         } catch (e) { /* 静默 */ }
+    }
+    if (firstRunningTask && !currentTaskModal) {
+        const { taskType, mapping } = firstRunningTask;
+        openTaskModal(taskType, mapping.label, mapping.btnId, { knownActiveAtOpen: true });
     }
 }
 
 // taskModalGenerationSequence, createTaskModalContext, currentTaskModal,
-// isProgressTerminal, isExecutionTerminal, isCurrentTaskModal, bindTaskModalExecution,
+// isProgressTerminal, getProgressStatusMeta, isExecutionTerminal, isCurrentTaskModal, bindTaskModalExecution,
 // fetchJsonForCurrentTaskModal, fetchAndCacheBatchLogs are defined in task-modal-runtime.js
 
 const TASK_WATCHER_INTERVAL_MS = 3000;
@@ -272,14 +276,10 @@ async function pollTaskWatcher(taskType) {
 
     try {
         const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        await handleAuthResponse(response);
         if (!isCurrentTaskWatcher(taskType, watcher)) return;
 
         if (response.status === 204) {
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                stopTaskWatcher(taskType, true, watcher);
-                restoreOutreachButton();
-                return;
-            }
             watcher.noProgressCount += 1;
 
             const graceExpired =
@@ -301,45 +301,26 @@ async function pollTaskWatcher(taskType) {
 
         watcher.noProgressCount = 0;
 
-        if (taskType === "MANUAL_INITIAL_OUTREACH") {
-            updateOutreachProgressPanel(progress);
-        }
-
         if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
             watcher.awaitingLaunch = false;
             watcher.observedActive = true;
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                setOutreachButtonRunning();
-            }
             return;
         }
 
         if (isProgressTerminal(progress.status)) {
             stopTaskWatcher(taskType, true, watcher);
-            if (taskType === "MANUAL_INITIAL_OUTREACH") {
-                restoreOutreachButton();
+            const mapping = taskButtonMapping[taskType];
+            const label = mapping?.label || taskType;
+            const meta = getProgressStatusMeta(progress.status);
+            notifyTaskCompletionOnce({
+                taskType,
+                executionId: progress.executionId,
+                status: progress.status,
+                message: `${label} ${meta.label}`,
+                level: meta.level
+            });
+            if (taskType === "MANUAL_INITIAL_OUTREACH" || taskType === "RAW_PROMOTION_SCAN" || taskType === "EXPERT_DISCOVERY" || taskType === "EXPERT_REVALIDATION") {
                 loadContacts();
-                const verb = progress.status === "CANCELLED" ? "已取消"
-                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
-                notifyTaskCompletionOnce({
-                    taskType,
-                    executionId: progress.executionId,
-                    status: progress.status,
-                    message: `批量发送介绍邮件 ${verb}`,
-                    level: progress.status === "FAILED" ? "error" : "ok"
-                });
-            } else {
-                const mapping = taskButtonMapping[taskType];
-                const label = mapping?.label || taskType;
-                const verb = progress.status === "CANCELLED" ? "已取消"
-                           : progress.status === "COMPLETED" ? "已完成" : "已结束";
-                notifyTaskCompletionOnce({
-                    taskType,
-                    executionId: progress.executionId,
-                    status: progress.status,
-                    message: `${label} ${verb}`,
-                    level: progress.status === "FAILED" ? "error" : "ok"
-                });
             }
         }
     } catch (e) {
@@ -411,6 +392,7 @@ async function progressStoreHasRunningTask() {
 async function isTaskRunning(taskType) {
     try {
         const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+        await handleAuthResponse(response);
         if (!response.ok) return false;
         const progress = await response.json();
         return progress.status === "RUNNING" || progress.status === "CANCELLING";
@@ -645,11 +627,19 @@ function updateTaskModalFromProgress(progress, generation) {
         }
     }
 
+    if (progress.details && progress.details.filterReasons != null) {
+        messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.filterReasons);
+    }
+    if (progress.details && progress.details.demotionReasons != null) {
+        messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.demotionReasons);
+    }
+
     if (currentTaskModal) {
         const justObservedTerminal = observeTaskModalProgress(progress, generation);
         if (justObservedTerminal) {
             cancelBtn.disabled = true;
-            cancelBtn.textContent = progress.status === "COMPLETED" ? "已完成" : (progress.status === "CANCELLED" ? "已取消" : "失败");
+            const meta = getProgressStatusMeta(progress.status);
+            cancelBtn.textContent = meta.label;
             if (currentTaskModal.btnId) {
                 restoreTaskButton(currentTaskModal.btnId);
             }
@@ -678,8 +668,13 @@ function updateTaskModalFromProgress(progress, generation) {
         oldPercentEl.textContent = progress.percentage + "%";
         oldFillEl.style.width = progress.percentage + "%";
         oldDetailEl.textContent = progress.message || "";
-        if (progress.status === "COMPLETED") bar.className = "task-progress-bar completed";
-        if (progress.status === "FAILED" || progress.status === "CANCELLED") bar.className = "task-progress-bar failed";
+        if (progress.status === "COMPLETED") {
+            bar.className = "task-progress-bar completed";
+        } else if (progress.status === "PARTIAL_SUCCESS") {
+            bar.className = "task-progress-bar warning";
+        } else {
+            bar.className = "task-progress-bar failed";
+        }
     }
 }
 
@@ -869,6 +864,7 @@ async function api(path, options = {}) {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
         ...options
     });
+    await handleAuthResponse(response);
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
@@ -971,7 +967,7 @@ function setView(view) {
     if (view === "contacts") {
         resumeProgressPollingIfNeeded();
     } else {
-        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(stopProgressPollingFor);
+        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(t => stopTaskWatcher(t, true));
     }
 }
 
@@ -1302,7 +1298,7 @@ async function loadContacts() {
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
-    if (operatorStatus || needsAttention) {
+    if (needsAttention) {
         tag = "";
         if (tagFilterEl) {
             tagFilterEl.value = "";
@@ -1321,10 +1317,10 @@ async function loadContacts() {
     let contacts = [];
     let totalHits = 0;
     try {
-    if (operatorStatus || needsAttention) {
+    if (needsAttention) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
-        if (needsAttention) params.set("needsAttention", needsAttention);
+        params.set("needsAttention", needsAttention);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
         totalHits = data.totalCount ?? rawContacts.length;
@@ -1352,6 +1348,7 @@ async function loadContacts() {
         params.set("size", size);
         params.set("from", state.contactsPage * size);
         if (tag) params.set("tag", tag);
+        if (operatorStatus) params.set("operatorStatus", operatorStatus);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const data = await api(`/api/experts?${params}`);
@@ -1467,80 +1464,312 @@ function contactBadgeType(contact) {
 }
 
 async function handleCheckReplies() {
+    const taskType = "CHECK_REPLIES";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "检查回复", "checkRepliesBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeCheckReplies() {
+    const taskType = "CHECK_REPLIES";
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+
     const checked = $$(".expert-select-cb:checked")
         .map(cb => Number(cb.dataset.contactId))
         .filter(id => id > 0);
 
-    if (checked.length === 0) {
-        const confirmed = confirm("未勾选专家，将检查所有已联系专家的回复，继续？");
-        if (!confirmed) return;
-    }
-
-    await executeCheckReplies(checked);
-}
-
-async function executeCheckReplies(checked = []) {
     const payload = checked.length > 0
         ? { contactIds: checked }
         : {};
 
-    const btn = $("#checkRepliesBtn");
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = "检查中...";
-
+    openTaskModal(taskType, "检查回复", "checkRepliesBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
     try {
-        await api("/api/mail/auto-reply/check-replies", {
+        const response = await api("/api/mail/auto-reply/check-replies", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        showStatus(checked.length > 0
-            ? `检查完成: 已检查 ${checked.length} 位指定专家的回复`
-            : "检查完成: 已检查所有已联系专家的回复", "ok");
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
     } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
+            return;
+        }
         showStatus("检查回复失败: " + e.message, "error");
-        return;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-
-    try {
-        await showPollLog();
-    } catch (e) {
-        showStatus("检查已完成，但轮询日志加载失败: " + e.message, "error");
+        showTaskErrorLog(e.message);
+        stopTaskModalPolling();
+        stopTaskWatcher(taskType, true);
+        hideProgressBar();
     }
 }
 
 // ---- 操作确认弹窗 ----
+const filterReasonLabels = {
+    MISSING_ORCID: "缺少 ORCID",
+    INVALID_EMAIL_FORMAT: "邮箱格式无效",
+    DISPOSABLE_EMAIL: "一次性邮箱",
+    NO_DOCTORAL_DEGREE: "无博士学位",
+    AGE_EXCEEDED: "超龄",
+    CHINESE_NATIONALITY: "中国国籍",
+    H_INDEX_TOO_LOW: "H-Index 过低",
+    CITATION_COUNT_TOO_LOW: "引用数过低",
+    INACTIVE: "近期无发表",
+    "EMAIL:NO_MX_RECORD": "邮箱 MX 记录不存在",
+    "EMAIL:INVALID_FORMAT": "邮箱格式无效",
+    "EMAIL:DISPOSABLE_EMAIL": "一次性邮箱域名",
+    "EMAIL:EMPTY_EMAIL": "邮箱为空"
+};
+
+const filterItems = [
+    { key: "candidate.requireValidEmail",        label: "要求有效邮箱",  type: "bool" },
+    { key: "candidate.requireDoctoralDegree",     label: "要求博士学位",  type: "bool" },
+    { key: "candidate.excludeChineseNationality", label: "排除中国国籍",  type: "bool" },
+    { key: "candidate.enableAgeFilter",           label: "年龄限制",     type: "bool" },
+    { key: "candidate.maxAgeExclusive",           label: "最大年龄",     type: "number", dependsOn: "candidate.enableAgeFilter" },
+    { key: "academic.enableHIndexFilter",         label: "H-Index 门槛", type: "bool" },
+    { key: "academic.minHIndex",                  label: "最低 H-Index", type: "number", dependsOn: "academic.enableHIndexFilter" },
+    { key: "academic.enableCitationFilter",       label: "引用数门槛",   type: "bool" },
+    { key: "academic.minCitationCount",           label: "最低引用数",   type: "number", dependsOn: "academic.enableCitationFilter" },
+    { key: "academic.enableActivityFilter",       label: "活跃度过滤",   type: "bool" },
+    { key: "academic.recentYearsThreshold",       label: "近 N 年有发表", type: "number", dependsOn: "academic.enableActivityFilter" },
+    { key: "email.enableMxCheck",                 label: "MX 邮箱验证",  type: "bool" }
+];
+
+function flattenFilters(filters) {
+    const flat = {};
+    if (!filters) return flat;
+    Object.entries(filters.candidateFilter || {}).forEach(([k, v]) => {
+        flat["candidate." + k] = v;
+    });
+    Object.entries(filters.academicFilter || {}).forEach(([k, v]) => {
+        flat["academic." + k] = v;
+    });
+    Object.entries(filters.emailValidation || {}).forEach(([k, v]) => {
+        flat["email." + k] = v;
+    });
+    return flat;
+}
+
+function renderFilterPanel(filters, preFlat) {
+    var flat = preFlat || flattenFilters(filters);
+    return filterItems.map(function(item) {
+        const value = flat[item.key];
+        if (item.type === "bool") {
+            const checked = value === true || value === "true";
+            return `<label class="filter-toggle">
+                <input type="checkbox" data-filter-key="${item.key}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(item.label)}</span>
+            </label>`;
+        } else {
+            const parentEnabled = item.dependsOn ? (flat[item.dependsOn] === true || flat[item.dependsOn] === "true") : true;
+            return `<label class="filter-number ${parentEnabled ? "" : "filter-disabled"}">
+                <span>${escapeHtml(item.label)}:</span>
+                <input type="number" data-filter-key="${item.key}" value="${value}" min="1" ${parentEnabled ? "" : "disabled"}>
+            </label>`;
+        }
+    }).join("");
+}
+
+var filterUpdateDebounceTimer = null;
+var filterSaveInFlightPromise = null;
+var filterSaveInFlightPayload = null;
+var lastFilterPayload = null;
+
+function collectFilterPayload() {
+    var payload = {};
+    var panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return payload;
+    panel.querySelectorAll("[data-filter-key]").forEach(function(input) {
+        var key = input.dataset.filterKey;
+        if (input.type === "checkbox") {
+            payload[key] = input.checked ? "true" : "false";
+        } else {
+            payload[key] = String(input.value);
+        }
+    });
+    return payload;
+}
+
+function payloadsEqual(a, b) {
+    var aKeys = Object.keys(a).sort();
+    var bKeys = Object.keys(b).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (var i = 0; i < aKeys.length; i++) {
+        if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[aKeys[i]]) return false;
+    }
+    return true;
+}
+
+function sendFilterSaveRequest(payload) {
+    return api("/api/experts/eligibility-filters", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+}
+
+function triggerFilterSave() {
+    if (filterSaveInFlightPromise != null) return filterSaveInFlightPromise;
+    if (lastFilterPayload == null) return Promise.resolve();
+    var payload = {};
+    var keys = Object.keys(lastFilterPayload);
+    for (var i = 0; i < keys.length; i++) {
+        payload[keys[i]] = lastFilterPayload[keys[i]];
+    }
+    filterSaveInFlightPayload = payload;
+    filterSaveInFlightPromise = sendFilterSaveRequest(payload).then(function() {
+        filterSaveInFlightPromise = null;
+        if (lastFilterPayload != null && !payloadsEqual(lastFilterPayload, filterSaveInFlightPayload)) {
+            filterSaveInFlightPayload = null;
+            return triggerFilterSave();
+        }
+        lastFilterPayload = null;
+        filterSaveInFlightPayload = null;
+    }).catch(function(e) {
+        filterSaveInFlightPromise = null;
+        filterSaveInFlightPayload = null;
+        throw e;
+    });
+    return filterSaveInFlightPromise;
+}
+
+function flushFilterSave() {
+    if (filterUpdateDebounceTimer) {
+        clearTimeout(filterUpdateDebounceTimer);
+        filterUpdateDebounceTimer = null;
+    }
+    if (lastFilterPayload == null || Object.keys(lastFilterPayload).length === 0) return Promise.resolve();
+    return triggerFilterSave();
+}
+
+function bindFilterToggleEvents() {
+    var panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return;
+    panel.querySelectorAll("[data-filter-key]").forEach(function(el) {
+        el.addEventListener("change", function() {
+            lastFilterPayload = collectFilterPayload();
+            if (filterUpdateDebounceTimer) clearTimeout(filterUpdateDebounceTimer);
+            filterUpdateDebounceTimer = setTimeout(function() {
+                triggerFilterSave().catch(function(e) {
+                    console.error("Failed to update filter settings:", e);
+                });
+            }, 300);
+            renderFilterPanelFromUpdates();
+        });
+    });
+}
+
+function renderFilterPanelFromUpdates() {
+    const panel = $("#taskLaunchFiltersPanel");
+    if (!panel) return;
+    const updateEls = panel.querySelectorAll("[data-filter-key]");
+    if (updateEls.length === 0) return;
+    const flat = {};
+    updateEls.forEach(function(el) {
+        flat[el.dataset.filterKey] = el.type === "checkbox" ? el.checked : el.value;
+    });
+    panel.innerHTML = renderFilterPanel({ candidateFilter: {}, academicFilter: {}, emailValidation: {} }, flat);
+    bindFilterToggleEvents();
+}
+
+function renderFilterReasonsTable(filterReasons) {
+    if (!filterReasons || Object.keys(filterReasons).length === 0) return "";
+    var entries = [];
+    for (var key in filterReasons) {
+        if (Object.prototype.hasOwnProperty.call(filterReasons, key)) {
+            entries.push({ key: key, count: filterReasons[key] });
+        }
+    }
+    entries.sort(function(a, b) { return b.count - a.count; });
+    return `<table class="filter-reasons-table">
+        <caption>过滤原因分布</caption>
+        <tbody>
+            ${entries.map(function(e) {
+                return `<tr><td>${escapeHtml(filterReasonLabels[e.key] || e.key)}</td><td>${e.count.toLocaleString()}</td></tr>`;
+            }).join("")}
+        </tbody>
+    </table>`;
+}
+
 const taskLaunchConfigs = {
     EXPERT_REVALIDATION: {
         title: "重新验证候选人",
         desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。",
-        btnId: "revalidateBtn",
+        btnId: "discoverBtn",
         showKeyword: false,
         showMaxPromotions: false,
+        showFilters: true,
+        preload: async () => {
+            var filters = await api("/api/experts/eligibility-filters");
+            return { desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。", canRun: true, filters: filters };
+        },
         run: executeRevalidate
     },
     RAW_PROMOTION_SCAN: {
-        title: "扫描 RAW 可晋升",
+        title: "发现专家（快速）",
         desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
-        btnId: "promoteRawBtn",
+        btnId: "discoverBtn",
         showKeyword: false,
-        showMaxPromotions: true,
+        showMaxPromotions: false,
+        showFilters: true,
+        preload: async () => {
+            var filters = await api("/api/experts/eligibility-filters");
+            return { desc: "将扫描 RAW 层专家，符合以下筛选条件的将被晋升到 CANDIDATE 层。", canRun: true, filters: filters };
+        },
         run: executePromoteRaw
     },
     EXPERT_DISCOVERY: {
-        title: "发现专家",
+        title: "发现专家（深度）",
         desc: "从外部数据源搜索并导入新专家到系统中。",
         btnId: "discoverBtn",
         showKeyword: true,
         showMaxPromotions: false,
         run: executeDiscover
+    },
+    MANUAL_INITIAL_OUTREACH: {
+        title: "批量发送介绍邮件",
+        desc: "",
+        btnId: "bulkOutreachBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        preload: async () => {
+            const countRes = await api("/api/mail/manual-outreach/pending-count");
+            const summary = summarizeManualOutreachPending(countRes);
+            return { desc: summary.confirmMessage, canRun: summary.total > 0 };
+        },
+        run: executeManualOutreach
+    },
+    CHECK_REPLIES: {
+        title: "检查回复",
+        desc: "检查所有已联系专家的邮箱回复。",
+        btnId: "checkRepliesBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        preload: async () => {
+            const checked = $$(".expert-select-cb:checked")
+                .map(cb => Number(cb.dataset.contactId))
+                .filter(id => id > 0);
+            if (checked.length > 0) {
+                return { desc: `将检查已勾选的 ${checked.length} 位专家的邮件回复。`, canRun: true };
+            }
+            return { desc: "将检查全部已联系候选人的邮件回复。", canRun: true };
+        },
+        run: executeCheckReplies
     }
 };
 
-function openTaskLaunchModal(taskType) {
+async function openTaskLaunchModal(taskType) {
     const config = taskLaunchConfigs[taskType];
     if (!config) return;
 
@@ -1551,7 +1780,32 @@ function openTaskLaunchModal(taskType) {
     $("#taskModalConfigSection").hidden = false;
     $("#taskModalProgressSection").hidden = true;
 
-    $("#taskLaunchDesc").textContent = config.desc;
+    $("#taskLaunchDesc").textContent = config.desc || "";
+
+    const runBtn = $("#taskLaunchRunBtn");
+    runBtn.disabled = false;
+
+    const filtersRow = $("#taskLaunchFiltersRow");
+    filtersRow.hidden = true;
+
+    if (config.preload) {
+        $("#taskLaunchDesc").textContent = "正在准备任务信息...";
+        runBtn.disabled = true;
+        try {
+            const pre = await config.preload();
+            $("#taskLaunchDesc").textContent = pre.desc;
+            runBtn.disabled = !pre.canRun;
+            if (pre.filters && config.showFilters) {
+                $("#taskLaunchFiltersPanel").innerHTML = renderFilterPanel(pre.filters);
+                filtersRow.hidden = false;
+                bindFilterToggleEvents();
+            }
+        } catch (e) {
+            $("#taskLaunchDesc").textContent = "加载任务信息失败: " + e.message;
+            return;
+        }
+    }
+
     $("#taskLaunchKeywordRow").hidden = !config.showKeyword;
     $("#taskLaunchMaxPromotionsRow").hidden = !config.showMaxPromotions;
     if (config.showKeyword) $("#taskLaunchKeywordInput").value = "";
@@ -1566,8 +1820,18 @@ function openTaskLaunchModal(taskType) {
     }
     $("#taskModalBySource").hidden = true;
 
-    const runBtn = $("#taskLaunchRunBtn");
-    runBtn.onclick = () => {
+    runBtn.onclick = async () => {
+        if (config.showFilters) {
+            runBtn.disabled = true;
+            try {
+                await flushFilterSave();
+            } catch (e) {
+                showStatus("筛选条件保存失败: " + e.message, "error");
+                runBtn.disabled = false;
+                return;
+            }
+            runBtn.disabled = false;
+        }
         // Toggle view to progress immediately, then run the task
         $("#taskModalConfigSection").hidden = true;
         $("#taskModalProgressSection").hidden = false;
@@ -1593,11 +1857,41 @@ function closeTaskLaunchModal() {
     closeTaskModal();
 }
 
+async function handleBackfillOperatorStatus() {
+    const btn = $("#backfillOperatorStatusBtn");
+    if (btn) btn.disabled = true;
+    showStatus("正在回刷 ES operatorStatus...", "info");
+    try {
+        const response = await api("/api/experts/backfill-operator-status", { method: "POST" });
+        const total = Number(response.total || 0);
+        const success = Number(response.success || 0);
+        const failure = Number(response.failure || 0);
+        const skipped = Number(response.skipped || 0);
+
+        let msg = `回刷处理完成：总数 ${total}, 成功 ${success}, 失败 ${failure}, 跳过 ${skipped}`;
+        if (skipped > 0) {
+            msg += ` (CANDIDATE 文档不存在)`;
+        }
+
+        if (failure === 0) {
+            showStatus(msg, "ok");
+        } else if (success > 0) {
+            showStatus(msg, "warn");
+        } else {
+            showStatus(msg, "error");
+        }
+    } catch (e) {
+        showStatus("回刷失败: " + e.message, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 async function handleRevalidateCandidates() {
     const taskType = "EXPERT_REVALIDATION";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "重新验证候选人", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -1610,7 +1904,7 @@ async function executeRevalidate() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "重新验证候选人", "revalidateBtn", { launchRequested: true });
+    openTaskModal(taskType, "重新验证候选人", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const response = await api("/api/experts/revalidate-candidates", { method: "POST" });
@@ -1646,24 +1940,57 @@ async function handlePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
 }
 
+async function handleDiscover() {
+    const taskType = "EXPERT_DISCOVERY";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function handleDiscoverClick() {
+    const runningRevalidate = await isTaskRunning("EXPERT_REVALIDATION");
+    if (runningRevalidate) {
+        openTaskModal("EXPERT_REVALIDATION", "重新验证候选人", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    const runningQuick = await isTaskRunning("RAW_PROMOTION_SCAN");
+    if (runningQuick) {
+        openTaskModal("RAW_PROMOTION_SCAN", "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    await handleDiscover();
+}
+
+async function handleDiscoverOption(mode) {
+    if (mode === 'quick') {
+        await handlePromoteRaw();
+    } else if (mode === 'revalidate') {
+        await handleRevalidateCandidates();
+    } else {
+        await handleDiscover();
+    }
+}
+
 async function executePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
-    const maxPromotions = parseInt($("#taskLaunchMaxPromotions")?.value) || 1000;
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "扫描 RAW 可晋升", "promoteRawBtn", { launchRequested: true });
+    openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const response = await api(`/api/experts/promote-eligible-raw?maxPromotions=${maxPromotions}`, { method: "POST" });
+        const response = await api("/api/experts/promote-eligible-raw", { method: "POST" });
         if (response && response.executionId != null) {
             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
         }
@@ -1675,11 +2002,13 @@ async function executePromoteRaw() {
         if (stats.existenceCheckFailed > 0) failures.push(`HEAD 失败 ${stats.existenceCheckFailed}`);
         const failureMsg = failures.length > 0 ? `, ${failures.join(", ")}` : "";
         const hasFailures = stats.promotionFailed > 0 || stats.existenceCheckFailed > 0;
+        const totalHits = stats.totalHits || stats.total;
+        const coverageMsg = totalHits > stats.total ? `已处理 ${stats.total}/${totalHits}` : `总数 ${stats.total}`;
         notifyTaskCompletionOnce({
             taskType,
             executionId: response.executionId,
             status: "COMPLETED",
-            message: `RAW 晋升扫描完成: 总数 ${stats.total}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
+            message: `发现专家（快速）完成: ${coverageMsg}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
             level: hasFailures ? "warn" : "ok"
         });
     } catch (e) {
@@ -1694,16 +2023,6 @@ async function executePromoteRaw() {
         stopTaskWatcher(taskType, true);
         hideProgressBar();
     }
-}
-
-async function handleDiscover() {
-    const taskType = "EXPERT_DISCOVERY";
-    const running = await isTaskRunning(taskType);
-    if (running) {
-        openTaskModal(taskType, "发现专家", "discoverBtn", { knownActiveAtOpen: true });
-        return;
-    }
-    openTaskLaunchModal(taskType);
 }
 
 async function fetchSources() {
@@ -1738,7 +2057,7 @@ async function executeDiscover() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "发现专家", "discoverBtn", { launchRequested: true });
+    openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const selectedSources = getSelectedSources();
@@ -1782,6 +2101,45 @@ async function executeDiscover() {
             return;
         }
         showStatus("发现失败: " + e.message, "error");
+        showTaskErrorLog(e.message);
+        stopTaskModalPolling();
+        stopTaskWatcher(taskType, true);
+        hideProgressBar();
+    }
+}
+
+async function handleBulkOutreach() {
+    const taskType = "MANUAL_INITIAL_OUTREACH";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeManualOutreach() {
+    const taskType = "MANUAL_INITIAL_OUTREACH";
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+    openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
+    try {
+        const response = await api("/api/mail/manual-outreach/start", { method: "POST" });
+        if (response && response.executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+    } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
+            return;
+        }
+        showStatus("启动发送失败: " + e.message, "error");
         showTaskErrorLog(e.message);
         stopTaskModalPolling();
         stopTaskWatcher(taskType, true);
@@ -3662,7 +4020,9 @@ function scheduleMonitoringAutoRefresh() {
         } catch (error) {
             showStatus(error.message, "error");
         } finally {
-            scheduleMonitoringAutoRefresh();
+            if (appStarted === true && state.view === "monitoring") {
+                scheduleMonitoringAutoRefresh();
+            }
         }
     }, 60000);
 }
@@ -3901,25 +4261,25 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     });
 
-    // 后台任务下拉菜单
-    const taskMenuToggle = $("#taskMenuToggle");
-    const taskMenu = $("#taskMenu");
-    if (taskMenuToggle && taskMenu) {
-        taskMenuToggle.addEventListener("click", (event) => {
+    // 发现专家 split button 下拉菜单
+    const discoverModeToggle = $("#discoverModeToggle");
+    const discoverModeMenu = $("#discoverModeMenu");
+    if (discoverModeToggle && discoverModeMenu) {
+        discoverModeToggle.addEventListener("click", (event) => {
             event.stopPropagation();
-            taskMenu.hidden = !taskMenu.hidden;
-            taskMenuToggle.setAttribute("aria-expanded", String(!taskMenu.hidden));
+            discoverModeMenu.hidden = !discoverModeMenu.hidden;
+            discoverModeToggle.setAttribute("aria-expanded", String(!discoverModeMenu.hidden));
         });
         document.addEventListener("click", (event) => {
-            if (!taskMenu.hidden && !event.target.closest("#taskMenuDropdown")) {
-                taskMenu.hidden = true;
-                taskMenuToggle.setAttribute("aria-expanded", "false");
+            if (!discoverModeMenu.hidden && !event.target.closest("#discoverBtnGroup")) {
+                discoverModeMenu.hidden = true;
+                discoverModeToggle.setAttribute("aria-expanded", "false");
             }
         });
-        taskMenu.addEventListener("click", (event) => {
+        discoverModeMenu.addEventListener("click", (event) => {
             if (event.target.closest(".dropdown-item")) {
-                taskMenu.hidden = true;
-                taskMenuToggle.setAttribute("aria-expanded", "false");
+                discoverModeMenu.hidden = true;
+                discoverModeToggle.setAttribute("aria-expanded", "false");
             }
         });
     }
@@ -3976,10 +4336,10 @@ function bindEvents() {
             if (taskType === "MANUAL_INITIAL_OUTREACH") continue;
             try {
                 const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+                await handleAuthResponse(response);
                 if (!response.ok) continue;
                 const progress = await response.json();
-                if (progress.status === "RUNNING" || progress.status === "CANCELLING" ||
-                    progress.status === "COMPLETED" || progress.status === "FAILED" || progress.status === "CANCELLED") {
+                if (progress.status === "RUNNING" || progress.status === "CANCELLING" || isProgressTerminal(progress.status)) {
                     openTaskModal(taskType, mapping.label, mapping.btnId, {
                         knownActiveAtOpen: progress.status === "RUNNING" || progress.status === "CANCELLING"
                     });
@@ -3996,7 +4356,6 @@ function bindEvents() {
         }
     });
 
-    updateUnmatchedBadge();
 }
 
 const ACTION_DIALOG_SCHEMAS = {
@@ -4166,13 +4525,13 @@ async function refreshAutoReplySummary() {
             btn.textContent = "自动回复：无专家";
             btn.disabled = true;
         } else if (enabled === total) {
-            btn.textContent = "自动回复：全部开启 ✓（点击全部关闭）";
+            btn.textContent = "自动回复：全部开启 ✓";
             btn.disabled = false;
         } else if (disabled === total) {
-            btn.textContent = "自动回复：全部关闭（点击全部开启）";
+            btn.textContent = "自动回复：全部关闭";
             btn.disabled = false;
         } else {
-            btn.textContent = `自动回复：部分开启 ${enabled}/${total}（点击全部开启）`;
+            btn.textContent = `自动回复：${enabled}/${total} 开启`;
             btn.disabled = false;
         }
     } catch (e) {
@@ -4209,11 +4568,7 @@ function initBulkAutoReply() {
         const confirmed = confirm(confirmMsg);
         if (!confirmed) return;
 
-        const operatorName = getConfiguredOperatorName();
-        if (!operatorName) {
-            showStatus("请先设置操作员姓名", "error");
-            return;
-        }
+        const operatorName = $("#currentUserDisplay")?.textContent?.trim() || "console";
 
         btn.disabled = true;
         btn.textContent = "正在更新...";
@@ -4234,134 +4589,27 @@ function initBulkAutoReply() {
     });
 }
 
-function initManualOutreach() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
 
-    btn.addEventListener("click", async () => {
-        if (btn.classList.contains("danger")) {
-            const confirmed = confirm("是否确认停止批量发送介绍邮件？");
-            if (!confirmed) return;
-            btn.disabled = true;
-            btn.textContent = "停止中...";
-            try {
-                await api(`/api/task-progress/MANUAL_INITIAL_OUTREACH/cancel`, { method: "POST" });
-                showStatus("已发送停止请求", "ok");
-            } catch (e) {
-                showStatus("停止发送失败: " + e.message, "error");
-                btn.disabled = false;
-                btn.textContent = "停止发送";
-            }
-            return;
-        }
-
-        btn.disabled = true;
-        try {
-            const countRes = await api("/api/mail/manual-outreach/pending-count");
-            const pendingSummary = summarizeManualOutreachPending(countRes);
-            if (pendingSummary.total === 0) {
-                showStatus(pendingSummary.emptyMessage, "info");
-                btn.disabled = false;
-                return;
-            }
-
-            const confirmed = confirm(pendingSummary.confirmMessage);
-            if (!confirmed) {
-                btn.disabled = false;
-                return;
-            }
-
-            await api("/api/mail/manual-outreach/start", { method: "POST" });
-            showStatus("手动批量首发邮件已启动", "ok");
-
-            const panel = $("#outreachProgressPanel");
-            if (panel) {
-                panel.hidden = false;
-                $("#outreachCounters").textContent = `待发送 ${pendingSummary.total} · 已发送 0 · 失败 0`;
-                $("#outreachProgressPercent").textContent = "0%";
-                $("#outreachProgressFill").style.width = "0%";
-                $("#outreachProgressDetail").textContent = "正在启动...";
-                $("#outreachErrors").hidden = true;
-                $("#outreachErrors").textContent = "";
-            }
-
-            setOutreachButtonRunning();
-            startTaskWatcher("MANUAL_INITIAL_OUTREACH", { awaitingLaunch: true });
-        } catch (e) {
-            showStatus("启动失败: " + e.message, "error");
-            btn.disabled = false;
-        }
-    });
-
-    $("#closeOutreachProgressBtn")?.addEventListener("click", () => {
-        $("#outreachProgressPanel").hidden = true;
-    });
-}
 
 function summarizeManualOutreachPending(countRes) {
     const pending = Number(countRes?.pending || 0);
     const retryable = Number(countRes?.retryable || 0);
-    const profileMissing = Number(countRes?.profileMissing || 0);
-    const total = pending + retryable;
-    const missingNote = profileMissing > 0
-        ? `；另有 ${profileMissing} 位待补发专家因资料缺失将跳过`
+    const totalSendable = Number(countRes?.totalSendable ?? (pending + retryable));
+    const missingNote = retryable > 0
+        ? `（含 ${retryable} 位上次失败待补发）`
         : "";
     return {
         pending,
         retryable,
-        profileMissing,
-        total,
-        confirmMessage: `将向 ${total} 位专家发送介绍邮件（${pending} 位未联系，${retryable} 位上次失败待补发${missingNote}），是否开始？`,
-        emptyMessage: profileMissing > 0
-            ? `没有可发送的专家；${profileMissing} 位待补发专家因资料缺失已跳过`
+        totalSendable,
+        total: totalSendable,
+        confirmMessage: `将向 ${totalSendable} 位专家发送介绍邮件（${pending} 位未联系）${missingNote}，是否开始？`,
+        emptyMessage: totalSendable > 0
+            ? ""
             : "没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）"
     };
 }
 
-function setOutreachButtonRunning() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
-    btn.disabled = false;
-    btn.textContent = "停止发送";
-    btn.className = "button danger";
-}
-
-function restoreOutreachButton() {
-    const btn = $("#bulkOutreachBtn");
-    if (!btn) return;
-    btn.disabled = false;
-    btn.textContent = "批量发送介绍邮件";
-    btn.className = "button primary";
-}
-
-function updateOutreachProgressPanel(progress) {
-    const panel = $("#outreachProgressPanel");
-    if (!panel) return;
-    panel.hidden = false;
-
-    const details = progress.details || {};
-    const pending = details.pending || 0;
-    const sent = details.sent || 0;
-    const failed = details.failed || 0;
-    const total = progress.totalCount || (pending + sent + failed);
-    const percent = progress.percentage != null ? progress.percentage : (total > 0 ? Math.round((sent + failed) * 100 / total) : 0);
-
-    $("#outreachCounters").textContent = `待发送 ${pending} · 已发送 ${sent} · 失败 ${failed}`;
-    $("#outreachProgressPercent").textContent = `${percent}%`;
-    $("#outreachProgressFill").style.width = `${percent}%`;
-    $("#outreachProgressDetail").textContent = progress.message || "";
-
-    const errors = progress.errors || [];
-    const errorsDiv = $("#outreachErrors");
-    if (errorsDiv) {
-        if (errors.length > 0) {
-            errorsDiv.hidden = false;
-            errorsDiv.innerHTML = errors.map(err => `<div>${escapeHtml(err)}</div>`).join("");
-        } else {
-            errorsDiv.hidden = true;
-        }
-    }
-}
 
 
 function initPollLogPanel() {
@@ -4457,9 +4705,169 @@ function initLayoutResizer() {
     }
 }
 
-bindEvents();
-initManualOutreach();
-initBulkAutoReply();
-initPollLogPanel();
-initLayoutResizer();
-refreshCurrentView();
+let appStarted = false;
+
+function startAuthenticatedApp(username) {
+    $("#loginOverlay").hidden = true;
+    $("#changePasswordOverlay").hidden = true;
+    const userDisplay = $("#currentUserDisplay");
+    if (userDisplay) {
+        userDisplay.textContent = username;
+    }
+    const shell = $(".app-shell");
+    if (shell) {
+        shell.style.display = "grid";
+    }
+    if (!appStarted) {
+        appStarted = true;
+        updateUnmatchedBadge();
+        resumeProgressPollingIfNeeded().catch(() => {});
+        refreshCurrentView();
+    }
+}
+
+function stopAuthenticatedApp() {
+    appStarted = false;
+    const shell = $(".app-shell");
+    if (shell) {
+        shell.style.display = "none";
+    }
+    stopAllWatchers();
+    if (currentTaskModal) {
+        stopTaskModalPolling();
+        $("#taskProgressModal").hidden = true;
+        document.body.classList.remove("modal-open");
+        currentTaskModal = null;
+    }
+    if (state.monitoring.autoRefreshTimer) {
+        clearTimeout(state.monitoring.autoRefreshTimer);
+        state.monitoring.autoRefreshTimer = null;
+    }
+}
+
+window.stopAuthenticatedApp = stopAuthenticatedApp;
+
+function stopAllWatchers() {
+    if (typeof taskWatchers === 'object' && taskWatchers) {
+        for (const taskType of Object.keys(taskWatchers)) {
+            stopTaskWatcher(taskType, true);
+        }
+    }
+}
+
+async function checkAuth() {
+    try {
+        const res = await api("/api/auth/me");
+        if (res.authenticated) {
+            if (res.mustChangePassword) {
+                stopAuthenticatedApp();
+                $("#changePasswordOverlay").hidden = false;
+                $("#loginOverlay").hidden = true;
+            } else {
+                startAuthenticatedApp(res.username);
+            }
+        } else {
+            stopAuthenticatedApp();
+            $("#loginOverlay").hidden = false;
+            $("#changePasswordOverlay").hidden = true;
+        }
+    } catch (e) {
+        stopAuthenticatedApp();
+        $("#loginOverlay").hidden = false;
+        $("#loginError").textContent = "无法连接至服务器: " + e.message;
+        $("#loginError").hidden = false;
+    }
+}
+
+function bindAuthEvents() {
+    $("#loginForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const username = $("#loginUsername").value.trim();
+        const password = $("#loginPassword").value;
+        const errDiv = $("#loginError");
+        errDiv.hidden = true;
+
+        if (!username || !password) {
+            errDiv.textContent = "用户名和密码不能为空";
+            errDiv.hidden = false;
+            return;
+        }
+
+        try {
+            const res = await api("/api/auth/login", {
+                method: "POST",
+                body: JSON.stringify({ username, password })
+            });
+            if (res.mustChangePassword) {
+                stopAuthenticatedApp();
+                $("#loginOverlay").hidden = true;
+                $("#changePasswordOverlay").hidden = false;
+                $("#changePasswordError").hidden = true;
+            } else {
+                startAuthenticatedApp(res.username);
+            }
+        } catch (err) {
+            errDiv.textContent = err.message || "登录失败，请检查用户名或密码";
+            errDiv.hidden = false;
+        }
+    });
+
+    $("#changePasswordForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const oldPassword = $("#oldPassword").value;
+        const newPassword = $("#newPassword").value;
+        const confirmPassword = $("#confirmNewPassword").value;
+        const errDiv = $("#changePasswordError");
+        errDiv.hidden = true;
+
+        if (!oldPassword || !newPassword || !confirmPassword) {
+            errDiv.textContent = "密码字段不能为空";
+            errDiv.hidden = false;
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            errDiv.textContent = "新密码长度不能少于8位";
+            errDiv.hidden = false;
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            errDiv.textContent = "两次输入的新密码不一致";
+            errDiv.hidden = false;
+            return;
+        }
+
+        try {
+            await api("/api/auth/change-password", {
+                method: "POST",
+                body: JSON.stringify({ oldPassword, newPassword })
+            });
+            showStatus("密码修改成功");
+            await checkAuth();
+        } catch (err) {
+            errDiv.textContent = err.message || "密码修改失败";
+            errDiv.hidden = false;
+        }
+    });
+
+    $("#logoutBtn")?.addEventListener("click", async () => {
+        try {
+            await api("/api/auth/logout", { method: "POST" });
+        } catch (e) {
+        } finally {
+            location.reload();
+        }
+    });
+}
+
+function bootstrap() {
+    bindEvents();
+    initBulkAutoReply();
+    initPollLogPanel();
+    initLayoutResizer();
+    bindAuthEvents();
+    checkAuth();
+}
+
+bootstrap();

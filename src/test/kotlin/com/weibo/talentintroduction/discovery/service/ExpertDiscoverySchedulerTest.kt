@@ -45,7 +45,8 @@ class ExpertDiscoverySchedulerTest {
 
         Mockito.verify(discoveryService, Mockito.never()).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
     }
 
@@ -76,14 +77,16 @@ class ExpertDiscoverySchedulerTest {
             }
         Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         scheduler.scheduleDiscovery()
 
         Mockito.verify(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
     }
 
@@ -98,7 +101,8 @@ class ExpertDiscoverySchedulerTest {
             }
         Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         scheduler.scheduleDiscovery()

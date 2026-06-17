@@ -27,7 +27,20 @@ class EmailValidationServiceTest {
         `when`(it.lookup(anyString())).thenReturn(MxLookupResult.DNS_ERROR)
     }
 
-    private val service = EmailValidationService(properties, cacheRepository, resourceLoader, mxLookupClient)
+    private fun mockFilterService(enableMxCheck: Boolean): EligibilityFilterService {
+        val filterProps = EmailValidationProperties(enableMxCheck = enableMxCheck)
+        val mockSvc = mock(EligibilityFilterService::class.java)
+        `when`(mockSvc.getEmailValidationConfig()).thenReturn(filterProps)
+        return mockSvc
+    }
+
+    private val defaultFilterService = mockFilterService(false)
+    private val mxEnabledFilterService = mockFilterService(true)
+
+    private fun service(props: EmailValidationProperties = properties, filterService: EligibilityFilterService = defaultFilterService): EmailValidationService =
+        EmailValidationService(props, cacheRepository, resourceLoader, mxLookupClient, filterService)
+
+    private val service = EmailValidationService(properties, cacheRepository, resourceLoader, mxLookupClient, defaultFilterService)
 
     // ---- 格式校验 ----
 
@@ -172,7 +185,7 @@ class EmailValidationServiceTest {
             mxLookupTimeoutMs = 100
         )
         `when`(mxLookupClient.lookup("oxford.ac.uk")).thenReturn(MxLookupResult.FOUND)
-        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient)
+        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient, mxEnabledFilterService)
 
         val now = LocalDateTime.now()
         val l2Cache = EmailValidationCache(
@@ -200,7 +213,7 @@ class EmailValidationServiceTest {
             disposableDomainListPath = "classpath:email/disposable-domains.txt",
             mxLookupTimeoutMs = 100
         )
-        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient)
+        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient, mxEnabledFilterService)
 
         val now = LocalDateTime.now()
         val noMxCache = EmailValidationCache(
@@ -273,7 +286,7 @@ class EmailValidationServiceTest {
             disposableDomainListPath = "classpath:email/disposable-domains.txt",
             mxLookupTimeoutMs = 100
         )
-        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient)
+        val svc = EmailValidationService(propsWithMx, cacheRepository, resourceLoader, mxLookupClient, mxEnabledFilterService)
 
         // Default stub DNS_ERROR → hasMxRecord returns true → level 3
         val result = svc.validate("john@oxford.ac.uk")
@@ -298,14 +311,14 @@ class EmailValidationServiceTest {
     fun `DnsMxLookupClient null MX returns NOT_FOUND`() {
         // Null MX: "0 ." — exchange is "." → NOT_FOUND
         val nullMxClient = MxLookupClient { MxLookupResult.NOT_FOUND }
-        assertFalse(EmailValidationService(properties, cacheRepository, resourceLoader, nullMxClient)
+        assertFalse(EmailValidationService(properties, cacheRepository, resourceLoader, nullMxClient, defaultFilterService)
             .hasMxRecord("nullmx.example"))
     }
 
     @Test
     fun `DnsMxLookupClient normal MX returns true`() {
         val foundClient = MxLookupClient { MxLookupResult.FOUND }
-        assertTrue(EmailValidationService(properties, cacheRepository, resourceLoader, foundClient)
+        assertTrue(EmailValidationService(properties, cacheRepository, resourceLoader, foundClient, defaultFilterService)
             .hasMxRecord("hasmx.example"))
     }
 }

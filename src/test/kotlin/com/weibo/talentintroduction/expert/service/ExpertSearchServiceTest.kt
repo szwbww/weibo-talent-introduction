@@ -579,4 +579,208 @@ class ExpertSearchServiceTest {
         val result2 = service.searchExpertsWithEmail(1)
         assertEquals("0000-orcid", result2.experts.single().orcidId)
     }
+
+    @Test
+    fun `searchExperts with NOT_CONTACTED operatorStatus sets correct query body`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 5},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "operatorStatus": null}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExperts(10, ExpertIndexLevel.CANDIDATE, operatorStatus = "NOT_CONTACTED")
+
+        assertEquals(1, result.experts.size)
+        assertNull(result.experts.first().operatorStatus)
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        assertTrue(filter.any { it.toString().contains("exists") && it.toString().contains("email") })
+        assertTrue(filter.any { it.toString().contains("must_not") && it.toString().contains("exists") && it.toString().contains("operatorStatus") })
+    }
+
+    @Test
+    fun `searchExperts with CONTACTED operatorStatus and tag sets correct query body`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "operatorStatus": "CONTACTED", "tags": ["verified"]}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExperts(10, ExpertIndexLevel.CANDIDATE, tag = "verified", operatorStatus = "CONTACTED")
+
+        assertEquals(1, result.experts.size)
+        assertEquals("CONTACTED", result.experts.first().operatorStatus)
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        assertTrue(filter.any { it.toString().contains("tags") && it.toString().contains("verified") })
+        assertTrue(filter.any { it.toString().contains("operatorStatus") && it.toString().contains("CONTACTED") })
+    }
+
+    @Test
+    fun `countExperts sends count request with filters`() {
+        val responseNode = mapper.readTree("""{"count": 42}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val count = service.countExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("term" to mapOf("operatorStatus" to "REPLIED")))
+        )
+
+        assertEquals(42L, count)
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertTrue(filter.toString().contains("operatorStatus") && filter.toString().contains("REPLIED"))
+    }
+
+    @Test
+    fun `scrollExpertsFiltered sends search request with filters and cleans up`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "scroll-123",
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "operatorStatus": "CONTACTED"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        var processedCount = 0
+        service.scrollExpertsFiltered(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")))
+        ) { batch ->
+            processedCount += batch.size
+            false
+        }
+
+        assertEquals(1, processedCount)
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertTrue(filter.toString().contains("operatorStatus") && filter.toString().contains("CONTACTED"))
+
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `maps esDocId from _id field in ES hit`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_id": "ORCID-0000-0001-0002-0003",
+                    "_source": {
+                      "orcidId": "0000-0001-0002-0003",
+                      "email": "expert@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+        assertEquals(1, result.experts.size)
+        assertEquals("ORCID-0000-0001-0002-0003", result.experts.single().esDocId)
+    }
 }

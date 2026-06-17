@@ -1,7 +1,5 @@
 package com.weibo.talentintroduction.expert.service
 
-import com.weibo.talentintroduction.config.AcademicFilterProperties
-import com.weibo.talentintroduction.config.CandidateFilterProperties
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
@@ -10,14 +8,15 @@ import java.util.Locale
 
 @Service
 class CandidateEligibilityService(
-    private val properties: CandidateFilterProperties,
-    private val academicProperties: AcademicFilterProperties,
+    private val eligibilityFilterService: EligibilityFilterService,
     private val emailValidationService: EmailValidationService
 ) {
     fun isEligibleForCandidateIndex(expert: ExpertProfile): Boolean =
         evaluateEligibility(expert).eligible
 
     fun evaluateEligibility(expert: ExpertProfile): EligibilityResult {
+        val properties = eligibilityFilterService.getCandidateFilter()
+        val academicProperties = eligibilityFilterService.getAcademicFilter()
         val reasons = mutableListOf<String>()
 
         if (expert.orcidId.isBlank())
@@ -32,7 +31,7 @@ class CandidateEligibilityService(
         if (properties.requireDoctoralDegree && !hasDoctoralDegree(expert.degree))
             reasons += "NO_DOCTORAL_DEGREE"
 
-        if (properties.enableAgeFilter && !isUnderMaxAge(expert.age))
+        if (properties.enableAgeFilter && !isUnderMaxAge(expert.age, properties.maxAgeExclusive))
             reasons += "AGE_EXCEEDED"
 
         if (properties.excludeChineseNationality && !isNotChineseNationality(expert.nationality ?: expert.country))
@@ -64,8 +63,8 @@ class CandidateEligibilityService(
             normalized.contains("doctoral")
     }
 
-    fun isUnderMaxAge(age: Int?): Boolean =
-        age != null && age in 1 until properties.maxAgeExclusive
+    fun isUnderMaxAge(age: Int?, maxAgeExclusive: Int): Boolean =
+        age != null && age in 1 until maxAgeExclusive
 
     fun isNotChineseNationality(nationality: String?): Boolean {
         val normalized = normalize(nationality)

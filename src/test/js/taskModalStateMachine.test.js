@@ -1155,4 +1155,224 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             assert.ok(notifications[0].msg.includes("已完成"));
         });
     });
+
+    describe("Second reverification fix plan tests", () => {
+        it("handleBackfillOperatorStatus displays ok status when failure = 0", async () => {
+            const sandbox = createFreshSandbox();
+            let statusCalled = null;
+            sandbox.showStatus = (msg, level) => {
+                statusCalled = { msg, level };
+            };
+            sandbox.api = async (url, options) => {
+                return { total: 10, success: 9, failure: 0, skipped: 1 };
+            };
+            vm.runInContext(extractFn("handleBackfillOperatorStatus"), sandbox);
+            await sandbox.handleBackfillOperatorStatus();
+
+            assert.ok(statusCalled);
+            assert.strictEqual(statusCalled.level, "ok");
+            assert.ok(statusCalled.msg.includes("成功 9"));
+            assert.ok(statusCalled.msg.includes("跳过 1"));
+        });
+
+        it("handleBackfillOperatorStatus displays warn status when success > 0 && failure > 0", async () => {
+            const sandbox = createFreshSandbox();
+            let statusCalled = null;
+            sandbox.showStatus = (msg, level) => {
+                statusCalled = { msg, level };
+            };
+            sandbox.api = async (url, options) => {
+                return { total: 10, success: 8, failure: 2, skipped: 0 };
+            };
+            vm.runInContext(extractFn("handleBackfillOperatorStatus"), sandbox);
+            await sandbox.handleBackfillOperatorStatus();
+
+            assert.ok(statusCalled);
+            assert.strictEqual(statusCalled.level, "warn");
+            assert.ok(statusCalled.msg.includes("成功 8"));
+            assert.ok(statusCalled.msg.includes("失败 2"));
+        });
+
+        it("handleBackfillOperatorStatus displays error status when success = 0 && failure > 0", async () => {
+            const sandbox = createFreshSandbox();
+            let statusCalled = null;
+            sandbox.showStatus = (msg, level) => {
+                statusCalled = { msg, level };
+            };
+            sandbox.api = async (url, options) => {
+                return { total: 10, success: 0, failure: 10, skipped: 0 };
+            };
+            vm.runInContext(extractFn("handleBackfillOperatorStatus"), sandbox);
+            await sandbox.handleBackfillOperatorStatus();
+
+            assert.ok(statusCalled);
+            assert.strictEqual(statusCalled.level, "error");
+            assert.ok(statusCalled.msg.includes("失败 10"));
+        });
+
+        it("handleBulkOutreach passes knownActiveAtOpen = true if task is running", async () => {
+            const sandbox = createFreshSandbox();
+            let openedModal = null;
+            sandbox.isTaskRunning = async (type) => true;
+            sandbox.openTaskModal = (taskType, label, btnId, options) => {
+                openedModal = { taskType, label, btnId, options };
+            };
+            vm.runInContext(extractFn("handleBulkOutreach"), sandbox);
+            await sandbox.handleBulkOutreach();
+
+            assert.ok(openedModal);
+            assert.strictEqual(openedModal.taskType, "MANUAL_INITIAL_OUTREACH");
+            assert.ok(openedModal.options);
+            assert.strictEqual(openedModal.options.knownActiveAtOpen, true);
+        });
+
+        it("handleCheckReplies passes knownActiveAtOpen = true if task is running", async () => {
+            const sandbox = createFreshSandbox();
+            let openedModal = null;
+            sandbox.isTaskRunning = async (type) => true;
+            sandbox.openTaskModal = (taskType, label, btnId, options) => {
+                openedModal = { taskType, label, btnId, options };
+            };
+            vm.runInContext(extractFn("handleCheckReplies"), sandbox);
+            await sandbox.handleCheckReplies();
+
+            assert.ok(openedModal);
+            assert.strictEqual(openedModal.taskType, "CHECK_REPLIES");
+            assert.ok(openedModal.options);
+            assert.strictEqual(openedModal.options.knownActiveAtOpen, true);
+        });
+
+        it("executeManualOutreach starts watcher and does not notify completion upon acceptance", async () => {
+            const sandbox = createFreshSandbox();
+            let openedModal = null;
+            sandbox.progressStoreHasRunningTask = async () => false;
+            sandbox.openTaskModal = (taskType, label, btnId, options) => {
+                openedModal = { taskType, label, btnId, options };
+                sandbox.currentTaskModal = sandbox.createTaskModalContext(taskType, label, btnId, "PROGRESS");
+                sandbox.currentTaskModal.generation = 123;
+            };
+            let isCurrentCallCount = 0;
+            sandbox.isCurrentTaskModal = (taskType, gen) => {
+                isCurrentCallCount++;
+                return isCurrentCallCount === 1;
+            };
+            sandbox.api = async (url, options) => {
+                return { executionId: 456 };
+            };
+            let watcherStarted = null;
+            sandbox.startTaskWatcher = (taskType, options) => {
+                watcherStarted = { taskType, options };
+                sandbox.taskWatchers[taskType] = { awaitingLaunch: true };
+            };
+            let notified = false;
+            sandbox.notifyTaskCompletionOnce = () => { notified = true; };
+
+            vm.runInContext(extractFn("executeManualOutreach"), sandbox);
+            await sandbox.executeManualOutreach();
+
+            assert.ok(openedModal);
+            assert.strictEqual(openedModal.options.launchRequested, true);
+            assert.strictEqual(sandbox.currentTaskModal.executionId, 456);
+            assert.ok(watcherStarted);
+            assert.strictEqual(watcherStarted.taskType, "MANUAL_INITIAL_OUTREACH");
+            assert.strictEqual(notified, false);
+        });
+
+        it("executeCheckReplies starts watcher and does not notify completion upon acceptance", async () => {
+            const sandbox = createFreshSandbox();
+            let openedModal = null;
+            sandbox.progressStoreHasRunningTask = async () => false;
+            sandbox.openTaskModal = (taskType, label, btnId, options) => {
+                openedModal = { taskType, label, btnId, options };
+                sandbox.currentTaskModal = sandbox.createTaskModalContext(taskType, label, btnId, "PROGRESS");
+                sandbox.currentTaskModal.generation = 123;
+            };
+            let isCurrentCallCount = 0;
+            sandbox.isCurrentTaskModal = (taskType, gen) => {
+                isCurrentCallCount++;
+                return isCurrentCallCount === 1;
+            };
+            sandbox.api = async (url, options) => {
+                return { executionId: 789 };
+            };
+            let watcherStarted = null;
+            sandbox.startTaskWatcher = (taskType, options) => {
+                watcherStarted = { taskType, options };
+                sandbox.taskWatchers[taskType] = { awaitingLaunch: true };
+            };
+            let notified = false;
+            sandbox.notifyTaskCompletionOnce = () => { notified = true; };
+
+            vm.runInContext(extractFn("executeCheckReplies"), sandbox);
+            await sandbox.executeCheckReplies();
+
+            assert.ok(openedModal);
+            assert.strictEqual(openedModal.options.launchRequested, true);
+            assert.strictEqual(sandbox.currentTaskModal.executionId, 789);
+            assert.ok(watcherStarted);
+            assert.strictEqual(watcherStarted.taskType, "CHECK_REPLIES");
+            assert.strictEqual(notified, false);
+        });
+    });
+
+    describe("Third reverification fix plan tests", () => {
+        it("getProgressStatusMeta returns correct label and level", () => {
+            const sandbox = createFreshSandbox();
+            const getProgressStatusMeta = sandbox.getProgressStatusMeta;
+
+            const completed = getProgressStatusMeta("COMPLETED");
+            assert.strictEqual(completed.label, "已完成");
+            assert.strictEqual(completed.level, "ok");
+
+            const partial = getProgressStatusMeta("PARTIAL_SUCCESS");
+            assert.strictEqual(partial.label, "部分成功");
+            assert.strictEqual(partial.level, "warn");
+
+            const failed = getProgressStatusMeta("FAILED");
+            assert.strictEqual(failed.label, "失败");
+            assert.strictEqual(failed.level, "error");
+
+            const cancelled = getProgressStatusMeta("CANCELLED");
+            assert.strictEqual(cancelled.label, "已取消");
+            assert.strictEqual(cancelled.level, "warn");
+
+            const unknown = getProgressStatusMeta("UNKNOWN_STATE");
+            assert.strictEqual(unknown.label, "失败");
+            assert.strictEqual(unknown.level, "error");
+        });
+
+        it("updateTaskModalFromProgress sets warning style and label for PARTIAL_SUCCESS", async () => {
+            const sandbox = createFreshSandbox();
+            const elements = {};
+            sandbox.$ = (sel) => {
+                if (!elements[sel]) {
+                    elements[sel] = {
+                        textContent: "",
+                        className: "",
+                        style: { width: "" },
+                        hidden: false,
+                        disabled: false
+                    };
+                }
+                return elements[sel];
+            };
+            vm.runInContext(extractFn("updateTaskModalFromProgress"), sandbox);
+
+            const ctx = sandbox.createTaskModalContext("CHECK_REPLIES", "检查回复", "checkRepliesBtn", "PROGRESS");
+            sandbox.currentTaskModal = ctx;
+
+            const progress = { status: "PARTIAL_SUCCESS", percentage: 50, message: "部分邮箱账号检查失败" };
+            sandbox.updateTaskModalFromProgress(progress, ctx.generation);
+
+            // Verify cancel button text
+            const cancelBtn = elements["#taskModalCancelBtn"];
+            assert.ok(cancelBtn);
+            assert.strictEqual(cancelBtn.textContent, "部分成功");
+
+            // Verify progress bar class (sync old progress bar)
+            const progressBar = elements["#taskProgressBar"];
+            assert.ok(progressBar);
+            assert.strictEqual(progressBar.className, "task-progress-bar warning");
+        });
+    });
 });

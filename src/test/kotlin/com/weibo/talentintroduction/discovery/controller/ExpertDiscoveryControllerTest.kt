@@ -89,7 +89,8 @@ class ExpertDiscoveryControllerTest {
             }
         Mockito.doThrow(RuntimeException("Europe PMC unavailable")).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         val result = controller.triggerDiscovery(null)
@@ -109,7 +110,8 @@ class ExpertDiscoveryControllerTest {
             }
         Mockito.doThrow(RuntimeException("OpenAlex timeout")).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         val result = controller.triggerDiscoveryByKeyword(listOf("ml"), 2020, 2026)
@@ -147,7 +149,8 @@ class ExpertDiscoveryControllerTest {
             }
         Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         val result = controller.triggerDiscovery(null)
@@ -185,7 +188,8 @@ class ExpertDiscoveryControllerTest {
             }
         Mockito.doThrow(RuntimeException("Europe PMC down")).`when`(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString()
+            Mockito.anyString(),
+            Mockito.anyBoolean()
         )
 
         val result = controller.triggerDiscovery(null)

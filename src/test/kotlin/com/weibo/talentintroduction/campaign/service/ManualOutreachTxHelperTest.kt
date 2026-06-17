@@ -15,17 +15,21 @@ import org.mockito.Mockito
 import java.time.LocalDateTime
 import java.util.Optional
 
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+
 class ManualOutreachTxHelperTest {
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val mailSendAttemptRepository = Mockito.mock(MailSendAttemptRepository::class.java)
+    private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
 
     private val helper = ManualOutreachTxHelper(
         conversationStateService = conversationStateService,
         mailRecordRepository = mailRecordRepository,
         mailSenderAccountRepository = mailSenderAccountRepository,
-        mailSendAttemptRepository = mailSendAttemptRepository
+        mailSendAttemptRepository = mailSendAttemptRepository,
+        expertIndexWriterService = expertIndexWriterService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -108,6 +112,9 @@ class ManualOutreachTxHelperTest {
         val attemptCaptor = ArgumentCaptor.forClass(MailSendAttempt::class.java)
         Mockito.verify(mailSendAttemptRepository).save(captureValue(attemptCaptor, MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))
         assertEquals(MailSendAttemptStatus.SENT, attemptCaptor.value.status)
+
+        // 5. Verify ES sync called
+        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0001", "CONTACTED")
     }
 
     @Test

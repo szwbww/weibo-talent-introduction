@@ -389,6 +389,12 @@ p {
     cursor: not-allowed;
 }
 
+.dropdown-divider {
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 4px 0;
+}
+
 /* 筛选折叠开关（仅移动端显示，见响应式段落）
    注意: 选择器带 .toolbar 前缀以压过后方 .button 的 display 规则 */
 .toolbar .filter-toggle {
@@ -2254,6 +2260,10 @@ textarea {
     background-color: var(--error);
 }
 
+.task-progress-bar.warning .task-progress-fill {
+    background-color: var(--warning);
+}
+
 /* Task Error Log */
 .task-error-log {
     border: 1px solid var(--error-border);
@@ -3040,4 +3050,231 @@ textarea {
     .task-modal-input-field {
         font-size: 16px;
     }
+}
+
+/* Auth Styles */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--bg-main, #fafbfc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+[data-theme="dark"] .auth-overlay {
+    background-color: var(--bg-main, #0f141c);
+}
+.auth-card {
+    background-color: var(--card-bg, #ffffff);
+    border: 1px solid var(--panel-border, #e1e4e8);
+    border-radius: 12px;
+    padding: 32px 40px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: var(--shadow-sm, 0 8px 24px rgba(149, 157, 165, 0.15));
+}
+[data-theme="dark"] .auth-card {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.auth-card h2 {
+    margin-top: 0;
+    margin-bottom: 24px;
+    text-align: center;
+    color: var(--text-primary, #1e293b);
+}
+.auth-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary, #64748b);
+    text-align: center;
+    margin-top: -16px;
+    margin-bottom: 24px;
+}
+.auth-error {
+    color: #ef4444;
+    background-color: #fef2f2;
+    border: 1px solid #fee2e2;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    text-align: center;
+}
+.form-group {
+    margin-bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.form-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.form-group input {
+    padding: 10px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+.form-group input:focus {
+    outline: none;
+    border-color: var(--accent-primary, #4f46e5);
+}
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.user-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-left: 12px;
+}
+.logout-btn {
+    width: 100%;
+    text-align: left;
+}
+
+/* Split button container */
+.split-button {
+    display: inline-flex;
+    position: relative;
+    vertical-align: middle;
+}
+
+.split-button .button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.split-button .button.split-arrow {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+}
+
+.split-button .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: auto;
+    min-width: 180px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    padding: 4px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* ---- 筛选条件面板 (Eligibility Filter Panel) ---- */
+.task-modal-filters-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary, #f3f4f6);
+    color: var(--text-muted);
+    transition: background 0.15s;
+}
+
+.filter-toggle input[type="checkbox"]:checked + span {
+    color: var(--success-text, #166534);
+}
+
+.filter-toggle:has(input[type="checkbox"]:checked) {
+    background: var(--success-bg, #dcfce7);
+    border-color: var(--success-border, #bbf7d0);
+    color: var(--success-text, #166534);
+}
+
+.filter-number {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary, #f3f4f6);
+    color: var(--text-muted);
+    transition: opacity 0.15s;
+}
+
+.filter-number.filter-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.filter-number input[type="number"] {
+    width: 52px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 12px;
+    text-align: right;
+    background: var(--panel-bg);
+    color: var(--text);
+}
+
+.filter-reasons-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.filter-reasons-table caption {
+    text-align: left;
+    font-weight: 600;
+    padding: 4px 0;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.filter-reasons-table th,
+.filter-reasons-table td {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--panel-border);
+    text-align: left;
+}
+
+.filter-reasons-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }

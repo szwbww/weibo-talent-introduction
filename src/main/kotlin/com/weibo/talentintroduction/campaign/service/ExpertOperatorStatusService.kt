@@ -5,13 +5,15 @@ import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 @Service
 class ExpertOperatorStatusService(
     private val expertContactRepository: ExpertContactRepository,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    private val expertIndexWriterService: ExpertIndexWriterService
 ) {
     @Transactional
     fun changeStatus(
@@ -37,6 +39,7 @@ class ExpertOperatorStatusService(
             operatorName = operatorName,
             note = note
         )
+        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, target.name)
         return updated
     }
 
@@ -56,6 +59,7 @@ class ExpertOperatorStatusService(
             return contact
         }
         val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))
+        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, targetStatus.name)
         return updated
     }
 }

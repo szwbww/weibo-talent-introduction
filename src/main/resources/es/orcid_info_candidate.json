@@ -33,7 +33,8 @@
       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
       "filterResult": { "type": "keyword" },
       "filterRejectReason": { "type": "keyword" },
-      "tags": { "type": "keyword" }
+      "tags": { "type": "keyword" },
+      "operatorStatus": { "type": "keyword" }
     }
   }
 }

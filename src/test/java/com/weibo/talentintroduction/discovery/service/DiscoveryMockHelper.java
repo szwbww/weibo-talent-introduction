@@ -178,4 +178,101 @@ public class DiscoveryMockHelper {
             Mockito.any()
         );
     }
+
+    public static void stubEsCandidateHeadExists(RestTemplate mock) {
+        Mockito.doReturn(ResponseEntity.ok().<Void>build())
+            .when(mock).exchange(
+                Mockito.contains("orcid_info_candidate/_doc/"),
+                Mockito.eq(HttpMethod.HEAD),
+                Mockito.any(),
+                Mockito.eq(Void.class)
+            );
+    }
+
+    public static void stubEsRawDocGet(RestTemplate mock) {
+        var mapper = new ObjectMapper();
+        var source = mapper.createObjectNode()
+            .put("orcidId", "0000-0001-raw")
+            .put("displayName", "Test User");
+        var body = mapper.createObjectNode();
+        body.set("_source", source);
+        Mockito.doReturn(ResponseEntity.ok((com.fasterxml.jackson.databind.JsonNode) body))
+            .when(mock).exchange(
+                Mockito.contains("orcid_info/_doc/"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+            );
+    }
+
+    public static void stubEsHeadServerError(RestTemplate mock) {
+        Mockito.doThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
+            .when(mock).exchange(
+                Mockito.contains("orcid_info_candidate/_doc/"),
+                Mockito.eq(HttpMethod.HEAD),
+                Mockito.any(),
+                Mockito.eq(Void.class)
+            );
+    }
+
+    public static void stubEsRawDocGetCustom(RestTemplate mock, String orcidId, String displayName) {
+        var mapper = new ObjectMapper();
+        var source = mapper.createObjectNode()
+            .put("orcidId", orcidId)
+            .put("displayName", displayName);
+        var body = mapper.createObjectNode();
+        body.set("_source", source);
+        Mockito.doReturn(ResponseEntity.ok((com.fasterxml.jackson.databind.JsonNode) body))
+            .when(mock).exchange(
+                Mockito.contains("orcid_info/_doc/" + orcidId),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+            );
+    }
+
+    public static void verifyCandidatePutCalled(RestTemplate mock, int times) {
+        Mockito.verify(mock, Mockito.times(times)).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"),
+            Mockito.eq(HttpMethod.PUT),
+            Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+        );
+    }
+
+    public static void verifyCandidatePutNeverCalled(RestTemplate mock) {
+        Mockito.verify(mock, Mockito.never()).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"),
+            Mockito.eq(HttpMethod.PUT),
+            Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+        );
+    }
+
+    public static void verifyRawUpdateCalled(RestTemplate mock, int times) {
+        Mockito.verify(mock, Mockito.times(times)).exchange(
+            Mockito.contains("orcid_info/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode.class)
+        );
+    }
+
+    public static void verifyOrcidSearchRecordsCalled(OrcidDataSource mock, int times) {
+        Mockito.verify(mock, Mockito.times(times)).searchOrcidRecords(Mockito.any());
+    }
+
+    /**
+     * Stub isCancelled to return false for the first {@code falseCount} calls, then true.
+     * Use {@code 2} for "cancel after ORCID returns" scenarios, {@code 4} for "cancel after RAW update".
+     */
+    public static void stubCancelledAfterNCalls(TaskProgressStore mock, int falseCount) {
+        var counter = new java.util.concurrent.atomic.AtomicInteger(0);
+        Mockito.doAnswer(inv -> {
+            int call = counter.incrementAndGet();
+            return call > falseCount;
+        }).when(mock).isCancelled(
+            Mockito.eq("EXPERT_DISCOVERY")
+        );
+    }
 }

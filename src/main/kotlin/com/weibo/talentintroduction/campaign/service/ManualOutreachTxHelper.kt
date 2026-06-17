@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -16,7 +17,8 @@ class ManualOutreachTxHelper(
     private val conversationStateService: ConversationStateService,
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
-    private val mailSendAttemptRepository: MailSendAttemptRepository
+    private val mailSendAttemptRepository: MailSendAttemptRepository,
+    private val expertIndexWriterService: ExpertIndexWriterService
 ) {
     /**
      * Atomically records a successful send: transition contact NEW→INTRO_SENT,
@@ -77,6 +79,9 @@ class ManualOutreachTxHelper(
                 updatedAt = now
             ))
         }
+
+        // 5. Sync to ES Candidate index
+        expertIndexWriterService.syncCandidateOperatorStatus(contact.orcidId, "CONTACTED")
     }
 
     /**

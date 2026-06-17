@@ -49,6 +49,18 @@ public class ScrollExpertsMockHelper {
         Mockito.when(mock.writeCandidateDocument(Mockito.anyString(), Mockito.anyMap())).thenReturn(success);
     }
 
+    public static void verifyWriteCandidateDocumentWithDocId(ExpertIndexWriterService mock, String docId) {
+        Mockito.verify(mock).writeCandidateDocument(Mockito.eq(docId), Mockito.anyMap());
+    }
+
+    public static void verifyWriteCandidateDocumentWithDocIdAndOrcid(ExpertIndexWriterService mock, String docId, String orcidId) {
+        Mockito.verify(mock).writeCandidateDocument(Mockito.eq(docId), Mockito.argThat(doc -> orcidId.equals(doc.get("orcidId"))));
+    }
+
+    public static void verifyNeverWriteCandidateDocumentWithDocId(ExpertIndexWriterService mock, String docId) {
+        Mockito.verify(mock, Mockito.never()).writeCandidateDocument(Mockito.eq(docId), Mockito.anyMap());
+    }
+
     public static void stubReadRawDocument(ExpertIndexWriterService mock, Map<String, Object> doc) {
         Mockito.when(mock.readRawDocument(Mockito.anyString())).thenReturn(doc);
     }

@@ -18,9 +18,11 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
+import com.weibo.talentintroduction.expert.service.ExpertIdGenerator
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpEntity
@@ -50,6 +52,7 @@ class ExpertDiscoveryService(
     private val eligibilityService: CandidateEligibilityService,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val expertIndexService: ExpertIndexService,
+    private val revalidationService: ExpertRevalidationService,
     private val expertSearchService: ExpertSearchService,
     private val restTemplate: RestTemplate,
     private val esProperties: ElasticsearchProperties,
@@ -142,7 +145,8 @@ class ExpertDiscoveryService(
         return sources
     }
 
-    fun discover(criteria: PaperSearchCriteria, triggeredBy: String): DiscoveryResult {
+    @JvmOverloads
+    fun discover(criteria: PaperSearchCriteria, triggeredBy: String, includeRawScan: Boolean = true): DiscoveryResult {
         val stats = DiscoveryStats()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sources = resolveEnabledSources(criteria)
@@ -153,6 +157,20 @@ class ExpertDiscoveryService(
             "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}")
 
         try {
+            if (includeRawScan) {
+                log.info("开始执行 RAW 晋升扫描与邮箱补全...")
+                try {
+                    revalidationService.promoteEligibleRawExperts()
+                } catch (e: Exception) {
+                    log.warn("Failed to run RAW promotion scan during discovery", e)
+                }
+                try {
+                    backfillRawEmailsAndPromote(100)
+                } catch (e: Exception) {
+                    log.warn("Failed to run RAW email backfill during discovery", e)
+                }
+            }
+
             for (source in sources) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 stats.refreshGlobalCounts()
@@ -407,7 +425,7 @@ class ExpertDiscoveryService(
                     }
 
                     val profile = buildOrcidProfile(record, authorEmail, emailResult.level)
-                    val esDocId = authorEmail.orcidId ?: "ORCID-${record.orcidId}"
+                    val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId ?: record.orcidId, authorEmail.email)
                     val eligibility = eligibilityService.evaluateEligibility(profile)
                     val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
                     val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
@@ -534,7 +552,7 @@ class ExpertDiscoveryService(
             }
 
             val profile = buildProfile(paper, authorEmail, emailResult.level)
-            val esDocId = authorEmail.orcidId ?: generateIdFromEmail(authorEmail.email)
+            val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId, authorEmail.email)
             val eligibility = eligibilityService.evaluateEligibility(profile)
             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
@@ -572,7 +590,7 @@ class ExpertDiscoveryService(
                            filterResult: String, rejectReasons: List<String>): Map<String, Any?> {
         val now = LocalDateTime.now().format(dateFormatter)
         return mapOf(
-            "orcidId" to profile.orcidId, "email" to profile.email,
+            "orcidId" to esDocId, "email" to profile.email,
             "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
             "country" to profile.country, "keyword" to profile.keyword,
             "employment" to profile.employment, "institution" to profile.institution,
@@ -698,13 +716,6 @@ class ExpertDiscoveryService(
         } catch (e: Exception) { DedupResult.ERROR }
     }
 
-    private fun generateIdFromEmail(email: String): String {
-        val hash = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(email.lowercase(Locale.ROOT).toByteArray())
-            .joinToString("") { "%02x".format(it) }.take(19)
-        return "EMAIL-$hash"
-    }
-
     private fun inferCountryFromAffiliation(affiliation: String?): String? {
         if (affiliation.isNullOrBlank()) return null
         val parts = affiliation.split(",").map { it.trim() }
@@ -724,6 +735,138 @@ class ExpertDiscoveryService(
         contentType = MediaType.APPLICATION_JSON
         val raw = "${esProperties.username}:${esProperties.password}"
         set(HttpHeaders.AUTHORIZATION, "Basic ${Base64.getEncoder().encodeToString(raw.toByteArray(Charsets.UTF_8))}")
+    }
+
+    private fun tryGetEmailFromOrcid(orcidId: String): List<String> {
+        val orcid = orcidProvider.getIfAvailable() ?: return emptyList()
+        try {
+            val criteria = PaperSearchCriteria(
+                keywords = listOf("orcid:$orcidId"),
+                pageSize = 5
+            )
+            val records = orcid.searchOrcidRecords(criteria)
+            val normalizedTarget = orcidId.removePrefix("https://orcid.org/").trim()
+            val matched = records.firstOrNull {
+                it.orcidId?.removePrefix("https://orcid.org/")?.trim().equals(normalizedTarget, ignoreCase = true)
+            }
+            return matched?.emails.orEmpty()
+        } catch (e: Exception) {
+            log.warn("Failed to get email from ORCID for ID {}: {}", orcidId, e.message)
+            return emptyList()
+        }
+    }
+
+    private fun updateRawDocumentEmail(orcidId: String, email: String): Boolean {
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val now = LocalDateTime.now().format(dateFormatter)
+        val updateBody = mapOf(
+            "doc" to mapOf(
+                "email" to email,
+                "updatedAt" to now
+            )
+        )
+        val updateUrl = "${esProperties.baseUrl}/$rawIndex/_update/$orcidId"
+        return try {
+            restTemplate.exchange(updateUrl, HttpMethod.POST, HttpEntity(updateBody, esHeaders()),
+                com.fasterxml.jackson.databind.JsonNode::class.java)
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to update email for {} in RAW index: {}", orcidId, e.message)
+            false
+        }
+    }
+
+    private fun promoteRawToCandidateWithEmail(profile: ExpertProfile): Boolean {
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        try {
+            restTemplate.exchange(
+                "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}",
+                HttpMethod.HEAD,
+                HttpEntity(null, esHeaders()),
+                Void::class.java
+            )
+            log.debug("CANDIDATE already exists for {}, skip promotion", profile.orcidId)
+            return false
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode != HttpStatus.NOT_FOUND) {
+                log.warn("Failed to check CANDIDATE existence for {}: {}", profile.orcidId, e.message)
+                return false
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to check CANDIDATE existence for {}: {}", profile.orcidId, e.message)
+            return false
+        }
+
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val getUrl = "${esProperties.baseUrl}/$rawIndex/_doc/${profile.orcidId}"
+        val rawDoc = try {
+            val response = restTemplate.exchange(getUrl, HttpMethod.GET, HttpEntity(null, esHeaders()),
+                com.fasterxml.jackson.databind.JsonNode::class.java).body
+            val source = response?.path("_source")
+            if (source != null && !source.isMissingNode) {
+                objectMapper.convertValue(source, Map::class.java) as? Map<String, Any?>
+            } else null
+        } catch (e: Exception) {
+            log.warn("Failed to read raw document for promotion: {}", e.message)
+            null
+        }         ?: return false
+
+        val now = LocalDateTime.now().format(dateFormatter)
+        val candidateDoc = rawDoc.toMutableMap().apply {
+            put("candidateValidatedAt", now)
+            put("updatedAt", now)
+            val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            put("tags", (existingTags + "auto_promoted").distinct())
+        }
+        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}"
+        return try {
+            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()),
+                com.fasterxml.jackson.databind.JsonNode::class.java)
+            true
+        } catch (e: Exception) {
+            log.warn("Failed to promote raw expert {} with email to CANDIDATE: {}", profile.orcidId, e.message)
+            false
+        }
+    }
+
+    private fun backfillRawEmailsAndPromote(limit: Int = 100) {
+        var attemptedCount = 0
+        var promotedCount = 0
+        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return@scrollExperts false
+            if (attemptedCount >= limit) return@scrollExperts false
+
+            for (profile in batch) {
+                if (attemptedCount >= limit) break
+                if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+
+                if (profile.email.isNullOrBlank()) {
+                    val tempProfile = profile.copy(email = "temp@weibo.com")
+                    if (eligibilityService.evaluateEligibility(tempProfile).eligible) {
+                        val orcidId = profile.orcidId
+                        if (!orcidId.startsWith("EMAIL-") && orcidId.isNotBlank()) {
+                            attemptedCount++
+                            val emails = tryGetEmailFromOrcid(orcidId)
+                            if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+                            if (emails.isNotEmpty()) {
+                                val validEmail = emails.firstOrNull { emailValidationService.validate(it).valid }
+                                if (validEmail != null && !progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                                    if (updateRawDocumentEmail(orcidId, validEmail)) {
+                                        if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+                                        if (promoteRawToCandidateWithEmail(profile.copy(email = validEmail))) {
+                                            promotedCount++
+                                            log.info("Successfully backfilled email {} for ORCID {} and promoted to CANDIDATE", validEmail, orcidId)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            log.info("RAW email backfill batch {}: attempted={}, promoted={}, totalHits={}", batchNumber, attemptedCount, promotedCount, totalHits)
+            attemptedCount < limit
+        }
     }
 }
 

@@ -14,6 +14,7 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
@@ -370,5 +371,189 @@ class ExpertIndexWriterServiceTest {
         assertNotNull(result)
         assertEquals("a@b.com", result!!["email"])
         assertEquals(listOf("discovered", "verified"), result["tags"])
+    }
+
+    @Test
+    fun `syncCandidateOperatorStatus sends correct update post request`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree("""{"updated": 1}"""), HttpStatus.OK))
+
+        service.syncCandidateOperatorStatus("0001", "CONTACTED")
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `syncCandidateOperatorStatusBatch sends correct bulk request`() {
+        // Mock the _search to resolve orcidId → _id mapping
+        val searchResponse = mapper.readTree(
+            """
+            {
+              "hits": {
+                "hits": [
+                  { "_id": "0001", "_source": { "orcidId": "0001" } },
+                  { "_id": "0002", "_source": { "orcidId": "0002" } },
+                  { "_id": "0003", "_source": { "orcidId": "0003" } }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(searchResponse, HttpStatus.OK))
+
+        val responseNode = mapper.readTree(
+            """
+            {
+              "took": 1,
+              "errors": true,
+              "items": [
+                { "update": { "_index": "orcid_info_candidate", "_id": "0001", "status": 200 } },
+                { "update": { "_index": "orcid_info_candidate", "_id": "0002", "status": 404 } },
+                { "update": { "_index": "orcid_info_candidate", "_id": "0003", "status": 500, "error": { "reason": "conflict" } } }
+              ]
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val result = service.syncCandidateOperatorStatusBatch(listOf(
+            "0001" to "CONTACTED",
+            "0002" to "REPLIED",
+            "0003" to "REPLIED"
+        ))
+
+        assertEquals(3, result.total)
+        assertEquals(1, result.success)
+        assertEquals(1, result.skipped)
+        assertEquals(1, result.failure)
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors[0].contains("conflict"))
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `removeFromCandidateIndex returns false on 404`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_doc/ORCID-0001"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+
+        val result = service.removeFromCandidateIndex("ORCID-0001")
+        assertFalse(result)
+    }
+
+    @Test
+    fun `removeFromCandidateIndex returns false on non-404 HTTP error`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_doc/ORCID-0001"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.CONFLICT))
+
+        val result = service.removeFromCandidateIndex("ORCID-0001")
+        assertFalse(result)
+    }
+
+    @Test
+    fun `demoteToRaw sends delete_by_query and returns true`() {
+        val deleteResponse = mapper.readTree("""{"deleted": 1}""")
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_delete_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(deleteResponse, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_application/_delete_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(deleteResponse, HttpStatus.OK))
+
+        val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = 1L,
+            orcidId = "0001",
+            expertEmail = "a@b.com",
+            expertName = "Test User",
+            currentStatus = "WAITING_REPLY",
+            campaignId = 1L,
+            autoReplyEnabled = true
+        )
+        val result = service.demoteToRaw("0001", contact)
+        assertTrue(result)
+    }
+
+    @Test
+    fun `demoteToRaw returns false when no document deleted`() {
+        val deleteResponse = mapper.readTree("""{"deleted": 0}""")
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_delete_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(deleteResponse, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_application/_delete_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(deleteResponse, HttpStatus.OK))
+
+        val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = 1L,
+            orcidId = "0001",
+            expertEmail = "a@b.com",
+            expertName = "Test User",
+            currentStatus = "WAITING_REPLY",
+            campaignId = 1L,
+            autoReplyEnabled = true
+        )
+        val result = service.demoteToRaw("0001", contact)
+        assertFalse(result)
     }
 }

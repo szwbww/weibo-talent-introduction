@@ -291,6 +291,64 @@ class BatchAutoMailReplyServiceTest {
         assertTrue(result.expertsWithReply.contains("b@test.com"))
     }
 
+    @Test
+    fun `receiveAndAutoReplyAll supports progress callback`() {
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
+            listOf(account("a1"), account("a2"))
+        )
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 1))
+
+        val progressResults = mutableListOf<AccountAutoMailReplyResult>()
+        val progressCounts = mutableListOf<Pair<Int, Int>>()
+        val onProgress: (AccountAutoMailReplyResult, Int, Int) -> Unit = { result, processed, total ->
+            progressResults.add(result)
+            progressCounts.add(processed to total)
+            Unit
+        }
+
+        val result = service.receiveAndAutoReplyAll(5, onProgress = onProgress)
+
+        assertEquals(2, result.accountCount)
+        assertEquals(2, progressResults.size)
+        assertEquals("a1", progressResults[0].accountCode)
+        assertEquals("a2", progressResults[1].accountCode)
+        assertEquals(1 to 2, progressCounts[0])
+        assertEquals(2 to 2, progressCounts[1])
+    }
+
+    @Test
+    fun `receiveAndAutoReplyAll stops polling on cancellation`() {
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
+            listOf(account("a1"), account("a2"), account("a3"))
+        )
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+
+        var cancelledAfterFirst = false
+        val isCancelled: () -> Boolean = {
+            cancelledAfterFirst
+        }
+        val onProgress: (AccountAutoMailReplyResult, Int, Int) -> Unit = { _, processed, _ ->
+            if (processed == 1) {
+                cancelledAfterFirst = true
+            }
+        }
+
+        val result = service.receiveAndAutoReplyAll(5, onProgress = onProgress, isCancelled = isCancelled)
+
+        assertEquals(3, result.accountCount)
+        assertEquals(1, result.accountsPolled)
+        assertEquals(1, result.accounts.size)
+        assertEquals("a1", result.accounts[0].accountCode)
+        assertEquals("CANCELLED", result.taskFinalStatus)
+        assertTrue(result.wasCancelled)
+        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a2", 5)
+        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a3", 5)
+    }
+
     private fun account(accountCode: String): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,

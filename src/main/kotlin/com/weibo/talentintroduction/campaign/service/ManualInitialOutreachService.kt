@@ -48,8 +48,6 @@ class ManualInitialOutreachService(
      * Count experts pending outreach: new candidates from ES + retryable contacts (NEW status without SENT mail record).
      */
     fun countPending(): PendingOutreachSummary {
-        val seenOrcids = mutableSetOf<String>()
-        var pending = 0
         var retryable = 0
 
         // 1. Count retryable: NEW contacts in MANUAL_OUTREACH campaign without a SENT introduction
@@ -57,9 +55,10 @@ class ManualInitialOutreachService(
         if (campaign != null) {
             val campaignId = campaign.id ?: error("Campaign ID is null")
             val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+            val seenRetryableOrcids = mutableSetOf<String>()
             for (contact in newContacts) {
                 val normOrcid = normalizeOrcid(contact.orcidId)
-                if (seenOrcids.add(normOrcid)) {
+                if (seenRetryableOrcids.add(normOrcid)) {
                     // Only retryable if no SENT introduction exists
                     val hasSentIntro = hasSentIntroduction(contact.id!!)
                     if (!hasSentIntro) {
@@ -69,21 +68,13 @@ class ManualInitialOutreachService(
             }
         }
 
-        // 2. Count new candidates from ES
-        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
-            for (expert in batch) {
-                if (!expert.email.isNullOrBlank()) {
-                    val normOrcid = normalizeOrcid(expert.orcidId)
-                    if (seenOrcids.add(normOrcid)) {
-                        if (!expertContactRepository.existsByOrcidId(normOrcid)) {
-                            pending++
-                        }
-                    }
-                }
-            }
-            true
-        }
-        return PendingOutreachSummary(pending = pending, retryable = retryable)
+        // 2. Pending: ES count query, operatorStatus does not exist + has email
+        val pending = expertSearchService.countExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = ExpertSearchService.notContactedWithEmailFilters()
+        )
+
+        return PendingOutreachSummary(pending = pending.toInt(), retryable = retryable, totalSendable = pending.toInt() + retryable)
     }
 
     fun runBulkOutreach(executionId: Long): ManualOutreachResult {
@@ -266,14 +257,15 @@ class ManualInitialOutreachService(
             }
         }
 
-        // 2. New candidates from ES
-        expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch ->
+        // 2. New candidates from ES: scroll ES, only take documents where operatorStatus doesn't exist
+        expertSearchService.scrollExpertsFiltered(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = ExpertSearchService.notContactedWithEmailFilters()
+        ) { batch ->
             for (expert in batch) {
-                if (!expert.email.isNullOrBlank()) {
-                    val normOrcid = normalizeOrcid(expert.orcidId)
-                    if (seenOrcids.add(normOrcid) && !expertContactRepository.existsByOrcidId(normOrcid)) {
-                        snapshot.add(Pair(null, expert))
-                    }
+                val normOrcid = normalizeOrcid(expert.orcidId)
+                if (seenOrcids.add(normOrcid)) {
+                    snapshot.add(Pair(null, expert))
                 }
             }
             true
@@ -318,7 +310,8 @@ class ManualInitialOutreachService(
 
 data class PendingOutreachSummary(
     val pending: Int,
-    val retryable: Int
+    val retryable: Int,
+    val totalSendable: Int
 )
 
 data class ManualOutreachResult(

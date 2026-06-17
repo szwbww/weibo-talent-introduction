@@ -29,12 +29,14 @@ data class RevalidationResult(
 
 data class PromotionScanStats(
     var total: Int = 0,
+    var totalHits: Long = 0,
     var promoted: Int = 0,
     var filtered: Int = 0,
     var emailRejected: Int = 0,
     var alreadyPromoted: Int = 0,
     var promotionFailed: Int = 0,
-    var existenceCheckFailed: Int = 0
+    var existenceCheckFailed: Int = 0,
+    val filterReasons: MutableMap<String, Int> = mutableMapOf()
 )
 
 data class PromotionScanResult(

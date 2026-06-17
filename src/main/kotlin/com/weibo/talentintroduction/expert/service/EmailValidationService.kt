@@ -15,29 +15,33 @@ class EmailValidationService(
     private val properties: EmailValidationProperties,
     private val cacheRepository: EmailValidationCacheRepository,
     private val resourceLoader: ResourceLoader,
-    private val mxLookupClient: MxLookupClient
+    private val mxLookupClient: MxLookupClient,
+    private val eligibilityFilterService: EligibilityFilterService
 ) {
     private val log = LoggerFactory.getLogger(EmailValidationService::class.java)
     private val disposableDomains: Set<String> = loadDisposableDomains()
+
+    private fun mxCheckEnabled(): Boolean =
+        eligibilityFilterService.getEmailValidationConfig().enableMxCheck
 
     fun validate(email: String): EmailValidationResult {
         val normalized = email.lowercase(Locale.ROOT).trim()
         if (normalized.isBlank()) return reject(0, "EMPTY_EMAIL")
 
+        val mxEnabled = mxCheckEnabled()
+
         val cached = cacheRepository.findByEmail(normalized)
         if (cached != null && !cached.isExpired()) {
             if (cached.rejectReason != null) {
-                if (cached.rejectReason == "NO_MX_RECORD" && !properties.enableMxCheck) {
-                    // MX now disabled — NO_MX_RECORD should not block
+                if (cached.rejectReason == "NO_MX_RECORD" && !mxEnabled) {
                     updateCacheToLevel2(normalized, cached)
                     return EmailValidationResult(2, true)
                 }
                 return EmailValidationResult(cached.verifiedLevel, false, cached.rejectReason)
             }
-            if (!(properties.enableMxCheck && cached.mxValid == null)) {
+            if (!(mxEnabled && cached.mxValid == null)) {
                 return EmailValidationResult(cached.verifiedLevel, true, null)
             }
-            // L2 success cache was created when MX was off; MX is now on — re-verify MX only
             val domain = normalized.substringAfter("@")
             if (!hasMxRecord(domain)) {
                 cacheAndReturn(normalized, 2, "NO_MX_RECORD")
@@ -58,14 +62,14 @@ class EmailValidationService(
             return reject(1, "DISPOSABLE_EMAIL")
         }
 
-        if (properties.enableMxCheck) {
+        if (mxEnabled) {
             if (!hasMxRecord(domain)) {
                 cacheAndReturn(normalized, 2, "NO_MX_RECORD")
                 return reject(2, "NO_MX_RECORD")
             }
         }
 
-        val level = if (properties.enableMxCheck) 3 else 2
+        val level = if (mxEnabled) 3 else 2
         cacheAndReturn(normalized, level, null)
         return EmailValidationResult(level, true)
     }

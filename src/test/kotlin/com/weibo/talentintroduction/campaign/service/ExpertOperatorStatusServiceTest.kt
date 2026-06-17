@@ -11,12 +11,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import java.util.Optional
 
 class ExpertOperatorStatusServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
-    private val service = ExpertOperatorStatusService(expertContactRepository, operatorActionLogService)
+    private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
+    private val service = ExpertOperatorStatusService(expertContactRepository, operatorActionLogService, expertIndexWriterService)
 
     private fun contact(operatorStatus: String = "NOT_CONTACTED"): ExpertContact =
         ExpertContact(
@@ -39,6 +41,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.changeStatus(1L, "REPLIED", "admin", "manual verification")
 
         assertEquals("REPLIED", result.operatorStatus)
+        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -62,6 +65,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.updateAutomatically(c, OperatorStatus.REPLIED, "inbound reply")
 
         assertEquals("REPLIED", result.operatorStatus)
+        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -72,6 +76,7 @@ class ExpertOperatorStatusServiceTest {
 
         assertEquals("COMPLETED", result.operatorStatus)
         Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
     }
 
     @Test
@@ -83,5 +88,6 @@ class ExpertOperatorStatusServiceTest {
         val result = service.updateAutomatically(c, OperatorStatus.MATERIALS_RECEIVED, "materials arrived")
 
         assertEquals("MATERIALS_RECEIVED", result.operatorStatus)
+        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "MATERIALS_RECEIVED")
     }
 }

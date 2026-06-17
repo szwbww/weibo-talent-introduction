@@ -3,6 +3,12 @@ package com.weibo.talentintroduction.expert.controller
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ExpertIndexService
+import com.weibo.talentintroduction.expert.service.EligibilityFilterService
+import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
+import com.weibo.talentintroduction.expert.service.CandidateFilterView
+import com.weibo.talentintroduction.expert.service.AcademicFilterView
+import com.weibo.talentintroduction.expert.service.EmailValidationView
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
@@ -18,9 +24,12 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.http.MediaType
 import java.time.LocalDateTime
 
 @WebMvcTest(ExpertIndexController::class)
@@ -46,6 +55,12 @@ class ExpertIndexControllerMvcTest {
 
     @MockBean
     private lateinit var progressStore: TaskProgressStore
+
+    @MockBean
+    private lateinit var expertIndexService: ExpertIndexService
+
+    @MockBean
+    private lateinit var eligibilityFilterService: EligibilityFilterService
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
@@ -118,7 +133,7 @@ class ExpertIndexControllerMvcTest {
         Mockito.`when`(taskExecutionService.runAndRecordWithResult<Any>(
             eqValue("RAW_PROMOTION_SCAN"),
             eqValue("MANUAL"),
-            anyValue(Any()),
+            eqValue("promote-eligible-raw"),
             anyValue<(Long) -> Unit> { },
             anyValue { Any() }
         )).thenAnswer { invocation ->
@@ -127,7 +142,7 @@ class ExpertIndexControllerMvcTest {
             Pair(taskExecution, scanResult)
         }
 
-        mockMvc.perform(post("/api/experts/promote-eligible-raw").param("maxPromotions", "100"))
+        mockMvc.perform(post("/api/experts/promote-eligible-raw"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.executionId").value(43))
             .andExpect(jsonPath("$.result.stats.promoted").value(3))
@@ -141,5 +156,52 @@ class ExpertIndexControllerMvcTest {
         mockMvc.perform(post("/api/experts/revalidate-candidates"))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.message").value("任务正在执行中，请等待完成"))
+    }
+
+    @Test
+    fun `getEligibilityFilters returns current settings`() {
+        val response = EligibilityFiltersResponse(
+            candidateFilter = CandidateFilterView(false, true, true, false, 70),
+            academicFilter = AcademicFilterView(false, 5, false, 50, false, 5),
+            emailValidation = EmailValidationView(true)
+        )
+        Mockito.`when`(eligibilityFilterService.getAll()).thenReturn(response)
+
+        mockMvc.perform(get("/api/experts/eligibility-filters"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.candidateFilter.requireValidEmail").value(true))
+            .andExpect(jsonPath("$.candidateFilter.requireDoctoralDegree").value(false))
+            .andExpect(jsonPath("$.candidateFilter.excludeChineseNationality").value(true))
+            .andExpect(jsonPath("$.candidateFilter.enableAgeFilter").value(false))
+            .andExpect(jsonPath("$.candidateFilter.maxAgeExclusive").value(70))
+            .andExpect(jsonPath("$.academicFilter.enableHIndexFilter").value(false))
+            .andExpect(jsonPath("$.academicFilter.minHIndex").value(5))
+            .andExpect(jsonPath("$.emailValidation.enableMxCheck").value(true))
+    }
+
+    @Test
+    fun `updateEligibilityFilters persists and returns updated settings`() {
+        val updates = """{"candidate.requireValidEmail":"false","academic.minHIndex":"10"}"""
+        val response = EligibilityFiltersResponse(
+            candidateFilter = CandidateFilterView(false, false, true, false, 70),
+            academicFilter = AcademicFilterView(false, 10, false, 50, false, 5),
+            emailValidation = EmailValidationView(true)
+        )
+        Mockito.`when`(eligibilityFilterService.getAll()).thenReturn(response)
+        Mockito.`when`(eligibilityFilterService.update("candidate.requireValidEmail", "false"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EligibilityFilterSetting(
+                settingKey = "candidate.requireValidEmail", settingValue = "false"
+            ))
+        Mockito.`when`(eligibilityFilterService.update("academic.minHIndex", "10"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EligibilityFilterSetting(
+                settingKey = "academic.minHIndex", settingValue = "10"
+            ))
+
+        mockMvc.perform(put("/api/experts/eligibility-filters")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(updates))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.candidateFilter.requireValidEmail").value(false))
+            .andExpect(jsonPath("$.academicFilter.minHIndex").value(10))
     }
 }

@@ -11,7 +11,50 @@
     <link rel="stylesheet" href="styles.css?v=20260610-responsive2">
 </head>
 <body>
-<div class="app-shell">
+<!-- Login Overlay -->
+<div id="loginOverlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+        <h2>人才引进管理后台</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="loginUsername">用户名</label>
+                <input type="text" id="loginUsername" placeholder="请输入用户名" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">密码</label>
+                <input type="password" id="loginPassword" placeholder="请输入密码" required autocomplete="current-password">
+            </div>
+            <div id="loginError" class="auth-error" hidden></div>
+            <button class="button primary" type="submit" style="width: 100%;">登录</button>
+        </form>
+    </div>
+</div>
+
+<!-- Change Password Overlay -->
+<div id="changePasswordOverlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+        <h2>修改初始密码</h2>
+        <p class="auth-subtitle">首次登录请先修改密码</p>
+        <form id="changePasswordForm">
+            <div class="form-group">
+                <label for="oldPassword">当前密码</label>
+                <input type="password" id="oldPassword" placeholder="请输入当前密码" required autocomplete="current-password">
+            </div>
+            <div class="form-group">
+                <label for="newPassword">新密码 (至少8位，且不能与用户名相同)</label>
+                <input type="password" id="newPassword" placeholder="新密码" required autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label for="confirmNewPassword">确认新密码</label>
+                <input type="password" id="confirmNewPassword" placeholder="确认新密码" required autocomplete="new-password">
+            </div>
+            <div id="changePasswordError" class="auth-error" hidden></div>
+            <button class="button primary" type="submit" style="width: 100%;">提交并保存</button>
+        </form>
+    </div>
+</div>
+
+<div class="app-shell" style="display: none;">
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
         <div class="brand">
@@ -71,6 +114,29 @@
                 <span>任务记录</span>
             </button>
         </nav>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                当前登录: <span id="currentUserDisplay">admin</span>
+            </div>
+            <button class="nav-tab logout-btn" id="showPollLogBtn" onclick="showPollLog()" style="border-top: none; padding-top: 8px; padding-bottom: 8px;">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>轮询日志</span>
+            </button>
+            <button class="nav-tab logout-btn" id="logoutBtn">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span>退出登录</span>
+            </button>
+        </div>
     </aside>
 
     <!-- Main Content Panel -->
@@ -275,21 +341,22 @@
                         <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         刷新
                     </button>
-                    <div class="dropdown" id="taskMenuDropdown">
-                        <button class="button dropdown-toggle" id="taskMenuToggle">
-                            后台任务
+                    <div class="split-button" id="discoverBtnGroup">
+                        <button class="button primary" id="discoverBtn" onclick="handleDiscoverClick()">发现专家</button>
+                        <button class="button primary split-arrow" id="discoverModeToggle" aria-expanded="false">
                             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                         </button>
-                        <div class="dropdown-menu" id="taskMenu" hidden>
-                            <button class="dropdown-item" id="showPollLogBtn" onclick="showPollLog()">轮询日志</button>
-                            <button class="dropdown-item" id="revalidateBtn" onclick="handleRevalidateCandidates()">重新验证候选人</button>
-                            <button class="dropdown-item" id="promoteRawBtn" onclick="handlePromoteRaw()">扫描 RAW 可晋升</button>
+                        <div class="dropdown-menu" id="discoverModeMenu" hidden style="right: auto; left: 0;">
+                            <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速扫描（本地 RAW）</button>
+                            <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（含外部平台）</button>
+                            <hr class="dropdown-divider">
+                            <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
                     </div>
-                    <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
+                    <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
                     <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
-                    <button class="button primary" id="bulkOutreachBtn">批量发送介绍邮件</button>
-                    <button class="button primary" id="discoverBtn" onclick="handleDiscover()">发现专家</button>
+                    <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
+                    <button class="button secondary" id="backfillOperatorStatusBtn" onclick="handleBackfillOperatorStatus()">回刷 ES</button>
                 </div>
             </div>
 
@@ -305,20 +372,6 @@
                 <div id="taskProgressDetail" class="task-progress-detail"></div>
             </div>
 
-            <!-- Outreach Progress Panel -->
-            <div id="outreachProgressPanel" class="task-progress-bar" hidden>
-                <div class="task-progress-header">
-                    <span class="task-progress-label">批量发送介绍邮件</span>
-                    <span id="outreachCounters" style="margin-left: auto; margin-right: 12px; font-weight: normal; color: var(--text-muted);">待发送 0 · 已发送 0 · 失败 0</span>
-                    <span id="outreachProgressPercent" class="task-progress-percent">0%</span>
-                    <button class="button small secondary" id="closeOutreachProgressBtn" style="margin-left: 10px; padding: 2px 6px; font-size: 11px;">关闭</button>
-                </div>
-                <div class="task-progress-track">
-                    <div id="outreachProgressFill" class="task-progress-fill" style="width: 0%"></div>
-                </div>
-                <div id="outreachProgressDetail" class="task-progress-detail"></div>
-                <div id="outreachErrors" class="task-error-log-content" style="margin-top: 8px; font-family: monospace; font-size: 11px; max-height: 150px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent-red);" hidden></div>
-            </div>
 
             <!-- Poll Log Panel -->
             <div id="pollLogPanel" class="panel" style="margin-top: 12px; margin-bottom: 12px; padding: 14px;" hidden>
@@ -519,6 +572,11 @@
                 <div id="taskLaunchSourcesRow" hidden>
                     <label class="task-modal-input-label">数据源平台:</label>
                     <div id="taskLaunchSources" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
+                </div>
+
+                <div id="taskLaunchFiltersRow" hidden>
+                    <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
+                    <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
                 </div>
 
                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">

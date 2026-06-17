@@ -5,6 +5,9 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.RevalidationResult
+import com.weibo.talentintroduction.expert.service.EligibilityFilterService
+import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
+import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -16,6 +19,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -29,7 +34,9 @@ class ExpertIndexController(
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val revalidationService: ExpertRevalidationService,
     private val taskExecutionService: TaskExecutionService,
-    private val progressStore: TaskProgressStore
+    private val progressStore: TaskProgressStore,
+    private val expertIndexService: ExpertIndexService,
+    private val eligibilityFilterService: EligibilityFilterService
 ) {
     @GetMapping
     fun listExperts(
@@ -37,20 +44,26 @@ class ExpertIndexController(
         @RequestParam(defaultValue = "50") size: Int,
         @RequestParam(required = false) tag: String?,
         @RequestParam(required = false) sortBy: String?,
-        @RequestParam(defaultValue = "0") from: Int
+        @RequestParam(defaultValue = "0") from: Int,
+        @RequestParam(required = false) operatorStatus: String?
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from)
+        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus)
+        val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
+        val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
+            .findByOrcidIdIn(orcidIds)
+            .groupBy { it.orcidId }
+            .mapValues { (_, contacts) -> contacts.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN } }
+
         val experts = result.experts.map { expert ->
-            val contact = expert.orcidId
-                .takeIf { it.isNotBlank() }
-                ?.let(expertContactRepository::findFirstByOrcidIdOrderByUpdatedAtDesc)
+            val contact = contactMap[expert.orcidId]
             ExpertIndexResponse.from(
                 expert = expert,
                 level = level,
                 contactId = contact?.id,
                 contactStatus = contact?.currentStatus,
                 needsManualAttention = contact?.needsManualAttention ?: false,
-                autoReplyEnabled = contact?.autoReplyEnabled ?: true
+                autoReplyEnabled = contact?.autoReplyEnabled ?: true,
+                operatorStatus = expert.operatorStatus ?: "NOT_CONTACTED"
             )
         }
         return ExpertListResponse(experts = experts, totalHits = result.totalHits)
@@ -124,10 +137,7 @@ class ExpertIndexController(
     }
 
     @PostMapping("/promote-eligible-raw")
-    fun promoteEligibleRaw(
-        @RequestParam(defaultValue = "1000") maxPromotions: Int
-    ): ResponseEntity<Any> {
-        require(maxPromotions in 1..10000) { "maxPromotions must be between 1 and 10000" }
+    fun promoteEligibleRaw(): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("RAW_PROMOTION_SCAN", TaskProgress(
             taskType = "RAW_PROMOTION_SCAN", status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
@@ -139,13 +149,13 @@ class ExpertIndexController(
         var executionId: Long? = null
         try {
             val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
-                "RAW_PROMOTION_SCAN", "MANUAL", mapOf("maxPromotions" to maxPromotions),
+                "RAW_PROMOTION_SCAN", "MANUAL", "promote-eligible-raw",
                 onStarted = { id ->
                     executionId = id
                     progressStore.bindExecutionId("RAW_PROMOTION_SCAN", token, id)
                 }
             ) {
-                revalidationService.promoteEligibleRawExperts(maxPromotions)
+                revalidationService.promoteEligibleRawExperts()
             }
             return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
         } catch (ex: Exception) {
@@ -164,6 +174,37 @@ class ExpertIndexController(
             }
         }
     }
+
+    @PostMapping("/backfill-operator-status")
+    fun backfillOperatorStatus(): ResponseEntity<Any> {
+        if (!expertIndexService.checkCandidateOperatorStatusMapping()) {
+            return ResponseEntity.badRequest().body(mapOf("message" to "CANDIDATE 索引缺少 keyword 类型的 operatorStatus mapping 声明，请先更新 mapping"))
+        }
+        val contacts = expertContactRepository.findAllByOrderByUpdatedAtDesc()
+        val latestUpdates = contacts
+            .filter { !it.orcidId.isNullOrBlank() }
+            .map { it.orcidId!!.trim() to (it.operatorStatus ?: "NOT_CONTACTED") }
+            .distinctBy { it.first.lowercase() }
+
+        val result = expertIndexWriterService.syncCandidateOperatorStatusBatch(latestUpdates)
+        return ResponseEntity.ok(BackfillResult(
+            total = result.total,
+            success = result.success,
+            failure = result.failure,
+            skipped = result.skipped
+        ))
+    }
+
+    @GetMapping("/eligibility-filters")
+    fun getEligibilityFilters(): ResponseEntity<EligibilityFiltersResponse> {
+        return ResponseEntity.ok(eligibilityFilterService.getAll())
+    }
+
+    @PutMapping("/eligibility-filters")
+    fun updateEligibilityFilters(@RequestBody updates: Map<String, String>): ResponseEntity<EligibilityFiltersResponse> {
+        updates.forEach { (key, value) -> eligibilityFilterService.update(key, value) }
+        return ResponseEntity.ok(eligibilityFilterService.getAll())
+    }
 }
 
 data class ExpertListResponse(
@@ -175,6 +216,13 @@ data class ReindexResult(
     val total: Int,
     val success: Int,
     val failure: Int
+)
+
+data class BackfillResult(
+    val total: Int,
+    val success: Int,
+    val failure: Int,
+    val skipped: Int
 )
 
 data class ExpertIndexResponse(
@@ -189,6 +237,7 @@ data class ExpertIndexResponse(
     val age: Int?,
     val degree: String?,
     val nationality: String?,
+    val operatorStatus: String?,
     val contactId: Long?,
     val contactStatus: String?,
     val needsManualAttention: Boolean = false,
@@ -203,7 +252,8 @@ data class ExpertIndexResponse(
             contactId: Long?,
             contactStatus: String?,
             needsManualAttention: Boolean = false,
-            autoReplyEnabled: Boolean = true
+            autoReplyEnabled: Boolean = true,
+            operatorStatus: String? = null
         ): ExpertIndexResponse =
             ExpertIndexResponse(
                 indexLevel = level.name,
@@ -221,6 +271,7 @@ data class ExpertIndexResponse(
                 age = expert.age,
                 degree = expert.degree,
                 nationality = expert.nationality,
+                operatorStatus = operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED",
                 contactId = contactId,
                 contactStatus = contactStatus,
                 needsManualAttention = needsManualAttention,
