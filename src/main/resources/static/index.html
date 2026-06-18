@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260618-batch-send">
+    <link rel="stylesheet" href="styles.css?v=20260619-bsc-restyle">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -556,6 +556,7 @@
             <h3 id="taskModalTitle">任务管理</h3>
             <button class="button small" onclick="closeTaskModal()">×</button>
         </div>
+        <div id="taskModalToast" class="task-modal-toast" hidden></div>
         <div class="modal-body" style="gap: 20px;">
             <!-- Configuration Section (visible when starting task) -->
             <div id="taskModalConfigSection" class="task-modal-config-section">
@@ -587,40 +588,80 @@
 
                 <!-- Batch Send Config Panel (shown only for MANUAL_INITIAL_OUTREACH) -->
                 <div id="batchSendConfigPanel" class="batch-send-config-panel" hidden>
-                    <p class="batch-send-config-panel-hint">定时与定量参数（保存后立即生效，影响后续定时与手动执行）。</p>
-                    <div class="batch-send-config-grid">
-                        <label class="task-modal-input-label">
-                            自动定时开关
-                            <label class="batch-send-checkbox-row"><input type="checkbox" id="batchSendAutoEnabled" checked> 启用每天自动定时发送</label>
-                        </label>
-                        <label class="task-modal-input-label">
-                            定时表达式 (cron 或 每天 HH:mm)
-                            <input type="text" id="batchSendCron" class="task-modal-input-field" placeholder="如: 0 0 0 * * ? 或 00:00">
-                        </label>
-                        <label class="task-modal-input-label">
-                            每日上限 (dailyCap)
-                            <input type="number" id="batchSendDailyCap" class="task-modal-input-field" min="1" value="1000">
-                        </label>
-                        <label class="task-modal-input-label">
-                            每轮数量 (roundSize)
-                            <input type="number" id="batchSendRoundSize" class="task-modal-input-field" min="1" value="50">
-                        </label>
-                        <label class="task-modal-input-label">
-                            每封间隔 (秒)
-                            <input type="number" id="batchSendPerMailIntervalSec" class="task-modal-input-field" min="0" value="1">
-                        </label>
-                        <label class="task-modal-input-label">
-                            每轮间隔 (秒)
-                            <input type="number" id="batchSendPerRoundIntervalSec" class="task-modal-input-field" min="0" value="60">
-                        </label>
-                        <label class="task-modal-input-label">
-                            自检 TTL (分钟)
-                            <input type="number" id="batchSendSelfCheckTtlMin" class="task-modal-input-field" min="1" value="30">
-                        </label>
-                    </div>
+                    <p class="batch-send-config-panel-hint">保存后立即生效，影响后续定时与手动执行。</p>
+
+                    <!-- 定时调度 -->
+                    <fieldset class="bsc-group">
+                        <legend class="bsc-group-legend">定时调度</legend>
+                        <div class="bsc-row-2col">
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">执行频率</span>
+                                <select id="batchSendFrequency" class="bsc-input bsc-select">
+                                    <option value="hourly">每小时</option>
+                                    <option value="daily" selected>每天</option>
+                                    <option value="weekly">每周</option>
+                                </select>
+                            </div>
+                            <div class="bsc-field" id="batchSendTimeField">
+                                <span class="bsc-field-label">执行时间</span>
+                                <input type="time" id="batchSendTime" class="bsc-input" value="09:00">
+                            </div>
+                        </div>
+                        <input type="hidden" id="batchSendCron">
+                        <input type="hidden" id="batchSendAutoEnabled" value="1">
+                    </fieldset>
+
+                    <!-- 发送限额 -->
+                    <fieldset class="bsc-group">
+                        <legend class="bsc-group-legend">发送限额</legend>
+                        <div class="bsc-row-2col">
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">每批上限</span>
+                                <div class="bsc-input-wrap">
+                                    <input type="number" id="batchSendDailyCap" class="bsc-input" min="1" value="1000">
+                                    <span class="bsc-input-suffix">封</span>
+                                </div>
+                            </div>
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">每轮数量</span>
+                                <div class="bsc-input-wrap">
+                                    <input type="number" id="batchSendRoundSize" class="bsc-input" min="1" value="50">
+                                    <span class="bsc-input-suffix">封</span>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- 节流控制 -->
+                    <fieldset class="bsc-group">
+                        <legend class="bsc-group-legend">节流控制</legend>
+                        <div class="bsc-row-3col">
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">每封间隔</span>
+                                <div class="bsc-input-wrap">
+                                    <input type="number" id="batchSendPerMailIntervalSec" class="bsc-input" min="0" value="1">
+                                    <span class="bsc-input-suffix">秒</span>
+                                </div>
+                            </div>
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">每轮间隔</span>
+                                <div class="bsc-input-wrap">
+                                    <input type="number" id="batchSendPerRoundIntervalSec" class="bsc-input" min="0" value="60">
+                                    <span class="bsc-input-suffix">秒</span>
+                                </div>
+                            </div>
+                            <div class="bsc-field">
+                                <span class="bsc-field-label">自检 TTL</span>
+                                <div class="bsc-input-wrap">
+                                    <input type="number" id="batchSendSelfCheckTtlMin" class="bsc-input" min="1" value="30">
+                                    <span class="bsc-input-suffix">分钟</span>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="batch-send-config-actions">
                         <button class="button secondary" id="batchSendSaveConfigBtn" type="button">保存配置</button>
-                        <span id="batchSendConfigSaveHint" class="batch-send-config-save-hint" hidden></span>
                     </div>
                 </div>
 
@@ -809,6 +850,6 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-    <script src="app.js?v=20260618-batch-send"></script>
+    <script src="app.js?v=20260619-bsc-restyle"></script>
 </body>
 </html>

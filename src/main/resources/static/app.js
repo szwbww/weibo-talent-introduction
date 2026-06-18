@@ -1938,6 +1938,8 @@ async function openTaskLaunchModal(taskType) {
         if (manualBtn) manualBtn.onclick = handleBatchSendManual;
         const saveCfgBtn = $("#batchSendSaveConfigBtn");
         if (saveCfgBtn) saveCfgBtn.onclick = saveBatchSendConfig;
+        const freqSel = $("#batchSendFrequency");
+        if (freqSel) freqSel.addEventListener("change", syncBatchSendTimeFieldVisibility);
         // Initial controls state from preloaded status (or fresh fetch if missing)
         if (pre && pre.batchStatus) {
             applyBatchSendControls(pre.batchStatus);
@@ -2360,15 +2362,37 @@ async function refreshBatchSendControls() {
 function fillBatchSendConfigForm(config) {
     if (!config) return;
     const setVal = (id, v) => { const el = $("#" + id); if (el) el.value = v; };
-    const setChecked = (id, v) => { const el = $("#" + id); if (el) el.checked = !!v; };
-    setChecked("batchSendAutoEnabled", config.autoEnabled);
-    setVal("batchSendCron", config.cron || "");
+
+    // Parse cron to frequency + time
+    const cron = (config.cron || "").trim();
+    const cronParts = cron.split(/\s+/);
+    let freq = "daily", time = "09:00";
+    if (cronParts.length >= 5) {
+        const [sec, min, hour, dom, mon, dow] = cronParts;
+        if (hour === "*" || hour === "*/1") {
+            freq = "hourly"; time = "";
+        } else if (dow && dow !== "?" && dow !== "*") {
+            freq = "weekly"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0");
+        } else {
+            freq = "daily"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0");
+        }
+    }
+    setVal("batchSendFrequency", freq);
+    setVal("batchSendTime", time);
+    syncBatchSendTimeFieldVisibility();
+
     setVal("batchSendDailyCap", config.dailyCap ?? "");
     setVal("batchSendRoundSize", config.roundSize ?? "");
     // ms -> seconds for the UI
     setVal("batchSendPerMailIntervalSec", config.perMailIntervalMs != null ? Math.round(config.perMailIntervalMs / 1000) : "");
     setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
     setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
+}
+
+function syncBatchSendTimeFieldVisibility() {
+    const freq = $("#batchSendFrequency")?.value;
+    const timeField = $("#batchSendTimeField");
+    if (timeField) timeField.style.display = freq === "hourly" ? "none" : "";
 }
 
 // Reads the form and returns the PUT payload (seconds -> ms). Throws on invalid input.
@@ -2380,10 +2404,21 @@ function readBatchSendConfigForm() {
         if (raw === "" || raw == null || Number.isNaN(n)) throw new Error("字段 " + id + " 需为数字");
         return n;
     };
-    const cron = (val("batchSendCron") || "").trim();
-    if (!cron) throw new Error("定时表达式不能为空");
+    // Build cron from frequency + time
+    const freq = val("batchSendFrequency") || "daily";
+    const timeParts = (val("batchSendTime") || "09:00").split(":");
+    const hour = parseInt(timeParts[0] || "0", 10);
+    const min = parseInt(timeParts[1] || "0", 10);
+    let cron;
+    if (freq === "hourly") {
+        cron = "0 0 * * * ?";
+    } else if (freq === "weekly") {
+        cron = `0 ${min} ${hour} ? * MON`;
+    } else {
+        cron = `0 ${min} ${hour} * * ?`;
+    }
     const payload = {
-        autoEnabled: !!$("#batchSendAutoEnabled")?.checked,
+        autoEnabled: true,
         cron,
         dailyCap: Math.round(num("batchSendDailyCap")),
         roundSize: Math.round(num("batchSendRoundSize")),
@@ -2392,34 +2427,40 @@ function readBatchSendConfigForm() {
         selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin"))
     };
     if (payload.roundSize < 1) throw new Error("每轮数量需 ≥ 1");
-    if (payload.dailyCap < payload.roundSize) throw new Error("每日上限需 ≥ 每轮数量");
+    if (payload.dailyCap < payload.roundSize) throw new Error("每批上限需 ≥ 每轮数量");
     if (payload.perMailIntervalMs < 0) throw new Error("每封间隔需 ≥ 0");
     if (payload.perRoundIntervalMs < 0) throw new Error("每轮间隔需 ≥ 0");
     if (payload.selfCheckTtlMinutes < 1) throw new Error("自检 TTL 需 ≥ 1");
     return payload;
 }
 
+function showModalToast(message, type = "ok") {
+    const el = $("#taskModalToast");
+    if (!el) return;
+    el.textContent = message;
+    el.className = "task-modal-toast " + type;
+    el.hidden = false;
+    clearTimeout(showModalToast.timer);
+    showModalToast.timer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
 async function saveBatchSendConfig() {
     const btn = $("#batchSendSaveConfigBtn");
-    const hint = $("#batchSendConfigSaveHint");
     if (btn) btn.disabled = true;
-    if (hint) { hint.hidden = true; hint.textContent = ""; }
     let payload;
     try {
         payload = readBatchSendConfigForm();
     } catch (e) {
-        if (hint) { hint.textContent = "配置校验失败: " + e.message; hint.hidden = false; }
+        showModalToast("配置校验失败: " + e.message, "error");
         if (btn) btn.disabled = false;
         return;
     }
     try {
         const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
         fillBatchSendConfigForm(saved);
-        if (hint) { hint.textContent = "已保存"; hint.hidden = false; }
-        showStatus("批量发送配置已保存", "ok");
+        showModalToast("配置已保存", "ok");
     } catch (e) {
-        if (hint) { hint.textContent = "保存失败: " + e.message; hint.hidden = false; }
-        showStatus("批量发送配置保存失败: " + e.message, "error");
+        showModalToast("保存失败: " + e.message, "error");
     } finally {
         if (btn) btn.disabled = false;
     }

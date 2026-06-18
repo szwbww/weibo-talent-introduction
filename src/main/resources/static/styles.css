@@ -3303,14 +3303,40 @@ textarea {
     display: none;
 }
 
+/* Modal-scoped toast */
+.task-modal-toast {
+    margin: 0 20px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    animation: modalToastIn 0.2s ease;
+}
+.task-modal-toast[hidden] { display: none; }
+.task-modal-toast.ok {
+    background: rgba(52, 199, 89, 0.1);
+    color: #248a3d;
+    border: 1px solid rgba(52, 199, 89, 0.25);
+}
+.task-modal-toast.error {
+    background: rgba(255, 59, 48, 0.08);
+    color: #d70015;
+    border: 1px solid rgba(255, 59, 48, 0.2);
+}
+@keyframes modalToastIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Config panel inside the task launch modal */
 .batch-send-config-panel {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
+    gap: 14px;
+    padding: 16px;
     border: 1px solid var(--panel-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background-color: var(--panel-bg);
 }
 .batch-send-config-panel[hidden] {
@@ -3320,31 +3346,115 @@ textarea {
     margin: 0;
     font-size: 11px;
     color: var(--text-muted);
+    line-height: 1.4;
 }
-.batch-send-config-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+
+/* Grouped fieldsets */
+.bsc-group {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
 }
-.batch-send-checkbox-row {
+.bsc-group-legend {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 6px;
+}
+
+/* Toggle row */
+.bsc-toggle-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: 8px;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+.bsc-toggle-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+    margin: 0;
+    cursor: pointer;
+}
+.bsc-toggle-text {
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-main);
 }
+
+/* Field layout */
+.bsc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.bsc-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.bsc-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--panel-bg);
+    font-size: 13px;
+    color: var(--text-main);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+}
+.bsc-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2386868b'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+}
+.bsc-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+.bsc-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.bsc-input-wrap .bsc-input {
+    padding-right: 36px;
+}
+.bsc-input-suffix {
+    position: absolute;
+    right: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+/* Grid rows */
+.bsc-row-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.bsc-row-3col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+/* Actions */
 .batch-send-config-actions {
     display: flex;
     align-items: center;
     gap: 10px;
-}
-.batch-send-config-save-hint {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-.batch-send-config-save-hint[hidden] {
-    display: none;
 }
 
 /* Control bar (mode/status badges + 3 buttons) — visible in both CONFIG and PROGRESS modes */
@@ -3415,7 +3525,8 @@ textarea {
 }
 
 @media (max-width: 640px) {
-    .batch-send-config-grid {
+    .bsc-row-2col,
+    .bsc-row-3col {
         grid-template-columns: 1fr;
     }
     .batch-send-control-bar {
