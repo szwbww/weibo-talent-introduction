@@ -1509,7 +1509,18 @@ async function loadContacts() {
         </div>
         `;
     }).join("");
+    // Stagger list-item entrance animation
+    staggerListItems("#contactList .list-item");
     refreshAutoReplySummary().catch(() => {});
+}
+
+function staggerListItems(selector, maxDelay) {
+    const items = $$(selector);
+    const cap = maxDelay || 600; // ms total budget
+    const step = Math.min(40, cap / (items.length || 1));
+    items.forEach((el, i) => {
+        el.style.animationDelay = (i * step) + "ms";
+    });
 }
 
 function contactBadgeType(contact) {
