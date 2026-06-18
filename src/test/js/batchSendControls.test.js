@@ -249,7 +249,8 @@ describe("Batch Send Controls (phase 04)", () => {
         function setForm(sb, fields) {
             const map = {
                 batchSendAutoEnabled: "checked",
-                batchSendCron: "value",
+                batchSendFrequency: "value",
+                batchSendTime: "value",
                 batchSendDailyCap: "value",
                 batchSendRoundSize: "value",
                 batchSendPerMailIntervalSec: "value",
@@ -267,7 +268,8 @@ describe("Batch Send Controls (phase 04)", () => {
             const sb = createBatchSendSandbox();
             setForm(sb, {
                 batchSendAutoEnabled: true,
-                batchSendCron: "0 0 0 * * ?",
+                batchSendFrequency: "daily",
+                batchSendTime: "00:00",
                 batchSendDailyCap: "1000",
                 batchSendRoundSize: "50",
                 batchSendPerMailIntervalSec: "1",
@@ -288,35 +290,38 @@ describe("Batch Send Controls (phase 04)", () => {
             const sb = createBatchSendSandbox();
             setForm(sb, {
                 batchSendAutoEnabled: true,
-                batchSendCron: "0 0 0 * * ?",
+                batchSendFrequency: "daily",
+                batchSendTime: "00:00",
                 batchSendDailyCap: "10",
                 batchSendRoundSize: "50",
                 batchSendPerMailIntervalSec: "1",
                 batchSendPerRoundIntervalSec: "60",
                 batchSendSelfCheckTtlMin: "30"
             });
-            assert.throws(() => sb.readBatchSendConfigForm(), /每日上限/);
+            assert.throws(() => sb.readBatchSendConfigForm(), /每批上限/);
         });
 
-        it("blank cron throws", () => {
+        it("blank time falls back to default 09:00 cron", () => {
             const sb = createBatchSendSandbox();
             setForm(sb, {
                 batchSendAutoEnabled: true,
-                batchSendCron: "",
+                batchSendFrequency: "daily",
+                batchSendTime: "",
                 batchSendDailyCap: "1000",
                 batchSendRoundSize: "50",
                 batchSendPerMailIntervalSec: "1",
                 batchSendPerRoundIntervalSec: "60",
                 batchSendSelfCheckTtlMin: "30"
             });
-            assert.throws(() => sb.readBatchSendConfigForm(), /定时表达式/);
+            assert.strictEqual(sb.readBatchSendConfigForm().cron, "0 0 9 * * ?");
         });
 
         it("non-numeric interval throws", () => {
             const sb = createBatchSendSandbox();
             setForm(sb, {
                 batchSendAutoEnabled: true,
-                batchSendCron: "0 0 0 * * ?",
+                batchSendFrequency: "daily",
+                batchSendTime: "00:00",
                 batchSendDailyCap: "1000",
                 batchSendRoundSize: "50",
                 batchSendPerMailIntervalSec: "abc",
