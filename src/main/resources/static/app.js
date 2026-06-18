@@ -440,6 +440,27 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         const progressSection = $("#taskModalProgressSection");
         if (progressSection) progressSection.hidden = false;
 
+        // Batch send control bar visibility: shown only for MANUAL_INITIAL_OUTREACH.
+        const isBatchSend = taskType === "MANUAL_INITIAL_OUTREACH";
+        const batchControlBar = $("#batchSendControlBar");
+        const batchConfigPanel = $("#batchSendConfigPanel");
+        const batchProgressPanel = $("#batchSendProgressPanel");
+        if (batchControlBar) batchControlBar.hidden = !isBatchSend;
+        if (batchConfigPanel) batchConfigPanel.hidden = true; // config panel only in CONFIG mode
+        if (batchProgressPanel) batchProgressPanel.hidden = true;
+        if (isBatchSend) {
+            const startBtn = $("#batchSendStartBtn");
+            if (startBtn) startBtn.onclick = handleBatchSendStart;
+            const pauseBtn = $("#batchSendPauseBtn");
+            if (pauseBtn) pauseBtn.onclick = handleBatchSendPause;
+            const manualBtn = $("#batchSendManualBtn");
+            if (manualBtn) manualBtn.onclick = handleBatchSendManual;
+            refreshBatchSendControls().catch(() => {});
+            startBatchSendStatusPoll();
+        } else {
+            stopBatchSendStatusPoll();
+        }
+
         modal.hidden = false;
         document.body.classList.add("modal-open");
         if (titleEl) titleEl.textContent = label;
@@ -525,6 +546,7 @@ function closeTaskModal() {
         && currentTaskModal.executionId == null;
 
     stopTaskModalPolling();
+    stopBatchSendStatusPoll();
     $("#taskProgressModal").hidden = true;
     document.body.classList.remove("modal-open");
     currentTaskModal = null;
@@ -634,6 +656,23 @@ function updateTaskModalFromProgress(progress, generation) {
         messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.demotionReasons);
     }
 
+    // Batch send (MANUAL_INITIAL_OUTREACH): render per-account stats from progress.details (I-8).
+    // Button/badge states are driven by the slower /batch-send/status poll (refreshBatchSendControls).
+    if (currentTaskModal && currentTaskModal.taskType === "MANUAL_INITIAL_OUTREACH"
+        && progress.details && progress.details.accounts != null) {
+        const d = progress.details;
+        renderBatchSendAccountTable({
+            status: "RUNNING",
+            mode: d.executionMode || "MANUAL",
+            roundNumber: d.roundNumber ?? 0,
+            dailyCap: d.dailyCap ?? 0,
+            dailySentTotal: d.dailySentTotal ?? 0,
+            sentTotal: d.sentTotal ?? 0,
+            failedTotal: d.failedTotal ?? 0,
+            accounts: d.accounts || []
+        });
+    }
+
     if (currentTaskModal) {
         const justObservedTerminal = observeTaskModalProgress(progress, generation);
         if (justObservedTerminal) {
@@ -656,6 +695,11 @@ function updateTaskModalFromProgress(progress, generation) {
             }
 
             finalizeCurrentTaskModalTerminal(currentTaskModal.taskType, generation);
+            // Batch send: refresh controls + banner on terminal so the operator sees the
+            // resulting flow state (e.g. PAUSED + NO_AVAILABLE_ACCOUNT) immediately.
+            if (currentTaskModal && currentTaskModal.taskType === "MANUAL_INITIAL_OUTREACH") {
+                refreshBatchSendControls().catch(() => {});
+            }
         }
     }
 
@@ -986,24 +1030,35 @@ async function refreshCurrentView() {
 
 async function loadAccounts() {
     state.accounts = await api("/api/mail/sender-accounts");
-    $("#accountsTable").innerHTML = state.accounts.map((account) => `
+    $("#accountsTable").innerHTML = state.accounts.map((account) => {
+        const autoPaused = account.autoSendPaused === true;
+        const statusCell = badge(account.enabled ? "启用" : "禁用", account.enabled ? "ok" : "error")
+            + (autoPaused
+                ? ` <span class="badge warn" title="${escapeHtml(account.autoSendPausedReason || "自动暂停")}">自动暂停</span>`
+                : "");
+        const actions = [
+            `<button class="button" data-action="view-account" data-code="${escapeHtml(account.accountCode)}">查看</button>`,
+            `<button class="button" data-action="edit-account" data-code="${escapeHtml(account.accountCode)}">编辑</button>`,
+            `<button class="button" data-action="test-account" data-code="${escapeHtml(account.accountCode)}">测试</button>`,
+            `<button class="button" data-action="toggle-account" data-code="${escapeHtml(account.accountCode)}" data-enabled="${account.enabled}">
+                ${account.enabled ? "禁用" : "启用"}
+            </button>`,
+            `<button class="button" data-action="reset-account" data-code="${escapeHtml(account.accountCode)}">重置</button>`
+        ];
+        if (autoPaused) {
+            actions.push(`<button class="button" data-action="resume-auto-send" data-code="${escapeHtml(account.accountCode)}">恢复发送</button>`);
+        }
+        return `
         <tr>
             <td><strong>${escapeHtml(account.accountCode)}</strong></td>
             <td>${escapeHtml(account.senderEmail)}</td>
             <td>${account.strategyWeight}</td>
             <td>${account.todaySentCount}/${account.dailySendLimit}</td>
-            <td>${badge(account.enabled ? "启用" : "禁用", account.enabled ? "ok" : "error")}</td>
-            <td class="actions">
-                <button class="button" data-action="view-account" data-code="${escapeHtml(account.accountCode)}">查看</button>
-                <button class="button" data-action="edit-account" data-code="${escapeHtml(account.accountCode)}">编辑</button>
-                <button class="button" data-action="test-account" data-code="${escapeHtml(account.accountCode)}">测试</button>
-                <button class="button" data-action="toggle-account" data-code="${escapeHtml(account.accountCode)}" data-enabled="${account.enabled}">
-                    ${account.enabled ? "禁用" : "启用"}
-                </button>
-                <button class="button" data-action="reset-account" data-code="${escapeHtml(account.accountCode)}">重置</button>
-            </td>
+            <td>${statusCell}</td>
+            <td class="actions">${actions.join("")}</td>
         </tr>
-    `).join("");
+    `;
+    }).join("");
 }
 
 function showAccountEditor() {
@@ -1130,6 +1185,12 @@ async function handleAccountAction(button) {
     if (action === "reset-account") {
         await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/reset-today-sent-count`, { method: "POST" });
         await loadAccounts();
+    }
+    if (action === "resume-auto-send") {
+        await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/resume-auto-send`, { method: "POST" });
+        showStatus(`账号 ${code} 已恢复自动发送`, "ok");
+        await loadAccounts();
+        refreshBatchSendBanner().catch(() => {});
     }
 }
 
@@ -1746,7 +1807,21 @@ const taskLaunchConfigs = {
         preload: async () => {
             const countRes = await api("/api/mail/manual-outreach/pending-count");
             const summary = summarizeManualOutreachPending(countRes);
-            return { desc: summary.confirmMessage, canRun: summary.total > 0 };
+            let batchConfig = null;
+            let batchStatus = null;
+            try {
+                batchConfig = await api("/api/mail/batch-send/config");
+            } catch (e) { /* config optional */ }
+            try {
+                batchStatus = await api("/api/mail/batch-send/status");
+            } catch (e) { /* status optional */ }
+            return {
+                desc: summary.confirmMessage,
+                canRun: summary.total > 0,
+                batchConfig,
+                batchStatus,
+                summary
+            };
         },
         run: executeManualOutreach
     },
@@ -1773,6 +1848,7 @@ async function openTaskLaunchModal(taskType) {
     const config = taskLaunchConfigs[taskType];
     if (!config) return;
 
+    const isBatchSend = taskType === "MANUAL_INITIAL_OUTREACH";
     const modal = $("#taskProgressModal");
     $("#taskModalTitle").textContent = config.title;
 
@@ -1788,11 +1864,24 @@ async function openTaskLaunchModal(taskType) {
     const filtersRow = $("#taskLaunchFiltersRow");
     filtersRow.hidden = true;
 
+    // Batch-send-specific panels (hidden by default for other task types)
+    const batchConfigPanel = $("#batchSendConfigPanel");
+    const batchControlBar = $("#batchSendControlBar");
+    const batchProgressPanel = $("#batchSendProgressPanel");
+    if (batchConfigPanel) batchConfigPanel.hidden = !isBatchSend;
+    if (batchControlBar) batchControlBar.hidden = !isBatchSend;
+    if (batchProgressPanel) batchProgressPanel.hidden = true;
+    // For batch send, hide the generic run button row (the control bar takes over);
+    // for other tasks, keep the generic run button row visible.
+    const genericRunRow = runBtn ? runBtn.parentElement : null;
+    if (genericRunRow) genericRunRow.hidden = isBatchSend;
+
+    let pre = null;
     if (config.preload) {
         $("#taskLaunchDesc").textContent = "正在准备任务信息...";
         runBtn.disabled = true;
         try {
-            const pre = await config.preload();
+            pre = await config.preload();
             $("#taskLaunchDesc").textContent = pre.desc;
             runBtn.disabled = !pre.canRun;
             if (pre.filters && config.showFilters) {
@@ -1837,6 +1926,29 @@ async function openTaskLaunchModal(taskType) {
         $("#taskModalProgressSection").hidden = false;
         config.run();
     };
+
+    // Batch send: fill config form + initialize control bar from preloaded status
+    if (isBatchSend) {
+        if (pre && pre.batchConfig) fillBatchSendConfigForm(pre.batchConfig);
+        const startBtn = $("#batchSendStartBtn");
+        if (startBtn) startBtn.onclick = handleBatchSendStart;
+        const pauseBtn = $("#batchSendPauseBtn");
+        if (pauseBtn) pauseBtn.onclick = handleBatchSendPause;
+        const manualBtn = $("#batchSendManualBtn");
+        if (manualBtn) manualBtn.onclick = handleBatchSendManual;
+        const saveCfgBtn = $("#batchSendSaveConfigBtn");
+        if (saveCfgBtn) saveCfgBtn.onclick = saveBatchSendConfig;
+        // Initial controls state from preloaded status (or fresh fetch if missing)
+        if (pre && pre.batchStatus) {
+            applyBatchSendControls(pre.batchStatus);
+        } else {
+            refreshBatchSendControls().catch(() => {});
+        }
+        // Start a slow status poll while the modal is open (keeps buttons/badges in sync)
+        startBatchSendStatusPoll();
+    } else {
+        stopBatchSendStatusPoll();
+    }
 
     $("#taskModalRunBody").innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
     $("#taskModalErrors").hidden = true;
@@ -2118,32 +2230,350 @@ async function handleBulkOutreach() {
     openTaskLaunchModal(taskType);
 }
 
-async function executeManualOutreach() {
-    const taskType = "MANUAL_INITIAL_OUTREACH";
+const BATCH_SEND_TASK_TYPE = "MANUAL_INITIAL_OUTREACH";
+
+// Open PROGRESS modal and POST a batch-send launch endpoint (shared by 开始/手动).
+async function launchBatchSendWithProgress(endpoint, options = {}) {
+    const taskType = BATCH_SEND_TASK_TYPE;
+    const { successMessage, onError } = options;
+
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
-        return;
+        return false;
     }
+
     openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const response = await api("/api/mail/manual-outreach/start", { method: "POST" });
+        const response = await api(endpoint, { method: "POST" });
         if (response && response.executionId != null) {
             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
         }
         markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+        if (successMessage) showStatus(successMessage, "ok");
+        return true;
     } catch (e) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");
             stopTaskWatcher(taskType, true);
-            return;
+        } else if (onError) {
+            onError(e);
+        } else {
+            showStatus("启动发送失败: " + e.message, "error");
+            showTaskErrorLog(e.message);
         }
-        showStatus("启动发送失败: " + e.message, "error");
-        showTaskErrorLog(e.message);
         stopTaskModalPolling();
         stopTaskWatcher(taskType, true);
         hideProgressBar();
+        return false;
+    }
+}
+
+async function executeManualOutreach() {
+    await launchBatchSendWithProgress("/api/mail/manual-outreach/start");
+}
+
+// ----- Batch Send controls (phase 04: I-2 / I-5 / I-8 / I-9 / L4-1 / L4-2) -----
+let batchSendStatusTimer = null;
+let batchSendBannerTimer = null;
+const BATCH_SEND_STATUS_POLL_MS = 10000;
+const BATCH_SEND_BANNER_POLL_MS = 30000;
+
+function batchSendModeLabel(mode) {
+    if (mode === "AUTO") return "自动定时";
+    if (mode === "MANUAL") return "手动";
+    return "—";
+}
+
+function batchSendStatusLabel(status) {
+    if (status === "RUNNING") return "运行中";
+    if (status === "PAUSED") return "已暂停";
+    if (status === "IDLE") return "空闲";
+    return status || "—";
+}
+
+function batchSendStatusBadgeType(status) {
+    if (status === "RUNNING") return "primary";
+    if (status === "PAUSED") return "warn";
+    return "";
+}
+
+// L4-1: button enable/disable driven entirely by backend status.
+// Returns the disabled-state map for a given status so it can be unit-tested.
+function batchSendButtonStates(status) {
+    switch (status) {
+        case "IDLE":
+            return { start: false, pause: true, manual: true };
+        case "RUNNING":
+            return { start: true, pause: false, manual: true };
+        case "PAUSED":
+            return { start: false, pause: true, manual: false };
+        default:
+            return { start: true, pause: true, manual: true };
+    }
+}
+
+// Pure DOM application of controls + badges + account table (I-2/I-8/I-9/L4-1).
+function applyBatchSendControls(statusView) {
+    if (!statusView) return;
+    const status = statusView.status || "IDLE";
+    const mode = statusView.mode || "NONE";
+    const states = batchSendButtonStates(status);
+
+    const startBtn = $("#batchSendStartBtn");
+    const pauseBtn = $("#batchSendPauseBtn");
+    const manualBtn = $("#batchSendManualBtn");
+    if (startBtn) {
+        startBtn.disabled = states.start;
+        startBtn.textContent = status === "PAUSED" ? "继续/恢复" : "开始执行";
+    }
+    if (pauseBtn) pauseBtn.disabled = states.pause;
+    if (manualBtn) manualBtn.disabled = states.manual;
+
+    const modeBadge = $("#batchSendModeBadge");
+    if (modeBadge) {
+        modeBadge.textContent = batchSendModeLabel(mode);
+        modeBadge.className = "badge " + (mode === "AUTO" ? "primary" : mode === "MANUAL" ? "warn" : "");
+    }
+    const statusBadge = $("#batchSendStatusBadge");
+    if (statusBadge) {
+        statusBadge.textContent = batchSendStatusLabel(status);
+        statusBadge.className = "badge " + batchSendStatusBadgeType(status);
+    }
+
+    renderBatchSendAccountTable(statusView);
+    applyBatchSendBanner(statusView);
+}
+
+async function refreshBatchSendControls() {
+    try {
+        const statusView = await api("/api/mail/batch-send/status");
+        applyBatchSendControls(statusView);
+        return statusView;
+    } catch (e) {
+        // Status endpoint failure: leave controls as-is (don't blind the operator).
+        return null;
+    }
+}
+
+function fillBatchSendConfigForm(config) {
+    if (!config) return;
+    const setVal = (id, v) => { const el = $("#" + id); if (el) el.value = v; };
+    const setChecked = (id, v) => { const el = $("#" + id); if (el) el.checked = !!v; };
+    setChecked("batchSendAutoEnabled", config.autoEnabled);
+    setVal("batchSendCron", config.cron || "");
+    setVal("batchSendDailyCap", config.dailyCap ?? "");
+    setVal("batchSendRoundSize", config.roundSize ?? "");
+    // ms -> seconds for the UI
+    setVal("batchSendPerMailIntervalSec", config.perMailIntervalMs != null ? Math.round(config.perMailIntervalMs / 1000) : "");
+    setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
+    setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
+}
+
+// Reads the form and returns the PUT payload (seconds -> ms). Throws on invalid input.
+function readBatchSendConfigForm() {
+    const val = (id) => $("#" + id)?.value;
+    const num = (id) => {
+        const raw = val(id);
+        const n = Number(raw);
+        if (raw === "" || raw == null || Number.isNaN(n)) throw new Error("字段 " + id + " 需为数字");
+        return n;
+    };
+    const cron = (val("batchSendCron") || "").trim();
+    if (!cron) throw new Error("定时表达式不能为空");
+    const payload = {
+        autoEnabled: !!$("#batchSendAutoEnabled")?.checked,
+        cron,
+        dailyCap: Math.round(num("batchSendDailyCap")),
+        roundSize: Math.round(num("batchSendRoundSize")),
+        perMailIntervalMs: Math.round(num("batchSendPerMailIntervalSec") * 1000),
+        perRoundIntervalMs: Math.round(num("batchSendPerRoundIntervalSec") * 1000),
+        selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin"))
+    };
+    if (payload.roundSize < 1) throw new Error("每轮数量需 ≥ 1");
+    if (payload.dailyCap < payload.roundSize) throw new Error("每日上限需 ≥ 每轮数量");
+    if (payload.perMailIntervalMs < 0) throw new Error("每封间隔需 ≥ 0");
+    if (payload.perRoundIntervalMs < 0) throw new Error("每轮间隔需 ≥ 0");
+    if (payload.selfCheckTtlMinutes < 1) throw new Error("自检 TTL 需 ≥ 1");
+    return payload;
+}
+
+async function saveBatchSendConfig() {
+    const btn = $("#batchSendSaveConfigBtn");
+    const hint = $("#batchSendConfigSaveHint");
+    if (btn) btn.disabled = true;
+    if (hint) { hint.hidden = true; hint.textContent = ""; }
+    let payload;
+    try {
+        payload = readBatchSendConfigForm();
+    } catch (e) {
+        if (hint) { hint.textContent = "配置校验失败: " + e.message; hint.hidden = false; }
+        if (btn) btn.disabled = false;
+        return;
+    }
+    try {
+        const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
+        fillBatchSendConfigForm(saved);
+        if (hint) { hint.textContent = "已保存"; hint.hidden = false; }
+        showStatus("批量发送配置已保存", "ok");
+    } catch (e) {
+        if (hint) { hint.textContent = "保存失败: " + e.message; hint.hidden = false; }
+        showStatus("批量发送配置保存失败: " + e.message, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// I-8: render per-account stats + flow-level summary from /batch-send/status (or progress.details).
+function renderBatchSendAccountTable(statusView) {
+    const panel = $("#batchSendProgressPanel");
+    const tbody = $("#batchSendAccountTable");
+    const summary = $("#batchSendSummaryRow");
+    if (!panel || !tbody) return;
+    const accounts = Array.isArray(statusView?.accounts) ? statusView.accounts : [];
+    const showPanel = accounts.length > 0 || statusView?.status === "RUNNING" || statusView?.status === "PAUSED";
+    panel.hidden = !showPanel;
+    if (!showPanel) return;
+
+    if (summary) {
+        const cap = statusView?.dailyCap ?? 0;
+        const daily = statusView?.dailySentTotal ?? 0;
+        const sent = statusView?.sentTotal ?? 0;
+        const failed = statusView?.failedTotal ?? 0;
+        const round = statusView?.roundNumber ?? 0;
+        summary.innerHTML = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>`;
+    }
+
+    if (accounts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = accounts.map((a) => {
+        const statusCell = a.paused
+            ? `<span class="badge warn" title="${escapeHtml(a.pauseReason || "自动暂停")}">自动暂停</span>`
+            : `<span class="badge ok">正常</span>`;
+        return `
+            <tr>
+                <td><strong>${escapeHtml(a.accountCode)}</strong></td>
+                <td>${a.todaySent}/${a.dailyLimit}</td>
+                <td>${a.success}</td>
+                <td>${a.failed}</td>
+                <td>${statusCell}</td>
+            </tr>`;
+    }).join("");
+}
+
+// "开始执行/继续" handler. IDLE -> full manual start; PAUSED -> resume auto loop.
+async function handleBatchSendStart() {
+    const startBtn = $("#batchSendStartBtn");
+    if (startBtn) startBtn.disabled = true;
+    try {
+        const statusView = await refreshBatchSendControls();
+        const status = statusView?.status || "IDLE";
+        if (status === "PAUSED") {
+            // "继续/恢复": resume the AUTO loop. POST first so 409 does not open an empty progress view.
+            // Backend may 409 if not IDLE/autoEnabled; surface the message so the operator can use "手动".
+            try {
+                await api("/api/mail/batch-send/start-auto", { method: "POST" });
+                openTaskModal(BATCH_SEND_TASK_TYPE, "批量发送介绍邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
+                showStatus("已请求恢复自动定时发送", "ok");
+            } catch (e) {
+                showStatus("恢复失败: " + e.message + "（可使用「手动」执行一轮或等待下次定时）", "warn");
+            }
+        } else {
+            // IDLE: full manual run via the existing outreach start path.
+            await executeManualOutreach();
+        }
+    } finally {
+        refreshBatchSendControls().catch(() => {});
+    }
+}
+
+async function handleBatchSendPause() {
+    const pauseBtn = $("#batchSendPauseBtn");
+    if (pauseBtn) pauseBtn.disabled = true;
+    try {
+        await api("/api/mail/batch-send/pause", { method: "POST" });
+        showStatus("已请求暂停批量发送", "ok");
+    } catch (e) {
+        showStatus("暂停失败: " + e.message, "error");
+    } finally {
+        refreshBatchSendControls().catch(() => {});
+    }
+}
+
+async function handleBatchSendManual() {
+    const manualBtn = $("#batchSendManualBtn");
+    if (manualBtn) manualBtn.disabled = true;
+    try {
+        await launchBatchSendWithProgress("/api/mail/batch-send/manual", {
+            successMessage: "已请求手动执行一轮发送",
+            onError(e) {
+                // 409 when not PAUSED (I-9 backend guard) -> friendly hint.
+                const msg = e.message || "";
+                if (msg.includes("PAUSED") || msg.includes("手动执行仅")) {
+                    showStatus("请先暂停流程后再使用手动执行", "warn");
+                } else {
+                    showStatus("手动执行失败: " + msg, "error");
+                }
+            }
+        });
+    } finally {
+        refreshBatchSendControls().catch(() => {});
+    }
+}
+
+function startBatchSendStatusPoll() {
+    stopBatchSendStatusPoll();
+    batchSendStatusTimer = setInterval(() => {
+        refreshBatchSendControls().catch(() => {});
+    }, BATCH_SEND_STATUS_POLL_MS);
+}
+
+function stopBatchSendStatusPoll() {
+    if (batchSendStatusTimer) {
+        clearInterval(batchSendStatusTimer);
+        batchSendStatusTimer = null;
+    }
+}
+
+// I-5 / L4-2: banner source of truth is GET /batch-send/status (persisted, survives refresh).
+function applyBatchSendBanner(statusView) {
+    const banner = $("#batchSendPausedBanner");
+    if (!banner) return;
+    const textEl = $("#batchSendPausedBannerText");
+    const isNoAccount = statusView
+        && statusView.status === "PAUSED"
+        && statusView.pauseReason === "NO_AVAILABLE_ACCOUNT";
+    banner.hidden = !isNoAccount;
+    if (isNoAccount && textEl) {
+        textEl.textContent = "批量发送已暂停：无可用邮箱账号，请检查并恢复账号。";
+    }
+}
+
+async function refreshBatchSendBanner() {
+    try {
+        const statusView = await api("/api/mail/batch-send/status");
+        applyBatchSendBanner(statusView);
+        return statusView;
+    } catch (e) {
+        return null;
+    }
+}
+
+function initBatchSendBanner() {
+    refreshBatchSendBanner().catch(() => {});
+    stopBatchSendBannerPoll();
+    batchSendBannerTimer = setInterval(() => {
+        refreshBatchSendBanner().catch(() => {});
+    }, BATCH_SEND_BANNER_POLL_MS);
+}
+
+function stopBatchSendBannerPoll() {
+    if (batchSendBannerTimer) {
+        clearInterval(batchSendBannerTimer);
+        batchSendBannerTimer = null;
     }
 }
 
@@ -4722,6 +5152,7 @@ function startAuthenticatedApp(username) {
         appStarted = true;
         updateUnmatchedBadge();
         resumeProgressPollingIfNeeded().catch(() => {});
+        initBatchSendBanner();
         refreshCurrentView();
     }
 }
@@ -4732,6 +5163,8 @@ function stopAuthenticatedApp() {
     if (shell) {
         shell.style.display = "none";
     }
+    stopBatchSendBannerPoll();
+    stopBatchSendStatusPoll();
     stopAllWatchers();
     if (currentTaskModal) {
         stopTaskModalPolling();

@@ -56,40 +56,78 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V25`() {
+    fun `fresh database migrates through V28`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("25", flyway.migrate().targetSchemaVersion)
+        assertEquals("28", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
-    fun `database at original V23 upgrades to V25 without repair`() {
+    fun `V27 seeds batch_send_setting with default rows`() {
+        val flyway = flyway()
+        flyway.clean()
+        flyway.migrate()
+        connection().use { connection ->
+            assertTrue(connection.tableExists("batch_send_setting"))
+            assertTrue(connection.columnExists("batch_send_setting", "setting_key"))
+            assertTrue(connection.columnExists("batch_send_setting", "setting_value"))
+            assertEquals(10L, connection.queryLong("SELECT COUNT(*) FROM batch_send_setting"))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM batch_send_setting WHERE setting_key = 'batchSend.cron' AND setting_value = '0 0 0 * * ?'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM batch_send_setting WHERE setting_key = 'batchSend.runtimeStatus' AND setting_value = 'IDLE'"
+            ))
+        }
+    }
+
+    @Test
+    fun `V28 adds auto_send_paused columns to mail_sender_account`() {
+        val flyway = flyway()
+        flyway.clean()
+        flyway.migrate()
+        connection().use { connection ->
+            assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused"))
+            assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused_reason"))
+            assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused_at"))
+            assertEquals(0L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_sender_account WHERE auto_send_paused = 1"
+            ))
+        }
+    }
+
+    @Test
+    fun `database at original V23 upgrades to V28 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("25", flyway().migrate().targetSchemaVersion)
+        assertEquals("28", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
+            assertTrue(connection.tableExists("batch_send_setting"))
+            assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused"))
         }
     }
 
     @Test
-    fun `database at original V24 upgrades to V25 without repair`() {
+    fun `database at original V24 upgrades to V28 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("25", flyway().migrate().targetSchemaVersion)
+        assertEquals("28", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
             assertTrue(connection.columnExists("admin_user", "password_hash"))
             assertTrue(connection.columnExists("admin_user", "must_change_password"))
+            assertTrue(connection.tableExists("batch_send_setting"))
+            assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused"))
         }
     }
 
@@ -117,7 +155,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("25", flyway().migrate().targetSchemaVersion)
+        assertEquals("28", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
@@ -164,7 +202,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("25", flyway().migrate().targetSchemaVersion)
+        assertEquals("28", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }

@@ -42,6 +42,7 @@ function createSandbox() {
         clearTimeout: () => {},
         openTaskLaunchModal: () => {},
         stopTaskModalPolling: () => {},
+        stopBatchSendStatusPoll: () => {},
         showStatus: () => {},
         restoreTaskButton: () => {}
     };

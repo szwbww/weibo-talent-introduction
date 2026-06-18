@@ -2,7 +2,10 @@ package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.weibo.talentintroduction.campaign.service.BatchSendControlService
+import com.weibo.talentintroduction.campaign.service.BatchSendStatusView
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
+import com.weibo.talentintroduction.campaign.service.AccountStatRow
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
 import com.weibo.talentintroduction.mail.service.AutoMailReplyService
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyResult
@@ -20,6 +23,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import java.time.LocalDateTime
 
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
@@ -37,6 +41,7 @@ class MailAutomationControllerTest {
     private val manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val manualOutreachExecutor = Mockito.mock(Executor::class.java)
+    private val batchSendControlService = Mockito.mock(BatchSendControlService::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
 
     private var capturedTriggerType: String? = null
@@ -51,7 +56,8 @@ class MailAutomationControllerTest {
         taskExecutionService = taskExecutionService,
         manualInitialOutreachService = manualInitialOutreachService,
         progressStore = progressStore,
-        manualOutreachExecutor = manualOutreachExecutor
+        manualOutreachExecutor = manualOutreachExecutor,
+        batchSendControlService = batchSendControlService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -269,55 +275,155 @@ class MailAutomationControllerTest {
     }
 
     @Test
-    fun `startManualOutreach returns 202 and runs bulk outreach successfully`() {
-        Mockito.doReturn(Pair(true, 12345L))
-            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
-
-        Mockito.doAnswer { invocation ->
-            @Suppress("UNCHECKED_CAST")
-            val onStarted = invocation.getArgument<(Long) -> Unit>(3)
-            onStarted(99L)
-            @Suppress("UNCHECKED_CAST")
-            val block = invocation.getArgument<() -> Any?>(4)
-            block()
-        }.`when`(taskExecutionService).runAndRecordWithResult<Any>(
-            eqValue("MANUAL_INITIAL_OUTREACH"), eqValue("MANUAL"), eqValue("manual-outreach"),
-            anyValue<(Long) -> Unit> { }, anyValue<() -> Any> { Any() }
+    fun `startManualOutreach delegates to control service and returns 202 when accepted`() {
+        Mockito.`when`(batchSendControlService.startManual()).thenReturn(
+            ResponseEntity.accepted().body(mapOf("message" to "已启动"))
         )
 
         val response = controller.startManualOutreach()
-        assertEquals(org.springframework.http.HttpStatus.ACCEPTED, response.statusCode)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
         assertEquals("已启动", response.body?.get("message"))
-
-        Mockito.verify(progressStore).bindExecutionId("MANUAL_INITIAL_OUTREACH", 12345L, 99L)
-        Mockito.verify(manualInitialOutreachService).runBulkOutreach(99L)
-        Mockito.verify(progressStore).clearExecutionContext("MANUAL_INITIAL_OUTREACH", 99L)
+        verify(batchSendControlService).startManual()
     }
 
     @Test
-    fun `startManualOutreach returns 409 when task is already running`() {
-        Mockito.doReturn(Pair(false, 0L))
-            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
+    fun `startManualOutreach returns 409 when control service rejects`() {
+        Mockito.`when`(batchSendControlService.startManual()).thenReturn(
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "流程当前状态为 RUNNING，无法开始（需 IDLE）"))
+        )
 
         val response = controller.startManualOutreach()
-        assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
-        assertEquals("任务正在执行中", response.body?.get("message"))
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message")!!.contains("IDLE"))
+        verify(batchSendControlService).startManual()
+    }
+
+    // ──── Phase 03: batch send control endpoints ────
+
+    @Test
+    fun `pauseBatchSend delegates to control service pause with OPERATOR reason`() {
+        Mockito.`when`(batchSendControlService.pause("OPERATOR")).thenReturn(
+            ResponseEntity.ok(mapOf("message" to "已暂停: OPERATOR"))
+        )
+
+        val response = controller.pauseBatchSend()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals("已暂停: OPERATOR", response.body?.get("message"))
+        verify(batchSendControlService).pause("OPERATOR")
     }
 
     @Test
-    fun `startManualOutreach handles RejectedExecutionException, returns 500, updates progress and clears token`() {
-        Mockito.doReturn(Pair(true, 12345L))
-            .`when`(progressStore).tryStartWithToken(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)))
+    fun `pauseBatchSend returns 409 when control service rejects pause`() {
+        Mockito.`when`(batchSendControlService.pause("OPERATOR")).thenReturn(
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "流程当前状态为 IDLE，无法暂停（需 RUNNING）"))
+        )
 
-        Mockito.doThrow(java.util.concurrent.RejectedExecutionException("Queue full"))
-            .`when`(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
+        val response = controller.pauseBatchSend()
 
-        val response = controller.startManualOutreach()
-        assertEquals(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode)
-        assertTrue(response.body?.get("message")!!.contains("启动失败"))
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        verify(batchSendControlService).pause("OPERATOR")
+    }
 
-        Mockito.verify(progressStore).update(eqValue("MANUAL_INITIAL_OUTREACH"), anyValue(TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)), eqValue(12345L))
-        Mockito.verify(progressStore).clearExecutionContext("MANUAL_INITIAL_OUTREACH", 12345L)
+    @Test
+    fun `runManualOnce delegates to control service and returns 202 when PAUSED`() {
+        Mockito.`when`(batchSendControlService.runManualOnce()).thenReturn(
+            ResponseEntity.accepted().body(mapOf("message" to "已启动"))
+        )
+
+        val response = controller.runManualOnce()
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        verify(batchSendControlService).runManualOnce()
+    }
+
+    @Test
+    fun `runManualOnce returns 409 when control service rejects non-PAUSED state`() {
+        Mockito.`when`(batchSendControlService.runManualOnce()).thenReturn(
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "流程当前状态为 RUNNING，手动执行仅在 PAUSED 时可用"))
+        )
+
+        val response = controller.runManualOnce()
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message")!!.contains("PAUSED"))
+        verify(batchSendControlService).runManualOnce()
+    }
+
+    @Test
+    fun `startAutoBatchSend delegates to control service startAuto`() {
+        Mockito.`when`(batchSendControlService.startAuto()).thenReturn(
+            ResponseEntity.accepted().body(mapOf("message" to "已启动"))
+        )
+
+        val response = controller.startAutoBatchSend()
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        verify(batchSendControlService).startAuto()
+    }
+
+    @Test
+    fun `startAutoBatchSend returns 409 when autoEnabled is false`() {
+        Mockito.`when`(batchSendControlService.startAuto()).thenReturn(
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "自动定时发送未启用"))
+        )
+
+        val response = controller.startAutoBatchSend()
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        verify(batchSendControlService).startAuto()
+    }
+
+    @Test
+    fun `getBatchSendStatus returns status view from control service`() {
+        val statusView = BatchSendStatusView(
+            status = "PAUSED",
+            mode = "AUTO",
+            pauseReason = "NO_AVAILABLE_ACCOUNT",
+            roundNumber = 3,
+            dailyCap = 1000,
+            dailySentTotal = 42,
+            sentTotal = 42,
+            failedTotal = 2,
+            accounts = listOf(
+                AccountStatRow("chen", todaySent = 42, dailyLimit = 100, success = 40, failed = 2, paused = false, pauseReason = null)
+            ),
+            executionId = 99L,
+            message = "流程已暂停: NO_AVAILABLE_ACCOUNT"
+        )
+        Mockito.`when`(batchSendControlService.getStatus()).thenReturn(statusView)
+
+        val result = controller.getBatchSendStatus()
+
+        assertEquals("PAUSED", result.status)
+        assertEquals("AUTO", result.mode)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.pauseReason)
+        assertEquals(3, result.roundNumber)
+        assertEquals(1000, result.dailyCap)
+        assertEquals(42, result.dailySentTotal)
+        assertEquals(1, result.accounts.size)
+        assertEquals("chen", result.accounts[0].accountCode)
+        assertEquals(40, result.accounts[0].success)
+        verify(batchSendControlService).getStatus()
+    }
+
+    @Test
+    fun `getBatchSendStatus returns IDLE status when flow not started`() {
+        val statusView = BatchSendStatusView(
+            status = "IDLE", mode = "NONE", pauseReason = "",
+            roundNumber = 0, dailyCap = 0, dailySentTotal = 0,
+            sentTotal = 0, failedTotal = 0,
+            accounts = emptyList(), executionId = null, message = null
+        )
+        Mockito.`when`(batchSendControlService.getStatus()).thenReturn(statusView)
+
+        val result = controller.getBatchSendStatus()
+
+        assertEquals("IDLE", result.status)
+        assertNull(result.executionId)
+        assertTrue(result.accounts.isEmpty())
     }
 
     private fun emptyBatchResult() = BatchAutoMailReplyResult(

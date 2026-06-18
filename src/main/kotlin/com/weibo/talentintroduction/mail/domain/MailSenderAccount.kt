@@ -28,6 +28,9 @@ data class MailSenderAccount(
     val todaySentCount: Int = 0,
     val lastSentAt: LocalDateTime? = null,
     val enabled: Boolean = true,
+    val autoSendPaused: Boolean = false,
+    val autoSendPausedReason: String? = null,
+    val autoSendPausedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )

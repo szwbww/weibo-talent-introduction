@@ -186,6 +186,9 @@ function createSandbox() {
             sandbox.updateUnmatchedBadgeCalled++;
         },
         resumeProgressPollingIfNeeded: async () => {},
+        initBatchSendBanner: () => {},
+        stopBatchSendBannerPoll: () => {},
+        stopBatchSendStatusPoll: () => {},
         location: {
             reloadCalled: 0,
             reload: () => {
@@ -293,6 +296,9 @@ function createBootstrapSandbox(authMeResponse) {
         updateUnmatchedBadge: () => { badgeCalled++; },
         resumeProgressPollingIfNeeded: async () => { resumePollingCalled++; },
         refreshCurrentView: () => { refreshViewCalled++; },
+        initBatchSendBanner: () => {},
+        stopBatchSendBannerPoll: () => {},
+        stopBatchSendStatusPoll: () => {},
 
         // Stubs for bootstrap sub-functions (not auth-relevant, just need to not crash)
         bindEvents: () => {},

@@ -7,7 +7,8 @@ import java.time.LocalDateTime
 
 @Service
 class MailSenderAccountService(
-    private val repository: MailSenderAccountRepository
+    private val repository: MailSenderAccountRepository,
+    private val selfCheckService: SenderAccountSelfCheckService
 ) {
     fun listAccounts(): List<MailSenderAccount> =
         repository.findAllByOrderByAccountCodeAsc()
@@ -102,11 +103,29 @@ class MailSenderAccountService(
         return repository.save(existing.copy(todaySentCount = 0))
     }
 
+    fun pauseAutoSend(accountCode: String, reason: String) {
+        repository.pauseAutoSend(accountCode, reason, java.time.LocalDateTime.now())
+    }
+
+    fun resumeAutoSend(accountCode: String) {
+        repository.resumeAutoSend(accountCode)
+        selfCheckService.invalidate(accountCode)
+    }
+
     fun selectAccountForSending(): MailSenderAccount =
         repository.findAllByEnabledTrue()
-            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != SIMULATOR_ACCOUNT_CODE }
+            .filter { isSendable(it) }
             .maxWithOrNull(compareBy<MailSenderAccount> { selectionScore(it) }.thenBy { it.id ?: 0L })
             ?: error("No available mail sender account")
+
+    fun listSendableAccounts(): List<MailSenderAccount> =
+        repository.findAllByEnabledTrue().filter { isSendable(it) }
+
+    private fun isSendable(account: MailSenderAccount): Boolean =
+        account.enabled &&
+            !account.autoSendPaused &&
+            account.todaySentCount < account.dailySendLimit &&
+            account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun selectionScore(account: MailSenderAccount): Double {
         val remainingRatio = (account.dailySendLimit - account.todaySentCount).toDouble() / account.dailySendLimit

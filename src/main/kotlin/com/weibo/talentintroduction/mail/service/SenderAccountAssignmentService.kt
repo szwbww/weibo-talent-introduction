@@ -16,7 +16,7 @@ class SenderAccountAssignmentService(
     ): MailSenderAccount {
         val distributionKey = distributionKey(expert)
         return repository.findAllByEnabledTrue()
-            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
             .maxWithOrNull(
                 compareBy<MailSenderAccount> { account ->
                     assignmentScore(account, distributionKey, currentBatchAssignments)

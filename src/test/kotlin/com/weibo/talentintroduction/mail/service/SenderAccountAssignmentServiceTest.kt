@@ -50,7 +50,23 @@ class SenderAccountAssignmentServiceTest {
         assertEquals("zoe", selected.accountCode)
     }
 
-    private fun account(accountCode: String, strategyWeight: Int = 100): MailSenderAccount =
+    @Test
+    fun `excludes auto-paused account`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("paused", strategyWeight = 200, autoSendPaused = true),
+                account("zoe", strategyWeight = 100, autoSendPaused = false)
+            )
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States")
+        )
+
+        assertEquals("zoe", selected.accountCode)
+    }
+
+    private fun account(accountCode: String, strategyWeight: Int = 100, autoSendPaused: Boolean = false): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
             senderEmail = "$accountCode@qftechtalent.com",
@@ -67,7 +83,8 @@ class SenderAccountAssignmentServiceTest {
             imapPort = 993,
             imapUsername = "$accountCode@qftechtalent.com",
             imapPassword = "secret",
-            strategyWeight = strategyWeight
+            strategyWeight = strategyWeight,
+            autoSendPaused = autoSendPaused
         )
 
     private fun expert(country: String): ExpertProfile =

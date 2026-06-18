@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.mail.service.MailAccountConnectivityService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountCreateCommand
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountUpdateCommand
+import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -18,7 +19,8 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/mail/sender-accounts")
 class MailSenderAccountController(
     private val service: MailSenderAccountService,
-    private val connectivityService: MailAccountConnectivityService
+    private val connectivityService: MailAccountConnectivityService,
+    private val selfCheckService: SenderAccountSelfCheckService
 ) {
     @GetMapping
     fun listAccounts(): List<MailSenderAccountResponse> =
@@ -54,6 +56,16 @@ class MailSenderAccountController(
     @PostMapping("/{accountCode}/test-connectivity")
     fun testConnectivity(@PathVariable accountCode: String): MailAccountConnectivityResult =
         connectivityService.testAccount(accountCode)
+
+    @PostMapping("/{accountCode}/resume-auto-send")
+    fun resumeAutoSend(@PathVariable accountCode: String): MailSenderAccountResponse {
+        service.resumeAutoSend(accountCode)
+        return service.getAccount(accountCode).toResponse()
+    }
+
+    @PostMapping("/{accountCode}/self-check")
+    fun selfCheck(@PathVariable accountCode: String) =
+        selfCheckService.checkSendable(service.getAccount(accountCode))
 }
 
 data class MailSenderAccountCreateRequest(
@@ -161,7 +173,10 @@ data class MailSenderAccountResponse(
     val dailySendLimit: Int,
     val todaySentCount: Int,
     val lastSentAt: String?,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val autoSendPaused: Boolean,
+    val autoSendPausedReason: String?,
+    val autoSendPausedAt: String?
 )
 
 private fun MailSenderAccount.toResponse(): MailSenderAccountResponse =
@@ -184,5 +199,8 @@ private fun MailSenderAccount.toResponse(): MailSenderAccountResponse =
         dailySendLimit = dailySendLimit,
         todaySentCount = todaySentCount,
         lastSentAt = lastSentAt?.toString(),
-        enabled = enabled
+        enabled = enabled,
+        autoSendPaused = autoSendPaused,
+        autoSendPausedReason = autoSendPausedReason,
+        autoSendPausedAt = autoSendPausedAt?.toString()
     )

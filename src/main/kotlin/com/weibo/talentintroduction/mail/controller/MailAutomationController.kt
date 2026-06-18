@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.weibo.talentintroduction.campaign.service.BatchSendControlService
+import com.weibo.talentintroduction.campaign.service.BatchSendStatusView
 import com.weibo.talentintroduction.campaign.service.InitialOutreachBatchResult
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
@@ -35,7 +37,8 @@ class MailAutomationController(
     private val manualInitialOutreachService: ManualInitialOutreachService,
     private val progressStore: TaskProgressStore,
     @org.springframework.beans.factory.annotation.Qualifier("manualOutreachExecutor")
-    private val manualOutreachExecutor: java.util.concurrent.Executor
+    private val manualOutreachExecutor: java.util.concurrent.Executor,
+    private val batchSendControlService: BatchSendControlService
 ) {
     @PostMapping("/initial-outreach")
     fun sendInitialOutreach(
@@ -255,63 +258,39 @@ class MailAutomationController(
         manualInitialOutreachService.countPending()
 
     @PostMapping("/manual-outreach/start")
-    fun startManualOutreach(): ResponseEntity<Map<String, String>> {
-        val initialProgress = TaskProgress(
-            taskType = "MANUAL_INITIAL_OUTREACH",
-            status = "RUNNING",
-            batchNumber = 0,
-            processedCount = 0,
-            totalCount = 0,
-            message = "正在初始化发送队列...",
-            details = mapOf("pending" to 0, "sent" to 0, "failed" to 0)
-        )
-        val (started, pendingToken) = progressStore.tryStartWithToken("MANUAL_INITIAL_OUTREACH", initialProgress)
-        if (!started) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "任务正在执行中"))
-        }
+    fun startManualOutreach(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.startManual()
 
-        try {
-            manualOutreachExecutor.execute {
-                var executionId: Long? = null
-                try {
-                    taskExecutionService.runAndRecordWithResult(
-                        "MANUAL_INITIAL_OUTREACH", "MANUAL", "manual-outreach",
-                        onStarted = { id ->
-                            executionId = id
-                            progressStore.bindExecutionId("MANUAL_INITIAL_OUTREACH", pendingToken, id)
-                        }
-                    ) {
-                        manualInitialOutreachService.runBulkOutreach(executionId!!)
-                    }
-                } catch (ex: Exception) {
-                    progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
-                        taskType = "MANUAL_INITIAL_OUTREACH", status = "FAILED",
-                        batchNumber = 0, processedCount = 0, totalCount = 0,
-                        message = ex.message ?: "初始化失败"
-                    ), executionId)
-                } finally {
-                    val execId = executionId
-                    if (execId != null) {
-                        progressStore.clearExecutionContext("MANUAL_INITIAL_OUTREACH", execId)
-                    } else {
-                        progressStore.clearExecutionContext("MANUAL_INITIAL_OUTREACH", pendingToken)
-                    }
-                }
-            }
-        } catch (reEx: java.util.concurrent.RejectedExecutionException) {
-            progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
-                taskType = "MANUAL_INITIAL_OUTREACH", status = "FAILED",
-                batchNumber = 0, processedCount = 0, totalCount = 0,
-                message = "启动失败: ${reEx.message}"
-            ), pendingToken)
-            progressStore.clearExecutionContext("MANUAL_INITIAL_OUTREACH", pendingToken)
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(mapOf("message" to "启动失败: 线程池满或已关闭"))
-        }
+    /**
+     * Operator "暂停" button (I-9): RUNNING → PAUSED. Cancels the active execution and
+     * persists the pause reason so it survives refresh (I-5/L3-3).
+     */
+    @PostMapping("/batch-send/pause")
+    fun pauseBatchSend(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.pause("OPERATOR")
 
-        return ResponseEntity.accepted().body(mapOf("message" to "已启动"))
-    }
+    /**
+     * Operator "手动" button (I-9): only allowed when PAUSED — runs one round then returns
+     * to PAUSED (L3-2). Returns 409 if not PAUSED.
+     */
+    @PostMapping("/batch-send/manual")
+    fun runManualOnce(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.runManualOnce()
+
+    /**
+     * Manual kick-off of the AUTO loop (optional, for admin/testing). Requires IDLE + autoEnabled.
+     */
+    @PostMapping("/batch-send/start-auto")
+    fun startAutoBatchSend(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.startAuto()
+
+    /**
+     * Status query (I-5): persisted runtime state + latest progress details. Survives refresh
+     * and restart (L3-3) so the frontend banner stays until the operator acts on it.
+     */
+    @GetMapping("/batch-send/status")
+    fun getBatchSendStatus(): BatchSendStatusView =
+        batchSendControlService.getStatus()
 
     private fun queuePublisher(): MailQueuePublisher =
         mailQueuePublisherProvider.getIfAvailable()

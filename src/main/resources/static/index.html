@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260610-responsive2">
+    <link rel="stylesheet" href="styles.css?v=20260618-batch-send">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -158,6 +158,12 @@
 
         <!-- Dynamic Status Bar notifications -->
         <section id="statusBar" class="status-bar" hidden></section>
+
+        <!-- Batch Send Paused Banner (I-5/L4-2: source of truth is GET /batch-send/status) -->
+        <div id="batchSendPausedBanner" class="batch-send-paused-banner" hidden>
+            <span class="batch-send-paused-banner-icon">⚠</span>
+            <span id="batchSendPausedBannerText">批量发送已暂停：无可用邮箱账号，请检查并恢复账号。</span>
+        </div>
 
         <!-- View 1: Mail Monitoring -->
         <section class="view" id="view-monitoring">
@@ -579,9 +585,63 @@
                     <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
                 </div>
 
+                <!-- Batch Send Config Panel (shown only for MANUAL_INITIAL_OUTREACH) -->
+                <div id="batchSendConfigPanel" class="batch-send-config-panel" hidden>
+                    <p class="batch-send-config-panel-hint">定时与定量参数（保存后立即生效，影响后续定时与手动执行）。</p>
+                    <div class="batch-send-config-grid">
+                        <label class="task-modal-input-label">
+                            自动定时开关
+                            <label class="batch-send-checkbox-row"><input type="checkbox" id="batchSendAutoEnabled" checked> 启用每天自动定时发送</label>
+                        </label>
+                        <label class="task-modal-input-label">
+                            定时表达式 (cron 或 每天 HH:mm)
+                            <input type="text" id="batchSendCron" class="task-modal-input-field" placeholder="如: 0 0 0 * * ? 或 00:00">
+                        </label>
+                        <label class="task-modal-input-label">
+                            每日上限 (dailyCap)
+                            <input type="number" id="batchSendDailyCap" class="task-modal-input-field" min="1" value="1000">
+                        </label>
+                        <label class="task-modal-input-label">
+                            每轮数量 (roundSize)
+                            <input type="number" id="batchSendRoundSize" class="task-modal-input-field" min="1" value="50">
+                        </label>
+                        <label class="task-modal-input-label">
+                            每封间隔 (秒)
+                            <input type="number" id="batchSendPerMailIntervalSec" class="task-modal-input-field" min="0" value="1">
+                        </label>
+                        <label class="task-modal-input-label">
+                            每轮间隔 (秒)
+                            <input type="number" id="batchSendPerRoundIntervalSec" class="task-modal-input-field" min="0" value="60">
+                        </label>
+                        <label class="task-modal-input-label">
+                            自检 TTL (分钟)
+                            <input type="number" id="batchSendSelfCheckTtlMin" class="task-modal-input-field" min="1" value="30">
+                        </label>
+                    </div>
+                    <div class="batch-send-config-actions">
+                        <button class="button secondary" id="batchSendSaveConfigBtn" type="button">保存配置</button>
+                        <span id="batchSendConfigSaveHint" class="batch-send-config-save-hint" hidden></span>
+                    </div>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
                     <button class="button secondary" onclick="closeTaskModal()">取消</button>
                     <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, #4facfe 100%); border: none; color: white;">开始执行</button>
+                </div>
+            </div>
+
+            <!-- Batch Send Control Bar (shown only for MANUAL_INITIAL_OUTREACH; visible in both CONFIG and PROGRESS modes) -->
+            <div id="batchSendControlBar" class="batch-send-control-bar" hidden>
+                <div class="batch-send-badges">
+                    <span class="batch-send-badge-label">模式:</span>
+                    <span id="batchSendModeBadge" class="badge">—</span>
+                    <span class="batch-send-badge-label">状态:</span>
+                    <span id="batchSendStatusBadge" class="badge">空闲</span>
+                </div>
+                <div class="batch-send-control-buttons">
+                    <button class="button primary" id="batchSendStartBtn" type="button">开始执行</button>
+                    <button class="button warn" id="batchSendPauseBtn" type="button" disabled>暂停</button>
+                    <button class="button secondary" id="batchSendManualBtn" type="button" disabled>手动</button>
                 </div>
             </div>
 
@@ -599,6 +659,26 @@
                 </div>
                 <div id="taskModalBySource" hidden style="margin-top: 10px; font-size: 11px;">
                     <div id="taskModalBySourceContent"></div>
+                </div>
+                <!-- Batch Send per-account stats (I-8); shown only for MANUAL_INITIAL_OUTREACH -->
+                <div id="batchSendProgressPanel" class="batch-send-progress-panel" hidden>
+                    <div id="batchSendSummaryRow" class="batch-send-summary-row"></div>
+                    <div class="batch-send-account-table-wrap">
+                        <table class="data-table compact batch-send-account-table">
+                            <thead>
+                                <tr>
+                                    <th>邮箱账号</th>
+                                    <th>今日已发/上限</th>
+                                    <th>成功</th>
+                                    <th>失败</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchSendAccountTable">
+                                <tr><td colspan="5" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="task-modal-actions" style="display: flex; justify-content: flex-end;">
                     <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
@@ -729,6 +809,6 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="app.js?v=20260610-responsive"></script>
+    <script src="app.js?v=20260618-batch-send"></script>
 </body>
 </html>

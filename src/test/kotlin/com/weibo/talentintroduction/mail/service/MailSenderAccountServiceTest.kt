@@ -12,7 +12,8 @@ import org.mockito.Mockito
 
 class MailSenderAccountServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
-    private val service = MailSenderAccountService(repository)
+    private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
+    private val service = MailSenderAccountService(repository, selfCheckService)
 
     @Test
     fun `selects enabled account with highest weighted remaining capacity`() {
@@ -27,6 +28,33 @@ class MailSenderAccountServiceTest {
         val selected = service.selectAccountForSending()
 
         assertEquals("balanced", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForSending excludes auto-paused accounts`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true),
+                account("balanced", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 10, autoSendPaused = false)
+            )
+        )
+
+        val selected = service.selectAccountForSending()
+
+        assertEquals("balanced", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForSending throws when all enabled accounts are auto-paused`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true)
+            )
+        )
+
+        assertThrows(IllegalStateException::class.java) {
+            service.selectAccountForSending()
+        }
     }
 
     @Test
@@ -169,12 +197,65 @@ class MailSenderAccountServiceTest {
         assertTrue(result.any { it.accountCode == "SIMULATOR_NOOP" })
     }
 
+    @Test
+    fun `pauseAutoSend delegates to repository with reason and timestamp`() {
+        service.pauseAutoSend("a1", "SELF_CHECK_FAILED:boom")
+
+        Mockito.verify(repository).pauseAutoSend(
+            Mockito.eq("a1") ?: "a1",
+            Mockito.eq("SELF_CHECK_FAILED:boom") ?: "",
+            Mockito.any(java.time.LocalDateTime::class.java) ?: java.time.LocalDateTime.now()
+        )
+    }
+
+    @Test
+    fun `pauseAutoSend does not modify enabled flag`() {
+        service.pauseAutoSend("a1", "reason")
+
+        Mockito.verify(repository, Mockito.never())
+            .save(Mockito.any(MailSenderAccount::class.java) ?: account("__any__"))
+    }
+
+    @Test
+    fun `resumeAutoSend delegates to repository and invalidates self-check cache`() {
+        service.resumeAutoSend("a1")
+
+        Mockito.verify(repository).resumeAutoSend(Mockito.eq("a1") ?: "a1")
+        Mockito.verify(selfCheckService).invalidate("a1")
+    }
+
+    @Test
+    fun `resumeAutoSend does not modify enabled flag`() {
+        service.resumeAutoSend("a1")
+
+        Mockito.verify(repository, Mockito.never())
+            .save(Mockito.any(MailSenderAccount::class.java) ?: account("__any__"))
+    }
+
+    @Test
+    fun `listSendableAccounts returns enabled non-paused non-simulator accounts under limit`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("ok", dailySendLimit = 100, todaySentCount = 5, autoSendPaused = false),
+                account("paused", dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true),
+                account("exhausted", dailySendLimit = 100, todaySentCount = 100, autoSendPaused = false),
+                account("SIMULATOR_NOOP", dailySendLimit = 100, todaySentCount = 0, autoSendPaused = false)
+            )
+        )
+
+        val result = service.listSendableAccounts()
+
+        assertEquals(1, result.size)
+        assertEquals("ok", result[0].accountCode)
+    }
+
     private fun account(
         accountCode: String,
         strategyWeight: Int = 100,
         dailySendLimit: Int = 100,
         todaySentCount: Int = 0,
-        enabled: Boolean = true
+        enabled: Boolean = true,
+        autoSendPaused: Boolean = false
     ): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
@@ -195,6 +276,7 @@ class MailSenderAccountServiceTest {
             strategyWeight = strategyWeight,
             dailySendLimit = dailySendLimit,
             todaySentCount = todaySentCount,
-            enabled = enabled
+            enabled = enabled,
+            autoSendPaused = autoSendPaused
         )
 }

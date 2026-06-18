@@ -17,12 +17,18 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
+import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
+import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.task.service.TaskProgress
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
@@ -42,6 +48,9 @@ class ManualInitialOutreachServiceTest {
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val properties = ManualOutreachProperties(sendIntervalMs = 0L)
     private val txHelper = Mockito.mock(ManualOutreachTxHelper::class.java)
+    private val batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java)
+    private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
+    private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
 
     private val service = ManualInitialOutreachService(
         expertSearchService = expertSearchService,
@@ -55,7 +64,22 @@ class ManualInitialOutreachServiceTest {
         mailSendAttemptRepository = mailSendAttemptRepository,
         progressStore = progressStore,
         properties = properties,
-        txHelper = txHelper
+        txHelper = txHelper,
+        batchSendSettingService = batchSendSettingService,
+        mailSenderAccountService = mailSenderAccountService,
+        selfCheckService = selfCheckService
+    )
+
+    private fun fastConfig(
+        roundSize: Int = 50,
+        dailyCap: Int = 1000,
+        perMailIntervalMs: Long = 0,
+        perRoundIntervalMs: Long = 0
+    ): BatchSendConfig = BatchSendConfig(
+        autoEnabled = false, cron = "0 0 0 * * ?",
+        dailyCap = dailyCap, roundSize = roundSize,
+        perMailIntervalMs = perMailIntervalMs, perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = 30
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -72,6 +96,15 @@ class ManualInitialOutreachServiceTest {
         // Default: no existing attempt (new expert)
         Mockito.`when`(mailSendAttemptRepository.findByOrcidIdAndMailType(Mockito.anyString(), Mockito.anyString()))
             .thenReturn(null)
+        // Default batch send config: fast intervals, generous caps
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig())
+        // Default: one sendable account "chen"
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(listOf(account("chen")))
+        Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(listOf(account("chen")))
+        // Default: self-check always passes (from cache, no probe)
+        Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")))).thenReturn(
+            SelfCheckResult("chen", passed = true, message = null, fromCache = true)
+        )
     }
 
     @Test
@@ -363,6 +396,261 @@ class ManualInitialOutreachServiceTest {
         assertEquals("chen", saved.accountCode)
     }
 
+    // ──── Phase 03: round-based scheduled batch tests ────
+
+    @Test
+    fun `runScheduledBatch triggers self-check for each sendable account at round gate`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg1", "SENT"))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        // L3-1: self-check invoked for the sendable account at the round gate
+        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")))
+    }
+
+    @Test
+    fun `runScheduledBatch pauses flow with NO_AVAILABLE_ACCOUNT when gate finds no sendable accounts`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        // Gate: no sendable accounts
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(emptyList())
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        // I-5: flow pauses with NO_AVAILABLE_ACCOUNT
+        assertEquals(0, result.sent)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        // No send attempt made
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `runScheduledBatch pauses when self-check fails all sendable accounts mid-gate`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+
+        // First call returns a candidate; after self-check pauses it, second call returns empty
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts())
+            .thenReturn(listOf(account("chen")))
+            .thenReturn(emptyList())
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        // Self-check was invoked for the candidate
+        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")))
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `runScheduledBatch respects dailyCap and stops full run with COMPLETED`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        // 5 experts, dailyCap=2, roundSize=10 → only 2 sent (L3-2/I-6)
+        stubScrolledExperts(listOf(
+            expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com"),
+            expert("0004", "g@h.com"), expert("0005", "i@j.com")
+        ))
+        for (orcid in listOf("0001", "0002", "0003", "0004", "0005")) {
+            Mockito.`when`(expertContactRepository.existsByOrcidId(orcid)).thenReturn(false)
+        }
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 2))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        // I-6/L3-2: at most dailyCap=2 mails sent
+        assertEquals(2, result.sent)
+        assertEquals(5, result.total)
+        // Full run hitting dailyCap → COMPLETED (IDLE for next day)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("","","")))
+    }
+
+    @Test
+    fun `runScheduledBatch oneRoundOnly returns PAUSED after single round`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        // 3 experts, roundSize=2 → one round sends 2, returns PAUSED (L3-2)
+        stubScrolledExperts(listOf(expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com")))
+        for (orcid in listOf("0001", "0002", "0003")) {
+            Mockito.`when`(expertContactRepository.existsByOrcidId(orcid)).thenReturn(false)
+        }
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 2, dailyCap = 1000))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // Only one round of 2 mails
+        assertEquals(2, result.sent)
+        assertEquals(3, result.total)
+        assertEquals(1, result.remaining)
+        // L3-2: oneRoundOnly returns to PAUSED
+        assertEquals("PAUSED", result.finalStatus)
+        assertEquals("ONE_ROUND_DONE", result.stopReason)
+        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("","","")))
+    }
+
+    @Test
+    fun `runScheduledBatch splits snapshot into multiple rounds`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        // 3 experts, roundSize=2, dailyCap=10 → 2 rounds (2 + 1)
+        stubScrolledExperts(listOf(expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com")))
+        for (orcid in listOf("0001", "0002", "0003")) {
+            Mockito.`when`(expertContactRepository.existsByOrcidId(orcid)).thenReturn(false)
+        }
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 2, dailyCap = 10))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        assertEquals(3, result.sent)
+        assertEquals(3, result.total)
+        assertEquals("COMPLETED", result.finalStatus)
+        // Round gate invoked for each round (2 rounds)
+        Mockito.verify(selfCheckService, Mockito.atLeast(2)).checkSendable(anyValue(account("chen")))
+    }
+
+    @Test
+    fun `runScheduledBatch progress details contain per-account stats`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        // I-8: capture progress updates and verify per-account stats + executionMode
+        val progressCaptor = org.mockito.ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("MANUAL_INITIAL_OUTREACH"),
+            captureValue(progressCaptor, TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)),
+            eqValue(12345L)
+        )
+        val finalProgress = progressCaptor.allValues.last()
+        val details = finalProgress.details
+        assertNotNull(details)
+        assertEquals("MANUAL", details!!["executionMode"])
+        assertEquals(1000, details["dailyCap"])
+        // accounts array present with per-account row
+        @Suppress("UNCHECKED_CAST")
+        val accounts = details["accounts"] as? List<AccountStatRow>
+        assertNotNull(accounts)
+        assertTrue(accounts!!.isNotEmpty())
+        val chenRow = accounts.first { it.accountCode == "chen" }
+        assertEquals(100, chenRow.dailyLimit)
+        assertEquals(1, chenRow.success)
+        assertEquals(0, chenRow.failed)
+        assertFalse(chenRow.paused)
+    }
+
+    @Test
+    fun `runScheduledBatch AUTO mode writes executionMode=AUTO to progress`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        val progressCaptor = org.mockito.ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("MANUAL_INITIAL_OUTREACH"),
+            captureValue(progressCaptor, TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)),
+            eqValue(12345L)
+        )
+        val finalProgress = progressCaptor.allValues.last()
+        assertEquals("AUTO", finalProgress.details!!["executionMode"])
+    }
+
+    @Test
+    fun `runScheduledBatch preserves anti-duplicate semantics for already CONTACTED expert`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        // I-7: SENT introduction already exists → skip
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(listOf(
+            MailRecord(expertContactId = 999L, direction = "OUTBOUND", mailType = "INTRODUCTION", sendStatus = "SENT",
+                messageId = "msg", inReplyTo = null, subject = "s", body = "b", matchedQaRuleId = null,
+                receivedAt = null, sentAt = LocalDateTime.now())
+        ))
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        // I-7: no send for already-CONTACTED expert
+        assertEquals(0, result.sent)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
     // ──── Helpers ────
 
     private fun expert(orcidId: String, email: String): ExpertProfile =
@@ -419,4 +707,7 @@ class ManualInitialOutreachServiceTest {
 
     private fun <T> eqValue(value: T): T =
         Mockito.eq(value) ?: value
+
+    private fun <T> captureValue(captor: org.mockito.ArgumentCaptor<T>, defaultValue: T): T =
+        captor.capture() ?: defaultValue
 }

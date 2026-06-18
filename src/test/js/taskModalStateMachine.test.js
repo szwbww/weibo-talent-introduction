@@ -58,6 +58,7 @@ function createFreshSandbox() {
         stopTaskWatcher: () => {},
         startTaskWatcher: () => {},
         stopTaskModalPolling: () => {},
+        stopBatchSendStatusPoll: () => {},
         fetchRunList: async () => {},
 
         // Timer mocks
@@ -1266,7 +1267,11 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             };
             let notified = false;
             sandbox.notifyTaskCompletionOnce = () => { notified = true; };
+            sandbox.hideProgressBar = () => {};
+            sandbox.showTaskErrorLog = () => {};
 
+            vm.runInContext("const BATCH_SEND_TASK_TYPE = \"MANUAL_INITIAL_OUTREACH\";", sandbox);
+            vm.runInContext(extractFn("launchBatchSendWithProgress"), sandbox);
             vm.runInContext(extractFn("executeManualOutreach"), sandbox);
             await sandbox.executeManualOutreach();
 

@@ -28,4 +28,28 @@ interface MailSenderAccountRepository : CrudRepository<MailSenderAccount, Long> 
         """
     )
     fun incrementTodaySentCount(accountCode: String, sentAt: java.time.LocalDateTime): Int
+
+    @Modifying
+    @Query(
+        """
+        UPDATE mail_sender_account
+           SET auto_send_paused = 1,
+               auto_send_paused_reason = :reason,
+               auto_send_paused_at = :pausedAt
+         WHERE account_code = :accountCode
+        """
+    )
+    fun pauseAutoSend(accountCode: String, reason: String, pausedAt: java.time.LocalDateTime): Int
+
+    @Modifying
+    @Query(
+        """
+        UPDATE mail_sender_account
+           SET auto_send_paused = 0,
+               auto_send_paused_reason = NULL,
+               auto_send_paused_at = NULL
+         WHERE account_code = :accountCode
+        """
+    )
+    fun resumeAutoSend(accountCode: String): Int
 }
