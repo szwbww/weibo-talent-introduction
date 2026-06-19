@@ -107,3 +107,12 @@ data class SenderAccountHealthRow(
     val lastSentAt: String?,
     val lastReceivedAt: String?
 )
+
+data class BounceStatsResponse(
+    val accountCode: String,
+    val windowDays: Int,
+    val hardBounceCount: Long,
+    val softBounceCount: Long,
+    val sentCount: Long,
+    val bounceRate: Double
+)

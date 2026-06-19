@@ -202,4 +202,15 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         """
     )
     fun findDistinctSenderAccountCodesByExpertContactIds(contactIds: List<Long>): List<String>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM mail_record
+         WHERE sender_account_code = :accountCode
+           AND direction = 'OUTBOUND'
+           AND send_status = 'SENT'
+           AND sent_at >= :since
+        """
+    )
+    fun countSentByAccountSince(accountCode: String, since: LocalDateTime): Long
 }

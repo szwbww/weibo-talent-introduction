@@ -10,10 +10,14 @@ import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepositor
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+import com.weibo.talentintroduction.mail.service.AccountRateLimiter
+import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -47,7 +51,9 @@ class ManualInitialOutreachService(
     private val txHelper: ManualOutreachTxHelper,
     private val batchSendSettingService: BatchSendSettingService,
     private val mailSenderAccountService: MailSenderAccountService,
-    private val selfCheckService: SenderAccountSelfCheckService
+    private val selfCheckService: SenderAccountSelfCheckService,
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val accountRateLimiter: AccountRateLimiter
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -68,7 +74,7 @@ class ManualInitialOutreachService(
                 if (seenRetryableOrcids.add(normOrcid)) {
                     // Only retryable if no SENT introduction exists
                     val hasSentIntro = hasSentIntroduction(contact.id!!)
-                    if (!hasSentIntro) {
+                    if (!hasSentIntro && contact.operatorStatus != "EMAIL_INVALID") {
                         retryable++
                     }
                 }
@@ -95,8 +101,8 @@ class ManualInitialOutreachService(
     /**
      * Round-based scheduled batch outreach (I-1/I-2/I-3/I-4/I-5/I-6/I-7/I-8, L3-1/L3-2).
      *
-     * - Builds a deduplicated snapshot (I-7 preserved: ES operatorStatus filter, mail_send_attempt
-     *   UNIQUE upsert, hasSentIntroduction double-check — all unchanged).
+     * - Streams targets via [OutreachTargetIterator] (I-7 preserved: ES operatorStatus filter,
+     *   mail_send_attempt UNIQUE upsert, hasSentIntroduction double-check — all unchanged).
      * - Loops rounds: per-round gate (L3-1) → quota calc (I-6/L3-2) → send round → per-account
      *   progress (I-8) → optional round interval.
      * - oneRoundOnly=true (manual button) returns after one round; the control service maps the
@@ -115,21 +121,41 @@ class ManualInitialOutreachService(
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = batchSendSettingService.getConfig()
 
-        val snapshot = buildSnapshot(campaignId)
-        val totalCount = snapshot.size
-        log.info("Outreach snapshot: {} targets; config: roundSize={}, dailyCap={}, perMailMs={}, perRoundMs={}",
-            totalCount, config.roundSize, config.dailyCap, config.perMailIntervalMs, config.perRoundIntervalMs)
+        val esFilters = ExpertSearchService.notContactedWithEmailFilters()
+        val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId)
+        val esEstimate = expertSearchService.countExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = esFilters
+        ).toInt()
+        val totalEstimate = retryableTargets.size + esEstimate
+        log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, dailyCap={}, perMailMs={}, perRoundMs={}",
+            retryableTargets.size, esEstimate, totalEstimate,
+            config.roundSize, config.dailyCap, config.perMailIntervalMs, config.perRoundIntervalMs)
 
-        if (totalCount == 0) {
+        if (totalEstimate == 0) {
             val emptyFinal = if (oneRoundOnly) "PAUSED" else "COMPLETED"
             val emptyReason = if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
-            updateProgress(executionId, 0, 0, 0, totalCount, 0, totalCount,
+            updateProgress(executionId, 0, 0, 0, totalEstimate, 0, totalEstimate,
                 emptyFinal, "没有需要发送的专家", emptyList(), mode, 0, config, emptyMap())
             return ManualOutreachResult(
                 total = 0, sent = 0, failed = 0, skippedNoAccount = 0,
                 wasCancelled = false, finalStatus = emptyFinal, stopReason = emptyReason
             )
         }
+
+        val targetIterator = OutreachTargetIterator(
+            retryableTargets = retryableTargets,
+            pageSize = config.roundSize * 2,
+            seenOrcids = seenOrcids,
+            fetchNextPage = { offset, size ->
+                expertSearchService.searchExpertsFiltered(
+                    level = ExpertIndexLevel.CANDIDATE,
+                    filters = esFilters,
+                    from = offset,
+                    size = size
+                )
+            }
+        )
 
         var sentCount = 0
         var failedCount = 0
@@ -142,12 +168,11 @@ class ManualInitialOutreachService(
         var stopReason: String? = null
         var finalStatus: String? = null
         var processedTotal = 0
-        var index = 0
 
-        while (index < snapshot.size) {
+        while (targetIterator.hasNext()) {
             // 1. Cancellation check (I-1: single flow, operator pause → requestCancel)
             if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
-                log.info("Cancelled at index {}", index)
+                log.info("Cancelled after {} processed", processedTotal)
                 wasCancelled = true
                 stopReason = "CANCELLED"
                 break
@@ -163,13 +188,21 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // 3. Compute round quota (I-6/L3-2): min(roundSize, dailyCap remaining, snapshot remaining)
+            // 3. Compute round quota (I-6/L3-2): min(roundSize, dailyCap remaining, estimated remaining)
             val dailyCapRemaining = config.dailyCap - dailySentTotal
-            val snapshotRemaining = snapshot.size - index
-            val roundQuota = minOf(config.roundSize, dailyCapRemaining, snapshotRemaining)
+            val estimatedRemaining = maxOf(0, totalEstimate - processedTotal)
+            val roundQuota = minOf(config.roundSize, dailyCapRemaining, estimatedRemaining)
             if (roundQuota <= 0) {
-                log.info("Round quota exhausted at round {} (dailyCapRemaining={}, snapshotRemaining={})",
-                    roundNumber, dailyCapRemaining, snapshotRemaining)
+                log.info("Round quota exhausted at round {} (dailyCapRemaining={}, estimatedRemaining={})",
+                    roundNumber, dailyCapRemaining, estimatedRemaining)
+                mailSenderAccountService.listEnabledAccounts()
+                    .filter {
+                        it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
+                            it.todaySentCount >= it.dailySendLimit
+                    }
+                    .forEach {
+                        mailSenderAccountService.pauseAutoSend(it.accountCode, "DAILY_LIMIT_EXHAUSTED")
+                    }
                 // L3-2: dailyCap reached. oneRoundOnly → PAUSED; full run → COMPLETED (IDLE next day)
                 if (oneRoundOnly) {
                     stopReason = "DAILY_CAP_REACHED"
@@ -180,18 +213,17 @@ class ManualInitialOutreachService(
             }
 
             // 4. Send this round
-            val roundEnd = index + roundQuota
+            var roundSent = 0
             var midRoundStop = false
-            while (index < roundEnd) {
-                val target = snapshot[index]
-                val (existingContact, expert) = target
+            while (roundSent < roundQuota && targetIterator.hasNext()) {
+                val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
                 // Select account (I-3 predicate enforced inside selectAccount)
                 val account = try {
                     senderAccountAssignmentService.selectAccount(expert, assignments)
                 } catch (e: NoAvailableSenderAccountException) {
-                    log.warn("No available sender account mid-round at index {}, pausing flow", index)
+                    log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
                     stopReason = "NO_AVAILABLE_ACCOUNT"
                     finalStatus = "PAUSED"
                     midRoundStop = true
@@ -222,7 +254,7 @@ class ManualInitialOutreachService(
                     // 2. Double-check: skip if SENT introduction already exists (anti-duplicate, I-7)
                     if (hasSentIntroduction(contact.id!!)) {
                         log.info("SENT introduction already exists for contact {}, skipping", contact.id)
-                        index++
+                        roundSent++
                         continue
                     }
 
@@ -253,6 +285,7 @@ class ManualInitialOutreachService(
                     // 5. Send via SMTP
                     val delivered = mailDeliveryService.send(account, mail)
                     if (delivered.status == "SENT") {
+                        accountRateLimiter.recordSuccess(account.accountCode, config.perMailIntervalMs)
                         // 6. Record success atomically (state transition + mail_record + counter + attempt + ES) — I-7
                         txHelper.recordSuccess(
                             contact = contact, accountCode = account.accountCode,
@@ -263,16 +296,78 @@ class ManualInitialOutreachService(
                         dailySentTotal++
                         stat.success++
                     } else {
-                        // Non-SENT delivery status
-                        txHelper.recordFailure(
-                            contactId = contact.id, accountCode = account.accountCode,
-                            messageId = messageId, errorSummary = "Delivery status: ${delivered.status}",
-                            subject = mail.subject, body = mail.body, attemptId = attempt.id
-                        )
-                        failedCount++
-                        stat.failed++
-                        errors.add("发送失败 (${expert.email}): ${delivered.status}")
-                        if (errors.size > 20) errors.removeAt(0)
+                        val errorSummary = buildSmtpErrorSummary(delivered)
+                        when (delivered.errorCategory) {
+                            SmtpErrorCategory.PERMANENT -> {
+                                txHelper.recordFailure(
+                                    contactId = contact.id, accountCode = account.accountCode,
+                                    messageId = messageId, errorSummary = errorSummary,
+                                    subject = mail.subject, body = mail.body, attemptId = attempt.id
+                                )
+                                expertContactRepository.save(
+                                    contact.copy(operatorStatus = "EMAIL_INVALID", updatedAt = LocalDateTime.now())
+                                )
+                                expertIndexWriterService.syncCandidateOperatorStatus(normOrcid, "EMAIL_INVALID")
+                                failedCount++
+                                stat.failed++
+                                errors.add("永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
+                                if (errors.size > 20) errors.removeAt(0)
+                            }
+                            SmtpErrorCategory.TRANSIENT -> {
+                                txHelper.recordFailure(
+                                    contactId = contact.id, accountCode = account.accountCode,
+                                    messageId = messageId, errorSummary = errorSummary,
+                                    subject = mail.subject, body = mail.body, attemptId = attempt.id
+                                )
+                                val code = delivered.smtpResponseCode
+                                if (code == 421 || code == 452) {
+                                    accountRateLimiter.recordThrottled(account.accountCode, config.perMailIntervalMs)
+                                    failedCount++
+                                    stat.failed++
+                                    errors.add("限流 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
+                                    if (errors.size > 20) errors.removeAt(0)
+                                } else {
+                                    mailSenderAccountService.pauseAutoSend(
+                                        account.accountCode,
+                                        "SMTP_TRANSIENT:${delivered.smtpResponseCode}:${delivered.errorDetail?.take(200)}"
+                                    )
+                                    failedCount++
+                                    stat.failed++
+                                    errors.add("暂时发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
+                                    if (errors.size > 20) errors.removeAt(0)
+                                    midRoundStop = true
+                                    break
+                                }
+                            }
+                            SmtpErrorCategory.INFRASTRUCTURE -> {
+                                txHelper.recordFailure(
+                                    contactId = contact.id, accountCode = account.accountCode,
+                                    messageId = messageId, errorSummary = errorSummary,
+                                    subject = mail.subject, body = mail.body, attemptId = attempt.id
+                                )
+                                mailSenderAccountService.pauseAutoSend(
+                                    account.accountCode,
+                                    "SMTP_INFRA:${delivered.errorDetail?.take(200)}"
+                                )
+                                failedCount++
+                                stat.failed++
+                                errors.add("基础设施发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
+                                if (errors.size > 20) errors.removeAt(0)
+                                midRoundStop = true
+                                break
+                            }
+                            else -> {
+                                txHelper.recordFailure(
+                                    contactId = contact.id, accountCode = account.accountCode,
+                                    messageId = messageId, errorSummary = errorSummary,
+                                    subject = mail.subject, body = mail.body, attemptId = attempt.id
+                                )
+                                failedCount++
+                                stat.failed++
+                                errors.add("发送失败 (${expert.email}): ${delivered.status}")
+                                if (errors.size > 20) errors.removeAt(0)
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     log.error("Failed to process ORCID: {}", normOrcid, e)
@@ -290,16 +385,17 @@ class ManualInitialOutreachService(
                 ))
 
                 processedTotal++
-                index++
+                roundSent++
 
                 // Update progress (I-8: per-account stats)
                 updateProgress(executionId, sentCount, failedCount, processedTotal,
-                    snapshot.size - processedTotal, snapshot.size, snapshot.size,
+                    totalEstimate - processedTotal, totalEstimate, totalEstimate,
                     "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats)
 
-                // Throttle per mail (I-6)
-                if (config.perMailIntervalMs > 0 && index < roundEnd) {
-                    try { Thread.sleep(config.perMailIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                // Throttle per mail (I-6 + dynamic rate limiter)
+                val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, config.perMailIntervalMs)
+                if (intervalMs > 0 && roundSent < roundQuota && targetIterator.hasNext()) {
+                    try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
             }
 
@@ -307,7 +403,7 @@ class ManualInitialOutreachService(
 
             // 5. Round end progress (I-8)
             updateProgress(executionId, sentCount, failedCount, processedTotal,
-                snapshot.size - processedTotal, snapshot.size, snapshot.size,
+                totalEstimate - processedTotal, totalEstimate, totalEstimate,
                 "RUNNING", "第${roundNumber}轮完成，已发送 $sentCount 封", errors, mode, roundNumber, config, runAccountStats)
 
             // 6. oneRoundOnly (manual button) — return after one round (L3-2: back to PAUSED)
@@ -319,7 +415,7 @@ class ManualInitialOutreachService(
             }
 
             // 7. Round interval (I-6)
-            if (config.perRoundIntervalMs > 0 && index < snapshot.size) {
+            if (config.perRoundIntervalMs > 0 && targetIterator.hasNext()) {
                 try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }
         }
@@ -338,21 +434,28 @@ class ManualInitialOutreachService(
             else -> "发送任务结束"
         }
         updateProgress(executionId, sentCount, failedCount, processedTotal,
-            snapshot.size - processedTotal, snapshot.size, snapshot.size,
+            totalEstimate - processedTotal, totalEstimate, totalEstimate,
             resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats)
 
-        val skipped = if (stopReason == "NO_AVAILABLE_ACCOUNT") snapshot.size - processedTotal else 0
+        val skipped = if (stopReason == "NO_AVAILABLE_ACCOUNT") totalEstimate - processedTotal else 0
         return ManualOutreachResult(
-            total = totalCount, sent = sentCount, failed = failedCount,
+            total = totalEstimate, sent = sentCount, failed = failedCount,
             skippedNoAccount = skipped, wasCancelled = wasCancelled,
             finalStatus = resolvedFinalStatus, stopReason = stopReason,
-            remaining = snapshot.size - processedTotal
+            remaining = totalEstimate - processedTotal
         )
     }
 
     // ──── Private helpers ────
 
     private fun normalizeOrcid(orcid: String) = orcid.trim().uppercase()
+
+    private fun buildSmtpErrorSummary(delivered: DeliveredMail): String =
+        buildString {
+            append(delivered.errorCategory.name)
+            delivered.smtpResponseCode?.let { append(":$it") }
+            delivered.errorDetail?.let { append(":${it.take(200)}") }
+        }
 
     /** Check if a SENT outbound INTRODUCTION mail record exists for this contact. */
     private fun hasSentIntroduction(contactId: Long): Boolean {
@@ -373,14 +476,16 @@ class ManualInitialOutreachService(
         return mailSenderAccountService.listSendableAccounts()
     }
 
-    private fun buildSnapshot(campaignId: Long): List<Pair<ExpertContact?, ExpertProfile>> {
+    private fun buildRetryableTargets(campaignId: Long): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
-        val snapshot = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
+        val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
 
         // 1. Retryable contacts: NEW status without SENT introduction (I-7 preserved)
         val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
         if (newContacts.isNotEmpty()) {
-            val retryableContacts = newContacts.filter { !hasSentIntroduction(it.id!!) }
+            val retryableContacts = newContacts.filter {
+                !hasSentIntroduction(it.id!!) && it.operatorStatus != "EMAIL_INVALID"
+            }
             val orcidIds = retryableContacts.map { it.orcidId }
             val profiles = if (orcidIds.isNotEmpty()) expertSearchService.searchByOrcidIds(orcidIds) else emptyList()
             val profileMap = profiles.associateBy { normalizeOrcid(it.orcidId) }
@@ -388,28 +493,13 @@ class ManualInitialOutreachService(
                 val normOrcid = normalizeOrcid(contact.orcidId)
                 val profile = profileMap[normOrcid]
                 if (profile != null && seenOrcids.add(normOrcid)) {
-                    snapshot.add(Pair(contact, profile))
+                    targets.add(Pair(contact, profile))
                 }
             }
         }
 
-        // 2. New candidates from ES: scroll ES, only take documents where operatorStatus doesn't exist (I-7)
-        expertSearchService.scrollExpertsFiltered(
-            level = ExpertIndexLevel.CANDIDATE,
-            filters = ExpertSearchService.notContactedWithEmailFilters()
-        ) { batch ->
-            for (expert in batch) {
-                val normOrcid = normalizeOrcid(expert.orcidId)
-                if (seenOrcids.add(normOrcid)) {
-                    snapshot.add(Pair(null, expert))
-                }
-            }
-            true
-        }
-
-        log.info("Snapshot: {} retryable, {} new, {} total",
-            snapshot.count { it.first != null }, snapshot.count { it.first == null }, snapshot.size)
-        return snapshot
+        log.info("Retryable targets: {}", targets.size)
+        return Pair(targets, seenOrcids)
     }
 
     private fun getOrCreateManualCampaign(): Campaign {
@@ -429,8 +519,9 @@ class ManualInitialOutreachService(
         ))
     }
 
-    private fun buildAccountStats(runAccountStats: Map<String, AccountRunStat>): List<AccountStatRow> {
+    private fun buildAccountStats(runAccountStats: Map<String, AccountRunStat>, config: BatchSendConfig): List<AccountStatRow> {
         val allAccounts = mailSenderAccountService.listAccounts()
+        val rateLimiterSnapshot = accountRateLimiter.getSnapshot()
         return allAccounts.map { account ->
             val runStat = runAccountStats[account.accountCode]
             AccountStatRow(
@@ -440,7 +531,8 @@ class ManualInitialOutreachService(
                 success = runStat?.success ?: 0,
                 failed = runStat?.failed ?: 0,
                 paused = account.autoSendPaused,
-                pauseReason = account.autoSendPausedReason
+                pauseReason = account.autoSendPausedReason,
+                currentIntervalMs = rateLimiterSnapshot[account.accountCode] ?: config.perMailIntervalMs
             )
         }
     }
@@ -463,7 +555,7 @@ class ManualInitialOutreachService(
             "pending" to remaining,
             "sent" to sent,
             "failed" to failed,
-            "accounts" to buildAccountStats(runAccountStats)
+            "accounts" to buildAccountStats(runAccountStats, config)
         )
         progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
             taskType = "MANUAL_INITIAL_OUTREACH", status = status,
@@ -516,5 +608,6 @@ data class AccountStatRow(
     val success: Int,
     val failed: Int,
     val paused: Boolean,
-    val pauseReason: String?
+    val pauseReason: String?,
+    val currentIntervalMs: Long? = null
 )

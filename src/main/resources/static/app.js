@@ -2498,19 +2498,22 @@ function renderBatchSendAccountTable(statusView) {
     }
 
     if (accounts.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`;
         return;
     }
     tbody.innerHTML = accounts.map((a) => {
         const statusCell = a.paused
             ? `<span class="badge warn" title="${escapeHtml(a.pauseReason || "自动暂停")}">自动暂停</span>`
             : `<span class="badge ok">正常</span>`;
+        const intervalMs = a.currentIntervalMs ?? 0;
+        const intervalLabel = intervalMs >= 1000 ? `${(intervalMs / 1000).toFixed(1)}s` : `${intervalMs}ms`;
         return `
             <tr>
                 <td><strong>${escapeHtml(a.accountCode)}</strong></td>
                 <td>${a.todaySent}/${a.dailyLimit}</td>
                 <td>${a.success}</td>
                 <td>${a.failed}</td>
+                <td>${intervalLabel}</td>
                 <td>${statusCell}</td>
             </tr>`;
     }).join("");

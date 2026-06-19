@@ -2,19 +2,13 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
-import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
-import com.weibo.talentintroduction.mail.domain.MailRecord
-import com.weibo.talentintroduction.mail.domain.TriggeredBy
-import com.weibo.talentintroduction.mail.repository.MailRecordRepository
-import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 @Service
@@ -24,10 +18,8 @@ class InitialOutreachService(
     private val introductionMailComposer: IntroductionMailComposer,
     private val mailDeliveryService: MailDeliveryService,
     private val expertContactRepository: ExpertContactRepository,
-    private val mailRecordRepository: MailRecordRepository,
-    private val mailSenderAccountRepository: MailSenderAccountRepository
+    private val txHelper: ManualOutreachTxHelper
 ) {
-    @Transactional
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
@@ -41,49 +33,57 @@ class InitialOutreachService(
             }
 
             val account = senderAccountAssignmentService.selectAccount(expert, assignments)
-            val mail = introductionMailComposer.compose(account.accountCode, expert)
-            val delivered = mailDeliveryService.send(account, mail)
             val now = LocalDateTime.now()
-
             val contact = expertContactRepository.save(
                 ExpertContact(
                     campaignId = campaignId,
                     orcidId = expert.orcidId,
                     expertEmail = expert.email.orEmpty(),
                     expertName = expert.displayName,
-                    currentStatus = ConversationStatus.INTRO_SENT.name,
-                    lastMailAt = now,
+                    currentStatus = "NEW",
                     createdAt = now,
                     updatedAt = now
                 )
             )
 
-            mailRecordRepository.save(
-                MailRecord(
-                    expertContactId = contact.id ?: error("Saved expert contact id is null"),
-                    direction = "OUTBOUND",
-                    mailType = "INTRODUCTION",
+            val mail = introductionMailComposer.compose(account.accountCode, expert)
+            val delivered = try {
+                mailDeliveryService.send(account, mail)
+            } catch (e: Exception) {
+                sentResults += InitialOutreachSendResult(
+                    orcidId = expert.orcidId,
+                    expertEmail = expert.email.orEmpty(),
                     senderAccountCode = account.accountCode,
-                    triggeredBy = TriggeredBy.SYSTEM,
-                    sourceInboundId = null,
-                    messageId = delivered.messageId,
-                    inReplyTo = null,
+                    status = "FAILED"
+                )
+                assignments += SenderExpertAssignment(
+                    accountCode = account.accountCode,
+                    expertId = expert.orcidId,
+                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+                )
+                return@forEach
+            }
+
+            if (delivered.status == "SENT") {
+                txHelper.recordSuccess(
+                    contact = contact,
+                    accountCode = account.accountCode,
+                    deliveredMessageId = delivered.messageId,
                     subject = mail.subject,
                     body = mail.body,
-                    matchedQaRuleId = null,
-                    sendStatus = delivered.status,
-                    receivedAt = null,
-                    sentAt = now,
-                    createdAt = now
+                    attemptId = 0L
                 )
-            )
-
-            mailSenderAccountRepository.save(
-                account.copy(
-                    todaySentCount = account.todaySentCount + 1,
-                    lastSentAt = now
+            } else {
+                txHelper.recordFailure(
+                    contactId = contact.id ?: error("Saved expert contact id is null"),
+                    accountCode = account.accountCode,
+                    messageId = delivered.messageId,
+                    errorSummary = delivered.errorDetail ?: delivered.status,
+                    subject = mail.subject,
+                    body = mail.body,
+                    attemptId = null
                 )
-            )
+            }
 
             assignments += SenderExpertAssignment(
                 accountCode = account.accountCode,
@@ -102,7 +102,8 @@ class InitialOutreachService(
         return InitialOutreachBatchResult(
             requested = size,
             candidates = experts.size,
-            sent = sentResults.size,
+            sent = sentResults.count { it.status == "SENT" },
+            failed = sentResults.count { it.status != "SENT" },
             skipped = skipped,
             results = sentResults
         )
@@ -113,6 +114,7 @@ data class InitialOutreachBatchResult(
     val requested: Int,
     val candidates: Int,
     val sent: Int,
+    val failed: Int,
     val skipped: Int,
     val results: List<InitialOutreachSendResult>
 )

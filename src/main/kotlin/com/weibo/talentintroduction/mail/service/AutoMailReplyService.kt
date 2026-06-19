@@ -45,7 +45,10 @@ class AutoMailReplyService(
     private val expertEmailAliasService: ExpertEmailAliasService,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val automaticApplicationPromotionService: AutomaticApplicationPromotionService,
-    private val expertOperatorStatusService: ExpertOperatorStatusService
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
+    private val bounceDetector: BounceDetector,
+    private val bounceCollectionService: BounceCollectionService,
+    private val bounceRateMonitorService: BounceRateMonitorService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -444,6 +447,10 @@ class AutoMailReplyService(
         val repliedExperts = mutableListOf<RepliedExpertInfo>()
 
         receivedMails.forEach {
+            if (bounceDetector.isBounce(it.from, it.subject, contentType = null)) {
+                log.debug("Skipping bounce message during auto-reply poll: uid={}", it.imapUid)
+                return@forEach
+            }
             val r = processSingle(account, it, skipImapAck = false)
             if (r.recorded) {
                 recorded++
@@ -463,6 +470,16 @@ class AutoMailReplyService(
             if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
             if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
         }
+
+        val bounceResult = bounceCollectionService.collectBounces(account)
+        if (bounceResult.collected > 0) {
+            log.info(
+                "Collected {} bounces for account {} after auto-reply",
+                bounceResult.collected,
+                accountCode
+            )
+        }
+        bounceRateMonitorService.checkAndPause(accountCode)
 
         return AutoMailReplyBatchResult(
             fetched = receivedMails.size,

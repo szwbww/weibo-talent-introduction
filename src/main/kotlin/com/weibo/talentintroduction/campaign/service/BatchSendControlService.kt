@@ -265,7 +265,8 @@ class BatchSendControlService(
                             success = (item["success"] as? Number)?.toInt() ?: 0,
                             failed = (item["failed"] as? Number)?.toInt() ?: 0,
                             paused = item["paused"] as? Boolean ?: false,
-                            pauseReason = item["pauseReason"] as? String
+                            pauseReason = item["pauseReason"] as? String,
+                            currentIntervalMs = (item["currentIntervalMs"] as? Number)?.toLong()
                         )
                     } catch (e: Exception) {
                         null

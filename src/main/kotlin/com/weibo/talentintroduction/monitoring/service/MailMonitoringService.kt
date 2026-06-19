@@ -8,9 +8,12 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
+import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
+import com.weibo.talentintroduction.monitoring.controller.BounceStatsResponse
 import com.weibo.talentintroduction.monitoring.controller.InboundListResponse
 import com.weibo.talentintroduction.monitoring.controller.InboundRow
 import com.weibo.talentintroduction.monitoring.controller.IntroductionListResponse
@@ -28,6 +31,7 @@ import java.time.LocalDate
 @Service
 class MailMonitoringService(
     private val mailRecordRepository: MailRecordRepository,
+    private val bounceRecordRepository: BounceRecordRepository,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val promotionRepository: ExpertApplicationPromotionRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
@@ -243,6 +247,23 @@ class MailMonitoringService(
                 lastReceivedAt = lastReceived[account.accountCode]?.toString()
             )
         }
+    }
+
+    fun getBounceStats(accountCode: String, windowDays: Int = BounceRateMonitorService.DEFAULT_WINDOW_DAYS): BounceStatsResponse {
+        val days = windowDays.coerceAtLeast(1)
+        val since = java.time.LocalDateTime.now().minusDays(days.toLong())
+        val hardBounces = bounceRecordRepository.countHardBouncesSince(accountCode, since)
+        val softBounces = bounceRecordRepository.countSoftBouncesSince(accountCode, since)
+        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+        val bounceRate = if (sentCount > 0) hardBounces.toDouble() / sentCount else 0.0
+        return BounceStatsResponse(
+            accountCode = accountCode,
+            windowDays = days,
+            hardBounceCount = hardBounces,
+            softBounceCount = softBounces,
+            sentCount = sentCount,
+            bounceRate = bounceRate
+        )
     }
 
     private fun List<MailRecord>.contactsById(): Map<Long?, ExpertContact> =

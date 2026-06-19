@@ -72,4 +72,11 @@ class MailMonitoringController(
     @GetMapping("/sender-accounts")
     fun senderAccounts(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?): List<SenderAccountHealthRow> =
         mailMonitoringService.senderAccountHealth(date)
+
+    @GetMapping("/bounce-stats")
+    fun bounceStats(
+        @RequestParam accountCode: String,
+        @RequestParam(required = false, defaultValue = "7") days: Int
+    ): BounceStatsResponse =
+        mailMonitoringService.getBounceStats(accountCode, days)
 }

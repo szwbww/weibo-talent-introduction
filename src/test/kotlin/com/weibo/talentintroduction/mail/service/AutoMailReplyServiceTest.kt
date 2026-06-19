@@ -46,6 +46,27 @@ class AutoMailReplyServiceTest {
     private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
     private val automaticApplicationPromotionService = Mockito.mock(AutomaticApplicationPromotionService::class.java)
     private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
+    private val bounceDetector = BounceDetector()
+    private val bounceCollectionService = Mockito.mock(
+        BounceCollectionService::class.java,
+        Mockito.withSettings().defaultAnswer { invocation ->
+            if (invocation.method.name == "collectBounces") {
+                BounceCollectionResult(collected = 0, skippedDuplicate = 0)
+            } else {
+                Mockito.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+    )
+    private val bounceRateMonitorService = Mockito.mock(
+        BounceRateMonitorService::class.java,
+        Mockito.withSettings().defaultAnswer { invocation ->
+            if (invocation.method.name == "checkAndPause") {
+                -1.0
+            } else {
+                Mockito.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+    )
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -65,7 +86,10 @@ class AutoMailReplyServiceTest {
         expertEmailAliasService,
         expertIndexWriterService,
         automaticApplicationPromotionService,
-        expertOperatorStatusService
+        expertOperatorStatusService,
+        bounceDetector,
+        bounceCollectionService,
+        bounceRateMonitorService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -95,6 +119,29 @@ class AutoMailReplyServiceTest {
             anyValue(OperatorStatus.REPLIED),
             anyValue("")
         )).thenAnswer { it.getArgument<ExpertContact>(0) }
+    }
+
+    @Test
+    fun `receiveAndAutoReply collects bounces after business reply processing in order`() {
+        val account = account("sender")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(
+                reply(from = "expert@example.com"),
+                reply(from = "mailer-daemon@example.com", subject = "Undelivered Mail Returned to Sender")
+            )
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        val inOrder = Mockito.inOrder(receiveService, bounceCollectionService, bounceRateMonitorService)
+
+        service.receiveAndAutoReply("sender", 5)
+
+        inOrder.verify(receiveService).fetchUnread(account, 5)
+        inOrder.verify(bounceCollectionService).collectBounces(account)
+        inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
+        Mockito.verify(expertEmailAliasService, Mockito.never())
+            .findContactByEmailOrAlias("mailer-daemon@example.com")
     }
 
     @Test
@@ -627,11 +674,15 @@ class AutoMailReplyServiceTest {
         )
     }
 
-    private fun reply(body: String = "Could you share the program details?", from: String = "expert@example.com"): ReceivedMail =
+    private fun reply(
+        body: String = "Could you share the program details?",
+        from: String = "expert@example.com",
+        subject: String = "Re: Talent Program"
+    ): ReceivedMail =
         ReceivedMail(
             imapUid = 101,
             from = from,
-            subject = "Re: Talent Program",
+            subject = subject,
             body = body,
             messageId = "reply-1",
             inReplyTo = "intro-1",

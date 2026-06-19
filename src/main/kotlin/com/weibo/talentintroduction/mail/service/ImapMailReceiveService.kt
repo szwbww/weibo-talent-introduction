@@ -12,8 +12,9 @@ import javax.mail.Multipart
 import javax.mail.Part
 import javax.mail.Session
 import javax.mail.UIDFolder
-import javax.mail.internet.MimeUtility
 import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMessage
+import javax.mail.internet.MimeUtility
 
 @Service
 class ImapMailReceiveService : MailReceiveService {
@@ -35,6 +36,31 @@ class ImapMailReceiveService : MailReceiveService {
                     .filterNot { it.flags.contains(Flags.Flag.SEEN) }
                     .take(maxMessages)
                     .map { message -> message.toReceivedMail(uidFolder.getUID(message)) }
+                    .toList()
+            }
+        }
+    }
+
+    /**
+     * Fetches UNSEEN inbox messages as detached [MimeMessage] copies so callers can parse
+     * multipart DSN content after the IMAP connection closes.
+     */
+    fun fetchUnseenMessages(account: MailSenderAccount, maxMessages: Int = 100): List<MimeMessage> {
+        require(maxMessages in 1..100) { "maxMessages must be between 1 and 100" }
+
+        val session = Session.getInstance(imapProperties(account.imapPort))
+        val store = session.getStore("imap")
+        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
+
+        return store.use { connectedStore ->
+            val inbox = connectedStore.getFolder("INBOX")
+            inbox.open(Folder.READ_ONLY)
+            inbox.use { folder ->
+                folder.messages
+                    .asSequence()
+                    .filterNot { it.flags.contains(Flags.Flag.SEEN) }
+                    .take(maxMessages)
+                    .map { message -> MimeMessage(message as MimeMessage) }
                     .toList()
             }
         }

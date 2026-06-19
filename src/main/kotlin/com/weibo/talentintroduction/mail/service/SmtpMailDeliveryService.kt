@@ -1,20 +1,18 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
-import org.springframework.mail.javamail.JavaMailSenderImpl
+import org.springframework.mail.MailException
 import org.springframework.stereotype.Service
-import java.util.Properties
+import javax.mail.AuthenticationFailedException
+import javax.mail.MessagingException
+import javax.mail.SendFailedException
 
 @Service
-class SmtpMailDeliveryService : MailDeliveryService {
+class SmtpMailDeliveryService(
+    private val smtpSenderFactory: SmtpSenderFactory
+) : MailDeliveryService {
     override fun send(account: MailSenderAccount, mail: ComposedMail): DeliveredMail {
-        val sender = JavaMailSenderImpl().apply {
-            host = account.smtpHost
-            port = account.smtpPort
-            username = account.smtpUsername
-            password = account.smtpPassword
-            javaMailProperties = smtpProperties(account.smtpPort)
-        }
+        val sender = smtpSenderFactory.getSender(account)
 
         val mailSession = sender.session
         val message = if (mail.messageId != null) {
@@ -36,25 +34,20 @@ class SmtpMailDeliveryService : MailDeliveryService {
             message.setText(mail.body, Charsets.UTF_8.name())
         }
 
-        sender.send(message)
-
-        return DeliveredMail(
-            messageId = message.messageID ?: mail.messageId,
-            status = "SENT"
-        )
-    }
-
-    private fun smtpProperties(port: Int): Properties =
-        Properties().apply {
-            put("mail.smtp.auth", "true")
-            put("mail.smtp.auth.mechanisms", "LOGIN")
-            put("mail.smtp.connectiontimeout", "10000")
-            put("mail.smtp.timeout", "10000")
-            put("mail.smtp.writetimeout", "10000")
-            if (port == 465) {
-                put("mail.smtp.ssl.enable", "true")
-            } else {
-                put("mail.smtp.starttls.enable", "true")
-            }
+        return try {
+            sender.send(message)
+            DeliveredMail(
+                messageId = message.messageID ?: mail.messageId,
+                status = "SENT"
+            )
+        } catch (e: SendFailedException) {
+            SmtpErrorClassifier.fromSendFailedException(e, mail.messageId)
+        } catch (e: AuthenticationFailedException) {
+            SmtpErrorClassifier.fromAuthenticationFailedException(e, mail.messageId)
+        } catch (e: MessagingException) {
+            SmtpErrorClassifier.fromMessagingException(e, mail.messageId)
+        } catch (e: MailException) {
+            SmtpErrorClassifier.fromMailException(e, mail.messageId)
         }
+    }
 }

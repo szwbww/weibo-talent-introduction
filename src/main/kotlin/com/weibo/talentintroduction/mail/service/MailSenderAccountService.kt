@@ -3,12 +3,15 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Service
 class MailSenderAccountService(
     private val repository: MailSenderAccountRepository,
-    private val selfCheckService: SenderAccountSelfCheckService
+    private val selfCheckService: SenderAccountSelfCheckService,
+    private val smtpSenderFactory: SmtpSenderFactory
 ) {
     fun listAccounts(): List<MailSenderAccount> =
         repository.findAllByOrderByAccountCodeAsc()
@@ -69,7 +72,7 @@ class MailSenderAccountService(
             "todaySentCount must not exceed dailySendLimit"
         }
 
-        return repository.save(
+        val updated = repository.save(
             existing.copy(
                 senderEmail = command.senderEmail,
                 senderName = command.senderName,
@@ -91,16 +94,34 @@ class MailSenderAccountService(
                 enabled = command.enabled
             )
         )
+        smtpSenderFactory.evict(accountCode)
+        return updated
     }
 
     fun setEnabled(accountCode: String, enabled: Boolean): MailSenderAccount {
         val existing = getAccount(accountCode)
-        return repository.save(existing.copy(enabled = enabled))
+        val updated = repository.save(existing.copy(enabled = enabled))
+        if (!enabled) {
+            smtpSenderFactory.evict(accountCode)
+        }
+        return updated
     }
 
     fun resetTodaySentCount(accountCode: String): MailSenderAccount {
         val existing = getAccount(accountCode)
         return repository.save(existing.copy(todaySentCount = 0))
+    }
+
+    /**
+     * 每日重置：清零 todaySentCount + 解除限额暂停。
+     * 由定时任务调用。
+     */
+    @Transactional
+    fun resetDailyCounts(): DailyResetResult {
+        val todayStart = LocalDate.now().atStartOfDay()
+        val countReset = repository.resetDailyCountsBeforeDate(todayStart)
+        val pauseResumed = repository.resumeDailyLimitPausedAccounts()
+        return DailyResetResult(countReset = countReset, pauseResumed = pauseResumed)
     }
 
     fun pauseAutoSend(accountCode: String, reason: String) {
@@ -136,6 +157,8 @@ class MailSenderAccountService(
         const val SIMULATOR_ACCOUNT_CODE = "SIMULATOR_NOOP"
     }
 }
+
+data class DailyResetResult(val countReset: Int, val pauseResumed: Int)
 
 data class MailSenderAccountCreateCommand(
     val accountCode: String,

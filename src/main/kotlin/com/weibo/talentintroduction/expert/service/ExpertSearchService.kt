@@ -24,7 +24,8 @@ class ExpertSearchService(
             mapOf("exists" to mapOf("field" to "email")),
             mapOf("bool" to mapOf(
                 "must_not" to listOf(
-                    mapOf("exists" to mapOf("field" to "operatorStatus"))
+                    mapOf("exists" to mapOf("field" to "operatorStatus")),
+                    mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
                 )
             ))
         )
@@ -302,6 +303,41 @@ class ExpertSearchService(
         )
         val response = restTemplate.exchange(
             "${properties.baseUrl}/$index/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        return response.path("hits")
+            .path("hits")
+            .map { hit -> toExpertProfile(hit) }
+    }
+
+    fun searchExpertsFiltered(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        from: Int,
+        size: Int
+    ): List<ExpertProfile> {
+        require(size in 1..1000) { "size must be between 1 and 1000" }
+        require(from >= 0) { "from must be >= 0" }
+
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+
+        val requestBody = mapOf(
+            "from" to from,
+            "size" to size,
+            "_source" to sourceFields(),
+            "query" to query,
+            "sort" to sortFields(level)
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java

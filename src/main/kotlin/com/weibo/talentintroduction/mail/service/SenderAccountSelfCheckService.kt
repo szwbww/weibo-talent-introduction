@@ -4,10 +4,8 @@ import com.weibo.talentintroduction.campaign.service.BatchSendSettingService
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.slf4j.LoggerFactory
-import org.springframework.mail.javamail.JavaMailSenderImpl
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
-import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import javax.mail.Message
 
@@ -16,15 +14,11 @@ interface SelfCheckProbeSender {
 }
 
 @Service
-class DefaultSelfCheckProbeSender : SelfCheckProbeSender {
+class DefaultSelfCheckProbeSender(
+    private val smtpSenderFactory: SmtpSenderFactory
+) : SelfCheckProbeSender {
     override fun sendProbe(account: MailSenderAccount) {
-        val sender = JavaMailSenderImpl().apply {
-            host = account.smtpHost
-            port = account.smtpPort
-            username = account.smtpUsername
-            password = account.smtpPassword
-            javaMailProperties = smtpProperties(account.smtpPort)
-        }
+        val sender = smtpSenderFactory.getSender(account)
         val message = sender.createMimeMessage()
         message.setFrom(account.senderEmail)
         message.setRecipients(Message.RecipientType.TO, account.senderEmail)
@@ -32,20 +26,6 @@ class DefaultSelfCheckProbeSender : SelfCheckProbeSender {
         message.setText("self-check probe", Charsets.UTF_8.name())
         sender.send(message)
     }
-
-    private fun smtpProperties(port: Int): Properties =
-        Properties().apply {
-            put("mail.smtp.auth", "true")
-            put("mail.smtp.auth.mechanisms", "LOGIN")
-            put("mail.smtp.connectiontimeout", "10000")
-            put("mail.smtp.timeout", "10000")
-            put("mail.smtp.writetimeout", "10000")
-            if (port == 465) {
-                put("mail.smtp.ssl.enable", "true")
-            } else {
-                put("mail.smtp.starttls.enable", "true")
-            }
-        }
 }
 
 @Service

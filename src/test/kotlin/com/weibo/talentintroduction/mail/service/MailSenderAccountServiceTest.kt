@@ -9,11 +9,13 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.transaction.annotation.Transactional
 
 class MailSenderAccountServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
-    private val service = MailSenderAccountService(repository, selfCheckService)
+    private val smtpSenderFactory = Mockito.mock(SmtpSenderFactory::class.java)
+    private val service = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory)
 
     @Test
     fun `selects enabled account with highest weighted remaining capacity`() {
@@ -102,6 +104,43 @@ class MailSenderAccountServiceTest {
         val disabled = service.setEnabled("a1", false)
 
         assertFalse(disabled.enabled)
+        Mockito.verify(smtpSenderFactory).evict("a1")
+    }
+
+    @Test
+    fun `updates sender account and evicts cached smtp sender`() {
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", strategyWeight = 100, dailySendLimit = 100, todaySentCount = 0))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as MailSenderAccount }
+
+        val updated = service.updateAccount(
+            "a1",
+            MailSenderAccountUpdateCommand(
+                senderEmail = "updated@qftechtalent.com",
+                senderName = "Updated",
+                senderTitle = "Customer Care Officer",
+                senderDisplayName = "Updated",
+                teamName = "Qingfei Tech Talent Team",
+                countryName = "China",
+                smtpHost = "smtp2.example.com",
+                smtpPort = 587,
+                smtpUsername = "updated@qftechtalent.com",
+                smtpPassword = "new-secret",
+                imapHost = "imap2.example.com",
+                imapPort = 993,
+                imapUsername = "updated@qftechtalent.com",
+                imapPassword = "new-secret",
+                strategyWeight = 120,
+                dailySendLimit = 80,
+                todaySentCount = 5,
+                enabled = true
+            )
+        )
+
+        assertEquals("smtp2.example.com", updated.smtpHost)
+        assertEquals(587, updated.smtpPort)
+        Mockito.verify(smtpSenderFactory).evict("a1")
     }
 
     @Test
@@ -247,6 +286,59 @@ class MailSenderAccountServiceTest {
 
         assertEquals(1, result.size)
         assertEquals("ok", result[0].accountCode)
+    }
+
+    @Test
+    fun `resetDailyCounts delegates to repository with today start and returns aggregated result`() {
+        val todayStart = java.time.LocalDate.now().atStartOfDay()
+        Mockito.`when`(repository.resetDailyCountsBeforeDate(todayStart)).thenReturn(3)
+        Mockito.`when`(repository.resumeDailyLimitPausedAccounts()).thenReturn(2)
+
+        val result = service.resetDailyCounts()
+
+        assertEquals(3, result.countReset)
+        assertEquals(2, result.pauseResumed)
+        Mockito.verify(repository).resetDailyCountsBeforeDate(todayStart)
+        Mockito.verify(repository).resumeDailyLimitPausedAccounts()
+    }
+
+    @Test
+    fun `resetDailyCounts is idempotent when repository returns zero rows affected`() {
+        val todayStart = java.time.LocalDate.now().atStartOfDay()
+        Mockito.`when`(repository.resetDailyCountsBeforeDate(todayStart)).thenReturn(0)
+        Mockito.`when`(repository.resumeDailyLimitPausedAccounts()).thenReturn(0)
+
+        val result = service.resetDailyCounts()
+
+        assertEquals(0, result.countReset)
+        assertEquals(0, result.pauseResumed)
+    }
+
+    @Test
+    fun `resetDailyCounts uses today start boundary for L4-1 last_sent_at filter`() {
+        val todayStart = java.time.LocalDate.now().atStartOfDay()
+
+        service.resetDailyCounts()
+
+        Mockito.verify(repository).resetDailyCountsBeforeDate(
+            Mockito.eq(todayStart) ?: todayStart
+        )
+    }
+
+    @Test
+    fun `resetDailyCounts resumes only DAILY_LIMIT paused accounts via repository query`() {
+        service.resetDailyCounts()
+
+        Mockito.verify(repository).resumeDailyLimitPausedAccounts()
+        Mockito.verify(repository, Mockito.never())
+            .resumeAutoSend(Mockito.anyString() ?: "__any__")
+    }
+
+    @Test
+    fun `resetDailyCounts is transactional`() {
+        val method = MailSenderAccountService::class.java.getMethod("resetDailyCounts")
+
+        assertNotNull(method.getAnnotation(Transactional::class.java))
     }
 
     private fun account(
