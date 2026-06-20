@@ -350,4 +350,65 @@ class TaskProgressControllerExecutionsTest {
         val response = controller.getExecutions("EXPERT_REVALIDATION", 10)
         assertEquals("Connection refused", response.body!![0].errorMessage)
     }
+
+    @Test
+    fun `outreach resultSummary maps sent failed processed from flat fields`() {
+        val summary =
+            """{"total":84079,"sent":2,"failed":0,"skippedNoAccount":0,"wasCancelled":false,"finalStatus":"COMPLETED","stopReason":null,"remaining":84077}"""
+        Mockito.`when`(taskExecutionRepository.findRecentByTaskType("MANUAL_INITIAL_OUTREACH", 10))
+            .thenReturn(listOf(execution(20, "MANUAL_INITIAL_OUTREACH", "SUCCESS", summary)))
+
+        val response = controller.getExecutions("MANUAL_INITIAL_OUTREACH", 10)
+        val list = response.body!!
+        assertEquals(2L, list[0].totalProcessed)
+        assertEquals(2L, list[0].totalPassed)
+        assertEquals(0L, list[0].totalRejected)
+    }
+
+    @Test
+    fun `outreach with failures maps rejected`() {
+        val summary =
+            """{"total":10,"sent":3,"failed":2,"skippedNoAccount":0,"wasCancelled":false,"finalStatus":"COMPLETED","stopReason":null,"remaining":5}"""
+        Mockito.`when`(taskExecutionRepository.findRecentByTaskType("MANUAL_INITIAL_OUTREACH", 10))
+            .thenReturn(listOf(execution(21, "MANUAL_INITIAL_OUTREACH", "SUCCESS", summary)))
+
+        val response = controller.getExecutions("MANUAL_INITIAL_OUTREACH", 10)
+        val list = response.body!!
+        assertEquals(5L, list[0].totalProcessed)
+        assertEquals(3L, list[0].totalPassed)
+        assertEquals(2L, list[0].totalRejected)
+    }
+
+    @Test
+    fun `outreach empty snapshot yields zeros without negative`() {
+        val summary = """{"total":0,"sent":0,"failed":0,"remaining":0,"finalStatus":"COMPLETED"}"""
+        Mockito.`when`(taskExecutionRepository.findRecentByTaskType("MANUAL_INITIAL_OUTREACH", 10))
+            .thenReturn(listOf(execution(22, "MANUAL_INITIAL_OUTREACH", "SUCCESS", summary)))
+
+        val response = controller.getExecutions("MANUAL_INITIAL_OUTREACH", 10)
+        val list = response.body!!
+        assertEquals(0L, list[0].totalProcessed)
+        assertEquals(0L, list[0].totalPassed)
+        assertEquals(0L, list[0].totalRejected)
+    }
+
+    @Test
+    fun `outreach blank resultSummary falls back to log`() {
+        Mockito.`when`(taskExecutionRepository.findRecentByTaskType("MANUAL_INITIAL_OUTREACH", 10))
+            .thenReturn(listOf(execution(23, "MANUAL_INITIAL_OUTREACH", "SUCCESS", "")))
+
+        val log = TaskProgressLog(
+            id = 30L, taskType = "MANUAL_INITIAL_OUTREACH", taskExecutionId = 23L,
+            batchNumber = 1, status = "COMPLETED", processedCount = 1, totalCount = 100,
+            detailsJson = """{"sent":1,"failed":0}"""
+        )
+        Mockito.`when`(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(23L))
+            .thenReturn(log)
+
+        val response = controller.getExecutions("MANUAL_INITIAL_OUTREACH", 10)
+        val list = response.body!!
+        assertEquals(1L, list[0].totalProcessed)
+        assertEquals(1L, list[0].totalPassed)
+        assertEquals(0L, list[0].totalRejected)
+    }
 }

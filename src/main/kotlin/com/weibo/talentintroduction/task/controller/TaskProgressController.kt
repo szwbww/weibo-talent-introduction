@@ -145,9 +145,10 @@ class TaskProgressController(
                         )
                     }
                     "MANUAL_INITIAL_OUTREACH" -> ExecutionTotals(
-                        totalProcessed = stats.path("total").asLong(0),
-                        totalPassed = stats.path("sent").asLong(0),
-                        totalRejected = stats.path("failed").asLong(0)
+                        totalProcessed = (root.path("total").asLong(0) - root.path("remaining").asLong(0))
+                            .coerceAtLeast(0),
+                        totalPassed = root.path("sent").asLong(0),
+                        totalRejected = root.path("failed").asLong(0)
                     )
                     "CHECK_REPLIES" -> ExecutionTotals(
                         totalProcessed = root.path("totalAccountsToPoll").asLong(0),
