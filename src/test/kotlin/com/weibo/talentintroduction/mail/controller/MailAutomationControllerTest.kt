@@ -377,10 +377,37 @@ class MailAutomationControllerTest {
     }
 
     @Test
+    fun `resumeBatchSendSchedule delegates to control service without immediate execution`() {
+        Mockito.`when`(batchSendControlService.resumeSchedule()).thenReturn(
+            ResponseEntity.ok(mapOf("message" to "已恢复定时发送"))
+        )
+
+        val response = controller.resumeBatchSendSchedule()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals("已恢复定时发送", response.body?.get("message"))
+        verify(batchSendControlService).resumeSchedule()
+    }
+
+    @Test
+    fun `pauseBatchSendSchedule delegates to control service without cancelling execution`() {
+        Mockito.`when`(batchSendControlService.pauseSchedule()).thenReturn(
+            ResponseEntity.ok(mapOf("message" to "已暂停定时发送"))
+        )
+
+        val response = controller.pauseBatchSendSchedule()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals("已暂停定时发送", response.body?.get("message"))
+        verify(batchSendControlService).pauseSchedule()
+    }
+
+    @Test
     fun `getBatchSendStatus returns status view from control service`() {
         val statusView = BatchSendStatusView(
             status = "PAUSED",
             mode = "AUTO",
+            autoEnabled = false,
             pauseReason = "NO_AVAILABLE_ACCOUNT",
             roundNumber = 3,
             dailyCap = 1000,
@@ -412,7 +439,7 @@ class MailAutomationControllerTest {
     @Test
     fun `getBatchSendStatus returns IDLE status when flow not started`() {
         val statusView = BatchSendStatusView(
-            status = "IDLE", mode = "NONE", pauseReason = "",
+            status = "IDLE", mode = "NONE", autoEnabled = false, pauseReason = "",
             roundNumber = 0, dailyCap = 0, dailySentTotal = 0,
             sentTotal = 0, failedTotal = 0,
             accounts = emptyList(), executionId = null, message = null

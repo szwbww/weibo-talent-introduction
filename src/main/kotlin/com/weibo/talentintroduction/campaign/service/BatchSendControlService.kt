@@ -99,6 +99,38 @@ class BatchSendControlService(
     }
 
     /**
+     * Operator resume for scheduled sending. This only clears the persisted pause state so the
+     * dynamic cron scheduler can run the next due AUTO execution; it does not launch a send now.
+     */
+    fun resumeSchedule(): ResponseEntity<Map<String, String>> {
+        val state = batchSendSettingService.getRuntimeStatus()
+        if (state.status == "RUNNING") {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "流程当前状态为 RUNNING，无法恢复定时（需非 RUNNING）"))
+        }
+        batchSendSettingService.setAutoEnabled(true)
+        batchSendSettingService.setRuntimeStatus("IDLE", state.mode, "")
+        log.info("Batch send schedule resumed by operator from status={}, mode={}", state.status, state.mode)
+        return ResponseEntity.ok(mapOf("message" to "已恢复定时发送"))
+    }
+
+    /**
+     * Pauses the cron-driven schedule when no execution is currently running. Active execution
+     * cancellation still goes through [pause].
+     */
+    fun pauseSchedule(): ResponseEntity<Map<String, String>> {
+        val state = batchSendSettingService.getRuntimeStatus()
+        if (state.status == "RUNNING") {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "流程当前状态为 RUNNING，请使用执行暂停"))
+        }
+        batchSendSettingService.setAutoEnabled(false)
+        batchSendSettingService.setRuntimeStatus("PAUSED", "AUTO", "OPERATOR")
+        log.info("Batch send schedule paused by operator from status={}, mode={}", state.status, state.mode)
+        return ResponseEntity.ok(mapOf("message" to "已暂停定时发送"))
+    }
+
+    /**
      * Operator "手动" button (I-9): PAUSED → one round → PAUSED. Only allowed when PAUSED.
      * Runs a single round (oneRoundOnly=true) then returns to PAUSED (L3-2).
      */
@@ -117,11 +149,14 @@ class BatchSendControlService(
      */
     fun getStatus(): BatchSendStatusView {
         val state = batchSendSettingService.getRuntimeStatus()
+        val config = batchSendSettingService.getConfig()
         val progress = progressStore.get(TASK_TYPE)
         val details = progress?.details
+        val mode = if (state.status == "IDLE" && config.autoEnabled) "AUTO" else state.mode
         return BatchSendStatusView(
             status = state.status,
-            mode = state.mode,
+            mode = mode,
+            autoEnabled = config.autoEnabled,
             pauseReason = state.pauseReason,
             roundNumber = details?.asInt("roundNumber") ?: 0,
             dailyCap = details?.asInt("dailyCap") ?: 0,
@@ -290,6 +325,7 @@ class BatchSendControlService(
 data class BatchSendStatusView(
     val status: String,
     val mode: String,
+    val autoEnabled: Boolean,
     val pauseReason: String,
     val roundNumber: Int,
     val dailyCap: Int,

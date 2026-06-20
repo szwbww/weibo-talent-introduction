@@ -169,6 +169,60 @@ class BatchSendControlServiceTest {
     }
 
     @Test
+    fun `resumeSchedule from PAUSED clears pause and does not launch execution`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("PAUSED", "AUTO", "OPERATOR"))
+
+        val response = control.resumeSchedule()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        Mockito.verify(batchSendSettingService).setAutoEnabled(true)
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "AUTO", "")
+        Mockito.verifyNoInteractions(manualInitialOutreachService)
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `resumeSchedule from RUNNING returns 409 and keeps execution untouched`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
+
+        val response = control.resumeSchedule()
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        Mockito.verify(batchSendSettingService, Mockito.never()).setRuntimeStatus(Mockito.anyString(), Mockito.anyString(), Mockito.anyString())
+        Mockito.verifyNoInteractions(manualInitialOutreachService)
+    }
+
+    @Test
+    fun `pauseSchedule from IDLE disables timer and marks PAUSED without launching execution`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "AUTO", ""))
+
+        val response = control.pauseSchedule()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        Mockito.verify(batchSendSettingService).setAutoEnabled(false)
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("PAUSED", "AUTO", "OPERATOR")
+        Mockito.verifyNoInteractions(manualInitialOutreachService)
+    }
+
+    @Test
+    fun `getStatus includes autoEnabled for active timer UI`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(
+            BatchSendConfig(autoEnabled = true, cron = "0 0 9 * * ?", dailyCap = 100, roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
+        )
+
+        val status = control.getStatus()
+
+        assertEquals(true, status.autoEnabled)
+        assertEquals("AUTO", status.mode)
+    }
+
+    @Test
     fun `runManualOnce from PAUSED returns 202 and sets PAUSED after one round`() {
         // First getRuntimeStatus: PAUSED (precondition); second: RUNNING (applyResult check)
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
@@ -347,7 +401,8 @@ class BatchSendControlServiceTest {
         val status = control.getStatus()
 
         assertEquals("IDLE", status.status)
-        assertEquals("NONE", status.mode)
+        assertEquals("AUTO", status.mode)
+        assertEquals(true, status.autoEnabled)
         assertTrue(status.accounts.isEmpty())
         assertEquals(0, status.roundNumber)
     }

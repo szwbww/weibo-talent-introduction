@@ -38,6 +38,11 @@ class BatchSendSettingService(
         return getConfig()
     }
 
+    fun setAutoEnabled(enabled: Boolean): BatchSendConfig {
+        upsert(KEY_AUTO_ENABLED, enabled.toString())
+        return getConfig()
+    }
+
     fun getRuntimeStatus(): BatchSendRuntimeState {
         val values = loadAll()
         return BatchSendRuntimeState(

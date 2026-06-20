@@ -1369,10 +1369,11 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             const progress = { status: "PARTIAL_SUCCESS", percentage: 50, message: "部分邮箱账号检查失败" };
             sandbox.updateTaskModalFromProgress(progress, ctx.generation);
 
-            // Verify cancel button text
+            // 终态：取消按钮被隐藏并禁用（不再改名为状态标签）
             const cancelBtn = elements["#taskModalCancelBtn"];
             assert.ok(cancelBtn);
-            assert.strictEqual(cancelBtn.textContent, "部分成功");
+            assert.strictEqual(cancelBtn.hidden, true);
+            assert.strictEqual(cancelBtn.disabled, true);
 
             // Verify progress bar class (sync old progress bar)
             const progressBar = elements["#taskProgressBar"];

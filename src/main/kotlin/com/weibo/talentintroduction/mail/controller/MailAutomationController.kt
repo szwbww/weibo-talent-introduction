@@ -285,6 +285,22 @@ class MailAutomationController(
         batchSendControlService.startAuto()
 
     /**
+     * Operator "开始执行/继续" for scheduled mode: enable the timer path without immediately
+     * launching a send. The next run is triggered by BatchSendScheduler cron.
+     */
+    @PostMapping("/batch-send/resume-schedule")
+    fun resumeBatchSendSchedule(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.resumeSchedule()
+
+    /**
+     * Operator pause for scheduled mode when no execution is active. Disables the timer without
+     * requesting cancellation from TaskProgressStore.
+     */
+    @PostMapping("/batch-send/pause-schedule")
+    fun pauseBatchSendSchedule(): ResponseEntity<Map<String, String>> =
+        batchSendControlService.pauseSchedule()
+
+    /**
      * Status query (I-5): persisted runtime state + latest progress details. Survives refresh
      * and restart (L3-3) so the frontend banner stays until the operator acts on it.
      */

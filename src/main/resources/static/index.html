@@ -725,9 +725,12 @@
                     <span id="batchSendStatusBadge" class="badge">空闲</span>
                 </div>
                 <div class="batch-send-control-buttons">
+                    <!-- 定时开关：开始执行 ⇄ 暂停 ⇄ 继续/恢复（由 applyBatchSendControls 按状态切换文案/行为） -->
                     <button class="button primary" id="batchSendStartBtn" type="button">开始执行</button>
-                    <button class="button warn" id="batchSendPauseBtn" type="button" disabled>暂停</button>
-                    <button class="button secondary" id="batchSendManualBtn" type="button" disabled>手动</button>
+                    <!-- 原独立暂停按钮已并入上方切换按钮，保留占位但始终隐藏 -->
+                    <button class="button warn" id="batchSendPauseBtn" type="button" hidden disabled>暂停</button>
+                    <!-- 手动执行（仅 PAUSED 时可点击） -->
+                    <button class="button secondary" id="batchSendManualBtn" type="button" disabled>手动执行</button>
                 </div>
             </div>
 

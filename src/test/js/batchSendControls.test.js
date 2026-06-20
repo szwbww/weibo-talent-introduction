@@ -23,7 +23,12 @@ const BATCH_SEND_FNS = [
     "applyBatchSendBanner",
     "renderBatchSendAccountTable",
     "applyBatchSendControls",
-    "readBatchSendConfigForm"
+    "refreshBatchSendControls",
+    "readBatchSendConfigForm",
+    "enableBatchSendSchedule",
+    "handleBatchSendToggle",
+    "handleBatchSendStart",
+    "handleBatchSendPause"
 ];
 
 // Build a per-selector element stub store so tests can assert on DOM state.
@@ -41,6 +46,7 @@ function createElementStore() {
                 value: "",
                 checked: false,
                 title: "",
+                dataset: {},
                 parentElement: null
             });
         }
@@ -76,6 +82,22 @@ function createBatchSendSandbox() {
 }
 
 describe("Batch Send Controls (phase 04)", () => {
+    function setConfigForm(sb, fields) {
+        const map = {
+            batchSendAutoEnabled: "checked",
+            batchSendFrequency: "value",
+            batchSendTime: "value",
+            batchSendDailyCap: "value",
+            batchSendRoundSize: "value",
+            batchSendPerMailIntervalSec: "value",
+            batchSendPerRoundIntervalSec: "value",
+            batchSendSelfCheckTtlMin: "value"
+        };
+        for (const [id, prop] of Object.entries(map)) {
+            const el = sb.$("#" + id);
+            el[prop] = fields[id] ?? (prop === "value" ? "" : false);
+        }
+    }
 
     describe("L4-1 button state machine", () => {
         it("IDLE: only 开始 enabled; 暂停/手动 disabled", () => {
@@ -159,7 +181,7 @@ describe("Batch Send Controls (phase 04)", () => {
     });
 
     describe("applyBatchSendControls end-to-end (L4-1 + I-2 + I-8 + L4-2)", () => {
-        it("IDLE: 开始 enabled labeled 开始执行; 暂停/手动 disabled; badges set; banner hidden", () => {
+        it("IDLE: 切换按钮 enabled labeled 开始执行(action=start); 暂停按钮隐藏; 手动隐藏/disabled; badges set; banner hidden", () => {
             const sb = createBatchSendSandbox();
             sb.applyBatchSendControls({
                 status: "IDLE", mode: "NONE", pauseReason: "",
@@ -170,14 +192,17 @@ describe("Batch Send Controls (phase 04)", () => {
             const manual = sb.__store.get("batchSendManualBtn");
             assert.strictEqual(start.disabled, false);
             assert.strictEqual(start.textContent, "开始执行");
-            assert.strictEqual(pause.disabled, true);
+            assert.strictEqual(start.dataset.action, "start");
+            assert.strictEqual(pause.hidden, true);
+            // 手动执行按钮始终显示，仅在非 PAUSED 时禁用
+            assert.strictEqual(manual.hidden, false);
             assert.strictEqual(manual.disabled, true);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "—");
             assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "空闲");
             assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, true);
         });
 
-        it("RUNNING + AUTO: only 暂停 enabled; mode badge 自动定时; status badge 运行中", () => {
+        it("RUNNING + AUTO: 切换按钮 labeled 暂停(action=pause) enabled; mode badge 自动定时; status badge 运行中", () => {
             const sb = createBatchSendSandbox();
             sb.applyBatchSendControls({
                 status: "RUNNING", mode: "AUTO", pauseReason: "",
@@ -188,8 +213,12 @@ describe("Batch Send Controls (phase 04)", () => {
                     { accountCode: "acct2", todaySent: 0, dailyLimit: 100, success: 0, failed: 1, paused: true, pauseReason: "SELF_CHECK_FAILED:timeout" }
                 ]
             });
-            assert.strictEqual(sb.__store.get("batchSendStartBtn").disabled, true);
-            assert.strictEqual(sb.__store.get("batchSendPauseBtn").disabled, false);
+            assert.strictEqual(sb.__store.get("batchSendStartBtn").disabled, false);
+            assert.strictEqual(sb.__store.get("batchSendStartBtn").textContent, "暂停");
+            assert.strictEqual(sb.__store.get("batchSendStartBtn").dataset.action, "pause");
+            assert.strictEqual(sb.__store.get("batchSendPauseBtn").hidden, true);
+            // 手动执行按钮始终显示，RUNNING 时禁用
+            assert.strictEqual(sb.__store.get("batchSendManualBtn").hidden, false);
             assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, true);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "自动定时");
             assert.strictEqual(sb.__store.get("batchSendModeBadge").className, "badge primary");
@@ -208,7 +237,7 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.ok(tableHtml.includes("SELF_CHECK_FAILED:timeout"));
         });
 
-        it("PAUSED + NO_AVAILABLE_ACCOUNT: 开始(继续)+手动 enabled, 暂停 disabled; banner shown", () => {
+        it("PAUSED + NO_AVAILABLE_ACCOUNT: 切换(继续)+手动 enabled/visible, 暂停按钮隐藏; banner shown", () => {
             const sb = createBatchSendSandbox();
             sb.applyBatchSendControls({
                 status: "PAUSED", mode: "MANUAL", pauseReason: "NO_AVAILABLE_ACCOUNT",
@@ -217,8 +246,10 @@ describe("Batch Send Controls (phase 04)", () => {
             const start = sb.__store.get("batchSendStartBtn");
             assert.strictEqual(start.disabled, false);
             assert.strictEqual(start.textContent, "继续/恢复");
+            assert.strictEqual(start.dataset.action, "start");
+            assert.strictEqual(sb.__store.get("batchSendManualBtn").hidden, false);
             assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, false);
-            assert.strictEqual(sb.__store.get("batchSendPauseBtn").disabled, true);
+            assert.strictEqual(sb.__store.get("batchSendPauseBtn").hidden, true);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "手动");
             assert.strictEqual(sb.__store.get("batchSendModeBadge").className, "badge warn");
             assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "已暂停");
@@ -243,25 +274,23 @@ describe("Batch Send Controls (phase 04)", () => {
             sb.applyBatchSendControls({ status: "PAUSED", mode: "MANUAL", accounts: [] });
             assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, false, "manual should be enabled for PAUSED");
         });
+
+        it("IDLE + autoEnabled: schedule is active so toggle button shows pause", () => {
+            const sb = createBatchSendSandbox();
+            sb.applyBatchSendControls({ status: "IDLE", mode: "AUTO", autoEnabled: true, accounts: [] });
+
+            const start = sb.__store.get("batchSendStartBtn");
+            assert.strictEqual(start.disabled, false);
+            assert.strictEqual(start.textContent, "暂停");
+            assert.strictEqual(start.dataset.action, "pause");
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "定时中");
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").className, "badge primary");
+        });
     });
 
     describe("config form seconds <-> milliseconds conversion", () => {
         function setForm(sb, fields) {
-            const map = {
-                batchSendAutoEnabled: "checked",
-                batchSendFrequency: "value",
-                batchSendTime: "value",
-                batchSendDailyCap: "value",
-                batchSendRoundSize: "value",
-                batchSendPerMailIntervalSec: "value",
-                batchSendPerRoundIntervalSec: "value",
-                batchSendSelfCheckTtlMin: "value"
-            };
-            for (const [id, prop] of Object.entries(map)) {
-                // Use sb.$ so the element stub is created on demand in the sandbox store.
-                const el = sb.$("#" + id);
-                el[prop] = fields[id] ?? (prop === "value" ? "" : false);
-            }
+            setConfigForm(sb, fields);
         }
 
         it("seconds are converted to ms on read (1s -> 1000ms, 60s -> 60000ms)", () => {
@@ -329,6 +358,139 @@ describe("Batch Send Controls (phase 04)", () => {
                 batchSendSelfCheckTtlMin: "30"
             });
             assert.throws(() => sb.readBatchSendConfigForm(), /数字/);
+        });
+    });
+
+    describe("schedule start behavior", () => {
+        it("launch modal binds the start button to the toggle handler", () => {
+            assert.ok(
+                !appJsSource.includes("startBtn.onclick = handleBatchSendStart"),
+                "batch send start button must use handleBatchSendToggle so pause clicks cannot start the timer"
+            );
+        });
+
+        it("IDLE start enables schedule without launching manual outreach", async () => {
+            const sb = createBatchSendSandbox();
+            setConfigForm(sb, {
+                batchSendAutoEnabled: true,
+                batchSendFrequency: "daily",
+                batchSendTime: "09:30",
+                batchSendDailyCap: "1000",
+                batchSendRoundSize: "50",
+                batchSendPerMailIntervalSec: "1",
+                batchSendPerRoundIntervalSec: "60",
+                batchSendSelfCheckTtlMin: "30"
+            });
+            const calls = [];
+            sb.api = async (url, options) => {
+                calls.push({ url, method: options?.method, body: options?.body });
+                return JSON.parse(options.body);
+            };
+            sb.fillBatchSendConfigForm = () => {};
+            sb.refreshBatchSendControls = async () => {};
+            let toast = null;
+            sb.showModalToast = (message, type) => { toast = { message, type }; };
+            let status = null;
+            sb.showStatus = (message, type) => { status = { message, type }; };
+
+            await sb.enableBatchSendSchedule("IDLE");
+
+            assert.deepStrictEqual(calls.map(c => c.url), ["/api/mail/batch-send/config"]);
+            assert.strictEqual(JSON.parse(calls[0].body).autoEnabled, true);
+            assert.strictEqual(JSON.parse(calls[0].body).cron, "0 30 9 * * ?");
+            assert.ok(!calls.some(c => c.url === "/api/mail/manual-outreach/start"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/start-auto"));
+            assert.strictEqual(toast.type, "ok");
+            assert.strictEqual(status.type, "ok");
+        });
+
+        it("PAUSED resume enables schedule and clears pause without immediate execution", async () => {
+            const sb = createBatchSendSandbox();
+            setConfigForm(sb, {
+                batchSendAutoEnabled: true,
+                batchSendFrequency: "daily",
+                batchSendTime: "09:30",
+                batchSendDailyCap: "1000",
+                batchSendRoundSize: "50",
+                batchSendPerMailIntervalSec: "1",
+                batchSendPerRoundIntervalSec: "60",
+                batchSendSelfCheckTtlMin: "30"
+            });
+            const calls = [];
+            sb.api = async (url, options) => {
+                calls.push({ url, method: options?.method, body: options?.body });
+                return options?.body ? JSON.parse(options.body) : {};
+            };
+            sb.fillBatchSendConfigForm = () => {};
+            sb.refreshBatchSendControls = async () => {};
+            sb.showModalToast = () => {};
+            sb.showStatus = () => {};
+
+            await sb.enableBatchSendSchedule("PAUSED");
+
+            assert.deepStrictEqual(calls.map(c => c.url), [
+                "/api/mail/batch-send/config",
+                "/api/mail/batch-send/resume-schedule"
+            ]);
+            assert.ok(!calls.some(c => c.url === "/api/mail/manual-outreach/start"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/start-auto"));
+        });
+
+        it("pause while timer is active disables schedule without pausing an execution", async () => {
+            const sb = createBatchSendSandbox();
+            const calls = [];
+            sb.api = async (url, options) => {
+                calls.push({ url, method: options?.method });
+                return url === "/api/mail/batch-send/status"
+                    ? { status: "IDLE", mode: "AUTO", autoEnabled: true, accounts: [] }
+                    : {};
+            };
+            let modalToast = null;
+            sb.showModalToast = (message, type) => { modalToast = { message, type }; };
+            sb.showStatus = () => {};
+
+            await sb.handleBatchSendPause();
+
+            assert.deepStrictEqual(calls.map(c => c.url), [
+                "/api/mail/batch-send/status",
+                "/api/mail/batch-send/pause-schedule",
+                "/api/mail/batch-send/status"
+            ]);
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/pause"));
+            assert.deepStrictEqual(modalToast, { message: "已暂停定时发送", type: "ok" });
+        });
+
+        it("toggle rechecks status so stale start action does not restart an active timer", async () => {
+            const sb = createBatchSendSandbox();
+            setConfigForm(sb, {
+                batchSendAutoEnabled: true,
+                batchSendFrequency: "daily",
+                batchSendTime: "09:30",
+                batchSendDailyCap: "1000",
+                batchSendRoundSize: "50",
+                batchSendPerMailIntervalSec: "1",
+                batchSendPerRoundIntervalSec: "60",
+                batchSendSelfCheckTtlMin: "30"
+            });
+            const start = sb.$("#batchSendStartBtn");
+            start.textContent = "暂停";
+            start.dataset.action = "start";
+            const calls = [];
+            sb.api = async (url, options) => {
+                calls.push({ url, method: options?.method, body: options?.body });
+                return url === "/api/mail/batch-send/status"
+                    ? { status: "IDLE", mode: "AUTO", autoEnabled: true, accounts: [] }
+                    : {};
+            };
+            sb.confirm = () => true;
+            sb.showStatus = () => {};
+            sb.showModalToast = () => {};
+            sb.fillBatchSendConfigForm = () => {};
+
+            await sb.handleBatchSendToggle();
+
+            assert.ok(calls.some(c => c.url === "/api/mail/batch-send/pause-schedule"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/config"));
         });
     });
 });

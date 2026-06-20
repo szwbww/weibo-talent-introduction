@@ -59,7 +59,20 @@ describe("renderBatchTable (from app.js)", () => {
         assert.ok(html.includes("20%"), "percentage present");
     });
 
-    it("batchNumber values rendered as-is (filtering done server-side)", () => {
+    it("keeps only the latest log for each batchNumber", () => {
+        const logs = [
+            { batchNumber: 1, batchProcessed: 4, batchPassed: 3, batchRejected: 1, processedCount: 4, totalCount: 100, createdAt: "2026-06-10T10:00:00" },
+            { batchNumber: 1, batchProcessed: 10, batchPassed: 8, batchRejected: 2, processedCount: 10, totalCount: 100, createdAt: "2026-06-10T10:00:10" },
+            { batchNumber: 2, batchProcessed: 5, batchPassed: 5, batchRejected: 0, processedCount: 15, totalCount: 100, createdAt: "2026-06-10T10:01:00" }
+        ];
+        const html = renderBatchTable(logs);
+        assert.strictEqual((html.match(/<tr>\s*<td>1<\/td>/g) || []).length, 1);
+        assert.ok(!html.includes("4/100"), "older batch 1 progress should be replaced");
+        assert.ok(html.includes("10/100"), "latest batch 1 progress should be shown");
+        assert.ok(html.includes("<td>2</td>"), "batchNumber 2 present");
+    });
+
+    it("batchNumber values rendered after frontend dedupe", () => {
         const logs = [
             { batchNumber: 1, batchProcessed: 5, batchPassed: 5, batchRejected: 0, processedCount: 5, totalCount: 10, createdAt: null }
         ];

@@ -218,6 +218,9 @@ class ManualInitialOutreachService(
 
             // 4. Send this round
             var roundSent = 0
+            var roundProcessed = 0
+            var roundPassed = 0
+            var roundRejected = 0
             var midRoundStop = false
             while (roundSent < roundQuota && targetIterator.hasNext()) {
                 val (existingContact, expert) = targetIterator.next()
@@ -227,9 +230,12 @@ class ManualInitialOutreachService(
                 if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
                     processedTotal++
                     roundSent++
+                    roundProcessed++
+                    roundRejected++
                     updateProgress(executionId, sentCount, failedCount, processedTotal,
                         totalEstimate - processedTotal, totalEstimate, totalEstimate,
-                        "RUNNING", "已跳过抑制邮箱：${email ?: ""}", errors, mode, roundNumber, config, runAccountStats)
+                        "RUNNING", "已跳过抑制邮箱：${email ?: ""}", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected)
                     continue
                 }
 
@@ -310,6 +316,7 @@ class ManualInitialOutreachService(
                         sentCount++
                         dailySentTotal++
                         stat.success++
+                        roundPassed++
                     } else {
                         val errorSummary = buildSmtpErrorSummary(delivered)
                         when (delivered.errorCategory) {
@@ -325,6 +332,7 @@ class ManualInitialOutreachService(
                                 expertIndexWriterService.syncCandidateOperatorStatus(normOrcid, "EMAIL_INVALID")
                                 failedCount++
                                 stat.failed++
+                                roundRejected++
                                 errors.add("永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 if (errors.size > 20) errors.removeAt(0)
                             }
@@ -339,6 +347,7 @@ class ManualInitialOutreachService(
                                     accountRateLimiter.recordThrottled(account.accountCode, provider, config.perMailIntervalMs)
                                     failedCount++
                                     stat.failed++
+                                    roundRejected++
                                     errors.add("限流 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                     if (errors.size > 20) errors.removeAt(0)
                                 } else {
@@ -348,6 +357,7 @@ class ManualInitialOutreachService(
                                     )
                                     failedCount++
                                     stat.failed++
+                                    roundRejected++
                                     errors.add("暂时发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                     if (errors.size > 20) errors.removeAt(0)
                                     midRoundStop = true
@@ -366,6 +376,7 @@ class ManualInitialOutreachService(
                                 )
                                 failedCount++
                                 stat.failed++
+                                roundRejected++
                                 errors.add("基础设施发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 if (errors.size > 20) errors.removeAt(0)
                                 midRoundStop = true
@@ -379,6 +390,7 @@ class ManualInitialOutreachService(
                                 )
                                 failedCount++
                                 stat.failed++
+                                roundRejected++
                                 errors.add("发送失败 (${expert.email}): ${delivered.status}")
                                 if (errors.size > 20) errors.removeAt(0)
                             }
@@ -388,6 +400,7 @@ class ManualInitialOutreachService(
                     log.error("Failed to process ORCID: {}", normOrcid, e)
                     failedCount++
                     stat.failed++
+                    roundRejected++
                     errors.add("发送异常 (${expert.email}): ${e.message ?: "Unknown error"}")
                     if (errors.size > 20) errors.removeAt(0)
                     // Continue to next expert — don't stop the whole task
@@ -401,11 +414,13 @@ class ManualInitialOutreachService(
 
                 processedTotal++
                 roundSent++
+                roundProcessed++
 
                 // Update progress (I-8: per-account stats)
                 updateProgress(executionId, sentCount, failedCount, processedTotal,
                     totalEstimate - processedTotal, totalEstimate, totalEstimate,
-                    "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats)
+                    "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
+                    roundNumber, roundProcessed, roundPassed, roundRejected)
 
                 // Throttle per mail (I-6 + dynamic rate limiter)
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
@@ -419,7 +434,8 @@ class ManualInitialOutreachService(
             // 5. Round end progress (I-8)
             updateProgress(executionId, sentCount, failedCount, processedTotal,
                 totalEstimate - processedTotal, totalEstimate, totalEstimate,
-                "RUNNING", "第${roundNumber}轮完成，已发送 $sentCount 封", errors, mode, roundNumber, config, runAccountStats)
+                "RUNNING", "第${roundNumber}轮完成，已发送 $sentCount 封", errors, mode, roundNumber, config, runAccountStats,
+                roundNumber, roundProcessed, roundPassed, roundRejected)
 
             // 6. oneRoundOnly (manual button) — return after one round (L3-2: back to PAUSED)
             if (oneRoundOnly) {
@@ -535,7 +551,8 @@ class ManualInitialOutreachService(
     }
 
     private fun buildAccountStats(runAccountStats: Map<String, AccountRunStat>, config: BatchSendConfig): List<AccountStatRow> {
-        val allAccounts = mailSenderAccountService.listAccounts()
+        // 运行中账号统计仅展示已启用账号；已禁用(enabled=false)账号不参与发送，不应出现在面板中。
+        val allAccounts = mailSenderAccountService.listEnabledAccounts()
         val rateLimiterSnapshot = accountRateLimiter.getSnapshot()
         return allAccounts.map { account ->
             val runStat = runAccountStats[account.accountCode]
@@ -557,7 +574,11 @@ class ManualInitialOutreachService(
         remaining: Int, total: Int, totalCount: Int,
         status: String, message: String, errors: List<String>,
         mode: ExecutionMode, roundNumber: Int,
-        config: BatchSendConfig, runAccountStats: Map<String, AccountRunStat>
+        config: BatchSendConfig, runAccountStats: Map<String, AccountRunStat>,
+        batchNumber: Int = 0,
+        batchProcessed: Int = 0,
+        batchPassed: Int = 0,
+        batchRejected: Int = 0
     ) {
         val details = mapOf(
             "executionMode" to mode.name,
@@ -574,10 +595,13 @@ class ManualInitialOutreachService(
         )
         progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
             taskType = "MANUAL_INITIAL_OUTREACH", status = status,
-            batchNumber = processed, processedCount = processed.toLong(), totalCount = totalCount.toLong(),
+            batchNumber = batchNumber, processedCount = processed.toLong(), totalCount = totalCount.toLong(),
             message = message,
             details = details,
-            errors = errors.toList(), batchPassed = sent, batchRejected = failed,
+            errors = errors.toList(),
+            batchProcessed = batchProcessed,
+            batchPassed = batchPassed,
+            batchRejected = batchRejected,
             executionId = executionId
         ), executionId)
     }

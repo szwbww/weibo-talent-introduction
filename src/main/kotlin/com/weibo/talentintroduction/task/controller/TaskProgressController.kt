@@ -61,7 +61,13 @@ class TaskProgressController(
             }
             ?: return emptyList()
         val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(targetExecutionId)
-        return if (batchOnly) logs.filter { it.batchNumber > 0 } else logs
+        if (!batchOnly) return logs
+        // 同一批次号(batchNumber)可能因多次进度更新落多条日志，批次明细去重：
+        // 每个 batchNumber 仅保留最新一条(id 最大)，按批次号升序返回，避免明细表出现重复行。
+        return logs.filter { it.batchNumber > 0 }
+            .groupBy { it.batchNumber }
+            .map { (_, group) -> group.last() }
+            .sortedBy { it.batchNumber }
     }
 
     @GetMapping("/{taskType}/executions")

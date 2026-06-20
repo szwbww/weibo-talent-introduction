@@ -116,6 +116,7 @@ class ManualInitialOutreachServiceTest {
         // Default: one sendable account "chen"
         Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(listOf(account("chen")))
         Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(listOf(account("chen")))
+        Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(listOf(account("chen")))
         // Default: self-check always passes (from cache, no probe)
         Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")))).thenReturn(
             SelfCheckResult("chen", passed = true, message = null, fromCache = true)
@@ -611,6 +612,47 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, chenRow.success)
         assertEquals(0, chenRow.failed)
         assertFalse(chenRow.paused)
+    }
+
+    @Test
+    fun `runScheduledBatch progress uses per-batch counts instead of cumulative counts`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(
+            expert("0001", "a@b.com"),
+            expert("0002", "b@b.com")
+        ))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0002")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 1, dailyCap = 10))
+
+        service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        val progressCaptor = org.mockito.ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("MANUAL_INITIAL_OUTREACH"),
+            captureValue(progressCaptor, TaskProgress("MANUAL_INITIAL_OUTREACH", "RUNNING", 0, 0, 0)),
+            eqValue(12345L)
+        )
+        val runningUpdates = progressCaptor.allValues.filter {
+            it.status == "RUNNING" && it.message?.startsWith("正在发送") == true
+        }
+        assertEquals(2, runningUpdates.size)
+        assertEquals(1, runningUpdates[0].batchNumber)
+        assertEquals(1, runningUpdates[0].batchProcessed)
+        assertEquals(1, runningUpdates[0].batchPassed)
+        assertEquals(0, runningUpdates[0].batchRejected)
+        assertEquals(2, runningUpdates[1].batchNumber)
+        assertEquals(1, runningUpdates[1].batchProcessed)
+        assertEquals(1, runningUpdates[1].batchPassed)
+        assertEquals(0, runningUpdates[1].batchRejected)
     }
 
     @Test

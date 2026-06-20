@@ -455,7 +455,7 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         if (batchProgressPanel) batchProgressPanel.hidden = true;
         if (isBatchSend) {
             const startBtn = $("#batchSendStartBtn");
-            if (startBtn) startBtn.onclick = handleBatchSendStart;
+            if (startBtn) startBtn.onclick = handleBatchSendToggle;
             const pauseBtn = $("#batchSendPauseBtn");
             if (pauseBtn) pauseBtn.onclick = handleBatchSendPause;
             const manualBtn = $("#batchSendManualBtn");
@@ -478,6 +478,7 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         if (messageEl) messageEl.textContent = "初始化中...";
         if (cancelBtn) {
             cancelBtn.disabled = false;
+            cancelBtn.hidden = false;
             cancelBtn.textContent = "取消任务";
         }
         if (errorsDiv) errorsDiv.hidden = true;
@@ -595,14 +596,18 @@ function renderRunList(runs, taskType, generation) {
     if (!isCurrentTaskModal(taskType, generation)) return;
     const runBody = $("#taskModalRunBody");
     if (!runBody) return;
-    runBody.innerHTML = runs.length > 0
-        ? runs.map(r => renderRunRow(r, taskType)).join("")
-        : `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">暂无执行记录</td></tr>`;
     if (currentTaskModal) {
         runs.forEach(r => {
             currentTaskModal.runStatusByExecutionId[r.executionId] = r.status;
         });
     }
+    const html = runs.length > 0
+        ? runs.map(r => renderRunRow(r, taskType)).join("")
+        : `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">暂无执行记录</td></tr>`;
+    // 内容未变化时跳过整表重写，避免每 5s 轮询导致的明显闪烁（及展开行被反复销毁重建）。
+    if (runBody.__lastHtml === html) return;
+    runBody.__lastHtml = html;
+    runBody.innerHTML = html;
 }
 
 function updateExpandedFromCache(taskType, generation) {
@@ -681,9 +686,10 @@ function updateTaskModalFromProgress(progress, generation) {
     if (currentTaskModal) {
         const justObservedTerminal = observeTaskModalProgress(progress, generation);
         if (justObservedTerminal) {
+            // 终态：直接隐藏取消按钮（终态状态已由上方 taskModalStatus 徽标表达），
+            // 不再保留一个不可点击、改名为"已完成"的无意义按钮。
             cancelBtn.disabled = true;
-            const meta = getProgressStatusMeta(progress.status);
-            cancelBtn.textContent = meta.label;
+            cancelBtn.hidden = true;
             if (currentTaskModal.btnId) {
                 restoreTaskButton(currentTaskModal.btnId);
             }
@@ -731,14 +737,30 @@ function updateTaskModalLogs(executionId, logs) {
     // 刷新第一层执行行的内嵌批次表
     const batchBody = document.getElementById(`batch-body-${executionId}`);
     if (!batchBody) return;
-    batchBody.innerHTML = renderBatchTable(logs);
+    const html = renderBatchTable(logs);
+    // 内容未变化时跳过重写，避免每 3s 日志轮询导致批次表闪烁。
+    if (batchBody.__lastHtml === html) return;
+    batchBody.__lastHtml = html;
+    batchBody.innerHTML = html;
 }
 
 function renderBatchTable(logs) {
     if (!logs || logs.length === 0) {
         return `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
     }
-    return logs.map(log => {
+    const latestByBatch = new Map();
+    logs.forEach(log => {
+        const batchNumber = Number(log.batchNumber);
+        if (!Number.isFinite(batchNumber) || batchNumber <= 0) return;
+        latestByBatch.set(batchNumber, log);
+    });
+    const rows = Array.from(latestByBatch.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, log]) => log);
+    if (rows.length === 0) {
+        return `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+    }
+    return rows.map(log => {
         const time = formatDateTime(log.createdAt);
         const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
         return `
@@ -2036,7 +2058,7 @@ async function openTaskLaunchModal(taskType) {
     if (isBatchSend) {
         if (pre && pre.batchConfig) fillBatchSendConfigForm(pre.batchConfig);
         const startBtn = $("#batchSendStartBtn");
-        if (startBtn) startBtn.onclick = handleBatchSendStart;
+        if (startBtn) startBtn.onclick = handleBatchSendToggle;
         const pauseBtn = $("#batchSendPauseBtn");
         if (pauseBtn) pauseBtn.onclick = handleBatchSendPause;
         const manualBtn = $("#batchSendManualBtn");
@@ -2396,12 +2418,14 @@ function batchSendModeLabel(mode) {
 function batchSendStatusLabel(status) {
     if (status === "RUNNING") return "运行中";
     if (status === "PAUSED") return "已暂停";
+    if (status === "SCHEDULED") return "定时中";
     if (status === "IDLE") return "空闲";
     return status || "—";
 }
 
 function batchSendStatusBadgeType(status) {
     if (status === "RUNNING") return "primary";
+    if (status === "SCHEDULED") return "primary";
     if (status === "PAUSED") return "warn";
     return "";
 }
@@ -2426,17 +2450,45 @@ function applyBatchSendControls(statusView) {
     if (!statusView) return;
     const status = statusView.status || "IDLE";
     const mode = statusView.mode || "NONE";
+    const scheduleActive = status === "IDLE" && statusView.autoEnabled === true;
+    const displayStatus = scheduleActive ? "SCHEDULED" : status;
     const states = batchSendButtonStates(status);
 
     const startBtn = $("#batchSendStartBtn");
     const pauseBtn = $("#batchSendPauseBtn");
     const manualBtn = $("#batchSendManualBtn");
+    // 单个切换按钮：RUNNING 显示"暂停"(点击暂停)，其余显示"开始执行/继续"(点击启动/恢复)。
+    // dataset.action 决定点击行为，由 handleBatchSendToggle 读取。
     if (startBtn) {
-        startBtn.disabled = states.start;
-        startBtn.textContent = status === "PAUSED" ? "继续/恢复" : "开始执行";
+        if (status === "RUNNING" || scheduleActive) {
+            startBtn.textContent = "暂停";
+            startBtn.className = "button warn";
+            startBtn.disabled = false;
+            startBtn.dataset.action = "pause";
+        } else if (status === "PAUSED") {
+            startBtn.textContent = "继续/恢复";
+            startBtn.className = "button primary";
+            startBtn.disabled = false;
+            startBtn.dataset.action = "start";
+        } else if (status === "IDLE") {
+            startBtn.textContent = "开始执行";
+            startBtn.className = "button primary";
+            startBtn.disabled = false;
+            startBtn.dataset.action = "start";
+        } else {
+            startBtn.textContent = "开始执行";
+            startBtn.className = "button primary";
+            startBtn.disabled = true;
+            startBtn.dataset.action = "start";
+        }
     }
-    if (pauseBtn) pauseBtn.disabled = states.pause;
-    if (manualBtn) manualBtn.disabled = states.manual;
+    // 开始/暂停已并入上方切换按钮，原暂停按钮始终隐藏。
+    if (pauseBtn) { pauseBtn.hidden = true; pauseBtn.disabled = states.pause; }
+    // 手动执行按钮始终保留显示；仅在 PAUSED 时可点击（后端 I-9 仅在 PAUSED 允许手动）。
+    if (manualBtn) {
+        manualBtn.hidden = false;
+        manualBtn.disabled = states.manual;
+    }
 
     const modeBadge = $("#batchSendModeBadge");
     if (modeBadge) {
@@ -2445,8 +2497,8 @@ function applyBatchSendControls(statusView) {
     }
     const statusBadge = $("#batchSendStatusBadge");
     if (statusBadge) {
-        statusBadge.textContent = batchSendStatusLabel(status);
-        statusBadge.className = "badge " + batchSendStatusBadgeType(status);
+        statusBadge.textContent = batchSendStatusLabel(displayStatus);
+        statusBadge.className = "badge " + batchSendStatusBadgeType(displayStatus);
     }
 
     renderBatchSendAccountTable(statusView);
@@ -2588,20 +2640,23 @@ function renderBatchSendAccountTable(statusView) {
         const sent = statusView?.sentTotal ?? 0;
         const failed = statusView?.failedTotal ?? 0;
         const round = statusView?.roundNumber ?? 0;
-        summary.innerHTML = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>`;
+        const summaryHtml = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>`;
+        // 内容未变化时跳过重写，避免轮询导致汇总行闪烁。
+        if (summary.__lastHtml !== summaryHtml) {
+            summary.__lastHtml = summaryHtml;
+            summary.innerHTML = summaryHtml;
+        }
     }
 
-    if (accounts.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`;
-        return;
-    }
-    tbody.innerHTML = accounts.map((a) => {
-        const statusCell = a.paused
-            ? `<span class="badge warn" title="${escapeHtml(a.pauseReason || "自动暂停")}">自动暂停</span>`
-            : `<span class="badge ok">正常</span>`;
-        const intervalMs = a.currentIntervalMs ?? 0;
-        const intervalLabel = intervalMs >= 1000 ? `${(intervalMs / 1000).toFixed(1)}s` : `${intervalMs}ms`;
-        return `
+    const tableHtml = accounts.length === 0
+        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`
+        : accounts.map((a) => {
+            const statusCell = a.paused
+                ? `<span class="badge warn" title="${escapeHtml(a.pauseReason || "自动暂停")}">自动暂停</span>`
+                : `<span class="badge ok">正常</span>`;
+            const intervalMs = a.currentIntervalMs ?? 0;
+            const intervalLabel = intervalMs >= 1000 ? `${(intervalMs / 1000).toFixed(1)}s` : `${intervalMs}ms`;
+            return `
             <tr>
                 <td><strong>${escapeHtml(a.accountCode)}</strong></td>
                 <td>${a.todaySent}/${a.dailyLimit}</td>
@@ -2610,41 +2665,82 @@ function renderBatchSendAccountTable(statusView) {
                 <td>${intervalLabel}</td>
                 <td>${statusCell}</td>
             </tr>`;
-    }).join("");
+        }).join("");
+    // 内容未变化时跳过重写，避免每 1s 进度轮询导致账号表整体闪烁。
+    if (tbody.__lastHtml === tableHtml) return;
+    tbody.__lastHtml = tableHtml;
+    tbody.innerHTML = tableHtml;
 }
 
-// "开始执行/继续" handler. IDLE -> full manual start; PAUSED -> resume auto loop.
+// 单个切换按钮入口：RUNNING -> 暂停；IDLE/PAUSED -> 开始/恢复。
+// 行为依据按钮 dataset.action（由 applyBatchSendControls 设置），避免再次读取状态。
+async function handleBatchSendToggle() {
+    const startBtn = $("#batchSendStartBtn");
+    const statusView = await refreshBatchSendControls();
+    const latestStatus = statusView?.status;
+    const latestScheduleActive = latestStatus === "IDLE" && statusView?.autoEnabled === true;
+    const action = statusView
+        ? (latestStatus === "RUNNING" || latestScheduleActive ? "pause" : "start")
+        : (startBtn?.dataset?.action || "start");
+    if (action === "pause") {
+        if (!confirm("确定要暂停批量发送吗？暂停后定时任务将不再自动发送。")) return;
+        if (startBtn) startBtn.disabled = true;
+        await handleBatchSendPause(statusView);
+    } else {
+        const isResume = (startBtn?.textContent || "").includes("继续") || (startBtn?.textContent || "").includes("恢复");
+        const msg = isResume ? "确定要恢复自动定时发送吗？" : "确定要开始执行批量发送吗？";
+        if (!confirm(msg)) return;
+        if (startBtn) startBtn.disabled = true;
+        await handleBatchSendStart();
+    }
+}
+
+// Enables the cron-driven batch-send schedule. This never starts a send immediately.
+async function enableBatchSendSchedule(status) {
+    let payload;
+    try {
+        payload = readBatchSendConfigForm();
+    } catch (e) {
+        showModalToast("配置校验失败: " + e.message, "error");
+        return false;
+    }
+    const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
+    fillBatchSendConfigForm(saved);
+    if (status === "PAUSED") {
+        await api("/api/mail/batch-send/resume-schedule", { method: "POST" });
+    }
+    showModalToast(status === "PAUSED" ? "已恢复定时发送" : "定时器已启动", "ok");
+    showStatus(status === "PAUSED" ? "已恢复自动定时发送，将按配置时间执行" : "定时器已启动，将按配置时间执行", "ok");
+    await refreshBatchSendControls();
+    return true;
+}
+
+// "开始执行/继续" handler. IDLE/PAUSED -> enable cron schedule; no immediate send.
 async function handleBatchSendStart() {
     const startBtn = $("#batchSendStartBtn");
     if (startBtn) startBtn.disabled = true;
     try {
         const statusView = await refreshBatchSendControls();
         const status = statusView?.status || "IDLE";
-        if (status === "PAUSED") {
-            // "继续/恢复": resume the AUTO loop. POST first so 409 does not open an empty progress view.
-            // Backend may 409 if not IDLE/autoEnabled; surface the message so the operator can use "手动".
-            try {
-                await api("/api/mail/batch-send/start-auto", { method: "POST" });
-                openTaskModal(BATCH_SEND_TASK_TYPE, "批量发送介绍邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
-                showStatus("已请求恢复自动定时发送", "ok");
-            } catch (e) {
-                showStatus("恢复失败: " + e.message + "（可使用「手动」执行一轮或等待下次定时）", "warn");
-            }
-        } else {
-            // IDLE: full manual run via the existing outreach start path.
-            await executeManualOutreach();
-        }
+        await enableBatchSendSchedule(status);
+    } catch (e) {
+        showStatus("启动定时器失败: " + e.message, "error");
     } finally {
         refreshBatchSendControls().catch(() => {});
     }
 }
 
-async function handleBatchSendPause() {
+async function handleBatchSendPause(statusViewOverride = null) {
     const pauseBtn = $("#batchSendPauseBtn");
     if (pauseBtn) pauseBtn.disabled = true;
     try {
-        await api("/api/mail/batch-send/pause", { method: "POST" });
-        showStatus("已请求暂停批量发送", "ok");
+        const statusView = statusViewOverride || await refreshBatchSendControls();
+        const status = statusView?.status || "IDLE";
+        const endpoint = status === "RUNNING" ? "/api/mail/batch-send/pause" : "/api/mail/batch-send/pause-schedule";
+        await api(endpoint, { method: "POST" });
+        const message = status === "RUNNING" ? "已请求暂停批量发送" : "已暂停定时发送";
+        showModalToast(message, "ok");
+        showStatus(message, "ok");
     } catch (e) {
         showStatus("暂停失败: " + e.message, "error");
     } finally {
@@ -2653,6 +2749,7 @@ async function handleBatchSendPause() {
 }
 
 async function handleBatchSendManual() {
+    if (!confirm("确定要手动执行一轮发送吗？")) return;
     const manualBtn = $("#batchSendManualBtn");
     if (manualBtn) manualBtn.disabled = true;
     try {
