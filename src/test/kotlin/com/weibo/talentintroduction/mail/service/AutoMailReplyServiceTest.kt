@@ -67,6 +67,7 @@ class AutoMailReplyServiceTest {
             }
         }
     )
+    private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -89,7 +90,8 @@ class AutoMailReplyServiceTest {
         expertOperatorStatusService,
         bounceDetector,
         bounceCollectionService,
-        bounceRateMonitorService
+        bounceRateMonitorService,
+        emailSuppressionService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -617,6 +619,117 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `QA auto reply skips send and hands off when recipient is suppressed`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(true)
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndReasonAndHandoffStatusOrderByUpdatedAtDesc(
+                11, "RECIPIENT_UNSUBSCRIBED", "PENDING"
+            )
+        ).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        assertEquals(0, result.replied)
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        val handoffCaptor = ArgumentCaptor.forClass(ManualHandoff::class.java)
+        Mockito.verify(manualHandoffRepository).save(handoffCaptor.capture())
+        assertEquals("RECIPIENT_UNSUBSCRIBED", handoffCaptor.value.reason)
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
+        assertEquals(ConversationStatus.MANUAL_HANDOFF.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `QA auto reply sends normally when recipient is not suppressed`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Re: Program", body = "Auto reply body"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.replied)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(emailSuppressionService).isSuppressed("expert@example.com")
+        Mockito.verify(deliveryService).send(
+            eqValue(account),
+            eqValue(ComposedMail(to = "expert@example.com", subject = "Re: Program", body = "Auto reply body"))
+        )
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
+        assertEquals(ConversationStatus.QA_AUTO_REPLIED.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `meeting invitation skips send and hands off when recipient is suppressed`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(
+            account,
+            contact,
+            reply(body = "I am interested in this opportunity")
+        )
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+        ).thenReturn(false)
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(true)
+        Mockito.`when`(
+            manualHandoffRepository.findFirstByExpertContactIdAndReasonAndHandoffStatusOrderByUpdatedAtDesc(
+                11, "RECIPIENT_UNSUBSCRIBED", "PENDING"
+            )
+        ).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        assertEquals(0, result.meetingInvitations)
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        Mockito.verifyNoInteractions(mailTemplateService)
+        val handoffCaptor = ArgumentCaptor.forClass(ManualHandoff::class.java)
+        Mockito.verify(manualHandoffRepository).save(handoffCaptor.capture())
+        assertEquals("RECIPIENT_UNSUBSCRIBED", handoffCaptor.value.reason)
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
+        assertEquals(ConversationStatus.MANUAL_HANDOFF.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
     fun `QA reply sets operator status to REPLIED`() {
         val account = account("sender")
         val contact = ExpertContact(
@@ -672,6 +785,46 @@ class AutoMailReplyServiceTest {
         Mockito.verify(expertOperatorStatusService).updateAutomatically(
             anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
         )
+    }
+
+    private fun introSentContact(): ExpertContact {
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            firstReplyAt = LocalDateTime.now()
+        )
+        defaultPromotionStubs(contact)
+        return contact
+    }
+
+    private fun stubAutoReplyPipeline(
+        account: MailSenderAccount,
+        contact: ExpertContact,
+        received: ReceivedMail = reply()
+    ) {
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(received))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
     }
 
     private fun reply(

@@ -3,6 +3,10 @@ const state = {
     accounts: [],
     categories: [],
     qaRules: [],
+    suppressions: [],
+    suppressionsPage: 0,
+    suppressionsTotal: 0,
+    suppressionKeyword: "",
     contacts: [],
     contactsPage: 0,
     contactsTotalHits: 0,
@@ -36,6 +40,7 @@ const viewMeta = {
     monitoring: ["邮件监控", "当日活动概览、自动回复全链路、发件账号健康。"],
     accounts: ["邮箱账号", "维护发送账号、权重、限额和连通性。"],
     qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
+    suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     unmatched: ["待处理邮件", "人工待办来信队列与专家绑定。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
@@ -1019,6 +1024,7 @@ async function refreshCurrentView() {
     try {
         if (state.view === "accounts") await loadAccounts();
         if (state.view === "qa") await loadQa();
+        if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
         if (state.view === "unmatched") await loadUnmatched();
         if (state.view === "tasks") await loadTasks();
@@ -1305,6 +1311,94 @@ async function handleQaAction(button) {
         const enabled = button.dataset.enabled === "true";
         await api(`/api/qa/rules/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
         await loadQa();
+    }
+}
+
+const suppressionSourceLabels = {
+    INBOUND_REPLY: "入站回复",
+    ONE_CLICK: "一键退订",
+    MAILTO: "Mailto",
+    MANUAL: "手动添加"
+};
+
+function renderSuppressionPager(size) {
+    const pager = $("#suppressionPager");
+    const total = state.suppressionsTotal;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    if (total <= size) {
+        pager.hidden = true;
+        return;
+    }
+    pager.hidden = false;
+    $("#suppressionPageInfo").textContent = `第 ${state.suppressionsPage + 1} / ${totalPages} 页（共 ${total} 条）`;
+    $("#suppressionPrevPage").disabled = state.suppressionsPage <= 0;
+    $("#suppressionNextPage").disabled = state.suppressionsPage >= totalPages - 1;
+}
+
+async function loadSuppressions() {
+    const size = 50;
+    const params = new URLSearchParams();
+    params.set("page", String(state.suppressionsPage));
+    params.set("size", String(size));
+    if (state.suppressionKeyword) {
+        params.set("keyword", state.suppressionKeyword);
+    }
+    const data = await api(`/api/suppressions?${params}`);
+    state.suppressions = data.items || [];
+    state.suppressionsTotal = data.total ?? state.suppressions.length;
+    renderSuppressionsTable();
+    renderSuppressionPager(size);
+}
+
+function renderSuppressionsTable() {
+    $("#suppressionsTable").innerHTML = state.suppressions.map((item) => {
+        const sourceLabel = suppressionSourceLabels[item.source] || item.source;
+        return `
+        <tr>
+            <td><strong>${escapeHtml(item.email)}</strong></td>
+            <td>${badge(sourceLabel, item.source === "MANUAL" ? "warn" : "neutral")}</td>
+            <td class="muted-cell">${escapeHtml(item.reason || "-")}</td>
+            <td>${escapeHtml(formatDateTime(item.createdAt) || "-")}</td>
+            <td class="actions">
+                <button class="button" data-action="remove-suppression" data-email="${escapeHtml(item.email)}">移除</button>
+            </td>
+        </tr>
+    `;
+    }).join("") || `<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">暂无退订记录</td></tr>`;
+}
+
+function showSuppressionEditor() {
+    $("#suppressionModal").hidden = false;
+    document.body.classList.add("modal-open");
+}
+
+function hideSuppressionEditor() {
+    const form = $("#suppressionForm");
+    form.reset();
+    $("#suppressionModal").hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
+async function saveSuppression(event) {
+    event.preventDefault();
+    const values = formValues(event.currentTarget);
+    const payload = {
+        email: values.email,
+        reason: values.reason?.trim() || null
+    };
+    const result = await api("/api/suppressions", { method: "POST", body: JSON.stringify(payload) });
+    showStatus(result.added ? "已加入退订名单" : "该邮箱已在名单中", result.added ? "ok" : "warn");
+    hideSuppressionEditor();
+    await loadSuppressions();
+}
+
+async function handleSuppressionAction(button) {
+    const action = button.dataset.action;
+    const email = button.dataset.email;
+    if (action === "remove-suppression") {
+        const result = await api(`/api/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+        showStatus(result.removed ? "已从退订名单移除" : "该邮箱不在名单中", result.removed ? "ok" : "warn");
+        await loadSuppressions();
     }
 }
 
@@ -4591,6 +4685,50 @@ function bindEvents() {
     $("#qaRulesTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleQaAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#reloadSuppressionsBtn").addEventListener("click", () => {
+        loadSuppressions().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#searchSuppressionsBtn").addEventListener("click", () => {
+        state.suppressionKeyword = $("#suppressionKeyword").value.trim();
+        state.suppressionsPage = 0;
+        loadSuppressions().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#suppressionKeyword").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            state.suppressionKeyword = $("#suppressionKeyword").value.trim();
+            state.suppressionsPage = 0;
+            loadSuppressions().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#newSuppressionBtn").addEventListener("click", () => {
+        showSuppressionEditor();
+    });
+    $("#suppressionForm").addEventListener("submit", (event) => {
+        saveSuppression(event).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#clearSuppressionBtn").addEventListener("click", hideSuppressionEditor);
+    $("#suppressionModalCloseBtn").addEventListener("click", hideSuppressionEditor);
+    $("#suppressionModalBackdrop").addEventListener("click", hideSuppressionEditor);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#suppressionModal").hidden) {
+            hideSuppressionEditor();
+        }
+    });
+    $("#suppressionsTable").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleSuppressionAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#suppressionPrevPage").addEventListener("click", () => {
+        if (state.suppressionsPage > 0) {
+            state.suppressionsPage -= 1;
+            loadSuppressions().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#suppressionNextPage").addEventListener("click", () => {
+        state.suppressionsPage += 1;
+        loadSuppressions().catch((error) => showStatus(error.message, "error"));
     });
     $("#loadContactsBtn").addEventListener("click", () => {
         loadContacts().catch((e) => showStatus(e.message, "error"));

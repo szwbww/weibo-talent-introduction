@@ -49,4 +49,36 @@ class AccountRateLimiterTest {
         assertEquals(baseIntervalMs, limiter.getIntervalMs("chen", baseIntervalMs))
         assertEquals(emptyMap<String, Long>(), limiter.getSnapshot())
     }
+
+    @Test
+    fun `provider throttled only affects that provider combo`() {
+        limiter.recordThrottled("chen", "gmail", baseIntervalMs)
+        assertEquals(2000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+        assertEquals(baseIntervalMs, limiter.getIntervalMs("chen", "outlook", baseIntervalMs))
+        assertEquals(baseIntervalMs, limiter.getIntervalMs("chen", baseIntervalMs))
+    }
+
+    @Test
+    fun `provider interval takes max of provider and account level`() {
+        limiter.recordThrottled("chen", baseIntervalMs)
+        assertEquals(2000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+
+        limiter.recordThrottled("chen", "gmail", baseIntervalMs)
+        assertEquals(2000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+
+        limiter.recordThrottled("chen", baseIntervalMs)
+        assertEquals(4000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+    }
+
+    @Test
+    fun `provider recordSuccess only recovers that provider combo`() {
+        limiter.recordThrottled("chen", "gmail", baseIntervalMs)
+        limiter.recordThrottled("chen", "gmail", baseIntervalMs)
+        assertEquals(4000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+        repeat(AccountRateLimiter.RECOVERY_THRESHOLD) {
+            limiter.recordSuccess("chen", "gmail", baseIntervalMs)
+        }
+        assertEquals(2000L, limiter.getIntervalMs("chen", "gmail", baseIntervalMs))
+        assertEquals(baseIntervalMs, limiter.getIntervalMs("chen", "outlook", baseIntervalMs))
+    }
 }

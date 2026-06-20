@@ -8,7 +8,8 @@ import java.util.Locale
 
 @Service
 class SenderAccountAssignmentService(
-    private val repository: MailSenderAccountRepository
+    private val repository: MailSenderAccountRepository,
+    private val warmup: SenderWarmupService
 ) {
     fun selectAccount(
         expert: ExpertProfile,
@@ -16,7 +17,11 @@ class SenderAccountAssignmentService(
     ): MailSenderAccount {
         val distributionKey = distributionKey(expert)
         return repository.findAllByEnabledTrue()
-            .filter { it.todaySentCount < it.dailySendLimit && it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
+            .filter {
+                it.todaySentCount < warmup.effectiveDailyLimit(it) &&
+                    it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
+                    !it.autoSendPaused
+            }
             .maxWithOrNull(
                 compareBy<MailSenderAccount> { account ->
                     assignmentScore(account, distributionKey, currentBatchAssignments)
@@ -30,7 +35,8 @@ class SenderAccountAssignmentService(
         distributionKey: String,
         assignments: List<SenderExpertAssignment>
     ): Double {
-        val remainingRatio = (account.dailySendLimit - account.todaySentCount).toDouble() / account.dailySendLimit
+        val effectiveLimit = warmup.effectiveDailyLimit(account)
+        val remainingRatio = (effectiveLimit - account.todaySentCount).toDouble() / effectiveLimit
         val baseScore = account.strategyWeight * remainingRatio
         val sameSegmentCount = assignments.count {
             it.accountCode == account.accountCode && it.distributionKey == distributionKey

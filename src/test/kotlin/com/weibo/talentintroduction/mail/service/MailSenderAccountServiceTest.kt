@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.config.WarmupProperties
+import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -15,7 +17,8 @@ class MailSenderAccountServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
     private val smtpSenderFactory = Mockito.mock(SmtpSenderFactory::class.java)
-    private val service = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory)
+    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false))
+    private val service = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, warmupService)
 
     @Test
     fun `selects enabled account with highest weighted remaining capacity`() {
@@ -335,6 +338,61 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
+    fun `listSendableAccounts excludes account at warmup effective limit below dailySendLimit`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            )
+        )
+        val serviceWithWarmup = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, enabledWarmup)
+        val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "warmup_exhausted",
+                    dailySendLimit = 500,
+                    todaySentCount = 20,
+                    createdAt = now
+                ),
+                account("ok", dailySendLimit = 500, todaySentCount = 5, createdAt = now.minusDays(30))
+            )
+        )
+
+        val result = serviceWithWarmup.listSendableAccounts()
+
+        assertEquals(1, result.size)
+        assertEquals("ok", result[0].accountCode)
+    }
+
+    @Test
+    fun `listSendableAccounts excludes auto-paused account even when under warmup effective limit`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            )
+        )
+        val serviceWithWarmup = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, enabledWarmup)
+        val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "paused",
+                    dailySendLimit = 500,
+                    todaySentCount = 0,
+                    autoSendPaused = true,
+                    createdAt = now
+                )
+            )
+        )
+
+        val result = serviceWithWarmup.listSendableAccounts()
+
+        assertEquals(0, result.size)
+    }
+
+    @Test
     fun `resetDailyCounts is transactional`() {
         val method = MailSenderAccountService::class.java.getMethod("resetDailyCounts")
 
@@ -347,7 +405,8 @@ class MailSenderAccountServiceTest {
         dailySendLimit: Int = 100,
         todaySentCount: Int = 0,
         enabled: Boolean = true,
-        autoSendPaused: Boolean = false
+        autoSendPaused: Boolean = false,
+        createdAt: java.time.LocalDateTime? = null
     ): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
@@ -369,6 +428,7 @@ class MailSenderAccountServiceTest {
             dailySendLimit = dailySendLimit,
             todaySentCount = todaySentCount,
             enabled = enabled,
-            autoSendPaused = autoSendPaused
+            autoSendPaused = autoSendPaused,
+            createdAt = createdAt
         )
 }

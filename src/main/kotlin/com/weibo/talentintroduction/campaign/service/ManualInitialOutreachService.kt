@@ -17,7 +17,9 @@ import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
+import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.DeliveredMail
+import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -53,7 +55,9 @@ class ManualInitialOutreachService(
     private val mailSenderAccountService: MailSenderAccountService,
     private val selfCheckService: SenderAccountSelfCheckService,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val accountRateLimiter: AccountRateLimiter
+    private val accountRateLimiter: AccountRateLimiter,
+    private val emailSuppressionService: EmailSuppressionService,
+    private val providerResolver: ProviderResolver
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -219,6 +223,16 @@ class ManualInitialOutreachService(
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
+                val email = expert.email
+                if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
+                    processedTotal++
+                    roundSent++
+                    updateProgress(executionId, sentCount, failedCount, processedTotal,
+                        totalEstimate - processedTotal, totalEstimate, totalEstimate,
+                        "RUNNING", "已跳过抑制邮箱：${email ?: ""}", errors, mode, roundNumber, config, runAccountStats)
+                    continue
+                }
+
                 // Select account (I-3 predicate enforced inside selectAccount)
                 val account = try {
                     senderAccountAssignmentService.selectAccount(expert, assignments)
@@ -238,6 +252,7 @@ class ManualInitialOutreachService(
                 }
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
+                val provider = providerResolver.resolve(expert.email)
 
                 try {
                     // 1. Create or reuse contact (occupy the slot) — I-7
@@ -285,7 +300,7 @@ class ManualInitialOutreachService(
                     // 5. Send via SMTP
                     val delivered = mailDeliveryService.send(account, mail)
                     if (delivered.status == "SENT") {
-                        accountRateLimiter.recordSuccess(account.accountCode, config.perMailIntervalMs)
+                        accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
                         // 6. Record success atomically (state transition + mail_record + counter + attempt + ES) — I-7
                         txHelper.recordSuccess(
                             contact = contact, accountCode = account.accountCode,
@@ -321,7 +336,7 @@ class ManualInitialOutreachService(
                                 )
                                 val code = delivered.smtpResponseCode
                                 if (code == 421 || code == 452) {
-                                    accountRateLimiter.recordThrottled(account.accountCode, config.perMailIntervalMs)
+                                    accountRateLimiter.recordThrottled(account.accountCode, provider, config.perMailIntervalMs)
                                     failedCount++
                                     stat.failed++
                                     errors.add("限流 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
@@ -393,7 +408,7 @@ class ManualInitialOutreachService(
                     "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats)
 
                 // Throttle per mail (I-6 + dynamic rate limiter)
-                val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, config.perMailIntervalMs)
+                val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
                 if (intervalMs > 0 && roundSent < roundQuota && targetIterator.hasNext()) {
                     try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }

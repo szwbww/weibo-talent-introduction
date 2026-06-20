@@ -9,7 +9,9 @@ import javax.mail.SendFailedException
 
 @Service
 class SmtpMailDeliveryService(
-    private val smtpSenderFactory: SmtpSenderFactory
+    private val smtpSenderFactory: SmtpSenderFactory,
+    private val unsubscribeTokenService: UnsubscribeTokenService,
+    private val mailContentService: MailContentService
 ) : MailDeliveryService {
     override fun send(account: MailSenderAccount, mail: ComposedMail): DeliveredMail {
         val sender = smtpSenderFactory.getSender(account)
@@ -29,9 +31,25 @@ class SmtpMailDeliveryService(
         message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
         message.subject = mail.subject
         if (mail.html) {
-            message.setContent(mail.body, "text/html; charset=UTF-8")
+            val plain = mail.text?.takeIf { it.isNotBlank() }
+                ?: mailContentService.htmlToPlainText(mail.body)
+            val multipart = javax.mail.internet.MimeMultipart("alternative")
+            multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                setText(plain, Charsets.UTF_8.name())
+            })
+            multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                setContent(mail.body, "text/html; charset=UTF-8")
+            })
+            message.setContent(multipart)
         } else {
             message.setText(mail.body, Charsets.UTF_8.name())
+        }
+
+        if (unsubscribeTokenService.enabled()) {
+            val httpsUrl = unsubscribeTokenService.unsubscribeUrl(mail.to)
+            val mailto = "mailto:${account.senderEmail}?subject=unsubscribe"
+            message.addHeader("List-Unsubscribe", "<$httpsUrl>, <$mailto>")
+            message.addHeader("List-Unsubscribe-Post", "List=One-Click")
         }
 
         return try {

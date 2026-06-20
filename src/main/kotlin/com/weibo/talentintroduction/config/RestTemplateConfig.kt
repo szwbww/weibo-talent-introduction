@@ -27,7 +27,9 @@ import java.time.Duration
     PmcOaProperties::class,
     OrcidProperties::class,
     CoreProperties::class,
-    ManualOutreachProperties::class
+    ManualOutreachProperties::class,
+    UnsubscribeProperties::class,
+    WarmupProperties::class
 )
 class RestTemplateConfig {
 

@@ -1,0 +1,101 @@
+package com.weibo.talentintroduction.mail.service
+
+import com.weibo.talentintroduction.mail.domain.EmailSuppression
+import com.weibo.talentintroduction.mail.repository.EmailSuppressionRepository
+import org.springframework.dao.DuplicateKeyException
+import org.springframework.stereotype.Service
+import java.time.LocalDateTime
+import java.util.Locale
+
+enum class SuppressionSource { INBOUND_REPLY, ONE_CLICK, MAILTO, MANUAL }
+
+@Service
+class EmailSuppressionService(
+    private val repository: EmailSuppressionRepository
+) {
+    fun normalize(email: String): String = email.trim().lowercase(Locale.ROOT)
+
+    fun isSuppressed(email: String): Boolean {
+        val n = normalize(email)
+        if (n.isBlank()) return false
+        return repository.existsByEmail(n)
+    }
+
+    /** 幂等：已存在则忽略。返回是否新增。 */
+    fun suppress(email: String, source: SuppressionSource, reason: String?): Boolean {
+        val n = normalize(email)
+        if (n.isBlank() || repository.existsByEmail(n)) return false
+        return try {
+            repository.save(
+                EmailSuppression(
+                    email = n,
+                    source = source.name,
+                    reason = reason?.take(500),
+                    createdAt = LocalDateTime.now()
+                )
+            )
+            true
+        } catch (e: DuplicateKeyException) {
+            false
+        }
+    }
+
+    /** 幂等：不存在也不报错。返回是否删除。 */
+    fun remove(email: String): Boolean {
+        val n = normalize(email)
+        if (n.isBlank()) return false
+        return repository.deleteByEmail(n) > 0
+    }
+
+    fun list(keyword: String?, page: Int, size: Int): SuppressionPage {
+        val safeSize = if (size <= 0) 50 else minOf(size, MAX_PAGE_SIZE)
+        val safePage = if (page < 0) 0 else page
+        val offset = safePage * safeSize
+        val normalizedKeyword = keyword?.trim()?.takeIf { it.isNotEmpty() }?.let { normalize(it) }
+        val items = if (normalizedKeyword.isNullOrBlank()) {
+            repository.findAllOrderByCreatedAtDesc(safeSize, offset)
+        } else {
+            repository.findByEmailContainingOrderByCreatedAtDesc(normalizedKeyword, safeSize, offset)
+        }
+        val total = if (normalizedKeyword.isNullOrBlank()) {
+            repository.countAll()
+        } else {
+            repository.countByEmailContaining(normalizedKeyword)
+        }
+        return SuppressionPage(
+            items = items,
+            page = safePage,
+            size = safeSize,
+            total = total
+        )
+    }
+
+    /** 独立退订关键词判定，不复用 InboundIntentClassifier。 */
+    fun looksLikeUnsubscribe(body: String?): Boolean {
+        val b = body?.lowercase(Locale.ROOT) ?: return false
+        return UNSUBSCRIBE_PHRASES.any { b.contains(it) }
+    }
+
+    companion object {
+        private const val MAX_PAGE_SIZE = 100
+
+        private val UNSUBSCRIBE_PHRASES = listOf(
+            "unsubscribe",
+            "please remove me",
+            "remove me from",
+            "stop emailing",
+            "opt out",
+            "opt-out",
+            "取消订阅",
+            "退订",
+            "不要再发"
+        )
+    }
+}
+
+data class SuppressionPage(
+    val items: List<EmailSuppression>,
+    val page: Int,
+    val size: Int,
+    val total: Long
+)

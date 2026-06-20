@@ -11,7 +11,8 @@ import java.time.LocalDateTime
 class MailSenderAccountService(
     private val repository: MailSenderAccountRepository,
     private val selfCheckService: SenderAccountSelfCheckService,
-    private val smtpSenderFactory: SmtpSenderFactory
+    private val smtpSenderFactory: SmtpSenderFactory,
+    private val warmup: SenderWarmupService
 ) {
     fun listAccounts(): List<MailSenderAccount> =
         repository.findAllByOrderByAccountCodeAsc()
@@ -145,11 +146,12 @@ class MailSenderAccountService(
     private fun isSendable(account: MailSenderAccount): Boolean =
         account.enabled &&
             !account.autoSendPaused &&
-            account.todaySentCount < account.dailySendLimit &&
+            account.todaySentCount < warmup.effectiveDailyLimit(account) &&
             account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun selectionScore(account: MailSenderAccount): Double {
-        val remainingRatio = (account.dailySendLimit - account.todaySentCount).toDouble() / account.dailySendLimit
+        val effectiveLimit = warmup.effectiveDailyLimit(account)
+        val remainingRatio = (effectiveLimit - account.todaySentCount).toDouble() / effectiveLimit
         return account.strategyWeight * remainingRatio
     }
 

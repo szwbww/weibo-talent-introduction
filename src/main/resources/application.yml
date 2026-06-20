@@ -65,6 +65,11 @@ talent-introduction:
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
   manual-outreach:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
+  unsubscribe:
+    base-url: ${UNSUBSCRIBE_BASE_URL:}
+    secret: ${UNSUBSCRIBE_SECRET:}
+  warmup:
+    enabled: ${WARMUP_ENABLED:false}
   academic-filter:
     enable-h-index-filter: ${ACADEMIC_ENABLE_H_INDEX_FILTER:false}
     min-h-index: ${ACADEMIC_MIN_H_INDEX:5}

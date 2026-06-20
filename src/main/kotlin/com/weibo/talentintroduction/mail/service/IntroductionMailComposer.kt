@@ -35,5 +35,6 @@ data class ComposedMail(
     val subject: String,
     val body: String,
     val html: Boolean = false,
+    val text: String? = null,
     val messageId: String? = null
 )

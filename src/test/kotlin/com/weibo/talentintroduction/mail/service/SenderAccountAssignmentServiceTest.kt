@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -9,7 +10,8 @@ import org.mockito.Mockito
 
 class SenderAccountAssignmentServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
-    private val service = SenderAccountAssignmentService(repository)
+    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false))
+    private val service = SenderAccountAssignmentService(repository, warmupService)
 
     @Test
     fun `avoids repeatedly assigning same country segment to same account`() {

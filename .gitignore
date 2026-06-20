@@ -6,6 +6,6 @@ docs/multi-ai-runs/
 docs/plans/
 docs/reviews/
 cache/
-docs/.DS_Store
+.DS_Store
 config/application-local.yml
 .od-skills/

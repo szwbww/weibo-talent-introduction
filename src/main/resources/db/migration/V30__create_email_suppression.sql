@@ -1,0 +1,9 @@
+CREATE TABLE email_suppression (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(320) NOT NULL COMMENT '归一化邮箱(小写trim)',
+    source VARCHAR(20) NOT NULL COMMENT 'INBOUND_REPLY/ONE_CLICK/MAILTO/MANUAL',
+    reason VARCHAR(500),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_email (email),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

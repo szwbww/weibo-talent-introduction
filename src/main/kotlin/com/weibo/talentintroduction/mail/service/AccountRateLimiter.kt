@@ -48,6 +48,17 @@ class AccountRateLimiter {
         }
     }
 
+    fun getIntervalMs(accountCode: String, provider: String, baseIntervalMs: Long): Long =
+        maxOf(getIntervalMs(key(accountCode, provider), baseIntervalMs), getIntervalMs(accountCode, baseIntervalMs))
+
+    fun recordSuccess(accountCode: String, provider: String, baseIntervalMs: Long) =
+        recordSuccess(key(accountCode, provider), baseIntervalMs)
+
+    fun recordThrottled(accountCode: String, provider: String, baseIntervalMs: Long) =
+        recordThrottled(key(accountCode, provider), baseIntervalMs)
+
+    private fun key(accountCode: String, provider: String) = "$accountCode|$provider"
+
     fun getSnapshot(): Map<String, Long> =
         states.mapValues { it.value.currentIntervalMs }
 

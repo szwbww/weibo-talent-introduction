@@ -48,7 +48,8 @@ class AutoMailReplyService(
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val bounceDetector: BounceDetector,
     private val bounceCollectionService: BounceCollectionService,
-    private val bounceRateMonitorService: BounceRateMonitorService
+    private val bounceRateMonitorService: BounceRateMonitorService,
+    private val emailSuppressionService: EmailSuppressionService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -127,6 +128,7 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
+            captureUnsubscribeIfPresent(received.from, cleanedBody)
             if (disabledContact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
                 if (!disabledContact.needsManualAttention) {
                     expertContactRepository.save(disabledContact.copy(needsManualAttention = true))
@@ -205,6 +207,7 @@ class AutoMailReplyService(
                 createdAt = LocalDateTime.now()
             )
         )
+        captureUnsubscribeIfPresent(received.from, cleanedBody)
 
         if (intent.intentCode == InboundIntentCode.MEETING_TIME_PROVIDED || intent.intentCode == InboundIntentCode.MEETING_REQUESTED) {
             meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
@@ -308,6 +311,30 @@ class AutoMailReplyService(
                     )
                 }
 
+                if (blockedByUnsubscribe(effectiveContact, received, received.from, "MEETING_INVITATION")) {
+                    confirmManualReviewWithBody(
+                        account = account,
+                        received = received,
+                        expertContactId = contactId,
+                        reason = "RECIPIENT_UNSUBSCRIBED",
+                        reasonType = "RECIPIENT_UNSUBSCRIBED",
+                        cleanedBody = cleanedBody,
+                        skipImapAck = skipImapAck
+                    )
+                    return SinglePipelineResult(
+                        outcome = SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,
+                        recorded = true,
+                        expertContactId = contactId,
+                        inboundMailRecordId = inboundMailRecordId,
+                        intentCode = intent.intentCode,
+                        autoAction = intent.autoAction,
+                        matchedKeywords = intent.matchedKeywords,
+                        newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                        previousStatus = contact.currentStatus,
+                        reason = "RECIPIENT_UNSUBSCRIBED"
+                    )
+                }
+
                 val meetingRecord = sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
                 val meetingContact = conversationStateService.transition(
                     contact = effectiveContact,
@@ -373,6 +400,30 @@ class AutoMailReplyService(
                 newStatus = ConversationStatus.MANUAL_HANDOFF.name,
                 previousStatus = contact.currentStatus,
                 reason = "QA_NO_MATCH"
+            )
+        }
+
+        if (blockedByUnsubscribe(effectiveContact, received, received.from, "QA")) {
+            confirmManualReviewWithBody(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                reason = "RECIPIENT_UNSUBSCRIBED",
+                reasonType = "RECIPIENT_UNSUBSCRIBED",
+                cleanedBody = cleanedBody,
+                skipImapAck = skipImapAck
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                previousStatus = contact.currentStatus,
+                reason = "RECIPIENT_UNSUBSCRIBED"
             )
         }
 
@@ -546,6 +597,34 @@ class AutoMailReplyService(
             direction = "OUTBOUND",
             mailType = "MEETING_INVITATION"
         )
+
+    private fun blockedByUnsubscribe(
+        contact: ExpertContact,
+        received: ReceivedMail,
+        recipient: String,
+        scene: String
+    ): Boolean {
+        if (!emailSuppressionService.isSuppressed(recipient)) return false
+        log.info("Recipient {} unsubscribed, skip auto send ({})", recipient, scene)
+        markManualReview(
+            contact = contact,
+            received = received,
+            status = ConversationStatus.MANUAL_HANDOFF,
+            reason = "RECIPIENT_UNSUBSCRIBED",
+            note = "Auto send skipped: recipient unsubscribed ($scene)"
+        )
+        return true
+    }
+
+    private fun captureUnsubscribeIfPresent(senderEmail: String, cleanedBody: String?) {
+        if (emailSuppressionService.looksLikeUnsubscribe(cleanedBody)) {
+            emailSuppressionService.suppress(
+                senderEmail,
+                SuppressionSource.INBOUND_REPLY,
+                "inbound reply unsubscribe"
+            )
+        }
+    }
 
     private fun markManualReview(
         contact: ExpertContact,

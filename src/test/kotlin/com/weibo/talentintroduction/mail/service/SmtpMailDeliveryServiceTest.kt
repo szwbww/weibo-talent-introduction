@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.mail.MailAuthenticationException
@@ -12,9 +14,20 @@ import org.springframework.mail.javamail.JavaMailSenderImpl
 import javax.mail.AuthenticationFailedException
 import javax.mail.MessagingException
 import javax.mail.internet.MimeMessage
+import javax.mail.internet.MimeMultipart
 import javax.mail.SendFailedException
 
 class SmtpMailDeliveryServiceTest {
+    private val mailContentService = MailContentService()
+    private val enabledTokenService = UnsubscribeTokenService(
+        UnsubscribeProperties(
+            baseUrl = "https://outreach.example.com",
+            secret = "test-secret"
+        )
+    )
+    private val disabledTokenService = UnsubscribeTokenService(
+        UnsubscribeProperties(baseUrl = "", secret = "")
+    )
     @Test
     fun `SendFailedException with 550 returns PERMANENT`() {
         val delivered = SmtpErrorClassifier.fromSendFailedException(
@@ -99,7 +112,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        val delivered = SmtpMailDeliveryService(factory).send(
+        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
             account,
             ComposedMail("bad@example.com", "Subject", "Body", messageId = "msg-1")
         )
@@ -107,6 +120,128 @@ class SmtpMailDeliveryServiceTest {
         assertEquals("FAILED", delivered.status)
         assertEquals(SmtpErrorCategory.PERMANENT, delivered.errorCategory)
         assertEquals(550, delivered.smtpResponseCode)
+    }
+
+    @Test
+    fun `send adds List-Unsubscribe headers when token service enabled`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+        val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
+
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService).send(account, mail)
+
+        assertEquals("SENT", delivered.status)
+        val message = captured.single()
+        assertEquals("Subject", message.subject)
+        assertEquals("Body", message.content.toString())
+
+        val listUnsubscribe = message.getHeader("List-Unsubscribe", null)
+        assertTrue(listUnsubscribe.contains("https://outreach.example.com/u/unsubscribe?token="))
+        assertTrue(listUnsubscribe.contains("mailto:test@example.com?subject=unsubscribe"))
+        assertEquals("List=One-Click", message.getHeader("List-Unsubscribe-Post", null))
+    }
+
+    @Test
+    fun `send omits List-Unsubscribe headers when token service disabled`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
+        )
+
+        val message = captured.single()
+        assertNull(message.getHeader("List-Unsubscribe", null))
+        assertNull(message.getHeader("List-Unsubscribe-Post", null))
+    }
+
+    @Test
+    fun `send uses plain string content for non-html mail`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail("recipient@example.com", "Subject", "Plain body", html = false)
+        )
+
+        val message = captured.single()
+        assertEquals("Plain body", message.content.toString())
+    }
+
+    @Test
+    fun `send uses multipart alternative for html mail`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+        val htmlBody = "<p>Hello <strong>world</strong></p>"
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail("recipient@example.com", "Subject", htmlBody, html = true)
+        )
+
+        val multipart = captured.single().content as MimeMultipart
+        assertTrue(multipart.contentType.startsWith("multipart/alternative"))
+        assertEquals(2, multipart.count)
+        assertTrue(multipart.getBodyPart(0).contentType.lowercase().startsWith("text/plain"))
+        assertEquals("Hello world", multipart.getBodyPart(0).content.toString().trim())
+        assertEquals(htmlBody, multipart.getBodyPart(1).content.toString())
+    }
+
+    @Test
+    fun `send uses explicit text part when provided for html mail`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail(
+                to = "recipient@example.com",
+                subject = "Subject",
+                body = "<p>HTML</p>",
+                html = true,
+                text = "Custom plain text"
+            )
+        )
+
+        val multipart = captured.single().content as MimeMultipart
+        assertEquals("Custom plain text", multipart.getBodyPart(0).content.toString().trim())
     }
 
     private fun testAccount(): MailSenderAccount =

@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
@@ -18,7 +19,8 @@ class InitialOutreachService(
     private val introductionMailComposer: IntroductionMailComposer,
     private val mailDeliveryService: MailDeliveryService,
     private val expertContactRepository: ExpertContactRepository,
-    private val txHelper: ManualOutreachTxHelper
+    private val txHelper: ManualOutreachTxHelper,
+    private val emailSuppressionService: EmailSuppressionService
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
@@ -28,6 +30,12 @@ class InitialOutreachService(
 
         experts.forEach { expert ->
             if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
+                skipped += 1
+                return@forEach
+            }
+
+            val email = expert.email
+            if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
                 skipped += 1
                 return@forEach
             }

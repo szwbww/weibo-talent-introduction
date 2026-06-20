@@ -20,8 +20,10 @@ import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
+import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
+import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
@@ -56,6 +58,8 @@ class ManualInitialOutreachServiceTest {
     private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val accountRateLimiter = AccountRateLimiter()
+    private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val providerResolver = ProviderResolver()
 
     private val service = ManualInitialOutreachService(
         expertSearchService = expertSearchService,
@@ -74,7 +78,9 @@ class ManualInitialOutreachServiceTest {
         mailSenderAccountService = mailSenderAccountService,
         selfCheckService = selfCheckService,
         expertIndexWriterService = expertIndexWriterService,
-        accountRateLimiter = accountRateLimiter
+        accountRateLimiter = accountRateLimiter,
+        emailSuppressionService = emailSuppressionService,
+        providerResolver = providerResolver
     )
 
     private fun fastConfig(
@@ -92,6 +98,7 @@ class ManualInitialOutreachServiceTest {
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
         accountRateLimiter.clear()
+        Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { invocation ->
             invocation.getArgument<MailSendAttempt>(0).let { attempt ->
                 if (attempt.id == null) attempt.copy(id = 77L) else attempt
@@ -715,7 +722,55 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, result.sent)
         Mockito.verify(mailSenderAccountService, Mockito.never()).pauseAutoSend(Mockito.anyString(), Mockito.anyString())
         Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("","","")))
-        assertEquals(4000L, accountRateLimiter.getIntervalMs("chen", 1000L))
+        assertEquals(4000L, accountRateLimiter.getIntervalMs("chen", "other", 1000L))
+        assertEquals(1000L, accountRateLimiter.getIntervalMs("chen", 1000L))
+    }
+
+    @Test
+    fun `runScheduledBatch throttles only throttled provider not others`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(
+            expert("0001", "user@gmail.com"),
+            expert("0002", "user@gmail.com"),
+            expert("0003", "user@outlook.com")
+        ))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0002")).thenReturn(false)
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0003")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenAnswer { invocation ->
+            val expertArg = invocation.getArgument<ExpertProfile>(1)
+            ComposedMail(expertArg.email ?: "", "Subject", "Body")
+        }
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenAnswer { invocation ->
+            val mail = invocation.getArgument<ComposedMail>(1)
+            if (mail.to.endsWith("@gmail.com")) {
+                DeliveredMail(
+                    messageId = "msg-1",
+                    status = "FAILED",
+                    errorCategory = SmtpErrorCategory.TRANSIENT,
+                    smtpResponseCode = 421,
+                    errorDetail = "421 4.7.0 Try again later"
+                )
+            } else {
+                DeliveredMail(messageId = "msg-2", status = "SENT")
+            }
+        }
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 100, perMailIntervalMs = 1000))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(2, result.failed)
+        assertEquals(1, result.sent)
+        assertEquals(4000L, accountRateLimiter.getIntervalMs("chen", "gmail", 1000L))
+        assertEquals(1000L, accountRateLimiter.getIntervalMs("chen", "outlook", 1000L))
+        assertEquals(1000L, accountRateLimiter.getIntervalMs("chen", 1000L))
     }
 
     @Test
