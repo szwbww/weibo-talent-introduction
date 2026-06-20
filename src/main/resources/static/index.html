@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260619-gradient-bg">
+    <link rel="stylesheet" href="styles.css?v=20260620-blue-refresh">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -433,15 +433,15 @@
                 <div class="table-wrap">
                     <table class="data-table" style="width: 100%; font-size: 12px;">
                         <thead>
-                            <tr>
-                                <th>触发方式</th>
-                                <th>开始时间</th>
-                                <th>轮询进度</th>
-                                <th>发现回复</th>
-                                <th>耗时</th>
-                                <th>下次定时</th>
-                                <th>状态</th>
-                            </tr>
+                        <tr>
+                            <th>触发方式</th>
+                            <th>开始时间</th>
+                            <th>轮询进度</th>
+                            <th>发现回复</th>
+                            <th>耗时</th>
+                            <th>下次定时</th>
+                            <th>状态</th>
+                        </tr>
                         </thead>
                         <tbody id="pollLogBody">
                         </tbody>
@@ -606,14 +606,14 @@
             <!-- Configuration Section (visible when starting task) -->
             <div id="taskModalConfigSection" class="task-modal-config-section">
                 <p id="taskLaunchDesc" class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted);"></p>
-                
+
                 <div id="taskLaunchKeywordRow" hidden>
                     <label class="task-modal-input-label">
                         发现关键词 (多个用逗号分隔，留空使用默认条件):
                         <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
                     </label>
                 </div>
-                
+
                 <div id="taskLaunchMaxPromotionsRow" hidden>
                     <label class="task-modal-input-label">
                         最大晋升数量:
@@ -755,17 +755,17 @@
                     <div class="batch-send-account-table-wrap">
                         <table class="data-table compact batch-send-account-table">
                             <thead>
-                                <tr>
-                                    <th>邮箱账号</th>
-                                    <th>今日已发/上限</th>
-                                    <th>成功</th>
-                                    <th>失败</th>
-                                    <th>发送间隔</th>
-                                    <th>状态</th>
-                                </tr>
+                            <tr>
+                                <th>邮箱账号</th>
+                                <th>今日已发/上限</th>
+                                <th>成功</th>
+                                <th>失败</th>
+                                <th>发送间隔</th>
+                                <th>状态</th>
+                            </tr>
                             </thead>
                             <tbody id="batchSendAccountTable">
-                                <tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>
+                            <tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -787,16 +787,16 @@
                 <div class="task-modal-log-table-wrapper" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-sm); background-color: var(--surface);">
                     <table class="data-table compact" style="width: 100%; border-collapse: collapse; font-size: 12px;">
                         <thead>
-                            <tr style="background-color: var(--panel-bg); border-bottom: 1px solid var(--panel-border);">
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted); width: 24px;"></th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">开始时间</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">触发</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">状态</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">总处理</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">通过</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">拒绝</th>
-                                <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">耗时</th>
-                            </tr>
+                        <tr style="background-color: var(--panel-bg); border-bottom: 1px solid var(--panel-border);">
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted); width: 24px;"></th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">开始时间</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">触发</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">状态</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">总处理</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">通过</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">拒绝</th>
+                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">耗时</th>
+                        </tr>
                         </thead>
                         <tbody id="taskModalRunBody"></tbody>
                     </table>
@@ -918,6 +918,6 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-    <script src="app.js?v=20260619-animations"></script>
+<script src="app.js?v=20260619-animations"></script>
 </body>
 </html>
