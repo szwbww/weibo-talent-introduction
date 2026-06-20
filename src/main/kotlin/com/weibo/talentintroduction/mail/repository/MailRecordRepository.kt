@@ -76,8 +76,8 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         """
         SELECT COUNT(*) FROM mail_record
         WHERE direction = 'OUTBOUND'
-          AND send_status IS NOT NULL AND send_status <> 'SUCCESS'
-          AND sent_at >= :from AND sent_at < :to
+          AND send_status = 'FAILED'
+          AND created_at >= :from AND created_at < :to
         """
     )
     fun countFailedOutboundBetween(from: LocalDateTime, to: LocalDateTime): Long
@@ -184,7 +184,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                SUM(CASE WHEN triggered_by = 'SYSTEM'
                          AND mail_type IN ('QA_REPLY','MEETING_INVITATION','MEETING_CONFIRMATION')
                         THEN 1 ELSE 0 END) AS auto_reply_count,
-               SUM(CASE WHEN send_status IS NOT NULL AND send_status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failed_count,
+               SUM(CASE WHEN send_status = 'FAILED' THEN 1 ELSE 0 END) AS failed_count,
                MAX(sent_at) AS last_sent_at
           FROM mail_record
          WHERE direction = 'OUTBOUND'

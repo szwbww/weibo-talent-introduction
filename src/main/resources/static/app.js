@@ -1,3 +1,7 @@
+function monitoringToday() {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+}
+
 const state = {
     view: "accounts",
     accounts: [],
@@ -18,7 +22,7 @@ const state = {
     unmatchedRecords: [],
     unmatchedFiltered: [],
     monitoring: {
-        date: null,
+        date: monitoringToday(),
         summary: null,
         subTab: "introductions",
         page: 0,
@@ -102,7 +106,8 @@ const mailTypeLabels = {
 
 const triggeredByLabels = {
     SYSTEM: "自动",
-    OPERATOR: "人工"
+    OPERATOR: "人工",
+    MANUAL: "批量发送"
 };
 
 const promotionStatusLabels = {
@@ -4495,6 +4500,13 @@ function renderEmailAliasSection(contactId) {
 }
 
 async function loadMonitoring() {
+    const dateInput = $("#monitoringDate");
+    if (dateInput && !state.monitoring.date) {
+        state.monitoring.date = monitoringToday();
+    }
+    if (dateInput) {
+        dateInput.value = state.monitoring.date || monitoringToday();
+    }
     const dateParams = new URLSearchParams();
     if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
     const [summary, senderHealth] = await Promise.all([
@@ -4514,7 +4526,7 @@ async function loadMonitoring() {
 
 function monitoringRangeParams() {
     const params = new URLSearchParams();
-    const date = state.monitoring.date || new Date().toISOString().slice(0, 10);
+    const date = state.monitoring.date || monitoringToday();
     params.set("from", date);
     params.set("to", date);
     params.set("pageSize", state.monitoring.pageSize);
@@ -4529,20 +4541,20 @@ function monitoringRangeParams() {
 function renderMonitoringCards() {
     const s = state.monitoring.summary || {};
     const cards = [
-        ["今日介绍邮件", s.introductions],
-        ["今日收到回复", s.inboundReplies],
-        ["今日回复专家数", s.repliedExperts],
-        ["今日自动回复", s.autoReplies],
-        ["今日人工外发", s.operatorOutbound],
-        ["今日会议邀约", s.meetingInvitations],
-        ["今日人工待办新增", s.manualReviewInbound],
-        ["今日未匹配来信", s.unmatchedInbound],
-        ["今日发送失败", s.failedOutbound],
-        ["今日 APPLICATION 晋级", s.applicationPromotions]
+        ["今日介绍邮件", s.introductions, null],
+        ["今日收到回复", s.inboundReplies, null],
+        ["今日回复专家数", s.repliedExperts, null],
+        ["今日自动回复", s.autoReplies, "会议邀约为自动回复的子项，细分统计不可相加"],
+        ["今日人工外发", s.operatorOutbound, null],
+        ["今日会议邀约", s.meetingInvitations, "属于自动回复子项，细分统计不可相加"],
+        ["今日人工待办新增", s.manualReviewInbound, "未匹配来信为人工待办子项，细分统计不可相加"],
+        ["今日未匹配来信", s.unmatchedInbound, "属于人工待办子项，细分统计不可相加"],
+        ["今日发送失败", s.failedOutbound, null],
+        ["今日 APPLICATION 晋级", s.applicationPromotions, null]
     ];
-    $("#monitoringCards").innerHTML = cards.map(([label, value]) => `
-        <div class="metric-card">
-            <div class="metric-label">${escapeHtml(label)}</div>
+    $("#monitoringCards").innerHTML = cards.map(([label, value, hint]) => `
+        <div class="metric-card"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+            <div class="metric-label">${escapeHtml(label)}${hint ? '<span class="metric-hint" title="' + escapeHtml(hint) + '">ⓘ</span>' : ""}</div>
             <div class="metric-value">${escapeHtml(value ?? 0)}</div>
         </div>
     `).join("");
