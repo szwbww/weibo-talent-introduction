@@ -213,4 +213,82 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         """
     )
     fun countSentByAccountSince(accountCode: String, since: LocalDateTime): Long
+
+    @Query(
+        """
+        SELECT mr.id, mr.expert_contact_id, mr.direction, mr.mail_type,
+               mr.sender_account_code, mr.triggered_by, mr.subject,
+               SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) AS body_preview,
+               mr.send_status, mr.sent_at, mr.received_at, mr.created_at,
+               ec.expert_email, ec.expert_name,
+               EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS has_attachment
+          FROM mail_record mr
+          LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.sender_account_code IN (:accountCodes)
+           AND (:direction IS NULL OR mr.direction = :direction)
+           AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+           AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                  OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+           AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) >= :startTime)
+           AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) < :endTime)
+         ORDER BY COALESCE(mr.sent_at, mr.received_at) DESC
+         LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listMailbox(
+        accountCodes: List<String>,
+        direction: String?,
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?,
+        limit: Int,
+        offset: Long
+    ): List<MailboxRow>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+          FROM mail_record mr
+          LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.sender_account_code IN (:accountCodes)
+           AND (:direction IS NULL OR mr.direction = :direction)
+           AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+           AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                  OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+           AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) >= :startTime)
+           AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) < :endTime)
+        """
+    )
+    fun countMailbox(
+        accountCodes: List<String>,
+        direction: String?,
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?
+    ): Long
 }
+
+data class MailboxRow(
+    val id: Long,
+    val expertContactId: Long,
+    val direction: String,
+    val mailType: String,
+    val senderAccountCode: String?,
+    val triggeredBy: String?,
+    val subject: String?,
+    val bodyPreview: String?,
+    val sendStatus: String?,
+    val sentAt: LocalDateTime?,
+    val receivedAt: LocalDateTime?,
+    val createdAt: LocalDateTime?,
+    val expertEmail: String?,
+    val expertName: String?,
+    val hasAttachment: Boolean
+)
+
