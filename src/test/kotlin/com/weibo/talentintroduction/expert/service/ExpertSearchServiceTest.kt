@@ -783,4 +783,97 @@ class ExpertSearchServiceTest {
         assertEquals(1, result.experts.size)
         assertEquals("ORCID-0000-0001-0002-0003", result.experts.single().esDocId)
     }
+
+    @Test
+    fun `notContactedWithEmailFilters appends wildcard when emailDomain is provided`() {
+        val defaultFilters = ExpertSearchService.notContactedWithEmailFilters()
+        assertEquals(2, defaultFilters.size)
+        
+        val filtered = ExpertSearchService.notContactedWithEmailFilters("gmail.com")
+        assertEquals(3, filtered.size)
+        val wildcardFilter = filtered[2]
+        val wildcard = wildcardFilter["wildcard"] as Map<*, *>
+        val email = wildcard["email"] as Map<*, *>
+        assertEquals("*@gmail.com", email["value"])
+    }
+
+    @Test
+    fun `searchExperts passes emailDomain wildcard query to ES`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@gmail.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExperts(10, ExpertIndexLevel.CANDIDATE, emailDomain = "gmail.com")
+
+        assertEquals(1, result.experts.size)
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        assertTrue(filter.any { it.toString().contains("wildcard") && it.toString().contains("email") && it.toString().contains("*@gmail.com") })
+    }
+
+    @Test
+    fun `aggregateEmailDomains runs terms aggregation and returns domain counts`() {
+        val body = mapper.readTree(
+            """
+            {
+              "aggregations": {
+                "email_domains": {
+                  "buckets": [
+                    {"key": "gmail.com", "doc_count": 10},
+                    {"key": "outlook.com", "doc_count": 5}
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.aggregateEmailDomains(ExpertIndexLevel.CANDIDATE)
+
+        assertEquals(2, result.size)
+        assertEquals("gmail.com", result[0].domain)
+        assertEquals(10L, result[0].count)
+        assertEquals("outlook.com", result[1].domain)
+        assertEquals(5L, result[1].count)
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        assertTrue(query.containsKey("exists"))
+        val aggs = requestPayload["aggs"] as Map<*, *>
+        assertTrue(aggs.containsKey("email_domains"))
+    }
 }

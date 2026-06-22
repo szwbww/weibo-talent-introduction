@@ -20,15 +20,21 @@ class ExpertSearchService(
     private val expertIndexService: ExpertIndexService
 ) {
     companion object {
-        fun notContactedWithEmailFilters(): List<Map<String, Any>> = listOf(
-            mapOf("exists" to mapOf("field" to "email")),
-            mapOf("bool" to mapOf(
-                "must_not" to listOf(
-                    mapOf("exists" to mapOf("field" to "operatorStatus")),
-                    mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
-                )
-            ))
-        )
+        fun notContactedWithEmailFilters(emailDomain: String? = null): List<Map<String, Any>> {
+            val filters = mutableListOf(
+                mapOf("exists" to mapOf("field" to "email")),
+                mapOf("bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                ))
+            )
+            if (!emailDomain.isNullOrBlank()) {
+                filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
+            }
+            return filters
+        }
     }
 
     fun searchExperts(
@@ -37,7 +43,8 @@ class ExpertSearchService(
         tag: String? = null,
         sortBy: String? = null,
         from: Int = 0,
-        operatorStatus: String? = null
+        operatorStatus: String? = null,
+        emailDomain: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
@@ -51,12 +58,16 @@ class ExpertSearchService(
         if (!operatorStatus.isNullOrBlank()) {
             when (operatorStatus) {
                 "NOT_CONTACTED" -> {
-                    filters.addAll(notContactedWithEmailFilters())
+                    filters.addAll(notContactedWithEmailFilters(null))
                 }
                 else -> {
                     filters.add(mapOf("term" to mapOf("operatorStatus" to operatorStatus)))
                 }
             }
+        }
+
+        if (!emailDomain.isNullOrBlank()) {
+            filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
         }
 
         val query = if (filters.isEmpty()) {
@@ -433,9 +444,51 @@ class ExpertSearchService(
             }
         }
     }
+    fun aggregateEmailDomains(level: ExpertIndexLevel): List<EmailDomainCount> {
+        val requestBody = mapOf(
+            "size" to 0,
+            "query" to mapOf(
+                "exists" to mapOf("field" to "email")
+            ),
+            "aggs" to mapOf(
+                "email_domains" to mapOf(
+                    "terms" to mapOf(
+                        "field" to "email",
+                        "size" to 10000,
+                        "script" to mapOf(
+                            "source" to "doc['email'].value.substring(doc['email'].value.indexOf('@') + 1)"
+                        )
+                    )
+                )
+            )
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        val buckets = response.path("aggregations")
+            .path("email_domains")
+            .path("buckets")
+
+        return buckets.map { bucket ->
+            EmailDomainCount(
+                domain = bucket.path("key").asText(),
+                count = bucket.path("doc_count").asLong()
+            )
+        }
+    }
 }
 
 data class ExpertSearchResult(
     val experts: List<ExpertProfile>,
     val totalHits: Long
+)
+
+data class EmailDomainCount(
+    val domain: String,
+    val count: Long
 )
