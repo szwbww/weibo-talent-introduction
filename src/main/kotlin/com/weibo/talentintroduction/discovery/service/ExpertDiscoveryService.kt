@@ -23,6 +23,8 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
+import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpEntity
@@ -58,10 +60,53 @@ class ExpertDiscoveryService(
     private val esProperties: ElasticsearchProperties,
     private val discoveryProperties: ExpertDiscoveryProperties,
     private val objectMapper: ObjectMapper,
-    private val progressStore: TaskProgressStore
+    private val progressStore: TaskProgressStore,
+    private val cursorRepository: DiscoverySourceCursorRepository
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    /** Sources whose cursors expire between runs (e.g. ES scroll context) */
+    private val nonPersistableCursorSources = setOf("CORE")
+
+    private fun loadSourceCursor(sourceName: String): String? {
+        if (sourceName in nonPersistableCursorSources) return null
+        return try {
+            cursorRepository.findBySourceName(sourceName)?.cursorValue
+        } catch (e: Exception) {
+            log.warn("Failed to load cursor for {}: {}", sourceName, e.message)
+            null
+        }
+    }
+
+    private fun saveSourceCursor(sourceName: String, cursorValue: String?, papersInRun: Int) {
+        if (sourceName in nonPersistableCursorSources) return
+        try {
+            val now = LocalDateTime.now()
+            val existing = cursorRepository.findBySourceName(sourceName)
+            val entity = if (existing != null) {
+                existing.copy(
+                    cursorValue = cursorValue,
+                    papersProcessedTotal = existing.papersProcessedTotal + papersInRun,
+                    lastRunAt = now,
+                    updatedAt = now
+                )
+            } else {
+                DiscoverySourceCursor(
+                    sourceName = sourceName,
+                    cursorValue = cursorValue,
+                    papersProcessedTotal = papersInRun.toLong(),
+                    lastRunAt = now,
+                    updatedAt = now
+                )
+            }
+            cursorRepository.save(entity)
+            log.info("[{}] 游标已保存: cursor={}, 累计论文={}", sourceName,
+                cursorValue?.take(30) ?: "null(已穷尽)", entity.papersProcessedTotal)
+        } catch (e: Exception) {
+            log.warn("Failed to save cursor for {}: {}", sourceName, e.message)
+        }
+    }
 
     private enum class DedupResult { EXISTS, NOT_FOUND, ERROR }
 
@@ -176,9 +221,22 @@ class ExpertDiscoveryService(
                 stats.refreshGlobalCounts()
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
-                discoverFromSource(source, criteria, stats)
+
+                val savedCursor = loadSourceCursor(source.sourceName)
+                val sourceCriteria = if (savedCursor != null) criteria.copy(cursor = savedCursor) else criteria
+                if (savedCursor != null) {
+                    log.info("[{}] 从上次游标继续: {}", source.sourceName, savedCursor.take(50))
+                }
+                val finalCursor = discoverFromSource(source, sourceCriteria, stats)
+                val sourceStats = stats.bySource[source.sourceName]
+                saveSourceCursor(source.sourceName, finalCursor, sourceStats?.papersSearched ?: 0)
             }
-            discoverFromOrcid(criteria, stats)
+
+            val orcidSavedCursor = loadSourceCursor("ORCID")
+            val orcidCriteria = if (orcidSavedCursor != null) criteria.copy(cursor = orcidSavedCursor) else criteria
+            val orcidFinalCursor = discoverFromOrcid(orcidCriteria, stats)
+            val orcidStats = stats.bySource["ORCID"]
+            saveSourceCursor("ORCID", orcidFinalCursor, orcidStats?.papersSearched ?: 0)
             stats.refreshGlobalCounts()
 
             val totalElapsed = System.currentTimeMillis() - startTime
@@ -232,7 +290,7 @@ class ExpertDiscoveryService(
         return source.maxPapersPerSource
     }
 
-    private fun discoverFromSource(source: AcademicDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats) {
+    private fun discoverFromSource(source: AcademicDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats): String? {
         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
         val sourceStartTime = System.currentTimeMillis()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
@@ -241,6 +299,7 @@ class ExpertDiscoveryService(
         log.info("[{}] 开始: 方式={}, 本源限额={}", source.sourceName, source.emailExtractionMethod, sourceLimit)
 
         var cursor: String? = criteria.cursor
+        var lastNextCursor: String? = null
         var batchNumber = 0
         var sourcePapersProcessed = 0
         var consecutiveFailures = 0
@@ -303,6 +362,11 @@ class ExpertDiscoveryService(
                 processPaper(paper, source, stats, sourceStats)
             }
 
+            // I-4: 只有当批次全量处理完毕才推进游标；部分批次保持上一完整批次游标
+            if (!limitReached) {
+                lastNextCursor = batch.nextCursor
+            }
+
             val batchProcessed = sourceStats.papersSearched - papersBefore
             val batchPassed = sourceStats.indexed - indexedBefore
             val batchRejected = batchProcessed - batchPassed
@@ -351,11 +415,13 @@ class ExpertDiscoveryService(
             sourceStats.indexed, sourceStats.duplicates,
             sourceStats.indexed, sourceStats.promoted,
             sourceStats.filtered)
+
+        return lastNextCursor
     }
 
-    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats) {
-        val orcid = orcidProvider.getIfAvailable() ?: return
-        if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return
+    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats): String? {
+        val orcid = orcidProvider.getIfAvailable() ?: return null
+        if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return null
 
         val sourceStats = stats.getOrCreateSourceStats(orcid.sourceName, "API_FIELD")
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
@@ -371,7 +437,7 @@ class ExpertDiscoveryService(
         do {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
                 log.info("[{}] 已取消", orcid.sourceName)
-                return
+                return cursor
             }
             stats.refreshGlobalCounts()
             if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
@@ -480,6 +546,8 @@ class ExpertDiscoveryService(
             sourceStats.emailsValid, sourceStats.emailsRejected,
             sourceStats.indexed, sourceStats.duplicates,
             sourceStats.indexed, sourceStats.promoted, sourceStats.filtered)
+
+        return cursor
     }
 
     private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {

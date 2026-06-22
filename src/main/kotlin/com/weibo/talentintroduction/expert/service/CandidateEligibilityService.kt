@@ -68,8 +68,8 @@ class CandidateEligibilityService(
 
     fun isNotChineseNationality(nationality: String?): Boolean {
         val normalized = normalize(nationality)
-        return normalized.isNotBlank() &&
-            normalized != "china" &&
+        if (normalized.isBlank()) return true // 国籍未知时放行，不视为中国籍
+        return normalized != "china" &&
             normalized != "chinese" &&
             normalized != "cn" &&
             !normalized.contains("people's republic of china")

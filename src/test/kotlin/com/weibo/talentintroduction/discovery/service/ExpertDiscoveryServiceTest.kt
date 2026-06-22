@@ -17,13 +17,16 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.ResponseEntity
@@ -45,6 +48,7 @@ class ExpertDiscoveryServiceTest {
     private lateinit var expertSearchService: ExpertSearchService
     private lateinit var restTemplate: RestTemplate
     private lateinit var progressStore: TaskProgressStore
+    private lateinit var cursorRepository: DiscoverySourceCursorRepository
     private val discoveryProperties = ExpertDiscoveryProperties(
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
@@ -80,6 +84,7 @@ class ExpertDiscoveryServiceTest {
         revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
         restTemplate = Mockito.mock(RestTemplate::class.java)
         progressStore = Mockito.mock(TaskProgressStore::class.java)
+        cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
 
         DiscoveryMockHelper.stubSourceInfo(europePmc)
         Mockito.doReturn(null).`when`(openAlexProvider).getIfAvailable()
@@ -103,7 +108,7 @@ class ExpertDiscoveryServiceTest {
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
-            props, objectMapper, progressStore
+            props, objectMapper, progressStore, cursorRepository
         )
     }
 
@@ -971,5 +976,48 @@ class ExpertDiscoveryServiceTest {
         svc.discover(PaperSearchCriteria(), "TEST")
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
+    }
+
+    @Test
+    fun `partial batch does not advance cursor to nextCursor`() {
+        // P1-1: 数据源返回 3 篇且 maxPapersPerRun=1，断言保存的游标不等于 batch.nextCursor
+        val limitedProperties = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 1, maxAuthorsPerRun = 200)
+        val svc = createService(limitedProperties)
+        val papers = (1..3).map { paper("PMC$it", "Paper $it") }
+        val batchNextCursor = "page2-cursor"
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, batchNextCursor, 3))
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor::class.java)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        // 验证 EUROPE_PMC 的 cursorValue 不等于 batch.nextCursor；ORCID 也会保存游标
+        Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
+        val savedCursor = captor.allValues.single { it.sourceName == "EUROPE_PMC" }
+        assertNotEquals(batchNextCursor, savedCursor.cursorValue,
+            "Partial batch must NOT save nextCursor='$batchNextCursor'; " +
+            "saved cursor was '${savedCursor.cursorValue}' which would skip unprocessed papers")
+    }
+
+    @Test
+    fun `partial batch due to sourceLimit does not advance cursor`() {
+        // P1-1 变体: 单源限额触发部分批次
+        val props = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200)
+        val svc = createService(props)
+        val papers = (1..5).map { paper("PMC$it", "Paper $it") }
+        val batchNextCursor = "next-page"
+        DiscoveryMockHelper.stubMaxPapersPerSource(europePmc, 2)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, batchNextCursor, 5))
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor::class.java)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
+        val savedCursor = captor.allValues.single { it.sourceName == "EUROPE_PMC" }
+        assertNotEquals(batchNextCursor, savedCursor.cursorValue,
+            "When sourceLimit causes partial batch, cursor must not advance to '$batchNextCursor'")
     }
 }
