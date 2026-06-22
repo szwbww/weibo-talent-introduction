@@ -221,7 +221,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) AS body_preview,
                mr.send_status, mr.sent_at, mr.received_at, mr.created_at,
                ec.expert_email, ec.expert_name,
-               EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS has_attachment
+               CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment
           FROM mail_record mr
           LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
          WHERE mr.sender_account_code IN (:accountCodes)
@@ -289,5 +289,5 @@ data class MailboxRow(
     val createdAt: LocalDateTime?,
     val expertEmail: String?,
     val expertName: String?,
-    val hasAttachment: Boolean
+    val hasAttachment: Long
 )

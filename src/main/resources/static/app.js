@@ -39,7 +39,8 @@ const state = {
         page: 0,
         totalCount: 0,
         pageSize: 20,
-        accountsLoaded: false
+        accountsLoaded: false,
+        dateDefaultsApplied: false
     }
 };
 
@@ -5726,13 +5727,23 @@ async function loadMailboxAccounts() {
 async function loadMailbox() {
     await loadMailboxAccounts();
 
+    const startInput = $("#mailboxFilterStartDate");
+    const endInput = $("#mailboxFilterEndDate");
+    if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        endInput.value = monitoringToday();
+        startInput.value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(weekAgo);
+    }
+    state.mailbox.dateDefaultsApplied = true;
+
     const params = new URLSearchParams();
     const direction = $("#mailboxFilterDirection").value;
     const accountCode = $("#mailboxFilterAccountCode").value;
     const recipientEmail = $("#mailboxFilterRecipient").value.trim();
     const keyword = $("#mailboxFilterKeyword").value.trim();
-    const startDate = $("#mailboxFilterStartDate").value;
-    const endDate = $("#mailboxFilterEndDate").value;
+    const startDate = startInput.value;
+    const endDate = endInput.value;
 
     if (direction) params.set("direction", direction);
     if (accountCode) params.set("accountCode", accountCode);

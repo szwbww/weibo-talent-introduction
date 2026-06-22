@@ -103,7 +103,7 @@ class MailboxServiceTest {
             createdAt = now,
             expertEmail = "expert@example.com",
             expertName = "Dr. Expert",
-            hasAttachment = true
+            hasAttachment = 1L
         )
 
         Mockito.`when`(

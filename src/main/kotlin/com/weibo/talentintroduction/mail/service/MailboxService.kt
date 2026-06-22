@@ -68,7 +68,7 @@ class MailboxService(
                 expertName = row.expertName,
                 subject = row.subject,
                 bodyPreview = row.bodyPreview,
-                hasAttachment = row.hasAttachment,
+                hasAttachment = row.hasAttachment != 0L,
                 sendStatus = row.sendStatus,
                 timestamp = timestamp
             )
