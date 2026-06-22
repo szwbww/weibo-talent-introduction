@@ -218,8 +218,8 @@ const taskButtonOriginalTexts = {
 
 const taskButtonMapping = {
     EXPERT_REVALIDATION: { label: "重新验证", btnId: "discoverBtn" },
-    RAW_PROMOTION_SCAN: { label: "发现专家（快速）", btnId: "discoverBtn" },
-    EXPERT_DISCOVERY: { label: "发现专家（深度）", btnId: "discoverBtn" },
+    RAW_PROMOTION_SCAN: { label: "快速晋升（扫描 RAW）", btnId: "discoverBtn" },
+    EXPERT_DISCOVERY: { label: "深度发现（外部数据源）", btnId: "discoverBtn" },
     MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
     CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
 };
@@ -1974,7 +1974,7 @@ const taskLaunchConfigs = {
         run: executeRevalidate
     },
     RAW_PROMOTION_SCAN: {
-        title: "发现专家（快速）",
+        title: "快速晋升（扫描 RAW）",
         desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
         btnId: "discoverBtn",
         showKeyword: false,
@@ -1987,7 +1987,7 @@ const taskLaunchConfigs = {
         run: executePromoteRaw
     },
     EXPERT_DISCOVERY: {
-        title: "发现专家（深度）",
+        title: "深度发现（外部数据源）",
         desc: "从外部数据源搜索并导入新专家到系统中。",
         btnId: "discoverBtn",
         showKeyword: true,
@@ -2102,6 +2102,13 @@ async function openTaskLaunchModal(taskType) {
         fetchSources().catch(() => {});
     } else {
         sourcesRow.hidden = true;
+    }
+    const advancedRow = $("#taskLaunchAdvancedRow");
+    if (taskType === "EXPERT_DISCOVERY") {
+        advancedRow.hidden = false;
+        $("#taskLaunchIncludeRawScan").checked = false;
+    } else {
+        advancedRow.hidden = true;
     }
     $("#taskModalBySource").hidden = true;
 
@@ -2250,7 +2257,7 @@ async function handlePromoteRaw() {
     const taskType = "RAW_PROMOTION_SCAN";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "快速晋升（扫描 RAW）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -2260,7 +2267,7 @@ async function handleDiscover() {
     const taskType = "EXPERT_DISCOVERY";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "深度发现（外部数据源）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -2274,7 +2281,7 @@ async function handleDiscoverClick() {
     }
     const runningQuick = await isTaskRunning("RAW_PROMOTION_SCAN");
     if (runningQuick) {
-        openTaskModal("RAW_PROMOTION_SCAN", "发现专家（快速）", "discoverBtn", { knownActiveAtOpen: true });
+        openTaskModal("RAW_PROMOTION_SCAN", "快速晋升（扫描 RAW）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
     await handleDiscover();
@@ -2297,7 +2304,7 @@ async function executePromoteRaw() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "发现专家（快速）", "discoverBtn", { launchRequested: true });
+    openTaskModal(taskType, "快速晋升（扫描 RAW）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const response = await api("/api/experts/promote-eligible-raw", { method: "POST" });
@@ -2318,7 +2325,7 @@ async function executePromoteRaw() {
             taskType,
             executionId: response.executionId,
             status: "COMPLETED",
-            message: `发现专家（快速）完成: ${coverageMsg}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
+            message: `快速晋升（扫描 RAW）完成: ${coverageMsg}, 晋升 ${stats.promoted}, 过滤 ${stats.filtered}, 邮箱拒收 ${stats.emailRejected}${failureMsg}`,
             level: hasFailures ? "warn" : "ok"
         });
     } catch (e) {
@@ -2367,19 +2374,25 @@ async function executeDiscover() {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "发现专家（深度）", "discoverBtn", { launchRequested: true });
+    openTaskModal(taskType, "深度发现（外部数据源）", "discoverBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const selectedSources = getSelectedSources();
+        const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
         let response;
         if (keywords) {
             const params = new URLSearchParams();
             keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
             if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
+            if (includeRawScan) params.append("includeRawScan", "true");
             response = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
         } else {
+            const params = new URLSearchParams();
+            if (includeRawScan) params.append("includeRawScan", "true");
+            const query = params.toString();
+            const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
             const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
-            response = await api("/api/expert-discovery/run", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
+            response = await api(url, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
         }
         if (response && response.executionId != null) {
             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);

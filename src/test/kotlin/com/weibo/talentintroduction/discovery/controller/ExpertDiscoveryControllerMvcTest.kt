@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.controller
 
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
@@ -28,7 +29,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.LocalDateTime
 
 @WebMvcTest(ExpertDiscoveryController::class)
-@EnableConfigurationProperties(EuropePmcProperties::class)
+@EnableConfigurationProperties(EuropePmcProperties::class, ExpertDiscoveryProperties::class)
 class ExpertDiscoveryControllerMvcTest {
 
     @Autowired

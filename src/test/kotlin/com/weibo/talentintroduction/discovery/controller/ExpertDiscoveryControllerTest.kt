@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.controller
 
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
@@ -47,8 +48,9 @@ class ExpertDiscoveryControllerTest {
     @Suppress("UNCHECKED_CAST")
     private val coreProvider = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<CoreDataSource>
     private val europePmcProperties = EuropePmcProperties()
+    private val discoveryProperties = ExpertDiscoveryProperties()
     private val controller = ExpertDiscoveryController(
-        discoveryService, taskExecutionService, progressStore,
+        discoveryService, taskExecutionService, progressStore, discoveryProperties,
         openAlexProvider, crossrefProvider, arxivProvider,
         pmcOaProvider, orcidProvider, coreProvider, europePmcProperties
     )
@@ -206,7 +208,7 @@ class ExpertDiscoveryControllerTest {
     fun `getAvailableSources reflects Europe PMC enabled state`() {
         val disabledProps = EuropePmcProperties(enabled = false)
         val disabledController = ExpertDiscoveryController(
-            discoveryService, taskExecutionService, progressStore,
+            discoveryService, taskExecutionService, progressStore, discoveryProperties,
             openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider, disabledProps
         )

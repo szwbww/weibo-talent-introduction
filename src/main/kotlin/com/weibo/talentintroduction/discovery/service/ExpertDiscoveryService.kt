@@ -191,7 +191,11 @@ class ExpertDiscoveryService(
     }
 
     @JvmOverloads
-    fun discover(criteria: PaperSearchCriteria, triggeredBy: String, includeRawScan: Boolean = true): DiscoveryResult {
+    fun discover(
+        criteria: PaperSearchCriteria,
+        triggeredBy: String,
+        includeRawScan: Boolean = discoveryProperties.includeRawScan
+    ): DiscoveryResult {
         val stats = DiscoveryStats()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sources = resolveEnabledSources(criteria)
@@ -202,7 +206,18 @@ class ExpertDiscoveryService(
             "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}")
 
         try {
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+                batchNumber = 0, processedCount = 0, totalCount = 0,
+                message = "正在加载数据源配置..."
+            ), execId)
+
             if (includeRawScan) {
+                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                    taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+                    batchNumber = 0, processedCount = 0, totalCount = 0,
+                    message = "正在扫描 RAW 索引并晋升..."
+                ), execId)
                 log.info("开始执行 RAW 晋升扫描与邮箱补全...")
                 try {
                     revalidationService.promoteEligibleRawExperts()

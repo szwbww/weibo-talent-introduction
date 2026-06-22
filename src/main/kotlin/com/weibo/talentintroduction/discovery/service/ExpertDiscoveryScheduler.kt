@@ -38,7 +38,7 @@ class ExpertDiscoveryScheduler(
                     progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
                 }
             ) {
-                discoveryService.discover(criteria, "SCHEDULED")
+                discoveryService.discover(criteria, "SCHEDULED", discoveryProperties.includeRawScan)
             }
         } catch (ex: Exception) {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(

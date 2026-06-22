@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.controller
 
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
@@ -31,6 +32,7 @@ class ExpertDiscoveryController(
     private val discoveryService: ExpertDiscoveryService,
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
+    private val discoveryProperties: ExpertDiscoveryProperties,
     private val openAlexProvider: ObjectProvider<OpenAlexDataSource>,
     private val crossrefProvider: ObjectProvider<CrossrefDataSource>,
     private val arxivProvider: ObjectProvider<ArxivDataSource>,
@@ -56,7 +58,10 @@ class ExpertDiscoveryController(
     }
 
     @PostMapping("/run")
-    fun triggerDiscovery(@RequestBody(required = false) criteria: PaperSearchCriteria?): ResponseEntity<Any> {
+    fun triggerDiscovery(
+        @RequestBody(required = false) criteria: PaperSearchCriteria?,
+        @RequestParam(required = false) includeRawScan: Boolean? = null
+    ): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
             taskType = "EXPERT_DISCOVERY", status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
@@ -78,10 +83,14 @@ class ExpertDiscoveryController(
                     progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
                 }
             ) {
-                discoveryService.discover(criteria ?: PaperSearchCriteria(
-                    excludeCountries = listOf("CN"),
-                    openAccessOnly = true
-                ), "MANUAL")
+                discoveryService.discover(
+                    criteria ?: PaperSearchCriteria(
+                        excludeCountries = listOf("CN"),
+                        openAccessOnly = true
+                    ),
+                    "MANUAL",
+                    includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
+                )
             }
             if (execution.status == "FAILED") {
                 val existing = progressStore.get("EXPERT_DISCOVERY")
@@ -123,7 +132,8 @@ class ExpertDiscoveryController(
         @RequestParam keywords: List<String>,
         @RequestParam(defaultValue = "2020") yearFrom: Int,
         @RequestParam(defaultValue = "2026") yearTo: Int,
-        @RequestParam(required = false) sources: List<String>? = null
+        @RequestParam(required = false) sources: List<String>? = null,
+        @RequestParam(required = false) includeRawScan: Boolean? = null
     ): ResponseEntity<Any> {
         val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
             taskType = "EXPERT_DISCOVERY", status = "RUNNING",
@@ -151,7 +161,11 @@ class ExpertDiscoveryController(
                     progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
                 }
             ) {
-                discoveryService.discover(criteria, "MANUAL")
+                discoveryService.discover(
+                    criteria,
+                    "MANUAL",
+                    includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
+                )
             }
             if (execution.status == "FAILED") {
                 val existing = progressStore.get("EXPERT_DISCOVERY")

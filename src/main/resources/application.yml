@@ -90,6 +90,7 @@ talent-introduction:
     cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
     max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:5000}
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:20000}
+    include-raw-scan: ${EXPERT_DISCOVERY_INCLUDE_RAW_SCAN:false}
     europe-pmc:
       enabled: ${EUROPE_PMC_ENABLED:true}
       base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}

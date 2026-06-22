@@ -411,8 +411,8 @@
                             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                         </button>
                         <div class="dropdown-menu" id="discoverModeMenu" hidden style="right: auto; left: 0;">
-                            <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速扫描（本地 RAW）</button>
-                            <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（含外部平台）</button>
+                            <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速晋升（扫描 RAW）</button>
+                            <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（外部数据源）</button>
                             <hr class="dropdown-divider">
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
@@ -683,6 +683,18 @@
                 <div id="taskLaunchSourcesRow" hidden>
                     <label class="task-modal-input-label">数据源平台:</label>
                     <div id="taskLaunchSources" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
+                </div>
+
+                <div id="taskLaunchAdvancedRow" hidden>
+                    <details class="task-launch-advanced">
+                        <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none;">高级选项</summary>
+                        <div style="margin-top:6px;">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                <input type="checkbox" id="taskLaunchIncludeRawScan">
+                                启动前扫描 RAW 索引并晋升（耗时较长）
+                            </label>
+                        </div>
+                    </details>
                 </div>
 
                 <div id="taskLaunchFiltersRow" hidden>
