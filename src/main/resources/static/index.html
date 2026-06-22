@@ -103,21 +103,14 @@
                 </svg>
                 <span>专家联系</span>
             </button>
-            <button class="nav-tab" data-view="unmatched">
-                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    <path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/>
-                </svg>
-                <span>待处理邮件</span>
-                <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
-                <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
-            </button>
             <button class="nav-tab" data-view="mailbox">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
                     <polyline points="22,6 12,13 2,6"/>
                 </svg>
                 <span>收发件箱</span>
+                <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
+                <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
             </button>
             <button class="nav-tab" data-view="tasks">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -514,56 +507,6 @@
             </div>
         </section>
 
-        <!-- View 5: Unmatched / Escalated messages queue -->
-        <section class="view" id="view-unmatched">
-            <div class="toolbar">
-                <button class="button primary" id="loadUnmatchedBtn">刷新处理队列</button>
-                <select id="unmatchedFilterReasonType">
-                    <option value="">全部挂起原因</option>
-                    <option value="UNMATCHED_CONTACT">未匹配到注册专家 (Unmatched Contact)</option>
-                    <option value="QA_NO_MATCH">QA 未命中自动分类 (QA Miss)</option>
-                    <option value="NOT_INTERESTED">意向度判断不感兴趣 (Not Interested)</option>
-                    <option value="UNCLEAR_INTENT">来信意图模糊 (Unclear Intent)</option>
-                </select>
-                <input id="unmatchedFilterEmail" placeholder="过滤来信邮箱" style="width: 200px;">
-                <input id="unmatchedFilterSubject" placeholder="过滤邮件主题" style="width: 220px;">
-                <select id="unmatchedPageSize">
-                    <option value="10">10 条/页</option>
-                    <option value="20" selected>20 条/页</option>
-                    <option value="50">50 条/页</option>
-                </select>
-            </div>
-
-            <section class="panel">
-                <div class="panel-head"><h2>人工处理挂起队列 (自动转人工 handoff 工单)</h2></div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>工单 ID</th>
-                            <th>来信发件人</th>
-                            <th>来信邮件主题</th>
-                            <th>接收时间</th>
-                            <th>匹配候选专家</th>
-                            <th>自动挂起原因</th>
-                            <th style="text-align: right;">处理操作</th>
-                        </tr>
-                        </thead>
-                        <tbody id="unmatchedTable"></tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Detail workspace card for handoff ticket -->
-            <section class="panel" id="unmatchedDetailPanel" hidden style="margin-top: 16px;">
-                <div class="panel-head">
-                    <h2>工单详情与专家关系映射</h2>
-                    <button class="button secondary" id="closeUnmatchedDetailBtn">收起面板</button>
-                </div>
-                <div id="unmatchedDetailContent" class="detail" style="padding: 24px;"></div>
-            </section>
-        </section>
-
         <!-- View: Mailbox (Inbound / Outbound records) -->
         <section class="view" id="view-mailbox">
             <div class="toolbar">
@@ -576,6 +519,18 @@
                     <option value="INBOUND">收件 (INBOUND)</option>
                     <option value="OUTBOUND">发件 (OUTBOUND)</option>
                 </select>
+                <select id="mailboxFilterTag">
+                    <option value="">全部标签</option>
+                    <option value="专家">专家</option>
+                    <option value="待匹配">待匹配</option>
+                    <option value="自动回复">自动回复</option>
+                    <option value="手动回复">手动回复</option>
+                    <option value="首发">首发</option>
+                    <option value="待处理">待处理</option>
+                    <option value="收件">收件</option>
+                    <option value="发件">发件</option>
+                </select>
+                <label class="checkbox-row"><input type="checkbox" id="mailboxFilterOnlyPending"> 仅待处理</label>
                 <input id="mailboxFilterRecipient" placeholder="过滤收件人邮箱" style="width: 180px;">
                 <input id="mailboxFilterKeyword" placeholder="过滤主题/内容关键词" style="width: 200px;">
                 <input type="date" id="mailboxFilterStartDate" style="width: 130px;">
@@ -596,17 +551,27 @@
                             <th>专家邮箱</th>
                             <th>专家姓名</th>
                             <th>主题</th>
+                            <th>标签</th>
                             <th>内容预览</th>
                             <th>邮件类型</th>
                             <th>来源</th>
                             <th>附件</th>
                             <th>发送状态</th>
+                            <th style="text-align: right;">操作</th>
                         </tr>
                         </thead>
                         <tbody id="mailboxTableBody"></tbody>
                     </table>
                 </div>
                 <div class="pagination" id="mailboxPagination" style="padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;"></div>
+            </section>
+
+            <section class="panel" id="unmatchedDetailPanel" hidden style="margin-top: 16px;">
+                <div class="panel-head">
+                    <h2>工单详情与专家关系映射</h2>
+                    <button class="button secondary" id="closeUnmatchedDetailBtn">收起面板</button>
+                </div>
+                <div id="unmatchedDetailContent" class="detail" style="padding: 24px;"></div>
             </section>
         </section>
 

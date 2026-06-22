@@ -40,7 +40,9 @@ const state = {
         totalCount: 0,
         pageSize: 20,
         accountsLoaded: false,
-        dateDefaultsApplied: false
+        dateDefaultsApplied: false,
+        onlyPending: false,
+        tagFilter: ""
     }
 };
 
@@ -55,8 +57,7 @@ const viewMeta = {
     qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
-    unmatched: ["待处理邮件", "人工待办来信队列与专家绑定。"],
-    mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，按时间、收件人、内容筛选。"],
+    mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -1063,7 +1064,6 @@ async function refreshCurrentView() {
         if (state.view === "qa") await loadQa();
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
-        if (state.view === "unmatched") await loadUnmatched();
         if (state.view === "mailbox") await loadMailbox();
         if (state.view === "tasks") await loadTasks();
         if (state.view === "monitoring") await loadMonitoring();
@@ -4086,22 +4086,12 @@ const REASON_TYPE_BADGE_CLASS = {
 };
 const HIGH_PRIORITY_REASON_TYPES = new Set(["NOT_INTERESTED", "QA_NO_MATCH"]);
 
-async function loadUnmatched() {
-    const params = new URLSearchParams();
-    const reason = $("#unmatchedFilterReasonType").value;
-    const email = $("#unmatchedFilterEmail").value.trim();
-    const subject = $("#unmatchedFilterSubject").value.trim();
-    const pageSize = $("#unmatchedPageSize").value || "20";
-    if (reason) params.set("reasonType", reason);
-    if (email) params.set("email", email);
-    if (subject) params.set("subject", subject);
-    params.set("pageSize", pageSize);
-    params.set("pageOffset", state.unmatchedPageOffset || "0");
-    const data = await api(`/api/mail/unmatched-inbound?${params}`);
-    state.unmatchedRecords = data.records || [];
-    state.unmatchedCounts = data.countsByReasonType || {};
-    renderUnmatchedTable();
-    updateUnmatchedBadge(data.countsByReasonType);
+async function refreshUnmatchedBadge() {
+    try {
+        const data = await api("/api/mail/unmatched-inbound?pageSize=1&pageOffset=0");
+        updateUnmatchedBadge(data.countsByReasonType);
+    } catch (_) {
+    }
 }
 
 function updateUnmatchedBadge(counts) {
@@ -4124,42 +4114,35 @@ function setBadge(sel, n) {
     else el.hidden = true;
 }
 
-function renderUnmatchedTable() {
-    const rows = state.unmatchedRecords.map((r) => `
-        <tr>
-            <td>${r.id}</td>
-            <td>${escapeHtml(r.fromEmail)}</td>
-            <td>${escapeHtml(r.subject || "-")}</td>
-            <td>${escapeHtml(r.receivedAt || "")}</td>
-            <td>${renderContactLink(r)}</td>
-            <td>${badge(REASON_TYPE_LABELS[r.reasonType] || "未知",
-                        REASON_TYPE_BADGE_CLASS[r.reasonType] || "warn")}</td>
-            <td class="actions">${renderUnmatchedActions(r)}</td>
-        </tr>
-    `).join("");
-    $("#unmatchedTable").innerHTML = rows || `<tr><td colspan="7" class="text-muted" style="text-align: center;">暂无记录</td></tr>`;
+const MAILBOX_TAG_BADGE_CLASS = {
+    "专家": "ok",
+    "待匹配": "warn",
+    "自动回复": "warn",
+    "手动回复": "",
+    "首发": "",
+    "待处理": "error",
+    "收件": "",
+    "发件": "ok"
+};
+
+function renderMailboxTagBadges(tags) {
+    return (tags || []).map((tag) => badge(tag, MAILBOX_TAG_BADGE_CLASS[tag] || "")).join(" ");
 }
 
-function renderContactLink(record) {
-    if (record.expertContactId) {
-        return `<div>
-            <a href="javascript:void 0" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">
-            ${escapeHtml(record.expertName || "(未命名)")}</a>
-            <div class="text-muted">${operatorStatusLabels[record.expertOperatorStatus] || labelStatus(record.expertCurrentStatus) || "-"}</div>
-            <div class="text-muted">${indexLevelLabels[record.expertIndexLevel] || record.expertIndexLevel || "-"}</div>
-        </div>`;
-    }
-    return `<span class="text-muted">未匹配</span>`;
-}
-
-function renderUnmatchedActions(r) {
+function renderMailboxActions(row) {
     const actions = [];
-    actions.push(`<button class="button" data-action="view-unmatched" data-id="${r.id}">查看/处理</button>`);
-    if (r.expertContactId) {
-        actions.push(`<button class="button" data-action="open-contact-from-unmatched" data-id="${r.expertContactId}">查看专家</button>`);
+    if (row.source === "INBOUND_PROCESSING" && row.processStatus === "MANUAL_REVIEW" && row.inboundProcessingId) {
+        actions.push(`<button class="button" data-action="open-pending" data-id="${row.inboundProcessingId}">查看/处理</button>`);
+        actions.push(`<button class="button" data-action="mark-unmatched-resolved" data-id="${row.inboundProcessingId}">标记已处理</button>`);
+    } else if (row.expertContactId) {
+        actions.push(`<button class="button" data-action="open-monitoring-contact" data-id="${row.expertContactId}">查看专家</button>`);
     }
-    actions.push(`<button class="button" data-action="mark-unmatched-resolved" data-id="${r.id}">标记已处理</button>`);
-    return actions.join(" ");
+    return actions.join(" ") || "-";
+}
+
+async function refreshMailboxAfterPendingAction() {
+    await loadMailbox();
+    await refreshUnmatchedBadge();
 }
 
 async function showUnmatchedDetail(id) {
@@ -4332,7 +4315,7 @@ async function handleUnmatchedAction(element) {
     const action = element.dataset.action;
     const id = element.dataset.id || element.dataset.recordId;
 
-    if (action === "view-unmatched") {
+    if (action === "view-unmatched" || action === "open-pending") {
         await showUnmatchedDetail(id);
         return;
     }
@@ -4363,7 +4346,7 @@ async function handleUnmatchedAction(element) {
             body: JSON.stringify(payload)
         });
         showStatus("已标记为处理完成");
-        await loadUnmatched();
+        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "bind-candidate") {
@@ -4377,7 +4360,7 @@ async function handleUnmatchedAction(element) {
         });
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
-        await loadUnmatched();
+        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "search-candidates") {
@@ -4417,7 +4400,7 @@ async function handleUnmatchedAction(element) {
         });
         showStatus("已绑定并添加别名");
         $("#unmatchedDetailPanel").hidden = true;
-        await loadUnmatched();
+        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "change-operator-status") {
@@ -4478,7 +4461,7 @@ async function handleUnmatchedAction(element) {
             return;
         }
         await showUnmatchedDetail(id);
-        await loadUnmatched();
+        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "send-manual-rich-reply") {
@@ -4510,7 +4493,7 @@ async function handleUnmatchedAction(element) {
             return;
         }
         await showUnmatchedDetail(id);
-        await loadUnmatched();
+        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "rich-command") {
@@ -4828,8 +4811,12 @@ function bindMonitoringEvents() {
             setView("contacts");
             await loadContactDetail(Number(target.dataset.id));
         }
-        if (target.dataset.action === "view-unmatched") {
-            setView("unmatched");
+        if (target.dataset.action === "view-unmatched" || target.dataset.action === "open-pending") {
+            setView("mailbox");
+            $("#mailboxFilterOnlyPending").checked = true;
+            state.mailbox.onlyPending = true;
+            state.mailbox.page = 0;
+            await loadMailbox();
             await showUnmatchedDetail(target.dataset.id);
         }
         if (target.dataset.action === "retry-promotion") {
@@ -5016,22 +5003,13 @@ function bindEvents() {
             confirmMeetingSchedule(form).catch((error) => showStatus(error.message, "error"));
         }
     });
-    $("#loadUnmatchedBtn").addEventListener("click", loadUnmatched);
-    $("#unmatchedFilterEmail").addEventListener("input", () => {
-        state.unmatchedPageOffset = 0;
-        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    $("#loadUnmatchedBtn")?.addEventListener("click", refreshUnmatchedBadge);
+    $("#unmatchedDetailPanel").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action]");
+        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
     });
-    $("#unmatchedFilterSubject").addEventListener("input", () => {
-        state.unmatchedPageOffset = 0;
-        loadUnmatched().catch((e) => showStatus(e.message, "error"));
-    });
-    $("#unmatchedFilterReasonType").addEventListener("change", () => {
-        state.unmatchedPageOffset = 0;
-        loadUnmatched().catch((e) => showStatus(e.message, "error"));
-    });
-    $("#unmatchedPageSize").addEventListener("change", () => {
-        state.unmatchedPageOffset = 0;
-        loadUnmatched().catch((e) => showStatus(e.message, "error"));
+    $("#closeUnmatchedDetailBtn")?.addEventListener("click", () => {
+        $("#unmatchedDetailPanel").hidden = true;
     });
     const updateFilterBadge = () => {
         const active = [
@@ -5096,21 +5074,17 @@ function bindEvents() {
         });
     }
 
-    $("#unmatchedTable").addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action]");
-        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
-    });
-    $("#unmatchedDetailPanel").addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action]");
-        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
-    });
     document.addEventListener("click", async (event) => {
         const element = event.target.closest("[data-action]");
         if (!element) return;
         const action = element.dataset.action;
         if (action === "goto-manual-queue") {
             event.preventDefault();
-            setView("unmatched");
+            setView("mailbox");
+            $("#mailboxFilterOnlyPending").checked = true;
+            state.mailbox.onlyPending = true;
+            state.mailbox.page = 0;
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
         }
         if (action === "add-alias") {
@@ -5436,6 +5410,27 @@ function initBulkAutoReply() {
         state.mailbox.page = 0;
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
+    $("#mailboxFilterTag").addEventListener("change", (event) => {
+        const value = event.target.value;
+        state.mailbox.tagFilter = value;
+        if (value === "待处理") {
+            $("#mailboxFilterOnlyPending").checked = true;
+            state.mailbox.onlyPending = true;
+            state.mailbox.page = 0;
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+            return;
+        }
+        renderMailboxTable();
+    });
+    $("#mailboxFilterOnlyPending").addEventListener("change", (event) => {
+        state.mailbox.onlyPending = event.target.checked;
+        state.mailbox.page = 0;
+        if (!state.mailbox.onlyPending && state.mailbox.tagFilter === "待处理") {
+            state.mailbox.tagFilter = "";
+            $("#mailboxFilterTag").value = "";
+        }
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
     $("#mailboxTableBody").addEventListener("click", async (event) => {
         const target = event.target.closest("[data-action]");
         if (!target) return;
@@ -5443,6 +5438,10 @@ function initBulkAutoReply() {
             state.selectedExpertOrcid = null;
             setView("contacts");
             await loadContactDetail(Number(target.dataset.id));
+            return;
+        }
+        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched"].includes(target.dataset.action)) {
+            await handleUnmatchedAction(target);
         }
     });
 }
@@ -5740,6 +5739,9 @@ async function loadMailboxAccounts() {
 async function loadMailbox() {
     await loadMailboxAccounts();
 
+    state.mailbox.onlyPending = $("#mailboxFilterOnlyPending")?.checked || false;
+    state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
+
     const startInput = $("#mailboxFilterStartDate");
     const endInput = $("#mailboxFilterEndDate");
     if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
@@ -5764,6 +5766,7 @@ async function loadMailbox() {
     if (keyword) params.set("keyword", keyword);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
+    if (state.mailbox.onlyPending) params.set("pending", "true");
 
     params.set("page", state.mailbox.page);
     params.set("size", state.mailbox.pageSize);
@@ -5774,6 +5777,7 @@ async function loadMailbox() {
         state.mailbox.totalCount = data.totalCount || 0;
         renderMailboxTable();
         renderMailboxPagination();
+        await refreshUnmatchedBadge();
     } catch (e) {
         showStatus("获取邮件记录失败: " + e.message, "error");
     }
@@ -5781,12 +5785,18 @@ async function loadMailbox() {
 
 function renderMailboxTable() {
     const tbody = $("#mailboxTableBody");
-    if (!state.mailbox.items || state.mailbox.items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="text-center muted">暂无邮件记录</td></tr>`;
+    const tagFilter = state.mailbox.tagFilter;
+    const rows = (state.mailbox.items || []).filter((row) => {
+        if (!tagFilter || tagFilter === "待处理") return true;
+        return (row.tags || []).includes(tagFilter);
+    });
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center muted">暂无邮件记录</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = state.mailbox.items.map(row => {
+    tbody.innerHTML = rows.map(row => {
         const timeStr = row.timestamp ? row.timestamp.replace('T', ' ').slice(0, 19) : "-";
         const directionBadge = row.direction === "INBOUND"
             ? '<span class="badge">收件</span>'
@@ -5816,18 +5826,20 @@ function renderMailboxTable() {
             : "-";
 
         return `
-            <tr>
+            <tr data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">
                 <td>${escapeHtml(timeStr)}</td>
                 <td>${directionBadge}</td>
                 <td>${escapeHtml(row.senderAccountCode || "-")}</td>
                 <td>${expertEmailLink}</td>
                 <td>${escapeHtml(row.expertName || "-")}</td>
                 <td>${escapeHtml(row.subject || "-")}</td>
+                <td>${renderMailboxTagBadges(row.tags)}</td>
                 <td title="${escapeHtml(row.bodyPreview || "")}">${escapeHtml(row.bodyPreview || "-")}</td>
                 <td>${escapeHtml(row.mailType || "-")}</td>
                 <td>${sourceBadge}</td>
                 <td>${attachment}</td>
                 <td>${sendStatus}</td>
+                <td class="actions">${renderMailboxActions(row)}</td>
             </tr>
         `;
     }).join("");

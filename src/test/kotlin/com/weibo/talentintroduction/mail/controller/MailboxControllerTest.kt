@@ -28,6 +28,7 @@ class MailboxControllerTest {
             items = listOf(
                 MailboxItemResponse(
                     id = 1L,
+                    source = "MAIL_RECORD",
                     expertContactId = 100L,
                     direction = "OUTBOUND",
                     mailType = "INTRODUCTION",
@@ -40,10 +41,15 @@ class MailboxControllerTest {
                     bodyPreview = "Preview of body...",
                     hasAttachment = false,
                     sendStatus = "SENT",
-                    timestamp = "2026-06-22T10:00:00"
+                    timestamp = "2026-06-22T10:00:00",
+                    tags = listOf("专家", "发件", "自动回复", "首发"),
+                    processStatus = null,
+                    reasonType = null,
+                    inboundProcessingId = null
                 ),
                 MailboxItemResponse(
                     id = 2L,
+                    source = "INBOUND_PROCESSING",
                     expertContactId = 200L,
                     direction = "INBOUND",
                     mailType = "REPLY",
@@ -56,7 +62,11 @@ class MailboxControllerTest {
                     bodyPreview = "Reply body...",
                     hasAttachment = true,
                     sendStatus = null,
-                    timestamp = "2026-06-22T11:00:00"
+                    timestamp = "2026-06-22T11:00:00",
+                    tags = listOf("专家", "收件"),
+                    processStatus = "PROCESSED",
+                    reasonType = "MANUAL_BOUND",
+                    inboundProcessingId = 2L
                 )
             ),
             totalCount = 2L
@@ -73,6 +83,7 @@ class MailboxControllerTest {
                 recipientEmail = "expert@example.com",
                 startTime = startLocalTime,
                 endTime = endLocalTime,
+                pending = false,
                 page = 0,
                 size = 20
             )

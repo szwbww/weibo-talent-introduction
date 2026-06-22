@@ -9,24 +9,29 @@ import java.time.LocalDate
 
 data class MailboxItemResponse(
     val id: Long,
-    val expertContactId: Long,
+    val source: String,
+    val expertContactId: Long?,
     val direction: String,
     val mailType: String,
     val senderAccountCode: String?,
-    val triggeredBy: String?,       // I-3: Direct pass-through
-    val isSystemSent: Boolean,      // I-3: triggeredBy == "SYSTEM"
+    val triggeredBy: String?,
+    val isSystemSent: Boolean,
     val expertEmail: String?,
     val expertName: String?,
     val subject: String?,
-    val bodyPreview: String?,       // I-5: Truncated
+    val bodyPreview: String?,
     val hasAttachment: Boolean,
     val sendStatus: String?,
-    val timestamp: String?          // ISO format, COALESCE(sentAt, receivedAt)
+    val timestamp: String?,
+    val tags: List<String>,
+    val processStatus: String?,
+    val reasonType: String?,
+    val inboundProcessingId: Long?
 )
 
 data class MailboxListResponse(
     val items: List<MailboxItemResponse>,
-    val totalCount: Long            // I-4
+    val totalCount: Long
 )
 
 @RestController
@@ -39,8 +44,9 @@ class MailboxController(private val mailboxService: MailboxService) {
         @RequestParam(required = false) accountCode: String?,
         @RequestParam(required = false) keyword: String?,
         @RequestParam(required = false) recipientEmail: String?,
-        @RequestParam(required = false) startDate: String?,   // yyyy-MM-dd
-        @RequestParam(required = false) endDate: String?,     // yyyy-MM-dd
+        @RequestParam(required = false) startDate: String?,
+        @RequestParam(required = false) endDate: String?,
+        @RequestParam(defaultValue = "false") pending: Boolean,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): MailboxListResponse {
@@ -53,6 +59,7 @@ class MailboxController(private val mailboxService: MailboxService) {
             recipientEmail = recipientEmail,
             startTime = startTime,
             endTime = endTime,
+            pending = pending,
             page = page,
             size = size.coerceIn(1, 100)
         )

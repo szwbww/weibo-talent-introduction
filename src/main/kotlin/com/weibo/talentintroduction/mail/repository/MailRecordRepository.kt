@@ -216,24 +216,57 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
-        SELECT mr.id, mr.expert_contact_id, mr.direction, mr.mail_type,
-               mr.sender_account_code, mr.triggered_by, mr.subject,
-               SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) AS body_preview,
-               mr.send_status, mr.sent_at, mr.received_at, mr.created_at,
-               ec.expert_email, ec.expert_name,
-               CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment
-          FROM mail_record mr
-          LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.sender_account_code IN (:accountCodes)
-           AND (:direction IS NULL OR mr.direction = :direction)
-           AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
-           AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
-                                  OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
-           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
-           AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) >= :startTime)
-           AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) < :endTime)
-         ORDER BY COALESCE(mr.sent_at, mr.received_at) DESC
-         LIMIT :limit OFFSET :offset
+        SELECT * FROM (
+          SELECT 'MAIL_RECORD' AS source, mr.id AS id, mr.expert_contact_id,
+                 mr.direction, mr.mail_type, mr.sender_account_code, mr.triggered_by,
+                 mr.matched_qa_rule_id, mr.send_status, mr.subject,
+                 SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) AS body_preview,
+                 mr.sent_at, CAST(NULL AS DATETIME) AS received_at,
+                 CAST(NULL AS CHAR) AS process_status, CAST(NULL AS CHAR) AS reason_type,
+                 ec.expert_email, ec.expert_name,
+                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+                 CAST(NULL AS SIGNED) AS inbound_processing_id
+            FROM mail_record mr
+            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+           WHERE mr.direction = 'OUTBOUND'
+             AND mr.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'OUTBOUND')
+             AND (:onlyPending = 0)
+             AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR mr.sent_at >= :startTime)
+             AND (:endTime IS NULL OR mr.sent_at < :endTime)
+          UNION ALL
+          SELECT 'INBOUND_PROCESSING' AS source, imp.id AS id, imp.expert_contact_id,
+                 'INBOUND' AS direction, 'REPLY' AS mail_type, imp.sender_account_code,
+                 CAST(NULL AS CHAR) AS triggered_by, CAST(NULL AS SIGNED) AS matched_qa_rule_id,
+                 CAST(NULL AS CHAR) AS send_status, imp.subject,
+                 SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) AS body_preview,
+                 CAST(NULL AS DATETIME) AS sent_at, imp.received_at,
+                 imp.process_status, imp.reason_type,
+                 COALESCE(ec2.expert_email, imp.from_email) AS expert_email, ec2.expert_name,
+                 CAST(EXISTS(
+                   SELECT 1 FROM mail_attachment ma
+                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+                    WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+                 ) AS SIGNED) AS has_attachment,
+                 imp.id AS inbound_processing_id
+            FROM inbound_mail_processing imp
+            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+           WHERE imp.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'INBOUND')
+             AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
+             AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR imp.from_email LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR imp.received_at >= :startTime)
+             AND (:endTime IS NULL OR imp.received_at < :endTime)
+        ) u
+        ORDER BY COALESCE(u.sent_at, u.received_at) DESC
+        LIMIT :limit OFFSET :offset
         """
     )
     fun listMailbox(
@@ -244,23 +277,41 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         recipientEmail: String?,
         startTime: LocalDateTime?,
         endTime: LocalDateTime?,
+        onlyPending: Int,
         limit: Int,
         offset: Long
     ): List<MailboxRow>
 
     @Query(
         """
-        SELECT COUNT(*)
-          FROM mail_record mr
-          LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.sender_account_code IN (:accountCodes)
-           AND (:direction IS NULL OR mr.direction = :direction)
-           AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
-           AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
-                                  OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
-           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
-           AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) >= :startTime)
-           AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.received_at) < :endTime)
+        SELECT COUNT(*) FROM (
+          SELECT mr.id
+            FROM mail_record mr
+            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+           WHERE mr.direction = 'OUTBOUND'
+             AND mr.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'OUTBOUND')
+             AND (:onlyPending = 0)
+             AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR mr.sent_at >= :startTime)
+             AND (:endTime IS NULL OR mr.sent_at < :endTime)
+          UNION ALL
+          SELECT imp.id
+            FROM inbound_mail_processing imp
+            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+           WHERE imp.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'INBOUND')
+             AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
+             AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR imp.from_email LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR imp.received_at >= :startTime)
+             AND (:endTime IS NULL OR imp.received_at < :endTime)
+        ) u
         """
     )
     fun countMailbox(
@@ -270,24 +321,29 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         keyword: String?,
         recipientEmail: String?,
         startTime: LocalDateTime?,
-        endTime: LocalDateTime?
+        endTime: LocalDateTime?,
+        onlyPending: Int
     ): Long
 }
 
 data class MailboxRow(
+    val source: String,
     val id: Long,
-    val expertContactId: Long,
+    val expertContactId: Long?,
     val direction: String,
     val mailType: String,
     val senderAccountCode: String?,
     val triggeredBy: String?,
+    val matchedQaRuleId: Long?,
     val subject: String?,
     val bodyPreview: String?,
     val sendStatus: String?,
     val sentAt: LocalDateTime?,
     val receivedAt: LocalDateTime?,
-    val createdAt: LocalDateTime?,
+    val processStatus: String?,
+    val reasonType: String?,
     val expertEmail: String?,
     val expertName: String?,
-    val hasAttachment: Long
+    val hasAttachment: Long,
+    val inboundProcessingId: Long?
 )
