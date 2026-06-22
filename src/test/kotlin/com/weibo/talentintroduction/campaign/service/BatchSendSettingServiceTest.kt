@@ -32,6 +32,7 @@ class BatchSendSettingServiceTest {
         assertEquals(1000L, cfg.perMailIntervalMs)
         assertEquals(60000L, cfg.perRoundIntervalMs)
         assertEquals(30, cfg.selfCheckTtlMinutes)
+        assertEquals("", cfg.emailDomain)
     }
 
     @Test
@@ -43,7 +44,8 @@ class BatchSendSettingServiceTest {
             row("batchSend.roundSize", "25"),
             row("batchSend.perMailIntervalMs", "2000"),
             row("batchSend.perRoundIntervalMs", "120000"),
-            row("batchSend.selfCheckTtlMinutes", "60")
+            row("batchSend.selfCheckTtlMinutes", "60"),
+            row("batchSend.emailDomain", "gmail.com")
         ))
         val cfg = service().getConfig()
         assertEquals(true, cfg.autoEnabled)
@@ -53,6 +55,7 @@ class BatchSendSettingServiceTest {
         assertEquals(2000L, cfg.perMailIntervalMs)
         assertEquals(120000L, cfg.perRoundIntervalMs)
         assertEquals(60, cfg.selfCheckTtlMinutes)
+        assertEquals("gmail.com", cfg.emailDomain)
     }
 
     @Test
@@ -97,7 +100,7 @@ class BatchSendSettingServiceTest {
             autoEnabled = true, cron = "0 15 3 * * ?",
             dailyCap = 200, roundSize = 20,
             perMailIntervalMs = 500, perRoundIntervalMs = 30000,
-            selfCheckTtlMinutes = 15
+            selfCheckTtlMinutes = 15, emailDomain = "gmail.com"
         )
         `when`(repository.save(any())).thenAnswer { it.arguments[0] }
         `when`(repository.findAll()).thenReturn(listOf(
@@ -107,7 +110,8 @@ class BatchSendSettingServiceTest {
             row("batchSend.roundSize", "20"),
             row("batchSend.perMailIntervalMs", "500"),
             row("batchSend.perRoundIntervalMs", "30000"),
-            row("batchSend.selfCheckTtlMinutes", "15")
+            row("batchSend.selfCheckTtlMinutes", "15"),
+            row("batchSend.emailDomain", "gmail.com")
         ))
 
         val result = service().updateConfig(cmd)
@@ -119,9 +123,10 @@ class BatchSendSettingServiceTest {
         assertEquals(500L, result.perMailIntervalMs)
         assertEquals(30000L, result.perRoundIntervalMs)
         assertEquals(15, result.selfCheckTtlMinutes)
+        assertEquals("gmail.com", result.emailDomain)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(7)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(8)).save(captor.capture())
         captor.allValues.forEach { saved ->
             assertTrue(saved.settingKey.startsWith("batchSend."))
         }
@@ -133,7 +138,7 @@ class BatchSendSettingServiceTest {
             autoEnabled = true, cron = "0 0 0 * * ?",
             dailyCap = 1000, roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
-            selfCheckTtlMinutes = 30
+            selfCheckTtlMinutes = 30, emailDomain = ""
         )
         `when`(repository.findBySettingKey("batchSend.autoEnabled")).thenReturn(row("batchSend.autoEnabled", "false", id = 7L))
         `when`(repository.save(any())).thenAnswer { it.arguments[0] }
@@ -142,7 +147,7 @@ class BatchSendSettingServiceTest {
         service().updateConfig(cmd)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(7)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(8)).save(captor.capture())
         val autoEnabledSave = captor.allValues.first { it.settingKey == "batchSend.autoEnabled" }
         assertEquals(7L, autoEnabledSave.id)
         assertEquals("true", autoEnabledSave.settingValue)

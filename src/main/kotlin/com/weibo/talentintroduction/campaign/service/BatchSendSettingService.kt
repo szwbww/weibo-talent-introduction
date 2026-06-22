@@ -22,7 +22,8 @@ class BatchSendSettingService(
             roundSize = intValue(values, KEY_ROUND_SIZE, DEFAULT_ROUND_SIZE),
             perMailIntervalMs = longValue(values, KEY_PER_MAIL_INTERVAL_MS, DEFAULT_PER_MAIL_INTERVAL_MS),
             perRoundIntervalMs = longValue(values, KEY_PER_ROUND_INTERVAL_MS, DEFAULT_PER_ROUND_INTERVAL_MS),
-            selfCheckTtlMinutes = intValue(values, KEY_SELF_CHECK_TTL_MINUTES, DEFAULT_SELF_CHECK_TTL_MINUTES)
+            selfCheckTtlMinutes = intValue(values, KEY_SELF_CHECK_TTL_MINUTES, DEFAULT_SELF_CHECK_TTL_MINUTES),
+            emailDomain = strValue(values, KEY_EMAIL_DOMAIN, DEFAULT_EMAIL_DOMAIN)
         )
     }
 
@@ -35,6 +36,7 @@ class BatchSendSettingService(
         upsert(KEY_PER_MAIL_INTERVAL_MS, cmd.perMailIntervalMs.toString())
         upsert(KEY_PER_ROUND_INTERVAL_MS, cmd.perRoundIntervalMs.toString())
         upsert(KEY_SELF_CHECK_TTL_MINUTES, cmd.selfCheckTtlMinutes.toString())
+        upsert(KEY_EMAIL_DOMAIN, cmd.emailDomain)
         return getConfig()
     }
 
@@ -120,6 +122,7 @@ class BatchSendSettingService(
         const val KEY_RUNTIME_STATUS = "batchSend.runtimeStatus"
         const val KEY_RUNTIME_MODE = "batchSend.runtimeMode"
         const val KEY_PAUSE_REASON = "batchSend.pauseReason"
+        const val KEY_EMAIL_DOMAIN = "batchSend.emailDomain"
 
         const val DEFAULT_AUTO_ENABLED = false
         const val DEFAULT_CRON = "0 0 0 * * ?"
@@ -131,6 +134,7 @@ class BatchSendSettingService(
         const val DEFAULT_RUNTIME_STATUS = "IDLE"
         const val DEFAULT_RUNTIME_MODE = "NONE"
         const val DEFAULT_PAUSE_REASON = ""
+        const val DEFAULT_EMAIL_DOMAIN = ""
     }
 }
 
@@ -141,7 +145,8 @@ data class BatchSendConfig(
     val roundSize: Int,
     val perMailIntervalMs: Long,
     val perRoundIntervalMs: Long,
-    val selfCheckTtlMinutes: Int
+    val selfCheckTtlMinutes: Int,
+    val emailDomain: String = ""
 )
 
 data class BatchSendConfigUpdateRequest(
@@ -151,7 +156,8 @@ data class BatchSendConfigUpdateRequest(
     val roundSize: Int,
     val perMailIntervalMs: Long,
     val perRoundIntervalMs: Long,
-    val selfCheckTtlMinutes: Int
+    val selfCheckTtlMinutes: Int,
+    val emailDomain: String = ""
 )
 
 data class BatchSendRuntimeState(
