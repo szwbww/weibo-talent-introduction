@@ -145,7 +145,7 @@ class MailboxServiceTest {
 
         assertEquals(1L, response.totalCount)
         assertEquals(1, response.items.size)
-        
+
         val item = response.items[0]
         assertEquals(42L, item.id)
         assertEquals(99L, item.expertContactId)

@@ -291,4 +291,3 @@ data class MailboxRow(
     val expertName: String?,
     val hasAttachment: Boolean
 )
-
