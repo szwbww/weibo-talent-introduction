@@ -3,6 +3,7 @@ function monitoringToday() {
 }
 
 const state = {
+    lastEmailProvidersLevel: null,
     view: "accounts",
     accounts: [],
     categories: [],
@@ -1471,6 +1472,47 @@ function renderContactPager(size) {
     $("#contactNextPage").disabled = state.contactsPage >= totalPages - 1;
 }
 
+async function loadEmailProviders(level) {
+    try {
+        const domains = await api(`/api/experts/email-providers?level=${level}`);
+        const filterDropdown = $("#expertEmailDomainFilter");
+        const configDropdown = $("#batchSendEmailDomain");
+
+        const currentFilterVal = filterDropdown ? filterDropdown.value : "";
+        const currentConfigVal = configDropdown ? configDropdown.value : "";
+
+        if (filterDropdown) {
+            filterDropdown.innerHTML = '<option value="">全部服务商</option>';
+            domains.forEach(d => {
+                const opt = document.createElement("option");
+                opt.value = d.domain;
+                opt.textContent = `${d.domain} (${d.count})`;
+                filterDropdown.appendChild(opt);
+            });
+            filterDropdown.value = currentFilterVal;
+            if (filterDropdown.value !== currentFilterVal) {
+                filterDropdown.value = "";
+            }
+        }
+
+        if (configDropdown) {
+            configDropdown.innerHTML = '<option value="">全部</option>';
+            domains.forEach(d => {
+                const opt = document.createElement("option");
+                opt.value = d.domain;
+                opt.textContent = `${d.domain} (${d.count})`;
+                configDropdown.appendChild(opt);
+            });
+            configDropdown.value = currentConfigVal;
+            if (configDropdown.value !== currentConfigVal) {
+                configDropdown.value = "";
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load email providers:", e);
+    }
+}
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = Number($("#expertIndexSize").value || "50");
@@ -1478,6 +1520,11 @@ async function loadContacts() {
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
     renderContactListSkeleton();
+
+    if (state.lastEmailProvidersLevel !== level) {
+        state.lastEmailProvidersLevel = level;
+        loadEmailProviders(level);
+    }
 
     const tagFilterEl = $("#expertTagFilter");
     if (needsAttention) {
@@ -1531,6 +1578,8 @@ async function loadContacts() {
         params.set("from", state.contactsPage * size);
         if (tag) params.set("tag", tag);
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
+        const emailDomain = $("#expertEmailDomainFilter")?.value || "";
+        if (emailDomain) params.set("emailDomain", emailDomain);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const data = await api(`/api/experts?${params}`);
@@ -2549,6 +2598,7 @@ function fillBatchSendConfigForm(config) {
     setVal("batchSendPerMailIntervalSec", config.perMailIntervalMs != null ? Math.round(config.perMailIntervalMs / 1000) : "");
     setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
     setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
+    setVal("batchSendEmailDomain", config.emailDomain ?? "");
 }
 
 function syncBatchSendTimeFieldVisibility() {
@@ -2586,7 +2636,8 @@ function readBatchSendConfigForm() {
         roundSize: Math.round(num("batchSendRoundSize")),
         perMailIntervalMs: Math.round(num("batchSendPerMailIntervalSec") * 1000),
         perRoundIntervalMs: Math.round(num("batchSendPerRoundIntervalSec") * 1000),
-        selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin"))
+        selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin")),
+        emailDomain: val("batchSendEmailDomain") || ""
     };
     if (payload.roundSize < 1) throw new Error("每轮数量需 ≥ 1");
     if (payload.dailyCap < payload.roundSize) throw new Error("每批上限需 ≥ 每轮数量");
@@ -4961,7 +5012,8 @@ function bindEvents() {
             $("#expertIndexSize").value !== "50",
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
-            $("#expertTagFilter").value !== ""
+            $("#expertTagFilter").value !== "",
+            $("#expertEmailDomainFilter")?.value !== ""
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
         countEl.hidden = active === 0;
@@ -4973,7 +5025,7 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter",
-        "contactStatusFilter", "expertTagFilter", "expertSortBy"].forEach((id) => {
+        "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
     updateFilterBadge();

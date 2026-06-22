@@ -91,7 +91,8 @@ describe("Batch Send Controls (phase 04)", () => {
             batchSendRoundSize: "value",
             batchSendPerMailIntervalSec: "value",
             batchSendPerRoundIntervalSec: "value",
-            batchSendSelfCheckTtlMin: "value"
+            batchSendSelfCheckTtlMin: "value",
+            batchSendEmailDomain: "value"
         };
         for (const [id, prop] of Object.entries(map)) {
             const el = sb.$("#" + id);
@@ -303,7 +304,8 @@ describe("Batch Send Controls (phase 04)", () => {
                 batchSendRoundSize: "50",
                 batchSendPerMailIntervalSec: "1",
                 batchSendPerRoundIntervalSec: "60",
-                batchSendSelfCheckTtlMin: "30"
+                batchSendSelfCheckTtlMin: "30",
+                batchSendEmailDomain: "gmail.com"
             });
             const payload = sb.readBatchSendConfigForm();
             assert.strictEqual(payload.autoEnabled, true);
@@ -313,6 +315,7 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(payload.perMailIntervalMs, 1000);
             assert.strictEqual(payload.perRoundIntervalMs, 60000);
             assert.strictEqual(payload.selfCheckTtlMinutes, 30);
+            assert.strictEqual(payload.emailDomain, "gmail.com");
         });
 
         it("dailyCap < roundSize throws", () => {
