@@ -2,12 +2,14 @@ package com.weibo.talentintroduction.expert.controller
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
 import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
@@ -155,5 +157,35 @@ class ExpertIndexControllerTest {
         assertEquals(1, body.success)
         assertEquals(0, body.failure)
         assertEquals(0, body.skipped)
+    }
+
+    @Test
+    fun `listExperts passes emailDomain parameter to searchService`() {
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com"))
+            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
+
+        val response = controller.listExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = "gmail.com"
+        )
+        assertEquals(0L, response.totalHits)
+        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com")
+    }
+
+    @Test
+    fun `getEmailProviders aggregates email domains`() {
+        val expectedAggs = listOf(EmailDomainCount("gmail.com", 100L))
+        Mockito.`when`(searchService.aggregateEmailDomains(ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expectedAggs)
+
+        val response = controller.getEmailProviders(ExpertIndexLevel.CANDIDATE)
+        assertEquals(1, response.size)
+        assertEquals("gmail.com", response[0].domain)
+        assertEquals(100L, response[0].count)
     }
 }

@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -45,9 +46,10 @@ class ExpertIndexController(
         @RequestParam(required = false) tag: String?,
         @RequestParam(required = false) sortBy: String?,
         @RequestParam(defaultValue = "0") from: Int,
-        @RequestParam(required = false) operatorStatus: String?
+        @RequestParam(required = false) operatorStatus: String?,
+        @RequestParam(required = false) emailDomain: String?
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus)
+        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus, emailDomain)
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
@@ -204,6 +206,13 @@ class ExpertIndexController(
     fun updateEligibilityFilters(@RequestBody updates: Map<String, String>): ResponseEntity<EligibilityFiltersResponse> {
         updates.forEach { (key, value) -> eligibilityFilterService.update(key, value) }
         return ResponseEntity.ok(eligibilityFilterService.getAll())
+    }
+
+    @GetMapping("/email-providers")
+    fun getEmailProviders(
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+    ): List<EmailDomainCount> {
+        return expertSearchService.aggregateEmailDomains(level)
     }
 }
 
