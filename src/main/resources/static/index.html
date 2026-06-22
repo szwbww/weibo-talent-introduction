@@ -112,6 +112,13 @@
                 <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
                 <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
             </button>
+            <button class="nav-tab" data-view="mailbox">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>收发件箱</span>
+            </button>
             <button class="nav-tab" data-view="tasks">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
@@ -554,6 +561,52 @@
                     <button class="button secondary" id="closeUnmatchedDetailBtn">收起面板</button>
                 </div>
                 <div id="unmatchedDetailContent" class="detail" style="padding: 24px;"></div>
+            </section>
+        </section>
+
+        <!-- View: Mailbox (Inbound / Outbound records) -->
+        <section class="view" id="view-mailbox">
+            <div class="toolbar">
+                <button class="button primary" id="mailboxRefreshBtn">刷新</button>
+                <select id="mailboxFilterAccountCode">
+                    <option value="">全部邮箱账号</option>
+                </select>
+                <select id="mailboxFilterDirection">
+                    <option value="">全部收发方向</option>
+                    <option value="INBOUND">收件 (INBOUND)</option>
+                    <option value="OUTBOUND">发件 (OUTBOUND)</option>
+                </select>
+                <input id="mailboxFilterRecipient" placeholder="过滤收件人邮箱" style="width: 180px;">
+                <input id="mailboxFilterKeyword" placeholder="过滤主题/内容关键词" style="width: 200px;">
+                <input type="date" id="mailboxFilterStartDate" style="width: 130px;">
+                <span>至</span>
+                <input type="date" id="mailboxFilterEndDate" style="width: 130px;">
+                <button class="button primary" id="mailboxSearchBtn">查询</button>
+            </div>
+
+            <section class="panel">
+                <div class="panel-head"><h2>已激活账号收发邮件记录</h2></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>方向</th>
+                            <th>邮箱账号</th>
+                            <th>专家邮箱</th>
+                            <th>专家姓名</th>
+                            <th>主题</th>
+                            <th>内容预览</th>
+                            <th>邮件类型</th>
+                            <th>来源</th>
+                            <th>附件</th>
+                            <th>发送状态</th>
+                        </tr>
+                        </thead>
+                        <tbody id="mailboxTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="mailboxPagination" style="padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;"></div>
             </section>
         </section>
 

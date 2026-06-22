@@ -33,6 +33,13 @@ const state = {
         senderHealth: [],
         lastRefreshedAt: null,
         autoRefreshTimer: null
+    },
+    mailbox: {
+        items: [],
+        page: 0,
+        totalCount: 0,
+        pageSize: 20,
+        accountsLoaded: false
     }
 };
 
@@ -48,6 +55,7 @@ const viewMeta = {
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     unmatched: ["待处理邮件", "人工待办来信队列与专家绑定。"],
+    mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，按时间、收件人、内容筛选。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -1055,6 +1063,7 @@ async function refreshCurrentView() {
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
         if (state.view === "unmatched") await loadUnmatched();
+        if (state.view === "mailbox") await loadMailbox();
         if (state.view === "tasks") await loadTasks();
         if (state.view === "monitoring") await loadMonitoring();
     } catch (error) {
@@ -5376,6 +5385,52 @@ function initBulkAutoReply() {
             await loadContacts();
         }
     });
+
+    $("#mailboxRefreshBtn").addEventListener("click", () => {
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#mailboxSearchBtn").addEventListener("click", () => {
+        state.mailbox.page = 0;
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#mailboxPagination").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "mailbox-prev") state.mailbox.page = Math.max(0, state.mailbox.page - 1);
+        if (button.dataset.action === "mailbox-next") state.mailbox.page += 1;
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#mailboxFilterRecipient").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            state.mailbox.page = 0;
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+        }
+    });
+    $("#mailboxFilterKeyword").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            state.mailbox.page = 0;
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+        }
+    });
+    $("#mailboxFilterAccountCode").addEventListener("change", () => {
+        state.mailbox.page = 0;
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#mailboxFilterDirection").addEventListener("change", () => {
+        state.mailbox.page = 0;
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#mailboxTableBody").addEventListener("click", async (event) => {
+        const target = event.target.closest("[data-action]");
+        if (!target) return;
+        if (target.dataset.action === "open-monitoring-contact") {
+            state.selectedExpertOrcid = null;
+            setView("contacts");
+            await loadContactDetail(Number(target.dataset.id));
+        }
+    });
 }
 
 
@@ -5651,6 +5706,118 @@ function bindAuthEvents() {
             location.reload();
         }
     });
+}
+
+async function loadMailboxAccounts() {
+    if (state.mailbox.accountsLoaded) return;
+    try {
+        const accounts = await api("/api/mail/sender-accounts");
+        const activeAccounts = accounts.filter(a => a.enabled);
+        const select = $("#mailboxFilterAccountCode");
+        select.innerHTML = '<option value="">全部邮箱账号</option>' + activeAccounts.map(a =>
+            `<option value="${escapeHtml(a.accountCode)}">${escapeHtml(a.accountCode)} (${escapeHtml(a.senderEmail)})</option>`
+        ).join("");
+        state.mailbox.accountsLoaded = true;
+    } catch (e) {
+        showStatus("加载邮箱账号失败: " + e.message, "error");
+    }
+}
+
+async function loadMailbox() {
+    await loadMailboxAccounts();
+
+    const params = new URLSearchParams();
+    const direction = $("#mailboxFilterDirection").value;
+    const accountCode = $("#mailboxFilterAccountCode").value;
+    const recipientEmail = $("#mailboxFilterRecipient").value.trim();
+    const keyword = $("#mailboxFilterKeyword").value.trim();
+    const startDate = $("#mailboxFilterStartDate").value;
+    const endDate = $("#mailboxFilterEndDate").value;
+
+    if (direction) params.set("direction", direction);
+    if (accountCode) params.set("accountCode", accountCode);
+    if (recipientEmail) params.set("recipientEmail", recipientEmail);
+    if (keyword) params.set("keyword", keyword);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+
+    params.set("page", state.mailbox.page);
+    params.set("size", state.mailbox.pageSize);
+
+    try {
+        const data = await api(`/api/mail/mailbox?${params}`);
+        state.mailbox.items = data.items || [];
+        state.mailbox.totalCount = data.totalCount || 0;
+        renderMailboxTable();
+        renderMailboxPagination();
+    } catch (e) {
+        showStatus("获取邮件记录失败: " + e.message, "error");
+    }
+}
+
+function renderMailboxTable() {
+    const tbody = $("#mailboxTableBody");
+    if (!state.mailbox.items || state.mailbox.items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center muted">暂无邮件记录</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.mailbox.items.map(row => {
+        const timeStr = row.timestamp ? row.timestamp.replace('T', ' ').slice(0, 19) : "-";
+        const directionBadge = row.direction === "INBOUND"
+            ? '<span class="badge">收件</span>'
+            : '<span class="badge ok">发件</span>';
+
+        const expertEmailLink = row.expertContactId
+            ? `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${row.expertContactId}">${escapeHtml(row.expertEmail || "")}</a>`
+            : escapeHtml(row.expertEmail || "-");
+
+        let sourceBadge = "-";
+        if (row.direction === "OUTBOUND") {
+            if (row.triggeredBy === "SYSTEM") {
+                sourceBadge = '<span class="badge warn">系统自动</span>';
+            } else if (row.triggeredBy === "OPERATOR") {
+                sourceBadge = '<span class="badge">人工</span>';
+            } else if (row.triggeredBy === "MANUAL") {
+                sourceBadge = '<span class="badge">手动</span>';
+            }
+        }
+
+        const attachment = row.hasAttachment
+            ? '<span class="badge warn" title="有附件">📎</span>'
+            : "-";
+
+        const sendStatus = row.direction === "OUTBOUND"
+            ? (row.sendStatus === "SENT" ? '<span class="badge ok">已发送</span>' : `<span class="badge error" title="发送失败">失败</span>`)
+            : "-";
+
+        return `
+            <tr>
+                <td>${escapeHtml(timeStr)}</td>
+                <td>${directionBadge}</td>
+                <td>${escapeHtml(row.senderAccountCode || "-")}</td>
+                <td>${expertEmailLink}</td>
+                <td>${escapeHtml(row.expertName || "-")}</td>
+                <td>${escapeHtml(row.subject || "-")}</td>
+                <td title="${escapeHtml(row.bodyPreview || "")}">${escapeHtml(row.bodyPreview || "-")}</td>
+                <td>${escapeHtml(row.mailType || "-")}</td>
+                <td>${sourceBadge}</td>
+                <td>${attachment}</td>
+                <td>${sendStatus}</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderMailboxPagination() {
+    const total = state.mailbox.totalCount || 0;
+    const page = state.mailbox.page;
+    const maxPage = Math.max(0, Math.ceil(total / state.mailbox.pageSize) - 1);
+    $("#mailboxPagination").innerHTML = `
+        <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
+        <button class="button secondary" data-action="mailbox-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
+        <button class="button secondary" data-action="mailbox-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
+    `;
 }
 
 function bootstrap() {
