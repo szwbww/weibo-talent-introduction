@@ -1518,6 +1518,7 @@ async function loadContacts() {
     const size = Number($("#expertIndexSize").value || "50");
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+    const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
     renderContactListSkeleton();
 
@@ -1552,7 +1553,12 @@ async function loadContacts() {
         params.set("needsAttention", needsAttention);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
-        totalHits = data.totalCount ?? rawContacts.length;
+        if (emailDomain) {
+            rawContacts = rawContacts.filter(c => (c.expertEmail || "").endsWith(`@${emailDomain}`));
+            totalHits = rawContacts.length;
+        } else {
+            totalHits = data.totalCount ?? rawContacts.length;
+        }
         // MySQL 接口暂无分页，前端切片
         rawContacts = rawContacts.slice(state.contactsPage * size, (state.contactsPage + 1) * size);
         contacts = rawContacts.map(c => ({
@@ -1578,7 +1584,6 @@ async function loadContacts() {
         params.set("from", state.contactsPage * size);
         if (tag) params.set("tag", tag);
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
-        const emailDomain = $("#expertEmailDomainFilter")?.value || "";
         if (emailDomain) params.set("emailDomain", emailDomain);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
