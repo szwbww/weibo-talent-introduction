@@ -929,6 +929,40 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(mailDeliveryService, Mockito.times(10)).send(anyValue(account), anyValue(ComposedMail("","","")))
     }
 
+    @Test
+    fun `countPending reads emailDomain from configuration`() {
+        val configWithDomain = fastConfig().copy(emailDomain = "gmail.com")
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(configWithDomain)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
+        
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(5L)
+
+        val summary = service.countPending()
+        assertEquals(5, summary.pending)
+        assertEquals(5, summary.totalSendable)
+    }
+
+    @Test
+    fun `runScheduledBatch passes configured emailDomain to ES filter`() {
+        val configWithDomain = fastConfig().copy(emailDomain = "gmail.com")
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(configWithDomain)
+
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+        assertEquals(0, result.total)
+        
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
     // ──── Helpers ────
 
     private fun expert(orcidId: String, email: String): ExpertProfile =

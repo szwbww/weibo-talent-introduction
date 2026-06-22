@@ -85,10 +85,11 @@ class ManualInitialOutreachService(
             }
         }
 
+        val emailDomain = batchSendSettingService.getConfig().emailDomain
         // 2. Pending: ES count query, operatorStatus does not exist + has email
         val pending = expertSearchService.countExperts(
             level = ExpertIndexLevel.CANDIDATE,
-            filters = ExpertSearchService.notContactedWithEmailFilters()
+            filters = ExpertSearchService.notContactedWithEmailFilters(emailDomain.ifBlank { null })
         )
 
         return PendingOutreachSummary(pending = pending.toInt(), retryable = retryable, totalSendable = pending.toInt() + retryable)
@@ -125,7 +126,7 @@ class ManualInitialOutreachService(
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = batchSendSettingService.getConfig()
 
-        val esFilters = ExpertSearchService.notContactedWithEmailFilters()
+        val esFilters = ExpertSearchService.notContactedWithEmailFilters(config.emailDomain.ifBlank { null })
         val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId)
         val esEstimate = expertSearchService.countExperts(
             level = ExpertIndexLevel.CANDIDATE,
