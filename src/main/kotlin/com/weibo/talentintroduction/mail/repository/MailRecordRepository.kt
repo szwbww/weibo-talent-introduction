@@ -217,13 +217,21 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     @Query(
         """
         SELECT * FROM (
-          SELECT 'MAIL_RECORD' AS source, mr.id AS id, mr.expert_contact_id,
-                 mr.direction, mr.mail_type, mr.sender_account_code, mr.triggered_by,
-                 mr.matched_qa_rule_id, mr.send_status, mr.subject,
-                 SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) AS body_preview,
+          SELECT CONVERT('MAIL_RECORD' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+                 mr.id AS id, mr.expert_contact_id,
+                 CONVERT(mr.direction USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+                 CONVERT(mr.mail_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
+                 CONVERT(mr.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
+                 CONVERT(mr.triggered_by USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
+                 mr.matched_qa_rule_id,
+                 CONVERT(mr.send_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+                 CONVERT(mr.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+                 CONVERT(SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
                  mr.sent_at, CAST(NULL AS DATETIME) AS received_at,
-                 CAST(NULL AS CHAR) AS process_status, CAST(NULL AS CHAR) AS reason_type,
-                 ec.expert_email, ec.expert_name,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
+                 CONVERT(ec.expert_email USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
+                 CONVERT(ec.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
                  CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
                  CAST(NULL AS SIGNED) AS inbound_processing_id
             FROM mail_record mr
@@ -239,14 +247,21 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
              AND (:startTime IS NULL OR mr.sent_at >= :startTime)
              AND (:endTime IS NULL OR mr.sent_at < :endTime)
           UNION ALL
-          SELECT 'INBOUND_PROCESSING' AS source, imp.id AS id, imp.expert_contact_id,
-                 'INBOUND' AS direction, 'REPLY' AS mail_type, imp.sender_account_code,
-                 CAST(NULL AS CHAR) AS triggered_by, CAST(NULL AS SIGNED) AS matched_qa_rule_id,
-                 CAST(NULL AS CHAR) AS send_status, imp.subject,
-                 SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) AS body_preview,
+          SELECT CONVERT('INBOUND_PROCESSING' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+                 imp.id AS id, imp.expert_contact_id,
+                 CONVERT('INBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+                 CONVERT('REPLY' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
+                 CONVERT(imp.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
+                 CAST(NULL AS SIGNED) AS matched_qa_rule_id,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+                 CONVERT(imp.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+                 CONVERT(SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
                  CAST(NULL AS DATETIME) AS sent_at, imp.received_at,
-                 imp.process_status, imp.reason_type,
-                 COALESCE(ec2.expert_email, imp.from_email) AS expert_email, ec2.expert_name,
+                 CONVERT(imp.process_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+                 CONVERT(imp.reason_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
+                 CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
+                 CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
                  CAST(EXISTS(
                    SELECT 1 FROM mail_attachment ma
                      JOIN mail_record mr2 ON ma.mail_record_id = mr2.id

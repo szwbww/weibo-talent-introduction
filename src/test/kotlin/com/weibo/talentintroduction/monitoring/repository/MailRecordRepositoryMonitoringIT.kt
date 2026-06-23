@@ -73,6 +73,7 @@ class MailRecordRepositoryMonitoringIT {
 
     @BeforeEach
     fun cleanMailRecords() {
+        jdbcTemplate.execute("DELETE FROM inbound_mail_processing")
         jdbcTemplate.execute("DELETE FROM mail_record")
     }
 
@@ -126,6 +127,54 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals("sender", stats[0].senderAccountCode)
         assertEquals(1L, stats[0].introductionCount)
         assertEquals(1L, stats[0].failedCount)
+    }
+
+    @Test
+    fun `listMailbox works when outbound and inbound text columns have different collations`() {
+        seedBaseContact()
+        jdbcTemplate.execute("ALTER TABLE mail_record MODIFY subject VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        jdbcTemplate.execute("ALTER TABLE mail_record MODIFY body LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        jdbcTemplate.execute("ALTER TABLE inbound_mail_processing MODIFY subject VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        jdbcTemplate.execute("ALTER TABLE inbound_mail_processing MODIFY body TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+
+        val receivedAt = LocalDate.now(shanghaiZone).atStartOfDay().plusHours(8)
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 subject, body, send_status, sent_at, created_at)
+            VALUES
+                (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-out',
+                 'outbound subject', 'outbound body', 'SENT', ?, ?)
+            """.trimIndent(),
+            receivedAt.minusHours(1), receivedAt.minusHours(1)
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, imap_uid, message_id, from_email, subject, body,
+                 received_at, process_status, process_reason, expert_contact_id)
+            VALUES
+                ('sender', 1001, 'msg-in', 'reply@example.com', 'inbound subject', 'inbound body',
+                 ?, 'MANUAL_REVIEW', 'UNMATCHED_CONTACT', 1)
+            """.trimIndent(),
+            receivedAt
+        )
+
+        val rows = mailRecordRepository.listMailbox(
+            accountCodes = listOf("sender"),
+            direction = null,
+            accountCode = null,
+            keyword = null,
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 0,
+            limit = 10,
+            offset = 0
+        )
+
+        assertEquals(listOf("INBOUND_PROCESSING", "MAIL_RECORD"), rows.map { it.source })
     }
 
     private fun seedBaseContact() {
