@@ -1643,6 +1643,7 @@ async function loadContacts() {
     $("#contactCountInfo").textContent =
         `筛选结果: ${totalHits} 位专家，当前显示 ${contacts.length} 位`;
     renderContactPager(size);
+    loadOperatorStatusSyncTooltip();
 
     if (contacts.length === 0) {
         $("#contactList").innerHTML = `
@@ -2175,6 +2176,41 @@ function closeTaskLaunchModal() {
     closeTaskModal();
 }
 
+async function loadOperatorStatusSyncTooltip() {
+    const btn = $("#backfillOperatorStatusBtn");
+    if (!btn) return;
+    try {
+        const tasks = await api("/api/task-executions?taskType=CANDIDATE_OPERATOR_STATUS_SYNC");
+        if (!tasks || tasks.length === 0) {
+            btn.title = "暂无同步记录";
+            return;
+        }
+        const task = tasks[0];
+        const startedAt = task.startedAt || "-";
+        const status = task.status || "-";
+        const success = Number(task.successCount || 0);
+        const failure = Number(task.failureCount || 0);
+        let skipped = 0;
+        if (task.resultSummary) {
+            try {
+                const summary = typeof task.resultSummary === "string"
+                    ? JSON.parse(task.resultSummary)
+                    : task.resultSummary;
+                skipped = Number(summary.skipped || 0);
+            } catch (_) {
+                skipped = 0;
+            }
+        }
+        let title = `最近同步: ${startedAt}\n状态: ${status}\n成功: ${success}, 失败: ${failure}, 跳过: ${skipped}`;
+        if (task.errorMessage) {
+            title += `\n错误: ${task.errorMessage}`;
+        }
+        btn.title = title;
+    } catch (_) {
+        btn.title = "暂无同步记录";
+    }
+}
+
 async function handleBackfillOperatorStatus() {
     const btn = $("#backfillOperatorStatusBtn");
     if (btn) btn.disabled = true;
@@ -2202,6 +2238,7 @@ async function handleBackfillOperatorStatus() {
         showStatus("回刷失败: " + e.message, "error");
     } finally {
         if (btn) btn.disabled = false;
+        loadOperatorStatusSyncTooltip();
     }
 }
 

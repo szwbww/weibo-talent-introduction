@@ -1,9 +1,9 @@
 package com.weibo.talentintroduction.expert.controller
 
+import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
-import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
 import com.weibo.talentintroduction.expert.service.CandidateFilterView
@@ -48,6 +48,9 @@ class ExpertIndexControllerMvcTest {
     private lateinit var expertIndexWriterService: ExpertIndexWriterService
 
     @MockBean
+    private lateinit var candidateOperatorStatusSyncService: CandidateOperatorStatusSyncService
+
+    @MockBean
     private lateinit var revalidationService: ExpertRevalidationService
 
     @MockBean
@@ -55,9 +58,6 @@ class ExpertIndexControllerMvcTest {
 
     @MockBean
     private lateinit var progressStore: TaskProgressStore
-
-    @MockBean
-    private lateinit var expertIndexService: ExpertIndexService
 
     @MockBean
     private lateinit var eligibilityFilterService: EligibilityFilterService

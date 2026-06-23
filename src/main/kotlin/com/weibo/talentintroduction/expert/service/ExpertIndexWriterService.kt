@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -62,10 +63,10 @@ class ExpertIndexWriterService(
         }
     }
 
-    fun syncCandidateOperatorStatus(orcidId: String, operatorStatus: String) {
+    fun syncCandidateOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val now = LocalDateTime.now().format(dateFormatter)
-        try {
+        return try {
             val body: Map<String, Any>
             if (operatorStatus == "NOT_CONTACTED") {
                 body = mapOf(
@@ -92,10 +93,14 @@ class ExpertIndexWriterService(
             ).body
             val updated = resp?.path("updated")?.asLong(0) ?: 0
             if (updated == 0L) {
-                log.debug("_update_by_query matched 0 docs for orcid={}", orcidId)
+                log.warn("syncCandidateOperatorStatus matched 0 docs in candidate index for orcid={}", orcidId)
+                SingleSyncResult(matched = 0, ok = true)
+            } else {
+                SingleSyncResult(matched = updated, ok = true)
             }
         } catch (e: Exception) {
-            log.warn("Failed to sync operatorStatus for orcid={}", orcidId, e)
+            log.warn("Failed to sync operatorStatus for orcid={}: {}", orcidId, e.message, e)
+            SingleSyncResult(matched = 0, ok = false, error = e.message)
         }
     }
 
@@ -639,10 +644,25 @@ class ExpertIndexWriterService(
     }
 }
 
+data class SingleSyncResult(
+    val matched: Long,
+    val ok: Boolean,
+    val error: String? = null
+)
+
 data class BulkSyncResult(
     var total: Int = 0,
     var success: Int = 0,
     var failure: Int = 0,
     var skipped: Int = 0,
     val errors: MutableList<String> = mutableListOf()
-)
+) : TaskExecutionSummaryProvider {
+    override val taskSuccessCount: Int get() = success
+    override val taskFailureCount: Int get() = failure
+    override val taskFinalStatus: String?
+        get() = when {
+            failure > 0 && success > 0 -> "PARTIAL_SUCCESS"
+            failure > 0 -> "FAILED"
+            else -> "SUCCESS"
+        }
+}

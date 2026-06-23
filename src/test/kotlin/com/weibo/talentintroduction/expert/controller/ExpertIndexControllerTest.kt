@@ -6,11 +6,13 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
 import com.weibo.talentintroduction.expert.service.EligibilityFilterService
+import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -30,17 +32,17 @@ class ExpertIndexControllerTest {
     private val searchService = Mockito.mock(ExpertSearchService::class.java)
     private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val writerService = Mockito.mock(ExpertIndexWriterService::class.java)
+    private val syncService = Mockito.mock(CandidateOperatorStatusSyncService::class.java)
     private val revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
-    private val indexService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexService::class.java)
     private val filterService = Mockito.mock(EligibilityFilterService::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
-        searchService, contactRepository, writerService,
-        revalidationService, taskExecutionService, progressStore, indexService, filterService
+        searchService, contactRepository, writerService, syncService,
+        revalidationService, taskExecutionService, progressStore, filterService
     )
 
     private fun anyTaskProgress(): TaskProgress {
@@ -126,7 +128,14 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `backfillOperatorStatus returns 400 when mapping check fails`() {
-        Mockito.`when`(indexService.checkCandidateOperatorStatusMapping()).thenReturn(false)
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.`when`(syncService.reconcileAll())
+            .thenThrow(IllegalStateException("CANDIDATE 索引缺少 keyword 类型的 operatorStatus mapping 声明，请先更新 mapping"))
+
         val response = controller.backfillOperatorStatus()
         assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, response.statusCode)
         val body = response.body as Map<*, *>
@@ -135,19 +144,12 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `backfillOperatorStatus processes latest contact per orcid and returns ok`() {
-        Mockito.`when`(indexService.checkCandidateOperatorStatusMapping()).thenReturn(true)
-        val contact1 = com.weibo.talentintroduction.campaign.domain.ExpertContact(
-            id = 1L, orcidId = "orcid-1", operatorStatus = "CONTACTED",
-            campaignId = 1L, expertEmail = "test1@example.com", expertName = "Test 1"
-        )
-        val contact2 = com.weibo.talentintroduction.campaign.domain.ExpertContact(
-            id = 2L, orcidId = "orcid-1", operatorStatus = "REPLIED",
-            campaignId = 1L, expertEmail = "test2@example.com", expertName = "Test 2"
-        )
-        Mockito.`when`(contactRepository.findAllByOrderByUpdatedAtDesc())
-            .thenReturn(listOf(contact2, contact1)) // contact2 is newer
-
-        Mockito.`when`(writerService.syncCandidateOperatorStatusBatch(listOf("orcid-1" to "REPLIED")))
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.`when`(syncService.reconcileAll())
             .thenReturn(BulkSyncResult(total = 1, success = 1, failure = 0, skipped = 0))
 
         val response = controller.backfillOperatorStatus()
@@ -157,6 +159,46 @@ class ExpertIndexControllerTest {
         assertEquals(1, body.success)
         assertEquals(0, body.failure)
         assertEquals(0, body.skipped)
+    }
+
+    @Test
+    fun `listExperts prefers mysql operatorStatus over elasticsearch`() {
+        val expert = ExpertProfile(
+            orcidId = "orcid-1",
+            email = "test@example.com",
+            givenNames = "Expert",
+            familyNames = "One",
+            country = "US",
+            keyword = null,
+            employment = null,
+            operatorStatus = null
+        )
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null))
+            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
+        val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = 1L,
+            orcidId = "orcid-1",
+            operatorStatus = "REPLIED",
+            campaignId = 1L,
+            expertEmail = "test@example.com",
+            expertName = "Expert One",
+            updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(contactRepository.findByOrcidIdIn(listOf("orcid-1")))
+            .thenReturn(listOf(contact))
+
+        val response = controller.listExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = null
+        )
+
+        assertEquals(1, response.experts.size)
+        assertEquals("REPLIED", response.experts[0].operatorStatus)
     }
 
     @Test

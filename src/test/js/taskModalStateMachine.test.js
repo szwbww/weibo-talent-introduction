@@ -60,6 +60,7 @@ function createFreshSandbox() {
         stopTaskModalPolling: () => {},
         stopBatchSendStatusPoll: () => {},
         fetchRunList: async () => {},
+        loadOperatorStatusSyncTooltip: async () => {},
 
         // Timer mocks
         setInterval: (fn, ms) => {

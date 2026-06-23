@@ -384,13 +384,48 @@ class ExpertIndexWriterServiceTest {
             )
         ).thenReturn(ResponseEntity(mapper.readTree("""{"updated": 1}"""), HttpStatus.OK))
 
-        service.syncCandidateOperatorStatus("0001", "CONTACTED")
+        val result = service.syncCandidateOperatorStatus("0001", "CONTACTED")
+        assertEquals(1L, result.matched)
+        assertTrue(result.ok)
         Mockito.verify(restTemplate).exchange(
             eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
             eq(HttpMethod.POST),
             any(),
             eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
+    }
+
+    @Test
+    fun `syncCandidateOperatorStatus returns matched zero when no docs updated`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree("""{"updated": 0}"""), HttpStatus.OK))
+
+        val result = service.syncCandidateOperatorStatus("missing-orcid", "REPLIED")
+        assertEquals(0L, result.matched)
+        assertTrue(result.ok)
+    }
+
+    @Test
+    fun `syncCandidateOperatorStatus returns failure when elasticsearch throws`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("ES unavailable"))
+
+        val result = service.syncCandidateOperatorStatus("0001", "REPLIED")
+        assertEquals(0L, result.matched)
+        assertFalse(result.ok)
+        assertEquals("ES unavailable", result.error)
     }
 
     @Test

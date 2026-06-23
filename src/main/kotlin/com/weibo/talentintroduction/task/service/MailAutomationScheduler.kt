@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.task.service
 
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
+import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyService
@@ -16,6 +17,7 @@ class MailAutomationScheduler(
     private val mailQueuePublisherProvider: ObjectProvider<MailQueuePublisher>,
     private val batchAutoMailReplyService: BatchAutoMailReplyService,
     private val initialOutreachService: InitialOutreachService,
+    private val candidateOperatorStatusSyncService: CandidateOperatorStatusSyncService,
     private val taskExecutionService: TaskExecutionService
 ) {
     @Scheduled(cron = "\${talent-introduction.scheduling.auto-reply-all-cron:-}")
@@ -58,6 +60,17 @@ class MailAutomationScheduler(
                     size = properties.initialOutreachBatchSize
                 )
             }
+        }
+    }
+
+    @Scheduled(cron = "\${talent-introduction.scheduling.operator-status-sync-cron:-}")
+    fun scheduleOperatorStatusSync() {
+        taskExecutionService.runAndRecord(
+            "CANDIDATE_OPERATOR_STATUS_SYNC",
+            "SCHEDULED",
+            "operator-status-sync"
+        ) {
+            candidateOperatorStatusSyncService.reconcileAll()
         }
     }
 

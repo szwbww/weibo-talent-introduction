@@ -7,7 +7,7 @@ import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.RevalidationResult
 import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
-import com.weibo.talentintroduction.expert.service.ExpertIndexService
+import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
@@ -33,10 +33,10 @@ class ExpertIndexController(
     private val expertSearchService: ExpertSearchService,
     private val expertContactRepository: ExpertContactRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
+    private val candidateOperatorStatusSyncService: CandidateOperatorStatusSyncService,
     private val revalidationService: ExpertRevalidationService,
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
-    private val expertIndexService: ExpertIndexService,
     private val eligibilityFilterService: EligibilityFilterService
 ) {
     @GetMapping
@@ -65,7 +65,7 @@ class ExpertIndexController(
                 contactStatus = contact?.currentStatus,
                 needsManualAttention = contact?.needsManualAttention ?: false,
                 autoReplyEnabled = contact?.autoReplyEnabled ?: true,
-                operatorStatus = expert.operatorStatus ?: "NOT_CONTACTED"
+                operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED"
             )
         }
         return ExpertListResponse(experts = experts, totalHits = result.totalHits)
@@ -179,22 +179,23 @@ class ExpertIndexController(
 
     @PostMapping("/backfill-operator-status")
     fun backfillOperatorStatus(): ResponseEntity<Any> {
-        if (!expertIndexService.checkCandidateOperatorStatusMapping()) {
-            return ResponseEntity.badRequest().body(mapOf("message" to "CANDIDATE 索引缺少 keyword 类型的 operatorStatus mapping 声明，请先更新 mapping"))
+        return try {
+            val (_, result) = taskExecutionService.runAndRecordWithResult(
+                "CANDIDATE_OPERATOR_STATUS_SYNC",
+                "MANUAL",
+                "backfill-operator-status"
+            ) {
+                candidateOperatorStatusSyncService.reconcileAll()
+            }
+            ResponseEntity.ok(BackfillResult(
+                total = result.total,
+                success = result.success,
+                failure = result.failure,
+                skipped = result.skipped
+            ))
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.badRequest().body(mapOf("message" to (ex.message ?: "同步失败")))
         }
-        val contacts = expertContactRepository.findAllByOrderByUpdatedAtDesc()
-        val latestUpdates = contacts
-            .filter { !it.orcidId.isNullOrBlank() }
-            .map { it.orcidId!!.trim() to (it.operatorStatus ?: "NOT_CONTACTED") }
-            .distinctBy { it.first.lowercase() }
-
-        val result = expertIndexWriterService.syncCandidateOperatorStatusBatch(latestUpdates)
-        return ResponseEntity.ok(BackfillResult(
-            total = result.total,
-            success = result.success,
-            failure = result.failure,
-            skipped = result.skipped
-        ))
     }
 
     @GetMapping("/eligibility-filters")

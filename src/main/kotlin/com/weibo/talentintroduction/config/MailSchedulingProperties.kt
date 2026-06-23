@@ -11,5 +11,6 @@ data class MailSchedulingProperties(
     val autoReplyMaxMessagesPerAccount: Int = 20,
     val initialOutreachCron: String = "-",
     val initialOutreachCampaignId: Long = 0,
-    val initialOutreachBatchSize: Int = 10
+    val initialOutreachBatchSize: Int = 10,
+    val operatorStatusSyncCron: String = "-"
 )

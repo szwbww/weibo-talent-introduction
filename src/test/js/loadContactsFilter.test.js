@@ -54,7 +54,8 @@ function createContactsSandbox() {
         labelStatus: (v) => v || "",
         badge: (v, t) => `<span class="badge ${t || ""}">${v}</span>`,
         staggerListItems: () => {},
-        refreshAutoReplySummary: async () => {}
+        refreshAutoReplySummary: async () => {},
+        loadOperatorStatusSyncTooltip: async () => {}
     };
 
     vm.createContext(sandbox);
