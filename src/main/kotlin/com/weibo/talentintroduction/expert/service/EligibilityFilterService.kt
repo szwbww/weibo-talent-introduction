@@ -55,6 +55,7 @@ class EligibilityFilterService(
     fun getCandidateFilter(): CandidateFilterProperties {
         val values = loadAll()
         return CandidateFilterProperties(
+            requireOrcid = values["candidate.requireOrcid"]?.toBoolean() ?: candidateDefaults.requireOrcid,
             requireValidEmail = values["candidate.requireValidEmail"]?.toBoolean() ?: candidateDefaults.requireValidEmail,
             requireDoctoralDegree = values["candidate.requireDoctoralDegree"]?.toBoolean() ?: candidateDefaults.requireDoctoralDegree,
             excludeChineseNationality = values["candidate.excludeChineseNationality"]?.toBoolean() ?: candidateDefaults.excludeChineseNationality,
@@ -92,6 +93,7 @@ class EligibilityFilterService(
         val email = getEmailValidationConfig()
         return EligibilityFiltersResponse(
             candidateFilter = CandidateFilterView(
+                requireOrcid = candidate.requireOrcid,
                 requireDoctoralDegree = candidate.requireDoctoralDegree,
                 requireValidEmail = candidate.requireValidEmail,
                 excludeChineseNationality = candidate.excludeChineseNationality,
@@ -136,6 +138,7 @@ data class EligibilityFiltersResponse(
 )
 
 data class CandidateFilterView(
+    val requireOrcid: Boolean,
     val requireDoctoralDegree: Boolean,
     val requireValidEmail: Boolean,
     val excludeChineseNationality: Boolean,

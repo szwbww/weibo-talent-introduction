@@ -19,7 +19,7 @@ class CandidateEligibilityService(
         val academicProperties = eligibilityFilterService.getAcademicFilter()
         val reasons = mutableListOf<String>()
 
-        if (expert.orcidId.isBlank())
+        if (properties.requireOrcid && expert.orcidId.isBlank())
             reasons += "MISSING_ORCID"
 
         if (properties.requireValidEmail && !hasValidEmail(expert.email))

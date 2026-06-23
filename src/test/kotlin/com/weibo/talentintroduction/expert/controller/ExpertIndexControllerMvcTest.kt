@@ -161,7 +161,7 @@ class ExpertIndexControllerMvcTest {
     @Test
     fun `getEligibilityFilters returns current settings`() {
         val response = EligibilityFiltersResponse(
-            candidateFilter = CandidateFilterView(false, true, true, false, 70),
+            candidateFilter = CandidateFilterView(false, false, true, true, false, 70),
             academicFilter = AcademicFilterView(false, 5, false, 50, false, 5),
             emailValidation = EmailValidationView(true)
         )
@@ -183,7 +183,7 @@ class ExpertIndexControllerMvcTest {
     fun `updateEligibilityFilters persists and returns updated settings`() {
         val updates = """{"candidate.requireValidEmail":"false","academic.minHIndex":"10"}"""
         val response = EligibilityFiltersResponse(
-            candidateFilter = CandidateFilterView(false, false, true, false, 70),
+            candidateFilter = CandidateFilterView(false, false, false, true, false, 70),
             academicFilter = AcademicFilterView(false, 10, false, 50, false, 5),
             emailValidation = EmailValidationView(true)
         )

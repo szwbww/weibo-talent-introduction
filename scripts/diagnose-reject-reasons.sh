@@ -15,27 +15,43 @@ curl -s $AUTH "${ES_BASE_URL}/${RAW}/_search" \
   -H 'Content-Type: application/json' -d '{
   "size":0,
   "aggs":{"by_result":{"terms":{"field":"filterResult","size":10}}}
-}' | python3 -c 'import sys,json;d=json.load(sys.stdin);[print(f"{b[\"key\"]:>10}: {b[\"doc_count\"]}") for b in d["aggregations"]["by_result"]["buckets"]]'
+}' | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+bs = d.get("aggregations", {}).get("by_result", {}).get("buckets", [])
+if not bs:
+    print("(无桶: filterResult 字段可能不存在/非 keyword) 原始返回:")
+    print(json.dumps(d)[:500])
+for b in bs:
+    print("%10s: %d" % (b["key"], b["doc_count"]))
+'
 
 echo
-echo "===== ② REJECTED 的拒绝原因 Top20 (filterRejectReason 原值) ====="
+echo "===== ② REJECTED 拒绝原因整串 Top20 (filterRejectReason 原值) ====="
 curl -s $AUTH "${ES_BASE_URL}/${RAW}/_search" \
   -H 'Content-Type: application/json' -d '{
   "size":0,
   "query":{"term":{"filterResult":"REJECTED"}},
   "aggs":{"reasons":{"terms":{"field":"filterRejectReason","size":20}}}
-}' | python3 -c 'import sys,json;d=json.load(sys.stdin);bs=d["aggregations"]["reasons"]["buckets"];[print(f"{b[\"doc_count\"]:>8}  {b[\"key\"]}") for b in bs] or (bs or print("(无桶: 字段可能非 keyword 或为空)"))'
+}' | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+bs = d.get("aggregations", {}).get("reasons", {}).get("buckets", [])
+if not bs:
+    print("(无桶: 字段可能非 keyword 或为空) 原始返回:")
+    print(json.dumps(d)[:500])
+for b in bs:
+    print("%8d  %s" % (b["doc_count"], b["key"]))
+'
 
 echo
-echo "提示: filterRejectReason 是多原因用 \"; \" 拼接的整串。若想按单个原因(MISSING_ORCID 等)统计,"
-echo "      用下面这条带 include 的近似统计(逐个原因 count):"
-echo
+echo "===== ③ 逐个原因命中数 (REJECTED 内 wildcard 匹配, 可叠加) ====="
 for R in MISSING_ORCID CHINESE_NATIONALITY INVALID_EMAIL_FORMAT DISPOSABLE_EMAIL NO_DOCTORAL_DEGREE AGE_EXCEEDED H_INDEX_TOO_LOW CITATION_COUNT_TOO_LOW INACTIVE; do
   N=$(curl -s $AUTH "${ES_BASE_URL}/${RAW}/_count" \
     -H 'Content-Type: application/json' -d "{
     \"query\":{\"bool\":{\"must\":[
       {\"term\":{\"filterResult\":\"REJECTED\"}},
       {\"wildcard\":{\"filterRejectReason\":\"*${R}*\"}}
-    ]}}}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count","?"))')
+    ]}}}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("count","?"))')
   printf "  %-24s %s\n" "$R" "$N"
 done

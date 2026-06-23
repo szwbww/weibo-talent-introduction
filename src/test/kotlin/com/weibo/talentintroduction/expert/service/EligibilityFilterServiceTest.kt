@@ -31,6 +31,7 @@ class EligibilityFilterServiceTest {
         `when`(repository.findAll()).thenReturn(emptyList())
         val svc = service()
         val res = svc.getAll()
+        assertEquals(false, res.candidateFilter.requireOrcid)
         assertEquals(true, res.candidateFilter.requireValidEmail)
         assertEquals(false, res.candidateFilter.requireDoctoralDegree)
         assertEquals(true, res.candidateFilter.excludeChineseNationality)

@@ -34,6 +34,7 @@ talent-introduction:
     candidate-index-name: ${ES_CANDIDATE_INDEX_NAME:orcid_info_candidate}
     application-index-name: ${ES_APPLICATION_INDEX_NAME:orcid_info_application}
   candidate-filter:
+    require-orcid: ${CANDIDATE_REQUIRE_ORCID:false}
     require-doctoral-degree: ${CANDIDATE_REQUIRE_DOCTORAL_DEGREE:false}
     require-valid-email: ${CANDIDATE_REQUIRE_VALID_EMAIL:true}
     exclude-chinese-nationality: ${CANDIDATE_EXCLUDE_CHINESE_NATIONALITY:true}

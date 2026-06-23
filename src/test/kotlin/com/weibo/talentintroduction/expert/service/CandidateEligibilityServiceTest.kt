@@ -46,14 +46,49 @@ class CandidateEligibilityServiceTest {
         assertFalse(svc.isEligibleForCandidateIndex(expert(age = null)))
     }
 
+    @Test
+    fun `missing orcid allowed when requireOrcid is false`() {
+        val svc = service()
+        val result = svc.evaluateEligibility(
+            expert(orcidId = "", email = "expert@example.com", nationality = "United States")
+        )
+        assertTrue(result.eligible)
+        assertFalse(result.rejectReasons.contains("MISSING_ORCID"))
+    }
+
+    @Test
+    fun `missing orcid rejected when requireOrcid is true`() {
+        val svc = service(CandidateFilterProperties(requireOrcid = true))
+        val result = svc.evaluateEligibility(
+            expert(orcidId = "", email = "expert@example.com", nationality = "United States")
+        )
+        assertFalse(result.eligible)
+        assertTrue(result.rejectReasons.contains("MISSING_ORCID"))
+    }
+
+    @Test
+    fun `requireOrcid false still rejects chinese nationality and invalid email`() {
+        val svc = service()
+        val chineseResult = svc.evaluateEligibility(expert(nationality = "China"))
+        assertFalse(chineseResult.eligible)
+        assertTrue(chineseResult.rejectReasons.contains("CHINESE_NATIONALITY"))
+        assertFalse(chineseResult.rejectReasons.contains("MISSING_ORCID"))
+
+        val invalidEmailResult = svc.evaluateEligibility(expert(email = "invalid-email"))
+        assertFalse(invalidEmailResult.eligible)
+        assertTrue(invalidEmailResult.rejectReasons.contains("INVALID_EMAIL_FORMAT"))
+        assertFalse(invalidEmailResult.rejectReasons.contains("MISSING_ORCID"))
+    }
+
     private fun expert(
+        orcidId: String = "0000-0001",
         email: String = "expert@example.com",
         degree: String? = "Doctoral Degree",
         age: Int? = 45,
         nationality: String = "United States"
     ): ExpertProfile =
         ExpertProfile(
-            orcidId = "0000-0001",
+            orcidId = orcidId,
             email = email,
             givenNames = "Ada",
             familyNames = "Lovelace",

@@ -30,6 +30,70 @@ class CandidateEligibilityServiceEnhancedTest {
         )
         val result = svc.evaluateEligibility(expert)
         assertFalse(result.eligible)
+        assertFalse(result.rejectReasons.contains("MISSING_ORCID"))
+        assertTrue(result.rejectReasons.contains("INVALID_EMAIL_FORMAT"))
+        assertTrue(result.rejectReasons.contains("CHINESE_NATIONALITY"))
+    }
+
+    @Test
+    fun `missing orcid allowed by default when email valid and non chinese`() {
+        val svc = service()
+        val expert = ExpertProfile(
+            orcidId = "", email = "john@oxford.ac.uk",
+            givenNames = "John", familyNames = "Smith", country = "GB",
+            keyword = null, employment = null, nationality = "British"
+        )
+        val result = svc.evaluateEligibility(expert)
+        assertTrue(result.eligible)
+        assertFalse(result.rejectReasons.contains("MISSING_ORCID"))
+    }
+
+    @Test
+    fun `missing orcid rejected when requireOrcid enabled`() {
+        val svc = service(CandidateFilterProperties(requireOrcid = true))
+        val expert = ExpertProfile(
+            orcidId = "", email = "john@oxford.ac.uk",
+            givenNames = "John", familyNames = "Smith", country = "GB",
+            keyword = null, employment = null, nationality = "British"
+        )
+        val result = svc.evaluateEligibility(expert)
+        assertFalse(result.eligible)
+        assertTrue(result.rejectReasons.contains("MISSING_ORCID"))
+    }
+
+    @Test
+    fun `requireOrcid false still rejects chinese nationality and invalid email`() {
+        val svc = service()
+        val chineseExpert = ExpertProfile(
+            orcidId = "", email = "john@oxford.ac.uk",
+            givenNames = "John", familyNames = "Smith", country = "CN",
+            keyword = null, employment = null, nationality = "Chinese"
+        )
+        val chineseResult = svc.evaluateEligibility(chineseExpert)
+        assertFalse(chineseResult.eligible)
+        assertTrue(chineseResult.rejectReasons.contains("CHINESE_NATIONALITY"))
+        assertFalse(chineseResult.rejectReasons.contains("MISSING_ORCID"))
+
+        val invalidEmailExpert = ExpertProfile(
+            orcidId = "", email = "bad",
+            givenNames = "Test", familyNames = "User", country = "GB",
+            keyword = null, employment = null, nationality = "British"
+        )
+        val invalidEmailResult = svc.evaluateEligibility(invalidEmailExpert)
+        assertFalse(invalidEmailResult.eligible)
+        assertTrue(invalidEmailResult.rejectReasons.contains("INVALID_EMAIL_FORMAT"))
+        assertFalse(invalidEmailResult.rejectReasons.contains("MISSING_ORCID"))
+    }
+
+    @Test
+    fun `evaluateEligibility returns reject reasons for multiple failures when requireOrcid enabled`() {
+        val svc = service(CandidateFilterProperties(requireOrcid = true))
+        val expert = ExpertProfile(
+            orcidId = "", email = "bad", givenNames = "Test", familyNames = "User",
+            country = "CN", keyword = null, employment = null, nationality = "Chinese"
+        )
+        val result = svc.evaluateEligibility(expert)
+        assertFalse(result.eligible)
         assertTrue(result.rejectReasons.contains("MISSING_ORCID"))
         assertTrue(result.rejectReasons.contains("INVALID_EMAIL_FORMAT"))
         assertTrue(result.rejectReasons.contains("CHINESE_NATIONALITY"))

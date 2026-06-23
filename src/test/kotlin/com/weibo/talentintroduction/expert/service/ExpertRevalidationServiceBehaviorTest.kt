@@ -163,7 +163,23 @@ class ExpertRevalidationServiceBehaviorTest {
     }
 
     @Test
-    fun `empty ORCID filtered without calling documentExists`() {
+    fun `empty ORCID not filtered when requireOrcid disabled`() {
+        val expert = validExpert("", "user@oxford.ac.uk")
+        `when`(emailValidationService.validate("user@oxford.ac.uk"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "")).thenReturn(true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
+
+        val result = service.promoteEligibleRawExperts()
+        assertEquals(0, result.stats.filtered)
+        assertEquals(0, result.stats.promoted)
+        assertEquals(1, result.stats.alreadyPromoted)
+        verify(writerService).documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "")
+    }
+
+    @Test
+    fun `empty ORCID filtered when requireOrcid enabled without calling documentExists`() {
+        `when`(filterService.getCandidateFilter()).thenReturn(CandidateFilterProperties(requireOrcid = true))
         val expert = validExpert("", "user@oxford.ac.uk")
         `when`(emailValidationService.validate("user@oxford.ac.uk"))
             .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
@@ -174,6 +190,7 @@ class ExpertRevalidationServiceBehaviorTest {
         assertEquals(0, result.stats.promoted)
         assertEquals(0, result.stats.existenceCheckFailed)
         assertEquals(0, result.stats.alreadyPromoted)
+        verifyNoInteractions(writerService)
     }
 
     @Test

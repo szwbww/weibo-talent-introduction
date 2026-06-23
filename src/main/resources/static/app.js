@@ -1789,6 +1789,7 @@ const filterReasonLabels = {
 };
 
 const filterItems = [
+    { key: "candidate.requireOrcid",              label: "要求 ORCID",   type: "bool" },
     { key: "candidate.requireValidEmail",        label: "要求有效邮箱",  type: "bool" },
     { key: "candidate.requireDoctoralDegree",     label: "要求博士学位",  type: "bool" },
     { key: "candidate.excludeChineseNationality", label: "排除中国国籍",  type: "bool" },
