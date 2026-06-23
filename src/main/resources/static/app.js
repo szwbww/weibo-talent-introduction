@@ -4132,20 +4132,27 @@ function renderMailboxTagBadges(tags) {
 
 function renderMailboxActions(row) {
     const actions = [];
-    if (row.source === "INBOUND_PROCESSING" && row.processStatus === "MANUAL_REVIEW" && row.inboundProcessingId) {
-        actions.push(`<button class="button" data-action="open-pending" data-id="${row.inboundProcessingId}">查看/处理</button>`);
+    const canProcess = row.source === "INBOUND_PROCESSING"
+        && row.processStatus === "MANUAL_REVIEW"
+        && row.inboundProcessingId;
+
+    if (canProcess) {
+        // 可处理：查看/处理 打开处理面板（含查看），并额外提供快捷处理
+        actions.push(`<button class="button primary" data-action="open-pending" data-id="${row.inboundProcessingId}">查看/处理</button>`);
         actions.push(`<button class="button" data-action="mark-unmatched-resolved" data-id="${row.inboundProcessingId}">标记已处理</button>`);
-    } else if (row.expertContactId) {
-        actions.push(`<button class="button" data-action="open-monitoring-contact" data-id="${row.expertContactId}">查看专家</button>`);
+    } else {
+        // 不可处理：单纯查看原文；关联专家时保留跳转
+        if (row.expertContactId) {
+            actions.push(`<button class="button" data-action="open-monitoring-contact" data-id="${row.expertContactId}">查看专家</button>`);
+        }
+        actions.push(`<button class="button" data-action="view-mail" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">查看</button>`);
     }
-    actions.push(`<button class="button" data-action="view-mail" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">查看</button>`);
     return actions.join(" ") || "-";
 }
 
 async function showMailDetail(source, id) {
     try {
         const detail = await api(`/api/mail/mailbox/${encodeURIComponent(source)}/${id}`);
-        document.getElementById("mailDetailModal")?.remove();
 
         const timeStr = detail.timestamp ? detail.timestamp.replace("T", " ").slice(0, 19) : "-";
         const directionLabel = labelMailDirection(detail.direction);
@@ -4156,44 +4163,33 @@ async function showMailDetail(source, id) {
             : "-";
         const body = detail.body || "";
 
-        const modal = document.createElement("div");
-        modal.id = "mailDetailModal";
-        modal.className = "modal-shell";
-        modal.innerHTML = `
-            <button class="modal-backdrop mail-detail-close" type="button" aria-label="关闭邮件详情"></button>
-            <section class="panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="mailDetailTitle">
-                <div class="panel-head modal-head">
-                    <h2 id="mailDetailTitle">邮件详情</h2>
-                    <button class="button secondary mail-detail-close" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+        // 复用工单详情面板（内联，不弹框），仅展示，不含任何处理功能
+        const panel = $("#unmatchedDetailPanel");
+        panel.hidden = false;
+        panel.innerHTML = `
+            <div class="panel-head">
+                <h2>邮件详情</h2>
+                <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
+            </div>
+            <div class="unmatched-detail-body">
+                <div class="metadata-grid">
+                    <div class="metadata-card"><div class="metadata-card-header"><span>时间</span></div><div class="metadata-card-value">${escapeHtml(timeStr)}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>方向</span></div><div class="metadata-card-value">${escapeHtml(directionLabel)}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>邮件类型</span></div><div class="metadata-card-value">${escapeHtml(mailTypeLabel)}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>邮箱账号</span></div><div class="metadata-card-value">${escapeHtml(detail.senderAccountCode || "-")}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>专家邮箱</span></div><div class="metadata-card-value">${escapeHtml(detail.expertEmail || "-")}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>专家姓名</span></div><div class="metadata-card-value">${escapeHtml(detail.expertName || "-")}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>附件</span></div><div class="metadata-card-value">${escapeHtml(attachmentLabel)}</div></div>
+                    <div class="metadata-card"><div class="metadata-card-header"><span>发送状态</span></div><div class="metadata-card-value">${escapeHtml(sendStatusLabel)}</div></div>
+                    <div class="metadata-card" style="grid-column: 1 / -1;"><div class="metadata-card-header"><span>主题</span></div><div class="metadata-card-value">${escapeHtml(detail.subject || "-")}</div></div>
                 </div>
-                <div class="account-form" style="padding: 16px;">
-                    <dl class="detail-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-bottom: 16px;">
-                        <div><dt class="muted" style="font-size: 12px;">时间</dt><dd>${escapeHtml(timeStr)}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">方向</dt><dd>${escapeHtml(directionLabel)}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">邮件类型</dt><dd>${escapeHtml(mailTypeLabel)}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">邮箱账号</dt><dd>${escapeHtml(detail.senderAccountCode || "-")}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">专家邮箱</dt><dd>${escapeHtml(detail.expertEmail || "-")}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">专家姓名</dt><dd>${escapeHtml(detail.expertName || "-")}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">附件</dt><dd>${escapeHtml(attachmentLabel)}</dd></div>
-                        <div><dt class="muted" style="font-size: 12px;">发送状态</dt><dd>${escapeHtml(sendStatusLabel)}</dd></div>
-                        <div style="grid-column: 1 / -1;"><dt class="muted" style="font-size: 12px;">主题</dt><dd>${escapeHtml(detail.subject || "-")}</dd></div>
-                    </dl>
-                    <div class="mail-body-detail">
-                        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">正文</div>
-                        <div class="pre" style="white-space: pre-wrap;">${escapeHtml(body || "无正文")}</div>
-                    </div>
+                <div class="detail-section">
+                    <h3>正文</h3>
+                    <div class="pre">${escapeHtml(body || "无正文")}</div>
                 </div>
-            </section>
+            </div>
         `;
-
-        const closeModal = () => {
-            modal.remove();
-            document.body.classList.remove("modal-open");
-        };
-        modal.querySelectorAll(".mail-detail-close").forEach((btn) => btn.addEventListener("click", closeModal));
-
-        document.body.appendChild(modal);
-        document.body.classList.add("modal-open");
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) {
         showStatus(e.message, "error");
     }
@@ -5445,6 +5441,7 @@ function initBulkAutoReply() {
         if (!button) return;
         if (button.dataset.action === "mailbox-prev") state.mailbox.page = Math.max(0, state.mailbox.page - 1);
         if (button.dataset.action === "mailbox-next") state.mailbox.page += 1;
+        if (button.dataset.action === "mailbox-page") state.mailbox.page = Number(button.dataset.page);
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     $("#mailboxFilterRecipient").addEventListener("keydown", (event) => {
@@ -5490,7 +5487,7 @@ function initBulkAutoReply() {
         }
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
-    $("#mailboxTableBody").addEventListener("click", async (event) => {
+    $("#mailboxList").addEventListener("click", async (event) => {
         const target = event.target.closest("[data-action]");
         if (!target) return;
         if (target.dataset.action === "open-monitoring-contact") {
@@ -5847,7 +5844,7 @@ async function loadMailbox() {
 }
 
 function renderMailboxTable() {
-    const tbody = $("#mailboxTableBody");
+    const list = $("#mailboxList");
     const tagFilter = state.mailbox.tagFilter;
     const rows = (state.mailbox.items || []).filter((row) => {
         if (!tagFilter || tagFilter === "待处理") return true;
@@ -5855,11 +5852,11 @@ function renderMailboxTable() {
     });
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="text-center muted">暂无邮件记录</td></tr>`;
+        list.innerHTML = `<div class="mailbox-empty muted">暂无邮件记录</div>`;
         return;
     }
 
-    tbody.innerHTML = rows.map(row => {
+    list.innerHTML = rows.map(row => {
         const timeStr = row.timestamp ? row.timestamp.replace('T', ' ').slice(0, 19) : "-";
         const directionBadge = row.direction === "INBOUND"
             ? '<span class="badge">收件</span>'
@@ -5869,7 +5866,7 @@ function renderMailboxTable() {
             ? `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${row.expertContactId}">${escapeHtml(row.expertEmail || "")}</a>`
             : escapeHtml(row.expertEmail || "-");
 
-        let sourceBadge = "-";
+        let sourceBadge = "";
         if (row.direction === "OUTBOUND") {
             if (row.triggeredBy === "SYSTEM") {
                 sourceBadge = '<span class="badge warn">系统自动</span>';
@@ -5881,27 +5878,34 @@ function renderMailboxTable() {
         }
 
         const attachment = row.hasAttachment
-            ? '<span class="badge warn" title="有附件">📎</span>'
-            : "-";
+            ? '<span class="badge warn" title="有附件">📎 附件</span>'
+            : "";
 
-        const sendStatus = row.direction === "OUTBOUND"
-            ? (row.sendStatus === "SENT" ? '<span class="badge ok">已发送</span>' : `<span class="badge error" title="发送失败">失败</span>`)
-            : "-";
+        // 只在发送失败时高亮，成功态不占视觉
+        const sendStatus = (row.direction === "OUTBOUND" && row.sendStatus !== "SENT")
+            ? `<span class="badge error" title="发送失败">发送失败</span>`
+            : "";
+
+        const actions = renderMailboxActions(row);
 
         return `
-            <tr data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">
-                <td>${escapeHtml(timeStr)}</td>
-                <td>${directionBadge}</td>
-                <td>${escapeHtml(row.senderAccountCode || "-")}</td>
-                <td>${expertEmailLink}</td>
-                <td>${escapeHtml(row.expertName || "-")}</td>
-                <td>${escapeHtml(row.subject || "-")}</td>
-                <td>${renderMailboxTagBadges(row.tags)}</td>
-                <td>${sourceBadge}</td>
-                <td>${attachment}</td>
-                <td>${sendStatus}</td>
-                <td class="actions">${renderMailboxActions(row)}</td>
-            </tr>
+            <div class="mailbox-card" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">
+                <div class="mailbox-card-tags">
+                    ${directionBadge}
+                    ${renderMailboxTagBadges(row.tags)}
+                    ${sourceBadge}
+                    ${attachment}
+                    ${sendStatus}
+                </div>
+                <div class="mailbox-card-subject">${escapeHtml(row.subject || "(无主题)")}</div>
+                <div class="mailbox-card-meta">
+                    <span>${escapeHtml(timeStr)}</span>
+                    <span>${escapeHtml(row.senderAccountCode || "-")}</span>
+                    <span>${escapeHtml(row.expertName || "-")}</span>
+                    <span>${expertEmailLink}</span>
+                </div>
+                ${actions ? `<div class="mailbox-card-actions">${actions}</div>` : ""}
+            </div>
         `;
     }).join("");
 }
@@ -5910,9 +5914,27 @@ function renderMailboxPagination() {
     const total = state.mailbox.totalCount || 0;
     const page = state.mailbox.page;
     const maxPage = Math.max(0, Math.ceil(total / state.mailbox.pageSize) - 1);
+
+    // 生成页码窗口：当前页两侧各 2 页，首尾用省略号补齐
+    const pages = [];
+    const push = (p) => { if (!pages.includes(p) && p >= 0 && p <= maxPage) pages.push(p); };
+    push(0);
+    for (let p = page - 2; p <= page + 2; p++) push(p);
+    push(maxPage);
+    pages.sort((a, b) => a - b);
+
+    let pageBtns = "";
+    let prev = -1;
+    for (const p of pages) {
+        if (prev !== -1 && p - prev > 1) pageBtns += `<span class="page-ellipsis">…</span>`;
+        pageBtns += `<button class="button secondary page-num${p === page ? " active" : ""}" data-action="mailbox-page" data-page="${p}" ${p === page ? "disabled" : ""}>${p + 1}</button>`;
+        prev = p;
+    }
+
     $("#mailboxPagination").innerHTML = `
         <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
         <button class="button secondary" data-action="mailbox-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
+        ${pageBtns}
         <button class="button secondary" data-action="mailbox-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
     `;
 }

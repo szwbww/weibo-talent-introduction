@@ -2047,6 +2047,26 @@ textarea {
     justify-content: flex-end;
     gap: 6px;
     padding: 10px 0 0;
+    flex-wrap: wrap;
+}
+
+.pagination .page-num {
+    min-width: 32px;
+    padding-left: 8px;
+    padding-right: 8px;
+    text-align: center;
+}
+
+.pagination .page-num.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    opacity: 1;
+}
+
+.pagination .page-ellipsis {
+    padding: 0 2px;
+    color: var(--text-muted);
 }
 
 .muted {
@@ -3050,6 +3070,85 @@ tr td {
     background: rgba(217, 115, 13, 0.08);
     color: var(--warning);
     border-color: rgba(217, 115, 13, 0.18);
+}
+
+/* Mailbox card list */
+.mailbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 24px;
+}
+
+.mailbox-empty {
+    padding: 32px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.mailbox-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel-bg);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mailbox-card:hover {
+    border-color: rgba(var(--primary-rgb), 0.35);
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+}
+
+/* 左上角横排标签：不换行，超出隐藏 */
+.mailbox-card-tags {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.mailbox-card-tags .badge {
+    flex-shrink: 0;
+}
+
+.mailbox-card-subject {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mailbox-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.mailbox-card-meta span {
+    position: relative;
+}
+
+.mailbox-card-meta span + span::before {
+    content: "·";
+    position: absolute;
+    left: -8px;
+    color: var(--border);
+}
+
+.mailbox-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
 }
 
 /* Meeting schedule panel */
