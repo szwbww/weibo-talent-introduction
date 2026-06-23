@@ -4137,7 +4137,65 @@ function renderMailboxActions(row) {
     } else if (row.expertContactId) {
         actions.push(`<button class="button" data-action="open-monitoring-contact" data-id="${row.expertContactId}">查看专家</button>`);
     }
+    actions.push(`<button class="button" data-action="view-mail" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">查看</button>`);
     return actions.join(" ") || "-";
+}
+
+async function showMailDetail(source, id) {
+    try {
+        const detail = await api(`/api/mail/mailbox/${encodeURIComponent(source)}/${id}`);
+        document.getElementById("mailDetailModal")?.remove();
+
+        const timeStr = detail.timestamp ? detail.timestamp.replace("T", " ").slice(0, 19) : "-";
+        const directionLabel = labelMailDirection(detail.direction);
+        const mailTypeLabel = labelMailType(detail.mailType);
+        const attachmentLabel = detail.hasAttachment ? "有附件" : "无附件";
+        const sendStatusLabel = detail.direction === "OUTBOUND"
+            ? (detail.sendStatus === "SENT" ? "已发送" : detail.sendStatus === "FAILED" ? "发送失败" : detail.sendStatus || "-")
+            : "-";
+        const body = detail.body || "";
+
+        const modal = document.createElement("div");
+        modal.id = "mailDetailModal";
+        modal.className = "modal-shell";
+        modal.innerHTML = `
+            <button class="modal-backdrop mail-detail-close" type="button" aria-label="关闭邮件详情"></button>
+            <section class="panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="mailDetailTitle">
+                <div class="panel-head modal-head">
+                    <h2 id="mailDetailTitle">邮件详情</h2>
+                    <button class="button secondary mail-detail-close" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+                </div>
+                <div class="account-form" style="padding: 16px;">
+                    <dl class="detail-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-bottom: 16px;">
+                        <div><dt class="muted" style="font-size: 12px;">时间</dt><dd>${escapeHtml(timeStr)}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">方向</dt><dd>${escapeHtml(directionLabel)}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">邮件类型</dt><dd>${escapeHtml(mailTypeLabel)}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">邮箱账号</dt><dd>${escapeHtml(detail.senderAccountCode || "-")}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">专家邮箱</dt><dd>${escapeHtml(detail.expertEmail || "-")}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">专家姓名</dt><dd>${escapeHtml(detail.expertName || "-")}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">附件</dt><dd>${escapeHtml(attachmentLabel)}</dd></div>
+                        <div><dt class="muted" style="font-size: 12px;">发送状态</dt><dd>${escapeHtml(sendStatusLabel)}</dd></div>
+                        <div style="grid-column: 1 / -1;"><dt class="muted" style="font-size: 12px;">主题</dt><dd>${escapeHtml(detail.subject || "-")}</dd></div>
+                    </dl>
+                    <div class="mail-body-detail">
+                        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">正文</div>
+                        <div class="pre" style="white-space: pre-wrap;">${escapeHtml(body || "无正文")}</div>
+                    </div>
+                </div>
+            </section>
+        `;
+
+        const closeModal = () => {
+            modal.remove();
+            document.body.classList.remove("modal-open");
+        };
+        modal.querySelectorAll(".mail-detail-close").forEach((btn) => btn.addEventListener("click", closeModal));
+
+        document.body.appendChild(modal);
+        document.body.classList.add("modal-open");
+    } catch (e) {
+        showStatus(e.message, "error");
+    }
 }
 
 async function refreshMailboxAfterPendingAction() {
@@ -5440,6 +5498,10 @@ function initBulkAutoReply() {
             await loadContactDetail(Number(target.dataset.id));
             return;
         }
+        if (target.dataset.action === "view-mail") {
+            await showMailDetail(target.dataset.source, target.dataset.id);
+            return;
+        }
         if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched"].includes(target.dataset.action)) {
             await handleUnmatchedAction(target);
         }
@@ -5792,7 +5854,7 @@ function renderMailboxTable() {
     });
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" class="text-center muted">暂无邮件记录</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center muted">暂无邮件记录</td></tr>`;
         return;
     }
 
@@ -5834,8 +5896,6 @@ function renderMailboxTable() {
                 <td>${escapeHtml(row.expertName || "-")}</td>
                 <td>${escapeHtml(row.subject || "-")}</td>
                 <td>${renderMailboxTagBadges(row.tags)}</td>
-                <td title="${escapeHtml(row.bodyPreview || "")}">${escapeHtml(row.bodyPreview || "-")}</td>
-                <td>${escapeHtml(row.mailType || "-")}</td>
                 <td>${sourceBadge}</td>
                 <td>${attachment}</td>
                 <td>${sendStatus}</td>

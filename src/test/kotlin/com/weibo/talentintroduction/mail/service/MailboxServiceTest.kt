@@ -1,6 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.MailboxRow
@@ -10,12 +15,22 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import java.time.LocalDateTime
+import java.util.Optional
 
 class MailboxServiceTest {
 
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val senderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
-    private val mailboxService = MailboxService(mailRecordRepository, senderAccountRepository)
+    private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
+    private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
+    private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val mailboxService = MailboxService(
+        mailRecordRepository,
+        senderAccountRepository,
+        inboundMailProcessingRepository,
+        mailAttachmentRepository,
+        expertContactRepository
+    )
 
     private val activeAccount = MailSenderAccount(
         id = 1L,
@@ -335,5 +350,76 @@ class MailboxServiceTest {
             limit = 20,
             offset = 0L
         )
+    }
+
+    @Test
+    fun `getMailboxDetail returns mail record body from cleaned body`() {
+        val record = MailRecord(
+            id = 5L,
+            expertContactId = 9L,
+            direction = "OUTBOUND",
+            mailType = "INTRODUCTION",
+            senderAccountCode = "active_acc",
+            triggeredBy = "SYSTEM",
+            sourceInboundId = null,
+            messageId = "msg-1",
+            inReplyTo = null,
+            subject = "Hello",
+            body = "raw body",
+            cleanedBody = "cleaned body",
+            matchedQaRuleId = null,
+            sendStatus = "SENT",
+            receivedAt = null,
+            sentAt = LocalDateTime.of(2026, 6, 22, 10, 0),
+            errorSummary = null,
+            mailSendAttemptId = null,
+            createdAt = null
+        )
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(5L)).thenReturn(record)
+        Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.empty())
+        Mockito.`when`(mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(5L)).thenReturn(emptyList())
+
+        val detail = mailboxService.getMailboxDetail("MAIL_RECORD", 5L)
+
+        assertEquals("cleaned body", detail.body)
+        assertEquals("MAIL_RECORD", detail.source)
+        assertEquals("OUTBOUND", detail.direction)
+        assertFalse(detail.hasAttachment)
+    }
+
+    @Test
+    fun `getMailboxDetail returns inbound processing body`() {
+        val inbound = InboundMailProcessing(
+            id = 12L,
+            senderAccountCode = "active_acc",
+            imapUid = 100L,
+            messageId = "in-msg",
+            inReplyTo = null,
+            fromEmail = "expert@example.com",
+            subject = "Re: Hello",
+            body = "inbound raw",
+            cleanedBody = "inbound cleaned",
+            receivedAt = LocalDateTime.of(2026, 6, 22, 11, 0),
+            processStatus = "MANUAL_REVIEW",
+            processReason = "UNMATCHED",
+            reasonType = "UNMATCHED_CONTACT",
+            resolvedAt = null,
+            resolvedBy = null,
+            expertContactId = null,
+            retryCount = 0,
+            lastError = null,
+            createdAt = null,
+            updatedAt = null
+        )
+        Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
+        Mockito.`when`(mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc("in-msg")).thenReturn(null)
+
+        val detail = mailboxService.getMailboxDetail("INBOUND_PROCESSING", 12L)
+
+        assertEquals("inbound cleaned", detail.body)
+        assertEquals("INBOUND_PROCESSING", detail.source)
+        assertEquals("INBOUND", detail.direction)
+        assertEquals(12L, detail.inboundProcessingId)
+        assertEquals("expert@example.com", detail.expertEmail)
     }
 }

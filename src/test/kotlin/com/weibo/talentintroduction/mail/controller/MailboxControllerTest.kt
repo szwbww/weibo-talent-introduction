@@ -113,4 +113,37 @@ class MailboxControllerTest {
             .andExpect(jsonPath("$.items[1].isSystemSent").value(false))
             .andExpect(jsonPath("$.items[1].hasAttachment").value(true))
     }
+
+    @Test
+    fun `detail mailbox record returns detail DTO`() {
+        val detail = MailboxDetailResponse(
+            id = 1L,
+            source = "MAIL_RECORD",
+            expertContactId = 100L,
+            direction = "OUTBOUND",
+            mailType = "INTRODUCTION",
+            senderAccountCode = "account1",
+            triggeredBy = "SYSTEM",
+            isSystemSent = true,
+            expertEmail = "expert@example.com",
+            expertName = "Expert Name",
+            subject = "Hello",
+            bodyPreview = "Preview",
+            body = "Full body text",
+            hasAttachment = false,
+            sendStatus = "SENT",
+            timestamp = "2026-06-22T10:00:00",
+            processStatus = null,
+            reasonType = null,
+            inboundProcessingId = null
+        )
+
+        Mockito.`when`(mailboxService.getMailboxDetail("MAIL_RECORD", 1L)).thenReturn(detail)
+
+        mockMvc.perform(get("/api/mail/mailbox/MAIL_RECORD/1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(1))
+            .andExpect(jsonPath("$.body").value("Full body text"))
+            .andExpect(jsonPath("$.direction").value("OUTBOUND"))
+    }
 }

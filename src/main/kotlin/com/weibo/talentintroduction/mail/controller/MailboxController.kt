@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.mail.service.MailboxService
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -34,6 +35,28 @@ data class MailboxListResponse(
     val totalCount: Long
 )
 
+data class MailboxDetailResponse(
+    val id: Long,
+    val source: String,
+    val expertContactId: Long?,
+    val direction: String,
+    val mailType: String,
+    val senderAccountCode: String?,
+    val triggeredBy: String?,
+    val isSystemSent: Boolean,
+    val expertEmail: String?,
+    val expertName: String?,
+    val subject: String?,
+    val bodyPreview: String?,
+    val body: String?,
+    val hasAttachment: Boolean,
+    val sendStatus: String?,
+    val timestamp: String?,
+    val processStatus: String?,
+    val reasonType: String?,
+    val inboundProcessingId: Long?
+)
+
 @RestController
 @RequestMapping("/api/mail/mailbox")
 class MailboxController(private val mailboxService: MailboxService) {
@@ -64,4 +87,10 @@ class MailboxController(private val mailboxService: MailboxService) {
             size = size.coerceIn(1, 100)
         )
     }
+
+    @GetMapping("/{source}/{id}")
+    fun detail(
+        @PathVariable source: String,
+        @PathVariable id: Long
+    ): MailboxDetailResponse = mailboxService.getMailboxDetail(source, id)
 }

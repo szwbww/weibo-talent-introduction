@@ -1,7 +1,13 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.controller.MailboxDetailResponse
 import com.weibo.talentintroduction.mail.controller.MailboxItemResponse
 import com.weibo.talentintroduction.mail.controller.MailboxListResponse
+import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.MailboxRow
@@ -12,7 +18,10 @@ import java.time.format.DateTimeFormatter
 @Service
 class MailboxService(
     private val mailRecordRepository: MailRecordRepository,
-    private val senderAccountRepository: MailSenderAccountRepository
+    private val senderAccountRepository: MailSenderAccountRepository,
+    private val inboundMailProcessingRepository: InboundMailProcessingRepository,
+    private val mailAttachmentRepository: MailAttachmentRepository,
+    private val expertContactRepository: ExpertContactRepository
 ) {
     fun listMailbox(
         direction: String?,
@@ -84,6 +93,84 @@ class MailboxService(
         }
 
         return MailboxListResponse(items, total)
+    }
+
+    fun getMailboxDetail(source: String, id: Long): MailboxDetailResponse {
+        return when (source) {
+            "MAIL_RECORD" -> {
+                val record = mailRecordRepository.findByIdOrNull(id)
+                    ?: throw NoSuchElementException("Mail record not found: $id")
+                toDetailFromMailRecord(record)
+            }
+            "INBOUND_PROCESSING" -> {
+                val record = inboundMailProcessingRepository.findById(id)
+                    .orElseThrow { NoSuchElementException("Inbound mail processing not found: $id") }
+                toDetailFromInbound(record)
+            }
+            else -> throw IllegalArgumentException("Unknown mailbox source: $source")
+        }
+    }
+
+    private fun toDetailFromMailRecord(record: MailRecord): MailboxDetailResponse {
+        val recordId = record.id ?: throw IllegalStateException("Mail record id is null")
+        val body = record.cleanedBody ?: record.body
+        val contact = expertContactRepository.findById(record.expertContactId).orElse(null)
+        val timestamp = (record.sentAt ?: record.receivedAt)?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        val bodyPreview = body?.take(200)
+        return MailboxDetailResponse(
+            id = recordId,
+            source = "MAIL_RECORD",
+            expertContactId = record.expertContactId,
+            direction = record.direction,
+            mailType = record.mailType,
+            senderAccountCode = record.senderAccountCode,
+            triggeredBy = record.triggeredBy,
+            isSystemSent = record.triggeredBy == "SYSTEM",
+            expertEmail = contact?.expertEmail,
+            expertName = contact?.expertName,
+            subject = record.subject,
+            bodyPreview = bodyPreview,
+            body = body,
+            hasAttachment = mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty(),
+            sendStatus = record.sendStatus,
+            timestamp = timestamp,
+            processStatus = null,
+            reasonType = null,
+            inboundProcessingId = null
+        )
+    }
+
+    private fun toDetailFromInbound(record: InboundMailProcessing): MailboxDetailResponse {
+        val recordId = record.id ?: throw IllegalStateException("Inbound mail processing id is null")
+        val body = record.cleanedBody ?: record.body
+        val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
+        val timestamp = record.receivedAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        val bodyPreview = body?.take(200)
+        val inboundMailRecord = record.messageId?.let { mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc(it) }
+        val hasAttachment = inboundMailRecord?.id?.let { mailRecordId ->
+            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(mailRecordId).isNotEmpty()
+        } ?: false
+        return MailboxDetailResponse(
+            id = recordId,
+            source = "INBOUND_PROCESSING",
+            expertContactId = record.expertContactId,
+            direction = "INBOUND",
+            mailType = "REPLY",
+            senderAccountCode = record.senderAccountCode,
+            triggeredBy = null,
+            isSystemSent = false,
+            expertEmail = contact?.expertEmail ?: record.fromEmail,
+            expertName = contact?.expertName,
+            subject = record.subject,
+            bodyPreview = bodyPreview,
+            body = body,
+            hasAttachment = hasAttachment,
+            sendStatus = null,
+            timestamp = timestamp,
+            processStatus = record.processStatus,
+            reasonType = record.reasonType,
+            inboundProcessingId = recordId
+        )
     }
 
     internal fun computeTags(row: MailboxRow): List<String> {
