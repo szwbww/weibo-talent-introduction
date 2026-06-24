@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.stereotype.Service
@@ -12,10 +13,15 @@ class MailSenderAccountService(
     private val repository: MailSenderAccountRepository,
     private val selfCheckService: SenderAccountSelfCheckService,
     private val smtpSenderFactory: SmtpSenderFactory,
-    private val warmup: SenderWarmupService
+    private val warmup: SenderWarmupService,
+    private val connectivityService: MailAccountConnectivityService,
+    private val campaignRepository: CampaignRepository
 ) {
     fun listAccounts(): List<MailSenderAccount> =
         repository.findAllByOrderByAccountCodeAsc()
+
+    fun effectiveDailyLimitFor(account: MailSenderAccount): Int =
+        warmup.effectiveDailyLimit(account)
 
     fun getEnabledAccount(accountCode: String): MailSenderAccount =
         repository.findByAccountCodeAndEnabledTrue(accountCode)
@@ -60,8 +66,10 @@ class MailSenderAccountService(
         require(!repository.existsByAccountCode(command.accountCode)) {
             "Mail sender account already exists: ${command.accountCode}"
         }
+        require(command.smtpPassword.isNotBlank()) { "smtpPassword is required" }
+        require(command.imapPassword.isNotBlank()) { "imapPassword is required" }
 
-        return repository.save(command.toDomain())
+        return repository.save(command.toDomain().copy(enabled = false))
     }
 
     fun updateAccount(accountCode: String, command: MailSenderAccountUpdateCommand): MailSenderAccount {
@@ -72,6 +80,24 @@ class MailSenderAccountService(
         require(command.todaySentCount <= command.dailySendLimit) {
             "todaySentCount must not exceed dailySendLimit"
         }
+
+        val smtpPassword = if (command.smtpPassword.isNullOrBlank()) {
+            existing.smtpPassword
+        } else {
+            command.smtpPassword
+        }
+        val imapPassword = if (command.imapPassword.isNullOrBlank()) {
+            existing.imapPassword
+        } else {
+            command.imapPassword
+        }
+
+        if (!existing.enabled && command.enabled) {
+            requireConnectivityPassed(accountCode)
+        }
+
+        warmup.validateWarmupStepsJson(command.warmupStepsJson)
+        val warmupStartedAt = parseWarmupStartedAt(command.warmupStartedAt)
 
         val updated = repository.save(
             existing.copy(
@@ -84,15 +110,18 @@ class MailSenderAccountService(
                 smtpHost = command.smtpHost,
                 smtpPort = command.smtpPort,
                 smtpUsername = command.smtpUsername,
-                smtpPassword = command.smtpPassword,
+                smtpPassword = smtpPassword,
                 imapHost = command.imapHost,
                 imapPort = command.imapPort,
                 imapUsername = command.imapUsername,
-                imapPassword = command.imapPassword,
+                imapPassword = imapPassword,
                 strategyWeight = command.strategyWeight,
                 dailySendLimit = command.dailySendLimit,
                 todaySentCount = command.todaySentCount,
-                enabled = command.enabled
+                enabled = command.enabled,
+                warmupEnabled = command.warmupEnabled,
+                warmupStartedAt = warmupStartedAt,
+                warmupStepsJson = command.warmupStepsJson?.trim()?.takeIf { it.isNotEmpty() }
             )
         )
         smtpSenderFactory.evict(accountCode)
@@ -100,12 +129,28 @@ class MailSenderAccountService(
     }
 
     fun setEnabled(accountCode: String, enabled: Boolean): MailSenderAccount {
+        if (enabled) {
+            requireConnectivityPassed(accountCode)
+        }
         val existing = getAccount(accountCode)
         val updated = repository.save(existing.copy(enabled = enabled))
         if (!enabled) {
             smtpSenderFactory.evict(accountCode)
         }
         return updated
+    }
+
+    fun deleteAccount(accountCode: String) {
+        val account = getAccount(accountCode)
+        if (account.accountCode == SIMULATOR_ACCOUNT_CODE) {
+            throw IllegalStateException("模拟器账号不可删除")
+        }
+        val accountId = account.id ?: error("Mail sender account id is null: $accountCode")
+        if (campaignRepository.existsBySenderAccountId(accountId)) {
+            throw IllegalStateException("该账号已被活动引用，无法删除")
+        }
+        smtpSenderFactory.evict(accountCode)
+        repository.deleteById(accountId)
     }
 
     fun resetTodaySentCount(accountCode: String): MailSenderAccount {
@@ -153,6 +198,26 @@ class MailSenderAccountService(
         val effectiveLimit = warmup.effectiveDailyLimit(account)
         val remainingRatio = (effectiveLimit - account.todaySentCount).toDouble() / effectiveLimit
         return account.strategyWeight * remainingRatio
+    }
+
+    private fun requireConnectivityPassed(accountCode: String) {
+        val result = connectivityService.testAccount(accountCode)
+        if (!result.passed) {
+            throw IllegalStateException(
+                "连通性测试未通过: SMTP=${result.smtp.message}, IMAP=${result.imap.message}"
+            )
+        }
+    }
+
+    private fun parseWarmupStartedAt(value: String?): LocalDateTime? {
+        if (value.isNullOrBlank()) {
+            return null
+        }
+        return try {
+            LocalDateTime.parse(value.trim())
+        } catch (_: Exception) {
+            throw IllegalArgumentException("warmupStartedAt must be an ISO-8601 datetime")
+        }
     }
 
     companion object {
@@ -219,13 +284,16 @@ data class MailSenderAccountUpdateCommand(
     val smtpHost: String,
     val smtpPort: Int,
     val smtpUsername: String,
-    val smtpPassword: String,
+    val smtpPassword: String?,
     val imapHost: String,
     val imapPort: Int,
     val imapUsername: String,
-    val imapPassword: String,
+    val imapPassword: String?,
     val strategyWeight: Int,
     val dailySendLimit: Int,
     val todaySentCount: Int,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val warmupEnabled: Boolean? = null,
+    val warmupStartedAt: String? = null,
+    val warmupStepsJson: String? = null
 )

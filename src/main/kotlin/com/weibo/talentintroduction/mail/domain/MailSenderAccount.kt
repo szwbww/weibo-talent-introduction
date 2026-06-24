@@ -31,6 +31,9 @@ data class MailSenderAccount(
     val autoSendPaused: Boolean = false,
     val autoSendPausedReason: String? = null,
     val autoSendPausedAt: LocalDateTime? = null,
+    val warmupEnabled: Boolean? = null,
+    val warmupStartedAt: LocalDateTime? = null,
+    val warmupStepsJson: String? = null,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )

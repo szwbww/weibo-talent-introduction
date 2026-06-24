@@ -7,13 +7,16 @@ import com.weibo.talentintroduction.mail.service.MailSenderAccountCreateCommand
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountUpdateCommand
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.http.HttpStatus
 
 @RestController
 @RequestMapping("/api/mail/sender-accounts")
@@ -24,34 +27,34 @@ class MailSenderAccountController(
 ) {
     @GetMapping
     fun listAccounts(): List<MailSenderAccountResponse> =
-        service.listAccounts().map { it.toResponse() }
+        service.listAccounts().map { toResponse(it) }
 
     @GetMapping("/{accountCode}")
     fun getAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        service.getAccount(accountCode).toResponse()
+        toResponse(service.getAccount(accountCode))
 
     @PostMapping
     fun createAccount(@RequestBody request: MailSenderAccountCreateRequest): MailSenderAccountResponse =
-        service.createAccount(request.toCommand()).toResponse()
+        toResponse(service.createAccount(request.toCommand()))
 
     @PutMapping("/{accountCode}")
     fun updateAccount(
         @PathVariable accountCode: String,
         @RequestBody request: MailSenderAccountUpdateRequest
     ): MailSenderAccountResponse =
-        service.updateAccount(accountCode, request.toCommand()).toResponse()
+        toResponse(service.updateAccount(accountCode, request.toCommand()))
 
     @PostMapping("/{accountCode}/enable")
     fun enableAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        service.setEnabled(accountCode, true).toResponse()
+        toResponse(service.setEnabled(accountCode, true))
 
     @PostMapping("/{accountCode}/disable")
     fun disableAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        service.setEnabled(accountCode, false).toResponse()
+        toResponse(service.setEnabled(accountCode, false))
 
     @PostMapping("/{accountCode}/reset-today-sent-count")
     fun resetTodaySentCount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        service.resetTodaySentCount(accountCode).toResponse()
+        toResponse(service.resetTodaySentCount(accountCode))
 
     @PostMapping("/{accountCode}/test-connectivity")
     fun testConnectivity(@PathVariable accountCode: String): MailAccountConnectivityResult =
@@ -60,12 +63,48 @@ class MailSenderAccountController(
     @PostMapping("/{accountCode}/resume-auto-send")
     fun resumeAutoSend(@PathVariable accountCode: String): MailSenderAccountResponse {
         service.resumeAutoSend(accountCode)
-        return service.getAccount(accountCode).toResponse()
+        return toResponse(service.getAccount(accountCode))
     }
 
     @PostMapping("/{accountCode}/self-check")
     fun selfCheck(@PathVariable accountCode: String) =
         selfCheckService.checkSendable(service.getAccount(accountCode))
+
+    @DeleteMapping("/{accountCode}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deleteAccount(@PathVariable accountCode: String) {
+        service.deleteAccount(accountCode)
+    }
+
+    private fun toResponse(account: MailSenderAccount): MailSenderAccountResponse =
+        MailSenderAccountResponse(
+            id = account.id,
+            accountCode = account.accountCode,
+            senderEmail = account.senderEmail,
+            senderName = account.senderName,
+            senderTitle = account.senderTitle,
+            senderDisplayName = account.senderDisplayName,
+            teamName = account.teamName,
+            countryName = account.countryName,
+            smtpHost = account.smtpHost,
+            smtpPort = account.smtpPort,
+            smtpUsername = account.smtpUsername,
+            imapHost = account.imapHost,
+            imapPort = account.imapPort,
+            imapUsername = account.imapUsername,
+            strategyWeight = account.strategyWeight,
+            dailySendLimit = account.dailySendLimit,
+            effectiveDailyLimit = service.effectiveDailyLimitFor(account),
+            todaySentCount = account.todaySentCount,
+            lastSentAt = account.lastSentAt?.toString(),
+            enabled = account.enabled,
+            autoSendPaused = account.autoSendPaused,
+            autoSendPausedReason = account.autoSendPausedReason,
+            autoSendPausedAt = account.autoSendPausedAt?.toString(),
+            warmupEnabled = account.warmupEnabled,
+            warmupStartedAt = account.warmupStartedAt?.toString(),
+            warmupStepsJson = account.warmupStepsJson
+        )
 }
 
 data class MailSenderAccountCreateRequest(
@@ -121,15 +160,18 @@ data class MailSenderAccountUpdateRequest(
     val smtpHost: String,
     val smtpPort: Int,
     val smtpUsername: String,
-    val smtpPassword: String,
+    val smtpPassword: String? = null,
     val imapHost: String,
     val imapPort: Int,
     val imapUsername: String,
-    val imapPassword: String,
+    val imapPassword: String? = null,
     val strategyWeight: Int,
     val dailySendLimit: Int,
     val todaySentCount: Int,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val warmupEnabled: Boolean? = null,
+    val warmupStartedAt: String? = null,
+    val warmupStepsJson: String? = null
 ) {
     fun toCommand(): MailSenderAccountUpdateCommand =
         MailSenderAccountUpdateCommand(
@@ -150,7 +192,10 @@ data class MailSenderAccountUpdateRequest(
             strategyWeight = strategyWeight,
             dailySendLimit = dailySendLimit,
             todaySentCount = todaySentCount,
-            enabled = enabled
+            enabled = enabled,
+            warmupEnabled = warmupEnabled,
+            warmupStartedAt = warmupStartedAt,
+            warmupStepsJson = warmupStepsJson
         )
 }
 
@@ -171,36 +216,14 @@ data class MailSenderAccountResponse(
     val imapUsername: String,
     val strategyWeight: Int,
     val dailySendLimit: Int,
+    val effectiveDailyLimit: Int,
     val todaySentCount: Int,
     val lastSentAt: String?,
     val enabled: Boolean,
     val autoSendPaused: Boolean,
     val autoSendPausedReason: String?,
-    val autoSendPausedAt: String?
+    val autoSendPausedAt: String?,
+    val warmupEnabled: Boolean?,
+    val warmupStartedAt: String?,
+    val warmupStepsJson: String?
 )
-
-private fun MailSenderAccount.toResponse(): MailSenderAccountResponse =
-    MailSenderAccountResponse(
-        id = id,
-        accountCode = accountCode,
-        senderEmail = senderEmail,
-        senderName = senderName,
-        senderTitle = senderTitle,
-        senderDisplayName = senderDisplayName,
-        teamName = teamName,
-        countryName = countryName,
-        smtpHost = smtpHost,
-        smtpPort = smtpPort,
-        smtpUsername = smtpUsername,
-        imapHost = imapHost,
-        imapPort = imapPort,
-        imapUsername = imapUsername,
-        strategyWeight = strategyWeight,
-        dailySendLimit = dailySendLimit,
-        todaySentCount = todaySentCount,
-        lastSentAt = lastSentAt?.toString(),
-        enabled = enabled,
-        autoSendPaused = autoSendPaused,
-        autoSendPausedReason = autoSendPausedReason,
-        autoSendPausedAt = autoSendPausedAt?.toString()
-    )

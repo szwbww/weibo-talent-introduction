@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -35,26 +36,31 @@ class MailSenderAccountControllerMvcTest {
 
     @Test
     fun `listAccounts response exposes auto-pause fields`() {
-        Mockito.`when`(service.listAccounts()).thenReturn(
-            listOf(
-                account("a1", autoSendPaused = true, autoSendPausedReason = "SELF_CHECK_FAILED:boom"),
-                account("a2", autoSendPaused = false)
-            )
+        val accounts = listOf(
+            account("a1", autoSendPaused = true, autoSendPausedReason = "SELF_CHECK_FAILED:boom"),
+            account("a2", autoSendPaused = false)
         )
+        Mockito.`when`(service.listAccounts()).thenReturn(accounts)
+        Mockito.`when`(service.effectiveDailyLimitFor(accounts[0])).thenReturn(100)
+        Mockito.`when`(service.effectiveDailyLimitFor(accounts[1])).thenReturn(80)
 
         mockMvc.perform(get("/api/mail/sender-accounts"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].accountCode").value("a1"))
             .andExpect(jsonPath("$[0].autoSendPaused").value(true))
             .andExpect(jsonPath("$[0].autoSendPausedReason").value("SELF_CHECK_FAILED:boom"))
+            .andExpect(jsonPath("$[0].effectiveDailyLimit").value(100))
             .andExpect(jsonPath("$[1].accountCode").value("a2"))
             .andExpect(jsonPath("$[1].autoSendPaused").value(false))
             .andExpect(jsonPath("$[1].autoSendPausedReason").isEmpty)
+            .andExpect(jsonPath("$[1].effectiveDailyLimit").value(80))
     }
 
     @Test
     fun `resumeAutoSend endpoint delegates to service`() {
-        Mockito.`when`(service.getAccount("a1")).thenReturn(account("a1"))
+        val account = account("a1")
+        Mockito.`when`(service.getAccount("a1")).thenReturn(account)
+        Mockito.`when`(service.effectiveDailyLimitFor(account)).thenReturn(100)
 
         mockMvc.perform(post("/api/mail/sender-accounts/a1/resume-auto-send"))
             .andExpect(status().isOk)
@@ -68,13 +74,23 @@ class MailSenderAccountControllerMvcTest {
     fun `selfCheck endpoint delegates to selfCheckService and returns result`() {
         Mockito.`when`(selfCheckService.checkSendable(Mockito.any(MailSenderAccount::class.java) ?: account("__any__")))
             .thenReturn(SelfCheckResult(accountCode = "a1", passed = true, message = null, fromCache = false))
-        Mockito.`when`(service.getAccount("a1")).thenReturn(account("a1"))
+        val account = account("a1")
+        Mockito.`when`(service.getAccount("a1")).thenReturn(account)
+        Mockito.`when`(service.effectiveDailyLimitFor(account)).thenReturn(100)
 
         mockMvc.perform(post("/api/mail/sender-accounts/a1/self-check"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.accountCode").value("a1"))
             .andExpect(jsonPath("$.passed").value(true))
             .andExpect(jsonPath("$.fromCache").value(false))
+    }
+
+    @Test
+    fun `deleteAccount endpoint delegates to service`() {
+        mockMvc.perform(delete("/api/mail/sender-accounts/a1"))
+            .andExpect(status().isNoContent)
+
+        Mockito.verify(service).deleteAccount("a1")
     }
 
     private fun account(

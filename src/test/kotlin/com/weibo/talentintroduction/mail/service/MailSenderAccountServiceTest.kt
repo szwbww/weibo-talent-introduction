@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -17,8 +19,17 @@ class MailSenderAccountServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
     private val smtpSenderFactory = Mockito.mock(SmtpSenderFactory::class.java)
-    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false))
-    private val service = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, warmupService)
+    private val connectivityService = Mockito.mock(MailAccountConnectivityService::class.java)
+    private val campaignRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.CampaignRepository::class.java)
+    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule())
+    private val service = MailSenderAccountService(
+        repository,
+        selfCheckService,
+        smtpSenderFactory,
+        warmupService,
+        connectivityService,
+        campaignRepository
+    )
 
     @Test
     fun `selects enabled account with highest weighted remaining capacity`() {
@@ -93,8 +104,203 @@ class MailSenderAccountServiceTest {
         assertEquals("new_account", created.accountCode)
         assertEquals(120, created.strategyWeight)
         assertEquals(80, created.dailySendLimit)
+        assertFalse(created.enabled)
         assertNotNull(created.createdAt)
         assertNotNull(created.updatedAt)
+    }
+
+    @Test
+    fun `createAccount rejects blank smtp password`() {
+        Mockito.`when`(repository.existsByAccountCode("new_account")).thenReturn(false)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createAccount(
+                MailSenderAccountCreateCommand(
+                    accountCode = "new_account",
+                    senderEmail = "new_account@qftechtalent.com",
+                    senderName = "New Account",
+                    senderTitle = null,
+                    senderDisplayName = null,
+                    teamName = null,
+                    countryName = null,
+                    smtpHost = "smtp.example.com",
+                    smtpPort = 465,
+                    smtpUsername = "new_account@qftechtalent.com",
+                    smtpPassword = "",
+                    imapHost = "imap.example.com",
+                    imapPort = 993,
+                    imapUsername = "new_account@qftechtalent.com",
+                    imapPassword = "secret"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("smtpPassword"))
+    }
+
+    @Test
+    fun `setEnabled requires connectivity test to pass when enabling`() {
+        Mockito.`when`(connectivityService.testAccount("a1")).thenReturn(
+            MailAccountConnectivityResult(
+                accountCode = "a1",
+                smtp = MailProtocolConnectivityResult("SMTP", "smtp.example.com", 465, false, "auth failed"),
+                imap = MailProtocolConnectivityResult("IMAP", "imap.example.com", 993, true, "ok"),
+                passed = false
+            )
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.setEnabled("a1", true)
+        }
+
+        assertTrue(ex.message!!.contains("连通性测试未通过"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(MailSenderAccount::class.java) ?: account("__any__"))
+    }
+
+    @Test
+    fun `setEnabled succeeds when connectivity test passes`() {
+        Mockito.`when`(connectivityService.testAccount("a1")).thenReturn(
+            MailAccountConnectivityResult(
+                accountCode = "a1",
+                smtp = MailProtocolConnectivityResult("SMTP", "smtp.example.com", 465, true, "ok"),
+                imap = MailProtocolConnectivityResult("IMAP", "imap.example.com", 993, true, "ok"),
+                passed = true
+            )
+        )
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", enabled = false))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as MailSenderAccount }
+
+        val enabled = service.setEnabled("a1", true)
+
+        assertTrue(enabled.enabled)
+    }
+
+    @Test
+    fun `updateAccount preserves passwords when update command omits them`() {
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", strategyWeight = 100, dailySendLimit = 100, todaySentCount = 0))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as MailSenderAccount }
+
+        val updated = service.updateAccount(
+            "a1",
+            MailSenderAccountUpdateCommand(
+                senderEmail = "updated@qftechtalent.com",
+                senderName = "Updated",
+                senderTitle = "Customer Care Officer",
+                senderDisplayName = "Updated",
+                teamName = "Qingfei Tech Talent Team",
+                countryName = "China",
+                smtpHost = "smtp2.example.com",
+                smtpPort = 587,
+                smtpUsername = "updated@qftechtalent.com",
+                smtpPassword = null,
+                imapHost = "imap2.example.com",
+                imapPort = 993,
+                imapUsername = "updated@qftechtalent.com",
+                imapPassword = null,
+                strategyWeight = 120,
+                dailySendLimit = 80,
+                todaySentCount = 5,
+                enabled = true
+            )
+        )
+
+        assertEquals("secret", updated.smtpPassword)
+        assertEquals("secret", updated.imapPassword)
+        Mockito.verify(connectivityService, Mockito.never()).testAccount("a1")
+    }
+
+    @Test
+    fun `updateAccount requires connectivity test when enabling from disabled`() {
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", enabled = false))
+        Mockito.`when`(connectivityService.testAccount("a1")).thenReturn(
+            MailAccountConnectivityResult(
+                accountCode = "a1",
+                smtp = MailProtocolConnectivityResult("SMTP", "smtp.example.com", 465, false, "auth failed"),
+                imap = MailProtocolConnectivityResult("IMAP", "imap.example.com", 993, true, "ok"),
+                passed = false
+            )
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.updateAccount("a1", updateCommand(enabled = true))
+        }
+
+        assertTrue(ex.message!!.contains("连通性测试未通过"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(MailSenderAccount::class.java) ?: account("__any__"))
+    }
+
+    @Test
+    fun `updateAccount enables account when connectivity test passes`() {
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", enabled = false))
+        Mockito.`when`(connectivityService.testAccount("a1")).thenReturn(
+            MailAccountConnectivityResult(
+                accountCode = "a1",
+                smtp = MailProtocolConnectivityResult("SMTP", "smtp.example.com", 465, true, "ok"),
+                imap = MailProtocolConnectivityResult("IMAP", "imap.example.com", 993, true, "ok"),
+                passed = true
+            )
+        )
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as MailSenderAccount }
+
+        val updated = service.updateAccount("a1", updateCommand(enabled = true))
+
+        assertTrue(updated.enabled)
+    }
+
+    @Test
+    fun `updateAccount does not require connectivity test when account stays enabled`() {
+        Mockito.`when`(repository.findByAccountCode("a1"))
+            .thenReturn(account("a1", enabled = true))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as MailSenderAccount }
+
+        service.updateAccount("a1", updateCommand(enabled = true))
+
+        Mockito.verify(connectivityService, Mockito.never()).testAccount("a1")
+    }
+
+    @Test
+    fun `deleteAccount removes account when no campaign references exist`() {
+        val existing = account("a1").copy(id = 10L)
+        Mockito.`when`(repository.findByAccountCode("a1")).thenReturn(existing)
+        Mockito.`when`(campaignRepository.existsBySenderAccountId(10L)).thenReturn(false)
+
+        service.deleteAccount("a1")
+
+        Mockito.verify(repository).deleteById(10L)
+        Mockito.verify(smtpSenderFactory).evict("a1")
+    }
+
+    @Test
+    fun `deleteAccount rejects simulator account`() {
+        Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP"))
+            .thenReturn(account("SIMULATOR_NOOP"))
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.deleteAccount("SIMULATOR_NOOP")
+        }
+
+        assertTrue(ex.message!!.contains("模拟器账号不可删除"))
+    }
+
+    @Test
+    fun `deleteAccount rejects account referenced by campaign`() {
+        val existing = account("a1").copy(id = 10L)
+        Mockito.`when`(repository.findByAccountCode("a1")).thenReturn(existing)
+        Mockito.`when`(campaignRepository.existsBySenderAccountId(10L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.deleteAccount("a1")
+        }
+
+        assertTrue(ex.message!!.contains("该账号已被活动引用"))
     }
 
     @Test
@@ -343,9 +549,17 @@ class MailSenderAccountServiceTest {
             WarmupProperties(
                 enabled = true,
                 steps = listOf(WarmupStep(1, 20))
-            )
+            ),
+            ObjectMapper().registerKotlinModule()
         )
-        val serviceWithWarmup = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, enabledWarmup)
+        val serviceWithWarmup = MailSenderAccountService(
+            repository,
+            selfCheckService,
+            smtpSenderFactory,
+            enabledWarmup,
+            connectivityService,
+            campaignRepository
+        )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(
@@ -371,9 +585,17 @@ class MailSenderAccountServiceTest {
             WarmupProperties(
                 enabled = true,
                 steps = listOf(WarmupStep(1, 20))
-            )
+            ),
+            ObjectMapper().registerKotlinModule()
         )
-        val serviceWithWarmup = MailSenderAccountService(repository, selfCheckService, smtpSenderFactory, enabledWarmup)
+        val serviceWithWarmup = MailSenderAccountService(
+            repository,
+            selfCheckService,
+            smtpSenderFactory,
+            enabledWarmup,
+            connectivityService,
+            campaignRepository
+        )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(
@@ -398,6 +620,28 @@ class MailSenderAccountServiceTest {
 
         assertNotNull(method.getAnnotation(Transactional::class.java))
     }
+
+    private fun updateCommand(enabled: Boolean): MailSenderAccountUpdateCommand =
+        MailSenderAccountUpdateCommand(
+            senderEmail = "updated@qftechtalent.com",
+            senderName = "Updated",
+            senderTitle = "Customer Care Officer",
+            senderDisplayName = "Updated",
+            teamName = "Qingfei Tech Talent Team",
+            countryName = "China",
+            smtpHost = "smtp2.example.com",
+            smtpPort = 587,
+            smtpUsername = "updated@qftechtalent.com",
+            smtpPassword = null,
+            imapHost = "imap2.example.com",
+            imapPort = 993,
+            imapUsername = "updated@qftechtalent.com",
+            imapPassword = null,
+            strategyWeight = 120,
+            dailySendLimit = 80,
+            todaySentCount = 5,
+            enabled = enabled
+        )
 
     private fun account(
         accountCode: String,

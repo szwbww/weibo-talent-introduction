@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -10,7 +12,7 @@ import org.mockito.Mockito
 
 class SenderAccountAssignmentServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
-    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false))
+    private val warmupService = SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule())
     private val service = SenderAccountAssignmentService(repository, warmupService)
 
     @Test
@@ -66,6 +68,54 @@ class SenderAccountAssignmentServiceTest {
         )
 
         assertEquals("zoe", selected.accountCode)
+    }
+
+    @Test
+    fun `low strategyWeight account stays selectable with same segment penalty`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(account("low", strategyWeight = 10))
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States"),
+            currentBatchAssignments = listOf(
+                SenderExpertAssignment(
+                    accountCode = "low",
+                    expertId = "0000-0001",
+                    distributionKey = "united states"
+                )
+            )
+        )
+
+        assertEquals("low", selected.accountCode)
+    }
+
+    @Test
+    fun `prefers alternate account when low weight account already has same segment assignment`() {
+        val repository = Mockito.mock(MailSenderAccountRepository::class.java)
+        val service = SenderAccountAssignmentService(
+            repository,
+            SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule())
+        )
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("weighted", strategyWeight = 100),
+                account("other", strategyWeight = 100)
+            )
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States"),
+            currentBatchAssignments = listOf(
+                SenderExpertAssignment(
+                    accountCode = "weighted",
+                    expertId = "0000-0001",
+                    distributionKey = "united states"
+                )
+            )
+        )
+
+        assertEquals("other", selected.accountCode)
     }
 
     private fun account(accountCode: String, strategyWeight: Int = 100, autoSendPaused: Boolean = false): MailSenderAccount =

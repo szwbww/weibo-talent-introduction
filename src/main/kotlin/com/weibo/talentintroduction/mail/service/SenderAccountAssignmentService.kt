@@ -42,7 +42,9 @@ class SenderAccountAssignmentService(
             it.accountCode == account.accountCode && it.distributionKey == distributionKey
         }
         val totalAccountCount = assignments.count { it.accountCode == account.accountCode }
-        return baseScore - sameSegmentCount * 20.0 - totalAccountCount * 2.0
+        return baseScore -
+            account.strategyWeight * 0.2 * sameSegmentCount -
+            account.strategyWeight * 0.02 * totalAccountCount
     }
 
     private fun distributionKey(expert: ExpertProfile): String =

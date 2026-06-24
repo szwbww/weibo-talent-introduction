@@ -862,6 +862,9 @@
             <label>策略分流权重 (Weight)<input name="strategyWeight" type="number" value="100" required></label>
             <label>每日发信频次限制 (Limit)<input name="dailySendLimit" type="number" value="100" required></label>
             <label>今日已发送计数 (Counter)<input name="todaySentCount" type="number" value="0"></label>
+            <label class="checkbox-row span-2"><input name="warmupEnabled" type="checkbox"> 启用独立预热</label>
+            <label>预热起始日<input name="warmupStartedAt" type="datetime-local"></label>
+            <label class="span-2">预热步骤 (JSON)<textarea name="warmupStepsJson" rows="3" placeholder='[{"dayFrom":1,"limit":20},{"dayFrom":3,"limit":40}]'></textarea></label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 开启此发件账号池的轮询调度机制</label>
             <div class="form-actions modal-actions">
                 <button class="button primary" type="submit" id="saveAccountBtn">保存配置</button>

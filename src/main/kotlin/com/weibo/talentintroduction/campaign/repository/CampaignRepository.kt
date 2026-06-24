@@ -5,4 +5,6 @@ import org.springframework.data.repository.CrudRepository
 
 interface CampaignRepository : CrudRepository<Campaign, Long> {
     fun findByCampaignCode(campaignCode: String): Campaign?
+
+    fun existsBySenderAccountId(senderAccountId: Long): Boolean
 }

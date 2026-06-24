@@ -1087,7 +1087,8 @@ async function loadAccounts() {
             `<button class="button" data-action="toggle-account" data-code="${escapeHtml(account.accountCode)}" data-enabled="${account.enabled}">
                 ${account.enabled ? "禁用" : "启用"}
             </button>`,
-            `<button class="button" data-action="reset-account" data-code="${escapeHtml(account.accountCode)}">重置</button>`
+            `<button class="button" data-action="reset-account" data-code="${escapeHtml(account.accountCode)}">重置</button>`,
+            `<button class="button" data-action="delete-account" data-code="${escapeHtml(account.accountCode)}">删除</button>`
         ];
         if (autoPaused) {
             actions.push(`<button class="button" data-action="resume-auto-send" data-code="${escapeHtml(account.accountCode)}">恢复发送</button>`);
@@ -1097,7 +1098,11 @@ async function loadAccounts() {
             <td><strong>${escapeHtml(account.accountCode)}</strong></td>
             <td>${escapeHtml(account.senderEmail)}</td>
             <td>${account.strategyWeight}</td>
-            <td>${account.todaySentCount}/${account.dailySendLimit}</td>
+            <td>${account.todaySentCount}/${account.effectiveDailyLimit}${
+                account.effectiveDailyLimit < account.dailySendLimit
+                    ? ' <span class="badge info">预热中</span>'
+                    : ""
+            }</td>
             <td>${statusCell}</td>
             <td class="actions">${actions.join("")}</td>
         </tr>
@@ -1136,6 +1141,13 @@ const newAccountDefaults = {
     todaySentCount: 0
 };
 
+function toDatetimeLocalValue(value) {
+    if (!value) {
+        return "";
+    }
+    return value.length >= 16 ? value.slice(0, 16) : value;
+}
+
 function fillAccountForm(account, mode = account ? "edit" : "new") {
     const form = $("#accountForm");
     showAccountEditor();
@@ -1159,7 +1171,15 @@ function fillAccountForm(account, mode = account ? "edit" : "new") {
     });
     form.smtpPassword.value = "";
     form.imapPassword.value = "";
-    form.enabled.checked = account?.enabled ?? true;
+    const isEdit = mode === "edit";
+    form.smtpPassword.required = !isEdit;
+    form.imapPassword.required = !isEdit;
+    form.smtpPassword.placeholder = isEdit ? "留空保持不变" : "授权码或账号密码";
+    form.imapPassword.placeholder = isEdit ? "留空保持不变" : "授权码或账号密码";
+    form.enabled.checked = account?.enabled ?? false;
+    form.warmupEnabled.checked = account?.warmupEnabled === true;
+    form.warmupStartedAt.value = toDatetimeLocalValue(account?.warmupStartedAt);
+    form.warmupStepsJson.value = account?.warmupStepsJson ?? "";
 }
 
 async function saveAccount(event) {
@@ -1191,6 +1211,11 @@ async function saveAccount(event) {
     };
     if (state.selectedAccount) {
         payload.todaySentCount = numberValue(values.todaySentCount, 0);
+        payload.smtpPassword = values.smtpPassword?.trim() || null;
+        payload.imapPassword = values.imapPassword?.trim() || null;
+        payload.warmupEnabled = form.warmupEnabled.checked ? true : false;
+        payload.warmupStartedAt = values.warmupStartedAt?.trim() || null;
+        payload.warmupStepsJson = values.warmupStepsJson?.trim() || null;
         await api(`/api/mail/sender-accounts/${encodeURIComponent(state.selectedAccount)}`, {
             method: "PUT",
             body: JSON.stringify(payload)
@@ -1223,8 +1248,24 @@ async function handleAccountAction(button) {
     }
     if (action === "toggle-account") {
         const enabled = button.dataset.enabled === "true";
-        await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/${enabled ? "disable" : "enable"}`, { method: "POST" });
-        await loadAccounts();
+        try {
+            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+            await loadAccounts();
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
+    if (action === "delete-account") {
+        if (!confirm(`确认删除账号 ${code}？此操作不可恢复。`)) {
+            return;
+        }
+        try {
+            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`, { method: "DELETE" });
+            showStatus(`账号 ${code} 已删除`, "ok");
+            await loadAccounts();
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
     }
     if (action === "reset-account") {
         await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/reset-today-sent-count`, { method: "POST" });
