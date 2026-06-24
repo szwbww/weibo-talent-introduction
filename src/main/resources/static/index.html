@@ -840,35 +840,111 @@
     <button class="modal-backdrop" id="accountModalBackdrop" type="button" aria-label="关闭账号配置"></button>
     <section class="panel editor-panel modal-panel" id="accountEditorPanel" role="dialog" aria-modal="true" aria-labelledby="accountEditorTitle">
         <div class="panel-head modal-head">
-            <h2 id="accountEditorTitle">发件邮箱参数配置</h2>
-            <button class="button secondary" id="accountModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <div class="modal-head-left">
+                <div class="modal-head-titles">
+                    <h2 id="accountEditorTitle">发件邮箱参数配置</h2>
+                    <span class="modal-head-subtitle" id="accountEditorSubtitle" hidden></span>
+                </div>
+                <span class="badge" id="accountStatusBadge" hidden></span>
+            </div>
+            <button class="modal-close-btn" id="accountModalCloseBtn" type="button" aria-label="关闭">×</button>
         </div>
-        <form id="accountForm" class="form-grid">
-            <label>账号标识代码 (唯一)<input name="accountCode" placeholder="如: chenjj" required></label>
-            <label>对外发送邮箱地址<input name="senderEmail" type="email" placeholder="如: admin@company.com" required></label>
-            <label>发件人中文名<input name="senderName" placeholder="如: 陈静静" required></label>
-            <label>对外职位名称<input name="senderTitle" placeholder="如: 首席人才官 / Principal Director"></label>
-            <label>发件显示名 (DisplayName)<input name="senderDisplayName" placeholder="如: QF Tech Talent Director"></label>
-            <label>所属引进团队名称<input name="teamName" placeholder="如: 高层次人才工作组"></label>
-            <label>目标国家分类<input name="countryName" placeholder="如: United States (用于流量均衡)"></label>
-            <label>SMTP 服务器 Host<input name="smtpHost" placeholder="如: smtp.qftechtalent.com" required></label>
-            <label>SMTP 端口<input name="smtpPort" type="number" value="465" required></label>
-            <label>SMTP 认证用户名<input name="smtpUsername" placeholder="通常是发信邮箱" required></label>
-            <label>SMTP 授权密钥/密码<input name="smtpPassword" type="password" placeholder="授权码或账号密码" required></label>
-            <label>IMAP 服务器 Host<input name="imapHost" placeholder="如: imap.qftechtalent.com" required></label>
-            <label>IMAP 端口<input name="imapPort" type="number" value="993" required></label>
-            <label>IMAP 认证用户名<input name="imapUsername" placeholder="通常是收信邮箱" required></label>
-            <label>IMAP 授权密钥/密码<input name="imapPassword" type="password" placeholder="授权码或账号密码" required></label>
-            <label>策略分流权重 (Weight)<input name="strategyWeight" type="number" value="100" required></label>
-            <label>每日发信频次限制 (Limit)<input name="dailySendLimit" type="number" value="100" required></label>
-            <label>今日已发送计数 (Counter)<input name="todaySentCount" type="number" value="0"></label>
-            <label class="checkbox-row span-2"><input name="warmupEnabled" type="checkbox"> 启用独立预热</label>
-            <label>预热起始日<input name="warmupStartedAt" type="datetime-local"></label>
-            <label class="span-2">预热步骤 (JSON)<textarea name="warmupStepsJson" rows="3" placeholder='[{"dayFrom":1,"limit":20},{"dayFrom":3,"limit":40}]'></textarea></label>
-            <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 开启此发件账号池的轮询调度机制</label>
-            <div class="form-actions modal-actions">
-                <button class="button primary" type="submit" id="saveAccountBtn">保存配置</button>
-                <button class="button secondary" type="button" id="clearAccountFormBtn">取消</button>
+        <form id="accountForm" class="account-form-body">
+            <!-- 基本信息 -->
+            <fieldset class="form-section">
+                <legend class="form-section-title">基本信息</legend>
+                <div class="form-grid-2">
+                    <label>账号标识代码<input name="accountCode" placeholder="如: chenjj" required></label>
+                    <label>发送邮箱地址<input name="senderEmail" type="email" placeholder="如: admin@company.com" required></label>
+                    <label>发件人名称<input name="senderName" placeholder="如: 陈静静" required></label>
+                    <label>对外职位<input name="senderTitle" placeholder="如: Principal Director"></label>
+                    <label>发件显示名<input name="senderDisplayName" placeholder="如: QF Tech Talent Director"></label>
+                    <label>团队名称<input name="teamName" placeholder="如: 高层次人才工作组"></label>
+                    <label class="span-2">目标国家<input name="countryName" placeholder="如: United States"></label>
+                </div>
+            </fieldset>
+
+            <!-- SMTP + IMAP 并排 -->
+            <div class="form-section-pair">
+                <fieldset class="form-section">
+                    <legend class="form-section-title">SMTP 发信配置</legend>
+                    <div class="form-grid-host-port">
+                        <label>服务器<input name="smtpHost" placeholder="如: smtp.exmail.qq.com" required></label>
+                        <label>端口<input name="smtpPort" type="number" value="465" required></label>
+                    </div>
+                    <div class="form-grid-1">
+                        <label>认证用户名<input name="smtpUsername" placeholder="通常是发信邮箱" required></label>
+                        <label>授权码
+                            <span class="password-field">
+                                <input name="smtpPassword" type="password" placeholder="授权码或账号密码" required>
+                                <button class="password-toggle" type="button" data-target="smtpPassword" aria-label="显示/隐藏授权码">显示</button>
+                            </span>
+                        </label>
+                    </div>
+                </fieldset>
+                <fieldset class="form-section">
+                    <legend class="form-section-title">IMAP 收信配置<button class="link-btn" type="button" id="copySmtpToImapBtn">同步 SMTP</button></legend>
+                    <div class="form-grid-host-port">
+                        <label>服务器<input name="imapHost" placeholder="如: imap.exmail.qq.com" required></label>
+                        <label>端口<input name="imapPort" type="number" value="993" required></label>
+                    </div>
+                    <div class="form-grid-1">
+                        <label>认证用户名<input name="imapUsername" placeholder="通常是收信邮箱" required></label>
+                        <label>授权码
+                            <span class="password-field">
+                                <input name="imapPassword" type="password" placeholder="授权码或账号密码" required>
+                                <button class="password-toggle" type="button" data-target="imapPassword" aria-label="显示/隐藏授权码">显示</button>
+                            </span>
+                        </label>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- 发送策略 -->
+            <fieldset class="form-section">
+                <legend class="form-section-title">发送策略</legend>
+                <div class="form-grid-3">
+                    <label>策略权重<input name="strategyWeight" type="number" value="100" required></label>
+                    <label>每日限额<input name="dailySendLimit" type="number" value="100" required></label>
+                    <label>今日已发 <span class="effective-limit-hint" id="effectiveLimitHint"></span><input name="todaySentCount" type="number" value="0"></label>
+                </div>
+                <label class="checkbox-row">
+                    <input name="enabled" type="checkbox" checked> 开启此发件账号的轮询调度
+                </label>
+            </fieldset>
+
+            <!-- 预热配置 -->
+            <div class="warmup-card" id="warmupCard">
+                <div class="warmup-card-head">
+                    <label class="checkbox-row">
+                        <input name="warmupEnabled" type="checkbox" id="warmupEnabledCheckbox"> 独立预热
+                    </label>
+                    <span class="badge info" id="warmupStatusBadge" hidden></span>
+                </div>
+                <div class="warmup-card-fields" id="warmupFields" hidden>
+                    <div class="form-grid-2">
+                        <label>预热起始日<input name="warmupStartedAt" type="datetime-local"></label>
+                        <label>
+                            预热步骤模式
+                            <select name="warmupStepsMode" id="warmupStepsMode">
+                                <option value="default">默认阶梯 (20→40→80→160→320)</option>
+                                <option value="custom">自定义 JSON</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="warmupCustomStepsRow" hidden>
+                        <label>自定义步骤 JSON<textarea name="warmupStepsJson" rows="2" placeholder='[{"dayFrom":1,"limit":20},{"dayFrom":3,"limit":40}]'></textarea></label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部操作栏 -->
+            <div class="account-form-footer">
+                <button class="button danger-outline" type="button" id="deleteAccountBtn" hidden>删除账号</button>
+                <div class="account-form-footer-right">
+                    <button class="button secondary" type="button" id="clearAccountFormBtn">取消</button>
+                    <button class="button primary" type="submit" id="saveAccountBtn">保存配置</button>
+                </div>
             </div>
         </form>
     </section>

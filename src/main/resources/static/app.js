@@ -18,6 +18,7 @@ const state = {
     mailSendOptions: [],
     selectedAccount: null,
     accountEditorMode: null,
+    currentEditAccount: null,
     selectedExpertOrcid: null,
     selectedRuleId: null,
     unmatchedRecords: [],
@@ -1126,6 +1127,14 @@ function hideAccountEditor() {
     document.body.classList.remove("modal-open");
     state.selectedAccount = null;
     state.accountEditorMode = null;
+    state.currentEditAccount = null;
+    $("#accountStatusBadge").hidden = true;
+    $("#accountEditorSubtitle").hidden = true;
+    $("#warmupStatusBadge").hidden = true;
+    $("#effectiveLimitHint").textContent = "";
+    $("#deleteAccountBtn").hidden = true;
+    $("#warmupFields").hidden = true;
+    $("#warmupCustomStepsRow").hidden = true;
 }
 
 const newAccountDefaults = {
@@ -1148,14 +1157,84 @@ function toDatetimeLocalValue(value) {
     return value.length >= 16 ? value.slice(0, 16) : value;
 }
 
+function updateWarmupFieldsVisibility() {
+    const enabled = $("#warmupEnabledCheckbox").checked;
+    $("#warmupFields").hidden = !enabled;
+}
+
+function updateWarmupStepsMode() {
+    const mode = $("#warmupStepsMode").value;
+    $("#warmupCustomStepsRow").hidden = mode !== "custom";
+}
+
+function updateAccountStatusBadge(account) {
+    const badge = $("#accountStatusBadge");
+    if (!account) {
+        badge.hidden = true;
+        return;
+    }
+    badge.hidden = false;
+    if (account.autoSendPaused) {
+        badge.textContent = "自动暂停";
+        badge.className = "badge warn";
+    } else if (account.enabled) {
+        badge.textContent = "已启用";
+        badge.className = "badge ok";
+    } else {
+        badge.textContent = "已禁用";
+        badge.className = "badge error";
+    }
+}
+
+function updateEffectiveLimitHint(account) {
+    const hint = $("#effectiveLimitHint");
+    if (!account || account.effectiveDailyLimit == null) {
+        hint.textContent = "";
+        return;
+    }
+    if (account.effectiveDailyLimit < account.dailySendLimit) {
+        hint.textContent = `(有效: ${account.effectiveDailyLimit})`;
+    } else {
+        hint.textContent = "";
+    }
+}
+
+function updateWarmupStatusBadge(account) {
+    const badge = $("#warmupStatusBadge");
+    if (!account || account.warmupEnabled !== true || !account.warmupStartedAt) {
+        badge.hidden = true;
+        return;
+    }
+    const startedAt = new Date(account.warmupStartedAt);
+    const now = new Date();
+    const dayNum = Math.floor((now - startedAt) / (1000 * 60 * 60 * 24)) + 1;
+    badge.textContent = `预热中 · 第${dayNum}天`;
+    badge.hidden = false;
+}
+
 function fillAccountForm(account, mode = account ? "edit" : "new") {
     const form = $("#accountForm");
     showAccountEditor();
     state.selectedAccount = account?.accountCode || null;
     state.accountEditorMode = mode;
+    state.currentEditAccount = account || null;
     $("#accountEditorTitle").textContent = account
         ? `${mode === "view" ? "查看账号" : "编辑账号"}：${account.accountCode}`
         : "新增账号";
+    const subtitle = $("#accountEditorSubtitle");
+    if (account?.senderEmail) {
+        subtitle.textContent = account.senderEmail;
+        subtitle.hidden = false;
+    } else {
+        subtitle.textContent = "";
+        subtitle.hidden = true;
+    }
+    document.querySelectorAll("#accountForm .password-field input").forEach((input) => {
+        input.type = "password";
+    });
+    document.querySelectorAll("#accountForm .password-toggle").forEach((btn) => {
+        btn.textContent = "显示";
+    });
     Array.from(form.elements).forEach((element) => {
         element.disabled = mode === "view";
     });
@@ -1179,7 +1258,17 @@ function fillAccountForm(account, mode = account ? "edit" : "new") {
     form.enabled.checked = account?.enabled ?? false;
     form.warmupEnabled.checked = account?.warmupEnabled === true;
     form.warmupStartedAt.value = toDatetimeLocalValue(account?.warmupStartedAt);
+    const hasCustomSteps = account?.warmupStepsJson && account.warmupStepsJson.trim();
+    form.warmupStepsMode.value = hasCustomSteps ? "custom" : "default";
     form.warmupStepsJson.value = account?.warmupStepsJson ?? "";
+    updateWarmupFieldsVisibility();
+    updateWarmupStepsMode();
+    updateAccountStatusBadge(account);
+    updateEffectiveLimitHint(account);
+    updateWarmupStatusBadge(account);
+    const deleteBtn = $("#deleteAccountBtn");
+    deleteBtn.hidden = !account || mode === "view" || account.accountCode === "SIMULATOR_NOOP";
+    deleteBtn.disabled = mode === "view";
 }
 
 async function saveAccount(event) {
@@ -1215,7 +1304,9 @@ async function saveAccount(event) {
         payload.imapPassword = values.imapPassword?.trim() || null;
         payload.warmupEnabled = form.warmupEnabled.checked ? true : false;
         payload.warmupStartedAt = values.warmupStartedAt?.trim() || null;
-        payload.warmupStepsJson = values.warmupStepsJson?.trim() || null;
+        payload.warmupStepsJson = form.warmupStepsMode.value === "custom"
+            ? (values.warmupStepsJson?.trim() || null)
+            : null;
         await api(`/api/mail/sender-accounts/${encodeURIComponent(state.selectedAccount)}`, {
             method: "PUT",
             body: JSON.stringify(payload)
@@ -4975,6 +5066,38 @@ function bindEvents() {
         }
     });
     $("#accountForm").addEventListener("submit", saveAccount);
+    document.querySelectorAll(".password-toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const input = $("#accountForm").elements[btn.dataset.target];
+            if (!input) return;
+            const show = input.type === "password";
+            input.type = show ? "text" : "password";
+            btn.textContent = show ? "隐藏" : "显示";
+        });
+    });
+    $("#copySmtpToImapBtn").addEventListener("click", () => {
+        const form = $("#accountForm");
+        if (form.imapHost.disabled) return;
+        form.imapHost.value = (form.smtpHost.value || "").replace(/^smtp/i, "imap");
+        form.imapPort.value = form.imapPort.value || 993;
+        form.imapUsername.value = form.smtpUsername.value;
+        form.imapPassword.value = form.smtpPassword.value;
+    });
+    $("#warmupEnabledCheckbox").addEventListener("change", updateWarmupFieldsVisibility);
+    $("#warmupStepsMode").addEventListener("change", updateWarmupStepsMode);
+    $("#deleteAccountBtn").addEventListener("click", async () => {
+        const code = state.selectedAccount;
+        if (!code) return;
+        if (!confirm(`确认删除账号「${code}」？此操作不可恢复。`)) return;
+        try {
+            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`, { method: "DELETE" });
+            showStatus(`账号 ${code} 已删除`, "ok");
+            hideAccountEditor();
+            await loadAccounts();
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    });
     $("#accountsTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleAccountAction(button).catch((error) => showStatus(error.message, "error"));

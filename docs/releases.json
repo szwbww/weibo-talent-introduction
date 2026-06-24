@@ -334,5 +334,26 @@
     "release_id": "c4027350",
     "timestamp": "20260623-174916",
     "operator": "multi-ai-kit"
+  },
+  {
+    "environment": "production",
+    "action": "publish",
+    "source_revision": "778b32e9a9dc3e45d2b45cb566eae01a3f85cf11",
+    "resolved_commit_sha": "778b32e9a9dc3e45d2b45cb566eae01a3f85cf11",
+    "status": "passed",
+    "operation_id": "d07b1723-2814-497c-91a9-2f605a5bdbc5",
+    "artifact": {
+      "repo_relative_path": "target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_path": "/private/tmp/multi-ai-kit-publish-weibo-talent-introduction-778b32e9a9dc-nwydzd5h/target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_ephemeral": true,
+      "size": 38100385,
+      "sha256": "2090b56c4df3bbda969f7fee18cc8fb3277007e78cb6f1b9375965dfd1dc5469",
+      "remote_upload_path": "/opt/apache-tomcat-9.0.71/deploy/incoming/talent.war.release_20260624-161941_778b32e9a9dc.upload",
+      "remote_deployed_path": "/opt/apache-tomcat-9.0.71/webapps/talent.war",
+      "remote_backup_path": "/opt/apache-tomcat-9.0.71/deploy/backups/talent.war.release_20260624-161941_778b32e9a9dc.bak"
+    },
+    "release_id": "43187cfe",
+    "timestamp": "20260624-162135",
+    "operator": "multi-ai-kit"
   }
 ]
