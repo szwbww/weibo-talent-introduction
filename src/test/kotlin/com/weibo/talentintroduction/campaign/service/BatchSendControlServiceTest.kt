@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -18,6 +19,7 @@ class BatchSendControlServiceTest {
     private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
     private val batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java)
+    private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val manualOutreachExecutor = Mockito.mock(Executor::class.java)
 
     private val control = BatchSendControlService(
@@ -25,6 +27,7 @@ class BatchSendControlServiceTest {
         taskExecutionService = taskExecutionService,
         manualInitialOutreachService = manualInitialOutreachService,
         batchSendSettingService = batchSendSettingService,
+        mailSenderAccountService = mailSenderAccountService,
         manualOutreachExecutor = manualOutreachExecutor
     )
 
@@ -52,6 +55,9 @@ class BatchSendControlServiceTest {
             BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(10)
+        Mockito.`when`(mailSenderAccountService.warmupActiveCount()).thenReturn(0)
+        Mockito.`when`(mailSenderAccountService.todayTotalCapacity()).thenReturn(100)
 
         // Default runAndRecordWithResult: invoke onStarted(99L) and run the block
         Mockito.`when`(taskExecutionService.runAndRecordWithResult<ManualOutreachResult>(
@@ -369,7 +375,15 @@ class BatchSendControlServiceTest {
                 "sentTotal" to 42,
                 "failedTotal" to 2,
                 "accounts" to listOf(
-                    AccountStatRow("chen", 42, 100, 40, 2, false, null)
+                    AccountStatRow(
+                        accountCode = "chen",
+                        todaySent = 42,
+                        dailyLimit = 100,
+                        success = 40,
+                        failed = 2,
+                        paused = false,
+                        pauseReason = null
+                    )
                 )
             ),
             executionId = 99L
@@ -451,5 +465,63 @@ class BatchSendControlServiceTest {
             anyValue { },
             anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
         )
+    }
+
+    @Test
+    fun `startManual returns 409 when remaining daily capacity is zero`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(0)
+
+        val response = control.startManual()
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message")!!.contains("额度已用尽"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `runManualOnce returns 409 when remaining daily capacity is zero`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("PAUSED", "AUTO", "NO_AVAILABLE_ACCOUNT"))
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(0)
+
+        val response = control.runManualOnce()
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message")!!.contains("额度已用尽"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `execution with WARMUP_LIMIT_REACHED result transitions to IDLE`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
+        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.AUTO, false))
+            .thenReturn(ManualOutreachResult(
+                total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false,
+                finalStatus = "COMPLETED", stopReason = "WARMUP_LIMIT_REACHED"
+            ))
+
+        control.startAuto()
+
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "AUTO", "")
+    }
+
+    @Test
+    fun `execution with DAILY_LIMIT_REACHED result transitions to IDLE`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
+            .thenReturn(ManualOutreachResult(
+                total = 5, sent = 5, failed = 0, skippedNoAccount = 0, wasCancelled = false,
+                finalStatus = "COMPLETED", stopReason = "DAILY_LIMIT_REACHED"
+            ))
+
+        control.startManual()
+
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
     }
 }

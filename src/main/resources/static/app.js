@@ -2275,6 +2275,14 @@ async function openTaskLaunchModal(taskType) {
         if (manualBtn) manualBtn.onclick = handleBatchSendManual;
         const saveCfgBtn = $("#batchSendSaveConfigBtn");
         if (saveCfgBtn) saveCfgBtn.onclick = saveBatchSendConfig;
+        const emailDomainSel = $("#batchSendEmailDomain");
+        if (emailDomainSel && !emailDomainSel.dataset.refreshBound) {
+            emailDomainSel.dataset.refreshBound = "1";
+            emailDomainSel.addEventListener("change", async () => {
+                await saveBatchSendConfig();
+                await refreshOutreachPendingCount();
+            });
+        }
         const freqSel = $("#batchSendFrequency");
         if (freqSel) freqSel.addEventListener("change", syncBatchSendTimeFieldVisibility);
         // Initial controls state from preloaded status (or fresh fetch if missing)
@@ -2638,6 +2646,12 @@ async function launchBatchSendWithProgress(endpoint, options = {}) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");
             stopTaskWatcher(taskType, true);
+        } else if (e.message.includes("额度已用尽")) {
+            showModalToast(e.message, "warn");
+            showStatus(e.message, "warn");
+            stopTaskModalPolling();
+            stopTaskWatcher(taskType, true);
+            hideProgressBar();
         } else if (onError) {
             onError(e);
         } else {
@@ -2869,6 +2883,7 @@ async function saveBatchSendConfig() {
     try {
         const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
         fillBatchSendConfigForm(saved);
+        await refreshOutreachPendingCount();
         showModalToast("配置已保存", "ok");
     } catch (e) {
         showModalToast("保存失败: " + e.message, "error");
@@ -2878,15 +2893,40 @@ async function saveBatchSendConfig() {
 }
 
 // I-8: render per-account stats + flow-level summary from /batch-send/status (or progress.details).
+function batchSendLimitReasonLabel(limitReason) {
+    if (limitReason === "WARMUP_LIMIT_REACHED") return "预热达上限";
+    if (limitReason === "DAILY_LIMIT_REACHED") return "已达今日上限";
+    if (limitReason === "PAUSED_FAULT") return "故障暂停";
+    return "";
+}
+
 function renderBatchSendAccountTable(statusView) {
     const panel = $("#batchSendProgressPanel");
     const tbody = $("#batchSendAccountTable");
     const summary = $("#batchSendSummaryRow");
+    const warmupSummary = $("#batchSendWarmupSummary");
     if (!panel || !tbody) return;
     const accounts = Array.isArray(statusView?.accounts) ? statusView.accounts : [];
     const showPanel = accounts.length > 0 || statusView?.status === "RUNNING" || statusView?.status === "PAUSED";
     panel.hidden = !showPanel;
     if (!showPanel) return;
+
+    const warmupCount = statusView?.warmupAccountCount ?? 0;
+    const totalCapacity = statusView?.todayTotalCapacity ?? 0;
+    const remainingCapacity = statusView?.todayRemainingCapacity ?? 0;
+    const sentTodayTotal = accounts.reduce((sum, a) => sum + (a.todaySent || 0), 0);
+
+    if (warmupSummary) {
+        const showWarmup = warmupCount > 0 || totalCapacity > 0;
+        warmupSummary.hidden = !showWarmup;
+        if (showWarmup) {
+            const warmupHtml = `预热账号 <strong>${warmupCount}</strong> · 今日额度 <strong>${sentTodayTotal}/${totalCapacity}</strong> · 剩余 <strong>${remainingCapacity}</strong>`;
+            if (warmupSummary.__lastHtml !== warmupHtml) {
+                warmupSummary.__lastHtml = warmupHtml;
+                warmupSummary.innerHTML = warmupHtml;
+            }
+        }
+    }
 
     if (summary) {
         const cap = statusView?.dailyCap ?? 0;
@@ -2903,17 +2943,25 @@ function renderBatchSendAccountTable(statusView) {
     }
 
     const tableHtml = accounts.length === 0
-        ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`
+        ? `<tr><td colspan="7" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>`
         : accounts.map((a) => {
+            const limitLabel = batchSendLimitReasonLabel(a.limitReason);
             const statusCell = a.paused
                 ? `<span class="badge warn" title="${escapeHtml(a.pauseReason || "自动暂停")}">自动暂停</span>`
-                : `<span class="badge ok">正常</span>`;
+                : limitLabel
+                    ? `<span class="badge warn batch-send-limit-label">${escapeHtml(limitLabel)}</span>`
+                    : `<span class="badge ok">正常</span>`;
+            const warmupBadge = a.warmupActive
+                ? `<span class="badge info batch-send-warmup-badge">预热中</span>`
+                : "";
+            const effectiveLimit = a.effectiveDailyLimit ?? a.dailyLimit;
             const intervalMs = a.currentIntervalMs ?? 0;
             const intervalLabel = intervalMs >= 1000 ? `${(intervalMs / 1000).toFixed(1)}s` : `${intervalMs}ms`;
             return `
             <tr>
-                <td><strong>${escapeHtml(a.accountCode)}</strong></td>
+                <td><strong>${escapeHtml(a.accountCode)}</strong>${warmupBadge}</td>
                 <td>${a.todaySent}/${a.dailyLimit}</td>
+                <td>${effectiveLimit}</td>
                 <td>${a.success}</td>
                 <td>${a.failed}</td>
                 <td>${intervalLabel}</td>
@@ -3010,9 +3058,11 @@ async function handleBatchSendManual() {
         await launchBatchSendWithProgress("/api/mail/batch-send/manual", {
             successMessage: "已请求手动执行一轮发送",
             onError(e) {
-                // 409 when not PAUSED (I-9 backend guard) -> friendly hint.
                 const msg = e.message || "";
-                if (msg.includes("PAUSED") || msg.includes("手动执行仅")) {
+                if (msg.includes("额度已用尽")) {
+                    showModalToast(msg, "warn");
+                    showStatus(msg, "warn");
+                } else if (msg.includes("PAUSED") || msg.includes("手动执行仅")) {
                     showStatus("请先暂停流程后再使用手动执行", "warn");
                 } else {
                     showStatus("手动执行失败: " + msg, "error");
@@ -3043,12 +3093,24 @@ function applyBatchSendBanner(statusView) {
     const banner = $("#batchSendPausedBanner");
     if (!banner) return;
     const textEl = $("#batchSendPausedBannerText");
+    const pauseReason = statusView?.pauseReason || "";
+    const message = statusView?.message || "";
     const isNoAccount = statusView
         && statusView.status === "PAUSED"
-        && statusView.pauseReason === "NO_AVAILABLE_ACCOUNT";
-    banner.hidden = !isNoAccount;
-    if (isNoAccount && textEl) {
+        && pauseReason === "NO_AVAILABLE_ACCOUNT";
+    const isWarmupLimit = pauseReason === "WARMUP_LIMIT_REACHED"
+        || message.includes("预热上限");
+    const isDailyLimit = pauseReason === "DAILY_LIMIT_REACHED"
+        || (message.includes("今日发送上限") && !isWarmupLimit);
+    const showBanner = isNoAccount || isWarmupLimit || isDailyLimit;
+    banner.hidden = !showBanner;
+    if (!showBanner || !textEl) return;
+    if (isNoAccount) {
         textEl.textContent = "批量发送已暂停：无可用邮箱账号，请检查并恢复账号。";
+    } else if (isWarmupLimit) {
+        textEl.textContent = "已达到预热上限，今日暂停发送";
+    } else if (isDailyLimit) {
+        textEl.textContent = "已达到今日发送上限";
     }
 }
 
@@ -5726,6 +5788,21 @@ function summarizeManualOutreachPending(countRes) {
             ? ""
             : "没有待发送的专家（没有满足条件的未联系候选人且无上次失败的专家）"
     };
+}
+
+async function refreshOutreachPendingCount() {
+    const descEl = $("#taskLaunchDesc");
+    const runBtn = $("#taskLaunchRunBtn");
+    if (!descEl) return;
+    try {
+        const countRes = await api("/api/mail/manual-outreach/pending-count");
+        const summary = summarizeManualOutreachPending(countRes);
+        descEl.textContent = summary.total > 0 ? summary.confirmMessage : summary.emptyMessage;
+        if (runBtn) runBtn.disabled = summary.total <= 0;
+    } catch (e) {
+        descEl.textContent = "加载待发送专家数失败: " + e.message;
+        if (runBtn) runBtn.disabled = true;
+    }
 }
 
 

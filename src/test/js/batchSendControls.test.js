@@ -21,6 +21,7 @@ const BATCH_SEND_FNS = [
     "batchSendStatusBadgeType",
     "batchSendButtonStates",
     "applyBatchSendBanner",
+    "batchSendLimitReasonLabel",
     "renderBatchSendAccountTable",
     "applyBatchSendControls",
     "refreshBatchSendControls",

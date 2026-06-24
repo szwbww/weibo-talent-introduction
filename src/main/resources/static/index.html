@@ -774,6 +774,7 @@
                 </div>
                 <!-- Batch Send per-account stats (I-8); shown only for MANUAL_INITIAL_OUTREACH -->
                 <div id="batchSendProgressPanel" class="batch-send-progress-panel" hidden>
+                    <div id="batchSendWarmupSummary" class="batch-send-warmup-summary" hidden></div>
                     <div id="batchSendSummaryRow" class="batch-send-summary-row"></div>
                     <div class="batch-send-account-table-wrap">
                         <table class="data-table compact batch-send-account-table">
@@ -781,6 +782,7 @@
                             <tr>
                                 <th>邮箱账号</th>
                                 <th>今日已发/上限</th>
+                                <th>有效上限</th>
                                 <th>成功</th>
                                 <th>失败</th>
                                 <th>发送间隔</th>
@@ -788,7 +790,7 @@
                             </tr>
                             </thead>
                             <tbody id="batchSendAccountTable">
-                            <tr><td colspan="6" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>
+                            <tr><td colspan="7" class="muted" style="text-align:center;padding:10px;">暂无账号统计</td></tr>
                             </tbody>
                         </table>
                     </div>

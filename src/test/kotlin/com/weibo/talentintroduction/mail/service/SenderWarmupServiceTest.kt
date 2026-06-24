@@ -115,9 +115,60 @@ class SenderWarmupServiceTest {
         }
     }
 
+    @Test
+    fun `dailyState returns WARMUP_LIMIT_REACHED when warmup day 1 limit exhausted`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val account = account(
+            dailySendLimit = 500,
+            createdAt = now,
+            todaySentCount = 20,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+
+        assertEquals(AccountDailyState.WARMUP_LIMIT_REACHED, service.dailyState(account, now))
+        assertEquals(0, service.remainingCapacity(account, now))
+    }
+
+    @Test
+    fun `dailyState returns DAILY_LIMIT_REACHED when full daily limit exhausted`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val account = account(
+            dailySendLimit = 100,
+            createdAt = now,
+            todaySentCount = 100,
+            warmupEnabled = false
+        )
+
+        assertEquals(AccountDailyState.DAILY_LIMIT_REACHED, service.dailyState(account, now))
+    }
+
+    @Test
+    fun `dailyState returns PAUSED_FAULT when autoSendPaused`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val account = account(dailySendLimit = 100, createdAt = LocalDateTime.now())
+            .copy(autoSendPaused = true)
+
+        assertEquals(AccountDailyState.PAUSED_FAULT, service.dailyState(account))
+    }
+
+    @Test
+    fun `dailyState returns SENDABLE when below effective limit`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = true, steps = defaultSteps), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 20, 12, 0)
+        val account = account(dailySendLimit = 500, createdAt = now, todaySentCount = 5)
+
+        assertEquals(AccountDailyState.SENDABLE, service.dailyState(account, now))
+        assertEquals(15, service.remainingCapacity(account, now))
+    }
+
     private fun account(
         dailySendLimit: Int,
         createdAt: LocalDateTime?,
+        todaySentCount: Int = 0,
         warmupEnabled: Boolean? = null,
         warmupStartedAt: LocalDateTime? = null,
         warmupStepsJson: String? = null
@@ -139,6 +190,7 @@ class SenderWarmupServiceTest {
             imapUsername = "a1@qftechtalent.com",
             imapPassword = "secret",
             dailySendLimit = dailySendLimit,
+            todaySentCount = todaySentCount,
             createdAt = createdAt,
             warmupEnabled = warmupEnabled,
             warmupStartedAt = warmupStartedAt,

@@ -8,6 +8,8 @@ import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
+import com.weibo.talentintroduction.config.WarmupProperties
+import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -28,6 +30,7 @@ import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
+import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.task.service.TaskProgress
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -38,6 +41,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.LocalDateTime
 
 class ManualInitialOutreachServiceTest {
@@ -60,6 +65,13 @@ class ManualInitialOutreachServiceTest {
     private val accountRateLimiter = AccountRateLimiter()
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val providerResolver = ProviderResolver()
+    private val senderWarmupService = SenderWarmupService(
+        WarmupProperties(
+            enabled = true,
+            steps = listOf(WarmupStep(1, 20), WarmupStep(3, 40))
+        ),
+        ObjectMapper().registerKotlinModule()
+    )
 
     private val service = ManualInitialOutreachService(
         expertSearchService = expertSearchService,
@@ -80,7 +92,8 @@ class ManualInitialOutreachServiceTest {
         expertIndexWriterService = expertIndexWriterService,
         accountRateLimiter = accountRateLimiter,
         emailSuppressionService = emailSuppressionService,
-        providerResolver = providerResolver
+        providerResolver = providerResolver,
+        senderWarmupService = senderWarmupService
     )
 
     private fun fastConfig(
@@ -443,16 +456,16 @@ class ManualInitialOutreachServiceTest {
 
         stubScrolledExperts(listOf(expert("0001", "a@b.com")))
         Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
-        // Gate: no sendable accounts
         Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(
+            listOf(account("chen").copy(autoSendPaused = true, autoSendPausedReason = "SMTP_ERROR"))
+        )
 
         val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
 
-        // I-5: flow pauses with NO_AVAILABLE_ACCOUNT
         assertEquals(0, result.sent)
         assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
         assertEquals("PAUSED", result.finalStatus)
-        // No send attempt made
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
@@ -468,6 +481,9 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailSenderAccountService.listSendableAccounts())
             .thenReturn(listOf(account("chen")))
             .thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(
+            listOf(account("chen").copy(autoSendPaused = true, autoSendPausedReason = "SELF_CHECK_FAILED"))
+        )
 
         val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
 
@@ -961,6 +977,63 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, result.total)
         
         Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `runScheduledBatch completes with WARMUP_LIMIT_REACHED when all warmup accounts hit effective limit`() {
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val warmupAccount = account("chen").copy(
+            dailySendLimit = 500,
+            todaySentCount = 20,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(listOf(warmupAccount))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        assertEquals("WARMUP_LIMIT_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+        assertEquals(0, result.sent)
+        Mockito.verify(mailSenderAccountService, Mockito.never()).pauseAutoSend(Mockito.anyString(), Mockito.anyString())
+
+        val progressCaptor = org.mockito.ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("MANUAL_INITIAL_OUTREACH"),
+            captureValue(progressCaptor, TaskProgress("MANUAL_INITIAL_OUTREACH", "COMPLETED", 0, 0, 0)),
+            eqValue(12345L)
+        )
+        assertTrue(progressCaptor.allValues.last().message?.contains("预热上限") == true)
+    }
+
+    @Test
+    fun `runScheduledBatch prefers NO_AVAILABLE_ACCOUNT when one account is fault paused and others at limit`() {
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val atLimit = account("chen").copy(
+            dailySendLimit = 500,
+            todaySentCount = 20,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+        val faultPaused = account("li").copy(autoSendPaused = true, autoSendPausedReason = "SMTP_INFRA")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts()).thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(listOf(atLimit, faultPaused))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
     }
 
     // ──── Helpers ────

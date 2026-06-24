@@ -188,6 +188,21 @@ class MailSenderAccountService(
     fun listSendableAccounts(): List<MailSenderAccount> =
         repository.findAllByEnabledTrue().filter { isSendable(it) }
 
+    fun remainingDailyCapacity(): Int =
+        listEnabledAccounts()
+            .filter { it.accountCode != SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
+            .sumOf { warmup.remainingCapacity(it) }
+
+    fun warmupActiveCount(): Int =
+        listEnabledAccounts()
+            .filter { it.accountCode != SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
+            .count { warmup.isWarmupActive(it) }
+
+    fun todayTotalCapacity(): Int =
+        listEnabledAccounts()
+            .filter { it.accountCode != SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
+            .sumOf { warmup.effectiveDailyLimit(it) }
+
     private fun isSendable(account: MailSenderAccount): Boolean =
         account.enabled &&
             !account.autoSendPaused &&

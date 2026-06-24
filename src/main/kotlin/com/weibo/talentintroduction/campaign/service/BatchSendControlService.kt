@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
@@ -31,6 +32,7 @@ class BatchSendControlService(
     private val taskExecutionService: TaskExecutionService,
     private val manualInitialOutreachService: ManualInitialOutreachService,
     private val batchSendSettingService: BatchSendSettingService,
+    private val mailSenderAccountService: MailSenderAccountService,
     @Qualifier("manualOutreachExecutor") private val manualOutreachExecutor: Executor
 ) {
     private val log = LoggerFactory.getLogger(BatchSendControlService::class.java)
@@ -76,6 +78,10 @@ class BatchSendControlService(
         if (state.status != "IDLE") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，无法开始（需 IDLE）"))
+        }
+        val capacityError = checkRemainingDailyCapacity()
+        if (capacityError != null) {
+            return capacityError
         }
         return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = false)
     }
@@ -140,6 +146,10 @@ class BatchSendControlService(
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，手动执行仅在 PAUSED 时可用"))
         }
+        val capacityError = checkRemainingDailyCapacity()
+        if (capacityError != null) {
+            return capacityError
+        }
         return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = true)
     }
 
@@ -165,8 +175,19 @@ class BatchSendControlService(
             failedTotal = details?.asInt("failedTotal") ?: 0,
             accounts = extractAccountStats(details),
             executionId = progress?.executionId,
-            message = progress?.message
+            message = progress?.message,
+            warmupAccountCount = mailSenderAccountService.warmupActiveCount(),
+            todayTotalCapacity = mailSenderAccountService.todayTotalCapacity(),
+            todayRemainingCapacity = mailSenderAccountService.remainingDailyCapacity()
         )
+    }
+
+    private fun checkRemainingDailyCapacity(): ResponseEntity<Map<String, String>>? {
+        if (mailSenderAccountService.remainingDailyCapacity() <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "今日发送额度已用尽（含预热限制），暂不可手动发送"))
+        }
+        return null
     }
 
     /**
@@ -276,7 +297,6 @@ class BatchSendControlService(
                 log.info("Batch send transitioned to PAUSED after execution: reason={}", reason)
             }
             else -> {
-                // COMPLETED → IDLE (L3-2: auto/manual full run done or dailyCap hit → IDLE, wait next day)
                 batchSendSettingService.setRuntimeStatus("IDLE", mode.name, "")
                 log.info("Batch send transitioned to IDLE after execution (finalStatus={})", finalStatus)
             }
@@ -297,6 +317,10 @@ class BatchSendControlService(
                             accountCode = item["accountCode"] as? String ?: "",
                             todaySent = (item["todaySent"] as? Number)?.toInt() ?: 0,
                             dailyLimit = (item["dailyLimit"] as? Number)?.toInt() ?: 0,
+                            effectiveDailyLimit = (item["effectiveDailyLimit"] as? Number)?.toInt()
+                                ?: (item["dailyLimit"] as? Number)?.toInt() ?: 0,
+                            warmupActive = item["warmupActive"] as? Boolean ?: false,
+                            limitReason = item["limitReason"] as? String,
                             success = (item["success"] as? Number)?.toInt() ?: 0,
                             failed = (item["failed"] as? Number)?.toInt() ?: 0,
                             paused = item["paused"] as? Boolean ?: false,
@@ -334,5 +358,8 @@ data class BatchSendStatusView(
     val failedTotal: Int,
     val accounts: List<AccountStatRow>,
     val executionId: Long?,
-    val message: String?
+    val message: String?,
+    val warmupAccountCount: Int = 0,
+    val todayTotalCapacity: Int = 0,
+    val todayRemainingCapacity: Int = 0
 )

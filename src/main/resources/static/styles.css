@@ -4086,6 +4086,25 @@ tr td {
     color: var(--text-muted);
     margin-bottom: 8px;
 }
+.batch-send-warmup-summary {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--panel-bg);
+}
+.batch-send-warmup-summary[hidden] {
+    display: none;
+}
+.batch-send-warmup-badge {
+    margin-left: 6px;
+}
+.batch-send-limit-label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
 .batch-send-account-table-wrap {
     border: 1px solid var(--panel-border);
     border-radius: var(--radius-sm);

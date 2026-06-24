@@ -27,6 +27,8 @@ import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountExcepti
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
+import com.weibo.talentintroduction.mail.service.SenderWarmupService
+import com.weibo.talentintroduction.mail.service.AccountDailyState
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -57,7 +59,8 @@ class ManualInitialOutreachService(
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val accountRateLimiter: AccountRateLimiter,
     private val emailSuppressionService: EmailSuppressionService,
-    private val providerResolver: ProviderResolver
+    private val providerResolver: ProviderResolver,
+    private val senderWarmupService: SenderWarmupService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -187,33 +190,36 @@ class ManualInitialOutreachService(
             roundNumber++
             val sendable = runRoundGate()
             if (sendable.isEmpty()) {
-                log.warn("No sendable accounts at round {}, pausing flow", roundNumber)
-                stopReason = "NO_AVAILABLE_ACCOUNT"
-                finalStatus = "PAUSED"
+                val outcome = classifyNoSendableOutcome()
+                log.warn("No sendable accounts at round {}: stopReason={}, finalStatus={}", roundNumber, outcome.stopReason, outcome.finalStatus)
+                stopReason = outcome.stopReason
+                finalStatus = outcome.finalStatus
                 break
             }
 
-            // 3. Compute round quota (I-6/L3-2): min(roundSize, dailyCap remaining, estimated remaining)
+            // 3. Compute round quota (I-6/L3-2): min(roundSize, dailyCap remaining, estimated remaining, account capacity)
             val dailyCapRemaining = config.dailyCap - dailySentTotal
             val estimatedRemaining = maxOf(0, totalEstimate - processedTotal)
-            val roundQuota = minOf(config.roundSize, dailyCapRemaining, estimatedRemaining)
+            val remainingAccountCapacity = sendable.sumOf { senderWarmupService.remainingCapacity(it) }
+            val roundQuota = minOf(config.roundSize, dailyCapRemaining, estimatedRemaining, remainingAccountCapacity)
             if (roundQuota <= 0) {
-                log.info("Round quota exhausted at round {} (dailyCapRemaining={}, estimatedRemaining={})",
-                    roundNumber, dailyCapRemaining, estimatedRemaining)
-                mailSenderAccountService.listEnabledAccounts()
-                    .filter {
-                        it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
-                            it.todaySentCount >= it.dailySendLimit
+                log.info(
+                    "Round quota exhausted at round {} (dailyCapRemaining={}, estimatedRemaining={}, remainingAccountCapacity={})",
+                    roundNumber, dailyCapRemaining, estimatedRemaining, remainingAccountCapacity
+                )
+                when {
+                    dailyCapRemaining <= 0 -> {
+                        stopReason = "DAILY_CAP_REACHED"
+                        if (oneRoundOnly) {
+                            finalStatus = "PAUSED"
+                        }
                     }
-                    .forEach {
-                        mailSenderAccountService.pauseAutoSend(it.accountCode, "DAILY_LIMIT_EXHAUSTED")
+                    remainingAccountCapacity <= 0 -> {
+                        val limitOutcome = classifyLimitReachedOutcome(sendable)
+                        stopReason = limitOutcome.stopReason
+                        finalStatus = if (oneRoundOnly) "PAUSED" else "COMPLETED"
                     }
-                // L3-2: dailyCap reached. oneRoundOnly → PAUSED; full run → COMPLETED (IDLE next day)
-                if (oneRoundOnly) {
-                    stopReason = "DAILY_CAP_REACHED"
-                    finalStatus = "PAUSED"
                 }
-                // full run: just end (COMPLETED/IDLE)
                 break
             }
 
@@ -458,16 +464,11 @@ class ManualInitialOutreachService(
             finalStatus != null -> finalStatus
             else -> "COMPLETED"
         }
-        val finalMessage = when (resolvedFinalStatus) {
-            "CANCELLED" -> "发送任务已被取消"
-            "PAUSED" -> "流程已暂停: ${stopReason ?: ""}"
-            "FAILED" -> "发送任务失败: ${stopReason ?: ""}"
-            "COMPLETED" -> "发送任务已完成"
-            else -> "发送任务结束"
-        }
+        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason)
         updateProgress(executionId, sentCount, failedCount, processedTotal,
             totalEstimate - processedTotal, totalEstimate, totalEstimate,
-            resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats)
+            resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
+            stopReason = stopReason)
 
         val skipped = if (stopReason == "NO_AVAILABLE_ACCOUNT") totalEstimate - processedTotal else 0
         return ManualOutreachResult(
@@ -479,6 +480,58 @@ class ManualInitialOutreachService(
     }
 
     // ──── Private helpers ────
+
+    private fun classifyNoSendableOutcome(): StopOutcome {
+        val activeAccounts = mailSenderAccountService.listEnabledAccounts()
+            .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+        if (activeAccounts.isEmpty()) {
+            return StopOutcome("NO_AVAILABLE_ACCOUNT", "PAUSED")
+        }
+        val states = activeAccounts.map { senderWarmupService.dailyState(it) }
+        if (states.any { it == AccountDailyState.PAUSED_FAULT }) {
+            return StopOutcome("NO_AVAILABLE_ACCOUNT", "PAUSED")
+        }
+        return classifyLimitReachedOutcome(activeAccounts)
+    }
+
+    private fun classifyLimitReachedOutcome(accounts: List<MailSenderAccount>): StopOutcome {
+        val states = accounts.map { senderWarmupService.dailyState(it) }
+        val hasWarmupLimit = states.any { it == AccountDailyState.WARMUP_LIMIT_REACHED }
+        val hasDailyLimit = states.any { it == AccountDailyState.DAILY_LIMIT_REACHED }
+        val stopReason = when {
+            hasDailyLimit -> "DAILY_LIMIT_REACHED"
+            hasWarmupLimit -> "WARMUP_LIMIT_REACHED"
+            else -> "NO_AVAILABLE_ACCOUNT"
+        }
+        val finalStatus = if (stopReason == "NO_AVAILABLE_ACCOUNT") "PAUSED" else "COMPLETED"
+        return StopOutcome(stopReason, finalStatus)
+    }
+
+    private fun stopReasonMessage(finalStatus: String, stopReason: String?): String = when (stopReason) {
+        "WARMUP_LIMIT_REACHED" -> "已达到预热上限，今日暂停发送"
+        "DAILY_LIMIT_REACHED" -> if (hasWarmupLimitedAccounts()) {
+            "已达到今日发送上限（含预热账号）"
+        } else {
+            "已达到今日发送上限"
+        }
+        "NO_AVAILABLE_ACCOUNT" -> "批量发送已暂停：无可用邮箱账号，请检查并恢复账号。"
+        "DAILY_CAP_REACHED" -> "已达到本批次每日上限"
+        "ONE_ROUND_DONE" -> "手动单轮发送已完成"
+        "CANCELLED" -> "发送任务已被取消"
+        else -> when (finalStatus) {
+            "PAUSED" -> "流程已暂停: ${stopReason ?: ""}"
+            "FAILED" -> "发送任务失败: ${stopReason ?: ""}"
+            "COMPLETED" -> "发送任务已完成"
+            else -> "发送任务结束"
+        }
+    }
+
+    private fun hasWarmupLimitedAccounts(): Boolean =
+        mailSenderAccountService.listEnabledAccounts()
+            .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+            .any { senderWarmupService.dailyState(it) == AccountDailyState.WARMUP_LIMIT_REACHED }
+
+    private data class StopOutcome(val stopReason: String, val finalStatus: String)
 
     private fun normalizeOrcid(orcid: String) = orcid.trim().uppercase()
 
@@ -561,6 +614,11 @@ class ManualInitialOutreachService(
                 accountCode = account.accountCode,
                 todaySent = account.todaySentCount,
                 dailyLimit = account.dailySendLimit,
+                effectiveDailyLimit = senderWarmupService.effectiveDailyLimit(account),
+                warmupActive = senderWarmupService.isWarmupActive(account),
+                limitReason = senderWarmupService.dailyState(account)
+                    .takeIf { it != AccountDailyState.SENDABLE }
+                    ?.name,
                 success = runStat?.success ?: 0,
                 failed = runStat?.failed ?: 0,
                 paused = account.autoSendPaused,
@@ -579,9 +637,10 @@ class ManualInitialOutreachService(
         batchNumber: Int = 0,
         batchProcessed: Int = 0,
         batchPassed: Int = 0,
-        batchRejected: Int = 0
+        batchRejected: Int = 0,
+        stopReason: String? = null
     ) {
-        val details = mapOf(
+        val details = mutableMapOf<String, Any>(
             "executionMode" to mode.name,
             "status" to status,
             "roundNumber" to roundNumber,
@@ -594,6 +653,9 @@ class ManualInitialOutreachService(
             "failed" to failed,
             "accounts" to buildAccountStats(runAccountStats, config)
         )
+        if (stopReason != null) {
+            details["stopReason"] = stopReason
+        }
         progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
             taskType = "MANUAL_INITIAL_OUTREACH", status = status,
             batchNumber = batchNumber, processedCount = processed.toLong(), totalCount = totalCount.toLong(),
@@ -645,6 +707,9 @@ data class AccountStatRow(
     val accountCode: String,
     val todaySent: Int,
     val dailyLimit: Int,
+    val effectiveDailyLimit: Int = dailyLimit,
+    val warmupActive: Boolean = false,
+    val limitReason: String? = null,
     val success: Int,
     val failed: Int,
     val paused: Boolean,
