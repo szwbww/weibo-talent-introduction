@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.mail.javamail.JavaMailSenderImpl
 import org.springframework.stereotype.Service
 import java.util.Properties
@@ -9,10 +10,11 @@ import javax.mail.Session
 
 @Service
 class MailAccountConnectivityService(
-    private val mailSenderAccountService: MailSenderAccountService
+    private val repository: MailSenderAccountRepository
 ) {
     fun testAccount(accountCode: String): MailAccountConnectivityResult {
-        val account = mailSenderAccountService.getAccount(accountCode)
+        val account = repository.findByAccountCode(accountCode)
+            ?: error("Mail sender account not found: $accountCode")
         val smtp = testSmtp(account)
         val imap = testImap(account)
         return MailAccountConnectivityResult(
