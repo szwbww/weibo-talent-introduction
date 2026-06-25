@@ -11,5 +11,8 @@ data class PdfExtractionProperties(
     val maxPages: Int = 2,
     val blacklistPrefixes: List<String> = listOf(
         "support", "info", "journals", "permissions", "editorial", "office", "help", "admin"
-    )
+    ),
+    val maxRetries: Int = 2,
+    val retryBackoffMs: Long = 500,
+    val htmlFallbackEnabled: Boolean = true
 )

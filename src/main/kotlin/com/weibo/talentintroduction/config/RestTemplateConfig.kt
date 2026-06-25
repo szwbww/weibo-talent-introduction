@@ -45,6 +45,12 @@ class RestTemplateConfig {
         builder
             .setConnectTimeout(Duration.ofMillis(europePmcProperties.connectTimeoutMs.toLong()))
             .setReadTimeout(Duration.ofMillis(europePmcProperties.readTimeoutMs.toLong()))
+            .additionalInterceptors(
+                RetryingClientHttpRequestInterceptor(
+                    maxRetries = europePmcProperties.maxRetries,
+                    initialBackoffMs = europePmcProperties.retryBackoffMs
+                )
+            )
             .build()
 
     @Bean
@@ -56,5 +62,11 @@ class RestTemplateConfig {
         builder
             .setConnectTimeout(Duration.ofMillis(10_000L))
             .setReadTimeout(Duration.ofMillis(pdfExtractionProperties.downloadTimeoutMs))
+            .additionalInterceptors(
+                RetryingClientHttpRequestInterceptor(
+                    maxRetries = pdfExtractionProperties.maxRetries,
+                    initialBackoffMs = pdfExtractionProperties.retryBackoffMs
+                )
+            )
             .build()
 }

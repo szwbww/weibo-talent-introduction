@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.weibo.talentintroduction.config.FetchRetry
 import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 import java.io.ByteArrayInputStream
 import java.net.URI
+import java.nio.charset.StandardCharsets
 
 @Component
 class PdfEmailExtractor(
@@ -42,8 +44,13 @@ class PdfEmailExtractor(
             )
         }
 
-        val bytes = try {
-            downloadWithStreamLimit(uri)
+        val downloaded = try {
+            FetchRetry.retryOnRecoverableIo(
+                maxRetries = properties.maxRetries,
+                initialBackoffMs = properties.retryBackoffMs
+            ) {
+                downloadWithStreamLimit(uri)
+            }
         } catch (e: PdfTooLargeException) {
             log.debug("[{}] PDF {} too large", sourceName, pdfUrl)
             return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_TOO_LARGE", httpRequests = 1)
@@ -52,6 +59,19 @@ class PdfEmailExtractor(
             return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1)
         }
 
+        return when (downloaded.kind) {
+            ContentKind.PDF -> extractFromPdf(downloaded.bytes, knownAuthors, pdfUrl, sourceName)
+            ContentKind.HTML -> extractFromHtml(downloaded.bytes, knownAuthors)
+            ContentKind.OTHER -> EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1)
+        }
+    }
+
+    private fun extractFromPdf(
+        bytes: ByteArray,
+        knownAuthors: List<PaperAuthor>,
+        pdfUrl: String,
+        sourceName: String
+    ): EmailExtractionOutcome {
         val emails = try {
             extractEmailsFromBytes(bytes, knownAuthors)
         } catch (e: Exception) {
@@ -65,7 +85,21 @@ class PdfEmailExtractor(
         return EmailExtractionOutcome(emails, "PDF_PARSE", null, httpRequests = 1)
     }
 
-    private fun downloadWithStreamLimit(uri: URI): ByteArray {
+    private fun extractFromHtml(bytes: ByteArray, knownAuthors: List<PaperAuthor>): EmailExtractionOutcome {
+        val html = String(bytes, StandardCharsets.UTF_8)
+        val text = htmlToVisibleText(html)
+        val emails = associateEmailsWithAuthors(text, knownAuthors)
+        if (emails.isEmpty()) {
+            return EmailExtractionOutcome(emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1)
+        }
+        return EmailExtractionOutcome(emails, "HTML_FALLBACK", null, httpRequests = 1)
+    }
+
+    private enum class ContentKind { PDF, HTML, OTHER }
+
+    private data class DownloadedContent(val bytes: ByteArray, val kind: ContentKind)
+
+    private fun downloadWithStreamLimit(uri: URI): DownloadedContent {
         return restTemplate.execute(uri, HttpMethod.GET, null) { response ->
             val contentType = response.headers.contentType
             val isPdfContentType = contentType != null &&
@@ -93,12 +127,35 @@ class PdfEmailExtractor(
             if (bytes.isEmpty()) throw RuntimeException("Empty body")
 
             val hasMagic = bytes.size >= 4 && bytes.take(4).toByteArray().contentEquals(magicBytes)
-            if (!isPdfContentType && !hasMagic) {
-                throw RuntimeException("Not a PDF")
+            if (isPdfContentType || hasMagic) {
+                return@execute DownloadedContent(bytes, ContentKind.PDF)
             }
 
-            bytes
+            if (properties.htmlFallbackEnabled && isHtmlContent(contentType, bytes)) {
+                return@execute DownloadedContent(bytes, ContentKind.HTML)
+            }
+
+            DownloadedContent(bytes, ContentKind.OTHER)
         } ?: throw RuntimeException("Empty response")
+    }
+
+    private fun isHtmlContent(contentType: MediaType?, bytes: ByteArray): Boolean {
+        if (contentType != null && contentType.isCompatibleWith(MediaType.TEXT_HTML)) {
+            return true
+        }
+        val prefix = String(bytes, 0, minOf(bytes.size, 512), StandardCharsets.UTF_8)
+            .trimStart()
+            .lowercase()
+        return prefix.startsWith("<!doctype html") || prefix.startsWith("<html")
+    }
+
+    private fun htmlToVisibleText(html: String): String {
+        return html
+            .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
+            .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
+            .replace(Regex("<[^>]+>"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
     }
 
     private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>): List<AuthorEmail> {

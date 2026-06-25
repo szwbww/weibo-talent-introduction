@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.config.FetchRetry
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
@@ -69,7 +70,12 @@ class EuropePmcDataSource(
             if (properties.requestDelayMs > 0) {
                 Thread.sleep(properties.requestDelayMs)
             }
-            restTemplate.getForObject(url, ByteArray::class.java)
+            FetchRetry.retryOnRecoverableIo(
+                maxRetries = properties.maxRetries,
+                initialBackoffMs = properties.retryBackoffMs
+            ) {
+                restTemplate.getForObject(url, ByteArray::class.java)
+            }
         } catch (e: Exception) {
             log.debug("Failed to fetch full text XML for {}: {}", pmcId, e.message)
             null

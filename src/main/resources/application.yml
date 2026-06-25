@@ -100,6 +100,8 @@ talent-introduction:
       connect-timeout-ms: ${EUROPE_PMC_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${EUROPE_PMC_READ_TIMEOUT_MS:30000}
       max-papers-per-source: ${EUROPE_PMC_MAX_PAPERS:1500}
+      max-retries: ${EUROPE_PMC_MAX_RETRIES:2}
+      retry-backoff-ms: ${EUROPE_PMC_RETRY_BACKOFF_MS:500}
     openalex:
       enabled: ${OPENALEX_ENABLED:true}
       polite-email: ${OPENALEX_POLITE_EMAIL:wuwei@qftechtalent.com}
@@ -125,6 +127,9 @@ talent-introduction:
       max-pdf-size-bytes: ${PDF_MAX_SIZE:10485760}
       download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
       max-pages: 2
+      max-retries: ${PDF_MAX_RETRIES:2}
+      retry-backoff-ms: ${PDF_RETRY_BACKOFF_MS:500}
+      html-fallback-enabled: ${PDF_HTML_FALLBACK_ENABLED:true}
     pmc-oa:
       enabled: ${PMC_OA_ENABLED:true}
       base-url: ${PMC_OA_BASE_URL:https://eutils.ncbi.nlm.nih.gov/entrez/eutils}

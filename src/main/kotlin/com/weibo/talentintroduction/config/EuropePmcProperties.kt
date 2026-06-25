@@ -11,5 +11,7 @@ data class EuropePmcProperties(
     val enabled: Boolean = true,
     val connectTimeoutMs: Int = 5000,
     val readTimeoutMs: Int = 30000,
-    val maxPapersPerSource: Int = 500
+    val maxPapersPerSource: Int = 500,
+    val maxRetries: Int = 2,
+    val retryBackoffMs: Long = 500
 )

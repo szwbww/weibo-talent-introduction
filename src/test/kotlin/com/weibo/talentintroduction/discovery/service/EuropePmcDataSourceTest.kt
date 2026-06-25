@@ -268,6 +268,63 @@ class EuropePmcDataSourceTest {
     }
 
     @Test
+    fun `fetchFullTextXml retries on recoverable IO then succeeds`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val retryProperties = EuropePmcProperties(
+            requestDelayMs = 0,
+            enabled = true,
+            maxRetries = 2,
+            retryBackoffMs = 0
+        )
+        val dataSource = EuropePmcDataSource(restTemplate, retryProperties)
+        val xmlBytes = """<?xml version="1.0"?><article/>""".toByteArray()
+        var callCount = 0
+
+        Mockito.doAnswer {
+            callCount++
+            if (callCount == 1) {
+                throw org.springframework.web.client.ResourceAccessException(
+                    "Read timed out",
+                    java.net.SocketTimeoutException("Read timed out")
+                )
+            }
+            xmlBytes
+        }.`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+
+        val result = dataSource.fetchFullTextXml("PMC9876543")
+
+        assertNotNull(result)
+        assertEquals(xmlBytes.size, result!!.size)
+        assertEquals(2, callCount)
+    }
+
+    @Test
+    fun `fetchFullTextXml does not retry on 404`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val retryProperties = EuropePmcProperties(
+            requestDelayMs = 0,
+            enabled = true,
+            maxRetries = 2,
+            retryBackoffMs = 0
+        )
+        val dataSource = EuropePmcDataSource(restTemplate, retryProperties)
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenThrow(
+            org.springframework.web.client.HttpClientErrorException(
+                org.springframework.http.HttpStatus.NOT_FOUND
+            )
+        )
+
+        val result = dataSource.fetchFullTextXml("PMC9876543")
+
+        assertNull(result)
+        Mockito.verify(restTemplate, Mockito.times(1))
+            .getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+    }
+
+    @Test
     fun `fetchFullTextXml returns bytes on success`() {
         val restTemplate = Mockito.mock(RestTemplate::class.java)
         val dataSource = EuropePmcDataSource(restTemplate, properties)

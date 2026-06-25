@@ -80,7 +80,65 @@ class PdfEmailExtractorTest {
     }
 
     @Test
-    fun `rejects non-PDF content type`() {
+    fun `rejects non-PDF non-HTML content`() {
+        stubPdfDownload("NOT_PDF_OR_HTML".toByteArray(), MediaType.APPLICATION_OCTET_STREAM)
+
+        val result = extractor.extract("http://example.com/not-a-pdf", emptyList(), "TEST")
+
+        assertEquals("PDF_DOWNLOAD_FAILED", result.failureReason)
+    }
+
+    @Test
+    fun `extracts emails from HTML landing page`() {
+        val html = "<html><body>Contact: jane.doe@university.edu</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+
+        val result = extractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals("HTML_FALLBACK", result.methodUsed)
+        assertTrue(result.emails.any { it.email == "jane.doe@university.edu" })
+    }
+
+    @Test
+    fun `returns NO_EMAIL_IN_HTML when HTML has no email`() {
+        val html = "<html><body>No contact info here</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+
+        val result = extractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals("HTML_FALLBACK", result.methodUsed)
+        assertEquals("NO_EMAIL_IN_HTML", result.failureReason)
+        assertTrue(result.emails.isEmpty())
+    }
+
+    @Test
+    fun `detects HTML by doctype prefix without text html content type`() {
+        val html = "<!DOCTYPE html><html><body>researcher@gmail.com</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.APPLICATION_OCTET_STREAM)
+
+        val result = extractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals("HTML_FALLBACK", result.methodUsed)
+        assertTrue(result.emails.any { it.email == "researcher@gmail.com" })
+    }
+
+    @Test
+    fun `skips HTML fallback when disabled`() {
+        val disabledExtractor = PdfEmailExtractor(
+            restTemplate,
+            plainTextExtractor,
+            PdfExtractionProperties(htmlFallbackEnabled = false)
+        )
+        val html = "<html><body>jane@uni.edu</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+
+        val result = disabledExtractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals("PDF_DOWNLOAD_FAILED", result.failureReason)
+    }
+
+    @Test
+    fun `rejects empty non-PDF content`() {
         stubPdfDownload(ByteArray(0), MediaType.TEXT_HTML)
 
         val result = extractor.extract("http://example.com/not-a-pdf", emptyList(), "TEST")
@@ -99,13 +157,75 @@ class PdfEmailExtractorTest {
     }
 
     @Test
+    fun `retries download when body read throws recoverable IO then succeeds with HTML`() {
+        val retryProperties = PdfExtractionProperties(maxRetries = 2, retryBackoffMs = 0)
+        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties)
+        val html = "<html><body>retry@test.edu</body></html>".toByteArray()
+        var executeCount = 0
+
+        Mockito.doAnswer { invocation ->
+            executeCount++
+            val extractor = invocation.getArgument<ResponseExtractor<*>>(3)
+            val mockResponse = Mockito.mock(ClientHttpResponse::class.java)
+            val headers = HttpHeaders().apply { contentType = MediaType.TEXT_HTML }
+            Mockito.doReturn(headers).`when`(mockResponse).headers
+            if (executeCount == 1) {
+                val failingStream = object : java.io.InputStream() {
+                    override fun read(): Int = throw java.net.SocketTimeoutException("Read timed out")
+                    override fun read(b: ByteArray, off: Int, len: Int): Int =
+                        throw java.net.SocketTimeoutException("Read timed out")
+                }
+                Mockito.doReturn(failingStream).`when`(mockResponse).body
+            } else {
+                Mockito.doReturn(ByteArrayInputStream(html)).`when`(mockResponse).body
+            }
+            extractor.extractData(mockResponse)
+        }.`when`(restTemplate).execute(
+            Mockito.any(URI::class.java),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.any(),
+            Mockito.any(ResponseExtractor::class.java)
+        )
+
+        val result = retryExtractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals(2, executeCount)
+        assertEquals("HTML_FALLBACK", result.methodUsed)
+        assertTrue(result.emails.any { it.email == "retry@test.edu" })
+    }
+
+    @Test
+    fun `does not retry download for non recoverable HTTP error`() {
+        val retryProperties = PdfExtractionProperties(maxRetries = 2, retryBackoffMs = 0)
+        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties)
+
+        Mockito.doThrow(RuntimeException("404 Not Found"))
+            .`when`(restTemplate).execute(
+                Mockito.any(URI::class.java),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.any(ResponseExtractor::class.java)
+            )
+
+        val result = retryExtractor.extract("http://example.com/missing.pdf", emptyList(), "TEST")
+
+        assertEquals("PDF_DOWNLOAD_FAILED", result.failureReason)
+        Mockito.verify(restTemplate, Mockito.times(1)).execute(
+            Mockito.any(URI::class.java),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.any(),
+            Mockito.any(ResponseExtractor::class.java)
+        )
+    }
+
+    @Test
     fun `returns PDF_DOWNLOAD_FAILED on HTTP error`() {
         Mockito.doThrow(RuntimeException("Connection refused"))
             .`when`(restTemplate).execute(
                 Mockito.any(URI::class.java),
                 Mockito.eq(HttpMethod.GET),
                 Mockito.any(),
-                Mockito.any<ResponseExtractor<ByteArray>>()
+                Mockito.any(ResponseExtractor::class.java)
             )
 
         val result = extractor.extract("http://example.com/missing.pdf", emptyList(), "TEST")
@@ -150,17 +270,17 @@ class PdfEmailExtractorTest {
     @Suppress("UNCHECKED_CAST")
     private fun stubPdfDownload(bytes: ByteArray, contentType: MediaType) {
         Mockito.doAnswer { invocation: InvocationOnMock ->
-            val extractor = invocation.getArgument<ResponseExtractor<ByteArray>>(3)
+            val extractor = invocation.getArgument<ResponseExtractor<*>>(3)
             val mockResponse = Mockito.mock(ClientHttpResponse::class.java)
             val headers = HttpHeaders().apply { this.contentType = contentType }
             Mockito.doReturn(headers).`when`(mockResponse).headers
             Mockito.doReturn(ByteArrayInputStream(bytes)).`when`(mockResponse).body
-            extractor?.extractData(mockResponse)
+            extractor.extractData(mockResponse)
         }.`when`(restTemplate).execute(
             Mockito.any(URI::class.java),
             Mockito.eq(HttpMethod.GET),
             Mockito.any(),
-            Mockito.any<ResponseExtractor<ByteArray>>()
+            Mockito.any(ResponseExtractor::class.java)
         )
     }
 }
