@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import org.hamcrest.CoreMatchers.containsString
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -395,6 +396,103 @@ class EuropePmcDataSourceTest {
         assertEquals(1, result.papers.size)
         assertEquals("AoE/Cursor", result.nextCursor)
         server.verify()
+    }
+
+    @Test
+    fun `extractAuthorEmails returns FULLTEXT_FETCH_FAILED when fetch fails`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn(null)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+        ))
+
+        assertEquals("FULLTEXT_FETCH_FAILED", outcome.failureReason)
+        assertTrue(outcome.emails.isEmpty())
+        assertEquals(1, outcome.httpRequests)
+    }
+
+    @Test
+    fun `extractAuthorEmails returns XML_PARSE_FAILED when parse throws`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn("not valid xml".toByteArray())
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+        ))
+
+        assertEquals("XML_PARSE_FAILED", outcome.failureReason)
+        assertTrue(outcome.emails.isEmpty())
+    }
+
+    @Test
+    fun `extractAuthorEmails returns NO_EMAIL_IN_FULLTEXT when XML has no email`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val xmlBytes = """<?xml version="1.0" encoding="UTF-8"?><article><front><article-meta/></front></article>"""
+            .toByteArray()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn(xmlBytes)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+        ))
+
+        assertEquals("NO_EMAIL_IN_FULLTEXT", outcome.failureReason)
+        assertTrue(outcome.emails.isEmpty())
+    }
+
+    @Test
+    fun `extractAuthorEmails returns emails when XML contains email`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val xmlBytes = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group content-type="author">
+                    <contrib>
+                      <name><surname>Smith</surname><given-names>John</given-names></name>
+                      <xref ref-type="corresp" rid="fn001"/>
+                    </contrib>
+                  </contrib-group>
+                  <author-notes>
+                    <fn id="fn001">
+                      <p><email>john@oxford.ac.uk</email></p>
+                    </fn>
+                  </author-notes>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent().toByteArray()
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn(xmlBytes)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+        ))
+
+        assertNull(outcome.failureReason)
+        assertEquals(1, outcome.emails.size)
+        assertEquals("john@oxford.ac.uk", outcome.emails[0].email)
     }
 
     @Test

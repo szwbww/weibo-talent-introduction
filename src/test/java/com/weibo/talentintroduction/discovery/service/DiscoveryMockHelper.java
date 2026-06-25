@@ -40,6 +40,20 @@ public class DiscoveryMockHelper {
         )).thenReturn(result);
     }
 
+    public static void stubSearchPapersSequence(EuropePmcDataSource mock, PaperSearchResult... results) {
+        var stub = Mockito.when(mock.searchPapers(Mockito.any(PaperSearchCriteria.class)));
+        for (PaperSearchResult result : results) {
+            stub = stub.thenReturn(result);
+        }
+    }
+
+    public static void stubExtractAuthorEmailsSequence(AcademicDataSource mock, EmailExtractionOutcome... outcomes) {
+        var stub = Mockito.when(mock.extractAuthorEmails(Mockito.any(PaperMetadata.class)));
+        for (EmailExtractionOutcome outcome : outcomes) {
+            stub = stub.thenReturn(outcome);
+        }
+    }
+
     public static void stubExtractEmails(EuropePmcDataSource mock, String pmcId, List<AuthorEmail> emails) {
         Mockito.when(mock.extractEmailsFromFullText(pmcId)).thenReturn(emails);
     }

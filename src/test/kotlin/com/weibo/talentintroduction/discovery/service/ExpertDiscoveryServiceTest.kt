@@ -390,6 +390,61 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `FULLTEXT_FETCH_FAILED does not increment fulltextObtained`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "FULLTEXT_FETCH_FAILED", httpRequests = 1))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(0, sourceStats?.fulltextObtained)
+        assertEquals(1, sourceStats?.failureReasons?.get("FULLTEXT_FETCH_FAILED"))
+    }
+
+    @Test
+    fun `batchRejectReasons contains per-batch delta not cumulative totals`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Paper 1")
+        val p2 = paper("PMC2", "Paper 2")
+        val p3 = paper("PMC3", "Paper 3")
+
+        DiscoveryMockHelper.stubSearchPapersSequence(europePmc,
+            PaperSearchResult(listOf(p1, p2), "cursor2", 3),
+            PaperSearchResult(listOf(p3), null, 3)
+        )
+
+        DiscoveryMockHelper.stubExtractAuthorEmailsSequence(europePmc,
+            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
+            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("dup@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")),
+                "FULLTEXT_XML", null, httpRequests = 1
+            )
+        )
+
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 1)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val batchProgress = captured.filter {
+            it.status == "RUNNING" && it.details?.get("currentSource") == "EUROPE_PMC"
+        }.sortedBy { it.batchNumber }
+
+        assertEquals(2, batchProgress.size)
+        assertEquals(mapOf("NO_EMAIL_IN_FULLTEXT" to 2), batchProgress[0].batchRejectReasons)
+        assertEquals(mapOf("DUPLICATE" to 1), batchProgress[1].batchRejectReasons)
+    }
+
+    @Test
     fun `PDF_DOWNLOAD_FAILED does not increment fulltextObtained`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test")

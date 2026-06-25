@@ -17,6 +17,7 @@ data class TaskProgressLog(
     val batchProcessed: Int = 0,
     val batchPassed: Int = 0,
     val batchRejected: Int = 0,
+    val batchRejectReasonsJson: String? = null,
     val message: String? = null,
     val detailsJson: String? = null,
     val errorsJson: String? = null,

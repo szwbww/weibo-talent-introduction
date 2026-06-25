@@ -763,7 +763,7 @@ function updateTaskModalLogs(executionId, logs) {
 
 function renderBatchTable(logs) {
     if (!logs || logs.length === 0) {
-        return `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+        return `<tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
     }
     const latestByBatch = new Map();
     logs.forEach(log => {
@@ -775,11 +775,24 @@ function renderBatchTable(logs) {
         .sort(([a], [b]) => a - b)
         .map(([, log]) => log);
     if (rows.length === 0) {
-        return `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+        return `<tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
     }
     return rows.map(log => {
         const time = formatDateTime(log.createdAt);
         const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
+        let rejectReasons = "-";
+        if (log.batchRejectReasonsJson) {
+            try {
+                const parsed = JSON.parse(log.batchRejectReasonsJson);
+                rejectReasons = Object.entries(parsed)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([reason, count]) => `${reason}:${count}`)
+                    .join(", ") || "-";
+            } catch (e) {
+                rejectReasons = "-";
+            }
+        }
         return `
             <tr>
                 <td>${log.batchNumber}</td>
@@ -787,6 +800,7 @@ function renderBatchTable(logs) {
                 <td>${log.batchPassed}</td>
                 <td>${log.batchRejected}</td>
                 <td>${log.processedCount}/${log.totalCount} ${pct}</td>
+                <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(rejectReasons)}</td>
                 <td>${time}</td>
             </tr>
         `;
@@ -835,11 +849,12 @@ function renderBatchDetailRow(executionId) {
                                 <th style="padding:6px;">通过</th>
                                 <th style="padding:6px;">拒绝</th>
                                 <th style="padding:6px;">累计进度</th>
+                                <th style="padding:6px;">失败原因</th>
                                 <th style="padding:6px;">时间</th>
                             </tr>
                         </thead>
                         <tbody id="batch-body-${executionId}">
-                            <tr><td colspan="6" class="muted" style="text-align:center;padding:12px;">加载中...</td></tr>
+                            <tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">加载中...</td></tr>
                         </tbody>
                     </table>
                 </div>

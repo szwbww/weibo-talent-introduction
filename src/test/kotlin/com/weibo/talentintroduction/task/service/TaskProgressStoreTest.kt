@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.task.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
 import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 import org.junit.jupiter.api.Test
@@ -374,6 +375,86 @@ class TaskProgressStoreTest {
 
         latch.await()
         assertTrue(clearRejected.get(), "Stale clear with wrong executionId should be rejected")
+    }
+
+    @Test
+    fun `persistProgressLog writes batchRejectReasonsJson`() {
+        Mockito.reset(progressLogRepository)
+        val store = TaskProgressStore(progressLogRepository, objectMapper)
+        val reasons = mapOf("NO_EMAIL_IN_FULLTEXT" to 2, "FULLTEXT_FETCH_FAILED" to 1)
+        store.update("TEST", TaskProgress(
+            taskType = "TEST", status = "RUNNING",
+            batchNumber = 1, processedCount = 3, totalCount = 100,
+            batchProcessed = 3, batchPassed = 0, batchRejected = 3,
+            batchRejectReasons = reasons
+        ))
+
+        val captor = ArgumentCaptor.forClass(TaskProgressLog::class.java)
+        Mockito.verify(progressLogRepository, Mockito.times(1)).save(captor.capture())
+        val saved = captor.value
+        assertNotNull(saved.batchRejectReasonsJson)
+        val parsed = objectMapper.readValue<Map<String, Int>>(saved.batchRejectReasonsJson!!)
+        assertEquals(2, parsed["NO_EMAIL_IN_FULLTEXT"])
+        assertEquals(1, parsed["FULLTEXT_FETCH_FAILED"])
+    }
+
+    @Test
+    fun `persistProgressLog writes null batchRejectReasonsJson when absent`() {
+        Mockito.reset(progressLogRepository)
+        val store = TaskProgressStore(progressLogRepository, objectMapper)
+        store.update("TEST", runningProgress("TEST"))
+
+        val captor = ArgumentCaptor.forClass(TaskProgressLog::class.java)
+        Mockito.verify(progressLogRepository, Mockito.times(1)).save(captor.capture())
+        assertNull(captor.value.batchRejectReasonsJson)
+    }
+
+    @Test
+    fun `restore from log round-trips batchRejectReasons`() {
+        val log = TaskProgressLog(
+            id = 1L,
+            taskType = "TEST",
+            status = "COMPLETED",
+            batchNumber = 2,
+            processedCount = 10,
+            totalCount = 100,
+            batchProcessed = 5,
+            batchPassed = 2,
+            batchRejected = 3,
+            batchRejectReasonsJson = """{"DUPLICATE":1,"NO_EMAIL_IN_FULLTEXT":2}""",
+            createdAt = LocalDateTime.now()
+        )
+        Mockito.`when`(progressLogRepository.findTopByTaskTypeOrderByIdDesc("TEST"))
+            .thenReturn(log)
+
+        val store = TaskProgressStore(progressLogRepository, objectMapper)
+        val restored = store.get("TEST")
+        assertNotNull(restored)
+        assertEquals(mapOf("DUPLICATE" to 1, "NO_EMAIL_IN_FULLTEXT" to 2), restored?.batchRejectReasons)
+    }
+
+    @Test
+    fun `restore from log ignores invalid batchRejectReasonsJson`() {
+        val log = TaskProgressLog(
+            id = 1L,
+            taskType = "TEST",
+            status = "COMPLETED",
+            batchNumber = 1,
+            processedCount = 5,
+            totalCount = 10,
+            batchRejectReasonsJson = "not-json",
+            createdAt = LocalDateTime.now()
+        )
+        Mockito.`when`(progressLogRepository.findTopByTaskTypeOrderByIdDesc("TEST"))
+            .thenReturn(log)
+
+        val store = TaskProgressStore(progressLogRepository, objectMapper)
+        val restored = store.get("TEST")
+        assertNotNull(restored)
+        assertEquals("COMPLETED", restored?.status)
+        assertEquals(5, restored?.processedCount)
+        assertEquals(10, restored?.totalCount)
+        assertNull(restored?.batchRejectReasons)
     }
 
     private fun runningProgress(taskType: String) = TaskProgress(

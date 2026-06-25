@@ -124,6 +124,24 @@ class ExpertDiscoveryService(
             .associate { it.key to it.value }
     }
 
+    private fun snapshotRejectReasons(sourceStats: SourceStats): Map<String, Int> {
+        val snapshot = HashMap(sourceStats.failureReasons)
+        if (sourceStats.emailsRejected > 0) snapshot["EMAIL_INVALID"] = sourceStats.emailsRejected
+        if (sourceStats.duplicates > 0) snapshot["DUPLICATE"] = sourceStats.duplicates
+        if (sourceStats.dedupErrors > 0) snapshot["DEDUP_ERROR"] = sourceStats.dedupErrors
+        if (sourceStats.rawWriteFailed > 0) snapshot["RAW_WRITE_FAILED"] = sourceStats.rawWriteFailed
+        return snapshot
+    }
+
+    private fun computeBatchRejectReasons(before: Map<String, Int>, after: Map<String, Int>): Map<String, Int>? {
+        val delta = mutableMapOf<String, Int>()
+        for ((key, afterCount) in after) {
+            val diff = afterCount - before.getOrDefault(key, 0)
+            if (diff > 0) delta[key] = diff
+        }
+        return delta.ifEmpty { null }
+    }
+
     private fun buildBySourceDetails(stats: DiscoveryStats): Map<String, Any> {
         val bySource = mutableMapOf<String, Any>()
         stats.bySource.forEach { (name, ss) ->
@@ -362,6 +380,7 @@ class ExpertDiscoveryService(
 
             val papersBefore = sourceStats.papersSearched
             val indexedBefore = sourceStats.indexed
+            val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
             var processedInBatch = 0
@@ -385,6 +404,10 @@ class ExpertDiscoveryService(
             val batchProcessed = sourceStats.papersSearched - papersBefore
             val batchPassed = sourceStats.indexed - indexedBefore
             val batchRejected = batchProcessed - batchPassed
+            val batchRejectReasons = computeBatchRejectReasons(
+                rejectReasonsBefore,
+                snapshotRejectReasons(sourceStats)
+            )
 
             log.info("[{}] 批次 {}: 论文 +{} (累计 {}/{}), 获全文 {}, 抽到邮箱 {}, 有效 {}, 重复 {}, 收录 {}, 晋升 {}",
                 source.sourceName, batchNumber, batchProcessed,
@@ -404,7 +427,8 @@ class ExpertDiscoveryService(
                 errors = snapshotErrors(stats),
                 batchProcessed = batchProcessed,
                 batchPassed = batchPassed,
-                batchRejected = batchRejected.coerceAtLeast(0)
+                batchRejected = batchRejected.coerceAtLeast(0),
+                batchRejectReasons = batchRejectReasons
             ), execId)
 
             if (limitReached || circuitBreakerTripped) break
@@ -421,7 +445,8 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})",
+            " (资格淘汰 ${sourceStats.filtered})" +
+            (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
             source.sourceName, elapsed, sourceStats.apiRequests,
             sourceStats.papersSearched, sourceStats.fulltextAttempted, sourceStats.fulltextObtained,
             sourceStats.pdfDownloadFailed, sourceStats.pdfParseFailed,
@@ -472,6 +497,7 @@ class ExpertDiscoveryService(
 
             val indexedBefore = sourceStats.indexed
             val recordsProcessedBeforeBatch = recordsProcessed
+            val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             for (record in records) {
                 if (recordsProcessed >= orcidLimit) break
@@ -530,6 +556,10 @@ class ExpertDiscoveryService(
             val batchProcessed = recordsProcessed - recordsProcessedBeforeBatch
             val batchPassed = sourceStats.indexed - indexedBefore
             val batchRejected = batchProcessed - batchPassed
+            val batchRejectReasons = computeBatchRejectReasons(
+                rejectReasonsBefore,
+                snapshotRejectReasons(sourceStats)
+            )
 
             stats.refreshGlobalCounts()
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
@@ -542,7 +572,8 @@ class ExpertDiscoveryService(
                 errors = snapshotErrors(stats),
                 batchProcessed = batchProcessed,
                 batchPassed = batchPassed,
-                batchRejected = batchRejected.coerceAtLeast(0)
+                batchRejected = batchRejected.coerceAtLeast(0),
+                batchRejectReasons = batchRejectReasons
             ), execId)
 
             cursor = (cursor?.toIntOrNull()?.plus(records.size))?.toString()
@@ -556,7 +587,8 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})",
+            " (资格淘汰 ${sourceStats.filtered})" +
+            (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
             orcid.sourceName, elapsed, recordsProcessed, sourceStats.authorsExtracted,
             sourceStats.emailsValid, sourceStats.emailsRejected,
             sourceStats.indexed, sourceStats.duplicates,

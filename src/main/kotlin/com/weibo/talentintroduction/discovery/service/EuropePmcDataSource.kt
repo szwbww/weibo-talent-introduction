@@ -98,11 +98,23 @@ class EuropePmcDataSource(
         if (pmcId == null) {
             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
         }
-        val emails = extractEmailsFromFullText(pmcId)
-        if (emails.isEmpty()) {
-            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_EMAIL_IN_FULLTEXT", httpRequests = 1)
+
+        val xml = fetchFullTextXml(pmcId)
+        if (xml == null) {
+            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED", httpRequests = 1)
         }
-        return EmailExtractionOutcome(emails, emailExtractionMethod, null, httpRequests = 1)
+
+        return try {
+            val emails = JatsXmlEmailParser.parse(xml)
+            if (emails.isEmpty()) {
+                EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_EMAIL_IN_FULLTEXT", httpRequests = 1)
+            } else {
+                EmailExtractionOutcome(emails, emailExtractionMethod, null, httpRequests = 1)
+            }
+        } catch (e: Exception) {
+            log.debug("Failed to parse JATS XML for {}: {}", pmcId, e.message)
+            EmailExtractionOutcome(emptyList(), emailExtractionMethod, "XML_PARSE_FAILED", httpRequests = 1)
+        }
     }
 
     private fun buildQuery(criteria: PaperSearchCriteria): String {

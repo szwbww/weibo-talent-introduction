@@ -190,6 +190,7 @@ class TaskProgressStore(
                 batchProcessed = progress.batchProcessed,
                 batchPassed = progress.batchPassed,
                 batchRejected = progress.batchRejected,
+                batchRejectReasonsJson = progress.batchRejectReasons?.let { objectMapper.writeValueAsString(it) },
                 message = progress.message,
                 detailsJson = progress.details?.let { objectMapper.writeValueAsString(it) },
                 errorsJson = progress.errors?.let { objectMapper.writeValueAsString(it) }
@@ -210,6 +211,15 @@ class TaskProgressStore(
                 else -> latestLog.status
             }
 
+            val batchRejectReasons = latestLog.batchRejectReasonsJson?.let { json ->
+                try {
+                    objectMapper.readValue<Map<String, Int>>(json)
+                } catch (e: Exception) {
+                    log.warn("Failed to parse batchRejectReasonsJson for {}: {}", taskType, e.message)
+                    null
+                }
+            }
+
             return TaskProgress(
                 taskType = taskType,
                 status = status,
@@ -226,6 +236,7 @@ class TaskProgressStore(
                 batchProcessed = latestLog.batchProcessed,
                 batchPassed = latestLog.batchPassed,
                 batchRejected = latestLog.batchRejected,
+                batchRejectReasons = batchRejectReasons,
                 executionId = latestLog.taskExecutionId
             )
         } catch (e: Exception) {
@@ -247,6 +258,7 @@ data class TaskProgress(
     val batchProcessed: Int = 0,
     val batchPassed: Int = 0,
     val batchRejected: Int = 0,
+    val batchRejectReasons: Map<String, Int>? = null,
     val executionId: Long? = null
 ) {
     val percentage: Int
