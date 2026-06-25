@@ -93,6 +93,7 @@ talent-introduction:
     max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:5000}
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:20000}
     include-raw-scan: ${EXPERT_DISCOVERY_INCLUDE_RAW_SCAN:false}
+    fetch-concurrency: ${EXPERT_DISCOVERY_FETCH_CONCURRENCY:4}
     europe-pmc:
       enabled: ${EUROPE_PMC_ENABLED:true}
       base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}

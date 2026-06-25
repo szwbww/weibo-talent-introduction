@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
@@ -31,6 +32,8 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 
 class ExpertDiscoveryServiceTest {
     private lateinit var revalidationService: ExpertRevalidationService
@@ -102,13 +105,16 @@ class ExpertDiscoveryServiceTest {
             .indexName(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION)
     }
 
-    private fun createService(props: ExpertDiscoveryProperties = discoveryProperties): ExpertDiscoveryService {
+    private fun createService(
+        props: ExpertDiscoveryProperties = discoveryProperties,
+        executor: Executor = Executor { it.run() }
+    ): ExpertDiscoveryService {
         return ExpertDiscoveryService(
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
-            props, objectMapper, progressStore, cursorRepository
+            props, objectMapper, progressStore, cursorRepository, executor
         )
     }
 
@@ -1123,5 +1129,201 @@ class ExpertDiscoveryServiceTest {
         assertEquals(1, openAlexLogs.size)
         assertTrue(epmcLogs.all { it.message?.contains("批次 1") == true || it.message?.contains("批次 2") == true })
         assertTrue(openAlexLogs.single().message?.contains("批次 1") == true)
+    }
+
+    @Test
+    fun `parallel fetch produces same stats as serial run`() {
+        fun runWithConcurrency(concurrency: Int): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
+            setUp()
+            val paperCount = 30
+            val papers = (1..paperCount).map { paper("PMC$it", "Paper $it") }
+            val props = ExpertDiscoveryProperties(
+                enabled = true,
+                maxPapersPerRun = paperCount,
+                maxAuthorsPerRun = paperCount,
+                includeRawScan = false,
+                fetchConcurrency = concurrency
+            )
+            val executor: Executor = if (concurrency <= 1) Executor { it.run() } else Executors.newFixedThreadPool(concurrency)
+            val svc = createService(props, executor)
+
+            DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, paperCount.toLong()))
+            val outcomes = papers.mapIndexed { index, _ ->
+                if (index % 3 == 0) {
+                    EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
+                } else {
+                    EmailExtractionOutcome(
+                        listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                        "FULLTEXT_XML",
+                        null
+                    )
+                }
+            }.toTypedArray()
+            DiscoveryMockHelper.stubExtractAuthorEmailsSequence(europePmc, *outcomes)
+            Mockito.doAnswer { invocation ->
+                val email = invocation.arguments[0] as String
+                EmailValidationResult(2, true)
+            }.`when`(emailValidationService).validate(Mockito.anyString())
+            DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+            DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+            DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+            DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+        }
+
+        val serial = runWithConcurrency(1)
+        val parallel = runWithConcurrency(4)
+
+        assertEquals(serial.totalPapers, parallel.totalPapers)
+        assertEquals(serial.indexed, parallel.indexed)
+        assertEquals(serial.promoted, parallel.promoted)
+        assertEquals(serial.filtered, parallel.filtered)
+        assertEquals(serial.duplicates, parallel.duplicates)
+        assertEquals(serial.emailRejected, parallel.emailRejected)
+        assertEquals(serial.noEmailPapers, parallel.noEmailPapers)
+        val serialSource = serial.bySource["EUROPE_PMC"]!!
+        val parallelSource = parallel.bySource["EUROPE_PMC"]!!
+        assertEquals(serialSource.emailsValid, parallelSource.emailsValid)
+        assertEquals(serialSource.authorsExtracted, parallelSource.authorsExtracted)
+        assertEquals(serialSource.fulltextAttempted, parallelSource.fulltextAttempted)
+    }
+
+    @Test
+    fun `managed executor accepts batch larger than fetchConcurrency`() {
+        val paperCount = 12
+        val fetchConcurrency = 4
+        val props = ExpertDiscoveryProperties(
+            enabled = true,
+            maxPapersPerRun = paperCount,
+            maxAuthorsPerRun = paperCount,
+            includeRawScan = false,
+            fetchConcurrency = fetchConcurrency
+        )
+        val managedExecutor = DiscoveryExecutorConfig(props).discoveryFetchExecutor()
+        val papers = (1..paperCount).map { paper("PMC$it", "Paper $it") }
+
+        fun runDiscovery(executor: java.util.concurrent.Executor): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
+            setUp()
+            val svc = createService(props, executor)
+            DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, paperCount.toLong()))
+            val outcomes = papers.mapIndexed { index, _ ->
+                if (index % 2 == 0) {
+                    EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
+                } else {
+                    EmailExtractionOutcome(
+                        listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                        "FULLTEXT_XML",
+                        null
+                    )
+                }
+            }.toTypedArray()
+            DiscoveryMockHelper.stubExtractAuthorEmailsSequence(europePmc, *outcomes)
+            Mockito.doReturn(EmailValidationResult(2, true))
+                .`when`(emailValidationService).validate(Mockito.anyString())
+            DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+            DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+            DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+            DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+        }
+
+        val serial = runDiscovery(Executor { it.run() })
+        val managed = runDiscovery(managedExecutor)
+
+        assertEquals(serial.totalPapers, managed.totalPapers)
+        assertEquals(serial.indexed, managed.indexed)
+        assertEquals(serial.promoted, managed.promoted)
+        assertEquals(serial.noEmailPapers, managed.noEmailPapers)
+    }
+
+    @Test
+    fun `parallel fetch respects maxPapersPerRun and only counts consumed papers`() {
+        val batchSize = 5
+        val maxPapers = 2
+        val papers = (1..batchSize).map { paper("PMC$it", "Paper $it") }
+        val props = ExpertDiscoveryProperties(
+            enabled = true,
+            maxPapersPerRun = maxPapers,
+            maxAuthorsPerRun = 100,
+            includeRawScan = false,
+            fetchConcurrency = 4
+        )
+        val managedExecutor = DiscoveryExecutorConfig(props).discoveryFetchExecutor()
+
+        fun runDiscovery(executor: Executor): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
+            setUp()
+            val svc = createService(props, executor)
+            DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, batchSize.toLong()))
+            DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+        }
+
+        val serial = runDiscovery(Executor { it.run() })
+        val parallel = runDiscovery(managedExecutor)
+        val serialSource = serial.bySource["EUROPE_PMC"]!!
+        val parallelSource = parallel.bySource["EUROPE_PMC"]!!
+
+        assertEquals(maxPapers, serial.totalPapers)
+        assertEquals(serial.totalPapers, parallel.totalPapers)
+        assertEquals(serial.indexed, parallel.indexed)
+        assertEquals(maxPapers, serialSource.papersSearched)
+        assertEquals(serialSource.papersSearched, parallelSource.papersSearched)
+        assertEquals(maxPapers, serialSource.fulltextAttempted)
+        assertEquals(serialSource.fulltextAttempted, parallelSource.fulltextAttempted)
+    }
+
+    @Test
+    fun `parallel fetch stops at maxAuthorsPerRun without counting unconsumed papers`() {
+        val batchSize = 4
+        val maxAuthors = 2
+        val papers = (1..batchSize).map { paper("PMC$it", "Paper $it") }
+        val props = ExpertDiscoveryProperties(
+            enabled = true,
+            maxPapersPerRun = 100,
+            maxAuthorsPerRun = maxAuthors,
+            includeRawScan = false,
+            fetchConcurrency = 4
+        )
+        val managedExecutor = DiscoveryExecutorConfig(props).discoveryFetchExecutor()
+
+        fun runDiscovery(executor: Executor): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
+            setUp()
+            val svc = createService(props, executor)
+            DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, batchSize.toLong()))
+            val outcomes = papers.mapIndexed { index, _ ->
+                EmailExtractionOutcome(
+                    listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                    "FULLTEXT_XML",
+                    null
+                )
+            }.toTypedArray()
+            DiscoveryMockHelper.stubExtractAuthorEmailsSequence(europePmc, *outcomes)
+            for (index in 0 until batchSize) {
+                DiscoveryMockHelper.stubValidateEmail(
+                    emailValidationService,
+                    "author$index@example.com",
+                    EmailValidationResult(2, true)
+                )
+            }
+            DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+            DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+            DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+            DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+        }
+
+        val serial = runDiscovery(Executor { it.run() })
+        val parallel = runDiscovery(managedExecutor)
+        val serialSource = serial.bySource["EUROPE_PMC"]!!
+        val parallelSource = parallel.bySource["EUROPE_PMC"]!!
+
+        assertEquals(maxAuthors, serial.indexed)
+        assertEquals(serial.indexed, parallel.indexed)
+        assertEquals(maxAuthors, serialSource.papersSearched)
+        assertEquals(serialSource.papersSearched, parallelSource.papersSearched)
+        assertEquals(maxAuthors, serialSource.fulltextAttempted)
+        assertEquals(serialSource.fulltextAttempted, parallelSource.fulltextAttempted)
+        assertTrue(serialSource.papersSearched < batchSize)
     }
 }

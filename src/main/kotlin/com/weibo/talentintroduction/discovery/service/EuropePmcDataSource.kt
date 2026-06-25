@@ -100,6 +100,22 @@ class EuropePmcDataSource(
         if (!properties.enabled) {
             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "SOURCE_DISABLED")
         }
+
+        val searchEmails = paper.authors.mapNotNull { author ->
+            val email = author.email?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            AuthorEmail(
+                email = email,
+                givenNames = author.givenNames,
+                familyNames = author.familyNames,
+                isCorresponding = author.isCorresponding,
+                affiliation = author.affiliation,
+                orcidId = author.orcidId
+            )
+        }
+        if (searchEmails.isNotEmpty()) {
+            return EmailExtractionOutcome(searchEmails, "SEARCH_FIELD", null, httpRequests = 0)
+        }
+
         val pmcId = paper.pmcId
         if (pmcId == null) {
             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")

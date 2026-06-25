@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.EuropePmcProperties
+import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import org.hamcrest.CoreMatchers.containsString
@@ -547,6 +548,115 @@ class EuropePmcDataSourceTest {
             journal = "J", authors = emptyList(), source = "EUROPE_PMC"
         ))
 
+        assertNull(outcome.failureReason)
+        assertEquals(1, outcome.emails.size)
+        assertEquals("john@oxford.ac.uk", outcome.emails[0].email)
+    }
+
+    @Test
+    fun `extractAuthorEmails reuses search authorEmail without fulltext fetch`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J",
+            authors = listOf(
+                PaperAuthor(
+                    givenNames = "John",
+                    familyNames = "Smith",
+                    orcidId = "0000-0001-2345-6789",
+                    affiliation = "University of Oxford",
+                    isCorresponding = true,
+                    email = "john@oxford.ac.uk"
+                )
+            ),
+            source = "EUROPE_PMC"
+        ))
+
+        assertEquals("SEARCH_FIELD", outcome.methodUsed)
+        assertEquals(0, outcome.httpRequests)
+        assertNull(outcome.failureReason)
+        assertEquals(1, outcome.emails.size)
+        assertEquals("john@oxford.ac.uk", outcome.emails[0].email)
+        assertEquals("John", outcome.emails[0].givenNames)
+        assertEquals("Smith", outcome.emails[0].familyNames)
+        assertEquals("University of Oxford", outcome.emails[0].affiliation)
+        assertEquals("0000-0001-2345-6789", outcome.emails[0].orcidId)
+        assertTrue(outcome.emails[0].isCorresponding)
+        Mockito.verify(restTemplate, Mockito.never())
+            .getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+    }
+
+    @Test
+    fun `extractAuthorEmails reuses search authorEmail when pmcId is null`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = null, pmid = "36543210", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J",
+            authors = listOf(
+                PaperAuthor(
+                    givenNames = "Alice",
+                    familyNames = "Jones",
+                    orcidId = null,
+                    affiliation = "MIT",
+                    isCorresponding = false,
+                    email = "alice@mit.edu"
+                )
+            ),
+            source = "EUROPE_PMC"
+        ))
+
+        assertEquals("SEARCH_FIELD", outcome.methodUsed)
+        assertEquals(0, outcome.httpRequests)
+        assertNull(outcome.failureReason)
+        assertEquals(1, outcome.emails.size)
+        assertEquals("alice@mit.edu", outcome.emails[0].email)
+        Mockito.verify(restTemplate, Mockito.never())
+            .getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+    }
+
+    @Test
+    fun `extractAuthorEmails falls back to fulltext when authors have no email`() {
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val xmlBytes = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group content-type="author">
+                    <contrib>
+                      <name><surname>Smith</surname><given-names>John</given-names></name>
+                      <xref ref-type="corresp" rid="fn001"/>
+                    </contrib>
+                  </contrib-group>
+                  <author-notes>
+                    <fn id="fn001">
+                      <p><email>john@oxford.ac.uk</email></p>
+                    </fn>
+                  </author-notes>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent().toByteArray()
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn(xmlBytes)
+
+        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J",
+            authors = listOf(PaperAuthor("John", "Smith", null, "Oxford")),
+            source = "EUROPE_PMC"
+        ))
+
+        assertEquals("FULLTEXT_XML", outcome.methodUsed)
+        assertEquals(1, outcome.httpRequests)
         assertNull(outcome.failureReason)
         assertEquals(1, outcome.emails.size)
         assertEquals("john@oxford.ac.uk", outcome.emails[0].email)

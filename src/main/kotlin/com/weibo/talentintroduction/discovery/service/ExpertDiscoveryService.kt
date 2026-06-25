@@ -27,6 +27,7 @@ import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
@@ -40,6 +41,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 
 @Service
 class ExpertDiscoveryService(
@@ -61,7 +64,9 @@ class ExpertDiscoveryService(
     private val discoveryProperties: ExpertDiscoveryProperties,
     private val objectMapper: ObjectMapper,
     private val progressStore: TaskProgressStore,
-    private val cursorRepository: DiscoverySourceCursorRepository
+    private val cursorRepository: DiscoverySourceCursorRepository,
+    @Qualifier("discoveryFetchExecutor")
+    private val discoveryFetchExecutor: Executor
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -383,17 +388,19 @@ class ExpertDiscoveryService(
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
-            var processedInBatch = 0
-            for (paper in batch.papers) {
-                if (processedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
+            var consumedInBatch = 0
+
+            val extractions = parallelExtractOutcomes(batch.papers, source)
+            for ((paper, extraction) in extractions) {
+                if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
                 stats.refreshGlobalCounts()
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
                 if (sourcePapersProcessed >= sourceLimit) { limitReached = true; break }
                 sourceStats.papersSearched++
                 sourcePapersProcessed++
-                processedInBatch++
-                processPaper(paper, source, stats, sourceStats)
+                consumedInBatch++
+                consumeOutcome(paper, extraction, source, stats, sourceStats)
             }
 
             // I-4: 只有当批次全量处理完毕才推进游标；部分批次保持上一完整批次游标
@@ -612,16 +619,48 @@ class ExpertDiscoveryService(
         )
     }
 
-    private fun processPaper(paper: PaperMetadata, source: AcademicDataSource, stats: DiscoveryStats, sourceStats: SourceStats) {
-        sourceStats.fulltextAttempted++
-        val outcome = try {
-            source.extractAuthorEmails(paper)
+    private data class PaperExtraction(
+        val outcome: EmailExtractionOutcome?,
+        val extractionError: String?
+    )
+
+    private fun extractOutcome(paper: PaperMetadata, source: AcademicDataSource): PaperExtraction {
+        return try {
+            PaperExtraction(source.extractAuthorEmails(paper), null)
         } catch (e: Exception) {
-            stats.errors += "[${source.sourceName}] 提取失败: ${e.message ?: e.javaClass.simpleName}"
+            PaperExtraction(null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun parallelExtractOutcomes(
+        papers: List<PaperMetadata>,
+        source: AcademicDataSource
+    ): List<Pair<PaperMetadata, PaperExtraction>> {
+        if (papers.isEmpty()) return emptyList()
+        if (discoveryProperties.fetchConcurrency <= 1) {
+            return papers.map { it to extractOutcome(it, source) }
+        }
+        val futures = papers.map { paper ->
+            paper to CompletableFuture.supplyAsync({ extractOutcome(paper, source) }, discoveryFetchExecutor)
+        }
+        return futures.map { (paper, future) -> paper to future.join() }
+    }
+
+    private fun consumeOutcome(
+        paper: PaperMetadata,
+        extraction: PaperExtraction,
+        source: AcademicDataSource,
+        stats: DiscoveryStats,
+        sourceStats: SourceStats
+    ) {
+        sourceStats.fulltextAttempted++
+        if (extraction.extractionError != null) {
+            stats.errors += "[${source.sourceName}] 提取失败: ${extraction.extractionError}"
             sourceStats.failureReasons.merge("EXTRACTION_EXCEPTION", 1) { a, b -> a + b }
             return
         }
 
+        val outcome = extraction.outcome!!
         sourceStats.apiRequests += outcome.httpRequests
 
         if (outcome.failureReason != null) {
@@ -688,6 +727,10 @@ class ExpertDiscoveryService(
                 }
             }
         }
+    }
+
+    private fun processPaper(paper: PaperMetadata, source: AcademicDataSource, stats: DiscoveryStats, sourceStats: SourceStats) {
+        consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats)
     }
 
     private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {

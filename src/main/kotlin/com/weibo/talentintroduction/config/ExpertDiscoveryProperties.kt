@@ -10,5 +10,6 @@ data class ExpertDiscoveryProperties(
     val cron: String = "-",
     val maxPapersPerRun: Int = 500,
     val maxAuthorsPerRun: Int = 2000,
-    val includeRawScan: Boolean = true
+    val includeRawScan: Boolean = true,
+    val fetchConcurrency: Int = 4
 )
