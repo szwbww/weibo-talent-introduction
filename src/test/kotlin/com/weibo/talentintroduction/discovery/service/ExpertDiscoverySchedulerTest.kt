@@ -12,10 +12,12 @@ import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
+import java.time.LocalDate
+import java.time.LocalDateTime
 
 class ExpertDiscoverySchedulerTest {
     private val discoveryService = Mockito.mock(ExpertDiscoveryService::class.java)
@@ -36,6 +38,19 @@ class ExpertDiscoverySchedulerTest {
     private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
     private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
 
+    private val todayStart: LocalDateTime = LocalDate.now().atStartOfDay()
+
+    private fun stubNoScheduledRunToday() {
+        Mockito.`when`(
+            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", todayStart)
+        ).thenReturn(0L)
+    }
+
+    @BeforeEach
+    fun setUp() {
+        stubNoScheduledRunToday()
+    }
+
     @Test
     fun `scheduleDiscovery does nothing when task already running`() {
         Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
@@ -44,6 +59,50 @@ class ExpertDiscoverySchedulerTest {
         scheduler.scheduleDiscovery()
 
         Mockito.verify(discoveryService, Mockito.never()).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+    }
+
+    @Test
+    fun `scheduleDiscovery skips when scheduled discovery already ran today`() {
+        Mockito.`when`(
+            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", todayStart)
+        ).thenReturn(1L)
+
+        scheduler.scheduleDiscovery()
+
+        Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(
+            Mockito.anyString(),
+            anyTaskProgress()
+        )
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
+        Mockito.verify(discoveryService, Mockito.never()).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+    }
+
+    @Test
+    fun `scheduleDiscovery proceeds when only FAILED scheduled run exists today`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+
+        scheduler.scheduleDiscovery()
+
+        Mockito.verify(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
             Mockito.anyString(),
             Mockito.anyBoolean()

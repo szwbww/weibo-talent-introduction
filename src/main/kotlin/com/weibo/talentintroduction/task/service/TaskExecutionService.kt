@@ -38,6 +38,9 @@ class TaskExecutionService(
         return repository.findRecentByTaskType("AUTO_REPLY_ALL", limit)
     }
 
+    fun countScheduledSince(taskType: String, since: LocalDateTime): Long =
+        repository.countActiveSince(taskType, "SCHEDULED", since)
+
     fun nextPollTime(): LocalDateTime? {
         val cron = schedulingProperties.autoReplyAllCron
         if (cron.isBlank() || cron == "-") return null

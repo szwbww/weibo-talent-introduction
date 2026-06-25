@@ -5,9 +5,11 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 
 @Service
 @ConditionalOnProperty(prefix = "talent-introduction.expert-discovery", name = ["enabled"], havingValue = "true")
@@ -17,8 +19,15 @@ class ExpertDiscoveryScheduler(
     private val discoveryProperties: ExpertDiscoveryProperties,
     private val progressStore: TaskProgressStore
 ) {
+    private val log = LoggerFactory.getLogger(ExpertDiscoveryScheduler::class.java)
+
     @Scheduled(cron = "\${talent-introduction.expert-discovery.cron:-}")
     fun scheduleDiscovery() {
+        val todayStart = LocalDate.now().atStartOfDay()
+        if (taskExecutionService.countScheduledSince("EXPERT_DISCOVERY", todayStart) > 0) {
+            log.info("今日已存在 SCHEDULED 深度发现执行，跳过本次触发 (since={})", todayStart)
+            return
+        }
         val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
             taskType = "EXPERT_DISCOVERY", status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化 EuropePMC 搜索..."

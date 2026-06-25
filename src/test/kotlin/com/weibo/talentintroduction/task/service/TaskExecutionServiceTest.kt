@@ -226,6 +226,19 @@ class TaskExecutionServiceTest {
     }
 
     @Test
+    fun `countScheduledSince queries repository for SCHEDULED runs since given time`() {
+        val since = LocalDateTime.of(2026, 6, 25, 0, 0)
+        Mockito.`when`(
+            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", since)
+        ).thenReturn(2L)
+
+        val count = service.countScheduledSince("EXPERT_DISCOVERY", since)
+
+        assertEquals(2L, count)
+        Mockito.verify(repository).countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", since)
+    }
+
+    @Test
     fun `runAndRecordWithResult returns business result on success`() {
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
