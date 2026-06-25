@@ -1,15 +1,18 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.BatchSendSetting
+import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
 @Service
 class BatchSendSettingService(
-    private val repository: BatchSendSettingRepository
+    private val repository: BatchSendSettingRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(BatchSendSettingService::class.java)
 
@@ -29,6 +32,7 @@ class BatchSendSettingService(
 
     fun updateConfig(cmd: BatchSendConfigUpdateRequest): BatchSendConfig {
         validate(cmd)
+        val oldCron = getConfig().cron
         upsert(KEY_AUTO_ENABLED, cmd.autoEnabled.toString())
         upsert(KEY_CRON, cmd.cron)
         upsert(KEY_DAILY_CAP, cmd.dailyCap.toString())
@@ -37,6 +41,9 @@ class BatchSendSettingService(
         upsert(KEY_PER_ROUND_INTERVAL_MS, cmd.perRoundIntervalMs.toString())
         upsert(KEY_SELF_CHECK_TTL_MINUTES, cmd.selfCheckTtlMinutes.toString())
         upsert(KEY_EMAIL_DOMAIN, cmd.emailDomain)
+        if (cmd.cron != oldCron) {
+            eventPublisher.publishEvent(BatchSendCronChangedEvent(oldCron, cmd.cron))
+        }
         return getConfig()
     }
 

@@ -1,16 +1,22 @@
 package com.weibo.talentintroduction.task.service
 
+import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendSettingService
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.event.EventListener
+import org.springframework.scheduling.TaskScheduler
 import org.springframework.scheduling.Trigger
 import org.springframework.scheduling.TriggerContext
-import org.springframework.scheduling.annotation.SchedulingConfigurer
-import org.springframework.scheduling.config.ScheduledTaskRegistrar
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
 import org.springframework.scheduling.support.CronTrigger
 import org.springframework.stereotype.Component
 import java.util.Date
+import java.util.concurrent.ScheduledFuture
+import javax.annotation.PostConstruct
 
 /**
  * Dynamic-cron scheduler for the batch send flow (I-2: AUTO mode, triggerType=SCHEDULED).
@@ -21,24 +27,42 @@ import java.util.Date
  * can change the schedule at runtime without a restart. The `autoEnabled` flag is checked inside
  * the trigger body (not via a conditional bean) so the schedule itself stays registered.
  *
+ * Cron changes trigger an immediate reschedule via [BatchSendCronChangedEvent], cancelling any
+ * pending fire computed from a superseded cron (I-1) without interrupting an in-flight send (I-2).
+ *
  * Mutual exclusion (I-1) is delegated to [BatchSendControlService.startAuto] which uses
  * [TaskProgressStore.tryStartWithToken] + the single-thread manualOutreachExecutor.
  */
 @Component
-@Configuration
 class BatchSendScheduler(
     private val batchSendSettingService: BatchSendSettingService,
-    private val batchSendControlService: BatchSendControlService
-) : SchedulingConfigurer {
-
+    private val batchSendControlService: BatchSendControlService,
+    @Qualifier("batchSendTaskScheduler") private val taskScheduler: TaskScheduler
+) {
     private val log = LoggerFactory.getLogger(BatchSendScheduler::class.java)
 
-    override fun configureTasks(taskRegistrar: ScheduledTaskRegistrar) {
-        // AddTriggerTask evaluates the trigger after each execution to schedule the next one.
-        taskRegistrar.addTriggerTask(
-            Runnable { triggerBatchSend() },
-            DynamicCronTrigger(batchSendSettingService)
-        )
+    @Volatile
+    private var scheduledFuture: ScheduledFuture<*>? = null
+
+    @PostConstruct
+    fun scheduleInitial() {
+        reschedule()
+    }
+
+    @EventListener
+    fun onCronChanged(event: BatchSendCronChangedEvent) {
+        log.info("Batch send cron changed from {} to {}, rescheduling", event.oldCron, event.newCron)
+        reschedule()
+    }
+
+    private fun reschedule() {
+        synchronized(this) {
+            scheduledFuture?.cancel(false)
+            scheduledFuture = taskScheduler.schedule(
+                Runnable { triggerBatchSend() },
+                DynamicCronTrigger(batchSendSettingService)
+            )
+        }
     }
 
     private fun triggerBatchSend() {
@@ -61,6 +85,17 @@ class BatchSendScheduler(
                 response.statusCode, response.body?.get("message"))
         }
     }
+}
+
+@Configuration
+class BatchSendSchedulerConfiguration {
+    @Bean("batchSendTaskScheduler")
+    fun batchSendTaskScheduler(): TaskScheduler =
+        ThreadPoolTaskScheduler().apply {
+            poolSize = 1
+            setThreadNamePrefix("batch-send-")
+            initialize()
+        }
 }
 
 /**

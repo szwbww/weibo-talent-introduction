@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.BatchSendSetting
+import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -8,15 +9,18 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.any
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.springframework.context.ApplicationEventPublisher
 import java.time.LocalDateTime
 
 class BatchSendSettingServiceTest {
 
     private val repository = org.mockito.Mockito.mock(BatchSendSettingRepository::class.java)
+    private val eventPublisher = org.mockito.Mockito.mock(ApplicationEventPublisher::class.java)
 
-    private fun service(): BatchSendSettingService = BatchSendSettingService(repository)
+    private fun service(): BatchSendSettingService = BatchSendSettingService(repository, eventPublisher)
 
     private fun row(key: String, value: String, id: Long? = null): BatchSendSetting =
         BatchSendSetting(id = id, settingKey = key, settingValue = value, updatedAt = LocalDateTime.now())
@@ -292,5 +296,44 @@ class BatchSendSettingServiceTest {
         assertTrue("batchSend.pauseReason" in keys)
         val pauseReasonSave = captor.allValues.first { it.settingKey == "batchSend.pauseReason" }
         assertEquals("NO_AVAILABLE_ACCOUNT", pauseReasonSave.settingValue)
+    }
+
+    @Test
+    fun `updateConfig publishes cron changed event when cron changes`() {
+        `when`(repository.findAll()).thenReturn(listOf(
+            row("batchSend.cron", "0 0 0 * * ?")
+        ))
+        `when`(repository.save(any())).thenAnswer { it.arguments[0] }
+
+        val cmd = BatchSendConfigUpdateRequest(
+            autoEnabled = false, cron = "0 0 8 * * ?",
+            dailyCap = 1000, roundSize = 50,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
+            selfCheckTtlMinutes = 30
+        )
+        service().updateConfig(cmd)
+
+        val captor = ArgumentCaptor.forClass(BatchSendCronChangedEvent::class.java)
+        verify(eventPublisher).publishEvent(captor.capture())
+        assertEquals("0 0 0 * * ?", captor.value.oldCron)
+        assertEquals("0 0 8 * * ?", captor.value.newCron)
+    }
+
+    @Test
+    fun `updateConfig does not publish event when cron unchanged`() {
+        `when`(repository.findAll()).thenReturn(listOf(
+            row("batchSend.cron", "0 0 0 * * ?")
+        ))
+        `when`(repository.save(any())).thenAnswer { it.arguments[0] }
+
+        val cmd = BatchSendConfigUpdateRequest(
+            autoEnabled = true, cron = "0 0 0 * * ?",
+            dailyCap = 500, roundSize = 25,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
+            selfCheckTtlMinutes = 30
+        )
+        service().updateConfig(cmd)
+
+        verify(eventPublisher, never()).publishEvent(any())
     }
 }
