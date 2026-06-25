@@ -14,8 +14,11 @@ data class DiscoveryStats(
     var dedupErrors: Int = 0,
     val filterReasons: MutableMap<String, Int> = mutableMapOf(),
     val errors: MutableList<String> = mutableListOf(),
-    val bySource: MutableMap<String, SourceStats> = mutableMapOf()
+    val bySource: MutableMap<String, SourceStats> = mutableMapOf(),
+    var globalBatchSeq: Int = 0
 ) {
+    fun nextBatchSeq(): Int = ++globalBatchSeq
+
     fun getOrCreateSourceStats(sourceName: String, extractionMethod: String): SourceStats {
         return bySource.getOrPut(sourceName) { SourceStats(sourceName, extractionMethod) }
     }

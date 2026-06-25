@@ -1075,4 +1075,53 @@ class ExpertDiscoveryServiceTest {
         assertNotEquals(batchNextCursor, savedCursor.cursorValue,
             "When sourceLimit causes partial batch, cursor must not advance to '$batchNextCursor'")
     }
+
+    @Test
+    fun `batch numbers are globally unique and monotonic across sources`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200, includeRawScan = false
+        )
+        val svc = createService(props)
+
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn("OPENALEX").`when`(openAlex).sourceName
+        Mockito.doReturn("FULLTEXT_XML").`when`(openAlex).emailExtractionMethod
+        DiscoveryMockHelper.stubMaxPapersPerSource(openAlex, 500)
+
+        val epmcP1 = paper("PMC1", "EPMC Paper 1")
+        val epmcP2 = paper("PMC2", "EPMC Paper 2")
+        DiscoveryMockHelper.stubSearchPapersSequence(europePmc,
+            PaperSearchResult(listOf(epmcP1), "epmc-cursor", 2),
+            PaperSearchResult(listOf(epmcP2), null, 2)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val oaPaper = PaperMetadata(
+            pmcId = null, pmid = null, doi = "10.0/W1", title = "OA Paper", pubYear = 2024,
+            journal = "Nature", authors = listOf(PaperAuthor("Jane", "Doe", "0000-0002", "MIT, US")),
+            source = "OPENALEX"
+        )
+        Mockito.doReturn(PaperSearchResult(listOf(oaPaper), null, 1))
+            .`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(openAlex, "NO_PMC_ID")
+
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+
+        val batchProgress = captured.filter { it.status == "RUNNING" && it.batchNumber > 0 }
+        val batchNumbers = batchProgress.map { it.batchNumber }
+
+        assertEquals(listOf(1, 2, 3), batchNumbers, "batchNumber must be globally continuous across sources")
+        assertEquals(batchNumbers.size, batchNumbers.toSet().size, "batchNumber must be unique within execution")
+
+        val epmcLogs = batchProgress.filter { it.details?.get("currentSource") == "EUROPE_PMC" }
+        val openAlexLogs = batchProgress.filter { it.details?.get("currentSource") == "OPENALEX" }
+        assertEquals(2, epmcLogs.size)
+        assertEquals(1, openAlexLogs.size)
+        assertTrue(epmcLogs.all { it.message?.contains("批次 1") == true || it.message?.contains("批次 2") == true })
+        assertTrue(openAlexLogs.single().message?.contains("批次 1") == true)
+    }
 }

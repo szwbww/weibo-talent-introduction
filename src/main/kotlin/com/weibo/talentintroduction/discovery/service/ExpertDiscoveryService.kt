@@ -417,9 +417,10 @@ class ExpertDiscoveryService(
                 sourceStats.indexed, sourceStats.promoted)
 
             stats.refreshGlobalCounts()
+            val persistedBatchNumber = stats.nextBatchSeq()
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-                batchNumber = batchNumber,
+                batchNumber = persistedBatchNumber,
                 processedCount = stats.totalPapers.toLong(),
                 totalCount = discoveryProperties.maxPapersPerRun.toLong(),
                 message = "[${source.sourceName}] 批次 $batchNumber: 论文 ${sourceStats.papersSearched}/$sourceLimit, 收录 ${sourceStats.indexed}, 晋升 ${sourceStats.promoted}",
@@ -562,9 +563,10 @@ class ExpertDiscoveryService(
             )
 
             stats.refreshGlobalCounts()
+            val persistedBatchNumber = stats.nextBatchSeq()
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "RUNNING",
-                batchNumber = batchNumber,
+                batchNumber = persistedBatchNumber,
                 processedCount = recordsProcessed.toLong(),
                 totalCount = orcidLimit.toLong(),
                 message = "[${orcid.sourceName}] 批次 $batchNumber: 记录 $recordsProcessed/$orcidLimit, 收录 ${sourceStats.indexed}, 晋升 ${sourceStats.promoted}",
