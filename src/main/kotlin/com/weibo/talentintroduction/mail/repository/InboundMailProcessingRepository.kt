@@ -76,6 +76,22 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     """)
     fun countGroupedByReasonType(): List<ReasonTypeCount>
 
+    @Query("""
+        SELECT COUNT(*) FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW'
+          AND sender_account_code IN (:accountCodes)
+    """)
+    fun countManualReviewByAccounts(accountCodes: List<String>): Long
+
+    @Query("""
+        SELECT reason_type, COUNT(*) as count
+        FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW' AND reason_type IS NOT NULL
+          AND sender_account_code IN (:accountCodes)
+        GROUP BY reason_type
+    """)
+    fun countGroupedByReasonTypeForAccounts(accountCodes: List<String>): List<ReasonTypeCount>
+
     @Query(
         """
         SELECT COUNT(*) FROM inbound_mail_processing

@@ -63,6 +63,7 @@ class UnmatchedInboundMailController(
                 )
             },
             totalCount = result.totalCount,
+            manualReviewTotal = result.manualReviewTotal,
             countsByReasonType = result.countsByReasonType
         )
     }
@@ -225,6 +226,7 @@ class ExpertEmailAliasController(
 data class InboundMailProcessingListResponse(
     val records: List<InboundMailProcessingResponse>,
     val totalCount: Long,
+    val manualReviewTotal: Long,
     val countsByReasonType: Map<String, Long>
 )
 

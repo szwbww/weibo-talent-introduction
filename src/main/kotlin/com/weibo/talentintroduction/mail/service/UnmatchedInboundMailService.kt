@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -21,6 +22,7 @@ class UnmatchedInboundMailService(
     private val expertContactRepository: ExpertContactRepository,
     private val expertEmailAliasService: ExpertEmailAliasService,
     private val mailRecordRepository: MailRecordRepository,
+    private val senderAccountRepository: MailSenderAccountRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val operatorActionLogService: OperatorActionLogService
 ) {
@@ -43,11 +45,19 @@ class UnmatchedInboundMailService(
             email = email,
             subject = subject
         )
-        val counts = inboundMailProcessingRepository.countGroupedByReasonType()
-            .associate { it.reasonType to it.count }
+        val activeCodes = senderAccountRepository.findAllByEnabledTrue().map { it.accountCode }
+        val (manualReviewTotal, counts) = if (activeCodes.isEmpty()) {
+            0L to emptyMap()
+        } else {
+            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes)
+            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes)
+                .associate { it.reasonType to it.count }
+            total to grouped
+        }
         return ManualReviewQueueResult(
             records = records,
             totalCount = totalCount,
+            manualReviewTotal = manualReviewTotal,
             countsByReasonType = counts
         )
     }
@@ -247,5 +257,6 @@ data class CandidateSuggestion(
 data class ManualReviewQueueResult(
     val records: List<InboundMailProcessing>,
     val totalCount: Long,
+    val manualReviewTotal: Long,
     val countsByReasonType: Map<String, Long>
 )

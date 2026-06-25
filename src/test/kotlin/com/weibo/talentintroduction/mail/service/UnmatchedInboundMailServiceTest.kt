@@ -6,8 +6,10 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.ReasonTypeCount
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -23,6 +25,7 @@ class UnmatchedInboundMailServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val expertEmailAliasService = Mockito.mock(ExpertEmailAliasService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val senderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
 
@@ -31,6 +34,7 @@ class UnmatchedInboundMailServiceTest {
         expertContactRepository = expertContactRepository,
         expertEmailAliasService = expertEmailAliasService,
         mailRecordRepository = mailRecordRepository,
+        senderAccountRepository = senderAccountRepository,
         expertIndexWriterService = expertIndexWriterService,
         operatorActionLogService = operatorActionLogService
     )
@@ -61,14 +65,20 @@ class UnmatchedInboundMailServiceTest {
         Mockito.`when`(
             inboundMailProcessingRepository.countManualReviewQueue(null, null, null)
         ).thenReturn(1L)
+        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue())
+            .thenReturn(listOf(MailSenderAccount(accountCode = "acc1", senderEmail = "a@b.com", senderName = "A", senderTitle = null, senderDisplayName = null, teamName = null, countryName = null, smtpHost = "h", smtpPort = 587, smtpUsername = "u", smtpPassword = "p", imapHost = "h", imapPort = 993, imapUsername = "u", imapPassword = "p")))
         Mockito.`when`(
-            inboundMailProcessingRepository.countGroupedByReasonType()
+            inboundMailProcessingRepository.countManualReviewByAccounts(listOf("acc1"))
+        ).thenReturn(1L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(listOf("acc1"))
         ).thenReturn(listOf(ReasonTypeCount("QA_NO_MATCH", 1L)))
 
         val result = service.listManualReviewQueue(null, null, null, 20, 0)
         assertEquals(1, result.records.size)
         assertEquals("a@b.com", result.records[0].fromEmail)
         assertEquals(1L, result.totalCount)
+        assertEquals(1L, result.manualReviewTotal)
         assertEquals(1L, result.countsByReasonType["QA_NO_MATCH"])
     }
 

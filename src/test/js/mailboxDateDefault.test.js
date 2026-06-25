@@ -32,7 +32,12 @@ function createMailboxSandbox() {
                 id,
                 value: "",
                 innerHTML: "",
-                textContent: ""
+                textContent: "",
+                disabled: false,
+                checked: false,
+                classList: {
+                    toggle: () => {}
+                }
             });
         }
         return store.get(id);
@@ -48,13 +53,15 @@ function createMailboxSandbox() {
                 totalCount: 0,
                 pageSize: 20,
                 accountsLoaded: true,
-                dateDefaultsApplied: false
+                dateDefaultsApplied: false,
+                onlyPending: false
             }
         },
         api: async () => ({ items: [], totalCount: 0 }),
         showStatus: () => {},
         renderMailboxTable: () => {},
         renderMailboxPagination: () => {},
+        refreshUnmatchedBadge: async () => {},
         escapeHtml: (v) => String(v == null ? "" : v)
     };
 
@@ -75,13 +82,13 @@ describe("mailbox date default", () => {
         );
         assert.match(
             appJsSource,
-            /!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
-            "loadMailbox should only apply defaults before first initialization"
+            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
+            "loadMailbox should only apply defaults when not pending-only"
         );
         assert.match(
             appJsSource,
-            /state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
-            "loadMailbox should mark date defaults as applied after first check"
+            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
+            "loadMailbox should mark date defaults applied only outside pending-only mode"
         );
     });
 
@@ -129,5 +136,58 @@ describe("mailbox date default", () => {
         const query = new URLSearchParams(requestUrls[1].split("?")[1] || "");
         assert.equal(query.get("startDate"), null);
         assert.equal(query.get("endDate"), null);
+    });
+
+    it("onlyPending skips date params and disables date inputs", async () => {
+        const sb = createMailboxSandbox();
+        let requestUrl = "";
+
+        sb.api = async (url) => {
+            requestUrl = url;
+            return { items: [], totalCount: 0 };
+        };
+
+        sb.$("#mailboxFilterOnlyPending").checked = true;
+        await sb.loadMailbox();
+
+        const startInput = sb.$("#mailboxFilterStartDate");
+        const endInput = sb.$("#mailboxFilterEndDate");
+        assert.equal(startInput.disabled, true);
+        assert.equal(endInput.disabled, true);
+
+        const query = new URLSearchParams(requestUrl.split("?")[1] || "");
+        assert.equal(query.get("pending"), "true");
+        assert.equal(query.get("startDate"), null);
+        assert.equal(query.get("endDate"), null);
+        assert.equal(sb.state.mailbox.dateDefaultsApplied, false);
+    });
+
+    it("pending-only first load then uncheck applies default dates on next load", async () => {
+        const sb = createMailboxSandbox();
+        const requestUrls = [];
+
+        sb.api = async (url) => {
+            requestUrls.push(url);
+            return { items: [], totalCount: 0 };
+        };
+
+        sb.$("#mailboxFilterOnlyPending").checked = true;
+        await sb.loadMailbox();
+        assert.equal(sb.state.mailbox.dateDefaultsApplied, false);
+
+        sb.$("#mailboxFilterOnlyPending").checked = false;
+        await sb.loadMailbox();
+
+        const startInput = sb.$("#mailboxFilterStartDate");
+        const endInput = sb.$("#mailboxFilterEndDate");
+        assert.equal(startInput.disabled, false);
+        assert.equal(endInput.disabled, false);
+        assert.equal(startInput.value, shanghaiWeekAgoString());
+        assert.equal(endInput.value, shanghaiTodayString());
+        assert.equal(sb.state.mailbox.dateDefaultsApplied, true);
+
+        const query = new URLSearchParams(requestUrls[1].split("?")[1] || "");
+        assert.equal(query.get("startDate"), shanghaiWeekAgoString());
+        assert.equal(query.get("endDate"), shanghaiTodayString());
     });
 });

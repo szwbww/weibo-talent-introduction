@@ -4336,20 +4336,21 @@ const HIGH_PRIORITY_REASON_TYPES = new Set(["NOT_INTERESTED", "QA_NO_MATCH"]);
 async function refreshUnmatchedBadge() {
     try {
         const data = await api("/api/mail/unmatched-inbound?pageSize=1&pageOffset=0");
-        updateUnmatchedBadge(data.countsByReasonType);
+        updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
     } catch (_) {
     }
 }
 
-function updateUnmatchedBadge(counts) {
+function updateUnmatchedBadge(counts, total) {
     if (!counts) {
-        api("/api/mail/unmatched-inbound").then(data => {
-            updateUnmatchedBadge(data.countsByReasonType);
+        api("/api/mail/unmatched-inbound?pageSize=1&pageOffset=0").then(data => {
+            updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
         }).catch(() => {});
         return;
     }
     const high = Array.from(HIGH_PRIORITY_REASON_TYPES).reduce((s, k) => s + (counts[k] || 0), 0);
-    const normal = ["UNMATCHED_CONTACT", "UNCLEAR_INTENT"].reduce((s, k) => s + (counts[k] || 0), 0);
+    const t = typeof total === "number" ? total : Object.values(counts).reduce((s, v) => s + (v || 0), 0);
+    const normal = Math.max(0, t - high);
     setBadge("#unmatchedBadgeHigh", high);
     setBadge("#unmatchedBadgeNormal", normal);
 }
@@ -6097,13 +6098,21 @@ async function loadMailbox() {
 
     const startInput = $("#mailboxFilterStartDate");
     const endInput = $("#mailboxFilterEndDate");
-    if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        endInput.value = monitoringToday();
-        startInput.value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(weekAgo);
+    const disabled = state.mailbox.onlyPending;
+    startInput.disabled = disabled;
+    endInput.disabled = disabled;
+    startInput.classList.toggle("input-disabled", disabled);
+    endInput.classList.toggle("input-disabled", disabled);
+
+    if (!state.mailbox.onlyPending) {
+        if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            endInput.value = monitoringToday();
+            startInput.value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(weekAgo);
+        }
+        state.mailbox.dateDefaultsApplied = true;
     }
-    state.mailbox.dateDefaultsApplied = true;
 
     const params = new URLSearchParams();
     const direction = $("#mailboxFilterDirection").value;
@@ -6117,8 +6126,10 @@ async function loadMailbox() {
     if (accountCode) params.set("accountCode", accountCode);
     if (recipientEmail) params.set("recipientEmail", recipientEmail);
     if (keyword) params.set("keyword", keyword);
-    if (startDate) params.set("startDate", startDate);
-    if (endDate) params.set("endDate", endDate);
+    if (!state.mailbox.onlyPending) {
+        if (startDate) params.set("startDate", startDate);
+        if (endDate) params.set("endDate", endDate);
+    }
     if (state.mailbox.onlyPending) params.set("pending", "true");
 
     params.set("page", state.mailbox.page);
