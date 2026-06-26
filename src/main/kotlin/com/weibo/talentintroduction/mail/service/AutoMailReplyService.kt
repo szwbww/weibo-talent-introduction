@@ -49,7 +49,9 @@ class AutoMailReplyService(
     private val bounceDetector: BounceDetector,
     private val bounceCollectionService: BounceCollectionService,
     private val bounceRateMonitorService: BounceRateMonitorService,
-    private val emailSuppressionService: EmailSuppressionService
+    private val emailSuppressionService: EmailSuppressionService,
+    private val dmarcReportDetector: DmarcReportDetector,
+    private val dmarcReportIngestService: DmarcReportIngestService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -68,7 +70,7 @@ class AutoMailReplyService(
         val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
         if (contact == null) {
             val cleanedBody = mailBodyCleaner.clean(received.body)
-            confirmManualReviewWithBody(
+            val inboundProcessing = confirmManualReviewWithBody(
                 account = account,
                 received = received,
                 expertContactId = null,
@@ -77,6 +79,8 @@ class AutoMailReplyService(
                 cleanedBody = cleanedBody,
                 skipImapAck = skipImapAck
             )
+            val inboundProcessingId = inboundProcessing.id ?: error("Inbound mail processing id is required")
+            mailAttachmentService.saveUnmatchedAttachments(inboundProcessingId, received.attachments)
             return SinglePipelineResult(
                 outcome = SinglePipelineOutcome.UNMATCHED_CONTACT,
                 recorded = false,
@@ -502,6 +506,15 @@ class AutoMailReplyService(
                 log.debug("Skipping bounce message during auto-reply poll: uid={}", it.imapUid)
                 return@forEach
             }
+            if (dmarcReportDetector.isDmarcAggregateReport(it.from, it.subject, it.attachments)) {
+                try {
+                    dmarcReportIngestService.ingest(it.attachments)
+                } catch (e: Exception) {
+                    log.warn("DMARC parse failed uid={}", it.imapUid, e)
+                }
+                mailReceiveService.markSeen(account, it.imapUid)
+                return@forEach
+            }
             val r = processSingle(account, it, skipImapAck = false)
             if (r.recorded) {
                 recorded++
@@ -794,9 +807,9 @@ class AutoMailReplyService(
         reasonType: String?,
         cleanedBody: String,
         skipImapAck: Boolean = false
-    ) {
+    ): InboundMailProcessing {
         val now = LocalDateTime.now()
-        inboundMailProcessingRepository.save(
+        val saved = inboundMailProcessingRepository.save(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
                 imapUid = received.imapUid,
@@ -816,6 +829,7 @@ class AutoMailReplyService(
             )
         )
         if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
+        return saved
     }
 
     private fun confirmProcessed(

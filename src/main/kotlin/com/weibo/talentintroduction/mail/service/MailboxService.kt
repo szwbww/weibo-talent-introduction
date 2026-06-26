@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.mail.controller.MailboxDetailResponse
 import com.weibo.talentintroduction.mail.controller.MailboxItemResponse
 import com.weibo.talentintroduction.mail.controller.MailboxListResponse
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
@@ -111,6 +112,26 @@ class MailboxService(
         }
     }
 
+    fun resolveAttachments(source: String, id: Long): List<MailAttachment> {
+        return when (source) {
+            "MAIL_RECORD" -> mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(id)
+            "INBOUND_PROCESSING" -> {
+                val byInbound = mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(id)
+                if (byInbound.isNotEmpty()) {
+                    return byInbound
+                }
+                val inbound = inboundMailProcessingRepository.findById(id).orElse(null)
+                    ?: return emptyList()
+                val mailRecord = inbound.messageId?.let {
+                    mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc(it)
+                } ?: return emptyList()
+                val mailRecordId = mailRecord.id ?: return emptyList()
+                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(mailRecordId)
+            }
+            else -> throw IllegalArgumentException("Unknown mailbox source: $source")
+        }
+    }
+
     private fun toDetailFromMailRecord(record: MailRecord): MailboxDetailResponse {
         val recordId = record.id ?: throw IllegalStateException("Mail record id is null")
         val body = record.cleanedBody ?: record.body
@@ -131,7 +152,7 @@ class MailboxService(
             subject = record.subject,
             bodyPreview = bodyPreview,
             body = body,
-            hasAttachment = mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty(),
+            hasAttachment = resolveAttachments("MAIL_RECORD", recordId).isNotEmpty(),
             sendStatus = record.sendStatus,
             timestamp = timestamp,
             processStatus = null,
@@ -146,10 +167,7 @@ class MailboxService(
         val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
         val timestamp = record.receivedAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         val bodyPreview = body?.take(200)
-        val inboundMailRecord = record.messageId?.let { mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc(it) }
-        val hasAttachment = inboundMailRecord?.id?.let { mailRecordId ->
-            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(mailRecordId).isNotEmpty()
-        } ?: false
+        val hasAttachment = resolveAttachments("INBOUND_PROCESSING", recordId).isNotEmpty()
         return MailboxDetailResponse(
             id = recordId,
             source = "INBOUND_PROCESSING",

@@ -59,4 +59,38 @@ class MailAttachmentServiceTest {
         assertEquals(ExpertDocumentType.CV.name, documentCaptor.value.documentType)
         assertEquals(DocumentStatus.PENDING_REVIEW.name, documentCaptor.value.documentStatus)
     }
+
+    @Test
+    fun `saveUnmatchedAttachments writes file without expert document`(@TempDir tempDir: Path) {
+        val service = MailAttachmentService(
+            MailAttachmentStorageProperties(basePath = tempDir.toString()),
+            mailAttachmentRepository,
+            expertDocumentRepository
+        )
+        Mockito.`when`(mailAttachmentRepository.save(Mockito.any(MailAttachment::class.java)))
+            .thenAnswer { invocation ->
+                val attachment = invocation.getArgument<MailAttachment>(0)
+                attachment.copy(id = 41)
+            }
+
+        val saved = service.saveUnmatchedAttachments(
+            inboundProcessingId = 99,
+            attachments = listOf(
+                ReceivedMailAttachment(
+                    fileName = "unknown.pdf",
+                    contentType = "application/pdf",
+                    content = "pdf-content".toByteArray()
+                )
+            )
+        )
+
+        assertEquals(1, saved.size)
+        val attachmentCaptor = ArgumentCaptor.forClass(MailAttachment::class.java)
+        Mockito.verify(mailAttachmentRepository).save(attachmentCaptor.capture())
+        assertEquals(null, attachmentCaptor.value.mailRecordId)
+        assertEquals(99L, attachmentCaptor.value.inboundProcessingId)
+        assertTrue(Files.exists(Path.of(attachmentCaptor.value.storagePath)))
+        assertEquals("pdf-content", Files.readString(Path.of(attachmentCaptor.value.storagePath)))
+        Mockito.verify(expertDocumentRepository, Mockito.never()).save(Mockito.any(ExpertDocument::class.java))
+    }
 }

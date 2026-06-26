@@ -40,6 +40,7 @@ class MailAttachmentService(
             val mailAttachment = mailAttachmentRepository.save(
                 MailAttachment(
                     mailRecordId = mailRecordId,
+                    inboundProcessingId = null,
                     fileName = received.fileName,
                     contentType = received.contentType,
                     fileSize = received.content.size.toLong(),
@@ -55,6 +56,37 @@ class MailAttachmentService(
                     documentType = inferDocumentType(received.fileName).name,
                     createdAt = now,
                     updatedAt = now
+                )
+            )
+        }
+    }
+
+    fun saveUnmatchedAttachments(
+        inboundProcessingId: Long,
+        attachments: List<ReceivedMailAttachment>
+    ): List<MailAttachment> {
+        if (attachments.isEmpty()) {
+            return emptyList()
+        }
+
+        val now = LocalDateTime.now()
+        val directory = Path.of(properties.basePath, "unmatched", inboundProcessingId.toString())
+        Files.createDirectories(directory)
+
+        return attachments.map { received ->
+            val safeFileName = received.fileName.toSafeFileName()
+            val storagePath = directory.resolve("${UUID.randomUUID()}-$safeFileName")
+            Files.write(storagePath, received.content)
+
+            mailAttachmentRepository.save(
+                MailAttachment(
+                    mailRecordId = null,
+                    inboundProcessingId = inboundProcessingId,
+                    fileName = received.fileName,
+                    contentType = received.contentType,
+                    fileSize = received.content.size.toLong(),
+                    storagePath = storagePath.toString(),
+                    createdAt = now
                 )
             )
         }

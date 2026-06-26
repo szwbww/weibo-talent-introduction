@@ -4410,6 +4410,18 @@ async function showMailDetail(source, id) {
             : "-";
         const body = detail.body || "";
 
+        let attachmentSectionHtml = "";
+        if (detail.hasAttachment) {
+            try {
+                const attachments = await api(
+                    `/api/mail/mailbox/${encodeURIComponent(source)}/${id}/attachments`
+                );
+                attachmentSectionHtml = renderMailboxAttachments(attachments);
+            } catch (e) {
+                attachmentSectionHtml = `<p style="color: var(--text-muted); font-size: 12px;">附件加载失败：${escapeHtml(e.message)}</p>`;
+            }
+        }
+
         // 复用工单详情面板（内联，不弹框），仅展示，不含任何处理功能
         const panel = $("#unmatchedDetailPanel");
         panel.hidden = false;
@@ -4430,6 +4442,11 @@ async function showMailDetail(source, id) {
                     <div class="metadata-card"><div class="metadata-card-header"><span>发送状态</span></div><div class="metadata-card-value">${escapeHtml(sendStatusLabel)}</div></div>
                     <div class="metadata-card" style="grid-column: 1 / -1;"><div class="metadata-card-header"><span>主题</span></div><div class="metadata-card-value">${escapeHtml(detail.subject || "-")}</div></div>
                 </div>
+                ${detail.hasAttachment ? `
+                <div class="detail-section">
+                    <h3>附件</h3>
+                    ${attachmentSectionHtml}
+                </div>` : ""}
                 <div class="detail-section">
                     <h3>正文</h3>
                     <div class="pre">${escapeHtml(body || "无正文")}</div>
@@ -4440,6 +4457,28 @@ async function showMailDetail(source, id) {
     } catch (e) {
         showStatus(e.message, "error");
     }
+}
+
+function renderMailboxAttachments(attachments) {
+    const list = Array.isArray(attachments) ? attachments : [];
+    if (list.length === 0) {
+        return `<p style="color: var(--text-muted); font-size: 12px;">暂无附件。</p>`;
+    }
+    return `
+        <div class="document-list">
+            ${list.map(item => `
+                <div class="document-row">
+                    <div>
+                        <strong>${escapeHtml(item.fileName || "?")}</strong>
+                        <span>${escapeHtml(item.contentType || "-")}&nbsp;·&nbsp;${formatFileSize(item.fileSize)}</span>
+                    </div>
+                    <div class="document-actions">
+                        <a class="button small" href="${contextPath}/api/mail/mailbox/attachments/${encodeURIComponent(item.id)}/download" download>下载</a>
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `;
 }
 
 async function refreshMailboxAfterPendingAction() {

@@ -422,4 +422,68 @@ class MailboxServiceTest {
         assertEquals(12L, detail.inboundProcessingId)
         assertEquals("expert@example.com", detail.expertEmail)
     }
+
+    @Test
+    fun `resolveAttachments prefers inbound processing attachments`() {
+        val inboundAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
+            id = 1L,
+            mailRecordId = null,
+            inboundProcessingId = 12L,
+            fileName = "a.pdf",
+            contentType = "application/pdf",
+            fileSize = 10L,
+            storagePath = "/tmp/a.pdf"
+        )
+        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(12L))
+            .thenReturn(listOf(inboundAttachment))
+
+        val attachments = mailboxService.resolveAttachments("INBOUND_PROCESSING", 12L)
+
+        assertEquals(1, attachments.size)
+        assertEquals("a.pdf", attachments[0].fileName)
+    }
+
+    @Test
+    fun `hasAttachment matches resolveAttachments for inbound processing`() {
+        val inbound = InboundMailProcessing(
+            id = 12L,
+            senderAccountCode = "active_acc",
+            imapUid = 100L,
+            messageId = "in-msg",
+            inReplyTo = null,
+            fromEmail = "expert@example.com",
+            subject = "Re: Hello",
+            body = "inbound raw",
+            cleanedBody = "inbound cleaned",
+            receivedAt = LocalDateTime.of(2026, 6, 22, 11, 0),
+            processStatus = "MANUAL_REVIEW",
+            processReason = "UNMATCHED",
+            reasonType = "UNMATCHED_CONTACT",
+            resolvedAt = null,
+            resolvedBy = null,
+            expertContactId = null,
+            retryCount = 0,
+            lastError = null,
+            createdAt = null,
+            updatedAt = null
+        )
+        val inboundAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
+            id = 2L,
+            mailRecordId = null,
+            inboundProcessingId = 12L,
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            fileSize = 20L,
+            storagePath = "/tmp/cv.pdf"
+        )
+        Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
+        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(12L))
+            .thenReturn(listOf(inboundAttachment))
+
+        val detail = mailboxService.getMailboxDetail("INBOUND_PROCESSING", 12L)
+        val attachments = mailboxService.resolveAttachments("INBOUND_PROCESSING", 12L)
+
+        assertTrue(detail.hasAttachment)
+        assertEquals(1, attachments.size)
+    }
 }

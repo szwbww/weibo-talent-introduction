@@ -5,4 +5,5 @@ import org.springframework.data.repository.CrudRepository
 
 interface MailAttachmentRepository : CrudRepository<MailAttachment, Long> {
     fun findAllByMailRecordIdOrderByCreatedAtAsc(mailRecordId: Long): List<MailAttachment>
+    fun findAllByInboundProcessingIdOrderByCreatedAtAsc(inboundProcessingId: Long): List<MailAttachment>
 }

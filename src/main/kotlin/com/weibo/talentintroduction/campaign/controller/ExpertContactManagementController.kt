@@ -499,7 +499,7 @@ private fun sanitizeErrorSummary(summary: String?): String? {
 private fun MailAttachment.toResponse(): MailAttachmentResponse =
     MailAttachmentResponse(
         id = id,
-        mailRecordId = mailRecordId,
+        mailRecordId = requireNotNull(mailRecordId) { "Matched mail attachment must have mail_record_id" },
         fileName = fileName,
         contentType = contentType,
         fileSize = fileSize,

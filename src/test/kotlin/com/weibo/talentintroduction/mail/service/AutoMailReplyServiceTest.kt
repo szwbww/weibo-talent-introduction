@@ -68,6 +68,8 @@ class AutoMailReplyServiceTest {
         }
     )
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val dmarcReportDetector = DmarcReportDetector()
+    private val dmarcReportIngestService = Mockito.mock(DmarcReportIngestService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -91,7 +93,9 @@ class AutoMailReplyServiceTest {
         bounceDetector,
         bounceCollectionService,
         bounceRateMonitorService,
-        emailSuppressionService
+        emailSuppressionService,
+        dmarcReportDetector,
+        dmarcReportIngestService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -100,6 +104,13 @@ class AutoMailReplyServiceTest {
             val code = invocation.getArgument<String>(0)
             accountService.getEnabledAccount(code)
         }
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = record.id ?: 999L)
+            }
+        Mockito.`when`(mailAttachmentService.saveUnmatchedAttachments(Mockito.anyLong(), Mockito.anyList()))
+            .thenReturn(emptyList())
     }
 
     private fun defaultPromotionStubs(contact: ExpertContact) {
@@ -144,6 +155,124 @@ class AutoMailReplyServiceTest {
         inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
         Mockito.verify(expertEmailAliasService, Mockito.never())
             .findContactByEmailOrAlias("mailer-daemon@example.com")
+    }
+
+    @Test
+    fun `dmarc aggregate report is ingested and marked seen without manual review`() {
+        val account = account("sender")
+        val dmarcMail = ReceivedMail(
+            imapUid = 201L,
+            from = "noreply-dmarc-support@google.com",
+            subject = "Report domain: qftechtalent.com Submitter: google.com Report-ID: abc-123",
+            body = "",
+            messageId = "dmarc-1",
+            inReplyTo = null,
+            receivedAt = LocalDateTime.of(2026, 6, 26, 10, 0),
+            attachments = listOf(
+                ReceivedMailAttachment(
+                    fileName = "google.com!qftechtalent.com!1609459200!1609545600.xml.gz",
+                    contentType = "application/gzip",
+                    content = ByteArray(0)
+                )
+            )
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(0, result.manualReview)
+        assertEquals(0, result.recorded)
+        Mockito.verify(dmarcReportIngestService).ingest(dmarcMail.attachments)
+        Mockito.verify(receiveService).markSeen(account, 201L)
+        Mockito.verifyNoInteractions(expertEmailAliasService)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `corrupted dmarc ingest failure still marks seen without manual review`() {
+        val account = account("sender")
+        val dmarcMail = ReceivedMail(
+            imapUid = 301L,
+            from = "noreply-dmarc-support@google.com",
+            subject = "Report domain: qftechtalent.com Submitter: google.com Report-ID: bad",
+            body = "",
+            messageId = "dmarc-bad",
+            inReplyTo = null,
+            receivedAt = LocalDateTime.of(2026, 6, 26, 10, 0),
+            attachments = listOf(
+                ReceivedMailAttachment(
+                    fileName = "bad.xml.gz",
+                    contentType = "application/gzip",
+                    content = "not-gzip".toByteArray()
+                )
+            )
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail))
+        Mockito.doThrow(RuntimeException("ingest failed"))
+            .`when`(dmarcReportIngestService).ingest(dmarcMail.attachments)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.fetched)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(receiveService).markSeen(account, 301L)
+        Mockito.verifyNoInteractions(expertEmailAliasService)
+    }
+
+    @Test
+    fun `dmarc report does not block subsequent expert mail processing`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.WAITING_REPLY.name
+        )
+        val dmarcMail = ReceivedMail(
+            imapUid = 301L,
+            from = "noreply-dmarc-support@google.com",
+            subject = "Report domain: qftechtalent.com Submitter: google.com Report-ID: ok",
+            body = "",
+            messageId = "dmarc-ok",
+            inReplyTo = null,
+            receivedAt = LocalDateTime.of(2026, 6, 26, 10, 0),
+            attachments = emptyList()
+        )
+        val expertMail = reply(imapUid = 302L)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail, expertMail))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        defaultPromotionStubs(contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(null)
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+        Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ManualHandoff>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(2, result.fetched)
+        Mockito.verify(receiveService).markSeen(account, 301L)
+        Mockito.verify(expertEmailAliasService).findContactByEmailOrAlias("expert@example.com")
     }
 
     @Test
@@ -328,6 +457,11 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(null)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = 501L)
+            }
 
         val result = service.receiveAndAutoReply("sender", 5)
 
@@ -338,6 +472,32 @@ class AutoMailReplyServiceTest {
         assertEquals("CONTACT_NOT_FOUND", captor.value.processReason)
         assertEquals("reply-1", captor.value.messageId)
         assertEquals("intro-1", captor.value.inReplyTo)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(501L, emptyList())
+    }
+
+    @Test
+    fun `unmatched email with attachments saves unmatched attachments`() {
+        val account = account("sender")
+        val attachment = ReceivedMailAttachment(
+            fileName = "resume.pdf",
+            contentType = "application/pdf",
+            content = "pdf".toByteArray()
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(reply(attachments = listOf(attachment)))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(null)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = 502L)
+            }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(502L, listOf(attachment))
     }
 
     @Test
@@ -830,16 +990,19 @@ class AutoMailReplyServiceTest {
     private fun reply(
         body: String = "Could you share the program details?",
         from: String = "expert@example.com",
-        subject: String = "Re: Talent Program"
+        subject: String = "Re: Talent Program",
+        attachments: List<ReceivedMailAttachment> = emptyList(),
+        imapUid: Long = 101
     ): ReceivedMail =
         ReceivedMail(
-            imapUid = 101,
+            imapUid = imapUid,
             from = from,
             subject = subject,
             body = body,
             messageId = "reply-1",
             inReplyTo = "intro-1",
-            receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0)
+            receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0),
+            attachments = attachments
         )
 
     private fun account(accountCode: String): MailSenderAccount =

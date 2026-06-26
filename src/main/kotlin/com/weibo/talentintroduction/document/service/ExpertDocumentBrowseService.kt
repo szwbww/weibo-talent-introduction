@@ -47,10 +47,13 @@ class ExpertDocumentBrowseService(
             val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
                 .orElseThrow { error("Attachment not found: ${doc.mailAttachmentId}") }
 
-            val mailRecord = mailRecordRepository.findByIdOrNull(attachment.mailRecordId)
-                ?: error("Mail record not found: ${attachment.mailRecordId}")
+            val mailRecordId = requireNotNull(attachment.mailRecordId) {
+                "Expert document attachment must have mail_record_id"
+            }
+            val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+                ?: error("Mail record not found: $mailRecordId")
             require(mailRecord.expertContactId == contactId) {
-                "Mail record ${attachment.mailRecordId} does not belong to expert contact $contactId"
+                "Mail record $mailRecordId does not belong to expert contact $contactId"
             }
 
             val contentType = resolveContentType(attachment)
@@ -59,7 +62,7 @@ class ExpertDocumentBrowseService(
             ExpertDocumentFile(
                 documentId = doc.id ?: error("Document id is required"),
                 attachmentId = attachment.id ?: error("Attachment id is required"),
-                mailRecordId = attachment.mailRecordId,
+                mailRecordId = mailRecordId,
                 fileName = attachment.fileName,
                 contentType = contentType,
                 fileSize = attachment.fileSize,
@@ -105,10 +108,13 @@ class ExpertDocumentBrowseService(
         val attachment = mailAttachmentRepository.findById(attachmentId)
             .orElseThrow { error("Attachment not found: $attachmentId") }
 
-        val mailRecord = mailRecordRepository.findByIdOrNull(attachment.mailRecordId)
-            ?: error("Mail record not found: ${attachment.mailRecordId}")
+        val mailRecordId = requireNotNull(attachment.mailRecordId) {
+            "Expert document attachment must have mail_record_id"
+        }
+        val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+            ?: error("Mail record not found: $mailRecordId")
         require(mailRecord.expertContactId == contactId) {
-            "Mail record ${attachment.mailRecordId} does not belong to expert contact $contactId"
+            "Mail record $mailRecordId does not belong to expert contact $contactId"
         }
 
         val storagePath = Path.of(attachment.storagePath).toAbsolutePath().normalize()

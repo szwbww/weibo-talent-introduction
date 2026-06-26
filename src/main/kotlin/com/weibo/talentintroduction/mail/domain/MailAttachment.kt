@@ -8,7 +8,8 @@ import java.time.LocalDateTime
 data class MailAttachment(
     @Id
     val id: Long? = null,
-    val mailRecordId: Long,
+    val mailRecordId: Long? = null,
+    val inboundProcessingId: Long? = null,
     val fileName: String,
     val contentType: String?,
     val fileSize: Long,
