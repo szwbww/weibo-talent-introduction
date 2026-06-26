@@ -12,10 +12,12 @@ import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.InboundIntent
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
@@ -32,6 +34,7 @@ class AutoMailReplyService(
     private val mailDeliveryService: MailDeliveryService,
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
+    private val mailRecordQaRuleRepository: MailRecordQaRuleRepository,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val inboundIntentRepository: InboundIntentRepository,
     private val manualHandoffRepository: ManualHandoffRepository,
@@ -407,6 +410,37 @@ class AutoMailReplyService(
             )
         }
 
+        if (match.gapDetected) {
+            markManualReview(
+                contact = effectiveContact,
+                received = received,
+                status = ConversationStatus.MANUAL_HANDOFF,
+                reason = "QA_GAP",
+                note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
+            )
+            confirmManualReviewWithBody(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                reason = "QA_GAP",
+                reasonType = "QA_GAP",
+                cleanedBody = cleanedBody,
+                skipImapAck = skipImapAck
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.QA_NO_MATCH,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                previousStatus = contact.currentStatus,
+                reason = "QA_GAP"
+            )
+        }
+
         if (blockedByUnsubscribe(effectiveContact, received, received.from, "QA")) {
             confirmManualReviewWithBody(
                 account = account,
@@ -459,6 +493,17 @@ class AutoMailReplyService(
                 createdAt = now
             )
         )
+
+        val outboundRecordId = outboundRecord.id ?: error("Outbound mail record id is required")
+        match.matchedRuleIds.forEachIndexed { ordinal, qaRuleId ->
+            mailRecordQaRuleRepository.save(
+                MailRecordQaRule(
+                    mailRecordId = outboundRecordId,
+                    qaRuleId = qaRuleId,
+                    ordinal = ordinal
+                )
+            )
+        }
 
         val qaContact = conversationStateService.transition(
             contact = effectiveContact,

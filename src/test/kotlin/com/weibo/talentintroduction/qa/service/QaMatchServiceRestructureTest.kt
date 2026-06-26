@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.qa.service
 
+import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -15,25 +17,53 @@ import org.mockito.Mockito
  */
 class QaMatchServiceRestructureTest {
     private val repository = Mockito.mock(QaRuleRepository::class.java)
-    private val service = QaMatchService(repository)
+    private val categoryRepository = Mockito.mock(QaCategoryRepository::class.java)
+    private val service = QaMatchService(repository, categoryRepository)
 
     @BeforeEach
     fun setUp() {
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(restructuredRules())
+        Mockito.`when`(categoryRepository.findAll()).thenReturn(
+            listOf(
+                QaCategory(id = 100, categoryCode = "PROGRAM_AND_ELIGIBILITY", categoryName = "Program", description = null, composeOrder = 10),
+                QaCategory(id = 101, categoryCode = "ROLE_AND_WORKSTYLE", categoryName = "Role", description = null, composeOrder = 20),
+                QaCategory(id = 102, categoryCode = "FUNDING_AND_TIMELINE", categoryName = "Funding", description = null, composeOrder = 30),
+                QaCategory(id = 103, categoryCode = "PROCESS_ACTIONS", categoryName = "Process", description = null, composeOrder = 40),
+                QaCategory(id = 104, categoryCode = "TRUST_AND_COMPLIANCE", categoryName = "Trust", description = null, composeOrder = 50),
+                QaCategory(id = 105, categoryCode = "COMMUNICATION_AND_OTHER", categoryName = "Communication", description = null, composeOrder = 60)
+            )
+        )
     }
 
     @Test
-    fun `overview inquiry still matches project content rule`() {
+    fun `overview inquiry matches overview composite rule`() {
+        val overviewRule = overviewRule()
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            restructuredRules() + overviewRule
+        )
+        Mockito.`when`(categoryRepository.findAll()).thenReturn(
+            listOf(
+                QaCategory(id = 106, categoryCode = "OVERVIEW", categoryName = "Overview", description = null, composeOrder = 0),
+                QaCategory(id = 100, categoryCode = "PROGRAM_AND_ELIGIBILITY", categoryName = "Program", description = null, composeOrder = 10),
+                QaCategory(id = 101, categoryCode = "ROLE_AND_WORKSTYLE", categoryName = "Role", description = null, composeOrder = 20),
+                QaCategory(id = 102, categoryCode = "FUNDING_AND_TIMELINE", categoryName = "Funding", description = null, composeOrder = 30),
+                QaCategory(id = 103, categoryCode = "PROCESS_ACTIONS", categoryName = "Process", description = null, composeOrder = 40),
+                QaCategory(id = 104, categoryCode = "TRUST_AND_COMPLIANCE", categoryName = "Trust", description = null, composeOrder = 50),
+                QaCategory(id = 105, categoryCode = "COMMUNICATION_AND_OTHER", categoryName = "Communication", description = null, composeOrder = 60)
+            )
+        )
+
         val body = """
             Dear team,
-            I am interested in learning more about your talent program and what this project involves.
-            Could you share an overview of the available schemes?
+            I would like to learn more about your talent program and understand the program
+            before sharing my background. Could you share more information on the objectives and scope?
         """.trimIndent()
 
         val result = service.match(body)
 
-        assertEquals(1L, result?.ruleId)
-        assertEquals("About the talent program", result?.replySubject)
+        assertEquals(24L, result?.ruleId)
+        assertEquals("Program overview", result?.replySubject)
+        assertEquals(overviewRule.replyBody, result?.replyBody)
     }
 
     @Test
@@ -133,6 +163,18 @@ class QaMatchServiceRestructureTest {
     fun `generic thank you without keywords still matches nothing`() {
         assertNull(service.match("Thank you for your email. I will get back to you soon."))
     }
+
+    private fun overviewRule(): QaRule = QaRule(
+        id = 24,
+        categoryId = 106,
+        keywords = "learn more,more information,name and background,objectives and scope,before sharing,understand the program",
+        matchMode = "ANY",
+        priority = 5,
+        replySubject = "Program overview",
+        replyBody = "Bundled overview answer for opening inquiries.",
+        displayName = "项目总览",
+        supersedesChildren = true
+    )
 
     private fun restructuredRules(): List<QaRule> = listOf(
         // Original 12 V3 seed rules — keywords/priority/reply unchanged (I-1)

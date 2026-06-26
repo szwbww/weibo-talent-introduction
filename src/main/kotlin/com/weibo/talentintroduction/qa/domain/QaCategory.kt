@@ -11,6 +11,7 @@ data class QaCategory(
     val categoryCode: String,
     val categoryName: String,
     val description: String?,
+    val composeOrder: Int = 100,
     val enabled: Boolean = true,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null

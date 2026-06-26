@@ -12,10 +12,12 @@ import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.service.QaMatchResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
@@ -33,6 +35,7 @@ class AutoMailReplyServiceTest {
     private val deliveryService = Mockito.mock(MailDeliveryService::class.java)
     private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val inboundIntentRepository = Mockito.mock(InboundIntentRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
@@ -76,6 +79,7 @@ class AutoMailReplyServiceTest {
         deliveryService,
         contactRepository,
         mailRecordRepository,
+        mailRecordQaRuleRepository,
         inboundMailProcessingRepository,
         inboundIntentRepository,
         manualHandoffRepository,
@@ -850,6 +854,144 @@ class AutoMailReplyServiceTest {
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
         Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
         assertEquals(ConversationStatus.QA_AUTO_REPLIED.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `QA gap hands off without sending outbound mail`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Partial answer",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(1L),
+                gapDetected = true
+            )
+        )
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        assertEquals(0, result.replied)
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        Mockito.verifyNoInteractions(mailRecordQaRuleRepository)
+        val handoffCaptor = ArgumentCaptor.forClass(ManualHandoff::class.java)
+        Mockito.verify(manualHandoffRepository).save(handoffCaptor.capture())
+        assertEquals("QA_GAP", handoffCaptor.value.reason)
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
+        assertEquals(ConversationStatus.MANUAL_HANDOFF.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `QA auto reply persists all matched rules in association table`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 10,
+                replySubject = "Re: Program",
+                replyBody = "Combined answer",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(10L, 20L),
+                gapDetected = false
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Re: Program", body = "Combined answer"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        service.receiveAndAutoReply("sender", 5)
+
+        val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository, Mockito.atLeastOnce()).save(mailRecordCaptor.capture())
+        val outboundRecord = mailRecordCaptor.allValues.last { it.direction == "OUTBOUND" && it.mailType == "QA_REPLY" }
+        assertEquals(10L, outboundRecord.matchedQaRuleId)
+
+        val qaRuleCaptor = ArgumentCaptor.forClass(MailRecordQaRule::class.java)
+        Mockito.verify(mailRecordQaRuleRepository, Mockito.times(2)).save(qaRuleCaptor.capture())
+        assertEquals(listOf(10L to 0, 20L to 1), qaRuleCaptor.allValues.map { it.qaRuleId to it.ordinal })
+        qaRuleCaptor.allValues.forEach { assertEquals(100L, it.mailRecordId) }
+    }
+
+    @Test
+    fun `single QA auto reply persists one association row`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(1L),
+                gapDetected = false
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Re: Program", body = "Auto reply body"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        service.receiveAndAutoReply("sender", 5)
+
+        val qaRuleCaptor = ArgumentCaptor.forClass(MailRecordQaRule::class.java)
+        Mockito.verify(mailRecordQaRuleRepository).save(qaRuleCaptor.capture())
+        assertEquals(1L, qaRuleCaptor.value.qaRuleId)
+        assertEquals(0, qaRuleCaptor.value.ordinal)
+    }
+
+    @Test
+    fun `overview match with multiple questions sends instead of QA gap handoff`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 100,
+                replySubject = "Program overview",
+                replyBody = "Overview answer",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(100L),
+                gapDetected = false
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Program overview", body = "Overview answer"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.replied)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(deliveryService).send(
+            eqValue(account),
+            eqValue(ComposedMail(to = "expert@example.com", subject = "Program overview", body = "Overview answer"))
+        )
+        Mockito.verify(manualHandoffRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test

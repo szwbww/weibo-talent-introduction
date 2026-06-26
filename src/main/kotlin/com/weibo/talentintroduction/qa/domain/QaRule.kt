@@ -15,8 +15,10 @@ data class QaRule(
     val replySubject: String?,
     val replyBody: String,
     val displayName: String? = null,
+    val sectionTitle: String? = null,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
+    val supersedesChildren: Boolean = false,
     val enabled: Boolean = true,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
