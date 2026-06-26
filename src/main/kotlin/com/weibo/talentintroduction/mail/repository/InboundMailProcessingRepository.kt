@@ -153,4 +153,16 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         """
     )
     fun findLastReceivedAtPerAccount(): List<SenderAccountLastReceived>
+
+    @Query(
+        """
+        SELECT * FROM inbound_mail_processing
+        ORDER BY received_at ASC, id ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun findAllPagedOrderByReceivedAtAsc(limit: Int, offset: Int): List<InboundMailProcessing>
+
+    @Query("SELECT COUNT(*) FROM inbound_mail_processing")
+    fun countAll(): Long
 }

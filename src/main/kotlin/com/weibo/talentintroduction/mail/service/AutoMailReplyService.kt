@@ -53,6 +53,7 @@ class AutoMailReplyService(
     private val bounceCollectionService: BounceCollectionService,
     private val bounceRateMonitorService: BounceRateMonitorService,
     private val emailSuppressionService: EmailSuppressionService,
+    private val selfCheckProbeDetector: SelfCheckProbeDetector,
     private val dmarcReportDetector: DmarcReportDetector,
     private val dmarcReportIngestService: DmarcReportIngestService
 ) {
@@ -547,8 +548,23 @@ class AutoMailReplyService(
         val repliedExperts = mutableListOf<RepliedExpertInfo>()
 
         receivedMails.forEach {
-            if (bounceDetector.isBounce(it.from, it.subject, contentType = null)) {
-                log.debug("Skipping bounce message during auto-reply poll: uid={}", it.imapUid)
+            if (selfCheckProbeDetector.isSelfCheckProbe(it.from, it.subject, account.senderEmail)) {
+                mailReceiveService.markSeen(account, it.imapUid)
+                log.debug("Discarded self-check probe: uid={}", it.imapUid)
+                return@forEach
+            }
+            val bounceSignal = bounceDetector.detect(it.from, it.subject, it.body)
+            if (bounceSignal != null) {
+                bounceCollectionService.ingest(
+                    signal = bounceSignal,
+                    senderAccountCode = account.accountCode,
+                    bounceMessageId = it.messageId,
+                    from = it.from,
+                    subject = it.subject,
+                    receivedAt = it.receivedAt
+                )
+                mailReceiveService.markSeen(account, it.imapUid)
+                log.debug("Ingested bounce during auto-reply poll: uid={}", it.imapUid)
                 return@forEach
             }
             if (dmarcReportDetector.isDmarcAggregateReport(it.from, it.subject, it.attachments)) {

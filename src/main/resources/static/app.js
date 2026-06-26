@@ -5409,6 +5409,14 @@ async function loadMonitoringSubTab() {
         pendingParams.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
         url = `/api/mail/unmatched-inbound?${pendingParams}`;
     }
+    if (tab === "bounces") {
+        const bounceParams = new URLSearchParams();
+        bounceParams.set("pageSize", state.monitoring.pageSize);
+        bounceParams.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+        const accountCode = $("#monitoringSenderAccount")?.value;
+        if (accountCode) bounceParams.set("accountCode", accountCode);
+        url = `/api/mail/bounces?${bounceParams}`;
+    }
     if (tab === "promotions") url = `/api/mail-monitoring/promotions?${params}`;
     const data = await api(url);
     state.monitoring.rows = data.records || [];
@@ -5460,6 +5468,22 @@ function renderMonitoringActivityTable() {
         `).join("") || renderEmpty(7);
         return;
     }
+    if (tab === "bounces") {
+        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>账号</th><th>类型</th><th>失败收件人</th><th>失败原因</th><th>关联专家</th><th>DSN</th><th>原始 Message-ID</th></tr>`;
+        table.querySelector("tbody").innerHTML = rows.map((r) => `
+            <tr><td>${escapeHtml(r.receivedAt || "-")}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
+            <td>${badge(r.bounceType || "-", r.bounceType === "HARD" ? "error" : "warn")}</td>
+            <td>${escapeHtml(r.failedRecipient || "-")}</td>
+            <td>${escapeHtml(r.bounceReason || "-")}</td>
+            <td>${escapeHtml(r.expertName || r.expertEmail || r.originalExpertContactId || "-")}</td>
+            <td>${escapeHtml(r.dsnStatus || "-")}</td><td>${escapeHtml(r.originalMessageId || "-")}</td></tr>
+        `).join("") || renderEmpty(8);
+        const backfillBtn = $("#monitoringBounceBackfillBtn");
+        if (backfillBtn) backfillBtn.style.display = "";
+        return;
+    }
+    const backfillBtn = $("#monitoringBounceBackfillBtn");
+    if (backfillBtn) backfillBtn.style.display = "none";
     table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>触发</th><th>状态</th><th>层级</th><th>来源来信</th><th>错误</th><th>操作</th></tr>`;
     table.querySelector("tbody").innerHTML = rows.map((r) => `
         <tr><td>${escapeHtml(r.createdAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(triggeredByLabels[r.triggeredBy] || r.triggeredBy)}</td>
@@ -5537,6 +5561,18 @@ function bindMonitoringEvents() {
         state.monitoring.page = 0;
         $$("#monitoringSubTabs .tab").forEach((item) => item.classList.toggle("active", item === tab));
         loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringBounceBackfillBtn")?.addEventListener("click", async () => {
+        if (!confirm("将从 inbound 历史记录回填退信名单，可重复执行。继续？")) return;
+        try {
+            const result = await api("/api/mail/bounces/backfill", { method: "POST" });
+            showStatus(`回填完成：扫描 ${result.scanned}，新增 ${result.ingested}，重复 ${result.duplicates}`);
+            if (state.monitoring.subTab === "bounces") {
+                await loadMonitoringSubTab();
+            }
+        } catch (e) {
+            showStatus(e.message, "error");
+        }
     });
     $("#monitoringPagination").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");

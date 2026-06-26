@@ -50,6 +50,7 @@ class AutoMailReplyServiceTest {
     private val automaticApplicationPromotionService = Mockito.mock(AutomaticApplicationPromotionService::class.java)
     private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
     private val bounceDetector = BounceDetector()
+    private val selfCheckProbeDetector = SelfCheckProbeDetector()
     private val bounceCollectionService = Mockito.mock(
         BounceCollectionService::class.java,
         Mockito.withSettings().defaultAnswer { invocation ->
@@ -98,6 +99,7 @@ class AutoMailReplyServiceTest {
         bounceCollectionService,
         bounceRateMonitorService,
         emailSuppressionService,
+        selfCheckProbeDetector,
         dmarcReportDetector,
         dmarcReportIngestService
     )
@@ -139,14 +141,87 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `receiveAndAutoReply ingests bounce before processSingle and still collects unseen bounces`() {
+        val account = account("sender")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        val bounceMail = reply(
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered Mail Returned to Sender",
+            body = "554 5.1.1 User unknown",
+            imapUid = 102L
+        )
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
+            listOf(
+                reply(from = "expert@example.com"),
+                bounceMail
+            )
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+        Mockito.`when`(
+            bounceCollectionService.ingest(
+                anyValue(BounceSignal("SOFT", null, null, null, null)),
+                eqValue("sender"),
+                Mockito.nullable(String::class.java),
+                Mockito.nullable(String::class.java),
+                Mockito.nullable(String::class.java),
+                anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(BounceIngestResult.INGESTED)
+
+        val inOrder = Mockito.inOrder(receiveService, bounceCollectionService, bounceRateMonitorService)
+
+        service.receiveAndAutoReply("sender", 5)
+
+        inOrder.verify(receiveService).fetchUnread(account, 5)
+        inOrder.verify(bounceCollectionService).ingest(
+            anyValue(BounceSignal("SOFT", null, null, null, null)),
+            eqValue("sender"),
+            Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java),
+            anyValue(LocalDateTime.now())
+        )
+        inOrder.verify(receiveService).markSeen(account, bounceMail.imapUid)
+        inOrder.verify(bounceCollectionService).collectBounces(account)
+        inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
+        Mockito.verify(expertEmailAliasService, Mockito.never())
+            .findContactByEmailOrAlias("mailer-daemon@example.com")
+    }
+
+    @Test
+    fun `receiveAndAutoReply discards self-check probe without persisting`() {
+        val account = account("sender")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        val probe = reply(
+            from = account.senderEmail,
+            subject = "[self-check] sender ${System.currentTimeMillis()}",
+            body = "self-check probe",
+            imapUid = 301L
+        )
+        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(probe))
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(receiveService).markSeen(account, probe.imapUid)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any(MailRecord::class.java))
+        Mockito.verify(bounceCollectionService, Mockito.never()).ingest(
+            anyValue(BounceSignal("SOFT", null, null, null, null)),
+            anyValue(""),
+            Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java),
+            anyValue(LocalDateTime.now())
+        )
+    }
+
+    @Test
     fun `receiveAndAutoReply collects bounces after business reply processing in order`() {
         val account = account("sender")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(
-                reply(from = "expert@example.com"),
-                reply(from = "mailer-daemon@example.com", subject = "Undelivered Mail Returned to Sender")
-            )
+            listOf(reply(from = "expert@example.com"))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
 
@@ -157,8 +232,6 @@ class AutoMailReplyServiceTest {
         inOrder.verify(receiveService).fetchUnread(account, 5)
         inOrder.verify(bounceCollectionService).collectBounces(account)
         inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
-        Mockito.verify(expertEmailAliasService, Mockito.never())
-            .findContactByEmailOrAlias("mailer-daemon@example.com")
     }
 
     @Test

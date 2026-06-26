@@ -29,4 +29,29 @@ interface BounceRecordRepository : CrudRepository<BounceRecord, Long> {
     fun countSoftBouncesSince(accountCode: String, since: LocalDateTime): Long
 
     fun findAllBySenderAccountCodeOrderByReceivedAtDesc(accountCode: String): List<BounceRecord>
+
+    @Query(
+        """
+        SELECT * FROM bounce_record
+        WHERE (:accountCode IS NULL OR sender_account_code = :accountCode)
+          AND (:bounceType IS NULL OR bounce_type = :bounceType)
+        ORDER BY received_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun findPaged(
+        accountCode: String?,
+        bounceType: String?,
+        limit: Int,
+        offset: Int
+    ): List<BounceRecord>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM bounce_record
+        WHERE (:accountCode IS NULL OR sender_account_code = :accountCode)
+          AND (:bounceType IS NULL OR bounce_type = :bounceType)
+        """
+    )
+    fun countPaged(accountCode: String?, bounceType: String?): Long
 }

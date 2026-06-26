@@ -189,12 +189,14 @@
 
             <section class="panel">
                 <div class="panel-head">
-                    <div class="tabs" id="monitoringSubTabs" style="display: flex; gap: 8px;">
+                    <div class="tabs" id="monitoringSubTabs" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <button class="tab button secondary active" data-subtab="introductions">首发邮件</button>
                         <button class="tab button secondary" data-subtab="inbound">收信分类</button>
                         <button class="tab button secondary" data-subtab="outbound">发信回复</button>
-                        <button class="tab button secondary" data-subtab="pending">待处理</button>
+                        <button class="tab button secondary" data-subtab="pending">未匹配邮件</button>
+                        <button class="tab button secondary" data-subtab="bounces">退信名单</button>
                         <button class="tab button secondary" data-subtab="promotions">漏斗晋级</button>
+                        <button class="button secondary" id="monitoringBounceBackfillBtn" style="margin-left: auto; display: none;">回填历史退信</button>
                     </div>
                 </div>
                 <div class="table-wrap">

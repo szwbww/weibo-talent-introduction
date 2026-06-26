@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.BounceRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -8,6 +9,7 @@ import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.ZoneId
 import javax.mail.internet.InternetAddress
@@ -19,7 +21,8 @@ class BounceCollectionService(
     private val bounceRecordRepository: BounceRecordRepository,
     private val mailRecordRepository: MailRecordRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val expertContactRepository: ExpertContactRepository
+    private val expertContactRepository: ExpertContactRepository,
+    private val expertEmailAliasService: ExpertEmailAliasService
 ) {
     private val log = LoggerFactory.getLogger(BounceCollectionService::class.java)
 
@@ -36,50 +39,111 @@ class BounceCollectionService(
             val subject = message.subject
             val contentType = message.contentType
 
-            if (!bounceDetector.isBounce(from, subject, contentType)) continue
+            val signal = if (contentType?.contains("report-type=delivery-status", ignoreCase = true) == true) {
+                bounceDetector.parseBounceDetails(message)
+                    ?: bounceDetector.detect(from, subject, message.content?.toString())
+            } else {
+                bounceDetector.parseBounceDetails(message)
+            } ?: continue
 
-            val messageId = message.getHeader("Message-ID")?.firstOrNull() ?: continue
-            if (bounceRecordRepository.existsByBounceMessageId(messageId)) {
-                skippedDuplicate++
-                continue
-            }
+            val messageIdHeader = message.getHeader("Message-ID")?.firstOrNull()
+            val receivedAt = message.receivedDate
+                ?.toInstant()
+                ?.atZone(ZoneId.systemDefault())
+                ?.toLocalDateTime()
+                ?: LocalDateTime.now()
 
-            val details = bounceDetector.parseBounceDetails(message)
-            val originalContact = details.originalMessageId?.let { origMsgId ->
-                mailRecordRepository.findByMessageId(origMsgId)?.let { mailRecord ->
-                    expertContactRepository.findById(mailRecord.expertContactId).orElse(null)
-                }
-            }
-
-            bounceRecordRepository.save(
-                BounceRecord(
+            when (
+                ingest(
+                    signal = signal,
                     senderAccountCode = account.accountCode,
-                    bounceMessageId = messageId,
-                    originalMessageId = details.originalMessageId,
-                    originalExpertContactId = originalContact?.id,
-                    bounceType = details.bounceType,
-                    dsnStatus = details.dsnStatus,
-                    bounceReason = details.reason,
-                    receivedAt = message.receivedDate
-                        ?.toInstant()
-                        ?.atZone(ZoneId.systemDefault())
-                        ?.toLocalDateTime()
-                        ?: LocalDateTime.now()
+                    bounceMessageId = messageIdHeader,
+                    from = from,
+                    subject = subject,
+                    receivedAt = receivedAt
                 )
-            )
-
-            if (details.bounceType == "HARD" && originalContact != null) {
-                expertIndexWriterService.syncCandidateOperatorStatus(
-                    originalContact.orcidId,
-                    "EMAIL_INVALID"
-                )
+            ) {
+                BounceIngestResult.INGESTED -> collected++
+                BounceIngestResult.DUPLICATE -> skippedDuplicate++
             }
-
-            collected++
         }
 
         return BounceCollectionResult(collected = collected, skippedDuplicate = skippedDuplicate)
     }
+
+    fun ingest(
+        signal: BounceSignal,
+        senderAccountCode: String,
+        bounceMessageId: String?,
+        from: String?,
+        subject: String?,
+        receivedAt: LocalDateTime
+    ): BounceIngestResult {
+        val dedupeKey = resolveBounceMessageId(bounceMessageId, from, subject, receivedAt)
+        if (bounceRecordRepository.existsByBounceMessageId(dedupeKey)) {
+            return BounceIngestResult.DUPLICATE
+        }
+
+        val originalContact = resolveOriginalContact(signal)
+
+        bounceRecordRepository.save(
+            BounceRecord(
+                senderAccountCode = senderAccountCode,
+                bounceMessageId = dedupeKey,
+                originalMessageId = signal.originalMessageId,
+                originalExpertContactId = originalContact?.id,
+                failedRecipient = signal.failedRecipient,
+                bounceType = signal.bounceType,
+                dsnStatus = signal.dsnStatus,
+                bounceReason = signal.reason,
+                receivedAt = receivedAt
+            )
+        )
+
+        if (signal.bounceType == "HARD" && originalContact != null) {
+            expertIndexWriterService.syncCandidateOperatorStatus(
+                originalContact.orcidId,
+                "EMAIL_INVALID"
+            )
+        }
+
+        log.debug(
+            "Ingested bounce {} for account {} type={}",
+            dedupeKey,
+            senderAccountCode,
+            signal.bounceType
+        )
+        return BounceIngestResult.INGESTED
+    }
+
+    fun resolveBounceMessageId(
+        bounceMessageId: String?,
+        from: String?,
+        subject: String?,
+        receivedAt: LocalDateTime
+    ): String {
+        if (!bounceMessageId.isNullOrBlank()) {
+            return bounceDetector.normalizeMessageId(bounceMessageId)
+        }
+        val input = "${from.orEmpty()}|${subject.orEmpty()}|$receivedAt"
+        val digest = MessageDigest.getInstance("SHA-1").digest(input.toByteArray(Charsets.UTF_8))
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return "NOID:$hex"
+    }
+
+    private fun resolveOriginalContact(signal: BounceSignal) =
+        signal.originalMessageId?.let { origMsgId ->
+            mailRecordRepository.findByMessageId(origMsgId)?.let { mailRecord ->
+                expertContactRepository.findById(mailRecord.expertContactId).orElse(null)
+            }
+        } ?: signal.failedRecipient?.let { recipient ->
+            expertEmailAliasService.findContactByEmailOrAlias(recipient)
+        }
+}
+
+enum class BounceIngestResult {
+    INGESTED,
+    DUPLICATE
 }
 
 data class BounceCollectionResult(

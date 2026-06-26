@@ -11,6 +11,7 @@ data class BounceRecord(
     val bounceMessageId: String,
     val originalMessageId: String?,
     val originalExpertContactId: Long?,
+    val failedRecipient: String? = null,
     val bounceType: String,
     val dsnStatus: String?,
     val bounceReason: String?,
