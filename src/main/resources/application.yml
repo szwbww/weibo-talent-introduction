@@ -72,6 +72,12 @@ talent-introduction:
     secret: ${UNSUBSCRIBE_SECRET:}
   warmup:
     enabled: ${WARMUP_ENABLED:false}
+  llm:
+    enabled: ${LLM_ENABLED:false}
+    api-url: ${LLM_API_URL:}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:gpt-4o-mini}
+    timeout-ms: ${LLM_TIMEOUT_MS:30000}
   academic-filter:
     enable-h-index-filter: ${ACADEMIC_ENABLE_H_INDEX_FILTER:false}
     min-h-index: ${ACADEMIC_MIN_H_INDEX:5}

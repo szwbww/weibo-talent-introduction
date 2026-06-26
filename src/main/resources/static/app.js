@@ -44,7 +44,24 @@ const state = {
         dateDefaultsApplied: false,
         onlyPending: false,
         tagFilter: ""
+    },
+    qaAudit: {
+        from: "",
+        to: "",
+        report: null
     }
+};
+
+const QA_COMPOSE_GREETING = "Thank you for your email. Please find our answers below.";
+const QA_COMPOSE_CLOSING = "Please let us know if you have any further questions.\n\nBest regards,\nTalent Introduction Team";
+
+const composedReplyState = {
+    recordId: null,
+    suggest: null,
+    selectedRuleIds: [],
+    freeText: "",
+    previewEdited: false,
+    baselinePreview: ""
 };
 
 const contextPath = (() => {
@@ -1401,6 +1418,63 @@ async function loadQa() {
     formSelect.value = formSelectValue;
 
     renderQaRulesTable();
+    renderQaAuditPanel();
+}
+
+async function loadQaAuditReport() {
+    const fromInput = $("#qaAuditFrom");
+    const toInput = $("#qaAuditTo");
+    const from = fromInput?.value;
+    const to = toInput?.value;
+    if (!from || !to) {
+        showStatus("请选择审计时间范围", "error");
+        return;
+    }
+    state.qaAudit.from = from;
+    state.qaAudit.to = to;
+    const report = await api(`/api/qa/audit/rule-usage?from=${encodeURIComponent(from)}T00:00:00&to=${encodeURIComponent(to)}T23:59:59`);
+    state.qaAudit.report = report;
+    renderQaAuditPanel();
+}
+
+function renderQaAuditPanel() {
+    const container = $("#qaAuditPanel");
+    if (!container) return;
+    const report = state.qaAudit.report;
+    if (!report) {
+        container.innerHTML = `<p class="text-muted" style="font-size:13px;">选择时间段后点击加载报表。</p>`;
+        return;
+    }
+    const renderCounts = (rows, label) => {
+        if (!rows?.length) return `<p class="text-muted" style="font-size:12px;">${label}：无数据</p>`;
+        return `
+            <h4 style="margin:8px 0 4px;font-size:13px;">${label}</h4>
+            <ul class="compose-gap-list">
+                ${rows.map((row) => `<li><span>规则 #${row.qaRuleId}</span><span class="badge ok">${row.count} 次</span></li>`).join("")}
+            </ul>`;
+    };
+    container.innerHTML = `
+        <div class="metadata-grid" style="margin-bottom:12px;">
+            <div class="metadata-card"><div class="metadata-card-header"><span>组装回复次数</span></div><div class="metadata-card-value">${report.totalActions}</div></div>
+            <div class="metadata-card"><div class="metadata-card-header"><span>人工改写次数</span></div><div class="metadata-card-value">${report.editedReplyCount}</div></div>
+        </div>
+        ${renderCounts(report.removedRuleCounts, "运营移除的建议规则（疑似误命中）")}
+        ${renderCounts(report.addedRuleCounts, "运营新增的规则（疑似缺失/盲区）")}
+        ${renderFreeTextTopics(report.freeTextTopicCounts || [])}
+    `;
+}
+
+function renderFreeTextTopics(rows) {
+    if (!rows?.length) {
+        return `<p class="text-muted" style="font-size:12px;">高频自由文本主题：无数据</p>`;
+    }
+    return `
+        <h4 style="margin:8px 0 4px;font-size:13px;">高频自由文本主题</h4>
+        <ul class="compose-gap-list">
+            ${rows.map((row) => `
+                <li><span>${escapeHtml(row.topic)}</span><span class="badge ok">${row.count} 次</span></li>
+            `).join("")}
+        </ul>`;
 }
 
 function renderQaRulesTable() {
@@ -4520,13 +4594,237 @@ async function refreshMailboxAfterPendingAction() {
     await refreshUnmatchedBadge();
 }
 
+function findSuggestRule(suggest, ruleId) {
+    for (const category of suggest.rulesByCategory || []) {
+        const rule = category.rules.find((item) => item.id === ruleId);
+        if (rule) {
+            return { ...rule, categoryId: category.categoryId, composeOrder: category.composeOrder };
+        }
+    }
+    return null;
+}
+
+function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText) {
+    const rules = selectedRuleIds
+        .map((id) => findSuggestRule(suggest, id))
+        .filter(Boolean);
+    const trimmedFree = (freeText || "").trim();
+    if (!rules.length) return trimmedFree;
+    if (rules.length === 1) {
+        return trimmedFree ? `${rules[0].replyBody}\n\n${trimmedFree}` : rules[0].replyBody;
+    }
+    const sections = rules.map((rule) => {
+        const title = (rule.sectionTitle || "").trim();
+        return title ? `${title}\n${rule.replyBody}` : rule.replyBody;
+    }).join("\n\n");
+    let body = [QA_COMPOSE_GREETING, sections, QA_COMPOSE_CLOSING].join("\n\n");
+    if (trimmedFree) body += `\n\n${trimmedFree}`;
+    return body;
+}
+
+function getSelectedCategoryCount(suggest, selectedRuleIds) {
+    const categoryIds = new Set();
+    selectedRuleIds.forEach((id) => {
+        const rule = findSuggestRule(suggest, id);
+        if (rule) categoryIds.add(rule.categoryId);
+    });
+    return categoryIds.size;
+}
+
+function renderComposedGapList() {
+    const list = $("#composedGapList");
+    if (!list || !composedReplyState.suggest) return;
+    const coveredCount = getSelectedCategoryCount(composedReplyState.suggest, composedReplyState.selectedRuleIds);
+    const gapItems = composedReplyState.suggest.gapItems || [];
+    if (!gapItems.length) {
+        list.innerHTML = `<li class="text-muted">暂无缺口项</li>`;
+        return;
+    }
+    list.innerHTML = gapItems.map((item, index) => `
+        <li class="${index < coveredCount ? "covered" : ""}">
+            <span>${index < coveredCount ? "✓" : "○"}</span>
+            <span>${escapeHtml(item)}</span>
+        </li>
+    `).join("");
+}
+
+function renderComposedSelectedList() {
+    const list = $("#composedSelectedList");
+    if (!list || !composedReplyState.suggest) return;
+    list.innerHTML = composedReplyState.selectedRuleIds.map((ruleId, index) => {
+        const rule = findSuggestRule(composedReplyState.suggest, ruleId);
+        const label = rule?.displayName || rule?.sectionTitle || `规则 #${ruleId}`;
+        return `
+            <li draggable="true" data-rule-id="${ruleId}" data-index="${index}">
+                <span class="compose-drag-handle">☰</span>
+                <span>${escapeHtml(label)}</span>
+                <span class="compose-selected-actions">
+                    <button type="button" class="button small" data-action="compose-move-up" data-index="${index}">↑</button>
+                    <button type="button" class="button small" data-action="compose-move-down" data-index="${index}">↓</button>
+                </span>
+            </li>`;
+    }).join("") || `<li class="text-muted">未选择规则</li>`;
+    setupComposeDragDrop();
+}
+
+function setupComposeDragDrop() {
+    const list = $("#composedSelectedList");
+    if (!list) return;
+    let dragIndex = null;
+    list.querySelectorAll("li[data-rule-id]").forEach((li) => {
+        li.addEventListener("dragstart", (event) => {
+            dragIndex = Number(li.dataset.index);
+            event.dataTransfer.effectAllowed = "move";
+        });
+        li.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+        });
+        li.addEventListener("drop", (event) => {
+            event.preventDefault();
+            const dropIndex = Number(li.dataset.index);
+            if (dragIndex == null || Number.isNaN(dropIndex) || dragIndex === dropIndex) {
+                return;
+            }
+            const ids = composedReplyState.selectedRuleIds;
+            const [moved] = ids.splice(dragIndex, 1);
+            ids.splice(dropIndex, 0, moved);
+            dragIndex = null;
+            refreshComposedPreviewFromRules();
+        });
+    });
+}
+
+function sortCategoryRulesForDisplay(rules, suggestedSet) {
+    const suggested = [];
+    const others = [];
+    rules.forEach((rule) => {
+        if (suggestedSet.has(rule.id)) {
+            suggested.push(rule);
+        } else {
+            others.push(rule);
+        }
+    });
+    return [...suggested, ...others];
+}
+
+function refreshComposedPreviewFromRules() {
+    if (!composedReplyState.suggest) return;
+    const preview = buildDeterministicComposedPreview(
+        composedReplyState.selectedRuleIds,
+        composedReplyState.suggest,
+        composedReplyState.freeText
+    );
+    composedReplyState.baselinePreview = preview;
+    if (!composedReplyState.previewEdited) {
+        const previewEl = $("#composedReplyPreview");
+        if (previewEl) previewEl.value = preview;
+    }
+    renderComposedGapList();
+    renderComposedSelectedList();
+}
+
+function initComposedReplyWorkbench(recordId, suggest) {
+    composedReplyState.recordId = recordId;
+    composedReplyState.suggest = suggest;
+    composedReplyState.selectedRuleIds = [...(suggest.suggestedRuleIds || [])];
+    composedReplyState.freeText = "";
+    composedReplyState.previewEdited = false;
+    composedReplyState.baselinePreview = "";
+
+    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+            const ruleId = Number(checkbox.dataset.ruleId);
+            if (checkbox.checked) {
+                if (!composedReplyState.selectedRuleIds.includes(ruleId)) {
+                    composedReplyState.selectedRuleIds.push(ruleId);
+                }
+            } else {
+                composedReplyState.selectedRuleIds = composedReplyState.selectedRuleIds.filter((id) => id !== ruleId);
+            }
+            refreshComposedPreviewFromRules();
+        });
+    });
+
+    $("#composedFreeText")?.addEventListener("input", (event) => {
+        composedReplyState.freeText = event.target.value;
+        if (!composedReplyState.previewEdited) {
+            refreshComposedPreviewFromRules();
+        }
+    });
+
+    $("#composedReplyPreview")?.addEventListener("input", () => {
+        composedReplyState.previewEdited = true;
+    });
+
+    const polishBtn = $("#composedPolishBtn");
+    if (polishBtn) {
+        polishBtn.hidden = !suggest.llmEnabled;
+    }
+
+    refreshComposedPreviewFromRules();
+}
+
+function renderComposedReplyWorkbenchHtml(suggest, recordId) {
+    const suggestedSet = new Set(suggest.suggestedRuleIds || []);
+    const categoriesHtml = (suggest.rulesByCategory || []).map((category) => `
+        <details class="compose-category-panel" open>
+            <summary>${escapeHtml(category.categoryName)}</summary>
+            <div class="compose-rule-list">
+                ${sortCategoryRulesForDisplay(category.rules, suggestedSet).map((rule) => {
+                    const checked = suggestedSet.has(rule.id) ? "checked" : "";
+                    const suggested = suggestedSet.has(rule.id)
+                        ? `<span class="badge ok">建议</span>` : "";
+                    const label = rule.displayName || rule.sectionTitle || `规则 #${rule.id}`;
+                    return `
+                        <label class="compose-rule-item">
+                            <input type="checkbox" class="compose-rule-checkbox" data-rule-id="${rule.id}" ${checked}>
+                            <span>${escapeHtml(label)}</span>
+                            ${suggested}
+                        </label>`;
+                }).join("")}
+            </div>
+        </details>
+    `).join("");
+
+    return `
+        <div class="detail-section compose-workbench-section">
+            <h3>组装台回复</h3>
+            <div class="compose-workbench">
+                <div class="compose-panel compose-fragments">
+                    <h4>片段面板</h4>
+                    ${categoriesHtml || "<p class='text-muted'>暂无可用规则</p>"}
+                </div>
+                <div class="compose-panel compose-draft">
+                    <h4>草稿预览</h4>
+                    <p class="text-muted" style="font-size:12px;margin:0 0 8px;">已选规则段 + 自由文本（两层模型）</p>
+                    <ul id="composedSelectedList" class="compose-selected-list"></ul>
+                    <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
+                    <textarea id="composedReplyPreview" class="compose-preview" rows="10" placeholder="组装预览"></textarea>
+                    <div class="compose-draft-actions">
+                        <button type="button" class="button" id="composedPolishBtn" data-action="polish-composed-reply" data-record-id="${recordId}" hidden>润色</button>
+                        <button type="button" class="button primary" data-action="send-composed-reply" data-record-id="${recordId}">发送组装回复</button>
+                    </div>
+                </div>
+                <div class="compose-panel compose-gaps">
+                    <h4>缺口清单</h4>
+                    <ul id="composedGapList" class="compose-gap-list"></ul>
+                </div>
+            </div>
+        </div>`;
+}
+
 async function showUnmatchedDetail(id) {
+    const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
     const [data, options, logs] = await Promise.all([
-        api(`/api/mail/unmatched-inbound/${id}`),
+        detailPromise,
         loadMailSendOptions(),
         api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] }))
     ]);
     const record = data.record;
+    const suggest = record.expertContactId
+        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
+        : null;
     const candidates = data.candidates || [];
     const contact = data.contact;
     const panel = $("#unmatchedDetailPanel");
@@ -4602,7 +4900,7 @@ async function showUnmatchedDetail(id) {
     const qaOptions = options.filter(o => o.optionType === "QA");
     const qaReplyHtml = qaOptions.length > 0 ? `
         <div class="detail-section" style="margin-top:12px;">
-            <h3>QA 邮件回复</h3>
+            <h3>QA 邮件回复（单规则）</h3>
             <div style="display:flex;gap:8px;align-items:center;">
                 <select id="unmatchedQaOption" style="flex:1;">
                     ${qaOptions.map(o => `
@@ -4613,6 +4911,8 @@ async function showUnmatchedDetail(id) {
             </div>
         </div>
     ` : "";
+
+    const composeWorkbenchHtml = suggest ? renderComposedReplyWorkbenchHtml(suggest, id) : "";
 
     panel.innerHTML = `
         <div class="panel-head">
@@ -4663,6 +4963,8 @@ async function showUnmatchedDetail(id) {
 
             ${qaReplyHtml}
 
+            ${composeWorkbenchHtml}
+
             <div class="detail-section" style="margin-top:12px;">
                 <h3>人工富文本回复</h3>
                 <input id="manualReplySubject" placeholder="邮件主题" style="margin-bottom:8px;">
@@ -4682,6 +4984,11 @@ async function showUnmatchedDetail(id) {
             </div>
         </div>
     `;
+
+    if (suggest) {
+        composedReplyState.recordId = id;
+        initComposedReplyWorkbench(id, suggest);
+    }
 
     panel.scrollIntoView({ behavior: "smooth" });
 }
@@ -4822,6 +5129,77 @@ async function handleUnmatchedAction(element) {
             alert("QA 邮件发送成功");
         } catch (e) {
             alert("QA 邮件发送失败: " + e.message);
+            return;
+        }
+        await showUnmatchedDetail(id);
+        await refreshMailboxAfterPendingAction();
+        return;
+    }
+    if (action === "compose-move-up") {
+        const index = Number(element.dataset.index);
+        if (index > 0) {
+            const ids = composedReplyState.selectedRuleIds;
+            [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+            refreshComposedPreviewFromRules();
+        }
+        return;
+    }
+    if (action === "compose-move-down") {
+        const index = Number(element.dataset.index);
+        const ids = composedReplyState.selectedRuleIds;
+        if (index >= 0 && index < ids.length - 1) {
+            [ids[index + 1], ids[index]] = [ids[index], ids[index + 1]];
+            refreshComposedPreviewFromRules();
+        }
+        return;
+    }
+    if (action === "polish-composed-reply") {
+        if (!composedReplyState.selectedRuleIds.length) {
+            showStatus("请至少选择一条 QA 规则", "error");
+            return;
+        }
+        try {
+            const result = await api(`/api/mail/unmatched-inbound/${id}/composed-reply/polish`, {
+                method: "POST",
+                body: JSON.stringify({
+                    qaRuleIds: composedReplyState.selectedRuleIds,
+                    freeText: composedReplyState.freeText || null
+                })
+            });
+            const previewEl = $("#composedReplyPreview");
+            if (previewEl) previewEl.value = result.draftText || "";
+            composedReplyState.previewEdited = true;
+            showStatus(result.usedLlm ? "LLM 润色完成" : "已使用确定性拼接草稿", "ok");
+        } catch (e) {
+            alert("润色失败: " + e.message);
+        }
+        return;
+    }
+    if (action === "send-composed-reply") {
+        if (!composedReplyState.selectedRuleIds.length) {
+            showStatus("请至少选择一条 QA 规则", "error");
+            return;
+        }
+        const previewEl = $("#composedReplyPreview");
+        const previewText = previewEl?.value?.trim() || "";
+        if (!previewText) {
+            showStatus("预览正文不能为空", "error");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/composed-reply`, {
+                method: "POST",
+                body: JSON.stringify({
+                    qaRuleIds: composedReplyState.selectedRuleIds,
+                    overrideTextBody: composedReplyState.previewEdited ? previewText : null,
+                    freeTextBody: composedReplyState.freeText?.trim() || null,
+                    operatorName
+                })
+            });
+            alert("组装回复发送成功");
+        } catch (e) {
+            alert("组装回复发送失败: " + e.message);
             return;
         }
         await showUnmatchedDetail(id);
@@ -5241,6 +5619,17 @@ function bindEvents() {
         if (button) handleAccountAction(button).catch((error) => showStatus(error.message, "error"));
     });
     $("#reloadQaBtn").addEventListener("click", loadQa);
+    const qaAuditFrom = $("#qaAuditFrom");
+    const qaAuditTo = $("#qaAuditTo");
+    if (qaAuditFrom && !qaAuditFrom.value) {
+        const today = monitoringToday();
+        qaAuditTo.value = today;
+        const monthAgo = new Date();
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        qaAuditFrom.value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(monthAgo);
+    }
+    $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
+    $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
     $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
     $("#clearQaRuleBtn").addEventListener("click", hideQaRuleEditor);

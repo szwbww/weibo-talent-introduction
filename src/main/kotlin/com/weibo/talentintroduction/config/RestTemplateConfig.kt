@@ -29,7 +29,8 @@ import java.time.Duration
     CoreProperties::class,
     ManualOutreachProperties::class,
     UnsubscribeProperties::class,
-    WarmupProperties::class
+    WarmupProperties::class,
+    LlmProperties::class
 )
 class RestTemplateConfig {
 

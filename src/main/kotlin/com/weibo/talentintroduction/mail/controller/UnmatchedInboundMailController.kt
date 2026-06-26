@@ -8,10 +8,14 @@ import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.service.CandidateSuggestion
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.mail.service.ComposedReplyRequest
 import com.weibo.talentintroduction.mail.service.PendingManualRichReplyRequest
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.PendingQaReplyRequest
 import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
+import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
+import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
+import com.weibo.talentintroduction.qa.service.SuggestQaRule
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -29,7 +33,8 @@ class UnmatchedInboundMailController(
     private val expertEmailAliasService: ExpertEmailAliasService,
     private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository,
     private val pendingMailOperationService: PendingMailOperationService,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -192,6 +197,50 @@ class UnmatchedInboundMailController(
             textBody = request.textBody,
             operatorName = request.operatorName
         )
+
+    @GetMapping("/unmatched-inbound/{id}/composed-reply/suggest")
+    fun suggestComposedReply(@PathVariable id: Long): ComposedReplySuggestResponse {
+        val detail = unmatchedInboundMailService.getDetail(id)
+        val suggest = pendingMailOperationService.suggestComposedReply(id)
+        val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
+        return suggest.toResponse(
+            llmEnabled = llmStitchService.isEnabled(),
+            inboundText = inboundText
+        )
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/composed-reply/polish")
+    fun polishComposedReply(
+        @PathVariable id: Long,
+        @RequestBody request: com.weibo.talentintroduction.llm.service.PolishDraftRequest
+    ): com.weibo.talentintroduction.llm.service.PolishDraftResponse {
+        val detail = unmatchedInboundMailService.getDetail(id)
+        val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
+        val result = llmStitchService.polishDraft(
+            qaRuleIds = request.qaRuleIds,
+            inboundQuestion = inboundText,
+            freeText = request.freeText
+        )
+        return com.weibo.talentintroduction.llm.service.PolishDraftResponse(
+            draftText = result.draftText,
+            usedLlm = result.usedLlm,
+            llmEnabled = llmStitchService.isEnabled()
+        )
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/composed-reply")
+    fun sendComposedReply(
+        @PathVariable id: Long,
+        @RequestBody request: ComposedReplyRequest
+    ): PendingMailSendResult =
+        pendingMailOperationService.sendManualComposedReply(
+            inboundProcessingId = id,
+            qaRuleIds = request.qaRuleIds,
+            overrideTextBody = request.overrideTextBody,
+            freeTextBody = request.freeTextBody,
+            senderAccountCode = request.senderAccountCode,
+            operatorName = request.operatorName
+        )
 }
 
 @RestController
@@ -330,6 +379,35 @@ data class OperatorActionLogResponse(
     val createdAt: String?
 )
 
+data class ComposedReplySuggestResponse(
+    val suggestedRuleIds: List<Long>,
+    val suggestedRules: List<SuggestQaRuleResponse>,
+    val rulesByCategory: List<CategoryRulesGroupResponse>,
+    val gapItems: List<String>,
+    val gapDetected: Boolean,
+    val matchedCategoryIds: List<Long>,
+    val llmEnabled: Boolean,
+    val inboundText: String
+)
+
+data class SuggestQaRuleResponse(
+    val id: Long,
+    val categoryId: Long,
+    val displayName: String?,
+    val sectionTitle: String?,
+    val replySubject: String?,
+    val replyBody: String,
+    val keywords: String
+)
+
+data class CategoryRulesGroupResponse(
+    val categoryId: Long,
+    val categoryCode: String,
+    val categoryName: String,
+    val composeOrder: Int,
+    val rules: List<SuggestQaRuleResponse>
+)
+
 private fun InboundMailProcessing.toResponse(
     expertName: String? = null,
     expertCurrentStatus: String? = null,
@@ -397,4 +475,36 @@ private fun OperatorActionLog.toResponse() = OperatorActionLogResponse(
     operatorName = operatorName,
     note = note,
     createdAt = createdAt?.toString()
+)
+
+private fun CompositionSuggestResult.toResponse(
+    llmEnabled: Boolean,
+    inboundText: String
+) = ComposedReplySuggestResponse(
+    suggestedRuleIds = suggestedRuleIds,
+    suggestedRules = suggestedRules.map { it.toResponse() },
+    rulesByCategory = rulesByCategory.map { it.toResponse() },
+    gapItems = gapItems,
+    gapDetected = gapDetected,
+    matchedCategoryIds = matchedCategoryIds,
+    llmEnabled = llmEnabled,
+    inboundText = inboundText
+)
+
+private fun SuggestQaRule.toResponse() = SuggestQaRuleResponse(
+    id = id,
+    categoryId = categoryId,
+    displayName = displayName,
+    sectionTitle = sectionTitle,
+    replySubject = replySubject,
+    replyBody = replyBody,
+    keywords = keywords
+)
+
+private fun CategoryRulesGroup.toResponse() = CategoryRulesGroupResponse(
+    categoryId = categoryId,
+    categoryCode = categoryCode,
+    categoryName = categoryName,
+    composeOrder = composeOrder,
+    rules = rules.map { it.toResponse() }
 )

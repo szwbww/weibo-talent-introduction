@@ -208,4 +208,23 @@ class QaReplyComposerTest {
 
         assertEquals(1, primary.rule.id)
     }
+
+    @Test
+    fun `composeInOperatorOrder preserves operator sequence`() {
+        val ruleB = QaRuleMatch(
+            QaRule(id = 20, categoryId = 1, keywords = "b", priority = 10, replySubject = "B", replyBody = "Body B"),
+            matchedKeywordCount = 1
+        )
+        val ruleA = QaRuleMatch(
+            QaRule(id = 10, categoryId = 2, keywords = "a", priority = 80, replySubject = "A", replyBody = "Body A"),
+            matchedKeywordCount = 1
+        )
+
+        val result = QaReplyComposer.composeInOperatorOrder(listOf(ruleB, ruleA))
+
+        val bodyBIndex = result.replyBody.indexOf("Body B")
+        val bodyAIndex = result.replyBody.indexOf("Body A")
+        assertTrue(bodyBIndex >= 0)
+        assertTrue(bodyAIndex > bodyBIndex)
+    }
 }

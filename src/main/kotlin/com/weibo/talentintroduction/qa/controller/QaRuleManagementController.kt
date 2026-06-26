@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/qa")
 class QaRuleManagementController(
-    private val service: QaRuleManagementService
+    private val service: QaRuleManagementService,
+    private val qaRuleAuditService: com.weibo.talentintroduction.qa.service.QaRuleAuditService
 ) {
     @GetMapping("/categories")
     fun listCategories(): List<QaCategoryResponse> =
@@ -59,6 +60,16 @@ class QaRuleManagementController(
     @PostMapping("/rules/{ruleId}/disable")
     fun disableRule(@PathVariable ruleId: Long): QaRuleResponse =
         service.setRuleEnabled(ruleId, false).toResponse(category = null)
+
+    @GetMapping("/audit/rule-usage")
+    fun ruleUsageAudit(
+        @RequestParam from: String,
+        @RequestParam to: String
+    ): com.weibo.talentintroduction.qa.service.QaRuleUsageAuditReport =
+        qaRuleAuditService.aggregateRuleUsage(
+            from = java.time.LocalDateTime.parse(from),
+            to = java.time.LocalDateTime.parse(to)
+        )
 }
 
 data class QaCategoryCreateRequest(

@@ -4149,3 +4149,136 @@ tr td {
     cursor: not-allowed;
     background: #f1f1f1;
 }
+
+.compose-workbench-section .compose-workbench {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr) minmax(160px, 0.9fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.compose-panel {
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+    min-height: 200px;
+}
+
+.compose-panel h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.compose-category-panel {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.compose-category-panel summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 0;
+}
+
+.compose-rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.compose-rule-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.compose-selected-list {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.compose-selected-list li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.compose-drag-handle {
+    color: var(--text-muted);
+    cursor: grab;
+}
+
+.compose-selected-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+}
+
+.compose-free-text,
+.compose-preview {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 12px;
+    line-height: 1.5;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    font-family: var(--font-body);
+}
+
+.compose-preview {
+    min-height: 140px;
+    resize: vertical;
+}
+
+.compose-draft-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.compose-gap-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.compose-gap-list li {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.compose-gap-list li.covered {
+    background: #ecfdf5;
+    border-color: #6ee7b7;
+}
+
+@media (max-width: 960px) {
+    .compose-workbench-section .compose-workbench {
+        grid-template-columns: 1fr;
+    }
+}
