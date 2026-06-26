@@ -248,6 +248,22 @@ class BatchSendControlServiceTest {
     }
 
     @Test
+    fun `runManualOnce from IDLE returns 202 and restores IDLE after one round`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "AUTO", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+
+        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, true))
+            .thenReturn(ManualOutreachResult(total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "PAUSED", stopReason = "ONE_ROUND_DONE"))
+
+        val response = control.runManualOnce()
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("RUNNING", "MANUAL", "")
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
+    }
+
+    @Test
     fun `runManualOnce from RUNNING returns 409`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
@@ -260,14 +276,18 @@ class BatchSendControlServiceTest {
     }
 
     @Test
-    fun `runManualOnce from IDLE returns 409`() {
+    fun `runManualOnce from IDLE keeps PAUSED when no available account`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
-            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("IDLE", "AUTO", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+
+        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, true))
+            .thenReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
 
         val response = control.runManualOnce()
 
-        assertEquals(HttpStatus.CONFLICT, response.statusCode)
-        Mockito.verifyNoInteractions(manualInitialOutreachService)
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("PAUSED", "MANUAL", "NO_AVAILABLE_ACCOUNT")
     }
 
     // ──── I-5: no available account → PAUSED ────

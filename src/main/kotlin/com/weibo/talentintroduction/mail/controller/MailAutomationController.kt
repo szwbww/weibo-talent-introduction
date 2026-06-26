@@ -270,8 +270,8 @@ class MailAutomationController(
         batchSendControlService.pause("OPERATOR")
 
     /**
-     * Operator "手动" button (I-9): only allowed when PAUSED — runs one round then returns
-     * to PAUSED (L3-2). Returns 409 if not PAUSED.
+     * Operator "手动" button (I-9): allowed when IDLE/PAUSED — runs one round. IDLE starts
+     * return to IDLE; PAUSED starts return to PAUSED (L3-2). Returns 409 if RUNNING.
      */
     @PostMapping("/batch-send/manual")
     fun runManualOnce(): ResponseEntity<Map<String, String>> =

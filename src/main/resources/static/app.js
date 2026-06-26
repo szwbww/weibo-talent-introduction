@@ -2794,7 +2794,7 @@ function batchSendStatusBadgeType(status) {
 function batchSendButtonStates(status) {
     switch (status) {
         case "IDLE":
-            return { start: false, pause: true, manual: true };
+            return { start: false, pause: true, manual: false };
         case "RUNNING":
             return { start: true, pause: false, manual: true };
         case "PAUSED":
@@ -2843,7 +2843,7 @@ function applyBatchSendControls(statusView) {
     }
     // 开始/暂停已并入上方切换按钮，原暂停按钮始终隐藏。
     if (pauseBtn) { pauseBtn.hidden = true; pauseBtn.disabled = states.pause; }
-    // 手动执行按钮始终保留显示；仅在 PAUSED 时可点击（后端 I-9 仅在 PAUSED 允许手动）。
+    // 手动执行按钮始终保留显示；IDLE/PAUSED 可手动跑一轮，RUNNING 禁用。
     if (manualBtn) {
         manualBtn.hidden = false;
         manualBtn.disabled = states.manual;
@@ -3155,8 +3155,8 @@ async function handleBatchSendManual() {
                 if (msg.includes("额度已用尽")) {
                     showModalToast(msg, "warn");
                     showStatus(msg, "warn");
-                } else if (msg.includes("PAUSED") || msg.includes("手动执行仅")) {
-                    showStatus("请先暂停流程后再使用手动执行", "warn");
+                } else if (msg.includes("IDLE 或 PAUSED") || msg.includes("手动执行仅")) {
+                    showStatus("当前流程正在运行，结束或暂停后再使用手动执行", "warn");
                 } else {
                     showStatus("手动执行失败: " + msg, "error");
                 }

@@ -328,7 +328,7 @@ class MailAutomationControllerTest {
     }
 
     @Test
-    fun `runManualOnce delegates to control service and returns 202 when PAUSED`() {
+    fun `runManualOnce delegates to control service and returns 202 when allowed`() {
         Mockito.`when`(batchSendControlService.runManualOnce()).thenReturn(
             ResponseEntity.accepted().body(mapOf("message" to "已启动"))
         )
@@ -340,9 +340,9 @@ class MailAutomationControllerTest {
     }
 
     @Test
-    fun `runManualOnce returns 409 when control service rejects non-PAUSED state`() {
+    fun `runManualOnce returns 409 when control service rejects running state`() {
         Mockito.`when`(batchSendControlService.runManualOnce()).thenReturn(
-            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "流程当前状态为 RUNNING，手动执行仅在 PAUSED 时可用"))
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to "流程当前状态为 RUNNING，手动执行仅在 IDLE 或 PAUSED 时可用"))
         )
 
         val response = controller.runManualOnce()

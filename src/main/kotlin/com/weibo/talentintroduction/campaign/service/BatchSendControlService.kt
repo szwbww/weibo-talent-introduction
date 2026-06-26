@@ -20,7 +20,7 @@ import javax.annotation.PostConstruct
  *
  * - start: IDLE → RUNNING (full run, AUTO or MANUAL mode, I-2)
  * - pause: RUNNING → PAUSED (operator button or I-5 no-account; cancels active execution)
- * - runManualOnce: PAUSED → one round → PAUSED (manual button, I-9/L3-2)
+ * - runManualOnce: IDLE/PAUSED → one round → previous resting state (manual button, I-9/L3-2)
  * - getStatus: merges persisted runtime state with latest TaskProgress (I-5 banner, I-8 stats)
  *
  * Mutual exclusion (I-1) is enforced by [TaskProgressStore.tryStartWithToken] plus the
@@ -137,20 +137,25 @@ class BatchSendControlService(
     }
 
     /**
-     * Operator "手动" button (I-9): PAUSED → one round → PAUSED. Only allowed when PAUSED.
-     * Runs a single round (oneRoundOnly=true) then returns to PAUSED (L3-2).
+     * Operator "手动" button (I-9): IDLE/PAUSED → one round. Normal IDLE starts return to
+     * IDLE so scheduled sending remains armed; PAUSED starts return to PAUSED.
      */
     fun runManualOnce(): ResponseEntity<Map<String, String>> {
         val state = batchSendSettingService.getRuntimeStatus()
-        if (state.status != "PAUSED") {
+        if (state.status !in setOf("IDLE", "PAUSED")) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 ${state.status}，手动执行仅在 PAUSED 时可用"))
+                .body(mapOf("message" to "流程当前状态为 ${state.status}，手动执行仅在 IDLE 或 PAUSED 时可用"))
         }
         val capacityError = checkRemainingDailyCapacity()
         if (capacityError != null) {
             return capacityError
         }
-        return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = true)
+        return launchExecution(
+            mode = ExecutionMode.MANUAL,
+            triggerType = "MANUAL",
+            oneRoundOnly = true,
+            returnToPausedAfterOneRound = state.status == "PAUSED"
+        )
     }
 
     /**
@@ -197,7 +202,8 @@ class BatchSendControlService(
     private fun launchExecution(
         mode: ExecutionMode,
         triggerType: String,
-        oneRoundOnly: Boolean
+        oneRoundOnly: Boolean,
+        returnToPausedAfterOneRound: Boolean = true
     ): ResponseEntity<Map<String, String>> {
         val initialProgress = TaskProgress(
             taskType = TASK_TYPE,
@@ -234,7 +240,7 @@ class BatchSendControlService(
                     ) {
                         manualInitialOutreachService.runScheduledBatch(executionId!!, mode, oneRoundOnly)
                     }
-                    applyResultToRuntimeStatus(mode, result)
+                    applyResultToRuntimeStatus(mode, result, returnToPausedAfterOneRound)
                 } catch (ex: Exception) {
                     log.error("Batch send execution failed", ex)
                     batchSendSettingService.setRuntimeStatus("PAUSED", mode.name, "EXECUTION_ERROR:${ex.message?.take(200)}")
@@ -278,11 +284,20 @@ class BatchSendControlService(
      * - FAILED → PAUSED + reason
      * - COMPLETED (snapshot exhausted or dailyCap hit on full run, L3-2) → IDLE
      */
-    private fun applyResultToRuntimeStatus(mode: ExecutionMode, result: ManualOutreachResult) {
+    private fun applyResultToRuntimeStatus(
+        mode: ExecutionMode,
+        result: ManualOutreachResult,
+        returnToPausedAfterOneRound: Boolean
+    ) {
         val finalStatus = result.finalStatus ?: if (result.wasCancelled) "CANCELLED" else "COMPLETED"
         val current = batchSendSettingService.getRuntimeStatus()
         if (current.status != "RUNNING") {
             log.info("Runtime status is {} (not RUNNING) after execution; skipping transition (finalStatus={})", current.status, finalStatus)
+            return
+        }
+        if (!returnToPausedAfterOneRound && finalStatus == "PAUSED" && result.stopReason in idleSafeOneRoundStopReasons) {
+            batchSendSettingService.setRuntimeStatus("IDLE", mode.name, "")
+            log.info("Batch send transitioned to IDLE after one-round manual execution: reason={}", result.stopReason)
             return
         }
         when (finalStatus) {
@@ -342,6 +357,13 @@ class BatchSendControlService(
 
     companion object {
         const val TASK_TYPE = "MANUAL_INITIAL_OUTREACH"
+        private val idleSafeOneRoundStopReasons = setOf(
+            "ONE_ROUND_DONE",
+            "EMPTY_SNAPSHOT",
+            "DAILY_CAP_REACHED",
+            "DAILY_LIMIT_REACHED",
+            "WARMUP_LIMIT_REACHED"
+        )
     }
 }
 

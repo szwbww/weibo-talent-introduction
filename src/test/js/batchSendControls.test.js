@@ -102,9 +102,9 @@ describe("Batch Send Controls (phase 04)", () => {
     }
 
     describe("L4-1 button state machine", () => {
-        it("IDLE: only 开始 enabled; 暂停/手动 disabled", () => {
+        it("IDLE: 开始 and 手动 enabled; 暂停 disabled", () => {
             const s = batchSendButtonStates_ref("IDLE");
-            assert.deepStrictEqual(s, { start: false, pause: true, manual: true });
+            assert.deepStrictEqual(s, { start: false, pause: true, manual: false });
         });
         it("RUNNING: only 暂停 enabled; 开始/手动 disabled", () => {
             const s = batchSendButtonStates_ref("RUNNING");
@@ -183,7 +183,7 @@ describe("Batch Send Controls (phase 04)", () => {
     });
 
     describe("applyBatchSendControls end-to-end (L4-1 + I-2 + I-8 + L4-2)", () => {
-        it("IDLE: 切换按钮 enabled labeled 开始执行(action=start); 暂停按钮隐藏; 手动隐藏/disabled; badges set; banner hidden", () => {
+        it("IDLE: 切换按钮 enabled labeled 开始执行(action=start); 暂停按钮隐藏; 手动 enabled; badges set; banner hidden", () => {
             const sb = createBatchSendSandbox();
             sb.applyBatchSendControls({
                 status: "IDLE", mode: "NONE", pauseReason: "",
@@ -196,9 +196,9 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(start.textContent, "开始执行");
             assert.strictEqual(start.dataset.action, "start");
             assert.strictEqual(pause.hidden, true);
-            // 手动执行按钮始终显示，仅在非 PAUSED 时禁用
+            // 手动执行按钮始终显示，IDLE 可立即手动跑一轮
             assert.strictEqual(manual.hidden, false);
-            assert.strictEqual(manual.disabled, true);
+            assert.strictEqual(manual.disabled, false);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "—");
             assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "空闲");
             assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, true);
@@ -267,12 +267,14 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, true);
         });
 
-        it("manual button disabled in every non-PAUSED state (I-9 409 guard mirror)", () => {
+        it("manual button disabled only while RUNNING or unknown", () => {
             const sb = createBatchSendSandbox();
-            for (const status of ["IDLE", "RUNNING", "WEIRD"]) {
+            for (const status of ["RUNNING", "WEIRD"]) {
                 sb.applyBatchSendControls({ status, mode: "MANUAL", accounts: [] });
                 assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, true, `manual should be disabled for ${status}`);
             }
+            sb.applyBatchSendControls({ status: "IDLE", mode: "MANUAL", accounts: [] });
+            assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, false, "manual should be enabled for IDLE");
             sb.applyBatchSendControls({ status: "PAUSED", mode: "MANUAL", accounts: [] });
             assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, false, "manual should be enabled for PAUSED");
         });
