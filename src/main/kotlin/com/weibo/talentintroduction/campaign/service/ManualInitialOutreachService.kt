@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepositor
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -533,7 +534,7 @@ class ManualInitialOutreachService(
 
     private data class StopOutcome(val stopReason: String, val finalStatus: String)
 
-    private fun normalizeOrcid(orcid: String) = orcid.trim().uppercase()
+    private fun normalizeOrcid(orcid: String) = ExpertIdNormalizer.normalize(orcid)
 
     private fun buildSmtpErrorSummary(delivered: DeliveredMail): String =
         buildString {

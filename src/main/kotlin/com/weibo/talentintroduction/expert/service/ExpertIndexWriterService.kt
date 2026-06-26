@@ -41,7 +41,7 @@ class ExpertIndexWriterService(
     fun markApplicationClosed(contact: ExpertContact) {
         if (!contact.applicationIndexed) return
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
-        val orcid = contact.orcidId
+        val orcid = ExpertIdNormalizer.normalize(contact.orcidId)
         val now = LocalDateTime.now().format(dateFormatter)
         try {
             val updateDoc = mapOf(
@@ -65,12 +65,13 @@ class ExpertIndexWriterService(
 
     fun syncCandidateOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
         val now = LocalDateTime.now().format(dateFormatter)
         return try {
             val body: Map<String, Any>
             if (operatorStatus == "NOT_CONTACTED") {
                 body = mapOf(
-                    "query" to mapOf("term" to mapOf("orcidId" to orcidId)),
+                    "query" to mapOf("term" to mapOf("orcidId" to normalizedOrcidId)),
                     "script" to mapOf(
                         "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
                         "params" to mapOf("updatedAt" to now)
@@ -78,7 +79,7 @@ class ExpertIndexWriterService(
                 )
             } else {
                 body = mapOf(
-                    "query" to mapOf("term" to mapOf("orcidId" to orcidId)),
+                    "query" to mapOf("term" to mapOf("orcidId" to normalizedOrcidId)),
                     "script" to mapOf(
                         "source" to "ctx._source.operatorStatus = params.status; ctx._source.updatedAt = params.now",
                         "params" to mapOf("status" to operatorStatus, "now" to now)
@@ -93,13 +94,13 @@ class ExpertIndexWriterService(
             ).body
             val updated = resp?.path("updated")?.asLong(0) ?: 0
             if (updated == 0L) {
-                log.warn("syncCandidateOperatorStatus matched 0 docs in candidate index for orcid={}", orcidId)
+                log.warn("syncCandidateOperatorStatus matched 0 docs in candidate index for orcid={}", normalizedOrcidId)
                 SingleSyncResult(matched = 0, ok = true)
             } else {
                 SingleSyncResult(matched = updated, ok = true)
             }
         } catch (e: Exception) {
-            log.warn("Failed to sync operatorStatus for orcid={}: {}", orcidId, e.message, e)
+            log.warn("Failed to sync operatorStatus for orcid={}: {}", normalizedOrcidId, e.message, e)
             SingleSyncResult(matched = 0, ok = false, error = e.message)
         }
     }
@@ -113,11 +114,12 @@ class ExpertIndexWriterService(
         for (batch in batches) {
             try {
                 // Resolve orcidId → _id mapping via terms query
-                val orcidIds = batch.map { it.first }.distinct()
+                val orcidIds = batch.map { ExpertIdNormalizer.normalize(it.first) }.distinct()
                 val idMapping = resolveOrcidToDocIds(candidateIndex, orcidIds)
 
                 val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, operatorStatus) ->
-                    val docId = idMapping[orcidId] ?: return@joinToString ""
+                    val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
+                    val docId = idMapping[normalizedOrcidId] ?: return@joinToString ""
                     val meta = mapOf("update" to mapOf("_id" to docId, "_index" to candidateIndex))
                     val data = if (operatorStatus == "NOT_CONTACTED") {
                         mapOf(
@@ -140,7 +142,7 @@ class ExpertIndexWriterService(
 
                 // Count orcidIds not found in ES as skipped
                 for ((orcidId, _) in batch) {
-                    if (!idMapping.containsKey(orcidId)) {
+                    if (!idMapping.containsKey(ExpertIdNormalizer.normalize(orcidId))) {
                         overallResult.total++
                         overallResult.skipped++
                     }
@@ -236,10 +238,11 @@ class ExpertIndexWriterService(
         operatorName: String? = null
     ): Boolean {
         val audit = createPromotionAudit(contact, orcid, sourceInboundId, triggeredBy, operatorName)
+        val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
 
-        val getUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        val getUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid"
         val candidateResponse = try {
             restTemplate.exchange(
                 getUrl,
@@ -278,7 +281,7 @@ class ExpertIndexWriterService(
             put("updatedAt", now)
         }
 
-        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$orcid"
+        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$normalizedOrcid"
         return try {
             restTemplate.exchange(
                 putUrl,
@@ -324,7 +327,7 @@ class ExpertIndexWriterService(
 
     fun syncApplicationStatus(contact: ExpertContact, intent: String? = null) {
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
-        val orcid = contact.orcidId
+        val orcid = ExpertIdNormalizer.normalize(contact.orcidId)
         val now = LocalDateTime.now().format(dateFormatter)
 
         try {
@@ -355,10 +358,11 @@ class ExpertIndexWriterService(
     }
 
     fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+        val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
 
-        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"
+        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid"
         val rawResponse = try {
             restTemplate.exchange(
                 getUrl,
@@ -383,7 +387,7 @@ class ExpertIndexWriterService(
             put("updatedAt", now)
         }
 
-        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$orcid"
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid"
         try {
             restTemplate.exchange(
                 putUrl,
@@ -424,8 +428,9 @@ class ExpertIndexWriterService(
     }
 
     fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+        val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
-        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$orcid"
+        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid"
         return try {
             restTemplate.exchange(
                 putUrl,
@@ -529,10 +534,11 @@ class ExpertIndexWriterService(
     }
 
     fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+        val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
 
-        val deleteBody = mapOf("query" to mapOf("term" to mapOf("orcidId" to orcid)))
+        val deleteBody = mapOf("query" to mapOf("term" to mapOf("orcidId" to normalizedOrcid)))
         val deleteCandidateUrl = "${properties.baseUrl}/$candidateIndex/_delete_by_query"
         val deleteApplicationUrl = "${properties.baseUrl}/$applicationIndex/_delete_by_query"
 

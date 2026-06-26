@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 
 /**
  * Lazy iterator: retryable contacts first, then ES candidates fetched page by page.
@@ -44,7 +45,7 @@ class OutreachTargetIterator(
             esBuffer = mutableListOf()
             esBufferIndex = 0
             for (expert in page) {
-                val normOrcid = expert.orcidId.trim().uppercase()
+                val normOrcid = ExpertIdNormalizer.normalize(expert.orcidId)
                 if (seenOrcids.add(normOrcid)) {
                     esBuffer.add(Pair(null, expert))
                 }

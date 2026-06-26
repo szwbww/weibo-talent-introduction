@@ -81,6 +81,26 @@ class OutreachTargetIteratorTest {
     }
 
     @Test
+    fun `deduplicates generated email ids without uppercasing ES id`() {
+        val seenOrcids = mutableSetOf("EMAIL-f07688e64d3dc212a4d")
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 5,
+            seenOrcids = seenOrcids,
+            fetchNextPage = { _, _ ->
+                listOf(expert("EMAIL-f07688e64d3dc212a4d"), expert("EMAIL-abc123"))
+            }
+        )
+
+        val collected = mutableListOf<String>()
+        while (iterator.hasNext()) {
+            collected += iterator.next().second.orcidId
+        }
+
+        assertEquals(listOf("EMAIL-abc123"), collected)
+    }
+
+    @Test
     fun `loads next ES page when entire page is filtered by seenOrcids`() {
         val seenOrcids = mutableSetOf("0001", "0002")
         var fetchCount = 0

@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncSe
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
+import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -53,11 +54,11 @@ class ExpertIndexController(
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
-            .groupBy { it.orcidId }
+            .groupBy { ExpertIdNormalizer.normalize(it.orcidId) }
             .mapValues { (_, contacts) -> contacts.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN } }
 
         val experts = result.experts.map { expert ->
-            val contact = contactMap[expert.orcidId]
+            val contact = contactMap[ExpertIdNormalizer.normalize(expert.orcidId)]
             ExpertIndexResponse.from(
                 expert = expert,
                 level = level,
