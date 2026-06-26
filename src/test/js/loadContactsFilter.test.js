@@ -59,6 +59,7 @@ function createContactsSandbox() {
     };
 
     vm.createContext(sandbox);
+    vm.runInContext(extractFn("renderContactListItems"), sandbox);
     vm.runInContext(extractFn("loadContacts"), sandbox);
     sandbox.__store = store;
     return sandbox;

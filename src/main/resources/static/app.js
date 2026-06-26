@@ -1792,7 +1792,12 @@ async function loadContacts() {
     renderContactPager(size);
     loadOperatorStatusSyncTooltip();
 
-    if (contacts.length === 0) {
+    renderContactListItems();
+    refreshAutoReplySummary().catch(() => {});
+}
+
+function renderContactListItems() {
+    if (!state.contacts || state.contacts.length === 0) {
         $("#contactList").innerHTML = `
             <div class="list-empty">
                 <span class="list-empty-title">没有符合条件的专家</span>
@@ -1844,7 +1849,6 @@ async function loadContacts() {
     }).join("");
     // Stagger list-item entrance animation
     staggerListItems("#contactList .list-item");
-    refreshAutoReplySummary().catch(() => {});
 }
 
 function staggerListItems(selector, maxDelay) {
@@ -3837,6 +3841,36 @@ async function loadContactDetail(contactId) {
     if (contact.id) {
         loadEmailAliases(contact.id, contact);
     }
+    return contact;
+}
+
+async function openContactInList(contactId) {
+    setView("contacts");
+    if (!state.contacts || state.contacts.length === 0) {
+        await loadContacts();
+    }
+    const contact = await loadContactDetail(contactId);
+    state.selectedExpertOrcid = contact?.orcidId || null;
+    if (contact && !state.contacts.some(item => item.orcidId === contact.orcidId)) {
+        state.contacts.unshift({
+            orcidId: contact.orcidId,
+            email: contact.expertEmail,
+            displayName: contact.expertName,
+            indexLevel: contact.currentIndexLevel,
+            indexLevelName: indexLevelLabels[contact.currentIndexLevel] || contact.currentIndexLevel,
+            contactId: contact.id,
+            contactStatus: contact.currentStatus,
+            operatorStatus: contact.operatorStatus,
+            needsManualAttention: contact.needsManualAttention,
+            country: "",
+            employment: "",
+            keyword: "",
+            tags: contact.tags || [],
+            updatedAt: contact.updatedAt || null
+        });
+    }
+    renderContactListItems();
+    document.querySelector("#contactList .list-item.active")?.scrollIntoView({ block: "nearest" });
 }
 
 async function loadEmailAliases(contactId, contact) {
@@ -4665,18 +4699,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "open-contact-from-unmatched") {
-        setView("contacts");
-        await loadContacts();
-        await loadContactDetail(Number(id));
-        const listItems = $$("#contactList .list-item");
-        listItems.forEach(item => {
-            const isMatch = Number(item.dataset.contactId) === Number(id);
-            item.classList.toggle("active", isMatch);
-            if (isMatch) {
-                state.selectedExpertOrcid = item.dataset.orcid;
-                item.scrollIntoView({ behavior: "smooth", block: "nearest" });
-            }
-        });
+        await openContactInList(Number(id));
         return;
     }
     if (action === "mark-unmatched-resolved") {
@@ -5148,9 +5171,7 @@ function bindMonitoringEvents() {
         const target = event.target.closest("[data-action]");
         if (!target) return;
         if (target.dataset.action === "open-monitoring-contact") {
-            state.selectedExpertOrcid = null;
-            setView("contacts");
-            await loadContactDetail(Number(target.dataset.id));
+            await openContactInList(Number(target.dataset.id));
         }
         if (target.dataset.action === "view-unmatched" || target.dataset.action === "open-pending") {
             setView("mailbox");
@@ -5809,9 +5830,7 @@ function initBulkAutoReply() {
         const target = event.target.closest("[data-action]");
         if (!target) return;
         if (target.dataset.action === "open-monitoring-contact") {
-            state.selectedExpertOrcid = null;
-            setView("contacts");
-            await loadContactDetail(Number(target.dataset.id));
+            await openContactInList(Number(target.dataset.id));
             return;
         }
         if (target.dataset.action === "view-mail") {
