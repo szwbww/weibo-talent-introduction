@@ -96,7 +96,8 @@ class BounceCollectionService(
                 bounceType = signal.bounceType,
                 dsnStatus = signal.dsnStatus,
                 bounceReason = signal.reason,
-                receivedAt = receivedAt
+                receivedAt = receivedAt,
+                createdAt = LocalDateTime.now()
             )
         )
 
