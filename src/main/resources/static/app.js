@@ -4636,10 +4636,14 @@ function renderComposedGapList() {
     if (!list || !composedReplyState.suggest) return;
     const coveredCount = getSelectedCategoryCount(composedReplyState.suggest, composedReplyState.selectedRuleIds);
     const gapItems = composedReplyState.suggest.gapItems || [];
+    const countEl = $("#composedGapCount");
     if (!gapItems.length) {
         list.innerHTML = `<li class="text-muted">暂无缺口项</li>`;
+        if (countEl) countEl.textContent = "";
         return;
     }
+    const covered = Math.min(coveredCount, gapItems.length);
+    if (countEl) countEl.textContent = `${covered}/${gapItems.length}`;
     list.innerHTML = gapItems.map((item, index) => `
         <li class="${index < coveredCount ? "covered" : ""}">
             <span>${index < coveredCount ? "✓" : "○"}</span>
@@ -4800,6 +4804,7 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     <p class="text-muted" style="font-size:12px;margin:0 0 8px;">已选规则段 + 自由文本（两层模型）</p>
                     <ul id="composedSelectedList" class="compose-selected-list"></ul>
                     <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
+                    <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览</p>
                     <textarea id="composedReplyPreview" class="compose-preview" rows="10" placeholder="组装预览"></textarea>
                     <div class="compose-draft-actions">
                         <button type="button" class="button" id="composedPolishBtn" data-action="polish-composed-reply" data-record-id="${recordId}" hidden>润色</button>
@@ -4807,7 +4812,7 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     </div>
                 </div>
                 <div class="compose-panel compose-gaps">
-                    <h4>缺口清单</h4>
+                    <h4>缺口清单<span class="compose-count" id="composedGapCount"></span></h4>
                     <ul id="composedGapList" class="compose-gap-list"></ul>
                 </div>
             </div>
