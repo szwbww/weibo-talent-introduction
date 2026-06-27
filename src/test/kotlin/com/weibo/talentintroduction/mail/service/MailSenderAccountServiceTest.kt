@@ -32,6 +32,62 @@ class MailSenderAccountServiceTest {
     )
 
     @Test
+    fun `selectAccountForManualSending selects account at daily limit`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("exhausted", strategyWeight = 100, dailySendLimit = 100, todaySentCount = 100)
+            )
+        )
+
+        val selected = service.selectAccountForManualSending()
+
+        assertEquals("exhausted", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForManualSending excludes auto-paused accounts`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true),
+                account("ok", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 100, autoSendPaused = false)
+            )
+        )
+
+        val selected = service.selectAccountForManualSending()
+
+        assertEquals("ok", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForManualSending excludes simulator account`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("SIMULATOR_NOOP", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0),
+                account("real", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 100)
+            )
+        )
+
+        val selected = service.selectAccountForManualSending()
+
+        assertEquals("real", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForManualSending throws when no eligible account`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true)
+            )
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.selectAccountForManualSending()
+        }
+
+        assertTrue(ex.message!!.contains("manual send"))
+    }
+
+    @Test
     fun `selects enabled account with highest weighted remaining capacity`() {
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(

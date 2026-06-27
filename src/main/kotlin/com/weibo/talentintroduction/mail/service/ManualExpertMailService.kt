@@ -67,7 +67,7 @@ class ManualExpertMailService(
         val account = command.senderAccountCode
             ?.takeIf { it.isNotBlank() }
             ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForSending()
+            ?: mailSenderAccountService.selectAccountForManualSending()
         val composed = compose(contact, account.accountCode, command)
         val delivered = mailDeliveryService.send(account, composed.mail)
         val now = LocalDateTime.now()
@@ -92,12 +92,7 @@ class ManualExpertMailService(
             )
         )
 
-        mailSenderAccountRepository.save(
-            account.copy(
-                todaySentCount = account.todaySentCount + 1,
-                lastSentAt = now
-            )
-        )
+        mailSenderAccountRepository.save(account.copy(lastSentAt = now))
 
         conversationStateService.transition(
             contact = contact,

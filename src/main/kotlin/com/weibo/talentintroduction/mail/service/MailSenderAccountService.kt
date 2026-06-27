@@ -185,6 +185,12 @@ class MailSenderAccountService(
             .maxWithOrNull(compareBy<MailSenderAccount> { selectionScore(it) }.thenBy { it.id ?: 0L })
             ?: error("No available mail sender account")
 
+    fun selectAccountForManualSending(): MailSenderAccount =
+        repository.findAllByEnabledTrue()
+            .filter { isManualSendable(it) }
+            .maxWithOrNull(compareBy<MailSenderAccount> { selectionScore(it) }.thenBy { it.id ?: 0L })
+            ?: error("No available mail sender account for manual send")
+
     fun listSendableAccounts(): List<MailSenderAccount> =
         repository.findAllByEnabledTrue().filter { isSendable(it) }
 
@@ -207,6 +213,11 @@ class MailSenderAccountService(
         account.enabled &&
             !account.autoSendPaused &&
             account.todaySentCount < warmup.effectiveDailyLimit(account) &&
+            account.accountCode != SIMULATOR_ACCOUNT_CODE
+
+    private fun isManualSendable(account: MailSenderAccount): Boolean =
+        account.enabled &&
+            !account.autoSendPaused &&
             account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun selectionScore(account: MailSenderAccount): Double {

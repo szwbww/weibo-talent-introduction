@@ -98,7 +98,7 @@ class PendingMailOperationService(
         val account = senderAccountCode
             ?.takeIf { it.isNotBlank() }
             ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForSending()
+            ?: mailSenderAccountService.selectAccountForManualSending()
 
         val plainBody = rule.replyBody
         val mail = ComposedMail(
@@ -182,7 +182,7 @@ class PendingMailOperationService(
         val account = senderAccountCode
             ?.takeIf { it.isNotBlank() }
             ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForSending()
+            ?: mailSenderAccountService.selectAccountForManualSending()
 
         val mail = ComposedMail(
             to = contact.expertEmail,
@@ -290,7 +290,7 @@ class PendingMailOperationService(
         val account = senderAccountCode
             ?.takeIf { it.isNotBlank() }
             ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForSending()
+            ?: mailSenderAccountService.selectAccountForManualSending()
 
         val mail = ComposedMail(
             to = contact.expertEmail,
