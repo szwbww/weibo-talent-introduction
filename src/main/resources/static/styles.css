@@ -4152,10 +4152,17 @@ tr td {
 
 .compose-workbench-section .compose-workbench {
     display: grid;
-    grid-template-columns: minmax(180px, 0.85fr) minmax(260px, 1.3fr) minmax(170px, 0.85fr);
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-areas:
+        "fragments fragments"
+        "draft gaps";
     gap: 12px;
-    align-items: stretch;
+    align-items: start;
 }
+
+.compose-workbench .compose-fragments { grid-area: fragments; }
+.compose-workbench .compose-draft { grid-area: draft; }
+.compose-workbench .compose-gaps { grid-area: gaps; }
 
 .compose-panel {
     display: flex;
@@ -4183,63 +4190,113 @@ tr td {
     color: var(--text-muted);
 }
 
-/* ---- fragment panel ---- */
-.compose-category-panel {
-    margin-bottom: 10px;
-    border: none;
-    padding: 0;
+/* ---- fragment panel (compact single-row) ---- */
+.compose-fragments {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
 }
 
-.compose-category-panel summary {
+.compose-fragments h4 {
+    display: inline-flex;
+    margin: 0 8px 0 0;
+}
+
+.compose-fragments .compose-category-panel {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    border: none;
+    padding: 0;
+    vertical-align: middle;
+}
+
+.compose-fragments .compose-category-panel summary {
     cursor: pointer;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--text-muted);
-    padding: 2px 0 6px;
+    padding: 0;
+    margin-right: 2px;
     list-style: none;
+    white-space: nowrap;
 }
 
-.compose-category-panel summary::-webkit-details-marker {
+.compose-fragments .compose-category-panel summary::-webkit-details-marker {
     display: none;
 }
 
-.compose-category-panel summary::before {
-    content: "▾";
-    display: inline-block;
-    margin-right: 4px;
-    font-size: 9px;
-    transition: transform 0.15s;
+.compose-fragments .compose-category-panel summary::before {
+    content: none;
 }
 
-.compose-category-panel:not([open]) summary::before {
-    transform: rotate(-90deg);
+.compose-fragments .compose-rule-list {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+}
+
+.compose-fragments .compose-rule-item {
+    padding: 3px 9px;
+    font-size: 12px;
+    gap: 6px;
 }
 
 .compose-rule-list {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 2px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
 }
 
 .compose-rule-item {
-    display: flex;
+    display: inline-flex;
+    flex-direction: row;
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    padding: 7px 8px;
-    border-radius: 6px;
+    font-weight: 400;
+    color: var(--text-main);
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
     cursor: pointer;
-    transition: background 0.12s;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.compose-rule-item .compose-rule-checkbox {
+    width: 14px;
+    min-width: 14px;
+    height: 14px;
+    min-height: 14px;
+    margin: 0;
+    padding: 0;
+    flex: none;
+}
+
+.compose-rule-item > span:not(.badge) {
+    min-width: 0;
 }
 
 .compose-rule-item:hover {
     background: rgba(15, 23, 42, 0.04);
+    border-color: var(--text-muted);
 }
 
 .compose-rule-item:has(.compose-rule-checkbox:checked) {
     background: var(--primary-light);
+    border-color: rgba(var(--primary-rgb), 0.4);
 }
 
 .compose-rule-item:has(.compose-rule-checkbox:checked) > span:not(.badge) {
@@ -4373,5 +4430,9 @@ tr td {
 @media (max-width: 960px) {
     .compose-workbench-section .compose-workbench {
         grid-template-columns: 1fr;
+        grid-template-areas:
+            "fragments"
+            "draft"
+            "gaps";
     }
 }
