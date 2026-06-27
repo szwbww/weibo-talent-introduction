@@ -34,7 +34,8 @@ class PendingMailOperationService(
     private val operatorActionLogService: OperatorActionLogService,
     private val qaRuleRepository: QaRuleRepository,
     private val qaMatchService: QaMatchService,
-    private val mailBodyCleaner: MailBodyCleaner
+    private val mailBodyCleaner: MailBodyCleaner,
+    private val mailContentService: MailContentService
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -99,10 +100,13 @@ class PendingMailOperationService(
             ?.let(mailSenderAccountService::getEnabledAccount)
             ?: mailSenderAccountService.selectAccountForSending()
 
+        val plainBody = rule.replyBody
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = rule.replySubject ?: "Re: ${record.subject.orEmpty()}".trim(),
-            body = rule.replyBody
+            body = mailContentService.plainTextToHtml(plainBody),
+            html = true,
+            text = plainBody
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()
@@ -118,7 +122,7 @@ class PendingMailOperationService(
                 messageId = delivered.messageId,
                 inReplyTo = record.messageId,
                 subject = mail.subject,
-                body = mail.body,
+                body = plainBody,
                 matchedQaRuleId = rule.id,
                 sendStatus = delivered.status,
                 receivedAt = null,
@@ -140,7 +144,7 @@ class PendingMailOperationService(
                 "qaRuleName" to rule.displayName,
                 "sendStatus" to delivered.status,
                 "subject" to mail.subject,
-                "bodyPreviewText" to mail.body.take(500)
+                "bodyPreviewText" to plainBody.take(500)
             ),
             operatorName = operatorName,
             note = "QA reply sent for inbound processing $inboundProcessingId"
@@ -291,7 +295,9 @@ class PendingMailOperationService(
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = subject,
-            body = finalBody
+            body = mailContentService.plainTextToHtml(finalBody),
+            html = true,
+            text = finalBody
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()

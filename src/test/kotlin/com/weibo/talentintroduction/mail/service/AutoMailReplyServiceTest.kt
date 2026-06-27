@@ -23,6 +23,7 @@ import com.weibo.talentintroduction.qa.service.QaMatchResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -74,6 +75,7 @@ class AutoMailReplyServiceTest {
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val dmarcReportDetector = DmarcReportDetector()
     private val dmarcReportIngestService = Mockito.mock(DmarcReportIngestService::class.java)
+    private val mailContentService = MailContentService()
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -101,7 +103,8 @@ class AutoMailReplyServiceTest {
         emailSuppressionService,
         selfCheckProbeDetector,
         dmarcReportDetector,
-        dmarcReportIngestService
+        dmarcReportIngestService,
+        mailContentService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -898,32 +901,42 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
+        val plainBody = "Auto reply body"
         Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
-                replyBody = "Auto reply body",
+                replyBody = plainBody,
                 handoffRequired = false,
                 autoReplyEnabled = true
             )
         )
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(
             deliveryService.send(
                 anyValue(account),
-                anyValue(ComposedMail(to = "stub@example.com", subject = "Re: Program", body = "Auto reply body"))
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
             )
-        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail(messageId = "msg-200", status = "SUCCESS")
+        }
 
         val result = service.receiveAndAutoReply("sender", 5)
 
         assertEquals(1, result.replied)
         assertEquals(0, result.manualReview)
         Mockito.verify(emailSuppressionService).isSuppressed("expert@example.com")
-        Mockito.verify(deliveryService).send(
-            eqValue(account),
-            eqValue(ComposedMail(to = "expert@example.com", subject = "Re: Program", body = "Auto reply body"))
-        )
+        val sentMail = sentMails.single()
+        assertEquals(true, sentMail.html)
+        assertEquals(plainBody, sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml(plainBody), sentMail.body)
+        val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository, Mockito.atLeastOnce()).save(mailRecordCaptor.capture())
+        val outboundRecord = mailRecordCaptor.allValues.last { it.direction == "OUTBOUND" && it.mailType == "QA_REPLY" }
+        assertEquals(plainBody, outboundRecord.body)
+        assertFalse(outboundRecord.body!!.contains("<p>"))
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
         Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
         assertEquals(ConversationStatus.QA_AUTO_REPLIED.name, contactCaptor.allValues.last().currentStatus)
@@ -1049,21 +1062,25 @@ class AutoMailReplyServiceTest {
             )
         )
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(
             deliveryService.send(
                 anyValue(account),
-                anyValue(ComposedMail(to = "stub@example.com", subject = "Program overview", body = "Overview answer"))
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
             )
-        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail(messageId = "msg-200", status = "SUCCESS")
+        }
 
         val result = service.receiveAndAutoReply("sender", 5)
 
         assertEquals(1, result.replied)
         assertEquals(0, result.manualReview)
-        Mockito.verify(deliveryService).send(
-            eqValue(account),
-            eqValue(ComposedMail(to = "expert@example.com", subject = "Program overview", body = "Overview answer"))
-        )
+        val sentMail = sentMails.single()
+        assertEquals(true, sentMail.html)
+        assertEquals("Overview answer", sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml("Overview answer"), sentMail.body)
         Mockito.verify(manualHandoffRepository, Mockito.never()).save(Mockito.any())
     }
 

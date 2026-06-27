@@ -55,7 +55,8 @@ class AutoMailReplyService(
     private val emailSuppressionService: EmailSuppressionService,
     private val selfCheckProbeDetector: SelfCheckProbeDetector,
     private val dmarcReportDetector: DmarcReportDetector,
-    private val dmarcReportIngestService: DmarcReportIngestService
+    private val dmarcReportIngestService: DmarcReportIngestService,
+    private val mailContentService: MailContentService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -466,10 +467,13 @@ class AutoMailReplyService(
             )
         }
 
+        val plainBody = match.replyBody
         val reply = ComposedMail(
             to = received.from,
             subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
-            body = match.replyBody
+            body = mailContentService.plainTextToHtml(plainBody),
+            html = true,
+            text = plainBody
         )
         val delivered = mailDeliveryService.send(account, reply)
         val now = LocalDateTime.now()
@@ -485,7 +489,7 @@ class AutoMailReplyService(
                 messageId = delivered.messageId,
                 inReplyTo = received.messageId,
                 subject = reply.subject,
-                body = reply.body,
+                body = plainBody,
                 cleanedBody = null,
                 matchedQaRuleId = match.ruleId,
                 sendStatus = delivered.status,

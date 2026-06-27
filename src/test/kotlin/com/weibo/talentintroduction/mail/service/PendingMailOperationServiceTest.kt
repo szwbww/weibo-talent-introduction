@@ -19,6 +19,7 @@ import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -41,6 +42,7 @@ class PendingMailOperationServiceTest {
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val mailBodyCleaner = Mockito.mock(MailBodyCleaner::class.java)
+    private val mailContentService = MailContentService()
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -53,7 +55,8 @@ class PendingMailOperationServiceTest {
         operatorActionLogService,
         qaRuleRepository,
         qaMatchService,
-        mailBodyCleaner
+        mailBodyCleaner,
+        mailContentService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -191,15 +194,28 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
         Mockito.`when`(mailSenderAccountService.selectAccountForSending()).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 200) }
 
         val result = service.sendQaReply(1, 10, null, "op")
 
         assertEquals("SUCCESS", result.sendStatus)
+
+        val sentMail = sentMails.single()
+        assertEquals(true, sentMail.html)
+        assertEquals("QA Body", sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml("QA Body"), sentMail.body)
+
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("QA Body", recordCaptor.value.body)
 
         @Suppress("UNCHECKED_CAST")
         val captor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
@@ -374,9 +390,13 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule1))
         Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(rule2))
         Mockito.`when`(mailSenderAccountService.selectAccountForSending()).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 300) }
         Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
@@ -390,6 +410,12 @@ class PendingMailOperationServiceTest {
         assertEquals("SUCCESS", result.sendStatus)
         assertEquals("MANUAL_COMPOSED_REPLY", result.mailType)
         assertTrue(result.subject.contains("Subject"))
+
+        val sentMail = sentMails.single()
+        assertEquals(true, sentMail.html)
+        assertNotNull(sentMail.text)
+        assertFalse(sentMail.text!!.contains("<p>"))
+        assertTrue(sentMail.body.contains("<p>"))
 
         val mailCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
         Mockito.verify(mailRecordRepository).save(mailCaptor.capture())
@@ -483,15 +509,22 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(ruleB))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(ruleA))
         Mockito.`when`(mailSenderAccountService.selectAccountForSending()).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 302) }
         Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
             .thenAnswer { it.getArgument<MailRecordQaRule>(0).copy(id = 1) }
 
         service.sendManualComposedReply(1, listOf(11, 10), null, null, null, "op")
+
+        val htmlBody = sentMails.single().body
+        assertTrue(htmlBody.indexOf("Body B") < htmlBody.indexOf("Body A"))
 
         val mailCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
         Mockito.verify(mailRecordRepository).save(mailCaptor.capture())
