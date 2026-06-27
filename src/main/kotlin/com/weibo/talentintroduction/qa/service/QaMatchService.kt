@@ -13,10 +13,11 @@ class QaMatchService(
 ) {
     fun suggestComposition(messageBody: String): CompositionSuggestResult {
         val normalizedBody = normalize(messageBody)
-        val rawMatches = qaRuleRepository.findAllEnabledOrdered()
+        val enabledRules = qaRuleRepository.findAllEnabledOrdered()
+        val rawMatches = enabledRules
             .mapNotNull { rule -> matchRule(rule, normalizedBody) }
         val matches = if (rawMatches.isEmpty()) emptyList() else applySupersede(rawMatches)
-        val gapItems = extractGapItems(messageBody)
+        val gapItems = extractGapItems(messageBody, enabledRules)
         val matchedCategoryIds = rawMatches.map { it.rule.categoryId }.distinct()
         val categories = qaCategoryRepository.findAll().filter { it.enabled }
         val rulesByCategory = categories.map { category ->
@@ -93,9 +94,9 @@ class QaMatchService(
     }
 
     private fun countQuestionUnits(messageBody: String): Int =
-        extractGapItems(messageBody).size
+        extractGapTexts(messageBody).size
 
-    private fun extractGapItems(messageBody: String): List<String> {
+    private fun extractGapTexts(messageBody: String): List<String> {
         val questions = QUESTION_SENTENCE_PATTERN.findAll(messageBody)
             .map { it.value.trim() }
             .filter { it.isNotBlank() }
@@ -107,23 +108,22 @@ class QaMatchService(
         return if (questions.size >= bullets.size) questions else bullets
     }
 
-    private fun matchRule(rule: QaRule, normalizedBody: String): QaRuleMatch? {
-        val keywords = rule.keywords
-            .split(",")
-            .map { normalize(it) }
-            .filter { it.isNotBlank() }
+    private fun extractGapItems(messageBody: String, enabledRules: List<QaRule>): List<GapItem> =
+        extractGapTexts(messageBody).map { text ->
+            val normalizedGapText = normalize(text)
+            val candidateRuleIds = enabledRules
+                .filter { rule -> matchRuleAgainstText(rule, normalizedGapText) }
+                .mapNotNull { it.id }
+            GapItem(text = text, candidateRuleIds = candidateRuleIds)
+        }
 
+    private fun matchRule(rule: QaRule, normalizedBody: String): QaRuleMatch? {
+        val keywords = parseKeywords(rule)
         if (keywords.isEmpty()) {
             return null
         }
-
         val matchedKeywords = keywords.filter(normalizedBody::contains)
-        val matched = when (rule.matchMode.uppercase(Locale.ROOT)) {
-            "ALL" -> matchedKeywords.size == keywords.size
-            else -> matchedKeywords.isNotEmpty()
-        }
-
-        return if (matched) {
+        return if (ruleMatchesKeywords(keywords, matchedKeywords, rule.matchMode)) {
             QaRuleMatch(
                 rule = rule,
                 matchedKeywordCount = matchedKeywords.size
@@ -131,6 +131,33 @@ class QaMatchService(
         } else {
             null
         }
+    }
+
+    private fun matchRuleAgainstText(rule: QaRule, normalizedGapText: String): Boolean =
+        ruleMatches(rule, normalizedGapText)
+
+    private fun ruleMatches(rule: QaRule, normalizedText: String): Boolean {
+        val keywords = parseKeywords(rule)
+        if (keywords.isEmpty()) {
+            return false
+        }
+        val matchedKeywords = keywords.filter(normalizedText::contains)
+        return ruleMatchesKeywords(keywords, matchedKeywords, rule.matchMode)
+    }
+
+    private fun parseKeywords(rule: QaRule): List<String> =
+        rule.keywords
+            .split(",")
+            .map { normalize(it) }
+            .filter { it.isNotBlank() }
+
+    private fun ruleMatchesKeywords(
+        keywords: List<String>,
+        matchedKeywords: List<String>,
+        matchMode: String
+    ): Boolean = when (matchMode.uppercase(Locale.ROOT)) {
+        "ALL" -> matchedKeywords.size == keywords.size
+        else -> matchedKeywords.isNotEmpty()
     }
 
     private fun normalize(value: String): String =
@@ -154,11 +181,16 @@ data class QaMatchResult(
     val gapDetected: Boolean = false
 )
 
+data class GapItem(
+    val text: String,
+    val candidateRuleIds: List<Long>
+)
+
 data class CompositionSuggestResult(
     val suggestedRuleIds: List<Long>,
     val suggestedRules: List<SuggestQaRule>,
     val rulesByCategory: List<CategoryRulesGroup>,
-    val gapItems: List<String>,
+    val gapItems: List<GapItem>,
     val gapDetected: Boolean,
     val matchedCategoryIds: List<Long>
 )

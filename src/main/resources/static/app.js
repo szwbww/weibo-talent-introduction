@@ -61,7 +61,8 @@ const composedReplyState = {
     selectedRuleIds: [],
     freeText: "",
     previewEdited: false,
-    baselinePreview: ""
+    baselinePreview: "",
+    activeGapIndex: null
 };
 
 const contextPath = (() => {
@@ -4622,34 +4623,78 @@ function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText) {
     return body;
 }
 
-function getSelectedCategoryCount(suggest, selectedRuleIds) {
-    const categoryIds = new Set();
-    selectedRuleIds.forEach((id) => {
-        const rule = findSuggestRule(suggest, id);
-        if (rule) categoryIds.add(rule.categoryId);
+function isGapCovered(gapItem, selectedRuleIds) {
+    const candidates = gapItem.candidateRuleIds || [];
+    return candidates.some((id) => selectedRuleIds.includes(id));
+}
+
+function clearGapHighlight() {
+    document.querySelectorAll(".compose-rule-item.gap-highlight").forEach((el) => {
+        el.classList.remove("gap-highlight");
     });
-    return categoryIds.size;
+}
+
+function applyGapHighlight() {
+    clearGapHighlight();
+    const activeIndex = composedReplyState.activeGapIndex;
+    if (activeIndex == null || !composedReplyState.suggest) return;
+    const gapItems = composedReplyState.suggest.gapItems || [];
+    const gapItem = gapItems[activeIndex];
+    if (!gapItem?.candidateRuleIds?.length) return;
+    gapItem.candidateRuleIds.forEach((ruleId) => {
+        const checkbox = document.querySelector(`.compose-rule-checkbox[data-rule-id="${ruleId}"]`);
+        checkbox?.closest(".compose-rule-item")?.classList.add("gap-highlight");
+    });
+}
+
+function setupComposedGapClickHandlers() {
+    const list = $("#composedGapList");
+    if (!list) return;
+    list.querySelectorAll("li[data-gap-index]").forEach((li) => {
+        li.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const index = Number(li.dataset.gapIndex);
+            const gapItems = composedReplyState.suggest?.gapItems || [];
+            const gapItem = gapItems[index];
+            if (!gapItem?.candidateRuleIds?.length) return;
+            composedReplyState.activeGapIndex = composedReplyState.activeGapIndex === index ? null : index;
+            renderComposedGapList();
+        });
+    });
 }
 
 function renderComposedGapList() {
     const list = $("#composedGapList");
     if (!list || !composedReplyState.suggest) return;
-    const coveredCount = getSelectedCategoryCount(composedReplyState.suggest, composedReplyState.selectedRuleIds);
+    const selectedRuleIds = composedReplyState.selectedRuleIds;
     const gapItems = composedReplyState.suggest.gapItems || [];
     const countEl = $("#composedGapCount");
     if (!gapItems.length) {
         list.innerHTML = `<li class="text-muted">暂无缺口项</li>`;
         if (countEl) countEl.textContent = "";
+        clearGapHighlight();
         return;
     }
-    const covered = Math.min(coveredCount, gapItems.length);
-    if (countEl) countEl.textContent = `${covered}/${gapItems.length}`;
-    list.innerHTML = gapItems.map((item, index) => `
-        <li class="${index < coveredCount ? "covered" : ""}">
-            <span>${index < coveredCount ? "✓" : "○"}</span>
-            <span>${escapeHtml(item)}</span>
-        </li>
-    `).join("");
+    const coveredCount = gapItems.filter((item) => isGapCovered(item, selectedRuleIds)).length;
+    if (countEl) countEl.textContent = `${coveredCount}/${gapItems.length}`;
+    const activeIndex = composedReplyState.activeGapIndex;
+    list.innerHTML = gapItems.map((item, index) => {
+        const covered = isGapCovered(item, selectedRuleIds);
+        const hasCandidates = (item.candidateRuleIds || []).length > 0;
+        const classes = [
+            covered ? "covered" : "",
+            hasCandidates ? "clickable" : "no-rules",
+            activeIndex === index ? "active-gap" : ""
+        ].filter(Boolean).join(" ");
+        const noRuleHint = hasCandidates ? "" : `<span class="gap-no-rules-hint">无可用规则</span>`;
+        return `
+        <li class="${classes}" data-gap-index="${index}">
+            <span>${covered ? "✓" : "○"}</span>
+            <span>${escapeHtml(item.text)}${noRuleHint}</span>
+        </li>`;
+    }).join("");
+    setupComposedGapClickHandlers();
+    applyGapHighlight();
 }
 
 function renderComposedSelectedList() {
@@ -4728,6 +4773,22 @@ function refreshComposedPreviewFromRules() {
     renderComposedSelectedList();
 }
 
+let composedGapDismissHandlerBound = false;
+
+function ensureComposedGapDismissHandler() {
+    if (composedGapDismissHandlerBound) return;
+    composedGapDismissHandlerBound = true;
+    document.addEventListener("click", (event) => {
+        if (!composedReplyState.suggest) return;
+        if (!event.target.closest(".compose-workbench")) return;
+        if (event.target.closest(".compose-gaps li[data-gap-index]")) return;
+        if (composedReplyState.activeGapIndex != null) {
+            composedReplyState.activeGapIndex = null;
+            renderComposedGapList();
+        }
+    });
+}
+
 function initComposedReplyWorkbench(recordId, suggest) {
     composedReplyState.recordId = recordId;
     composedReplyState.suggest = suggest;
@@ -4735,6 +4796,9 @@ function initComposedReplyWorkbench(recordId, suggest) {
     composedReplyState.freeText = "";
     composedReplyState.previewEdited = false;
     composedReplyState.baselinePreview = "";
+    composedReplyState.activeGapIndex = null;
+
+    ensureComposedGapDismissHandler();
 
     document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {

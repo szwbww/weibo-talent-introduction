@@ -352,6 +352,79 @@ class QaMatchServiceTest {
     }
 
     @Test
+    fun `gap item includes candidate rules matching gap text keywords`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,funding",
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                ),
+                QaRule(
+                    id = 2,
+                    categoryId = 2,
+                    keywords = "deadline",
+                    replySubject = "Deadline",
+                    replyBody = "Deadline answer"
+                )
+            )
+        )
+
+        val result = service.suggestComposition("What funding is available? What is the deadline?")
+
+        val fundingGap = result.gapItems.find { it.text.contains("funding", ignoreCase = true) }
+        assertTrue(fundingGap!!.candidateRuleIds.contains(1L))
+        assertFalse(fundingGap.candidateRuleIds.contains(2L))
+
+        val deadlineGap = result.gapItems.find { it.text.contains("deadline", ignoreCase = true) }
+        assertTrue(deadlineGap!!.candidateRuleIds.contains(2L))
+        assertFalse(deadlineGap.candidateRuleIds.contains(1L))
+    }
+
+    @Test
+    fun `gap item has empty candidates when no rule matches gap text`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,funding",
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+
+        val result = service.suggestComposition("What is the deadline?")
+
+        assertEquals(1, result.gapItems.size)
+        assertTrue(result.gapItems[0].candidateRuleIds.isEmpty())
+    }
+
+    @Test
+    fun `ALL mode rule not candidate when only partial keywords match gap text`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,funding",
+                    matchMode = "ALL",
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+
+        val result = service.suggestComposition("What salary support exists?")
+
+        assertEquals(1, result.gapItems.size)
+        assertTrue(result.gapItems[0].candidateRuleIds.isEmpty())
+    }
+
+    @Test
     fun `overview supersede does not trigger gap on multi question overview mail`() {
         val overviewRule = QaRule(
             id = 100,

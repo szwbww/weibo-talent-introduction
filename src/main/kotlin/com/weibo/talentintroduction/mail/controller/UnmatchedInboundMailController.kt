@@ -379,11 +379,16 @@ data class OperatorActionLogResponse(
     val createdAt: String?
 )
 
+data class GapItemResponse(
+    val text: String,
+    val candidateRuleIds: List<Long>
+)
+
 data class ComposedReplySuggestResponse(
     val suggestedRuleIds: List<Long>,
     val suggestedRules: List<SuggestQaRuleResponse>,
     val rulesByCategory: List<CategoryRulesGroupResponse>,
-    val gapItems: List<String>,
+    val gapItems: List<GapItemResponse>,
     val gapDetected: Boolean,
     val matchedCategoryIds: List<Long>,
     val llmEnabled: Boolean,
@@ -484,7 +489,7 @@ private fun CompositionSuggestResult.toResponse(
     suggestedRuleIds = suggestedRuleIds,
     suggestedRules = suggestedRules.map { it.toResponse() },
     rulesByCategory = rulesByCategory.map { it.toResponse() },
-    gapItems = gapItems,
+    gapItems = gapItems.map { GapItemResponse(it.text, it.candidateRuleIds) },
     gapDetected = gapDetected,
     matchedCategoryIds = matchedCategoryIds,
     llmEnabled = llmEnabled,
