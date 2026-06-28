@@ -18,6 +18,8 @@ import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
 import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.SuggestQaRule
+import com.weibo.talentintroduction.reply.service.ManualReplyFrame
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -37,7 +39,8 @@ class UnmatchedInboundMailController(
     private val pendingMailOperationService: PendingMailOperationService,
     private val operatorActionLogService: OperatorActionLogService,
     private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService,
-    private val autoReplyPreviewService: AutoReplyPreviewService
+    private val autoReplyPreviewService: AutoReplyPreviewService,
+    private val replySnippetService: ReplySnippetService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -212,7 +215,8 @@ class UnmatchedInboundMailController(
         val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
         return suggest.toResponse(
             llmEnabled = llmStitchService.isEnabled(),
-            inboundText = inboundText
+            inboundText = inboundText,
+            frame = replySnippetService.resolveManualFrame()
         )
     }
 
@@ -226,7 +230,8 @@ class UnmatchedInboundMailController(
         val result = llmStitchService.polishDraft(
             qaRuleIds = request.qaRuleIds,
             inboundQuestion = inboundText,
-            freeText = request.freeText
+            freeText = request.freeText,
+            ackSnippetId = request.ackSnippetId
         )
         return com.weibo.talentintroduction.llm.service.PolishDraftResponse(
             draftText = result.draftText,
@@ -245,6 +250,7 @@ class UnmatchedInboundMailController(
             qaRuleIds = request.qaRuleIds,
             overrideTextBody = request.overrideTextBody,
             freeTextBody = request.freeTextBody,
+            ackSnippetId = request.ackSnippetId,
             senderAccountCode = request.senderAccountCode,
             operatorName = request.operatorName
         )
@@ -413,7 +419,16 @@ data class ComposedReplySuggestResponse(
     val gapDetected: Boolean,
     val matchedCategoryIds: List<Long>,
     val llmEnabled: Boolean,
-    val inboundText: String
+    val inboundText: String,
+    val salutation: String?,
+    val greeting: String?,
+    val closing: String?,
+    val ackOptions: List<AckOptionResponse>
+)
+
+data class AckOptionResponse(
+    val id: Long,
+    val content: String
 )
 
 data class SuggestQaRuleResponse(
@@ -519,7 +534,8 @@ private fun AutoReplyPreviewResult.toResponse() = AutoReplyPreviewResponse(
 
 private fun CompositionSuggestResult.toResponse(
     llmEnabled: Boolean,
-    inboundText: String
+    inboundText: String,
+    frame: ManualReplyFrame
 ) = ComposedReplySuggestResponse(
     suggestedRuleIds = suggestedRuleIds,
     suggestedRules = suggestedRules.map { it.toResponse() },
@@ -528,7 +544,11 @@ private fun CompositionSuggestResult.toResponse(
     gapDetected = gapDetected,
     matchedCategoryIds = matchedCategoryIds,
     llmEnabled = llmEnabled,
-    inboundText = inboundText
+    inboundText = inboundText,
+    salutation = frame.salutation,
+    greeting = frame.greeting,
+    closing = frame.closing,
+    ackOptions = frame.ackOptions.map { AckOptionResponse(id = it.id, content = it.content) }
 )
 
 private fun SuggestQaRule.toResponse() = SuggestQaRuleResponse(

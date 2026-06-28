@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.qa.service.QaRuleMatch
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -35,7 +36,8 @@ class PendingMailOperationService(
     private val qaRuleRepository: QaRuleRepository,
     private val qaMatchService: QaMatchService,
     private val mailBodyCleaner: MailBodyCleaner,
-    private val mailContentService: MailContentService
+    private val mailContentService: MailContentService,
+    private val replySnippetService: ReplySnippetService
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -253,6 +255,7 @@ class PendingMailOperationService(
         qaRuleIds: List<Long>,
         overrideTextBody: String?,
         freeTextBody: String?,
+        ackSnippetId: Long?,
         senderAccountCode: String?,
         operatorName: String?
     ): PendingMailSendResult {
@@ -277,7 +280,15 @@ class PendingMailOperationService(
         }
 
         val matches = rules.map { QaRuleMatch(rule = it, matchedKeywordCount = 1) }
-        val composed = QaReplyComposer.composeInOperatorOrder(matches)
+        val frame = replySnippetService.resolveManualFrame()
+        val ack = replySnippetService.resolveAck(ackSnippetId)
+        val composed = QaReplyComposer.composeInOperatorOrder(
+            matches = matches,
+            salutation = frame.salutation,
+            ack = ack,
+            greeting = frame.greeting,
+            closing = frame.closing
+        )
         val primary = QaReplyComposer.selectPrimary(matches)
         val primaryRuleId = requireNotNull(primary.rule.id)
 
@@ -346,6 +357,7 @@ class PendingMailOperationService(
             after = mapOf(
                 "mailRecordId" to mailRecordId,
                 "qaRuleIds" to qaRuleIds,
+                "ackSnippetId" to ackSnippetId,
                 "suggestedRuleIds" to suggestedRuleIds,
                 "edited" to edited,
                 "freeTextPreview" to freeTextPreview,
@@ -462,6 +474,7 @@ data class ComposedReplyRequest(
     val qaRuleIds: List<Long>,
     val overrideTextBody: String?,
     val freeTextBody: String? = null,
+    val ackSnippetId: Long? = null,
     val senderAccountCode: String?,
     val operatorName: String?
 )

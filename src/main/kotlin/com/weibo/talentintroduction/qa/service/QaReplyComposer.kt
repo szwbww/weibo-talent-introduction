@@ -39,20 +39,20 @@ object QaReplyComposer {
     }
 
     /** Preserves [matches] list order (operator-selected sequence). */
-    fun composeInOperatorOrder(matches: List<QaRuleMatch>): ComposedReply {
+    fun composeInOperatorOrder(
+        matches: List<QaRuleMatch>,
+        salutation: String? = null,
+        ack: String? = null,
+        greeting: String? = null,
+        closing: String? = null
+    ): ComposedReply {
         require(matches.isNotEmpty())
-
-        if (matches.size == 1) {
-            val rule = matches.first().rule
-            return ComposedReply(
-                replySubject = rule.replySubject,
-                replyBody = rule.replyBody
-            )
-        }
 
         val primary = selectPrimary(matches)
         val sections = matches.joinToString("\n\n") { formatSection(it.rule) }
-        val replyBody = listOf(GREETING, sections, CLOSING).joinToString("\n\n")
+        val replyBody = listOf(salutation, ack, greeting, sections, closing)
+            .mapNotNull { it?.trim()?.takeIf { text -> text.isNotEmpty() } }
+            .joinToString("\n\n")
 
         return ComposedReply(
             replySubject = primary.rule.replySubject,

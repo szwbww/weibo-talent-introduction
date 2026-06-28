@@ -2,9 +2,12 @@ package com.weibo.talentintroduction.llm.service
 
 import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
-import com.weibo.talentintroduction.llm.service.LlmDraftClient
+import com.weibo.talentintroduction.qa.service.QaReplyComposer
+import com.weibo.talentintroduction.reply.service.ManualReplyFrame
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
@@ -13,6 +16,7 @@ import java.util.Optional
 
 class LlmStitchServiceTest {
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
+    private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
 
     @Suppress("UNCHECKED_CAST")
     private fun provider(client: LlmDraftClient?): ObjectProvider<LlmDraftClient> {
@@ -21,13 +25,27 @@ class LlmStitchServiceTest {
         return mock
     }
 
+    private fun stubDefaultFrame() {
+        Mockito.`when`(replySnippetService.resolveManualFrame()).thenReturn(
+            ManualReplyFrame(
+                salutation = "Dear Professor,",
+                greeting = QaReplyComposer.GREETING,
+                closing = QaReplyComposer.CLOSING,
+                ackOptions = emptyList()
+            )
+        )
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.anyLong())).thenReturn(null)
+    }
+
     @Test
     fun `returns deterministic draft when llm disabled`() {
         val properties = LlmProperties(enabled = false)
         val service = LlmStitchService(
             properties,
             provider(null),
-            qaRuleRepository
+            qaRuleRepository,
+            replySnippetService
         )
         val rule = com.weibo.talentintroduction.qa.domain.QaRule(
             id = 1,
@@ -37,11 +55,15 @@ class LlmStitchServiceTest {
             replySubject = "Re",
             enabled = true
         )
+        stubDefaultFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
 
         val result = service.polishDraft(listOf(1), "What is salary?", null)
 
-        assertEquals("Salary info", result.draftText)
+        assertTrue(result.draftText.contains("Dear Professor,"))
+        assertTrue(result.draftText.contains(QaReplyComposer.GREETING))
+        assertTrue(result.draftText.contains("Salary info"))
+        assertTrue(result.draftText.contains(QaReplyComposer.CLOSING))
         assertFalse(result.usedLlm)
     }
 
@@ -54,7 +76,8 @@ class LlmStitchServiceTest {
         val service = LlmStitchService(
             properties,
             provider(failingClient),
-            qaRuleRepository
+            qaRuleRepository,
+            replySnippetService
         )
         val rule = com.weibo.talentintroduction.qa.domain.QaRule(
             id = 2,
@@ -64,11 +87,13 @@ class LlmStitchServiceTest {
             replySubject = "Re",
             enabled = true
         )
+        stubDefaultFrame()
         Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule))
 
         val result = service.polishDraft(listOf(2), "Visa question?", "extra")
 
-        assertEquals("Visa info\n\nextra", result.draftText)
+        assertTrue(result.draftText.contains("Visa info"))
+        assertTrue(result.draftText.endsWith("extra"))
         assertFalse(result.usedLlm)
     }
 
@@ -83,7 +108,8 @@ class LlmStitchServiceTest {
         val service = LlmStitchService(
             properties,
             provider(timeoutClient),
-            qaRuleRepository
+            qaRuleRepository,
+            replySnippetService
         )
         val rule = com.weibo.talentintroduction.qa.domain.QaRule(
             id = 3,
@@ -93,11 +119,12 @@ class LlmStitchServiceTest {
             replySubject = "Re",
             enabled = true
         )
+        stubDefaultFrame()
         Mockito.`when`(qaRuleRepository.findById(3L)).thenReturn(Optional.of(rule))
 
         val result = service.polishDraft(listOf(3), "Funding?", null)
 
-        assertEquals("Funding info", result.draftText)
+        assertTrue(result.draftText.contains("Funding info"))
         assertFalse(result.usedLlm)
     }
 }

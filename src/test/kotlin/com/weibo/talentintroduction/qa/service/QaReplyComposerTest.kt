@@ -220,11 +220,42 @@ class QaReplyComposerTest {
             matchedKeywordCount = 1
         )
 
-        val result = QaReplyComposer.composeInOperatorOrder(listOf(ruleB, ruleA))
+        val result = QaReplyComposer.composeInOperatorOrder(
+            matches = listOf(ruleB, ruleA),
+            greeting = QaReplyComposer.GREETING,
+            closing = QaReplyComposer.CLOSING
+        )
 
         val bodyBIndex = result.replyBody.indexOf("Body B")
         val bodyAIndex = result.replyBody.indexOf("Body A")
         assertTrue(bodyBIndex >= 0)
         assertTrue(bodyAIndex > bodyBIndex)
+    }
+
+    @Test
+    fun `composeInOperatorOrder assembles frame in fixed order for single rule`() {
+        val rule = QaRuleMatch(
+            QaRule(id = 1, categoryId = 1, keywords = "x", replySubject = "Subj", replyBody = "Body only"),
+            matchedKeywordCount = 1
+        )
+
+        val result = QaReplyComposer.composeInOperatorOrder(
+            matches = listOf(rule),
+            salutation = "Dear Professor,",
+            ack = "Thanks for CV.",
+            greeting = "Hello.",
+            closing = "Bye."
+        )
+
+        val salIndex = result.replyBody.indexOf("Dear Professor,")
+        val ackIndex = result.replyBody.indexOf("Thanks for CV.")
+        val greetIndex = result.replyBody.indexOf("Hello.")
+        val bodyIndex = result.replyBody.indexOf("Body only")
+        val closeIndex = result.replyBody.indexOf("Bye.")
+        assertTrue(salIndex >= 0)
+        assertTrue(salIndex < ackIndex)
+        assertTrue(ackIndex < greetIndex)
+        assertTrue(greetIndex < bodyIndex)
+        assertTrue(bodyIndex < closeIndex)
     }
 }

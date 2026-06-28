@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.qa.service.QaRuleMatch
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 
@@ -11,14 +12,16 @@ import org.springframework.stereotype.Service
 class LlmStitchService(
     private val properties: LlmProperties,
     private val llmDraftClientProvider: ObjectProvider<LlmDraftClient>,
-    private val qaRuleRepository: QaRuleRepository
+    private val qaRuleRepository: QaRuleRepository,
+    private val replySnippetService: ReplySnippetService
 ) {
     fun polishDraft(
         qaRuleIds: List<Long>,
         inboundQuestion: String,
-        freeText: String?
+        freeText: String?,
+        ackSnippetId: Long? = null
     ): PolishDraftResult {
-        val deterministic = composeDeterministic(qaRuleIds, freeText)
+        val deterministic = composeDeterministic(qaRuleIds, freeText, ackSnippetId)
         if (!properties.enabled) {
             return PolishDraftResult(draftText = deterministic, usedLlm = false)
         }
@@ -39,7 +42,7 @@ class LlmStitchService(
 
     fun isEnabled(): Boolean = properties.enabled
 
-    private fun composeDeterministic(qaRuleIds: List<Long>, freeText: String?): String {
+    private fun composeDeterministic(qaRuleIds: List<Long>, freeText: String?, ackSnippetId: Long?): String {
         if (qaRuleIds.isEmpty()) {
             return freeText.orEmpty()
         }
@@ -47,7 +50,15 @@ class LlmStitchService(
             qaRuleRepository.findById(ruleId).orElseThrow { error("QA rule not found: $ruleId") }
         }
         val matches = rules.map { QaRuleMatch(rule = it, matchedKeywordCount = 1) }
-        val composed = QaReplyComposer.composeInOperatorOrder(matches)
+        val frame = replySnippetService.resolveManualFrame()
+        val ack = replySnippetService.resolveAck(ackSnippetId)
+        val composed = QaReplyComposer.composeInOperatorOrder(
+            matches = matches,
+            salutation = frame.salutation,
+            ack = ack,
+            greeting = frame.greeting,
+            closing = frame.closing
+        )
         val free = freeText?.trim().orEmpty()
         return if (free.isBlank()) {
             composed.replyBody
@@ -72,7 +83,8 @@ data class PolishDraftResult(
 
 data class PolishDraftRequest(
     val qaRuleIds: List<Long>,
-    val freeText: String?
+    val freeText: String?,
+    val ackSnippetId: Long? = null
 )
 
 data class PolishDraftResponse(
