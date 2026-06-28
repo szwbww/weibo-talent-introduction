@@ -6,6 +6,8 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.service.AutoReplyPreviewResult
+import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.CandidateSuggestion
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.ComposedReplyRequest
@@ -34,7 +36,8 @@ class UnmatchedInboundMailController(
     private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository,
     private val pendingMailOperationService: PendingMailOperationService,
     private val operatorActionLogService: OperatorActionLogService,
-    private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService
+    private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService,
+    private val autoReplyPreviewService: AutoReplyPreviewService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -197,6 +200,10 @@ class UnmatchedInboundMailController(
             textBody = request.textBody,
             operatorName = request.operatorName
         )
+
+    @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
+    fun previewAutoReply(@PathVariable id: Long): AutoReplyPreviewResponse =
+        autoReplyPreviewService.preview(id).toResponse()
 
     @GetMapping("/unmatched-inbound/{id}/composed-reply/suggest")
     fun suggestComposedReply(@PathVariable id: Long): ComposedReplySuggestResponse {
@@ -384,6 +391,20 @@ data class GapItemResponse(
     val candidateRuleIds: List<Long>
 )
 
+data class AutoReplyPreviewResponse(
+    val previewKind: String,
+    val intentCode: String,
+    val autoAction: String,
+    val confidence: Int,
+    val matchedKeywords: List<String>,
+    val replySubject: String?,
+    val replyBody: String?,
+    val reason: String?,
+    val matchedRuleIds: List<Long>,
+    val wouldBeBlockedBy: List<String>,
+    val attachmentIntentIgnored: Boolean
+)
+
 data class ComposedReplySuggestResponse(
     val suggestedRuleIds: List<Long>,
     val suggestedRules: List<SuggestQaRuleResponse>,
@@ -480,6 +501,20 @@ private fun OperatorActionLog.toResponse() = OperatorActionLogResponse(
     operatorName = operatorName,
     note = note,
     createdAt = createdAt?.toString()
+)
+
+private fun AutoReplyPreviewResult.toResponse() = AutoReplyPreviewResponse(
+    previewKind = previewKind.name,
+    intentCode = intentCode.name,
+    autoAction = autoAction.name,
+    confidence = confidence,
+    matchedKeywords = matchedKeywords,
+    replySubject = replySubject,
+    replyBody = replyBody,
+    reason = reason,
+    matchedRuleIds = matchedRuleIds,
+    wouldBeBlockedBy = wouldBeBlockedBy,
+    attachmentIntentIgnored = attachmentIntentIgnored
 )
 
 private fun CompositionSuggestResult.toResponse(

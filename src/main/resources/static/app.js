@@ -4877,6 +4877,73 @@ function initComposedReplyWorkbench(recordId, suggest) {
     refreshComposedPreviewFromRules();
 }
 
+const autoReplyPreviewKindLabels = {
+    QA_AUTO_REPLIED: { text: "QA 自动回复", badge: "ok" },
+    QA_NO_MATCH: { text: "QA 未命中", badge: "warn" },
+    QA_GAP: { text: "QA 缺口", badge: "warn-yellow" },
+    MEETING_INVITATION: { text: "会议邀请", badge: "info" },
+    MEETING_ALREADY_SENT: { text: "会议已发", badge: "warn-yellow" },
+    MANUAL_HANDOFF: { text: "转人工", badge: "warn" }
+};
+
+const autoReplyBlockedLabels = {
+    AUTO_REPLY_DISABLED: "自动回复已关闭",
+    MANUAL_HANDOFF_STATUS: "当前为人工接管状态",
+    INTRODUCTION_NOT_SENT: "尚未发送介绍信",
+    RECIPIENT_UNSUBSCRIBED: "收件人已退订"
+};
+
+function renderAutoReplyPreviewHtml(preview) {
+    const kindMeta = autoReplyPreviewKindLabels[preview.previewKind] || {
+        text: preview.previewKind,
+        badge: ""
+    };
+    const intentLine = `
+        <p class="text-muted" style="margin:8px 0;">
+            意图：<strong>${escapeHtml(preview.intentCode)}</strong>
+            · 置信度 ${preview.confidence}
+            ${preview.matchedKeywords?.length
+                ? ` · 关键词：${escapeHtml(preview.matchedKeywords.join(", "))}`
+                : ""}
+        </p>`;
+
+    const blockedHtml = (preview.wouldBeBlockedBy || []).length > 0 ? `
+        <div class="auto-reply-preview-notice">
+            当前若收到此信不会自动发送，原因：${escapeHtml(
+                preview.wouldBeBlockedBy.map((code) => autoReplyBlockedLabels[code] || code).join("；")
+            )}（本预览仍展示假如开启会回的内容）
+        </div>` : "";
+
+    const attachmentHtml = preview.attachmentIntentIgnored ? `
+        <div class="auto-reply-preview-notice">
+            该来信含附件，本预览未计入附件意图推断，实际自动处理可能转人工
+        </div>` : "";
+
+    const replyHtml = preview.replyBody ? `
+        <div style="margin-top:8px;">
+            <h4 style="margin-bottom:6px;">${escapeHtml(preview.replySubject || "（无主题）")}</h4>
+            <div class="pre">${escapeHtml(preview.replyBody)}</div>
+        </div>` : "";
+
+    const reasonHtml = preview.reason && !preview.replyBody ? `
+        <p style="margin:8px 0;"><strong>转人工原因：</strong>${escapeHtml(preview.reason)}</p>` : "";
+
+    const rulesHtml = preview.matchedRuleIds?.length
+        ? `<p class="text-muted" style="font-size:12px;margin:4px 0 0;">命中规则 ID：${escapeHtml(preview.matchedRuleIds.join(", "))}</p>`
+        : "";
+
+    return `
+        <div class="auto-reply-preview-result">
+            ${badge(kindMeta.text, kindMeta.badge)}
+            ${intentLine}
+            ${blockedHtml}
+            ${attachmentHtml}
+            ${reasonHtml}
+            ${replyHtml}
+            ${rulesHtml}
+        </div>`;
+}
+
 function renderComposedReplyWorkbenchHtml(suggest, recordId) {
     const suggestedSet = new Set(suggest.suggestedRuleIds || []);
     const categoriesHtml = (suggest.rulesByCategory || []).map((category) => `
@@ -5078,6 +5145,13 @@ async function showUnmatchedDetail(id) {
 
             ${composeWorkbenchHtml}
 
+            <div class="detail-section auto-reply-preview-section">
+                <h3>自动回复预览</h3>
+                <p class="text-muted" style="font-size:12px;margin:0 0 8px;">模拟「若此刻开启自动回复」系统会回什么（不发送、不写库）</p>
+                <button type="button" class="button" data-action="preview-auto-reply" data-record-id="${id}">预览自动回复</button>
+                <div id="autoReplyPreviewResult" style="margin-top:12px;"></div>
+            </div>
+
             <div class="detail-section" style="margin-top:12px;">
                 <h3>人工富文本回复</h3>
                 <input id="manualReplySubject" placeholder="邮件主题" style="margin-bottom:8px;">
@@ -5116,6 +5190,24 @@ async function handleUnmatchedAction(element) {
     }
     if (action === "close-unmatched-detail") {
         $("#unmatchedDetailPanel").hidden = true;
+        return;
+    }
+    if (action === "preview-auto-reply") {
+        const resultEl = $("#autoReplyPreviewResult");
+        if (resultEl) {
+            resultEl.innerHTML = `<p class="text-muted">加载预览中…</p>`;
+        }
+        try {
+            const preview = await api(`/api/mail/unmatched-inbound/${id}/auto-reply-preview`);
+            if (resultEl) {
+                resultEl.innerHTML = renderAutoReplyPreviewHtml(preview);
+            }
+        } catch (error) {
+            if (resultEl) {
+                resultEl.innerHTML = `<p class="text-muted">${escapeHtml(error.message || "预览失败")}</p>`;
+            }
+            throw error;
+        }
         return;
     }
     if (action === "open-contact-from-unmatched") {
