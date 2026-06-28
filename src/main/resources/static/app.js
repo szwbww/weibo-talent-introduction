@@ -50,11 +50,10 @@ const state = {
         from: "",
         to: "",
         report: null
-    }
+    },
+    replySnippets: [],
+    selectedReplySnippetId: null
 };
-
-const QA_COMPOSE_GREETING = "Thank you for your email. Please find our answers below.";
-const QA_COMPOSE_CLOSING = "Please let us know if you have any further questions.\n\nBest regards,\nTalent Introduction Team";
 
 const composedReplyState = {
     recordId: null,
@@ -63,7 +62,8 @@ const composedReplyState = {
     freeText: "",
     previewEdited: false,
     baselinePreview: "",
-    activeGapIndex: null
+    activeGapIndex: null,
+    ackSnippetId: null
 };
 
 const contextPath = (() => {
@@ -75,6 +75,7 @@ const viewMeta = {
     monitoring: ["邮件监控", "当日活动概览、自动回复全链路、发件账号健康。"],
     accounts: ["邮箱账号", "维护发送账号、权重、限额和连通性。"],
     qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
+    "reply-snippets": ["回复片段配置", "管理尊语、致谢语、开场白与结束语片段。"],
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
@@ -1097,6 +1098,7 @@ async function refreshCurrentView() {
     try {
         if (state.view === "accounts") await loadAccounts();
         if (state.view === "qa") await loadQa();
+        if (state.view === "reply-snippets") await loadReplySnippets();
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
         if (state.view === "mailbox") await loadMailbox();
@@ -1572,6 +1574,182 @@ async function handleQaAction(button) {
         const enabled = button.dataset.enabled === "true";
         await api(`/api/qa/rules/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
         await loadQa();
+    }
+}
+
+const replySnippetTypeLabels = {
+    SALUTATION: "尊语",
+    ACK: "致谢语",
+    GREETING: "开场白",
+    CLOSING: "结束语"
+};
+
+const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING"];
+
+async function loadReplySnippets() {
+    state.replySnippets = await api("/api/reply-snippets");
+    renderReplySnippetsPanels();
+}
+
+function renderReplySnippetRow(snippet, showDefault) {
+    const defaultCell = showDefault
+        ? `<td>${snippet.isDefault ? badge("默认", "ok") : ""}</td>`
+        : "";
+    const defaultAction = showDefault && !snippet.isDefault
+        ? `<button class="button" data-action="reply-snippet-default" data-id="${snippet.id}">设默认</button>`
+        : "";
+    return `
+        <tr>
+            <td class="muted-cell">${escapeHtml((snippet.content || "").slice(0, 120))}</td>
+            <td>${snippet.displayOrder}</td>
+            ${defaultCell}
+            <td>${badge(snippet.enabled ? "启用" : "禁用", snippet.enabled ? "ok" : "error")}</td>
+            <td class="actions">
+                <button class="button" data-action="edit-reply-snippet" data-id="${snippet.id}">编辑</button>
+                ${defaultAction}
+                <button class="button" data-action="toggle-reply-snippet" data-id="${snippet.id}" data-enabled="${snippet.enabled}">
+                    ${snippet.enabled ? "禁用" : "启用"}
+                </button>
+                <button class="button" data-action="delete-reply-snippet" data-id="${snippet.id}">删除</button>
+            </td>
+        </tr>`;
+}
+
+function renderReplySnippetTypePanel(type, snippets) {
+    const showDefault = type !== "ACK";
+    const defaultHeader = showDefault ? "<th>默认</th>" : "";
+    const rows = snippets
+        .map((snippet) => renderReplySnippetRow(snippet, showDefault))
+        .join("") || `<tr><td colspan="${showDefault ? 5 : 4}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
+    return `
+        <section class="panel" style="margin-bottom:16px;">
+            <div class="panel-head">
+                <h2>${replySnippetTypeLabels[type] || type}</h2>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>内容</th>
+                            <th>排序</th>
+                            ${defaultHeader}
+                            <th>状态</th>
+                            <th style="text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </section>`;
+}
+
+function renderReplySnippetsPanels() {
+    const container = $("#replySnippetsPanels");
+    if (!container) return;
+    const byType = Object.fromEntries(replySnippetTypes.map((type) => [type, []]));
+    (state.replySnippets || []).forEach((snippet) => {
+        if (byType[snippet.snippetType]) {
+            byType[snippet.snippetType].push(snippet);
+        }
+    });
+    container.innerHTML = replySnippetTypes
+        .map((type) => renderReplySnippetTypePanel(type, byType[type]))
+        .join("");
+}
+
+function showReplySnippetEditor() {
+    $("#replySnippetModal").hidden = false;
+    document.body.classList.add("modal-open");
+}
+
+function hideReplySnippetEditor() {
+    const form = $("#replySnippetForm");
+    form.reset();
+    $("#replySnippetModal").hidden = true;
+    document.body.classList.remove("modal-open");
+    state.selectedReplySnippetId = null;
+    updateReplySnippetDefaultFieldVisibility();
+}
+
+function updateReplySnippetDefaultFieldVisibility() {
+    const type = $("#replySnippetForm")?.snippetType?.value || "";
+    const defaultRow = $("#replySnippetDefaultRow");
+    if (defaultRow) {
+        defaultRow.hidden = type === "ACK";
+    }
+}
+
+function fillReplySnippetForm(snippet, presetType) {
+    const form = $("#replySnippetForm");
+    showReplySnippetEditor();
+    state.selectedReplySnippetId = snippet?.id || null;
+    $("#replySnippetEditorTitle").textContent = snippet
+        ? `编辑片段：${replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType}`
+        : "新建回复片段";
+    form.id.value = snippet?.id || "";
+    form.snippetType.value = snippet?.snippetType || presetType || "SALUTATION";
+    form.snippetType.disabled = Boolean(snippet?.id);
+    form.content.value = snippet?.content || "";
+    form.displayOrder.value = snippet?.displayOrder ?? 100;
+    form.enabled.checked = snippet?.enabled ?? true;
+    form.isDefault.checked = snippet?.isDefault ?? false;
+    updateReplySnippetDefaultFieldVisibility();
+}
+
+async function saveReplySnippet(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formValues(form);
+    const payload = {
+        content: values.content,
+        displayOrder: numberValue(values.displayOrder, 100),
+        isDefault: form.isDefault.checked,
+        enabled: form.enabled.checked
+    };
+    if (state.selectedReplySnippetId) {
+        await api(`/api/reply-snippets/${state.selectedReplySnippetId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+    } else {
+        await api("/api/reply-snippets", {
+            method: "POST",
+            body: JSON.stringify({
+                snippetType: values.snippetType,
+                ...payload
+            })
+        });
+    }
+    showStatus("回复片段已保存");
+    hideReplySnippetEditor();
+    await loadReplySnippets();
+}
+
+async function handleReplySnippetAction(button) {
+    const action = button.dataset.action;
+    const id = button.dataset.id;
+    if (action === "edit-reply-snippet") {
+        const snippet = state.replySnippets.find((item) => String(item.id) === String(id));
+        fillReplySnippetForm(snippet);
+        return;
+    }
+    if (action === "toggle-reply-snippet") {
+        const enabled = button.dataset.enabled === "true";
+        await api(`/api/reply-snippets/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+        await loadReplySnippets();
+        return;
+    }
+    if (action === "reply-snippet-default") {
+        await api(`/api/reply-snippets/${id}/default`, { method: "POST" });
+        showStatus("已设为默认片段", "ok");
+        await loadReplySnippets();
+        return;
+    }
+    if (action === "delete-reply-snippet") {
+        if (!confirm("确认删除该片段？")) return;
+        await api(`/api/reply-snippets/${id}`, { method: "DELETE" });
+        showStatus("片段已删除", "ok");
+        await loadReplySnippets();
     }
 }
 
@@ -4649,22 +4827,30 @@ function findSuggestRule(suggest, ruleId) {
     return null;
 }
 
-function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText) {
+function resolveAckContent(suggest, ackSnippetId) {
+    if (ackSnippetId == null) return null;
+    return (suggest?.ackOptions || []).find((option) => option.id === ackSnippetId)?.content || null;
+}
+
+function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText, ackContent) {
+    const trimmedFree = (freeText || "").trim();
     const rules = selectedRuleIds
         .map((id) => findSuggestRule(suggest, id))
         .filter(Boolean);
-    const trimmedFree = (freeText || "").trim();
     if (!rules.length) return trimmedFree;
-    if (rules.length === 1) {
-        return trimmedFree ? `${rules[0].replyBody}\n\n${trimmedFree}` : rules[0].replyBody;
-    }
     const sections = rules.map((rule) => {
         const title = (rule.sectionTitle || "").trim();
         return title ? `${title}\n${rule.replyBody}` : rule.replyBody;
     }).join("\n\n");
-    let body = [QA_COMPOSE_GREETING, sections, QA_COMPOSE_CLOSING].join("\n\n");
-    if (trimmedFree) body += `\n\n${trimmedFree}`;
-    return body;
+    const parts = [
+        suggest?.salutation?.trim() || "",
+        ackContent?.trim() || "",
+        suggest?.greeting?.trim() || "",
+        sections,
+        suggest?.closing?.trim() || "",
+        trimmedFree
+    ].filter((part) => part);
+    return parts.join("\n\n");
 }
 
 function isGapCovered(gapItem, selectedRuleIds) {
@@ -4803,10 +4989,12 @@ function sortCategoryRulesForDisplay(rules, suggestedSet) {
 
 function refreshComposedPreviewFromRules() {
     if (!composedReplyState.suggest) return;
+    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
     const preview = buildDeterministicComposedPreview(
         composedReplyState.selectedRuleIds,
         composedReplyState.suggest,
-        composedReplyState.freeText
+        composedReplyState.freeText,
+        ackContent
     );
     composedReplyState.baselinePreview = preview;
     if (!composedReplyState.previewEdited) {
@@ -4833,6 +5021,14 @@ function ensureComposedGapDismissHandler() {
     });
 }
 
+function updateAckChipSelection() {
+    const selectedId = composedReplyState.ackSnippetId;
+    document.querySelectorAll(".compose-ack-chip").forEach((chip) => {
+        const chipId = chip.dataset.ackId ? Number(chip.dataset.ackId) : null;
+        chip.classList.toggle("primary", chipId === selectedId);
+    });
+}
+
 function initComposedReplyWorkbench(recordId, suggest) {
     composedReplyState.recordId = recordId;
     composedReplyState.suggest = suggest;
@@ -4841,8 +5037,20 @@ function initComposedReplyWorkbench(recordId, suggest) {
     composedReplyState.previewEdited = false;
     composedReplyState.baselinePreview = "";
     composedReplyState.activeGapIndex = null;
+    composedReplyState.ackSnippetId = null;
 
     ensureComposedGapDismissHandler();
+
+    document.querySelectorAll(".compose-ack-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+            const ackId = chip.dataset.ackId;
+            composedReplyState.ackSnippetId = ackId ? Number(ackId) : null;
+            updateAckChipSelection();
+            if (!composedReplyState.previewEdited) {
+                refreshComposedPreviewFromRules();
+            }
+        });
+    });
 
     document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
@@ -4966,6 +5174,15 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
         </details>
     `).join("");
 
+    const ackOptions = suggest.ackOptions || [];
+    const ackChipsHtml = `
+        <button type="button" class="button small compose-ack-chip primary" data-ack-id="">不添加</button>
+        ${ackOptions.map((option) => {
+            const label = (option.content || "").trim().split("\n")[0].slice(0, 48);
+            return `<button type="button" class="button small compose-ack-chip" data-ack-id="${option.id}">${escapeHtml(label || `致谢 #${option.id}`)}</button>`;
+        }).join("")}
+    `;
+
     return `
         <div class="detail-section compose-workbench-section">
             <h3>组装台回复</h3>
@@ -4978,6 +5195,16 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     <h4>草稿预览</h4>
                     <p class="text-muted" style="font-size:12px;margin:0 0 8px;">已选规则段 + 自由文本（两层模型）</p>
                     <ul id="composedSelectedList" class="compose-selected-list"></ul>
+                    ${suggest.salutation ? `
+                    <p class="text-muted compose-salutation-readonly" style="font-size:12px;margin:0 0 8px;">
+                        尊语：<span>${escapeHtml(suggest.salutation)}</span>
+                    </p>` : ""}
+                    <div class="compose-ack-section" style="margin-bottom:8px;">
+                        <p class="text-muted" style="font-size:11px;margin:0 0 6px;">致谢语（单选可不选）</p>
+                        <div class="compose-ack-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
+                            ${ackChipsHtml}
+                        </div>
+                    </div>
                     <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
                     <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览</p>
                     <textarea id="composedReplyPreview" class="compose-preview" rows="10" placeholder="组装预览"></textarea>
@@ -5368,7 +5595,8 @@ async function handleUnmatchedAction(element) {
                 method: "POST",
                 body: JSON.stringify({
                     qaRuleIds: composedReplyState.selectedRuleIds,
-                    freeText: composedReplyState.freeText || null
+                    freeText: composedReplyState.freeText || null,
+                    ackSnippetId: composedReplyState.ackSnippetId
                 })
             });
             const previewEl = $("#composedReplyPreview");
@@ -5399,6 +5627,7 @@ async function handleUnmatchedAction(element) {
                     qaRuleIds: composedReplyState.selectedRuleIds,
                     overrideTextBody: composedReplyState.previewEdited ? previewText : null,
                     freeTextBody: composedReplyState.freeText?.trim() || null,
+                    ackSnippetId: composedReplyState.ackSnippetId,
                     operatorName
                 })
             });
@@ -5884,6 +6113,26 @@ function bindEvents() {
     $("#qaRulesTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleQaAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#reloadReplySnippetsBtn")?.addEventListener("click", () => {
+        loadReplySnippets().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#newReplySnippetBtn")?.addEventListener("click", () => fillReplySnippetForm(null));
+    $("#replySnippetForm")?.addEventListener("submit", (event) => {
+        saveReplySnippet(event).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#clearReplySnippetBtn")?.addEventListener("click", hideReplySnippetEditor);
+    $("#replySnippetModalCloseBtn")?.addEventListener("click", hideReplySnippetEditor);
+    $("#replySnippetModalBackdrop")?.addEventListener("click", hideReplySnippetEditor);
+    $("#replySnippetForm")?.snippetType?.addEventListener("change", updateReplySnippetDefaultFieldVisibility);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#replySnippetModal")?.hidden) {
+            hideReplySnippetEditor();
+        }
+    });
+    $("#replySnippetsPanels")?.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleReplySnippetAction(button).catch((error) => showStatus(error.message, "error"));
     });
     $("#reloadSuppressionsBtn").addEventListener("click", () => {
         loadSuppressions().catch((error) => showStatus(error.message, "error"));

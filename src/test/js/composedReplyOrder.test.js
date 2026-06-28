@@ -14,6 +14,16 @@ function extractFn(name) {
     return match[0];
 }
 
+const frameSuggestFields = {
+    salutation: "Dear Dr. Smith,",
+    greeting: "Thank you for your email. Please find our answers below.",
+    closing: "Please let us know if you have any further questions.\n\nBest regards,\nTalent Introduction Team",
+    ackOptions: [
+        { id: 101, content: "Thank you for your interest in our program." },
+        { id: 102, content: "We appreciate your thoughtful reply." }
+    ]
+};
+
 function createComposeSandbox() {
     const sandbox = {
         composedReplyState: {
@@ -21,16 +31,16 @@ function createComposeSandbox() {
             selectedRuleIds: [],
             freeText: "",
             previewEdited: false,
-            baselinePreview: ""
+            baselinePreview: "",
+            ackSnippetId: null
         },
-        QA_COMPOSE_GREETING: "Thank you for your email. Please find our answers below.",
-        QA_COMPOSE_CLOSING: "Please let us know if you have any further questions.\n\nBest regards,\nTalent Introduction Team",
         escapeHtml: (v) => String(v == null ? "" : v),
         $: () => null
     };
     vm.createContext(sandbox);
     [
         "findSuggestRule",
+        "resolveAckContent",
         "buildDeterministicComposedPreview",
         "sortCategoryRulesForDisplay",
         "renderComposedSelectedList",
@@ -42,6 +52,7 @@ function createComposeSandbox() {
 
 describe("composed reply order (from app.js)", () => {
     const suggest = {
+        ...frameSuggestFields,
         rulesByCategory: [
             {
                 categoryId: 1,
@@ -57,8 +68,32 @@ describe("composed reply order (from app.js)", () => {
 
     it("preview follows selectedRuleIds order instead of composeOrder", () => {
         const sb = createComposeSandbox();
-        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "");
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
         assert.ok(preview.indexOf("Body B") < preview.indexOf("Body A"));
+    });
+
+    it("preview frame comes from suggest salutation and closing", () => {
+        const sb = createComposeSandbox();
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
+        assert.ok(preview.startsWith(suggest.salutation));
+        assert.ok(preview.includes(suggest.greeting));
+        assert.ok(preview.endsWith(suggest.closing));
+    });
+
+    it("selected ack option appears after salutation in preview", () => {
+        const sb = createComposeSandbox();
+        const ackContent = sb.resolveAckContent(suggest, 101);
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", ackContent);
+        assert.ok(preview.indexOf(suggest.salutation) < preview.indexOf(ackContent));
+        assert.ok(preview.indexOf(ackContent) < preview.indexOf("Body B"));
+    });
+
+    it("no ack content when ackSnippetId is not selected", () => {
+        const sb = createComposeSandbox();
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
+        suggest.ackOptions.forEach((option) => {
+            assert.ok(!preview.includes(option.content));
+        });
     });
 
     it("move-down updates preview order", () => {
@@ -67,10 +102,12 @@ describe("composed reply order (from app.js)", () => {
         sb.composedReplyState.selectedRuleIds = [10, 20];
         sb.composedReplyState.previewEdited = false;
         sb.refreshComposedPreviewFromRules = function refreshComposedPreviewFromRules() {
+            const ackContent = sb.resolveAckContent(sb.composedReplyState.suggest, sb.composedReplyState.ackSnippetId);
             const preview = sb.buildDeterministicComposedPreview(
                 sb.composedReplyState.selectedRuleIds,
                 sb.composedReplyState.suggest,
-                sb.composedReplyState.freeText
+                sb.composedReplyState.freeText,
+                ackContent
             );
             sb.composedReplyState.baselinePreview = preview;
             sb.__preview = preview;
