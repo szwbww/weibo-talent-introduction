@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.expert.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.http.HttpEntity
@@ -44,7 +45,8 @@ class ExpertSearchService(
         sortBy: String? = null,
         from: Int = 0,
         operatorStatus: String? = null,
-        emailDomain: String? = null
+        emailDomain: String? = null,
+        region: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
@@ -68,6 +70,10 @@ class ExpertSearchService(
 
         if (!emailDomain.isNullOrBlank()) {
             filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
+        }
+
+        if (!region.isNullOrBlank()) {
+            filters.add(regionFilter(region))
         }
 
         val query = if (filters.isEmpty()) {
@@ -444,6 +450,83 @@ class ExpertSearchService(
             }
         }
     }
+    fun aggregateRegions(level: ExpertIndexLevel): List<RegionCount> {
+        val requestBody = mapOf(
+            "size" to 0,
+            "query" to mapOf("match_all" to emptyMap<String, Any>()),
+            "aggs" to mapOf(
+                "countries" to mapOf(
+                    "terms" to mapOf(
+                        "field" to "country",
+                        "size" to 500
+                    )
+                )
+            )
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyRegionCounts()
+
+        val buckets = response.path("aggregations")
+            .path("countries")
+            .path("buckets")
+
+        val regionCounts = mutableMapOf<String, Long>()
+        buckets.forEach { bucket ->
+            val key = bucket.path("key").asText()
+            val count = bucket.path("doc_count").asLong()
+            val mappedRegion = CountryContinentMapping.toRegion(key)
+            regionCounts[mappedRegion] = regionCounts.getOrDefault(mappedRegion, 0L) + count
+        }
+
+        return CountryContinentMapping.allRegions().map { regionName ->
+            RegionCount(region = regionName, count = regionCounts.getOrDefault(regionName, 0L))
+        }
+    }
+
+    private fun emptyRegionCounts(): List<RegionCount> =
+        CountryContinentMapping.allRegions().map { RegionCount(it, 0L) }
+
+    private fun regionFilter(region: String): Map<String, Any> {
+        if (region == CountryContinentMapping.REGION_OTHER) {
+            val knownValues = CountryContinentMapping.allKnownEsTermValues().toList()
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to listOf(
+                        mapOf(
+                            "bool" to mapOf(
+                                "must" to listOf(mapOf("exists" to mapOf("field" to "country"))),
+                                "must_not" to listOf(mapOf("terms" to mapOf("country" to knownValues)))
+                            )
+                        ),
+                        mapOf(
+                            "bool" to mapOf(
+                                "must" to listOf(mapOf("exists" to mapOf("field" to "nationality"))),
+                                "must_not" to listOf(mapOf("terms" to mapOf("nationality" to knownValues)))
+                            )
+                        )
+                    ),
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
+        val countryValues = CountryContinentMapping.countriesForRegion(region).toList()
+        return mapOf(
+            "bool" to mapOf(
+                "should" to listOf(
+                    mapOf("terms" to mapOf("country" to countryValues)),
+                    mapOf("terms" to mapOf("nationality" to countryValues))
+                ),
+                "minimum_should_match" to 1
+            )
+        )
+    }
+
     fun aggregateEmailDomains(level: ExpertIndexLevel): List<EmailDomainCount> {
         val requestBody = mapOf(
             "size" to 0,
@@ -490,5 +573,10 @@ data class ExpertSearchResult(
 
 data class EmailDomainCount(
     val domain: String,
+    val count: Long
+)
+
+data class RegionCount(
+    val region: String,
     val count: Long
 )

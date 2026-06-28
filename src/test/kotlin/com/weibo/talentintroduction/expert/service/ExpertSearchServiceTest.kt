@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -875,5 +876,104 @@ class ExpertSearchServiceTest {
         assertTrue(query.containsKey("exists"))
         val aggs = requestPayload["aggs"] as Map<*, *>
         assertTrue(aggs.containsKey("email_domains"))
+    }
+
+    @Test
+    fun `aggregateRegions merges country buckets into region counts`() {
+        val body = mapper.readTree(
+            """
+            {
+              "aggregations": {
+                "countries": {
+                  "buckets": [
+                    {"key": "China", "doc_count": 10},
+                    {"key": "Japan", "doc_count": 5},
+                    {"key": "India", "doc_count": 3},
+                    {"key": "Germany", "doc_count": 7},
+                    {"key": "US", "doc_count": 12},
+                    {"key": "Brazil", "doc_count": 4},
+                    {"key": "xyzabc", "doc_count": 2}
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.aggregateRegions(ExpertIndexLevel.CANDIDATE)
+
+        val resultMap = result.associate { it.region to it.count }
+        assertEquals(10L, resultMap["China"])
+        assertEquals(5L, resultMap["Asia (Japan & Korea)"])
+        assertEquals(3L, resultMap["Asia (Other)"])
+        assertEquals(7L, resultMap["Europe"])
+        assertEquals(12L, resultMap["North America"])
+        assertEquals(4L, resultMap["South America"])
+        assertEquals(2L, resultMap["Other"])
+
+        val requestPayload = capture.value.body as Map<*, *>
+        assertEquals(0, requestPayload["size"])
+        val aggs = requestPayload["aggs"] as Map<*, *>
+        val countriesAgg = aggs["countries"] as Map<*, *>
+        val terms = countriesAgg["terms"] as Map<*, *>
+        assertEquals("country", terms["field"])
+        assertFalse(terms.containsKey("script"))
+    }
+
+    @Test
+    fun `searchExperts with region adds terms filter on country and nationality`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@example.com", "country": "GB"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(10, ExpertIndexLevel.CANDIDATE, region = "Europe")
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        val regionFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val innerBool = map["bool"] as? Map<*, *> ?: return@firstOrNull false
+            val should = innerBool["should"] as? List<*> ?: return@firstOrNull false
+            should.size == 2 &&
+                should.any { (it as Map<*, *>)["terms"]?.toString()?.contains("country") == true } &&
+                should.any { (it as Map<*, *>)["terms"]?.toString()?.contains("nationality") == true }
+        }
+        assertNotNull(regionFilter)
+        val innerBool = (regionFilter as Map<*, *>)["bool"] as Map<*, *>
+        assertEquals(1, innerBool["minimum_should_match"])
     }
 }

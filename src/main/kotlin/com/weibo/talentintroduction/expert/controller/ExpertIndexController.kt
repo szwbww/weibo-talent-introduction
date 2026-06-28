@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncSe
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
+import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
@@ -48,9 +49,10 @@ class ExpertIndexController(
         @RequestParam(required = false) sortBy: String?,
         @RequestParam(defaultValue = "0") from: Int,
         @RequestParam(required = false) operatorStatus: String?,
-        @RequestParam(required = false) emailDomain: String?
+        @RequestParam(required = false) emailDomain: String?,
+        @RequestParam(required = false) region: String?
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus, emailDomain)
+        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus, emailDomain, region)
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
@@ -215,6 +217,13 @@ class ExpertIndexController(
         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
     ): List<EmailDomainCount> {
         return expertSearchService.aggregateEmailDomains(level)
+    }
+
+    @GetMapping("/regions")
+    fun getRegions(
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+    ): List<RegionCount> {
+        return expertSearchService.aggregateRegions(level)
     }
 }
 

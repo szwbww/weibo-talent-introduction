@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
+import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -173,7 +174,7 @@ class ExpertIndexControllerTest {
             employment = null,
             operatorStatus = null
         )
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null))
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
         val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
             id = 1L,
@@ -194,7 +195,8 @@ class ExpertIndexControllerTest {
             sortBy = null,
             from = 0,
             operatorStatus = null,
-            emailDomain = null
+            emailDomain = null,
+            region = null
         )
 
         assertEquals(1, response.experts.size)
@@ -203,7 +205,7 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `listExperts passes emailDomain parameter to searchService`() {
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com"))
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
 
         val response = controller.listExperts(
@@ -213,10 +215,11 @@ class ExpertIndexControllerTest {
             sortBy = null,
             from = 0,
             operatorStatus = null,
-            emailDomain = "gmail.com"
+            emailDomain = "gmail.com",
+            region = null
         )
         assertEquals(0L, response.totalHits)
-        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com")
+        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null)
     }
 
     @Test
@@ -229,5 +232,37 @@ class ExpertIndexControllerTest {
         assertEquals(1, response.size)
         assertEquals("gmail.com", response[0].domain)
         assertEquals(100L, response[0].count)
+    }
+
+    @Test
+    fun `getRegions delegates to searchService`() {
+        val expectedAggs = listOf(RegionCount("Europe", 100L))
+        Mockito.`when`(searchService.aggregateRegions(ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expectedAggs)
+
+        val response = controller.getRegions(ExpertIndexLevel.CANDIDATE)
+        assertEquals(1, response.size)
+        assertEquals("Europe", response[0].region)
+        assertEquals(100L, response[0].count)
+        Mockito.verify(searchService).aggregateRegions(ExpertIndexLevel.CANDIDATE)
+    }
+
+    @Test
+    fun `listExperts passes region parameter to searchService`() {
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe"))
+            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
+
+        val response = controller.listExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = null,
+            region = "Europe"
+        )
+        assertEquals(0L, response.totalHits)
+        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe")
     }
 }

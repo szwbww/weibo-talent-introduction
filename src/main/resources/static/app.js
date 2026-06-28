@@ -4,6 +4,7 @@ function monitoringToday() {
 
 const state = {
     lastEmailProvidersLevel: null,
+    lastRegionsLevel: null,
     view: "accounts",
     accounts: [],
     categories: [],
@@ -1745,12 +1746,37 @@ async function loadEmailProviders(level) {
     }
 }
 
+async function loadRegions(level) {
+    try {
+        const regions = await api(`/api/experts/regions?level=${level}`);
+        const filterDropdown = $("#expertRegionFilter");
+        const currentFilterVal = filterDropdown ? filterDropdown.value : "";
+
+        if (filterDropdown) {
+            filterDropdown.innerHTML = '<option value="">全部地区</option>';
+            regions.forEach(d => {
+                const opt = document.createElement("option");
+                opt.value = d.region;
+                opt.textContent = `${d.region} (${d.count})`;
+                filterDropdown.appendChild(opt);
+            });
+            filterDropdown.value = currentFilterVal;
+            if (filterDropdown.value !== currentFilterVal) {
+                filterDropdown.value = "";
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load regions:", e);
+    }
+}
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = Number($("#expertIndexSize").value || "50");
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
+    const region = $("#expertRegionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
     renderContactListSkeleton();
 
@@ -1759,7 +1785,13 @@ async function loadContacts() {
         loadEmailProviders(level);
     }
 
+    if (state.lastRegionsLevel !== level) {
+        state.lastRegionsLevel = level;
+        loadRegions(level);
+    }
+
     const tagFilterEl = $("#expertTagFilter");
+    const regionFilterEl = $("#expertRegionFilter");
     if (needsAttention) {
         tag = "";
         if (tagFilterEl) {
@@ -1768,11 +1800,22 @@ async function loadContacts() {
             tagFilterEl.parentElement.style.opacity = "0.5";
             tagFilterEl.parentElement.title = "标签筛选仅在 ES 查询模式下可用";
         }
+        if (regionFilterEl) {
+            regionFilterEl.value = "";
+            regionFilterEl.disabled = true;
+            regionFilterEl.parentElement.style.opacity = "0.5";
+            regionFilterEl.parentElement.title = "地区筛选仅在 ES 查询模式下可用";
+        }
     } else {
         if (tagFilterEl) {
             tagFilterEl.disabled = false;
             tagFilterEl.parentElement.style.opacity = "1";
             tagFilterEl.parentElement.title = "";
+        }
+        if (regionFilterEl) {
+            regionFilterEl.disabled = false;
+            regionFilterEl.parentElement.style.opacity = "1";
+            regionFilterEl.parentElement.title = "";
         }
     }
 
@@ -1817,6 +1860,7 @@ async function loadContacts() {
         if (tag) params.set("tag", tag);
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (emailDomain) params.set("emailDomain", emailDomain);
+        if (region) params.set("region", region);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const data = await api(`/api/experts?${params}`);
@@ -5907,7 +5951,8 @@ function bindEvents() {
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
             $("#expertTagFilter").value !== "",
-            $("#expertEmailDomainFilter")?.value !== ""
+            $("#expertEmailDomainFilter")?.value !== "",
+            $("#expertRegionFilter")?.value !== ""
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
         countEl.hidden = active === 0;
@@ -5919,7 +5964,8 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter",
-        "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter"].forEach((id) => {
+        "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
+        "expertRegionFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
     updateFilterBadge();

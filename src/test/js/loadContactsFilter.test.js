@@ -35,6 +35,7 @@ function createContactsSandbox() {
             contacts: [],
             contactsTotalHits: 0,
             lastEmailProvidersLevel: null,
+            lastRegionsLevel: null,
             selectedExpertOrcid: null
         },
         indexLevelLabels: {
@@ -44,6 +45,7 @@ function createContactsSandbox() {
         },
         renderContactListSkeleton: () => {},
         loadEmailProviders: () => {},
+        loadRegions: () => {},
         api: async () => ({}),
         URLSearchParams,
         escapeHtml: (v) => String(v == null ? "" : v),
