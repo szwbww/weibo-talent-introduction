@@ -67,6 +67,16 @@ const composedReplyState = {
     ackSnippetId: null
 };
 
+const aiReplyState = {
+    recordId: null,
+    turns: [],
+    lastDraft: "",
+    /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
+    lastQaRuleIds: [],
+    drafts: {},
+    nextDraftId: 0
+};
+
 const contextPath = (() => {
     const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
     return firstSegment ? `/${firstSegment}` : "";
@@ -5343,7 +5353,65 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     <ul id="composedGapList" class="compose-gap-list"></ul>
                 </div>
             </div>
+        </div>
+        ${suggest.llmEnabled ? renderAiReplyPanelHtml(recordId) : ""}`;
+}
+
+function renderAiReplyPanelHtml(recordId) {
+    return `
+        <div class="detail-section ai-reply-section">
+            <h3>AI 生成回复</h3>
+            <p class="text-muted" style="font-size:12px;margin:0 0 8px;">基于匹配 QA 规则多轮生成英文草稿，满意后采用并发送</p>
+            <div class="ai-chat-panel">
+                <div id="aiChatMessages" class="ai-chat-messages"></div>
+                <div class="ai-chat-input-row">
+                    <textarea id="aiChatInput" class="ai-chat-input" rows="2" placeholder="首轮直接生成；续轮输入修改要求，如「语气更正式」"></textarea>
+                    <button type="button" class="button primary" data-action="ai-reply-turn" data-record-id="${recordId}">生成 / 继续修改</button>
+                </div>
+            </div>
         </div>`;
+}
+
+function resetAiReplyState(recordId) {
+    aiReplyState.recordId = recordId;
+    aiReplyState.turns = [];
+    aiReplyState.lastDraft = "";
+    aiReplyState.lastQaRuleIds = [];
+    aiReplyState.drafts = {};
+    aiReplyState.nextDraftId = 0;
+}
+
+function appendAiChatOperatorBubble(instruction) {
+    const container = $("#aiChatMessages");
+    if (!container) return;
+    const bubble = document.createElement("div");
+    bubble.className = "ai-chat-bubble ai-chat-operator";
+    bubble.innerHTML = `<div class="ai-chat-label">修改要求</div><div class="pre">${escapeHtml(instruction)}</div>`;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+}
+
+function appendAiChatDraftBubble(draftText) {
+    const container = $("#aiChatMessages");
+    if (!container) return;
+    const draftId = ++aiReplyState.nextDraftId;
+    aiReplyState.drafts[draftId] = draftText;
+    const bubble = document.createElement("div");
+    bubble.className = "ai-chat-bubble ai-chat-assistant";
+    bubble.innerHTML = `
+        <div class="ai-chat-label">AI 草稿</div>
+        ${translatableBody(draftText)}
+        <div class="ai-chat-draft-actions">
+            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}">采用此草稿</button>
+        </div>`;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+}
+
+function initAiReplyWorkbench(recordId) {
+    resetAiReplyState(recordId);
+    const container = $("#aiChatMessages");
+    if (container) container.innerHTML = "";
 }
 
 async function showUnmatchedDetail(id) {
@@ -5527,6 +5595,9 @@ async function showUnmatchedDetail(id) {
     if (suggest) {
         composedReplyState.recordId = id;
         initComposedReplyWorkbench(id, suggest);
+        if (suggest.llmEnabled) {
+            initAiReplyWorkbench(id);
+        }
     }
 
     panel.scrollIntoView({ behavior: "smooth" });
@@ -5730,6 +5801,68 @@ async function handleUnmatchedAction(element) {
             showStatus(result.usedLlm ? "LLM 润色完成" : "已使用确定性拼接草稿", "ok");
         } catch (e) {
             alert("润色失败: " + e.message);
+        }
+        return;
+    }
+    if (action === "ai-reply-turn") {
+        const input = $("#aiChatInput");
+        const instruction = input?.value?.trim() || "";
+        const turnsToSend = [...aiReplyState.turns];
+        if (aiReplyState.lastDraft) {
+            if (!instruction) {
+                showStatus("请输入修改要求", "error");
+                return;
+            }
+            turnsToSend.push({
+                assistantDraft: aiReplyState.lastDraft,
+                operatorInstruction: instruction
+            });
+        }
+        try {
+            const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
+                method: "POST",
+                body: JSON.stringify({ turns: turnsToSend, qaRuleIds: null })
+            });
+            if (instruction && aiReplyState.lastDraft) {
+                appendAiChatOperatorBubble(instruction);
+                aiReplyState.turns.push({
+                    assistantDraft: aiReplyState.lastDraft,
+                    operatorInstruction: instruction
+                });
+            }
+            appendAiChatDraftBubble(result.draftText || "");
+            aiReplyState.lastDraft = result.draftText || "";
+            aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
+            if (input) input.value = "";
+            showStatus(result.usedLlm ? "AI 生成完成" : "DeepSeek 不可用，已用确定性草稿");
+        } catch (e) {
+            alert("AI 生成失败: " + e.message);
+        }
+        return;
+    }
+    if (action === "ai-adopt-draft") {
+        const draftId = Number(element.dataset.draftId);
+        const draft = aiReplyState.drafts[draftId] || aiReplyState.lastDraft;
+        if (!draft) {
+            showStatus("草稿为空", "error");
+            return;
+        }
+        const qaIds = aiReplyState.lastQaRuleIds; // send audit subset only; empty => manual-rich-reply
+        if (qaIds && qaIds.length > 0) {
+            composedReplyState.selectedRuleIds = [...qaIds];
+            renderComposedSelectedList();
+            document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
+                const ruleId = Number(checkbox.dataset.ruleId);
+                checkbox.checked = composedReplyState.selectedRuleIds.includes(ruleId);
+            });
+            const previewEl = $("#composedReplyPreview");
+            if (previewEl) previewEl.value = draft;
+            composedReplyState.previewEdited = true;
+            showStatus("草稿已填入组装台，请确认后点击「发送组装回复」");
+        } else {
+            const editor = $("#manualRichReplyEditor");
+            if (editor) editor.innerText = draft;
+            showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
         }
         return;
     }

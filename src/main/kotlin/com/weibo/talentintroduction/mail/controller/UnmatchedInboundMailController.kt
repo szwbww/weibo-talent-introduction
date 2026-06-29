@@ -40,7 +40,8 @@ class UnmatchedInboundMailController(
     private val operatorActionLogService: OperatorActionLogService,
     private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService,
     private val autoReplyPreviewService: AutoReplyPreviewService,
-    private val replySnippetService: ReplySnippetService
+    private val replySnippetService: ReplySnippetService,
+    private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -254,6 +255,32 @@ class UnmatchedInboundMailController(
             senderAccountCode = request.senderAccountCode,
             operatorName = request.operatorName
         )
+
+    @PostMapping("/unmatched-inbound/{id}/ai-reply/turn")
+    fun aiReplyTurn(
+        @PathVariable id: Long,
+        @RequestBody request: AiReplyTurnRequest
+    ): AiReplyTurnResponse {
+        val detail = unmatchedInboundMailService.getDetail(id)
+        val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
+        val turns = request.turns.map {
+            com.weibo.talentintroduction.llm.service.AiReplyTurn(
+                assistantDraft = it.assistantDraft,
+                operatorInstruction = it.operatorInstruction
+            )
+        }
+        val result = aiReplyDraftService.generate(
+            inboundText = inboundText,
+            operatorTurns = turns,
+            qaRuleIds = request.qaRuleIds
+        )
+        return AiReplyTurnResponse(
+            draftText = result.draftText,
+            usedLlm = result.usedLlm,
+            llmEnabled = llmStitchService.isEnabled(),
+            qaRuleIds = result.qaRuleIds
+        )
+    }
 }
 
 @RestController
@@ -447,6 +474,24 @@ data class CategoryRulesGroupResponse(
     val categoryName: String,
     val composeOrder: Int,
     val rules: List<SuggestQaRuleResponse>
+)
+
+data class AiReplyTurnDto(
+    val assistantDraft: String,
+    val operatorInstruction: String
+)
+
+data class AiReplyTurnRequest(
+    val turns: List<AiReplyTurnDto> = emptyList(),
+    val qaRuleIds: List<Long>? = null,
+    val sessionId: String? = null
+)
+
+data class AiReplyTurnResponse(
+    val draftText: String,
+    val usedLlm: Boolean,
+    val llmEnabled: Boolean,
+    val qaRuleIds: List<Long>
 )
 
 private fun InboundMailProcessing.toResponse(

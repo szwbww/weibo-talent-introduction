@@ -3,7 +3,7 @@ id: K-cleanedbody-inbound-only
 domain: mail
 created: 2026-06-29
 last_used: 2026-06-29
-hit_count: 1
+hit_count: 2
 source: create-p:translate-source-cleaned-body
 severity: P2
 ---

@@ -2,8 +2,8 @@
 id: K-manual-frame-three-consumers
 domain: qa
 created: 2026-06-28
-last_used: 2026-06-28
-hit_count: 0
+last_used: 2026-06-29
+hit_count: 1
 source: create-p:reply-snippet-backend
 severity: P1
 ---

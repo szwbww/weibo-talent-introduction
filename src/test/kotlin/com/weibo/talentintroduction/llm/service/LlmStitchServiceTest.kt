@@ -72,6 +72,7 @@ class LlmStitchServiceTest {
         val properties = LlmProperties(enabled = true, apiUrl = "http://llm")
         val failingClient = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>): String? = null
         }
         val service = LlmStitchService(
             properties,
@@ -102,6 +103,9 @@ class LlmStitchServiceTest {
         val properties = LlmProperties(enabled = true, apiUrl = "http://llm")
         val timeoutClient = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? {
+                throw ResourceAccessException("Read timed out")
+            }
+            override fun chat(messages: List<LlmChatMessage>): String? {
                 throw ResourceAccessException("Read timed out")
             }
         }

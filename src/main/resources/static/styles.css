@@ -4515,3 +4515,69 @@ tr td {
             "gaps";
     }
 }
+
+.ai-reply-section .ai-chat-panel {
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    background: #fff;
+    padding: 14px;
+}
+
+.ai-chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 420px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.ai-chat-bubble {
+    border-radius: 10px;
+    padding: 10px 12px;
+    max-width: 92%;
+}
+
+.ai-chat-bubble.ai-chat-operator {
+    align-self: flex-end;
+    background: #eef4ff;
+    border: 1px solid #c9daf8;
+}
+
+.ai-chat-bubble.ai-chat-assistant {
+    align-self: flex-start;
+    background: #f8f9fb;
+    border: 1px solid var(--panel-border);
+}
+
+.ai-chat-label {
+    font-size: 11px;
+    color: var(--text-muted, #666);
+    margin-bottom: 6px;
+}
+
+.ai-chat-bubble .pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
+
+.ai-chat-draft-actions {
+    margin-top: 10px;
+}
+
+.ai-chat-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.ai-chat-input {
+    flex: 1;
+    min-height: 56px;
+    resize: vertical;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font: inherit;
+}

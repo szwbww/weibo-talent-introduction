@@ -42,6 +42,12 @@ class LlmStitchService(
 
     fun isEnabled(): Boolean = properties.enabled
 
+    fun composeDeterministicDraft(
+        qaRuleIds: List<Long>,
+        freeText: String? = null,
+        ackSnippetId: Long? = null
+    ): String = composeDeterministic(qaRuleIds, freeText, ackSnippetId)
+
     private fun composeDeterministic(qaRuleIds: List<Long>, freeText: String?, ackSnippetId: Long?): String {
         if (qaRuleIds.isEmpty()) {
             return freeText.orEmpty()
