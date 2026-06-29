@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
@@ -163,6 +164,57 @@ class SenderWarmupServiceTest {
 
         assertEquals(AccountDailyState.SENDABLE, service.dailyState(account, now))
         assertEquals(15, service.remainingCapacity(account, now))
+    }
+
+    @Test
+    fun `ignoreWarmup returns dailySendLimit as effective limit for warmup account`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val account = account(
+            dailySendLimit = 100,
+            createdAt = now,
+            todaySentCount = 20,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+
+        assertEquals(100, service.effectiveDailyLimit(account, now, ignoreWarmup = true))
+        assertFalse(service.isWarmupActive(account, now, ignoreWarmup = true))
+    }
+
+    @Test
+    fun `ignoreWarmup dailyState is SENDABLE when above warmup step but below dailySendLimit`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val account = account(
+            dailySendLimit = 100,
+            createdAt = now,
+            todaySentCount = 20,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+
+        assertEquals(AccountDailyState.SENDABLE, service.dailyState(account, now, ignoreWarmup = true))
+        assertEquals(80, service.remainingCapacity(account, now, ignoreWarmup = true))
+    }
+
+    @Test
+    fun `ignoreWarmup dailyState is DAILY_LIMIT_REACHED when dailySendLimit exhausted`() {
+        val service = SenderWarmupService(WarmupProperties(enabled = false), objectMapper)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        val account = account(
+            dailySendLimit = 100,
+            createdAt = now,
+            todaySentCount = 100,
+            warmupEnabled = true,
+            warmupStartedAt = now,
+            warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+        )
+
+        assertEquals(AccountDailyState.DAILY_LIMIT_REACHED, service.dailyState(account, now, ignoreWarmup = true))
+        assertEquals(0, service.remainingCapacity(account, now, ignoreWarmup = true))
     }
 
     private fun account(

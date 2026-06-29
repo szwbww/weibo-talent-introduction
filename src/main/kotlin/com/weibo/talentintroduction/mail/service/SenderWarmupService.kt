@@ -22,7 +22,14 @@ class SenderWarmupService(
     private val props: WarmupProperties,
     private val objectMapper: ObjectMapper
 ) {
-    fun effectiveDailyLimit(account: MailSenderAccount, now: LocalDateTime = LocalDateTime.now()): Int {
+    fun effectiveDailyLimit(
+        account: MailSenderAccount,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreWarmup: Boolean = false
+    ): Int {
+        if (ignoreWarmup) {
+            return account.dailySendLimit
+        }
         if (account.warmupEnabled == false) {
             return account.dailySendLimit
         }
@@ -45,14 +52,18 @@ class SenderWarmupService(
         parseSteps(json) ?: throw IllegalArgumentException("warmupStepsJson must be a valid JSON array of warmup steps")
     }
 
-    fun dailyState(account: MailSenderAccount, now: LocalDateTime = LocalDateTime.now()): AccountDailyState {
+    fun dailyState(
+        account: MailSenderAccount,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreWarmup: Boolean = false
+    ): AccountDailyState {
         if (!account.enabled || account.accountCode == MailSenderAccountService.SIMULATOR_ACCOUNT_CODE) {
             return AccountDailyState.DISABLED_OR_SIMULATOR
         }
         if (account.autoSendPaused) {
             return AccountDailyState.PAUSED_FAULT
         }
-        val eff = effectiveDailyLimit(account, now)
+        val eff = effectiveDailyLimit(account, now, ignoreWarmup)
         if (account.todaySentCount >= eff) {
             return if (eff < account.dailySendLimit) {
                 AccountDailyState.WARMUP_LIMIT_REACHED
@@ -63,18 +74,29 @@ class SenderWarmupService(
         return AccountDailyState.SENDABLE
     }
 
-    fun remainingCapacity(account: MailSenderAccount, now: LocalDateTime = LocalDateTime.now()): Int {
-        if (dailyState(account, now) != AccountDailyState.SENDABLE) {
+    fun remainingCapacity(
+        account: MailSenderAccount,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreWarmup: Boolean = false
+    ): Int {
+        if (dailyState(account, now, ignoreWarmup) != AccountDailyState.SENDABLE) {
             return 0
         }
-        return maxOf(0, effectiveDailyLimit(account, now) - account.todaySentCount)
+        return maxOf(0, effectiveDailyLimit(account, now, ignoreWarmup) - account.todaySentCount)
     }
 
-    fun isWarmupActive(account: MailSenderAccount, now: LocalDateTime = LocalDateTime.now()): Boolean {
+    fun isWarmupActive(
+        account: MailSenderAccount,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreWarmup: Boolean = false
+    ): Boolean {
+        if (ignoreWarmup) {
+            return false
+        }
         if (account.warmupEnabled != true || account.warmupStartedAt == null) {
             return false
         }
-        return effectiveDailyLimit(account, now) < account.dailySendLimit
+        return effectiveDailyLimit(account, now, ignoreWarmup) < account.dailySendLimit
     }
 
     private fun rampLimit(startedAt: LocalDateTime, now: LocalDateTime, steps: List<WarmupStep>): Int {

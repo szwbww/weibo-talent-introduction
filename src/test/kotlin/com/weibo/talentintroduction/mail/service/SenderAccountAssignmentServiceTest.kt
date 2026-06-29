@@ -3,12 +3,15 @@ package com.weibo.talentintroduction.mail.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.config.WarmupProperties
+import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import java.time.LocalDateTime
 
 class SenderAccountAssignmentServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
@@ -118,7 +121,82 @@ class SenderAccountAssignmentServiceTest {
         assertEquals("other", selected.accountCode)
     }
 
-    private fun account(accountCode: String, strategyWeight: Int = 100, autoSendPaused: Boolean = false): MailSenderAccount =
+    @Test
+    fun `selectAccount includes warmup-limited account when ignoreWarmup is true`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            ),
+            ObjectMapper().registerKotlinModule()
+        )
+        val serviceWithWarmup = SenderAccountAssignmentService(repository, enabledWarmup)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "warmup_only",
+                    strategyWeight = 100,
+                    dailySendLimit = 100,
+                    todaySentCount = 20,
+                    warmupEnabled = true,
+                    warmupStartedAt = now,
+                    warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+                )
+            )
+        )
+
+        val selected = serviceWithWarmup.selectAccount(
+            expert = expert(country = "United States"),
+            ignoreWarmup = true
+        )
+
+        assertEquals("warmup_only", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccount excludes account at dailySendLimit even when ignoreWarmup is true`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            ),
+            ObjectMapper().registerKotlinModule()
+        )
+        val serviceWithWarmup = SenderAccountAssignmentService(repository, enabledWarmup)
+        val now = LocalDateTime.of(2026, 6, 24, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "at_daily_limit",
+                    strategyWeight = 100,
+                    dailySendLimit = 100,
+                    todaySentCount = 100,
+                    warmupEnabled = true,
+                    warmupStartedAt = now,
+                    warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+                )
+            )
+        )
+
+        assertThrows(NoAvailableSenderAccountException::class.java) {
+            serviceWithWarmup.selectAccount(
+                expert = expert(country = "United States"),
+                ignoreWarmup = true
+            )
+        }
+    }
+
+    private fun account(
+        accountCode: String,
+        strategyWeight: Int = 100,
+        autoSendPaused: Boolean = false,
+        dailySendLimit: Int = 100,
+        todaySentCount: Int = 0,
+        warmupEnabled: Boolean? = null,
+        warmupStartedAt: LocalDateTime? = null,
+        warmupStepsJson: String? = null
+    ): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
             senderEmail = "$accountCode@qftechtalent.com",
@@ -136,7 +214,12 @@ class SenderAccountAssignmentServiceTest {
             imapUsername = "$accountCode@qftechtalent.com",
             imapPassword = "secret",
             strategyWeight = strategyWeight,
-            autoSendPaused = autoSendPaused
+            dailySendLimit = dailySendLimit,
+            todaySentCount = todaySentCount,
+            autoSendPaused = autoSendPaused,
+            warmupEnabled = warmupEnabled,
+            warmupStartedAt = warmupStartedAt,
+            warmupStepsJson = warmupStepsJson
         )
 
     private fun expert(country: String): ExpertProfile =

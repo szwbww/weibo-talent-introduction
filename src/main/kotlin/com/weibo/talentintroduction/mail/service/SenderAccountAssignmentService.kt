@@ -13,18 +13,19 @@ class SenderAccountAssignmentService(
 ) {
     fun selectAccount(
         expert: ExpertProfile,
-        currentBatchAssignments: List<SenderExpertAssignment> = emptyList()
+        currentBatchAssignments: List<SenderExpertAssignment> = emptyList(),
+        ignoreWarmup: Boolean = false
     ): MailSenderAccount {
         val distributionKey = distributionKey(expert)
         return repository.findAllByEnabledTrue()
             .filter {
-                it.todaySentCount < warmup.effectiveDailyLimit(it) &&
+                it.todaySentCount < warmup.effectiveDailyLimit(it, ignoreWarmup = ignoreWarmup) &&
                     it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
                     !it.autoSendPaused
             }
             .maxWithOrNull(
                 compareBy<MailSenderAccount> { account ->
-                    assignmentScore(account, distributionKey, currentBatchAssignments)
+                    assignmentScore(account, distributionKey, currentBatchAssignments, ignoreWarmup)
                 }.thenBy { it.id ?: 0L }
             )
             ?: throw NoAvailableSenderAccountException("No available mail sender account")
@@ -33,9 +34,10 @@ class SenderAccountAssignmentService(
     private fun assignmentScore(
         account: MailSenderAccount,
         distributionKey: String,
-        assignments: List<SenderExpertAssignment>
+        assignments: List<SenderExpertAssignment>,
+        ignoreWarmup: Boolean = false
     ): Double {
-        val effectiveLimit = warmup.effectiveDailyLimit(account)
+        val effectiveLimit = warmup.effectiveDailyLimit(account, ignoreWarmup = ignoreWarmup)
         val remainingRatio = (effectiveLimit - account.todaySentCount).toDouble() / effectiveLimit
         val baseScore = account.strategyWeight * remainingRatio
         val sameSegmentCount = assignments.count {

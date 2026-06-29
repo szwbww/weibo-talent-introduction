@@ -671,6 +671,83 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
+    fun `listSendableAccounts includes warmup-exhausted account when ignoreWarmup is true`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            ),
+            ObjectMapper().registerKotlinModule()
+        )
+        val serviceWithWarmup = MailSenderAccountService(
+            repository,
+            selfCheckService,
+            smtpSenderFactory,
+            enabledWarmup,
+            connectivityService,
+            campaignRepository
+        )
+        val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "warmup_exhausted",
+                    dailySendLimit = 100,
+                    todaySentCount = 20,
+                    createdAt = now,
+                    warmupEnabled = true,
+                    warmupStartedAt = now,
+                    warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+                )
+            )
+        )
+
+        val withWarmup = serviceWithWarmup.listSendableAccounts(ignoreWarmup = false)
+        val bypassWarmup = serviceWithWarmup.listSendableAccounts(ignoreWarmup = true)
+
+        assertEquals(0, withWarmup.size)
+        assertEquals(1, bypassWarmup.size)
+        assertEquals("warmup_exhausted", bypassWarmup[0].accountCode)
+    }
+
+    @Test
+    fun `listSendableAccounts excludes account at dailySendLimit even when ignoreWarmup is true`() {
+        val enabledWarmup = SenderWarmupService(
+            WarmupProperties(
+                enabled = true,
+                steps = listOf(WarmupStep(1, 20))
+            ),
+            ObjectMapper().registerKotlinModule()
+        )
+        val serviceWithWarmup = MailSenderAccountService(
+            repository,
+            selfCheckService,
+            smtpSenderFactory,
+            enabledWarmup,
+            connectivityService,
+            campaignRepository
+        )
+        val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account(
+                    "at_daily_limit",
+                    dailySendLimit = 100,
+                    todaySentCount = 100,
+                    createdAt = now,
+                    warmupEnabled = true,
+                    warmupStartedAt = now,
+                    warmupStepsJson = """[{"dayFrom":1,"limit":20}]"""
+                )
+            )
+        )
+
+        val result = serviceWithWarmup.listSendableAccounts(ignoreWarmup = true)
+
+        assertEquals(0, result.size)
+    }
+
+    @Test
     fun `resetDailyCounts is transactional`() {
         val method = MailSenderAccountService::class.java.getMethod("resetDailyCounts")
 
@@ -706,7 +783,10 @@ class MailSenderAccountServiceTest {
         todaySentCount: Int = 0,
         enabled: Boolean = true,
         autoSendPaused: Boolean = false,
-        createdAt: java.time.LocalDateTime? = null
+        createdAt: java.time.LocalDateTime? = null,
+        warmupEnabled: Boolean? = null,
+        warmupStartedAt: java.time.LocalDateTime? = null,
+        warmupStepsJson: String? = null
     ): MailSenderAccount =
         MailSenderAccount(
             accountCode = accountCode,
@@ -729,6 +809,9 @@ class MailSenderAccountServiceTest {
             todaySentCount = todaySentCount,
             enabled = enabled,
             autoSendPaused = autoSendPaused,
-            createdAt = createdAt
+            createdAt = createdAt,
+            warmupEnabled = warmupEnabled,
+            warmupStartedAt = warmupStartedAt,
+            warmupStepsJson = warmupStepsJson
         )
 }
