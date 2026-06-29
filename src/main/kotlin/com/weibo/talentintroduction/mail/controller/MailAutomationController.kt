@@ -40,6 +40,23 @@ class MailAutomationController(
     private val manualOutreachExecutor: java.util.concurrent.Executor,
     private val batchSendControlService: BatchSendControlService
 ) {
+    @PostMapping("/backfill-uids")
+    fun backfillUids(@RequestBody request: BackfillUidsRequest): Map<String, Any> {
+        require(request.accountCode.isNotBlank()) { "accountCode must not be blank" }
+        require(request.uids.isNotEmpty()) { "uids must not be empty" }
+        require(request.uids.size <= 100) { "uids must not contain more than 100 entries" }
+        require(request.uids.all { it > 0 }) { "each uid must be positive" }
+
+        val results = autoMailReplyService.processByUids(request.accountCode, request.uids)
+        val outcomes = request.uids.zip(results).associate { (uid, result) ->
+            uid.toString() to mapOf(
+                "outcome" to result.outcome.name,
+                "reason" to result.reason
+            )
+        }
+        return mapOf("outcomes" to outcomes)
+    }
+
     @PostMapping("/initial-outreach")
     fun sendInitialOutreach(
         @RequestParam campaignId: Long,
@@ -316,4 +333,9 @@ class MailAutomationController(
 data class CheckRepliesRequest(
     val contactIds: List<Long>? = null,
     val maxMessagesPerAccount: Int? = 20
+)
+
+data class BackfillUidsRequest(
+    val accountCode: String,
+    val uids: List<Long>
 )

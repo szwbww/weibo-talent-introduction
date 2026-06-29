@@ -56,7 +56,8 @@ class AutoMailReplyService(
     private val selfCheckProbeDetector: SelfCheckProbeDetector,
     private val dmarcReportDetector: DmarcReportDetector,
     private val dmarcReportIngestService: DmarcReportIngestService,
-    private val mailContentService: MailContentService
+    private val mailContentService: MailContentService,
+    private val mailInboxCursorService: MailInboxCursorService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
 
@@ -544,61 +545,90 @@ class AutoMailReplyService(
 
     fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
         val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
-        val receivedMails = mailReceiveService.fetchUnread(account, maxMessages)
+        val stored = mailInboxCursorService.get(accountCode)
+        var fetch = mailReceiveService.fetchInboundSince(account, stored.lastUid, maxMessages)
+        var start = mailInboxCursorService.resolveStart(stored, fetch.uidValidity)
+        if (start == 0L && stored.lastUid > 0L) {
+            fetch = mailReceiveService.fetchInboundSince(account, 0, maxMessages)
+        }
+
         var recorded = 0
         var replied = 0
         var manualReview = 0
         var meetingInvitations = 0
         val repliedExperts = mutableListOf<RepliedExpertInfo>()
+        val handledUids = mutableSetOf<Long>()
+        val fetchedUids = fetch.mails.map { it.imapUid }
 
-        receivedMails.forEach {
-            if (selfCheckProbeDetector.isSelfCheckProbe(it.from, it.subject, account.senderEmail)) {
-                mailReceiveService.markSeen(account, it.imapUid)
-                log.debug("Discarded self-check probe: uid={}", it.imapUid)
-                return@forEach
-            }
-            val bounceSignal = bounceDetector.detect(it.from, it.subject, it.body)
-            if (bounceSignal != null) {
-                bounceCollectionService.ingest(
-                    signal = bounceSignal,
-                    senderAccountCode = account.accountCode,
-                    bounceMessageId = it.messageId,
-                    from = it.from,
-                    subject = it.subject,
-                    receivedAt = it.receivedAt
-                )
-                mailReceiveService.markSeen(account, it.imapUid)
-                log.debug("Ingested bounce during auto-reply poll: uid={}", it.imapUid)
-                return@forEach
-            }
-            if (dmarcReportDetector.isDmarcAggregateReport(it.from, it.subject, it.attachments)) {
-                try {
-                    dmarcReportIngestService.ingest(it.attachments)
-                } catch (e: Exception) {
-                    log.warn("DMARC parse failed uid={}", it.imapUid, e)
+        fetch.mails.forEach { mail ->
+            try {
+                if (selfCheckProbeDetector.isSelfCheckProbe(mail.from, mail.subject, account.senderEmail)) {
+                    mailReceiveService.markSeen(account, mail.imapUid)
+                    log.debug("Discarded self-check probe: uid={}", mail.imapUid)
+                    handledUids.add(mail.imapUid)
+                    return@forEach
                 }
-                mailReceiveService.markSeen(account, it.imapUid)
-                return@forEach
-            }
-            val r = processSingle(account, it, skipImapAck = false)
-            if (r.recorded) {
-                recorded++
-                repliedExperts.add(
-                    RepliedExpertInfo(
-                        expertContactId = r.expertContactId,
-                        expertEmail = it.from,
-                        expertName = r.expertContactId
-                            ?.let(expertContactRepository::findById)
-                            ?.map { it.expertName }
-                            ?.orElse(null),
-                        outcome = r.outcome.name
+                val bounceSignal = bounceDetector.detect(mail.from, mail.subject, mail.body)
+                if (bounceSignal != null) {
+                    bounceCollectionService.ingest(
+                        signal = bounceSignal,
+                        senderAccountCode = account.accountCode,
+                        bounceMessageId = mail.messageId,
+                        from = mail.from,
+                        subject = mail.subject,
+                        receivedAt = mail.receivedAt
                     )
+                    mailReceiveService.markSeen(account, mail.imapUid)
+                    log.debug("Ingested bounce during auto-reply poll: uid={}", mail.imapUid)
+                    handledUids.add(mail.imapUid)
+                    return@forEach
+                }
+                if (dmarcReportDetector.isDmarcAggregateReport(mail.from, mail.subject, mail.attachments)) {
+                    try {
+                        dmarcReportIngestService.ingest(mail.attachments)
+                    } catch (e: Exception) {
+                        log.warn("DMARC parse failed uid={}", mail.imapUid, e)
+                    }
+                    mailReceiveService.markSeen(account, mail.imapUid)
+                    handledUids.add(mail.imapUid)
+                    return@forEach
+                }
+                val r = processSingle(account, mail, skipImapAck = false)
+                handledUids.add(mail.imapUid)
+                if (r.recorded) {
+                    recorded++
+                    repliedExperts.add(
+                        RepliedExpertInfo(
+                            expertContactId = r.expertContactId,
+                            expertEmail = mail.from,
+                            expertName = r.expertContactId
+                                ?.let(expertContactRepository::findById)
+                                ?.map { it.expertName }
+                                ?.orElse(null),
+                            outcome = r.outcome.name
+                        )
+                    )
+                }
+                if (r.outcome == SinglePipelineOutcome.QA_REPLIED) replied++
+                if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
+                if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
+            } catch (e: Exception) {
+                log.error(
+                    "Failed to process inbound mail uid={} account={}",
+                    mail.imapUid,
+                    accountCode,
+                    e
                 )
             }
-            if (r.outcome == SinglePipelineOutcome.QA_REPLIED) replied++
-            if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
-            if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
         }
+
+        mailInboxCursorService.advance(
+            accountCode = accountCode,
+            currentUidValidity = fetch.uidValidity,
+            fetchedUids = fetchedUids,
+            handledUids = handledUids,
+            oldStart = start
+        )
 
         val bounceResult = bounceCollectionService.collectBounces(account)
         if (bounceResult.collected > 0) {
@@ -611,13 +641,27 @@ class AutoMailReplyService(
         bounceRateMonitorService.checkAndPause(accountCode)
 
         return AutoMailReplyBatchResult(
-            fetched = receivedMails.size,
+            fetched = fetch.mails.size,
             recorded = recorded,
             replied = replied,
             manualReview = manualReview,
             meetingInvitations = meetingInvitations,
             repliedExperts = repliedExperts
         )
+    }
+
+    fun processByUids(accountCode: String, uids: List<Long>): List<SinglePipelineResult> {
+        val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
+        val mailsByUid = mailReceiveService.fetchByUids(account, uids).associateBy { it.imapUid }
+        return uids.map { uid ->
+            val mail = mailsByUid[uid]
+                ?: return@map SinglePipelineResult(
+                    outcome = SinglePipelineOutcome.UNMATCHED_CONTACT,
+                    recorded = false,
+                    reason = "UID_NOT_FOUND:$uid"
+                )
+            processSingle(account, mail, skipImapAck = false)
+        }
     }
 
     private fun saveMailRecord(

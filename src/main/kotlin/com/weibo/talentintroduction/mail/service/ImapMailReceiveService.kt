@@ -18,8 +18,13 @@ import javax.mail.internet.MimeUtility
 
 @Service
 class ImapMailReceiveService : MailReceiveService {
-    override fun fetchUnread(account: MailSenderAccount, maxMessages: Int): List<ReceivedMail> {
+    override fun fetchInboundSince(
+        account: MailSenderAccount,
+        afterUid: Long,
+        maxMessages: Int
+    ): InboundFetchResult {
         require(maxMessages in 1..100) { "maxMessages must be between 1 and 100" }
+        require(afterUid >= 0) { "afterUid must be non-negative" }
 
         val session = Session.getInstance(imapProperties(account.imapPort))
         val store = session.getStore("imap")
@@ -31,11 +36,49 @@ class ImapMailReceiveService : MailReceiveService {
             inbox.use { folder ->
                 val uidFolder = folder as? UIDFolder
                     ?: error("IMAP INBOX does not support UID lookup")
-                folder.messages
+                val uidValidity = uidFolder.uidValidity
+                val startUid = if (afterUid == 0L) 1L else afterUid + 1
+                val messages = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID)
                     .asSequence()
-                    .filterNot { it.flags.contains(Flags.Flag.SEEN) }
+                    .mapNotNull { message ->
+                        val uid = uidFolder.getUID(message)
+                        if (uid <= afterUid) null else message to uid
+                    }
+                    .sortedBy { it.second }
                     .take(maxMessages)
-                    .map { message -> message.toReceivedMail(uidFolder.getUID(message)) }
+                    .map { (message, uid) -> message.toReceivedMail(uid) }
+                    .toList()
+                InboundFetchResult(
+                    mails = messages,
+                    uidValidity = uidValidity,
+                    maxUidInWindow = messages.maxOfOrNull { it.imapUid } ?: afterUid
+                )
+            }
+        }
+    }
+
+    override fun fetchByUids(account: MailSenderAccount, uids: List<Long>): List<ReceivedMail> {
+        require(uids.isNotEmpty()) { "uids must not be empty" }
+        require(uids.all { it > 0 }) { "each uid must be positive" }
+
+        val session = Session.getInstance(imapProperties(account.imapPort))
+        val store = session.getStore("imap")
+        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
+
+        return store.use { connectedStore ->
+            val inbox = connectedStore.getFolder("INBOX")
+            inbox.open(Folder.READ_WRITE)
+            inbox.use { folder ->
+                val uidFolder = folder as? UIDFolder
+                    ?: error("IMAP INBOX does not support UID lookup")
+                uidFolder.getMessagesByUID(uids.toLongArray())
+                    .asSequence()
+                    .mapNotNull { message ->
+                        message?.let { msg ->
+                            msg.toReceivedMail(uidFolder.getUID(msg))
+                        }
+                    }
+                    .sortedBy { it.imapUid }
                     .toList()
             }
         }

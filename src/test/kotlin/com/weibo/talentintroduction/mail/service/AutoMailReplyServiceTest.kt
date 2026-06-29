@@ -33,6 +33,7 @@ import java.time.LocalDateTime
 class AutoMailReplyServiceTest {
     private val accountService = Mockito.mock(MailSenderAccountService::class.java)
     private val receiveService = Mockito.mock(MailReceiveService::class.java)
+    private val cursorService = Mockito.mock(MailInboxCursorService::class.java)
     private val deliveryService = Mockito.mock(MailDeliveryService::class.java)
     private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
@@ -104,7 +105,8 @@ class AutoMailReplyServiceTest {
         selfCheckProbeDetector,
         dmarcReportDetector,
         dmarcReportIngestService,
-        mailContentService
+        mailContentService,
+        cursorService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -120,6 +122,17 @@ class AutoMailReplyServiceTest {
             }
         Mockito.`when`(mailAttachmentService.saveUnmatchedAttachments(Mockito.anyLong(), Mockito.anyList()))
             .thenReturn(emptyList())
+        Mockito.`when`(cursorService.get(Mockito.anyString())).thenReturn(CursorState(null, 0L))
+        Mockito.`when`(
+            cursorService.resolveStart(
+                anyValue(CursorState(null, 0L)),
+                anyValue(0L)
+            )
+        ).thenAnswer { invocation ->
+                val stored = invocation.getArgument<CursorState>(0)
+                val currentUidValidity = invocation.getArgument<Long>(1)
+                if (stored.uidValidity != null && stored.uidValidity != currentUidValidity) 0L else stored.lastUid
+            }
     }
 
     private fun defaultPromotionStubs(contact: ExpertContact) {
@@ -153,11 +166,11 @@ class AutoMailReplyServiceTest {
             body = "554 5.1.1 User unknown",
             imapUid = 102L
         )
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(
                 reply(from = "expert@example.com"),
                 bounceMail
-            )
+            ))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
         Mockito.`when`(
@@ -175,7 +188,7 @@ class AutoMailReplyServiceTest {
 
         service.receiveAndAutoReply("sender", 5)
 
-        inOrder.verify(receiveService).fetchUnread(account, 5)
+        inOrder.verify(receiveService).fetchInboundSince(account, 0L, 5)
         inOrder.verify(bounceCollectionService).ingest(
             anyValue(BounceSignal("SOFT", null, null, null, null)),
             eqValue("sender"),
@@ -201,7 +214,7 @@ class AutoMailReplyServiceTest {
             body = "self-check probe",
             imapUid = 301L
         )
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(probe))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(probe)))
 
         service.receiveAndAutoReply("sender", 5)
 
@@ -223,8 +236,8 @@ class AutoMailReplyServiceTest {
     fun `receiveAndAutoReply collects bounces after business reply processing in order`() {
         val account = account("sender")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(from = "expert@example.com"))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(from = "expert@example.com")))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
 
@@ -232,7 +245,7 @@ class AutoMailReplyServiceTest {
 
         service.receiveAndAutoReply("sender", 5)
 
-        inOrder.verify(receiveService).fetchUnread(account, 5)
+        inOrder.verify(receiveService).fetchInboundSince(account, 0L, 5)
         inOrder.verify(bounceCollectionService).collectBounces(account)
         inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
     }
@@ -253,11 +266,10 @@ class AutoMailReplyServiceTest {
                     fileName = "google.com!qftechtalent.com!1609459200!1609545600.xml.gz",
                     contentType = "application/gzip",
                     content = ByteArray(0)
-                )
-            )
+        ))
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(dmarcMail)))
 
         val result = service.receiveAndAutoReply("sender", 5)
 
@@ -290,7 +302,7 @@ class AutoMailReplyServiceTest {
             )
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(dmarcMail)))
         Mockito.doThrow(RuntimeException("ingest failed"))
             .`when`(dmarcReportIngestService).ingest(dmarcMail.attachments)
 
@@ -325,7 +337,7 @@ class AutoMailReplyServiceTest {
         )
         val expertMail = reply(imapUid = 302L)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(dmarcMail, expertMail))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(dmarcMail, expertMail)))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -367,7 +379,7 @@ class AutoMailReplyServiceTest {
             currentStatus = ConversationStatus.NEW.name
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -399,7 +411,7 @@ class AutoMailReplyServiceTest {
         )
         defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -428,10 +440,10 @@ class AutoMailReplyServiceTest {
             )
         ).thenThrow(IllegalStateException("SMTP unavailable"))
 
-        assertThrows(IllegalStateException::class.java) {
-            service.receiveAndAutoReply("sender", 5)
-        }
+        val result = service.receiveAndAutoReply("sender", 5)
 
+        assertEquals(1, result.fetched)
+        assertEquals(0, result.recorded)
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
             .save(Mockito.any(InboundMailProcessing::class.java))
         Mockito.verify(receiveService, Mockito.never()).markSeen(account, 101)
@@ -452,7 +464,7 @@ class AutoMailReplyServiceTest {
         defaultPromotionStubs(contact)
         val meetingReply = reply(body = "I am available at 9AM China time next Tuesday.")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(meetingReply))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(meetingReply)))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -504,7 +516,7 @@ class AutoMailReplyServiceTest {
         defaultPromotionStubs(contact)
         val aliasReply = reply(from = "alias@example.com")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(aliasReply))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(aliasReply)))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("alias@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -534,7 +546,7 @@ class AutoMailReplyServiceTest {
     fun `unmatched email records body and in_reply_to for manual review`() {
         val account = account("sender")
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(null)
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
@@ -564,8 +576,8 @@ class AutoMailReplyServiceTest {
             content = "pdf".toByteArray()
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(attachments = listOf(attachment)))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(attachments = listOf(attachment))))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(null)
@@ -592,7 +604,7 @@ class AutoMailReplyServiceTest {
             currentStatus = ConversationStatus.NEW.name
         )
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -629,8 +641,8 @@ class AutoMailReplyServiceTest {
         )).thenReturn(promoted)
 
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(body = "Here are my documents"))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(body = "Here are my documents")))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
@@ -649,8 +661,7 @@ class AutoMailReplyServiceTest {
                 mailAttachmentId = 1,
                 documentType = "CV",
                 createdAt = LocalDateTime.now()
-            )
-        ))
+        )))
         Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
             invocation.getArgument<ExpertContact>(0)
         }
@@ -694,7 +705,7 @@ class AutoMailReplyServiceTest {
         )).thenReturn(promoted)
 
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -739,8 +750,8 @@ class AutoMailReplyServiceTest {
         )
         defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(body = "I have attached my CV"))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(body = "I have attached my CV")))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
@@ -782,8 +793,8 @@ class AutoMailReplyServiceTest {
         )
         defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(body = "Hello"))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(body = "Hello")))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
@@ -830,8 +841,8 @@ class AutoMailReplyServiceTest {
         )
         defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(
-            listOf(reply(body = "Hello again"))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(body = "Hello again")))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
@@ -870,8 +881,7 @@ class AutoMailReplyServiceTest {
                 replyBody = "Auto reply body",
                 handoffRequired = false,
                 autoReplyEnabled = true
-            )
-        )
+        ))
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(true)
         Mockito.`when`(
             manualHandoffRepository.findFirstByExpertContactIdAndReasonAndHandoffStatusOrderByUpdatedAtDesc(
@@ -1136,7 +1146,7 @@ class AutoMailReplyServiceTest {
         )
         defaultPromotionStubs(contact)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(reply()))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
         Mockito.`when`(
@@ -1179,6 +1189,94 @@ class AutoMailReplyServiceTest {
         )
     }
 
+    @Test
+    fun `receiveAndAutoReply processes mail above cursor regardless of seen flag`() {
+        val account = account("sender")
+        val seenReply = reply(imapUid = 22L)
+        Mockito.`when`(cursorService.get("sender")).thenReturn(CursorState(uidValidity = 1L, lastUid = 21L))
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 21L, 5)).thenReturn(
+            inboundFetch(listOf(seenReply), afterUid = 21L)
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.fetched)
+        assertEquals(1, result.manualReview)
+        Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `receiveAndAutoReply does not advance cursor past failed lower uid`() {
+        val account = account("sender")
+        val mail10 = reply(imapUid = 10L)
+        val mail11 = reply(imapUid = 11L)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(mail10, mail11))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenThrow(RuntimeException("boom"))
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(cursorService).advance(
+            eqValue("sender"),
+            eqValue(1L),
+            eqValue(listOf(10L, 11L)),
+            eqValue(emptySet()),
+            eqValue(0L)
+        )
+    }
+
+    @Test
+    fun `receiveAndAutoReply rescans from zero when uid validity changes`() {
+        val account = account("sender")
+        Mockito.`when`(cursorService.get("sender")).thenReturn(CursorState(uidValidity = 100L, lastUid = 5L))
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 5L, 5)).thenReturn(
+            inboundFetch(emptyList(), afterUid = 5L, uidValidity = 200L)
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply()), afterUid = 0L, uidValidity = 200L)
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(receiveService).fetchInboundSince(account, 0L, 5)
+    }
+
+    @Test
+    fun `processByUids returns duplicate for already processed uid`() {
+        val account = account("sender")
+        val uid = 22L
+        val mail = reply(imapUid = uid)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
+        Mockito.`when`(inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid))
+            .thenReturn(
+                InboundMailProcessing(
+                    id = 1L,
+                    senderAccountCode = "sender",
+                    imapUid = uid,
+                    messageId = "reply-1",
+                    fromEmail = "expert@example.com",
+                    subject = "Re: Talent Program",
+                    receivedAt = LocalDateTime.now(),
+                    processStatus = "PROCESSED",
+                    processReason = "PROCESSED",
+                    expertContactId = 11L
+                )
+            )
+
+        val results = service.processByUids("sender", listOf(uid))
+
+        assertEquals(1, results.size)
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, results[0].outcome)
+    }
+
     private fun introSentContact(): ExpertContact {
         val contact = ExpertContact(
             id = 11,
@@ -1199,7 +1297,7 @@ class AutoMailReplyServiceTest {
         received: ReceivedMail = reply()
     ) {
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
-        Mockito.`when`(receiveService.fetchUnread(account, 5)).thenReturn(listOf(received))
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from))
             .thenReturn(contact)
         Mockito.`when`(
@@ -1218,6 +1316,17 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
             .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
     }
+
+    private fun inboundFetch(
+        mails: List<ReceivedMail>,
+        afterUid: Long = 0L,
+        uidValidity: Long = 1L
+    ): InboundFetchResult =
+        InboundFetchResult(
+            mails = mails,
+            uidValidity = uidValidity,
+            maxUidInWindow = mails.maxOfOrNull { it.imapUid } ?: afterUid
+        )
 
     private fun reply(
         body: String = "Could you share the program details?",

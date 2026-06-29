@@ -4,10 +4,18 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import java.time.LocalDateTime
 
 interface MailReceiveService {
-    fun fetchUnread(account: MailSenderAccount, maxMessages: Int): List<ReceivedMail>
+    fun fetchInboundSince(account: MailSenderAccount, afterUid: Long, maxMessages: Int): InboundFetchResult
+
+    fun fetchByUids(account: MailSenderAccount, uids: List<Long>): List<ReceivedMail>
 
     fun markSeen(account: MailSenderAccount, imapUid: Long)
 }
+
+data class InboundFetchResult(
+    val mails: List<ReceivedMail>,
+    val uidValidity: Long,
+    val maxUidInWindow: Long
+)
 
 data class ReceivedMail(
     val imapUid: Long,
