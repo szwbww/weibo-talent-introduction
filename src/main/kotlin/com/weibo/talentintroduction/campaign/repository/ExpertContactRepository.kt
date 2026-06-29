@@ -44,12 +44,16 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
           AND (:status IS NULL OR current_status = :status)
           AND (:operatorStatus IS NULL OR operator_status = :operatorStatus)
           AND (:needsAttention IS NULL OR needs_manual_attention = :needsAttention)
+          AND (:replyMode IS NULL
+               OR (:replyMode = 'MANUAL' AND (auto_reply_enabled = false OR current_status = 'MANUAL_HANDOFF'))
+               OR (:replyMode = 'AUTO'   AND auto_reply_enabled = true AND current_status <> 'MANUAL_HANDOFF'))
         ORDER BY updated_at DESC
     """)
     fun findFilteredContacts(
         campaignId: Long?,
         status: String?,
         operatorStatus: String?,
-        needsAttention: Boolean?
+        needsAttention: Boolean?,
+        replyMode: String? = null
     ): List<ExpertContact>
 }

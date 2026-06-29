@@ -47,9 +47,11 @@ class ExpertContactManagementController(
         @RequestParam(required = false) campaignId: Long?,
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) operatorStatus: String?,
-        @RequestParam(required = false) needsAttention: Boolean?
+        @RequestParam(required = false) needsAttention: Boolean?,
+        @RequestParam(required = false) replyMode: String?
     ): ExpertContactListResponse {
-        val contacts = service.listContacts(campaignId, status, operatorStatus, needsAttention)
+        val normalizedReplyMode = replyMode?.takeIf { it == "AUTO" || it == "MANUAL" }
+        val contacts = service.listContacts(campaignId, status, operatorStatus, needsAttention, normalizedReplyMode)
         return ExpertContactListResponse(
             contacts = contacts.map { it.toResponse() },
             totalCount = contacts.size.toLong()

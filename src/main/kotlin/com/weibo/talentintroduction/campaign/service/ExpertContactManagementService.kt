@@ -37,8 +37,14 @@ class ExpertContactManagementService(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val operatorActionLogService: OperatorActionLogService
 ) {
-    fun listContacts(campaignId: Long?, status: String?, operatorStatus: String? = null, needsAttention: Boolean? = null): List<ExpertContact> =
-        expertContactRepository.findFilteredContacts(campaignId, status, operatorStatus, needsAttention)
+    fun listContacts(
+        campaignId: Long?,
+        status: String?,
+        operatorStatus: String? = null,
+        needsAttention: Boolean? = null,
+        replyMode: String? = null
+    ): List<ExpertContact> =
+        expertContactRepository.findFilteredContacts(campaignId, status, operatorStatus, needsAttention, replyMode)
 
     fun getContactDetail(contactId: Long): ExpertContactDetail {
         val contact = getContact(contactId)

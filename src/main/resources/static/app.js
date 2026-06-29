@@ -2055,6 +2055,7 @@ async function loadContacts() {
     const size = Number($("#expertIndexSize").value || "50");
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+    const replyMode = $("#contactReplyModeFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
@@ -2062,7 +2063,7 @@ async function loadContacts() {
 
     const tagFilterEl = $("#expertTagFilter");
     const regionFilterEl = $("#expertRegionFilter");
-    if (needsAttention) {
+    if (needsAttention || replyMode) {
         tag = "";
         if (tagFilterEl) {
             tagFilterEl.value = "";
@@ -2092,9 +2093,9 @@ async function loadContacts() {
     const levelChanged = state.lastEmailProvidersLevel !== level;
     state.lastEmailProvidersLevel = level;
 
-    const aggregationTag = needsAttention ? "" : tag;
-    const aggregationRegion = needsAttention ? "" : region;
-    const aggregationEmailDomain = needsAttention ? "" : emailDomain;
+    const aggregationTag = (needsAttention || replyMode) ? "" : tag;
+    const aggregationRegion = (needsAttention || replyMode) ? "" : region;
+    const aggregationEmailDomain = (needsAttention || replyMode) ? "" : emailDomain;
 
     loadEmailProviders(level, {
         filters: {
@@ -2115,10 +2116,11 @@ async function loadContacts() {
     let contacts = [];
     let totalHits = 0;
     try {
-    if (needsAttention) {
+    if (needsAttention || replyMode) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
-        params.set("needsAttention", needsAttention);
+        if (needsAttention) params.set("needsAttention", needsAttention);
+        if (replyMode) params.set("replyMode", replyMode);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
         if (emailDomain) {
@@ -2189,7 +2191,7 @@ async function loadContacts() {
     }
 
     const sortBy = $("#expertSortBy")?.value || "";
-    if ((operatorStatus || needsAttention) && sortBy === "updatedAt") {
+    if ((operatorStatus || needsAttention || replyMode) && sortBy === "updatedAt") {
         contacts.sort((a, b) => {
             if (!a.updatedAt) return 1;
             if (!b.updatedAt) return -1;
@@ -6407,6 +6409,7 @@ function bindEvents() {
             $("#expertIndexSize").value !== "50",
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
+            $("#contactReplyModeFilter").value !== "",
             $("#expertTagFilter").value !== "",
             $("#expertEmailDomainFilter")?.value !== "",
             $("#expertRegionFilter")?.value !== ""
@@ -6420,7 +6423,7 @@ function bindEvents() {
         updateFilterBadge();
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
-    ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter",
+    ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
