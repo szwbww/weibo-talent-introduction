@@ -194,10 +194,10 @@ class MailSenderAccountService(
     fun listSendableAccounts(ignoreWarmup: Boolean = false): List<MailSenderAccount> =
         repository.findAllByEnabledTrue().filter { isSendable(it, ignoreWarmup) }
 
-    fun remainingDailyCapacity(): Int =
+    fun remainingDailyCapacity(ignoreWarmup: Boolean = false): Int =
         listEnabledAccounts()
             .filter { it.accountCode != SIMULATOR_ACCOUNT_CODE && !it.autoSendPaused }
-            .sumOf { warmup.remainingCapacity(it) }
+            .sumOf { warmup.remainingCapacity(it, ignoreWarmup = ignoreWarmup) }
 
     fun warmupActiveCount(): Int =
         listEnabledAccounts()

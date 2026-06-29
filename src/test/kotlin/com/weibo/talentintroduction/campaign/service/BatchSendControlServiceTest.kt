@@ -55,7 +55,7 @@ class BatchSendControlServiceTest {
             BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
-        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(10)
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(Mockito.anyBoolean())).thenReturn(10)
         Mockito.`when`(mailSenderAccountService.warmupActiveCount()).thenReturn(0)
         Mockito.`when`(mailSenderAccountService.todayTotalCapacity()).thenReturn(100)
 
@@ -94,6 +94,7 @@ class BatchSendControlServiceTest {
         val response = control.startManual()
 
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        Mockito.verify(mailSenderAccountService).remainingDailyCapacity(eqValue(true))
         // I-9: RUNNING set on start
         Mockito.verify(batchSendSettingService).setRuntimeStatus("RUNNING", "MANUAL", "")
         // L3-2: COMPLETED → IDLE
@@ -491,7 +492,7 @@ class BatchSendControlServiceTest {
     fun `startManual returns 409 when remaining daily capacity is zero`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
-        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(0)
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(eqValue(true))).thenReturn(0)
 
         val response = control.startManual()
 
@@ -504,7 +505,7 @@ class BatchSendControlServiceTest {
     fun `runManualOnce returns 409 when remaining daily capacity is zero`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("PAUSED", "AUTO", "NO_AVAILABLE_ACCOUNT"))
-        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity()).thenReturn(0)
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(eqValue(true))).thenReturn(0)
 
         val response = control.runManualOnce()
 

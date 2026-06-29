@@ -188,7 +188,7 @@ class BatchSendControlService(
     }
 
     private fun checkRemainingDailyCapacity(): ResponseEntity<Map<String, String>>? {
-        if (mailSenderAccountService.remainingDailyCapacity() <= 0) {
+        if (mailSenderAccountService.remainingDailyCapacity(ignoreWarmup = true) <= 0) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "今日发送额度已用尽（含预热限制），暂不可手动发送"))
         }
