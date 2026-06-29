@@ -21,6 +21,7 @@ data class ExpertContact(
     val firstReplyAt: LocalDateTime? = null,
     val applicationIndexed: Boolean = false,
     val currentIndexLevel: String = "CANDIDATE",
+    val country: String? = null,
     val operatorStatus: String = "NOT_CONTACTED",
     val needsManualAttention: Boolean = false,
     val createdAt: LocalDateTime? = null,

@@ -79,4 +79,16 @@ class MailMonitoringController(
         @RequestParam(required = false, defaultValue = "7") days: Int
     ): BounceStatsResponse =
         mailMonitoringService.getBounceStats(accountCode, days)
+
+    @GetMapping("/provider-distribution")
+    fun providerDistribution(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
+    ): List<ProviderStatRow> =
+        mailMonitoringService.providerDistribution(date)
+
+    @GetMapping("/region-distribution")
+    fun regionDistribution(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
+    ): List<RegionStatRow> =
+        mailMonitoringService.regionDistribution(date)
 }

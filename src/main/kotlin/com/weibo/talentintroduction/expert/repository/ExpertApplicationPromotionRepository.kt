@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.expert.repository
 
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
+import com.weibo.talentintroduction.mail.repository.CountryCount
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
 import java.time.LocalDateTime
@@ -47,4 +48,16 @@ interface ExpertApplicationPromotionRepository : CrudRepository<ExpertApplicatio
         """
     )
     fun count(status: String?, from: LocalDateTime?, to: LocalDateTime?): Long
+
+    @Query(
+        """
+        SELECT ec.country AS country, COUNT(*) AS count
+          FROM expert_application_promotion eap
+          JOIN expert_contact ec ON eap.expert_contact_id = ec.id
+         WHERE eap.promotion_status = 'SUCCESS'
+           AND eap.created_at >= :from AND eap.created_at < :to
+         GROUP BY ec.country
+        """
+    )
+    fun aggregateSuccessByCountry(from: LocalDateTime, to: LocalDateTime): List<CountryCount>
 }

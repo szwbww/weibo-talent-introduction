@@ -13,6 +13,16 @@ data class SenderAccountDailyStats(
     val lastSentAt: LocalDateTime?
 )
 
+data class CountryCount(
+    val country: String?,
+    val count: Long
+)
+
+data class DomainCount(
+    val domain: String?,
+    val count: Long
+)
+
 interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     fun findByMailSendAttemptId(mailSendAttemptId: Long): MailRecord?
     fun findAllByExpertContactIdOrderByCreatedAtAsc(expertContactId: Long): List<MailRecord>
@@ -194,6 +204,57 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         """
     )
     fun aggregateSenderAccountStats(from: LocalDateTime, to: LocalDateTime): List<SenderAccountDailyStats>
+
+    @Query(
+        """
+        SELECT ec.country AS country, COUNT(*) AS count
+          FROM mail_record mr
+          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.direction = 'OUTBOUND'
+           AND mr.mail_type = 'INTRODUCTION'
+           AND mr.sent_at >= :from AND mr.sent_at < :to
+         GROUP BY ec.country
+        """
+    )
+    fun aggregateIntroSentByCountry(from: LocalDateTime, to: LocalDateTime): List<CountryCount>
+
+    @Query(
+        """
+        SELECT ec.country AS country, COUNT(DISTINCT mr.expert_contact_id) AS count
+          FROM mail_record mr
+          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.direction = 'INBOUND'
+           AND mr.received_at >= :from AND mr.received_at < :to
+         GROUP BY ec.country
+        """
+    )
+    fun aggregateInboundByCountry(from: LocalDateTime, to: LocalDateTime): List<CountryCount>
+
+    @Query(
+        """
+        SELECT SUBSTRING_INDEX(ec.expert_email, '@', -1) AS domain, COUNT(*) AS count
+          FROM mail_record mr
+          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.direction = 'OUTBOUND'
+           AND mr.mail_type = 'INTRODUCTION'
+           AND mr.sent_at >= :from AND mr.sent_at < :to
+         GROUP BY SUBSTRING_INDEX(ec.expert_email, '@', -1)
+        """
+    )
+    fun aggregateIntroSentByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainCount>
+
+    @Query(
+        """
+        SELECT SUBSTRING_INDEX(ec.expert_email, '@', -1) AS domain,
+               COUNT(DISTINCT mr.expert_contact_id) AS count
+          FROM mail_record mr
+          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+         WHERE mr.direction = 'INBOUND'
+           AND mr.received_at >= :from AND mr.received_at < :to
+         GROUP BY SUBSTRING_INDEX(ec.expert_email, '@', -1)
+        """
+    )
+    fun aggregateInboundByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainCount>
 
     @Query(
         """

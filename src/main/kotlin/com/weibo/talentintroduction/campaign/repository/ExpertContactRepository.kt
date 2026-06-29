@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.repository
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import org.springframework.data.jdbc.repository.query.Modifying
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
 
@@ -56,4 +57,8 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
         needsAttention: Boolean?,
         replyMode: String? = null
     ): List<ExpertContact>
+
+    @Modifying
+    @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
+    fun updateCountryById(id: Long, country: String?): Int
 }

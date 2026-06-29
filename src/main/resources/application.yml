@@ -72,6 +72,9 @@ talent-introduction:
     secret: ${UNSUBSCRIBE_SECRET:}
   warmup:
     enabled: ${WARMUP_ENABLED:false}
+  backfill:
+    contact-country:
+      enabled: ${BACKFILL_CONTACT_COUNTRY_ENABLED:false}
   llm:
     enabled: ${LLM_ENABLED:false}
     api-url: ${LLM_API_URL:}

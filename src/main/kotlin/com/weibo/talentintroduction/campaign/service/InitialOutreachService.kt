@@ -49,6 +49,7 @@ class InitialOutreachService(
                     expertEmail = expert.email.orEmpty(),
                     expertName = expert.displayName,
                     currentStatus = "NEW",
+                    country = expert.country,
                     createdAt = now,
                     updatedAt = now
                 )

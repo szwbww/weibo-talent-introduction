@@ -32,6 +32,8 @@ const state = {
         rows: [],
         totalCount: 0,
         senderHealth: [],
+        providerDistribution: [],
+        regionDistribution: [],
         lastRefreshedAt: null,
         autoRefreshTimer: null
     },
@@ -5870,13 +5872,19 @@ async function loadMonitoring() {
     }
     const dateParams = new URLSearchParams();
     if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
-    const [summary, senderHealth] = await Promise.all([
+    const [summary, senderHealth, providerDistribution, regionDistribution] = await Promise.all([
         api(`/api/mail-monitoring/summary?${dateParams}`),
-        api(`/api/mail-monitoring/sender-accounts?${dateParams}`)
+        api(`/api/mail-monitoring/sender-accounts?${dateParams}`),
+        api(`/api/mail-monitoring/provider-distribution?${dateParams}`).catch(() => []),
+        api(`/api/mail-monitoring/region-distribution?${dateParams}`).catch(() => [])
     ]);
     state.monitoring.summary = summary;
     state.monitoring.senderHealth = senderHealth || [];
+    state.monitoring.providerDistribution = providerDistribution || [];
+    state.monitoring.regionDistribution = regionDistribution || [];
     renderMonitoringCards();
+    renderMonitoringProviderDistribution();
+    renderMonitoringRegionDistribution();
     renderMonitoringSenderHealth();
     renderMonitoringSenderOptions();
     await loadMonitoringSubTab();
@@ -5901,6 +5909,17 @@ function monitoringRangeParams() {
 
 function renderMonitoringCards() {
     const s = state.monitoring.summary || {};
+    const providers = state.monitoring.providerDistribution || [];
+    const regions = state.monitoring.regionDistribution || [];
+    const activeProviderCount = providers.filter((row) => (row.sentCount || 0) > 0).length;
+    const activeRegionCount = regions.filter((row) => (row.sentCount || 0) > 0).length;
+    const worstBounceProvider = providers
+        .filter((row) => (row.sentCount || 0) > 0)
+        .map((row) => ({
+            provider: row.provider,
+            rate: (row.hardBounceCount || 0) / row.sentCount
+        }))
+        .sort((a, b) => b.rate - a.rate)[0];
     const cards = [
         ["今日介绍邮件", s.introductions, null],
         ["今日收到回复", s.inboundReplies, null],
@@ -5911,7 +5930,12 @@ function renderMonitoringCards() {
         ["今日人工待办新增", s.manualReviewInbound, "未匹配来信为人工待办子项，细分统计不可相加"],
         ["今日未匹配来信", s.unmatchedInbound, "属于人工待办子项，细分统计不可相加"],
         ["今日发送失败", s.failedOutbound, null],
-        ["今日 APPLICATION 晋级", s.applicationPromotions, null]
+        ["今日 APPLICATION 晋级", s.applicationPromotions, null],
+        ["覆盖地区数", activeRegionCount, "当日有首发邮件的大区数"],
+        ["覆盖服务商数", activeProviderCount, "当日有首发邮件的服务商桶数"],
+        ["最高退信服务商", worstBounceProvider
+            ? `${worstBounceProvider.provider} (${formatPercent(worstBounceProvider.rate)})`
+            : "-", "按硬退率（硬退数/发送量）"]
     ];
     $("#monitoringCards").innerHTML = cards.map(([label, value, hint]) => `
         <div class="metric-card"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
@@ -5919,6 +5943,62 @@ function renderMonitoringCards() {
             <div class="metric-value">${escapeHtml(value ?? 0)}</div>
         </div>
     `).join("");
+}
+
+function formatPercent(value) {
+    if (value == null || Number.isNaN(value)) return "0%";
+    return `${(value * 100).toFixed(1)}%`;
+}
+
+function monitoringDistributionBar(value, maxValue) {
+    const width = maxValue > 0 ? Math.max(4, Math.round((value / maxValue) * 100)) : 0;
+    return `<div style="background:#e2e8f0;border-radius:999px;height:8px;width:100%;max-width:120px;">
+        <div style="background:linear-gradient(90deg,#3b82f6,#60a5fa);height:8px;border-radius:999px;width:${width}%;"></div>
+    </div>`;
+}
+
+function renderMonitoringProviderDistribution() {
+    const table = $("#monitoringProviderDistributionTable");
+    if (!table) return;
+    const rows = state.monitoring.providerDistribution || [];
+    const maxSent = Math.max(0, ...rows.map((row) => row.sentCount || 0));
+    table.querySelector("thead").innerHTML = `
+        <tr>
+            <th>服务商</th><th>发送量</th><th>发送</th><th>回复率</th><th>硬退率</th><th>软退</th>
+        </tr>
+    `;
+    table.querySelector("tbody").innerHTML = rows.map((row) => {
+        const hardRate = row.sentCount > 0 ? (row.hardBounceCount || 0) / row.sentCount : 0;
+        return `<tr>
+            <td><strong>${escapeHtml(row.provider)}</strong></td>
+            <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
+            <td>${escapeHtml(row.sentCount ?? 0)}</td>
+            <td>${escapeHtml(formatPercent(row.replyRate))}</td>
+            <td>${escapeHtml(formatPercent(hardRate))}</td>
+            <td>${escapeHtml(row.softBounceCount ?? 0)}</td>
+        </tr>`;
+    }).join("") || `<tr><td colspan="6" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+}
+
+function renderMonitoringRegionDistribution() {
+    const table = $("#monitoringRegionDistributionTable");
+    if (!table) return;
+    const rows = state.monitoring.regionDistribution || [];
+    const maxSent = Math.max(0, ...rows.map((row) => row.sentCount || 0));
+    table.querySelector("thead").innerHTML = `
+        <tr>
+            <th>地区</th><th>发送量</th><th>发送</th><th>回复率</th><th>晋级</th>
+        </tr>
+    `;
+    table.querySelector("tbody").innerHTML = rows.map((row) => `
+        <tr>
+            <td><strong>${escapeHtml(row.region)}</strong></td>
+            <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
+            <td>${escapeHtml(row.sentCount ?? 0)}</td>
+            <td>${escapeHtml(formatPercent(row.replyRate))}</td>
+            <td>${escapeHtml(row.promotionCount ?? 0)}</td>
+        </tr>
+    `).join("") || `<tr><td colspan="5" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
 }
 
 function renderMonitoringSenderOptions() {

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.monitoring.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
@@ -13,6 +14,7 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
+import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.monitoring.controller.BounceStatsResponse
 import com.weibo.talentintroduction.monitoring.controller.InboundListResponse
 import com.weibo.talentintroduction.monitoring.controller.InboundRow
@@ -22,6 +24,8 @@ import com.weibo.talentintroduction.monitoring.controller.OutboundReplyListRespo
 import com.weibo.talentintroduction.monitoring.controller.OutboundReplyRow
 import com.weibo.talentintroduction.monitoring.controller.PromotionListResponse
 import com.weibo.talentintroduction.monitoring.controller.PromotionRow
+import com.weibo.talentintroduction.monitoring.controller.ProviderStatRow
+import com.weibo.talentintroduction.monitoring.controller.RegionStatRow
 import com.weibo.talentintroduction.monitoring.controller.SenderAccountHealthRow
 import com.weibo.talentintroduction.monitoring.controller.SourceInboundSummary
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -38,7 +42,8 @@ class MailMonitoringService(
     private val expertContactRepository: ExpertContactRepository,
     private val qaRuleRepository: QaRuleRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val dateRangeResolver: MonitoringDateRangeResolver
+    private val dateRangeResolver: MonitoringDateRangeResolver,
+    private val providerResolver: ProviderResolver
 ) {
     data class DailySummary(
         val date: String,
@@ -264,6 +269,92 @@ class MailMonitoringService(
             sentCount = sentCount,
             bounceRate = bounceRate
         )
+    }
+
+    fun providerDistribution(date: LocalDate?): List<ProviderStatRow> {
+        val (from, to) = dateRangeResolver.resolveDay(date)
+        val stats = PROVIDER_ORDER.associateWith { MutableProviderStats() }.toMutableMap()
+
+        mailRecordRepository.aggregateIntroSentByDomain(from, to).forEach { row ->
+            val provider = resolveProviderFromDomain(row.domain)
+            stats.getOrPut(provider) { MutableProviderStats() }.sent += row.count
+        }
+        mailRecordRepository.aggregateInboundByDomain(from, to).forEach { row ->
+            val provider = resolveProviderFromDomain(row.domain)
+            stats.getOrPut(provider) { MutableProviderStats() }.replied += row.count
+        }
+        bounceRecordRepository.aggregateBouncesByDomain(from, to).forEach { row ->
+            val provider = resolveProviderFromDomain(row.domain)
+            val bucket = stats.getOrPut(provider) { MutableProviderStats() }
+            bucket.hardBounce += row.hardCount
+            bucket.softBounce += row.softCount
+        }
+
+        return PROVIDER_ORDER.map { provider ->
+            val bucket = stats.getValue(provider)
+            ProviderStatRow(
+                provider = provider,
+                sentCount = bucket.sent,
+                repliedCount = bucket.replied,
+                replyRate = ratio(bucket.replied, bucket.sent),
+                hardBounceCount = bucket.hardBounce,
+                softBounceCount = bucket.softBounce
+            )
+        }
+    }
+
+    fun regionDistribution(date: LocalDate?): List<RegionStatRow> {
+        val (from, to) = dateRangeResolver.resolveDay(date)
+        val stats = CountryContinentMapping.allRegions().associateWith { MutableRegionStats() }.toMutableMap()
+
+        mailRecordRepository.aggregateIntroSentByCountry(from, to).forEach { row ->
+            val region = CountryContinentMapping.toRegion(row.country)
+            stats.getOrPut(region) { MutableRegionStats() }.sent += row.count
+        }
+        mailRecordRepository.aggregateInboundByCountry(from, to).forEach { row ->
+            val region = CountryContinentMapping.toRegion(row.country)
+            stats.getOrPut(region) { MutableRegionStats() }.replied += row.count
+        }
+        promotionRepository.aggregateSuccessByCountry(from, to).forEach { row ->
+            val region = CountryContinentMapping.toRegion(row.country)
+            stats.getOrPut(region) { MutableRegionStats() }.promotion += row.count
+        }
+
+        return CountryContinentMapping.allRegions().map { region ->
+            val bucket = stats.getValue(region)
+            RegionStatRow(
+                region = region,
+                sentCount = bucket.sent,
+                repliedCount = bucket.replied,
+                replyRate = ratio(bucket.replied, bucket.sent),
+                promotionCount = bucket.promotion
+            )
+        }
+    }
+
+    private fun resolveProviderFromDomain(domain: String?): String =
+        providerResolver.resolve(
+            domain?.trim()?.takeIf { it.isNotBlank() }?.let { "x@$it" }
+        )
+
+    private fun ratio(numerator: Long, denominator: Long): Double =
+        if (denominator > 0) numerator.toDouble() / denominator else 0.0
+
+    private data class MutableProviderStats(
+        var sent: Long = 0,
+        var replied: Long = 0,
+        var hardBounce: Long = 0,
+        var softBounce: Long = 0
+    )
+
+    private data class MutableRegionStats(
+        var sent: Long = 0,
+        var replied: Long = 0,
+        var promotion: Long = 0
+    )
+
+    companion object {
+        private val PROVIDER_ORDER = listOf("gmail", "outlook", "yahoo", "edu", "tencent", "netease", "other")
     }
 
     private fun List<MailRecord>.contactsById(): Map<Long?, ExpertContact> =

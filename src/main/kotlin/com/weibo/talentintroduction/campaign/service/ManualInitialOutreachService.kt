@@ -276,6 +276,7 @@ class ManualInitialOutreachService(
                             campaignId = campaignId, orcidId = normOrcid,
                             expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
                             currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
+                            country = expert.country,
                             createdAt = now, updatedAt = now
                         ))
                     }

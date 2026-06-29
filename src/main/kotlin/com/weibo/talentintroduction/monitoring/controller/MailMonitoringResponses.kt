@@ -116,3 +116,20 @@ data class BounceStatsResponse(
     val sentCount: Long,
     val bounceRate: Double
 )
+
+data class ProviderStatRow(
+    val provider: String,
+    val sentCount: Long,
+    val repliedCount: Long,
+    val replyRate: Double,
+    val hardBounceCount: Long,
+    val softBounceCount: Long
+)
+
+data class RegionStatRow(
+    val region: String,
+    val sentCount: Long,
+    val repliedCount: Long,
+    val replyRate: Double,
+    val promotionCount: Long
+)
