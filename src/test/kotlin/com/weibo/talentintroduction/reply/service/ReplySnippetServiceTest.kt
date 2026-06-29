@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.reply.service
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -13,6 +14,27 @@ import java.util.Optional
 class ReplySnippetServiceTest {
     private val repository = Mockito.mock(ReplySnippetRepository::class.java)
     private val service = ReplySnippetService(repository)
+
+    @Test
+    fun `create assigns timestamps before saving`() {
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ReplySnippet }
+
+        service.create(
+            ReplySnippetCreateCommand(
+                snippetType = SnippetType.ACK.name,
+                content = "Thanks",
+                displayOrder = 100,
+                isDefault = false,
+                enabled = true
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(ReplySnippet::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertNotNull(captor.value.createdAt)
+        assertNotNull(captor.value.updatedAt)
+    }
 
     @Test
     fun `setDefault clears previous default of same type`() {

@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
 
 @Service
 class ReplySnippetService(
@@ -50,13 +51,16 @@ class ReplySnippetService(
             require(snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
         }
 
+        val now = LocalDateTime.now()
         val saved = repository.save(
             ReplySnippet(
                 snippetType = snippetType,
                 content = command.content.trim(),
                 displayOrder = command.displayOrder,
                 isDefault = command.isDefault,
-                enabled = command.enabled
+                enabled = command.enabled,
+                createdAt = now,
+                updatedAt = now
             )
         )
         if (saved.isDefault) {
