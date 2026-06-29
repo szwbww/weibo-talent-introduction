@@ -1039,7 +1039,8 @@ function decodeTranslateSrc(encoded) {
 function translatableBody(text, opts = {}) {
     const raw = String(text ?? "");
     const display = !raw.trim() && opts.emptyLabel ? opts.emptyLabel : raw;
-    const encoded = encodeTranslateSrc(raw);
+    const srcRaw = opts.translateSrc != null ? String(opts.translateSrc) : raw;
+    const encoded = encodeTranslateSrc(srcRaw);
     return `
         <div class="translatable-body-block">
             <div class="pre translatable-body" data-translate-src="${encoded}">${escapeHtml(display)}</div>
@@ -3850,6 +3851,11 @@ function compactText(value, maxLength = 220) {
     return `${text.slice(0, maxLength)}...`;
 }
 
+function pickTranslateSrc(mail) {
+    const c = mail.cleanedBody;
+    return (c && c.trim()) ? c : (mail.body || "");
+}
+
 function renderMailItem(mail) {
     const direction = mail.direction.toLowerCase();
     const body = mail.body || "";
@@ -3884,7 +3890,7 @@ function renderMailItem(mail) {
             ${shouldCollapse ? `
                 <details class="mail-body-detail">
                     <summary>查看完整正文</summary>
-                    ${translatableBody(body)}
+                    ${translatableBody(body, { translateSrc: pickTranslateSrc(mail) })}
                 </details>
             ` : ""}
         </article>
