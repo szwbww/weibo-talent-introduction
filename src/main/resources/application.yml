@@ -78,6 +78,14 @@ talent-introduction:
     api-key: ${LLM_API_KEY:}
     model: ${LLM_MODEL:gpt-4o-mini}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
+  translation:
+    enabled: ${TRANSLATION_ENABLED:false}
+    base-url: ${TRANSLATION_BASE_URL:http://127.0.0.1:5000}
+    source: ${TRANSLATION_SOURCE:en}
+    target: ${TRANSLATION_TARGET:zh-Hans}
+    timeout-ms: ${TRANSLATION_TIMEOUT_MS:5000}
+    max-chars: ${TRANSLATION_MAX_CHARS:5000}
+    api-key: ${TRANSLATION_API_KEY:}
   academic-filter:
     enable-h-index-filter: ${ACADEMIC_ENABLE_H_INDEX_FILTER:false}
     min-h-index: ${ACADEMIC_MIN_H_INDEX:5}

@@ -1020,6 +1020,94 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+function encodeTranslateSrc(text) {
+    try {
+        return btoa(unescape(encodeURIComponent(String(text ?? ""))));
+    } catch {
+        return "";
+    }
+}
+
+function decodeTranslateSrc(encoded) {
+    try {
+        return decodeURIComponent(escape(atob(encoded)));
+    } catch {
+        return "";
+    }
+}
+
+function translatableBody(text, opts = {}) {
+    const raw = String(text ?? "");
+    const display = !raw.trim() && opts.emptyLabel ? opts.emptyLabel : raw;
+    const encoded = encodeTranslateSrc(raw);
+    return `
+        <div class="translatable-body-block">
+            <div class="pre translatable-body" data-translate-src="${encoded}">${escapeHtml(display)}</div>
+            <button class="btn-translate" type="button">🌐 翻译为中文</button>
+            <div class="translation-text pre" hidden></div>
+        </div>
+    `;
+}
+
+let translateClickHandlerBound = false;
+
+function ensureTranslateClickHandler() {
+    if (translateClickHandlerBound) return;
+    translateClickHandlerBound = true;
+    document.addEventListener("click", (event) => {
+        const btn = event.target.closest(".btn-translate");
+        if (!btn) return;
+        event.preventDefault();
+        onTranslateClick(btn);
+    });
+}
+
+async function onTranslateClick(btn) {
+    const block = btn.closest(".translatable-body-block");
+    if (!block) return;
+    const translationEl = block.querySelector(".translation-text");
+    const srcEl = block.querySelector(".translatable-body");
+    const srcEncoded = srcEl?.dataset.translateSrc;
+    if (!srcEncoded || !translationEl) return;
+
+    if (btn.dataset.state === "expanded") {
+        translationEl.hidden = true;
+        btn.textContent = "🌐 翻译为中文";
+        btn.dataset.state = "collapsed";
+        return;
+    }
+    if (btn.dataset.state === "collapsed" && translationEl.innerHTML) {
+        translationEl.hidden = false;
+        btn.textContent = "收起译文";
+        btn.dataset.state = "expanded";
+        return;
+    }
+
+    const text = decodeTranslateSrc(srcEncoded);
+    btn.disabled = true;
+    btn.textContent = "翻译中…";
+    try {
+        const result = await api("/api/translate", {
+            method: "POST",
+            body: JSON.stringify({ text })
+        });
+        if (result.ok && result.translatedText) {
+            translationEl.innerHTML = escapeHtml(result.translatedText);
+            translationEl.hidden = false;
+            btn.textContent = "收起译文";
+            btn.dataset.state = "expanded";
+        } else {
+            btn.textContent = "翻译失败，重试";
+            btn.dataset.state = "retry";
+        }
+    } catch {
+        btn.textContent = "翻译失败，重试";
+        btn.dataset.state = "retry";
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 function formValues(form) {
     return Object.fromEntries(Array.from(new FormData(form).entries()).map(([key, value]) => [key, value]));
 }
@@ -3794,7 +3882,7 @@ function renderMailItem(mail) {
             ${shouldCollapse ? `
                 <details class="mail-body-detail">
                     <summary>查看完整正文</summary>
-                    <div class="pre">${escapeHtml(body)}</div>
+                    ${translatableBody(body)}
                 </details>
             ` : ""}
         </article>
@@ -4807,7 +4895,7 @@ async function showMailDetail(source, id) {
                 </div>` : ""}
                 <div class="detail-section">
                     <h3>正文</h3>
-                    <div class="pre">${escapeHtml(body || "无正文")}</div>
+                    ${translatableBody(body, { emptyLabel: "无正文" })}
                 </div>
             </div>
         `;
@@ -5157,7 +5245,7 @@ function renderAutoReplyPreviewHtml(preview) {
     const replyHtml = preview.replyBody ? `
         <div style="margin-top:8px;">
             <h4 style="margin-bottom:6px;">${escapeHtml(preview.replySubject || "（无主题）")}</h4>
-            <div class="pre">${escapeHtml(preview.replyBody)}</div>
+            ${translatableBody(preview.replyBody)}
         </div>` : "";
 
     const reasonHtml = preview.reason && !preview.replyBody ? `
@@ -5384,13 +5472,13 @@ async function showUnmatchedDetail(id) {
             ${record.body ? `
             <div class="detail-section">
                 <h3>原始正文</h3>
-                <div class="pre">${escapeHtml(record.body)}</div>
+                ${translatableBody(record.body)}
             </div>` : ""}
 
             ${record.cleanedBody ? `
             <div class="detail-section">
                 <h3>清洗后正文</h3>
-                <div class="pre">${escapeHtml(record.cleanedBody)}</div>
+                ${translatableBody(record.cleanedBody)}
             </div>` : ""}
 
             ${linkedExpertHtml}
@@ -6065,6 +6153,7 @@ function bindMonitoringEvents() {
 }
 
 function bindEvents() {
+    ensureTranslateClickHandler();
     $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
     $("#refreshBtn").addEventListener("click", refreshCurrentView);
     bindMonitoringEvents();

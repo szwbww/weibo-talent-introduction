@@ -1518,6 +1518,38 @@ textarea {
     word-break: break-all;
 }
 
+.translatable-body-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.btn-translate {
+    align-self: flex-start;
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid var(--border, var(--panel-border));
+    border-radius: var(--radius-sm);
+    background: var(--surface, #fff);
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+.btn-translate:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-translate:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.translation-text {
+    border-top: 1px dashed var(--panel-border);
+    margin-top: 2px;
+}
+
 /* Mail Timeline */
 .mail-timeline {
     position: relative;

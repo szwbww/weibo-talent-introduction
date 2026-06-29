@@ -30,7 +30,8 @@ import java.time.Duration
     ManualOutreachProperties::class,
     UnsubscribeProperties::class,
     WarmupProperties::class,
-    LlmProperties::class
+    LlmProperties::class,
+    TranslationProperties::class
 )
 class RestTemplateConfig {
 
@@ -69,5 +70,16 @@ class RestTemplateConfig {
                     initialBackoffMs = pdfExtractionProperties.retryBackoffMs
                 )
             )
+            .build()
+
+    @Bean
+    @Qualifier("translationRestTemplate")
+    fun translationRestTemplate(
+        translationProperties: TranslationProperties,
+        builder: RestTemplateBuilder
+    ): RestTemplate =
+        builder
+            .setConnectTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
+            .setReadTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
             .build()
 }
