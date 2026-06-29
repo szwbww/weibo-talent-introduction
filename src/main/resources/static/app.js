@@ -4,7 +4,6 @@ function monitoringToday() {
 
 const state = {
     lastEmailProvidersLevel: null,
-    lastRegionsLevel: null,
     view: "accounts",
     accounts: [],
     categories: [],
@@ -1883,14 +1882,25 @@ function renderContactPager(size) {
     $("#contactNextPage").disabled = state.contactsPage >= totalPages - 1;
 }
 
-async function loadEmailProviders(level) {
+async function loadEmailProviders(level, { filters = {}, refreshConfigDropdown = false } = {}) {
     try {
-        const domains = await api(`/api/experts/email-providers?level=${level}`);
+        const params = new URLSearchParams({ level });
+        if (filters.tag) params.set("tag", filters.tag);
+        if (filters.operatorStatus) params.set("operatorStatus", filters.operatorStatus);
+        if (filters.region) params.set("region", filters.region);
+
         const filterDropdown = $("#expertEmailDomainFilter");
         const configDropdown = $("#batchSendEmailDomain");
 
         const currentFilterVal = filterDropdown ? filterDropdown.value : "";
         const currentConfigVal = configDropdown ? configDropdown.value : "";
+
+        const [domains, configDomains] = await Promise.all([
+            api(`/api/experts/email-providers?${params}`),
+            refreshConfigDropdown
+                ? api(`/api/experts/email-providers?level=${encodeURIComponent(level)}`)
+                : Promise.resolve(null)
+        ]);
 
         if (filterDropdown) {
             filterDropdown.innerHTML = '<option value="">全部服务商</option>';
@@ -1906,9 +1916,9 @@ async function loadEmailProviders(level) {
             }
         }
 
-        if (configDropdown) {
+        if (refreshConfigDropdown && configDropdown) {
             configDropdown.innerHTML = '<option value="">全部</option>';
-            domains.forEach(d => {
+            (configDomains || []).forEach(d => {
                 const opt = document.createElement("option");
                 opt.value = d.domain;
                 opt.textContent = `${d.domain} (${d.count})`;
@@ -1924,9 +1934,13 @@ async function loadEmailProviders(level) {
     }
 }
 
-async function loadRegions(level) {
+async function loadRegions(level, { filters = {} } = {}) {
     try {
-        const regions = await api(`/api/experts/regions?level=${level}`);
+        const params = new URLSearchParams({ level });
+        if (filters.tag) params.set("tag", filters.tag);
+        if (filters.operatorStatus) params.set("operatorStatus", filters.operatorStatus);
+        if (filters.emailDomain) params.set("emailDomain", filters.emailDomain);
+        const regions = await api(`/api/experts/regions?${params}`);
         const filterDropdown = $("#expertRegionFilter");
         const currentFilterVal = filterDropdown ? filterDropdown.value : "";
 
@@ -1958,16 +1972,6 @@ async function loadContacts() {
     let tag = $("#expertTagFilter")?.value || "";
     renderContactListSkeleton();
 
-    if (state.lastEmailProvidersLevel !== level) {
-        state.lastEmailProvidersLevel = level;
-        loadEmailProviders(level);
-    }
-
-    if (state.lastRegionsLevel !== level) {
-        state.lastRegionsLevel = level;
-        loadRegions(level);
-    }
-
     const tagFilterEl = $("#expertTagFilter");
     const regionFilterEl = $("#expertRegionFilter");
     if (needsAttention) {
@@ -1996,6 +2000,29 @@ async function loadContacts() {
             regionFilterEl.parentElement.title = "";
         }
     }
+
+    const levelChanged = state.lastEmailProvidersLevel !== level;
+    state.lastEmailProvidersLevel = level;
+
+    const aggregationTag = needsAttention ? "" : tag;
+    const aggregationRegion = needsAttention ? "" : region;
+    const aggregationEmailDomain = needsAttention ? "" : emailDomain;
+
+    loadEmailProviders(level, {
+        filters: {
+            tag: aggregationTag,
+            operatorStatus,
+            region: aggregationRegion
+        },
+        refreshConfigDropdown: levelChanged
+    });
+    loadRegions(level, {
+        filters: {
+            tag: aggregationTag,
+            operatorStatus,
+            emailDomain: aggregationEmailDomain
+        }
+    });
 
     let contacts = [];
     let totalHits = 0;

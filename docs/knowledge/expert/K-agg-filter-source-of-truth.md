@@ -3,7 +3,7 @@ id: K-agg-filter-source-of-truth
 domain: expert
 created: 2026-06-29
 last_used: 2026-06-29
-hit_count: 0
+hit_count: 2
 source: create-p:expert-filter-counts-cross-linkage
 ---
 

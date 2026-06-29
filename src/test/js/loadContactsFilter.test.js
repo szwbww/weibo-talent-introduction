@@ -14,7 +14,7 @@ function extractFn(name) {
     return match[0];
 }
 
-function createContactsSandbox() {
+function createContactsSandbox(options = {}) {
     const store = new Map();
     function el(id) {
         if (!store.has(id)) {
@@ -22,7 +22,12 @@ function createContactsSandbox() {
                 id,
                 value: "",
                 disabled: false,
-                parentElement: { style: {}, title: "" }
+                innerHTML: "",
+                hidden: false,
+                parentElement: { style: {}, title: "" },
+                appendChild(child) {
+                    this.innerHTML += child.outerHTML || String(child);
+                }
             });
         }
         return store.get(id);
@@ -30,12 +35,21 @@ function createContactsSandbox() {
 
     const sandbox = {
         $: (sel) => el(sel.replace(/^#/, "")),
+        document: {
+            createElement(tag) {
+                return {
+                    tagName: tag.toUpperCase(),
+                    value: "",
+                    textContent: "",
+                    outerHTML: ""
+                };
+            }
+        },
         state: {
             contactsPage: 0,
             contacts: [],
             contactsTotalHits: 0,
             lastEmailProvidersLevel: null,
-            lastRegionsLevel: null,
             selectedExpertOrcid: null
         },
         indexLevelLabels: {
@@ -44,8 +58,8 @@ function createContactsSandbox() {
             APPLICATION: "有效"
         },
         renderContactListSkeleton: () => {},
-        loadEmailProviders: () => {},
-        loadRegions: () => {},
+        loadEmailProviders: options.includeEmailProviders ? undefined : () => {},
+        loadRegions: options.includeRegions ? undefined : () => {},
         api: async () => ({}),
         URLSearchParams,
         escapeHtml: (v) => String(v == null ? "" : v),
@@ -61,6 +75,12 @@ function createContactsSandbox() {
     };
 
     vm.createContext(sandbox);
+    if (options.includeEmailProviders) {
+        vm.runInContext(extractFn("loadEmailProviders"), sandbox);
+    }
+    if (options.includeRegions) {
+        vm.runInContext(extractFn("loadRegions"), sandbox);
+    }
     vm.runInContext(extractFn("renderContactListItems"), sandbox);
     vm.runInContext(extractFn("loadContacts"), sandbox);
     sandbox.__store = store;
@@ -133,5 +153,118 @@ describe("loadContacts with contactNeedsAttentionFilter + expertEmailDomainFilte
         
         assert.strictEqual(sb.state.contactsTotalHits, 2);
         assert.strictEqual(sb.state.contacts.length, 2);
+    });
+});
+
+describe("loadEmailProviders batch config dropdown full results (I-5)", () => {
+    function createEmailProvidersSandbox() {
+        const store = new Map();
+        function el(id) {
+            if (!store.has(id)) {
+                store.set(id, {
+                    id,
+                    value: "",
+                    innerHTML: "",
+                    appendChild(child) {
+                        this.innerHTML += child.outerHTML || String(child);
+                    }
+                });
+            }
+            return store.get(id);
+        }
+
+        const sandbox = {
+            $: (sel) => el(sel.replace(/^#/, "")),
+            document: {
+                createElement(tag) {
+                    return { tagName: tag.toUpperCase(), value: "", textContent: "", outerHTML: "" };
+                }
+            },
+            api: async () => [],
+            URLSearchParams
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("loadEmailProviders"), sandbox);
+        return sandbox;
+    }
+
+    it("uses level-only URL for batchSendEmailDomain when refreshConfigDropdown is true", async () => {
+        const sb = createEmailProvidersSandbox();
+        const urls = [];
+        sb.api = async (url) => {
+            urls.push(url);
+            return [{ domain: "gmail.com", count: 10 }, { domain: "outlook.com", count: 5 }];
+        };
+
+        await sb.loadEmailProviders("APPLICATION", {
+            filters: { operatorStatus: "NOT_CONTACTED", region: "Europe" },
+            refreshConfigDropdown: true
+        });
+
+        assert.strictEqual(urls.length, 2);
+        const fullUrl = urls.find((u) => u.endsWith("/api/experts/email-providers?level=APPLICATION"));
+        assert.ok(fullUrl, "expected full-level-only email-providers request");
+        const filterUrl = urls.find((u) => u !== fullUrl);
+        assert.ok(filterUrl.includes("operatorStatus=NOT_CONTACTED"));
+        assert.ok(filterUrl.includes("region=Europe"));
+        assert.ok(!filterUrl.includes("emailDomain"));
+    });
+
+    it("does not request full providers when refreshConfigDropdown is false", async () => {
+        const sb = createEmailProvidersSandbox();
+        const urls = [];
+        sb.api = async (url) => {
+            urls.push(url);
+            return [{ domain: "gmail.com", count: 3 }];
+        };
+
+        await sb.loadEmailProviders("CANDIDATE", {
+            filters: { region: "Asia (Other)" },
+            refreshConfigDropdown: false
+        });
+
+        assert.strictEqual(urls.length, 1);
+        assert.ok(urls[0].includes("region=Asia"));
+        assert.ok(!urls[0].includes("emailDomain"));
+    });
+});
+
+describe("loadContacts level change keeps batchSendEmailDomain full (I-5)", () => {
+    it("requests filtered and full email-providers when level changes with active filters", async () => {
+        const sb = createContactsSandbox({ includeEmailProviders: true, includeRegions: true });
+        const urls = [];
+
+        sb.$("#expertIndexLevel").value = "APPLICATION";
+        sb.$("#expertIndexSize").value = "50";
+        sb.$("#contactStatusFilter").value = "NOT_CONTACTED";
+        sb.$("#contactNeedsAttentionFilter").value = "";
+        sb.$("#expertRegionFilter").value = "Europe";
+        sb.$("#expertTagFilter").value = "";
+        sb.$("#expertEmailDomainFilter").value = "";
+        sb.$("#batchSendEmailDomain").value = "gmail.com";
+        sb.state.lastEmailProvidersLevel = "CANDIDATE";
+
+        sb.api = async (url) => {
+            urls.push(url);
+            if (url.includes("/api/experts/email-providers")) {
+                return [{ domain: "gmail.com", count: 10 }];
+            }
+            if (url.includes("/api/experts/regions")) {
+                return [{ region: "Europe", count: 10 }];
+            }
+            return { experts: [], totalHits: 0 };
+        };
+
+        await sb.loadContacts();
+
+        const providerUrls = urls.filter((u) => u.includes("/api/experts/email-providers"));
+        assert.strictEqual(providerUrls.length, 2);
+        const fullProviderUrl = providerUrls.find((u) => u.endsWith("/api/experts/email-providers?level=APPLICATION"));
+        assert.ok(fullProviderUrl, "batch config dropdown should use full providers");
+        const filteredProviderUrl = providerUrls.find((u) => u !== fullProviderUrl);
+        assert.ok(filteredProviderUrl.includes("operatorStatus=NOT_CONTACTED"));
+        assert.ok(filteredProviderUrl.includes("region=Europe"));
+        assert.ok(!filteredProviderUrl.includes("emailDomain"));
     });
 });

@@ -51,30 +51,7 @@ class ExpertSearchService(
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
-        val filters = mutableListOf<Map<String, Any>>()
-
-        if (!tag.isNullOrBlank()) {
-            filters.add(mapOf("term" to mapOf("tags" to tag)))
-        }
-
-        if (!operatorStatus.isNullOrBlank()) {
-            when (operatorStatus) {
-                "NOT_CONTACTED" -> {
-                    filters.addAll(notContactedWithEmailFilters(null))
-                }
-                else -> {
-                    filters.add(mapOf("term" to mapOf("operatorStatus" to operatorStatus)))
-                }
-            }
-        }
-
-        if (!emailDomain.isNullOrBlank()) {
-            filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
-        }
-
-        if (!region.isNullOrBlank()) {
-            filters.add(regionFilter(region))
-        }
+        val filters = buildExpertFilters(tag, operatorStatus, emailDomain, region)
 
         val query = if (filters.isEmpty()) {
             mapOf("match_all" to emptyMap<String, Any>())
@@ -450,10 +427,22 @@ class ExpertSearchService(
             }
         }
     }
-    fun aggregateRegions(level: ExpertIndexLevel): List<RegionCount> {
+    fun aggregateRegions(
+        level: ExpertIndexLevel,
+        tag: String? = null,
+        operatorStatus: String? = null,
+        emailDomain: String? = null
+    ): List<RegionCount> {
+        val filters = buildExpertFilters(tag, operatorStatus, emailDomain, region = null)
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+
         val requestBody = mapOf(
             "size" to 0,
-            "query" to mapOf("match_all" to emptyMap<String, Any>()),
+            "query" to query,
             "aggs" to mapOf(
                 "countries" to mapOf(
                     "terms" to mapOf(
@@ -491,6 +480,40 @@ class ExpertSearchService(
     private fun emptyRegionCounts(): List<RegionCount> =
         CountryContinentMapping.allRegions().map { RegionCount(it, 0L) }
 
+    private fun buildExpertFilters(
+        tag: String?,
+        operatorStatus: String?,
+        emailDomain: String?,
+        region: String?
+    ): MutableList<Map<String, Any>> {
+        val filters = mutableListOf<Map<String, Any>>()
+
+        if (!tag.isNullOrBlank()) {
+            filters.add(mapOf("term" to mapOf("tags" to tag)))
+        }
+
+        if (!operatorStatus.isNullOrBlank()) {
+            when (operatorStatus) {
+                "NOT_CONTACTED" -> {
+                    filters.addAll(notContactedWithEmailFilters(null))
+                }
+                else -> {
+                    filters.add(mapOf("term" to mapOf("operatorStatus" to operatorStatus)))
+                }
+            }
+        }
+
+        if (!emailDomain.isNullOrBlank()) {
+            filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
+        }
+
+        if (!region.isNullOrBlank()) {
+            filters.add(regionFilter(region))
+        }
+
+        return filters
+    }
+
     private fun regionFilter(region: String): Map<String, Any> {
         if (region == CountryContinentMapping.REGION_OTHER) {
             val knownValues = CountryContinentMapping.allKnownEsTermValues().toList()
@@ -527,12 +550,17 @@ class ExpertSearchService(
         )
     }
 
-    fun aggregateEmailDomains(level: ExpertIndexLevel): List<EmailDomainCount> {
+    fun aggregateEmailDomains(
+        level: ExpertIndexLevel,
+        tag: String? = null,
+        operatorStatus: String? = null,
+        region: String? = null
+    ): List<EmailDomainCount> {
+        val filters = buildExpertFilters(tag, operatorStatus, emailDomain = null, region)
+        filters.add(mapOf("exists" to mapOf("field" to "email")))
         val requestBody = mapOf(
             "size" to 0,
-            "query" to mapOf(
-                "exists" to mapOf("field" to "email")
-            ),
+            "query" to mapOf("bool" to mapOf("filter" to filters)),
             "aggs" to mapOf(
                 "email_domains" to mapOf(
                     "terms" to mapOf(

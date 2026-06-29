@@ -225,7 +225,7 @@ class ExpertIndexControllerTest {
     @Test
     fun `getEmailProviders aggregates email domains`() {
         val expectedAggs = listOf(EmailDomainCount("gmail.com", 100L))
-        Mockito.`when`(searchService.aggregateEmailDomains(ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(searchService.aggregateEmailDomains(ExpertIndexLevel.CANDIDATE, null, null, null))
             .thenReturn(expectedAggs)
 
         val response = controller.getEmailProviders(ExpertIndexLevel.CANDIDATE)
@@ -237,14 +237,14 @@ class ExpertIndexControllerTest {
     @Test
     fun `getRegions delegates to searchService`() {
         val expectedAggs = listOf(RegionCount("Europe", 100L))
-        Mockito.`when`(searchService.aggregateRegions(ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(searchService.aggregateRegions(ExpertIndexLevel.CANDIDATE, null, null, null))
             .thenReturn(expectedAggs)
 
         val response = controller.getRegions(ExpertIndexLevel.CANDIDATE)
         assertEquals(1, response.size)
         assertEquals("Europe", response[0].region)
         assertEquals(100L, response[0].count)
-        Mockito.verify(searchService).aggregateRegions(ExpertIndexLevel.CANDIDATE)
+        Mockito.verify(searchService).aggregateRegions(ExpertIndexLevel.CANDIDATE, null, null, null)
     }
 
     @Test

@@ -214,16 +214,22 @@ class ExpertIndexController(
 
     @GetMapping("/email-providers")
     fun getEmailProviders(
-        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+        @RequestParam(required = false) tag: String? = null,
+        @RequestParam(required = false) operatorStatus: String? = null,
+        @RequestParam(required = false) region: String? = null
     ): List<EmailDomainCount> {
-        return expertSearchService.aggregateEmailDomains(level)
+        return expertSearchService.aggregateEmailDomains(level, tag, operatorStatus, region)
     }
 
     @GetMapping("/regions")
     fun getRegions(
-        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+        @RequestParam(required = false) tag: String? = null,
+        @RequestParam(required = false) operatorStatus: String? = null,
+        @RequestParam(required = false) emailDomain: String? = null
     ): List<RegionCount> {
-        return expertSearchService.aggregateRegions(level)
+        return expertSearchService.aggregateRegions(level, tag, operatorStatus, emailDomain)
     }
 }
 

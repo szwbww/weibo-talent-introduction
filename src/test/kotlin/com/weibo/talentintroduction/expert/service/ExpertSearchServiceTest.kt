@@ -873,9 +873,92 @@ class ExpertSearchServiceTest {
 
         val requestPayload = capture.value.body as Map<*, *>
         val query = requestPayload["query"] as Map<*, *>
-        assertTrue(query.containsKey("exists"))
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertTrue(filter.any { it.toString().contains("exists") && it.toString().contains("email") })
         val aggs = requestPayload["aggs"] as Map<*, *>
         assertTrue(aggs.containsKey("email_domains"))
+    }
+
+    @Test
+    fun `aggregateEmailDomains applies region filter but ignores emailDomain`() {
+        val body = mapper.readTree(
+            """
+            {
+              "aggregations": {
+                "email_domains": {
+                  "buckets": [
+                    {"key": "gmail.com", "doc_count": 3}
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.aggregateEmailDomains(
+            ExpertIndexLevel.CANDIDATE,
+            tag = null,
+            operatorStatus = null,
+            region = "Europe"
+        )
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertTrue(filter.any { it.toString().contains("terms") && it.toString().contains("country") })
+        assertFalse(filter.any { it.toString().contains("wildcard") && it.toString().contains("email") })
+    }
+
+    @Test
+    fun `aggregateRegions applies emailDomain filter but ignores region`() {
+        val body = mapper.readTree(
+            """
+            {
+              "aggregations": {
+                "countries": {
+                  "buckets": []
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.aggregateRegions(
+            ExpertIndexLevel.CANDIDATE,
+            tag = null,
+            operatorStatus = null,
+            emailDomain = "gmail.com"
+        )
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertTrue(filter.any { it.toString().contains("wildcard") && it.toString().contains("*@gmail.com") })
     }
 
     @Test
