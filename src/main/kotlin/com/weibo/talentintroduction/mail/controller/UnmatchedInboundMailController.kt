@@ -202,7 +202,12 @@ class UnmatchedInboundMailController(
             subject = request.subject,
             htmlBody = request.htmlBody,
             textBody = request.textBody,
-            operatorName = request.operatorName
+            operatorName = request.operatorName,
+            qaRuleIds = request.qaRuleIds,
+            suggestedRuleIds = request.suggestedRuleIds,
+            ackSnippetId = request.ackSnippetId,
+            edited = request.edited,
+            freeTextPreview = request.freeTextPreview
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")

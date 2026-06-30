@@ -169,7 +169,12 @@ class PendingMailOperationService(
         subject: String,
         htmlBody: String,
         textBody: String?,
-        operatorName: String?
+        operatorName: String?,
+        qaRuleIds: List<Long>? = null,
+        suggestedRuleIds: List<Long>? = null,
+        ackSnippetId: Long? = null,
+        edited: Boolean? = null,
+        freeTextPreview: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -180,6 +185,20 @@ class PendingMailOperationService(
 
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
+
+        val carriesQa = !qaRuleIds.isNullOrEmpty()
+        val primaryRuleId = if (carriesQa) {
+            val rules = qaRuleIds!!.map { ruleId ->
+                val rule = qaRuleRepository.findById(ruleId)
+                    .orElseThrow { error("QA rule not found: $ruleId") }
+                require(rule.enabled) { "QA rule is disabled: $ruleId" }
+                rule
+            }
+            val matches = rules.map { QaRuleMatch(rule = it, matchedKeywordCount = 1) }
+            requireNotNull(QaReplyComposer.selectPrimary(matches).rule.id)
+        } else {
+            null
+        }
 
         val account = senderAccountCode
             ?.takeIf { it.isNotBlank() }
@@ -207,7 +226,7 @@ class PendingMailOperationService(
                 inReplyTo = record.messageId,
                 subject = mail.subject,
                 body = textBody ?: htmlBody,
-                matchedQaRuleId = null,
+                matchedQaRuleId = primaryRuleId,
                 sendStatus = delivered.status,
                 receivedAt = null,
                 sentAt = now,
@@ -215,22 +234,59 @@ class PendingMailOperationService(
             )
         )
 
-        operatorActionLogService.record(
-            targetType = "INBOUND_MAIL_PROCESSING",
-            targetId = inboundProcessingId,
-            actionType = OperatorActionType.SEND_MANUAL_RICH_REPLY,
-            expertContactId = contactId,
-            inboundProcessingId = inboundProcessingId,
-            before = mapOf("inboundProcessingId" to inboundProcessingId),
-            after = mapOf(
-                "mailRecordId" to saved.id,
-                "sendStatus" to delivered.status,
-                "subject" to mail.subject,
-                "bodyPreviewText" to (textBody?.ifBlank { mailBodyCleaner.clean(htmlBody) } ?: mailBodyCleaner.clean(htmlBody)).take(500)
-            ),
-            operatorName = operatorName,
-            note = "Manual rich reply sent for inbound processing $inboundProcessingId"
-        )
+        val bodyPreviewText = (textBody?.ifBlank { mailBodyCleaner.clean(htmlBody) }
+            ?: mailBodyCleaner.clean(htmlBody)).take(500)
+        val mailRecordId = saved.id ?: error("Mail record id is required")
+
+        if (carriesQa) {
+            qaRuleIds!!.forEachIndexed { ordinal, qaRuleId ->
+                mailRecordQaRuleRepository.save(
+                    MailRecordQaRule(
+                        mailRecordId = mailRecordId,
+                        qaRuleId = qaRuleId,
+                        ordinal = ordinal
+                    )
+                )
+            }
+            operatorActionLogService.record(
+                targetType = "INBOUND_MAIL_PROCESSING",
+                targetId = inboundProcessingId,
+                actionType = OperatorActionType.SEND_MANUAL_COMPOSED_REPLY,
+                expertContactId = contactId,
+                inboundProcessingId = inboundProcessingId,
+                before = mapOf("inboundProcessingId" to inboundProcessingId),
+                after = mapOf(
+                    "mailRecordId" to mailRecordId,
+                    "qaRuleIds" to qaRuleIds,
+                    "suggestedRuleIds" to (suggestedRuleIds ?: emptyList()),
+                    "ackSnippetId" to ackSnippetId,
+                    "edited" to (edited ?: false),
+                    "freeTextPreview" to freeTextPreview,
+                    "sendStatus" to delivered.status,
+                    "subject" to mail.subject,
+                    "bodyPreviewText" to bodyPreviewText
+                ),
+                operatorName = operatorName,
+                note = "Manual rich reply with QA rules sent for inbound processing $inboundProcessingId"
+            )
+        } else {
+            operatorActionLogService.record(
+                targetType = "INBOUND_MAIL_PROCESSING",
+                targetId = inboundProcessingId,
+                actionType = OperatorActionType.SEND_MANUAL_RICH_REPLY,
+                expertContactId = contactId,
+                inboundProcessingId = inboundProcessingId,
+                before = mapOf("inboundProcessingId" to inboundProcessingId),
+                after = mapOf(
+                    "mailRecordId" to mailRecordId,
+                    "sendStatus" to delivered.status,
+                    "subject" to mail.subject,
+                    "bodyPreviewText" to bodyPreviewText
+                ),
+                operatorName = operatorName,
+                note = "Manual rich reply sent for inbound processing $inboundProcessingId"
+            )
+        }
 
         return PendingMailSendResult(
             contactId = contactId,
@@ -467,7 +523,12 @@ data class PendingManualRichReplyRequest(
     val subject: String,
     val htmlBody: String,
     val textBody: String?,
-    val operatorName: String?
+    val operatorName: String?,
+    val qaRuleIds: List<Long>? = null,
+    val suggestedRuleIds: List<Long>? = null,
+    val ackSnippetId: Long? = null,
+    val edited: Boolean? = null,
+    val freeTextPreview: String? = null
 )
 
 data class ComposedReplyRequest(

@@ -41,6 +41,8 @@ function createComposeSandbox() {
     [
         "findSuggestRule",
         "resolveAckContent",
+        "buildComposedSegments",
+        "mergeSegmentsToText",
         "buildDeterministicComposedPreview",
         "sortCategoryRulesForDisplay",
         "renderComposedSelectedList",
@@ -70,6 +72,12 @@ describe("composed reply order (from app.js)", () => {
         const sb = createComposeSandbox();
         const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
         assert.ok(preview.indexOf("Body B") < preview.indexOf("Body A"));
+    });
+
+    it("free text appears before closing in preview", () => {
+        const sb = createComposeSandbox();
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "Extra note", null);
+        assert.ok(preview.indexOf("Extra note") < preview.indexOf(suggest.closing));
     });
 
     it("preview frame comes from suggest salutation and closing", () => {

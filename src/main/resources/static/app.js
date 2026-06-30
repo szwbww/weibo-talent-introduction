@@ -67,6 +67,8 @@ const composedReplyState = {
     ackSnippetId: null
 };
 
+let manualReplyQaContext = null;
+
 const aiReplyState = {
     recordId: null,
     turns: [],
@@ -4491,6 +4493,7 @@ function actionTypeLabel(type) {
         BIND_INBOUND_MAIL: "绑定待处理邮件",
         SEND_QA_REPLY: "发送 QA 邮件",
         SEND_MANUAL_RICH_REPLY: "人工回复邮件",
+        SEND_MANUAL_COMPOSED_REPLY: "组装 QA 回复",
         MARK_INBOUND_RESOLVED: "标记已处理"
     };
     return map[type] || type;
@@ -4967,25 +4970,69 @@ function resolveAckContent(suggest, ackSnippetId) {
     return (suggest?.ackOptions || []).find((option) => option.id === ackSnippetId)?.content || null;
 }
 
-function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText, ackContent) {
-    const trimmedFree = (freeText || "").trim();
-    const rules = selectedRuleIds
-        .map((id) => findSuggestRule(suggest, id))
-        .filter(Boolean);
-    if (!rules.length) return trimmedFree;
-    const sections = rules.map((rule) => {
+function buildComposedSegments(selectedRuleIds, suggest, freeText, ackContent) {
+    const segments = [];
+    const salutation = suggest?.salutation?.trim();
+    if (salutation) {
+        segments.push({ type: "salutation", label: "尊语", text: salutation });
+    }
+    const ack = ackContent?.trim();
+    if (ack) {
+        segments.push({ type: "ack", label: "致谢", text: ack });
+    }
+    const greeting = suggest?.greeting?.trim();
+    if (greeting) {
+        segments.push({ type: "greeting", label: "开场白", text: greeting });
+    }
+    selectedRuleIds.forEach((ruleId, index) => {
+        const rule = findSuggestRule(suggest, ruleId);
+        if (!rule) return;
         const title = (rule.sectionTitle || "").trim();
-        return title ? `${title}\n${rule.replyBody}` : rule.replyBody;
-    }).join("\n\n");
-    const parts = [
-        suggest?.salutation?.trim() || "",
-        ackContent?.trim() || "",
-        suggest?.greeting?.trim() || "",
-        sections,
-        suggest?.closing?.trim() || "",
-        trimmedFree
-    ].filter((part) => part);
-    return parts.join("\n\n");
+        const label = rule.displayName || rule.sectionTitle || `规则 #${ruleId}`;
+        const text = title ? `${title}\n${rule.replyBody}` : rule.replyBody;
+        segments.push({ type: "rule", ruleId, label, text, ruleIndex: index });
+    });
+    const trimmedFree = (freeText || "").trim();
+    if (trimmedFree) {
+        segments.push({ type: "freeText", label: "自由文本", text: trimmedFree });
+    }
+    const closing = suggest?.closing?.trim();
+    if (closing) {
+        segments.push({ type: "closing", label: "结束敬语", text: closing });
+    }
+    return segments;
+}
+
+function mergeSegmentsToText(segments) {
+    return segments.map((segment) => segment.text).join("\n\n");
+}
+
+function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText, ackContent) {
+    return mergeSegmentsToText(buildComposedSegments(selectedRuleIds, suggest, freeText, ackContent));
+}
+
+function renderComposedPreviewSegments() {
+    const container = $("#composedPreviewSegments");
+    if (!container || !composedReplyState.suggest) return;
+    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
+    const segments = buildComposedSegments(
+        composedReplyState.selectedRuleIds,
+        composedReplyState.suggest,
+        composedReplyState.freeText,
+        ackContent
+    );
+    container.innerHTML = segments.map((segment) => {
+        const ruleClass = segment.type === "rule"
+            ? ` compose-seg-rule-${segment.ruleIndex % 6}`
+            : "";
+        const ruleIdAttr = segment.ruleId != null ? ` data-rule-id="${segment.ruleId}"` : "";
+        return `
+            <div class="compose-seg compose-seg-${segment.type}${ruleClass}"${ruleIdAttr}>
+                <span class="compose-seg-tag">${escapeHtml(segment.label)}</span>
+                <div class="compose-seg-body pre">${escapeHtml(segment.text)}</div>
+            </div>`;
+    }).join("") || `<p class="text-muted">暂无预览内容</p>`;
+    applyGapHighlight();
 }
 
 function isGapCovered(gapItem, selectedRuleIds) {
@@ -4995,6 +5042,9 @@ function isGapCovered(gapItem, selectedRuleIds) {
 
 function clearGapHighlight() {
     document.querySelectorAll(".compose-rule-item.gap-highlight").forEach((el) => {
+        el.classList.remove("gap-highlight");
+    });
+    document.querySelectorAll("#composedPreviewSegments .compose-seg.gap-highlight").forEach((el) => {
         el.classList.remove("gap-highlight");
     });
 }
@@ -5009,6 +5059,9 @@ function applyGapHighlight() {
     gapItem.candidateRuleIds.forEach((ruleId) => {
         const checkbox = document.querySelector(`.compose-rule-checkbox[data-rule-id="${ruleId}"]`);
         checkbox?.closest(".compose-rule-item")?.classList.add("gap-highlight");
+        document.querySelectorAll(`#composedPreviewSegments [data-rule-id="${ruleId}"]`).forEach((el) => {
+            el.classList.add("gap-highlight");
+        });
     });
 }
 
@@ -5125,17 +5178,13 @@ function sortCategoryRulesForDisplay(rules, suggestedSet) {
 function refreshComposedPreviewFromRules() {
     if (!composedReplyState.suggest) return;
     const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
-    const preview = buildDeterministicComposedPreview(
+    composedReplyState.baselinePreview = buildDeterministicComposedPreview(
         composedReplyState.selectedRuleIds,
         composedReplyState.suggest,
         composedReplyState.freeText,
         ackContent
     );
-    composedReplyState.baselinePreview = preview;
-    if (!composedReplyState.previewEdited) {
-        const previewEl = $("#composedReplyPreview");
-        if (previewEl) previewEl.value = preview;
-    }
+    renderComposedPreviewSegments();
     renderComposedGapList();
     renderComposedSelectedList();
 }
@@ -5165,6 +5214,7 @@ function updateAckChipSelection() {
 }
 
 function initComposedReplyWorkbench(recordId, suggest) {
+    manualReplyQaContext = null;
     composedReplyState.recordId = recordId;
     composedReplyState.suggest = suggest;
     composedReplyState.selectedRuleIds = [...(suggest.suggestedRuleIds || [])];
@@ -5181,9 +5231,7 @@ function initComposedReplyWorkbench(recordId, suggest) {
             const ackId = chip.dataset.ackId;
             composedReplyState.ackSnippetId = ackId ? Number(ackId) : null;
             updateAckChipSelection();
-            if (!composedReplyState.previewEdited) {
-                refreshComposedPreviewFromRules();
-            }
+            refreshComposedPreviewFromRules();
         });
     });
 
@@ -5203,19 +5251,8 @@ function initComposedReplyWorkbench(recordId, suggest) {
 
     $("#composedFreeText")?.addEventListener("input", (event) => {
         composedReplyState.freeText = event.target.value;
-        if (!composedReplyState.previewEdited) {
-            refreshComposedPreviewFromRules();
-        }
+        refreshComposedPreviewFromRules();
     });
-
-    $("#composedReplyPreview")?.addEventListener("input", () => {
-        composedReplyState.previewEdited = true;
-    });
-
-    const polishBtn = $("#composedPolishBtn");
-    if (polishBtn) {
-        polishBtn.hidden = !suggest.llmEnabled;
-    }
 
     refreshComposedPreviewFromRules();
 }
@@ -5341,11 +5378,10 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                         </div>
                     </div>
                     <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
-                    <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览</p>
-                    <textarea id="composedReplyPreview" class="compose-preview" rows="10" placeholder="组装预览"></textarea>
+                    <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览（只读分段）</p>
+                    <div id="composedPreviewSegments" class="compose-preview-segments"></div>
                     <div class="compose-draft-actions">
-                        <button type="button" class="button" id="composedPolishBtn" data-action="polish-composed-reply" data-record-id="${recordId}" hidden>润色</button>
-                        <button type="button" class="button primary" data-action="send-composed-reply" data-record-id="${recordId}">发送组装回复</button>
+                        <button type="button" class="button primary" data-action="copy-to-manual-rich-reply" data-record-id="${recordId}">拷贝到人工富文本回复</button>
                     </div>
                 </div>
                 <div class="compose-panel compose-gaps">
@@ -5415,6 +5451,7 @@ function initAiReplyWorkbench(recordId) {
 }
 
 async function showUnmatchedDetail(id) {
+    manualReplyQaContext = null;
     const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
     const [data, options, logs] = await Promise.all([
         detailPromise,
@@ -5781,27 +5818,36 @@ async function handleUnmatchedAction(element) {
         }
         return;
     }
-    if (action === "polish-composed-reply") {
-        if (!composedReplyState.selectedRuleIds.length) {
-            showStatus("请至少选择一条 QA 规则", "error");
+    if (action === "copy-to-manual-rich-reply") {
+        const hasRules = composedReplyState.selectedRuleIds.length > 0;
+        const hasFreeText = (composedReplyState.freeText || "").trim().length > 0;
+        if (!hasRules && !hasFreeText) {
+            showStatus("请至少选择一条规则或填写自由文本", "error");
             return;
         }
-        try {
-            const result = await api(`/api/mail/unmatched-inbound/${id}/composed-reply/polish`, {
-                method: "POST",
-                body: JSON.stringify({
-                    qaRuleIds: composedReplyState.selectedRuleIds,
-                    freeText: composedReplyState.freeText || null,
-                    ackSnippetId: composedReplyState.ackSnippetId
-                })
-            });
-            const previewEl = $("#composedReplyPreview");
-            if (previewEl) previewEl.value = result.draftText || "";
-            composedReplyState.previewEdited = true;
-            showStatus(result.usedLlm ? "LLM 润色完成" : "已使用确定性拼接草稿", "ok");
-        } catch (e) {
-            alert("润色失败: " + e.message);
+        const mergedText = composedReplyState.baselinePreview || "";
+        const editor = $("#manualRichReplyEditor");
+        if (editor) editor.innerText = mergedText;
+        const subjectEl = $("#manualReplySubject");
+        if (subjectEl && !subjectEl.value.trim() && hasRules) {
+            const firstRule = findSuggestRule(composedReplyState.suggest, composedReplyState.selectedRuleIds[0]);
+            if (firstRule?.replySubject) {
+                subjectEl.value = firstRule.replySubject;
+            }
         }
+        if (hasRules) {
+            manualReplyQaContext = {
+                qaRuleIds: [...composedReplyState.selectedRuleIds],
+                suggestedRuleIds: [...(composedReplyState.suggest?.suggestedRuleIds || [])],
+                freeText: composedReplyState.freeText,
+                ackSnippetId: composedReplyState.ackSnippetId,
+                baselineText: mergedText
+            };
+        } else {
+            manualReplyQaContext = null;
+        }
+        showStatus("已拷贝到人工富文本回复区，可编辑后发送");
+        editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
         return;
     }
     if (action === "ai-reply-turn") {
@@ -5847,55 +5893,23 @@ async function handleUnmatchedAction(element) {
             showStatus("草稿为空", "error");
             return;
         }
-        const qaIds = aiReplyState.lastQaRuleIds; // send audit subset only; empty => manual-rich-reply
+        const qaIds = aiReplyState.lastQaRuleIds;
+        const editor = $("#manualRichReplyEditor");
+        if (editor) editor.innerText = draft;
         if (qaIds && qaIds.length > 0) {
-            composedReplyState.selectedRuleIds = [...qaIds];
-            renderComposedSelectedList();
-            document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
-                const ruleId = Number(checkbox.dataset.ruleId);
-                checkbox.checked = composedReplyState.selectedRuleIds.includes(ruleId);
-            });
-            const previewEl = $("#composedReplyPreview");
-            if (previewEl) previewEl.value = draft;
-            composedReplyState.previewEdited = true;
-            showStatus("草稿已填入组装台，请确认后点击「发送组装回复」");
+            manualReplyQaContext = {
+                qaRuleIds: [...qaIds],
+                suggestedRuleIds: [...qaIds],
+                freeText: null,
+                ackSnippetId: null,
+                baselineText: draft
+            };
+            showStatus("草稿已填入人工富文本回复区");
         } else {
-            const editor = $("#manualRichReplyEditor");
-            if (editor) editor.innerText = draft;
+            manualReplyQaContext = null;
             showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
         }
-        return;
-    }
-    if (action === "send-composed-reply") {
-        if (!composedReplyState.selectedRuleIds.length) {
-            showStatus("请至少选择一条 QA 规则", "error");
-            return;
-        }
-        const previewEl = $("#composedReplyPreview");
-        const previewText = previewEl?.value?.trim() || "";
-        if (!previewText) {
-            showStatus("预览正文不能为空", "error");
-            return;
-        }
-        const operatorName = window.localStorage.getItem("operatorName") || "console";
-        try {
-            await api(`/api/mail/unmatched-inbound/${id}/composed-reply`, {
-                method: "POST",
-                body: JSON.stringify({
-                    qaRuleIds: composedReplyState.selectedRuleIds,
-                    overrideTextBody: composedReplyState.previewEdited ? previewText : null,
-                    freeTextBody: composedReplyState.freeText?.trim() || null,
-                    ackSnippetId: composedReplyState.ackSnippetId,
-                    operatorName
-                })
-            });
-            alert("组装回复发送成功");
-        } catch (e) {
-            alert("组装回复发送失败: " + e.message);
-            return;
-        }
-        await showUnmatchedDetail(id);
-        await refreshMailboxAfterPendingAction();
+        editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
         return;
     }
     if (action === "send-manual-rich-reply") {
@@ -5910,17 +5924,27 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
+        const requestBody = {
+            senderAccountCode: null,
+            subject,
+            htmlBody: editor.innerHTML,
+            textBody: editor.innerText,
+            operatorName
+        };
+        if (manualReplyQaContext?.qaRuleIds?.length) {
+            requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;
+            requestBody.suggestedRuleIds = manualReplyQaContext.suggestedRuleIds || [];
+            requestBody.ackSnippetId = manualReplyQaContext.ackSnippetId;
+            const freePreview = (manualReplyQaContext.freeText || "").trim().slice(0, 200);
+            requestBody.freeTextPreview = freePreview || null;
+            requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
+        }
         try {
             await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
                 method: "POST",
-                body: JSON.stringify({
-                    senderAccountCode: null,
-                    subject,
-                    htmlBody: editor.innerHTML,
-                    textBody: editor.innerText,
-                    operatorName
-                })
+                body: JSON.stringify(requestBody)
             });
+            manualReplyQaContext = null;
             alert("人工回复邮件发送成功");
         } catch (e) {
             alert("人工回复发送失败: " + e.message);

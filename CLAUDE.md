@@ -57,6 +57,9 @@ Flyway runs on startup from `src/main/resources/db/migration` (`V1`..`V10`). **S
 ### Frontend
 A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `styles.css`) is served by `common/controller/FrontendController` and talks to the REST controllers under `/api/*` (`/api/mail`, `/api/mail/sender-accounts`, `/api/expert-contacts`, `/api/experts`, `/api/qa`, `/api/task-executions`).
 
+## 团队沉淀知识
+- 人工 QA 组装路径必须让 UI 预览、payload、外发正文和审计 ordinal 共用同一 `qaRuleIds` 顺序契约，避免运营调整顺序只影响日志不影响正文。(K-composed-reply-order-contract)
+
 ---
 
 # 项目元信息（供 multi-ai-kit 使用）

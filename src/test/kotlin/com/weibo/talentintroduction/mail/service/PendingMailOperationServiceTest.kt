@@ -357,6 +357,118 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
+    fun `send manual rich reply with qa rule ids writes associations and composed audit log`() {
+        val record = inbound(1)
+        val rule1 = qaRule(10, 1, "Body one", priority = 50)
+        val rule2 = qaRule(11, 2, "Body two", priority = 100)
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-rich-qa", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule1))
+        Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(rule2))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 301) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { invocation ->
+                val arg = invocation.getArgument<MailRecordQaRule>(0)
+                arg.copy(id = arg.ordinal + 1L)
+            }
+        Mockito.`when`(mailBodyCleaner.clean("<p>Composed</p>")).thenReturn("Composed")
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Subject",
+            htmlBody = "<p>Composed</p>",
+            textBody = "Composed body",
+            operatorName = "op",
+            qaRuleIds = listOf(10, 11),
+            suggestedRuleIds = listOf(10, 11),
+            ackSnippetId = 100L,
+            edited = true,
+            freeTextPreview = "free snippet"
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("MANUAL_RICH_REPLY", result.mailType)
+
+        val mailCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(mailCaptor.capture())
+        assertEquals(10L, mailCaptor.value.matchedQaRuleId)
+
+        val qaRuleCaptor = ArgumentCaptor.forClass(MailRecordQaRule::class.java)
+        Mockito.verify(mailRecordQaRuleRepository, Mockito.times(2)).save(qaRuleCaptor.capture())
+        val savedAssociations = qaRuleCaptor.allValues
+        assertEquals(listOf(10L, 11L), savedAssociations.map { it.qaRuleId })
+        assertEquals(listOf(0, 1), savedAssociations.map { it.ordinal })
+
+        @Suppress("UNCHECKED_CAST")
+        val afterCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
+        Mockito.verify(operatorActionLogService).record(
+            anyValue(""), anyValue(0L), anyValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
+            anyValue(0L), anyValue(0L),
+            anyValue(null), afterCaptor.capture(),
+            anyValue(""), anyValue(""), anyValue(null)
+        )
+        val after = afterCaptor.value!!
+        assertEquals(listOf(10L, 11L), after["qaRuleIds"])
+        assertEquals(listOf(10L, 11L), after["suggestedRuleIds"])
+        assertEquals(100L, after["ackSnippetId"])
+        assertEquals(true, after["edited"])
+        assertEquals("free snippet", after["freeTextPreview"])
+    }
+
+    @Test
+    fun `send manual rich reply without qa rule ids skips associations and uses rich reply log`() {
+        val record = inbound(1)
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-rich-plain", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 302) }
+        Mockito.`when`(mailBodyCleaner.clean("<p>Plain</p>")).thenReturn("Plain")
+
+        service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Hello",
+            htmlBody = "<p>Plain</p>",
+            textBody = "Plain",
+            operatorName = "op",
+            qaRuleIds = emptyList()
+        )
+
+        val mailCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(mailCaptor.capture())
+        assertEquals(null, mailCaptor.value.matchedQaRuleId)
+
+        Mockito.verify(mailRecordQaRuleRepository, Mockito.never()).save(
+            anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val afterCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
+        Mockito.verify(operatorActionLogService).record(
+            anyValue(""), anyValue(0L), anyValue(OperatorActionType.SEND_MANUAL_RICH_REPLY),
+            anyValue(0L), anyValue(0L),
+            anyValue(null), afterCaptor.capture(),
+            anyValue(""), anyValue(""), anyValue(null)
+        )
+    }
+
+    @Test
     fun `mark resolved updates status and writes log with correct fields`() {
         val record = inbound(1)
         Mockito.`when`(inboundMailProcessingRepository.findById(1L))
