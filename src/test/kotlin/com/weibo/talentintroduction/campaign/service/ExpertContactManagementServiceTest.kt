@@ -35,6 +35,7 @@ class ExpertContactManagementServiceTest {
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val inboundMailProcessingRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+    private val autoReplySettingService = Mockito.mock(com.weibo.talentintroduction.mail.service.AutoReplySettingService::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
     private val service = ExpertContactManagementService(
         expertContactRepository,
@@ -47,7 +48,8 @@ class ExpertContactManagementServiceTest {
         meetingScheduleRepository,
         expertIndexWriterService,
         inboundMailProcessingRepository,
-        operatorActionLogService
+        operatorActionLogService,
+        autoReplySettingService
     )
 
     private val auditLogResult = OperatorActionLog(id = 1L, targetType = "EXPERT_CONTACT", targetId = 1L, actionType = "SWITCH_REPLY_MODE", actionSummary = "test")
@@ -232,53 +234,28 @@ class ExpertContactManagementServiceTest {
     }
 
     @Test
-    fun `getAutoReplySummary returns correct counts`() {
+    fun `getAutoReplySummary returns correct counts and globalEnabled`() {
         val contacts = listOf(
             contact().copy(id = 1L, autoReplyEnabled = true),
             contact().copy(id = 2L, autoReplyEnabled = false, manualHandoffRequired = false),
             contact().copy(id = 3L, autoReplyEnabled = false, manualHandoffRequired = true)
         )
         Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
 
         val summary = service.getAutoReplySummary()
         assertEquals(3, summary.total)
         assertEquals(1, summary.enabled)
         assertEquals(2, summary.disabled)
         assertEquals(1, summary.handoffLocked)
+        assertEquals(false, summary.globalEnabled)
     }
 
     @Test
-    fun `bulkUpdateAutoReply turns off all enabled auto replies`() {
-        val contacts = listOf(
-            contact().copy(id = 1L, autoReplyEnabled = true),
-            contact().copy(id = 2L, autoReplyEnabled = false)
-        )
-        Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contacts[0]))
-        Mockito.`when`(expertContactRepository.findById(2L)).thenReturn(Optional.of(contacts[1]))
-        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
-            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
-
-        val result = service.bulkUpdateAutoReply(enabled = false, operatorName = "admin")
-        assertEquals(1, result.updated)
-        assertEquals(0, result.skipped)
-    }
-
-    @Test
-    fun `bulkUpdateAutoReply turns on all disabled auto replies except handoffLocked`() {
-        val contacts = listOf(
-            contact().copy(id = 1L, autoReplyEnabled = false, manualHandoffRequired = false),
-            contact().copy(id = 2L, autoReplyEnabled = false, manualHandoffRequired = true)
-        )
-        Mockito.`when`(expertContactRepository.findAll()).thenReturn(contacts)
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contacts[0]))
-        Mockito.`when`(expertContactRepository.findById(2L)).thenReturn(Optional.of(contacts[1]))
-        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
-            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
-
+    fun `bulkUpdateAutoReply toggles global switch`() {
         val result = service.bulkUpdateAutoReply(enabled = true, operatorName = "admin")
-        assertEquals(1, result.updated)
-        assertEquals(1, result.skipped)
+        assertEquals(true, result.globalEnabled)
+        Mockito.verify(autoReplySettingService).setGlobalEnabled(true)
     }
 
     @Test

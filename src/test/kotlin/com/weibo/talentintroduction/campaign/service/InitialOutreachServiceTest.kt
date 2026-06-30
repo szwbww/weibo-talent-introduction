@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
+import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
@@ -28,6 +29,7 @@ class InitialOutreachServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val txHelper = Mockito.mock(ManualOutreachTxHelper::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
 
     private val service = InitialOutreachService(
         expertSearchService = expertSearchService,
@@ -36,7 +38,8 @@ class InitialOutreachServiceTest {
         mailDeliveryService = mailDeliveryService,
         expertContactRepository = expertContactRepository,
         txHelper = txHelper,
-        emailSuppressionService = emailSuppressionService
+        emailSuppressionService = emailSuppressionService,
+        autoReplySettingService = autoReplySettingService
     )
 
     private var contactIdSeq = 100L
@@ -44,6 +47,7 @@ class InitialOutreachServiceTest {
     @BeforeEach
     fun setUp() {
         contactIdSeq = 100L
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
             val contact = invocation.getArgument<ExpertContact>(0)
@@ -217,6 +221,29 @@ class InitialOutreachServiceTest {
         Mockito.verify(expertContactRepository, Mockito.never()).save(
             anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
         )
+    }
+
+    @Test
+    fun `sendInitialBatch creates contact with autoReplyEnabled false when global switch off`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val experts = listOf(expert("0001"))
+        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001"))))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-1", "SENT"))
+
+        service.sendInitialBatch(campaignId = 1L, size = 1)
+
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(captureValue(contactCaptor, ExpertContact(
+            campaignId = 0L, orcidId = "", expertEmail = "", expertName = null
+        )))
+        assertEquals(false, contactCaptor.value.autoReplyEnabled)
     }
 
     private fun expert(orcidId: String): ExpertProfile =

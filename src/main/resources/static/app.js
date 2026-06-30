@@ -6979,22 +6979,12 @@ async function refreshAutoReplySummary() {
     try {
         const summary = await api("/api/expert-contacts/auto-reply/summary");
         lastAutoReplySummary = summary;
-        const total = summary.total;
-        const enabled = summary.enabled;
-        const disabled = summary.disabled;
-        if (total === 0) {
-            btn.textContent = "自动回复：无专家";
-            btn.disabled = true;
-        } else if (enabled === total) {
-            btn.textContent = "自动回复：全部开启 ✓";
-            btn.disabled = false;
-        } else if (disabled === total) {
+        if (summary.globalEnabled === false) {
             btn.textContent = "自动回复：全部关闭";
-            btn.disabled = false;
         } else {
-            btn.textContent = `自动回复：${enabled}/${total} 开启`;
-            btn.disabled = false;
+            btn.textContent = "自动回复：全部开启 ✓";
         }
+        btn.disabled = false;
     } catch (e) {
         btn.textContent = "自动回复：加载失败";
         console.error("加载自动回复汇总失败", e);
@@ -7007,24 +6997,10 @@ function initBulkAutoReply() {
 
     btn.addEventListener("click", async () => {
         if (!lastAutoReplySummary) return;
-        const total = lastAutoReplySummary.total;
-        const enabled = lastAutoReplySummary.enabled;
-        const handoffLocked = lastAutoReplySummary.handoffLocked;
-
-        let targetEnabled = true;
-        let confirmMsg = "";
-
-        if (enabled === total) {
-            targetEnabled = false;
-            confirmMsg = "是否确认关闭所有专家的自动回复？";
-        } else {
-            targetEnabled = true;
-            if (handoffLocked > 0) {
-                confirmMsg = `是否确认开启所有专家的自动回复？\n\n注意：将跳过 ${handoffLocked} 位人工接管中（需要人工处理）的专家。`;
-            } else {
-                confirmMsg = "是否确认开启所有专家的自动回复？";
-            }
-        }
+        const targetEnabled = !lastAutoReplySummary.globalEnabled;
+        const confirmMsg = targetEnabled
+            ? "是否确认开启全局自动回复？"
+            : "是否确认关闭全局自动回复？此后所有专家都不会收到自动回复邮件。";
 
         const confirmed = confirm(confirmMsg);
         if (!confirmed) return;
@@ -7040,7 +7016,7 @@ function initBulkAutoReply() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ enabled: targetEnabled, operatorName })
             });
-            showStatus(`已更新 ${res.updated} 位专家的自动回复设置` + (res.skipped ? `，跳过 ${res.skipped} 位` : ""), "ok");
+            showStatus(`全局自动回复已${res.globalEnabled ? "开启" : "关闭"}`, "ok");
         } catch (e) {
             showStatus("更新失败: " + e.message, "error");
         } finally {

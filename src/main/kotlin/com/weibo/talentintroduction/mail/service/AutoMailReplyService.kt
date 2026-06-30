@@ -57,7 +57,8 @@ class AutoMailReplyService(
     private val dmarcReportDetector: DmarcReportDetector,
     private val dmarcReportIngestService: DmarcReportIngestService,
     private val mailContentService: MailContentService,
-    private val mailInboxCursorService: MailInboxCursorService
+    private val mailInboxCursorService: MailInboxCursorService,
+    private val autoReplySettingService: AutoReplySettingService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
@@ -102,6 +103,59 @@ class AutoMailReplyService(
                 recorded = false,
                 expertContactId = contactId,
                 reason = "INTRODUCTION_NOT_SENT"
+            )
+        }
+
+        if (!autoReplySettingService.isGlobalEnabled()) {
+            val cleanedBody = mailBodyCleaner.clean(received.body)
+            val inboundRecord = saveMailRecord(account, contactId, received, cleanedBody)
+            val inboundMailRecordId = inboundRecord.id ?: error("Inbound mail record id is required")
+            mailAttachmentService.saveInboundAttachments(
+                expertContactId = contactId,
+                mailRecordId = inboundMailRecordId,
+                attachments = received.attachments
+            )
+            applyPromotionAndStatus(
+                contact = contact,
+                receivedAt = received.receivedAt,
+                inboundMailRecordId = inboundMailRecordId,
+                attachmentCount = received.attachments.size
+            )
+            val classifiedIntent = inboundIntentClassifier.classify(cleanedBody, received.subject)
+            val intent = effectiveIntent(classifiedIntent, received.attachments)
+            inboundIntentRepository.save(
+                InboundIntent(
+                    mailRecordId = inboundMailRecordId,
+                    expertContactId = contactId,
+                    intentCode = intent.intentCode.name,
+                    confidence = intent.confidence,
+                    matchedKeywords = intent.matchedKeywords.joinToString(",").ifBlank { null },
+                    autoAction = intent.autoAction.name,
+                    createdAt = LocalDateTime.now()
+                )
+            )
+            captureUnsubscribeIfPresent(received.from, cleanedBody)
+            confirmProcessed(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                status = "MANUAL_REVIEW",
+                reason = "GLOBAL_AUTO_REPLY_DISABLED",
+                reasonType = "GLOBAL_AUTO_REPLY_DISABLED",
+                skipImapAck = skipImapAck,
+                cleanedBody = cleanedBody
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = contact.currentStatus,
+                previousStatus = contact.currentStatus,
+                reason = "GLOBAL_AUTO_REPLY_DISABLED"
             )
         }
 
@@ -1016,6 +1070,7 @@ enum class SinglePipelineOutcome {
     DUPLICATE_INBOUND_MESSAGE,
     UNMATCHED_CONTACT,
     INTRODUCTION_NOT_SENT,
+    GLOBAL_AUTO_REPLY_DISABLED,
     AUTO_REPLY_DISABLED,
     MANUAL_HANDOFF_STATUS,
     QA_REPLIED,
@@ -1057,6 +1112,7 @@ data class SinglePipelineResult(
 val MANUAL_REVIEW_OUTCOMES = setOf(
     SinglePipelineOutcome.UNMATCHED_CONTACT,
     SinglePipelineOutcome.INTRODUCTION_NOT_SENT,
+    SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED,
     SinglePipelineOutcome.AUTO_REPLY_DISABLED,
     SinglePipelineOutcome.MANUAL_HANDOFF_STATUS,
     SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,

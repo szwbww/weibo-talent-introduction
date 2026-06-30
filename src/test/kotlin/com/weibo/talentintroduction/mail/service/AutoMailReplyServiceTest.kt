@@ -77,6 +77,7 @@ class AutoMailReplyServiceTest {
     private val dmarcReportDetector = DmarcReportDetector()
     private val dmarcReportIngestService = Mockito.mock(DmarcReportIngestService::class.java)
     private val mailContentService = MailContentService()
+    private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -106,11 +107,13 @@ class AutoMailReplyServiceTest {
         dmarcReportDetector,
         dmarcReportIngestService,
         mailContentService,
-        cursorService
+        cursorService,
+        autoReplySettingService
     )
 
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(accountService.getAutoReceiveAccount(Mockito.anyString())).thenAnswer { invocation ->
             val code = invocation.getArgument<String>(0)
             accountService.getEnabledAccount(code)
@@ -825,6 +828,26 @@ class AutoMailReplyServiceTest {
             anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
         )
         Mockito.verifyNoInteractions(qaMatchService, deliveryService)
+    }
+
+    @Test
+    fun `global auto reply disabled does not send mail`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply()
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", received.imapUid)
+        ).thenReturn(null)
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED, result.outcome)
+        assertEquals(true, result.recorded)
+        assertEquals("GLOBAL_AUTO_REPLY_DISABLED", result.reason)
+        Mockito.verifyNoInteractions(deliveryService)
+        Mockito.verifyNoInteractions(qaMatchService)
     }
 
     @Test

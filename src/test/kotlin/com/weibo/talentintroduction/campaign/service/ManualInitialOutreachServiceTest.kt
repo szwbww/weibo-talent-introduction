@@ -22,6 +22,7 @@ import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
+import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
@@ -65,6 +66,7 @@ class ManualInitialOutreachServiceTest {
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val accountRateLimiter = AccountRateLimiter()
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
     private val providerResolver = ProviderResolver()
     private val senderWarmupService = SenderWarmupService(
         WarmupProperties(
@@ -94,7 +96,8 @@ class ManualInitialOutreachServiceTest {
         accountRateLimiter = accountRateLimiter,
         emailSuppressionService = emailSuppressionService,
         providerResolver = providerResolver,
-        senderWarmupService = senderWarmupService
+        senderWarmupService = senderWarmupService,
+        autoReplySettingService = autoReplySettingService
     )
 
     private fun fastConfig(
@@ -112,6 +115,7 @@ class ManualInitialOutreachServiceTest {
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
         accountRateLimiter.clear()
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { invocation ->
             invocation.getArgument<MailSendAttempt>(0).let { attempt ->

@@ -20,6 +20,7 @@ import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
@@ -35,7 +36,8 @@ class ExpertContactManagementService(
     private val meetingScheduleRepository: MeetingScheduleRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    private val autoReplySettingService: AutoReplySettingService
 ) {
     fun listContacts(
         campaignId: Long?,
@@ -449,34 +451,15 @@ class ExpertContactManagementService(
             total = total,
             enabled = enabled,
             disabled = disabled,
-            handoffLocked = handoffLocked
+            handoffLocked = handoffLocked,
+            globalEnabled = autoReplySettingService.isGlobalEnabled()
         )
     }
 
     fun bulkUpdateAutoReply(enabled: Boolean, operatorName: String? = null): BulkAutoReplyResult {
         require(!operatorName.isNullOrBlank()) { "operatorName is required" }
-        val actualOperator = operatorName.trim()
-        val allContacts = expertContactRepository.findAll().toList()
-        var updated = 0
-        var skipped = 0
-        allContacts.forEach { contact ->
-            if (enabled) {
-                if (!contact.autoReplyEnabled) {
-                    if (!contact.manualHandoffRequired) {
-                        resumeAutoReply(contact.id ?: error("contact id is null"), actualOperator)
-                        updated++
-                    } else {
-                        skipped++
-                    }
-                }
-            } else {
-                if (contact.autoReplyEnabled) {
-                    pauseAutoReply(contact.id ?: error("contact id is null"), actualOperator)
-                    updated++
-                }
-            }
-        }
-        return BulkAutoReplyResult(updated = updated, skipped = skipped)
+        autoReplySettingService.setGlobalEnabled(enabled)
+        return BulkAutoReplyResult(globalEnabled = enabled)
     }
 }
 
@@ -484,12 +467,12 @@ data class AutoReplySummary(
     val total: Int,
     val enabled: Int,
     val disabled: Int,
-    val handoffLocked: Int
+    val handoffLocked: Int,
+    val globalEnabled: Boolean
 )
 
 data class BulkAutoReplyResult(
-    val updated: Int,
-    val skipped: Int
+    val globalEnabled: Boolean
 )
 
 data class ExpertContactDetail(

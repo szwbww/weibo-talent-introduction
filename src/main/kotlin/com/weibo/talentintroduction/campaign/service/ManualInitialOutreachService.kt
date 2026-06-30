@@ -18,6 +18,7 @@ import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
+import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
@@ -61,7 +62,8 @@ class ManualInitialOutreachService(
     private val accountRateLimiter: AccountRateLimiter,
     private val emailSuppressionService: EmailSuppressionService,
     private val providerResolver: ProviderResolver,
-    private val senderWarmupService: SenderWarmupService
+    private val senderWarmupService: SenderWarmupService,
+    private val autoReplySettingService: AutoReplySettingService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -278,6 +280,7 @@ class ManualInitialOutreachService(
                             expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
                             currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
                             country = expert.country,
+                            autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
                             createdAt = now, updatedAt = now
                         ))
                     }

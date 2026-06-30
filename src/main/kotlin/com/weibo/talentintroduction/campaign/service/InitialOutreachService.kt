@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
+import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import org.springframework.stereotype.Service
@@ -20,7 +21,8 @@ class InitialOutreachService(
     private val mailDeliveryService: MailDeliveryService,
     private val expertContactRepository: ExpertContactRepository,
     private val txHelper: ManualOutreachTxHelper,
-    private val emailSuppressionService: EmailSuppressionService
+    private val emailSuppressionService: EmailSuppressionService,
+    private val autoReplySettingService: AutoReplySettingService
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
@@ -50,6 +52,7 @@ class InitialOutreachService(
                     expertName = expert.displayName,
                     currentStatus = "NEW",
                     country = expert.country,
+                    autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
                     createdAt = now,
                     updatedAt = now
                 )

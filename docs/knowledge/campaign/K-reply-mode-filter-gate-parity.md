@@ -2,8 +2,8 @@
 id: K-reply-mode-filter-gate-parity
 domain: campaign
 created: 2026-06-29
-last_used: 2026-06-29
-hit_count: 1
+last_used: 2026-06-30
+hit_count: 2
 source: create-p:expert-contact-reply-mode-filter
 severity: P1
 ---

@@ -36,11 +36,11 @@ class ExpertContactManagementControllerTest {
     @Test
     fun `bulk auto reply trims operator name`() {
         Mockito.`when`(service.bulkUpdateAutoReply(true, "admin"))
-            .thenReturn(BulkAutoReplyResult(updated = 1, skipped = 0))
+            .thenReturn(BulkAutoReplyResult(globalEnabled = true))
 
         val result = controller.bulkUpdateAutoReply(BulkAutoReplyRequest(enabled = true, operatorName = " admin "))
 
-        assertEquals(1, result.updated)
+        assertEquals(true, result.globalEnabled)
         Mockito.verify(service).bulkUpdateAutoReply(true, "admin")
     }
 }
