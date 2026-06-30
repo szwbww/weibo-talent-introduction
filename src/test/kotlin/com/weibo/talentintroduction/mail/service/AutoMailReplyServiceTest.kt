@@ -953,6 +953,87 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `duplicate inbound questions in same poll get one QA auto reply`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val first = reply(
+            subject = "Follow-up on the Talent Program",
+            body = "Could you share the program details?",
+            imapUid = 101L
+        )
+        val second = first.copy(imapUid = 102L, messageId = "reply-2")
+        val third = first.copy(imapUid = 103L, messageId = "reply-3")
+        stubAutoReplyPipeline(account, contact, first)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(first, second, third))
+        )
+        listOf(first, second, third).forEach { mail ->
+            Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(contact)
+        }
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(1L)
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        val savedRecords = mutableListOf<MailRecord>()
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            val saved = record.copy(id = record.id ?: (100L + savedRecords.size))
+            savedRecords += saved
+            saved
+        }
+        Mockito.`when`(
+            mailRecordRepository.findRecentDuplicateInbound(
+                anyValue(0L),
+                anyValue(""),
+                anyValue(""),
+                anyValue(""),
+                anyValue(LocalDateTime.now()),
+                anyValue(LocalDateTime.now())
+            )
+        ).thenAnswer { invocation ->
+            val contactId = invocation.getArgument<Long>(0)
+            val accountCode = invocation.getArgument<String>(1)
+            val subject = invocation.getArgument<String?>(2)
+            val cleanedBody = invocation.getArgument<String>(3)
+            val since = invocation.getArgument<LocalDateTime>(4)
+            val receivedAt = invocation.getArgument<LocalDateTime>(5)
+            savedRecords.lastOrNull {
+                val savedReceivedAt = it.receivedAt
+                it.expertContactId == contactId &&
+                    it.senderAccountCode == accountCode &&
+                    it.direction == "INBOUND" &&
+                    it.mailType == "REPLY" &&
+                    it.subject == subject &&
+                    it.cleanedBody == cleanedBody &&
+                    savedReceivedAt != null &&
+                    !savedReceivedAt.isBefore(since) &&
+                    !savedReceivedAt.isAfter(receivedAt)
+            }
+        }
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.replied)
+        Mockito.verify(deliveryService, Mockito.times(1)).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+    }
+
+    @Test
     fun `QA gap hands off without sending outbound mail`() {
         val account = account("sender")
         val contact = introSentContact()

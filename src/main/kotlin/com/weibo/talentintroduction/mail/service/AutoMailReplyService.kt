@@ -60,6 +60,7 @@ class AutoMailReplyService(
     private val mailInboxCursorService: MailInboxCursorService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
+    private val duplicateInboundWindowMinutes = 30L
 
     @org.springframework.transaction.annotation.Transactional
     fun processSingle(
@@ -171,6 +172,40 @@ class AutoMailReplyService(
         }
 
         val cleanedBody = mailBodyCleaner.clean(received.body)
+        val duplicateInbound = mailRecordRepository.findRecentDuplicateInbound(
+            expertContactId = contactId,
+            senderAccountCode = account.accountCode,
+            subject = received.subject,
+            cleanedBody = cleanedBody,
+            since = received.receivedAt.minusMinutes(duplicateInboundWindowMinutes),
+            receivedAt = received.receivedAt
+        )
+        if (duplicateInbound != null) {
+            val inboundRecord = saveMailRecord(account, contactId, received, cleanedBody)
+            val inboundMailRecordId = inboundRecord.id ?: error("Inbound mail record id is required")
+            mailAttachmentService.saveInboundAttachments(
+                expertContactId = contactId,
+                mailRecordId = inboundMailRecordId,
+                attachments = received.attachments
+            )
+            confirmProcessed(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                status = "PROCESSED",
+                reason = "DUPLICATE_INBOUND_MESSAGE",
+                reasonType = "DUPLICATE_INBOUND_MESSAGE",
+                skipImapAck = skipImapAck,
+                cleanedBody = cleanedBody
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                reason = "DUPLICATE_INBOUND_MESSAGE"
+            )
+        }
         val inboundMailRecord = mailRecordRepository.save(
             MailRecord(
                 expertContactId = contactId,
@@ -978,6 +1013,7 @@ class AutoMailReplyService(
 
 enum class SinglePipelineOutcome {
     DUPLICATE_IMAP_UID,
+    DUPLICATE_INBOUND_MESSAGE,
     UNMATCHED_CONTACT,
     INTRODUCTION_NOT_SENT,
     AUTO_REPLY_DISABLED,

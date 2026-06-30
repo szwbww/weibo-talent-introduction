@@ -39,6 +39,30 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
+        SELECT * FROM mail_record
+        WHERE expert_contact_id = :expertContactId
+          AND sender_account_code = :senderAccountCode
+          AND direction = 'INBOUND'
+          AND mail_type = 'REPLY'
+          AND ((:subject IS NULL AND subject IS NULL) OR subject = :subject)
+          AND COALESCE(cleaned_body, '') = :cleanedBody
+          AND received_at >= :since
+          AND received_at <= :receivedAt
+        ORDER BY received_at DESC, id DESC
+        LIMIT 1
+        """
+    )
+    fun findRecentDuplicateInbound(
+        expertContactId: Long,
+        senderAccountCode: String,
+        subject: String?,
+        cleanedBody: String,
+        since: LocalDateTime,
+        receivedAt: LocalDateTime
+    ): MailRecord?
+
+    @Query(
+        """
         SELECT COUNT(*) FROM mail_record
         WHERE direction = 'OUTBOUND' AND mail_type = :mailType
           AND sent_at >= :from AND sent_at < :to
