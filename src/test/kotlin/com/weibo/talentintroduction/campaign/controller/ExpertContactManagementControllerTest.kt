@@ -1,11 +1,16 @@
 package com.weibo.talentintroduction.campaign.controller
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import java.time.LocalDateTime
+import java.util.Optional
 
 class ExpertContactManagementControllerTest {
     private val service = Mockito.mock(ExpertContactManagementService::class.java)
@@ -43,4 +48,38 @@ class ExpertContactManagementControllerTest {
         assertEquals(true, result.globalEnabled)
         Mockito.verify(service).bulkUpdateAutoReply(true, "admin")
     }
+
+    @Test
+    fun `markFollowUp delegates to service`() {
+        val contact = sampleContact().copy(followUpMarked = true, followUpMarkedAt = LocalDateTime.of(2026, 6, 30, 10, 0))
+        Mockito.`when`(service.markFollowUp(1L)).thenReturn(contact)
+
+        val response = controller.markFollowUp(1L)
+
+        assertTrue(response.followUpMarked)
+        assertEquals("2026-06-30T10:00", response.followUpMarkedAt)
+        Mockito.verify(service).markFollowUp(1L)
+    }
+
+    @Test
+    fun `unmarkFollowUp delegates to service`() {
+        val contact = sampleContact()
+        Mockito.`when`(service.unmarkFollowUp(1L)).thenReturn(contact)
+
+        val response = controller.unmarkFollowUp(1L)
+
+        assertFalse(response.followUpMarked)
+        assertEquals(null, response.followUpMarkedAt)
+        Mockito.verify(service).unmarkFollowUp(1L)
+    }
+
+    private fun sampleContact(): ExpertContact =
+        ExpertContact(
+            id = 1L,
+            campaignId = 10L,
+            orcidId = "0000-0001",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = "WAITING_REPLY"
+        )
 }

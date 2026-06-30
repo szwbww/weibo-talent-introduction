@@ -2237,6 +2237,12 @@ textarea {
     border-left: 2px solid var(--error) !important;
 }
 
+.follow-up-mark {
+    margin-right: 4px;
+    font-size: 12px;
+    line-height: 1;
+}
+
 /* Card Grid (Monitoring) */
 .card-grid {
     display: grid;

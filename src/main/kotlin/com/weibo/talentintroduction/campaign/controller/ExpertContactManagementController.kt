@@ -24,6 +24,7 @@ import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.ManualMailSendResult
 import com.weibo.talentintroduction.campaign.service.AutoReplySummary
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -48,10 +49,13 @@ class ExpertContactManagementController(
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) operatorStatus: String?,
         @RequestParam(required = false) needsAttention: Boolean?,
-        @RequestParam(required = false) replyMode: String?
+        @RequestParam(required = false) replyMode: String?,
+        @RequestParam(required = false) followUpMarked: Boolean?
     ): ExpertContactListResponse {
         val normalizedReplyMode = replyMode?.takeIf { it == "AUTO" || it == "MANUAL" }
-        val contacts = service.listContacts(campaignId, status, operatorStatus, needsAttention, normalizedReplyMode)
+        val contacts = service.listContacts(
+            campaignId, status, operatorStatus, needsAttention, normalizedReplyMode, followUpMarked
+        )
         return ExpertContactListResponse(
             contacts = contacts.map { it.toResponse() },
             totalCount = contacts.size.toLong()
@@ -90,6 +94,14 @@ class ExpertContactManagementController(
     @PostMapping("/{contactId}/resume-auto-reply")
     fun resumeAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
         service.resumeAutoReply(contactId).toResponse()
+
+    @PostMapping("/{contactId}/mark-follow-up")
+    fun markFollowUp(@PathVariable contactId: Long): ExpertContactResponse =
+        service.markFollowUp(contactId).toResponse()
+
+    @DeleteMapping("/{contactId}/mark-follow-up")
+    fun unmarkFollowUp(@PathVariable contactId: Long): ExpertContactResponse =
+        service.unmarkFollowUp(contactId).toResponse()
 
     @GetMapping("/auto-reply/summary")
     fun getAutoReplySummary(): AutoReplySummary =
@@ -361,6 +373,8 @@ data class ExpertContactResponse(
     val currentIndexLevel: String,
     val operatorStatus: String,
     val needsManualAttention: Boolean,
+    val followUpMarked: Boolean = false,
+    val followUpMarkedAt: String? = null,
     val latestManualReviewReasonType: String? = null,
     val updatedAt: String? = null
 )
@@ -467,6 +481,8 @@ private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = nul
         currentIndexLevel = currentIndexLevel,
         operatorStatus = operatorStatus,
         needsManualAttention = needsManualAttention,
+        followUpMarked = followUpMarked,
+        followUpMarkedAt = followUpMarkedAt?.toString(),
         latestManualReviewReasonType = latestManualReviewReasonType,
         updatedAt = updatedAt?.toString()
     )

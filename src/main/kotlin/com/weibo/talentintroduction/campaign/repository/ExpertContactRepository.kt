@@ -48,14 +48,18 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
           AND (:replyMode IS NULL
                OR (:replyMode = 'MANUAL' AND (auto_reply_enabled = false OR current_status = 'MANUAL_HANDOFF'))
                OR (:replyMode = 'AUTO'   AND auto_reply_enabled = true AND current_status <> 'MANUAL_HANDOFF'))
-        ORDER BY updated_at DESC
+          AND (:followUpMarked IS NULL OR follow_up_marked = :followUpMarked)
+        ORDER BY
+          CASE WHEN :followUpMarked = true THEN follow_up_marked_at END DESC,
+          updated_at DESC
     """)
     fun findFilteredContacts(
         campaignId: Long?,
         status: String?,
         operatorStatus: String?,
         needsAttention: Boolean?,
-        replyMode: String? = null
+        replyMode: String? = null,
+        followUpMarked: Boolean? = null
     ): List<ExpertContact>
 
     @Modifying

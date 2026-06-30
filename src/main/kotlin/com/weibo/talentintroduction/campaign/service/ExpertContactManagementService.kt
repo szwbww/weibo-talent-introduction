@@ -44,9 +44,27 @@ class ExpertContactManagementService(
         status: String?,
         operatorStatus: String? = null,
         needsAttention: Boolean? = null,
-        replyMode: String? = null
+        replyMode: String? = null,
+        followUpMarked: Boolean? = null
     ): List<ExpertContact> =
-        expertContactRepository.findFilteredContacts(campaignId, status, operatorStatus, needsAttention, replyMode)
+        expertContactRepository.findFilteredContacts(
+            campaignId, status, operatorStatus, needsAttention, replyMode, followUpMarked
+        )
+
+    fun markFollowUp(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        val now = LocalDateTime.now()
+        return expertContactRepository.save(
+            contact.copy(followUpMarked = true, followUpMarkedAt = now)
+        )
+    }
+
+    fun unmarkFollowUp(contactId: Long): ExpertContact {
+        val contact = getContact(contactId)
+        return expertContactRepository.save(
+            contact.copy(followUpMarked = false, followUpMarkedAt = null)
+        )
+    }
 
     fun getContactDetail(contactId: Long): ExpertContactDetail {
         val contact = getContact(contactId)

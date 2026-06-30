@@ -266,6 +266,59 @@ class ExpertContactManagementServiceTest {
         assertTrue(ex.message!!.contains("operatorName"))
     }
 
+    @Test
+    fun `markFollowUp only updates follow up fields`() {
+        val contact = contact()
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val updated = service.markFollowUp(1L)
+
+        assertTrue(updated.followUpMarked)
+        assertTrue(updated.followUpMarkedAt != null)
+        assertEquals(contact.currentStatus, updated.currentStatus)
+        assertEquals(contact.autoReplyEnabled, updated.autoReplyEnabled)
+        assertEquals(contact.needsManualAttention, updated.needsManualAttention)
+        Mockito.verify(expertContactRepository).save(
+            Mockito.argThat { saved ->
+                saved.followUpMarked && saved.followUpMarkedAt != null &&
+                    saved.currentStatus == contact.currentStatus
+            }
+        )
+    }
+
+    @Test
+    fun `unmarkFollowUp clears follow up fields`() {
+        val contact = contact().copy(followUpMarked = true, followUpMarkedAt = LocalDateTime.now())
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val updated = service.unmarkFollowUp(1L)
+
+        assertFalse(updated.followUpMarked)
+        assertEquals(null, updated.followUpMarkedAt)
+    }
+
+    @Test
+    fun `listContacts passes followUpMarked filter`() {
+        val filtered = listOf(contact().copy(followUpMarked = true))
+        Mockito.`when`(
+            expertContactRepository.findFilteredContacts(null, null, null, null, null, true)
+        ).thenReturn(filtered)
+
+        val result = service.listContacts(
+            campaignId = null,
+            status = null,
+            followUpMarked = true
+        )
+
+        assertEquals(1, result.size)
+        assertTrue(result[0].followUpMarked)
+        Mockito.verify(expertContactRepository).findFilteredContacts(null, null, null, null, null, true)
+    }
+
     private fun contact(): ExpertContact =
         ExpertContact(
             id = 1L,

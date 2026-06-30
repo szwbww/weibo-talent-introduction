@@ -2075,14 +2075,16 @@ async function loadContacts() {
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
     const replyMode = $("#contactReplyModeFilter")?.value || "";
+    const followUpMarked = $("#contactFollowUpFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
+    const useDbContactPath = needsAttention || replyMode || followUpMarked;
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
     const regionFilterEl = $("#expertRegionFilter");
-    if (needsAttention || replyMode) {
+    if (useDbContactPath) {
         tag = "";
         if (tagFilterEl) {
             tagFilterEl.value = "";
@@ -2112,9 +2114,9 @@ async function loadContacts() {
     const levelChanged = state.lastEmailProvidersLevel !== level;
     state.lastEmailProvidersLevel = level;
 
-    const aggregationTag = (needsAttention || replyMode) ? "" : tag;
-    const aggregationRegion = (needsAttention || replyMode) ? "" : region;
-    const aggregationEmailDomain = (needsAttention || replyMode) ? "" : emailDomain;
+    const aggregationTag = useDbContactPath ? "" : tag;
+    const aggregationRegion = useDbContactPath ? "" : region;
+    const aggregationEmailDomain = useDbContactPath ? "" : emailDomain;
 
     loadEmailProviders(level, {
         filters: {
@@ -2135,11 +2137,12 @@ async function loadContacts() {
     let contacts = [];
     let totalHits = 0;
     try {
-    if (needsAttention || replyMode) {
+    if (useDbContactPath) {
         const params = new URLSearchParams();
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
         if (replyMode) params.set("replyMode", replyMode);
+        if (followUpMarked) params.set("followUpMarked", followUpMarked);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
         if (emailDomain) {
@@ -2160,6 +2163,8 @@ async function loadContacts() {
             contactStatus: c.currentStatus,
             operatorStatus: c.operatorStatus,
             needsManualAttention: c.needsManualAttention,
+            followUpMarked: c.followUpMarked,
+            followUpMarkedAt: c.followUpMarkedAt || null,
             country: "",
             employment: "",
             keyword: "",
@@ -2210,7 +2215,13 @@ async function loadContacts() {
     }
 
     const sortBy = $("#expertSortBy")?.value || "";
-    if ((operatorStatus || needsAttention || replyMode) && sortBy === "updatedAt") {
+    if (followUpMarked) {
+        contacts.sort((a, b) => {
+            if (!a.followUpMarkedAt) return 1;
+            if (!b.followUpMarkedAt) return -1;
+            return new Date(b.followUpMarkedAt) - new Date(a.followUpMarkedAt);
+        });
+    } else if ((operatorStatus || needsAttention || replyMode) && sortBy === "updatedAt") {
         contacts.sort((a, b) => {
             if (!a.updatedAt) return 1;
             if (!b.updatedAt) return -1;
@@ -2254,6 +2265,9 @@ function renderContactListItems() {
             contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
             contact.keyword || ""
         ].filter(Boolean).join("\n");
+        const followUpIcon = contact.followUpMarked
+            ? `<span class="follow-up-mark" title="待跟进${contact.followUpMarkedAt ? ` · ${escapeHtml(contact.followUpMarkedAt)}` : ""}">📌</span>`
+            : "";
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}" ${hoverInfo ? `title="${escapeHtml(hoverInfo)}"` : ""}>
             <label class="expert-checkbox" onclick="event.stopPropagation()">
@@ -2262,7 +2276,7 @@ function renderContactListItems() {
             <div class="expert-content-wrapper">
                 <div class="expert-row-main">
                     <div class="expert-name-block">
-                        <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
+                        <div class="list-item-title expert-title">${followUpIcon}${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
                         <div class="list-item-meta expert-meta">
                             <span>${escapeHtml(indexLevelLabels[contact.indexLevel] || contact.indexLevelName || contact.indexLevel)}</span>
                             <span>${escapeHtml(contact.country || "国家未知")}</span>
@@ -4094,6 +4108,9 @@ async function loadContactDetail(contactId) {
             <button class="button primary" id="saveContactChangesBtn" data-contact-id="${contact.id}" disabled>
                 保存变更
             </button>
+            <button class="button ${contact.followUpMarked ? "" : "primary"}" data-action="toggle-follow-up" data-id="${contact.id}" data-marked="${contact.followUpMarked ? "true" : "false"}">
+                ${contact.followUpMarked ? "取消待跟进" : "标记待跟进"}
+            </button>
         </div>
         <div class="contact-head-mail-row">
             <span class="contact-head-label">手动发送邮件:</span>
@@ -4549,6 +4566,19 @@ async function handleContactAction(element) {
         });
         showStatus("邮件已发送");
         await loadContactDetail(id);
+        return;
+    }
+    if (action === "toggle-follow-up") {
+        const marked = element.dataset.marked === "true";
+        if (marked) {
+            await api(`/api/expert-contacts/${id}/mark-follow-up`, { method: "DELETE" });
+            showStatus("已取消待跟进");
+        } else {
+            await api(`/api/expert-contacts/${id}/mark-follow-up`, { method: "POST" });
+            showStatus("已标记待跟进");
+        }
+        await loadContactDetail(id);
+        await loadContacts();
         return;
     }
     if (action === "toggle-reply-mode") {
@@ -6691,6 +6721,7 @@ function bindEvents() {
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
             $("#contactReplyModeFilter").value !== "",
+            $("#contactFollowUpFilter")?.value !== "",
             $("#expertTagFilter").value !== "",
             $("#expertEmailDomainFilter")?.value !== "",
             $("#expertRegionFilter")?.value !== ""
@@ -6705,7 +6736,7 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
-        "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
+        "contactFollowUpFilter", "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
