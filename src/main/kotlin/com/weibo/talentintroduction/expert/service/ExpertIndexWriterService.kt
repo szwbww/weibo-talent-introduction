@@ -289,6 +289,11 @@ class ExpertIndexWriterService(
                 HttpEntity(toStringMap(doc), headers()),
                 JsonNode::class.java
             )
+            val removedFromCandidate = removeFromCandidateIndex(normalizedOrcid)
+            if (!removedFromCandidate) {
+                markPromotionFailed(audit, "Failed to remove candidate index document after application promotion")
+                return false
+            }
             markPromotionSuccess(audit)
             true
         } catch (e: Exception) {

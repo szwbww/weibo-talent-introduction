@@ -284,6 +284,71 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
+    fun `promoteToApplication removes promoted document from candidate index`() {
+        val candidateBody = mapper.readTree(
+            """
+            {
+              "_index": "orcid_info_candidate",
+              "_id": "0001",
+              "_source": {
+                "orcidId": "0001",
+                "email": "a@b.com",
+                "givenNames": "Test",
+                "familyNames": "User"
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_doc/0001"),
+                eq(HttpMethod.GET),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(candidateBody, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_application/_doc/0001"),
+                eq(HttpMethod.PUT),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_doc/0001"),
+                eq(HttpMethod.DELETE),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
+            id = null,
+            orcidId = "0001",
+            expertEmail = "a@b.com",
+            expertName = "Test User",
+            currentStatus = "WAITING_REPLY",
+            campaignId = 1L,
+            autoReplyEnabled = true
+        )
+        val result = service.promoteToApplication(
+            orcid = "0001",
+            contact = contact,
+            firstReplyAt = java.time.Instant.parse("2026-01-01T00:00:00Z")
+        )
+
+        assertTrue(result)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/0001"),
+            eq(HttpMethod.DELETE),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
     fun `addTag sends correct update script and returns true`() {
         Mockito.`when`(
             restTemplate.exchange(
