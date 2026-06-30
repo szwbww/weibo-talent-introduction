@@ -75,6 +75,10 @@ const aiReplyState = {
     lastDraft: "",
     /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
     lastQaRuleIds: [],
+    /** Locked after first turn: QA_MATCHED | FREE_FORM */
+    mode: null,
+    /** Whether first turn has completed (locks mode and qaRuleIds for continuation). */
+    firstTurnDone: false,
     drafts: {},
     nextDraftId: 0
 };
@@ -5397,11 +5401,11 @@ function renderAiReplyPanelHtml(recordId) {
     return `
         <div class="detail-section ai-reply-section">
             <h3>AI 生成回复</h3>
-            <p class="text-muted" style="font-size:12px;margin:0 0 8px;">基于匹配 QA 规则多轮生成英文草稿，满意后采用并发送</p>
+            <p class="text-muted" style="font-size:12px;margin:0 0 8px;">命中 QA 规则则按规则拼接；未命中则依据专家画像与历史邮件自由生成。首轮可填补充要求。</p>
             <div class="ai-chat-panel">
                 <div id="aiChatMessages" class="ai-chat-messages"></div>
                 <div class="ai-chat-input-row">
-                    <textarea id="aiChatInput" class="ai-chat-input" rows="2" placeholder="首轮直接生成；续轮输入修改要求，如「语气更正式」"></textarea>
+                    <textarea id="aiChatInput" class="ai-chat-input" rows="2" placeholder="首轮可填补充要求或直接生成；续轮输入修改要求，如「语气更正式」"></textarea>
                     <button type="button" class="button primary" data-action="ai-reply-turn" data-record-id="${recordId}">生成 / 继续修改</button>
                 </div>
             </div>
@@ -5413,6 +5417,8 @@ function resetAiReplyState(recordId) {
     aiReplyState.turns = [];
     aiReplyState.lastDraft = "";
     aiReplyState.lastQaRuleIds = [];
+    aiReplyState.mode = null;
+    aiReplyState.firstTurnDone = false;
     aiReplyState.drafts = {};
     aiReplyState.nextDraftId = 0;
 }
@@ -5868,8 +5874,9 @@ async function handleUnmatchedAction(element) {
     if (action === "ai-reply-turn") {
         const input = $("#aiChatInput");
         const instruction = input?.value?.trim() || "";
+        const isFirstTurn = !aiReplyState.firstTurnDone;
         const turnsToSend = [...aiReplyState.turns];
-        if (aiReplyState.lastDraft) {
+        if (!isFirstTurn) {
             if (!instruction) {
                 showStatus("请输入修改要求", "error");
                 return;
@@ -5879,23 +5886,39 @@ async function handleUnmatchedAction(element) {
                 operatorInstruction: instruction
             });
         }
+        const body = {
+            turns: turnsToSend,
+            qaRuleIds: isFirstTurn ? null : aiReplyState.lastQaRuleIds
+        };
+        if (isFirstTurn && instruction) {
+            body.operatorInstruction = instruction;
+        }
         try {
             const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
                 method: "POST",
-                body: JSON.stringify({ turns: turnsToSend, qaRuleIds: null })
+                body: JSON.stringify(body)
             });
-            if (instruction && aiReplyState.lastDraft) {
+            if (!isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
                 aiReplyState.turns.push({
                     assistantDraft: aiReplyState.lastDraft,
                     operatorInstruction: instruction
                 });
+            } else if (isFirstTurn && instruction) {
+                appendAiChatOperatorBubble(instruction);
             }
             appendAiChatDraftBubble(result.draftText || "");
             aiReplyState.lastDraft = result.draftText || "";
             aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
+            if (isFirstTurn) {
+                aiReplyState.mode = result.mode || null;
+                aiReplyState.firstTurnDone = true;
+            }
             if (input) input.value = "";
-            showStatus(result.usedLlm ? "AI 生成完成" : "DeepSeek 不可用，已用确定性草稿");
+            const modeHint = result.mode === "QA_MATCHED"
+                ? `已匹配 QA 规则（${(result.qaRuleIds || []).length} 条），按规则拼接`
+                : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
+            showStatus(result.usedLlm ? `AI 生成完成 — ${modeHint}` : `DeepSeek 不可用，已用确定性草稿 — ${modeHint}`);
         } catch (e) {
             alert("AI 生成失败: " + e.message);
         }

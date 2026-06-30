@@ -6,6 +6,8 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewResult
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.CandidateSuggestion
@@ -41,7 +43,8 @@ class UnmatchedInboundMailController(
     private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService,
     private val autoReplyPreviewService: AutoReplyPreviewService,
     private val replySnippetService: ReplySnippetService,
-    private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService
+    private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService,
+    private val mailRecordRepository: MailRecordRepository
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -274,16 +277,26 @@ class UnmatchedInboundMailController(
                 operatorInstruction = it.operatorInstruction
             )
         }
+        val expertProfile = detail.expertContactId?.let { contactId ->
+            expertContactRepository.findById(contactId).orElse(null)?.let(::buildExpertProfile)
+        }
+        val mailHistory = detail.expertContactId?.let { contactId ->
+            buildMailHistory(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+        }
         val result = aiReplyDraftService.generate(
             inboundText = inboundText,
             operatorTurns = turns,
-            qaRuleIds = request.qaRuleIds
+            qaRuleIds = request.qaRuleIds,
+            operatorInstruction = request.operatorInstruction,
+            expertProfile = expertProfile,
+            mailHistory = mailHistory
         )
         return AiReplyTurnResponse(
             draftText = result.draftText,
             usedLlm = result.usedLlm,
             llmEnabled = llmStitchService.isEnabled(),
-            qaRuleIds = result.qaRuleIds
+            qaRuleIds = result.qaRuleIds,
+            mode = result.mode.name
         )
     }
 }
@@ -489,15 +502,32 @@ data class AiReplyTurnDto(
 data class AiReplyTurnRequest(
     val turns: List<AiReplyTurnDto> = emptyList(),
     val qaRuleIds: List<Long>? = null,
-    val sessionId: String? = null
+    val sessionId: String? = null,
+    val operatorInstruction: String? = null
 )
 
 data class AiReplyTurnResponse(
     val draftText: String,
     val usedLlm: Boolean,
     val llmEnabled: Boolean,
-    val qaRuleIds: List<Long>
+    val qaRuleIds: List<Long>,
+    val mode: String
 )
+
+private fun buildExpertProfile(contact: ExpertContact): String = buildString {
+    contact.expertName?.takeIf { it.isNotBlank() }?.let { appendLine("Name: $it") }
+    contact.country?.takeIf { it.isNotBlank() }?.let { appendLine("Country: $it") }
+    appendLine("Email: ${contact.expertEmail}")
+    appendLine("Status: ${contact.currentStatus}")
+}.trim()
+
+private fun buildMailHistory(records: List<MailRecord>): String {
+    val recent = records.takeLast(20)
+    return recent.joinToString("\n\n") { record ->
+        val body = record.cleanedBody?.takeIf { it.isNotBlank() } ?: record.body.orEmpty()
+        "[${record.direction}] ${record.subject.orEmpty().take(200)}\n${body.take(1500)}"
+    }.take(8000)
+}
 
 private fun InboundMailProcessing.toResponse(
     expertName: String? = null,

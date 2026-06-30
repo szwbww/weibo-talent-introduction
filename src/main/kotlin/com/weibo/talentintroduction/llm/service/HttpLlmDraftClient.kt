@@ -20,7 +20,7 @@ data class LlmChatMessage(
 interface LlmDraftClient {
     fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String?
 
-    fun chat(messages: List<LlmChatMessage>): String?
+    fun chat(messages: List<LlmChatMessage>, temperature: Double? = null): String?
 }
 
 @Component
@@ -52,7 +52,7 @@ class HttpLlmDraftClient(
         return chat(listOf(LlmChatMessage(role = "user", content = prompt)))
     }
 
-    override fun chat(messages: List<LlmChatMessage>): String? {
+    override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
         if (properties.apiUrl.isBlank()) {
             return null
         }
@@ -65,7 +65,7 @@ class HttpLlmDraftClient(
         val body = mapOf(
             "model" to properties.model,
             "messages" to messages.map { mapOf("role" to it.role, "content" to it.content) },
-            "temperature" to 0.3
+            "temperature" to (temperature ?: properties.temperature)
         )
         return try {
             val response = restTemplate.postForEntity(

@@ -12,5 +12,7 @@ data class LlmProperties(
     val apiUrl: String = "",
     val apiKey: String = "",
     val model: String = "gpt-4o-mini",
-    val timeoutMs: Int = 30_000
+    val timeoutMs: Int = 30_000,
+    val temperature: Double = 0.3,
+    val freeFormTemperature: Double = 0.6
 )

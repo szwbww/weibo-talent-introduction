@@ -7,6 +7,11 @@ import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 
+enum class AiReplyMode {
+    QA_MATCHED,
+    FREE_FORM
+}
+
 data class AiReplyTurn(
     val assistantDraft: String,
     val operatorInstruction: String
@@ -15,7 +20,8 @@ data class AiReplyTurn(
 data class AiReplyDraftResult(
     val draftText: String,
     val usedLlm: Boolean,
-    val qaRuleIds: List<Long>
+    val qaRuleIds: List<Long>,
+    val mode: AiReplyMode
 )
 
 internal data class ResolvedQaRules(
@@ -35,19 +41,41 @@ class AiReplyDraftService(
     fun generate(
         inboundText: String,
         operatorTurns: List<AiReplyTurn>,
-        qaRuleIds: List<Long>? = null
+        qaRuleIds: List<Long>? = null,
+        operatorInstruction: String? = null,
+        expertProfile: String? = null,
+        mailHistory: String? = null
     ): AiReplyDraftResult {
         val resolved = resolveQaRules(inboundText, qaRuleIds)
+        val mode = if (resolved.sendQaRuleIds.isNotEmpty()) AiReplyMode.QA_MATCHED else AiReplyMode.FREE_FORM
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
 
         if (!properties.enabled) {
-            return fallback(resolved, operatorTurns, lastDraft)
+            return fallback(resolved, operatorTurns, lastDraft, mode)
         }
 
-        val messages = buildMessages(inboundText, operatorTurns, resolved.promptRuleIds)
+        val messages = when (mode) {
+            AiReplyMode.QA_MATCHED -> buildMatchedMessages(
+                inboundText = inboundText,
+                operatorTurns = operatorTurns,
+                promptRuleIds = resolved.promptRuleIds,
+                operatorInstruction = operatorInstruction
+            )
+            AiReplyMode.FREE_FORM -> buildFreeFormMessages(
+                inboundText = inboundText,
+                operatorTurns = operatorTurns,
+                operatorInstruction = operatorInstruction,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory
+            )
+        }
+        val temperature = when (mode) {
+            AiReplyMode.QA_MATCHED -> properties.temperature
+            AiReplyMode.FREE_FORM -> properties.freeFormTemperature
+        }
         val llmText = try {
             llmDraftClientProvider.getIfAvailable()
-                ?.chat(messages)
+                ?.chat(messages, temperature)
                 ?.takeIf { it.isNotBlank() }
         } catch (ex: Exception) {
             null
@@ -57,10 +85,11 @@ class AiReplyDraftService(
             AiReplyDraftResult(
                 draftText = llmText,
                 usedLlm = true,
-                qaRuleIds = resolved.sendQaRuleIds
+                qaRuleIds = resolved.sendQaRuleIds,
+                mode = mode
             )
         } else {
-            fallback(resolved, operatorTurns, lastDraft)
+            fallback(resolved, operatorTurns, lastDraft, mode)
         }
     }
 
@@ -77,36 +106,114 @@ class AiReplyDraftService(
         return ResolvedQaRules(sendQaRuleIds = matched, promptRuleIds = promptRuleIds)
     }
 
-    internal fun buildMessages(
+    internal fun buildMatchedMessages(
         inboundText: String,
         operatorTurns: List<AiReplyTurn>,
-        promptRuleIds: List<Long>
+        promptRuleIds: List<Long>,
+        operatorInstruction: String? = null
     ): List<LlmChatMessage> {
         val messages = mutableListOf<LlmChatMessage>()
-        messages += LlmChatMessage(role = "system", content = buildSystemPrompt(promptRuleIds))
-        messages += LlmChatMessage(role = "user", content = inboundText.take(4000))
+        messages += LlmChatMessage(role = "system", content = buildMatchedSystemPrompt())
+        messages += LlmChatMessage(role = "user", content = buildMatchedUserContent(inboundText, promptRuleIds))
+        appendFirstTurnInstruction(messages, operatorInstruction)
+        appendOperatorTurns(messages, operatorTurns)
+        return messages
+    }
+
+    internal fun buildFreeFormMessages(
+        inboundText: String,
+        operatorTurns: List<AiReplyTurn>,
+        operatorInstruction: String? = null,
+        expertProfile: String? = null,
+        mailHistory: String? = null
+    ): List<LlmChatMessage> {
+        val messages = mutableListOf<LlmChatMessage>()
+        messages += LlmChatMessage(role = "system", content = buildFreeFormSystemPrompt())
+        messages += LlmChatMessage(
+            role = "user",
+            content = buildFreeFormUserContent(inboundText, expertProfile, mailHistory)
+        )
+        appendFirstTurnInstruction(messages, operatorInstruction)
+        appendOperatorTurns(messages, operatorTurns)
+        return messages
+    }
+
+    private fun appendFirstTurnInstruction(messages: MutableList<LlmChatMessage>, operatorInstruction: String?) {
+        operatorInstruction?.takeIf { it.isNotBlank() }?.let { instruction ->
+            messages += LlmChatMessage(role = "user", content = instruction.take(4000))
+        }
+    }
+
+    private fun appendOperatorTurns(messages: MutableList<LlmChatMessage>, operatorTurns: List<AiReplyTurn>) {
         operatorTurns.forEach { turn ->
             messages += LlmChatMessage(role = "assistant", content = turn.assistantDraft)
             messages += LlmChatMessage(role = "user", content = turn.operatorInstruction)
         }
-        return messages
     }
 
-    private fun buildSystemPrompt(promptRuleIds: List<Long>): String = buildString {
-        appendLine("You are a recruiting assistant. Write expert reply emails in English using the QA knowledge below.")
+    private fun buildBaseSystemPrompt(): String = buildString {
+        appendLine("You are a recruiting assistant for academic expert outreach.")
+        appendLine("Your goal is to encourage a reply and advance the conversation toward scheduling a meeting.")
+        appendLine("Tone: warm, professional, concise.")
+        appendLine("Reply in the same language as the inbound email.")
+        appendLine("Keep the reply to at most 4 paragraphs.")
         appendLine("Output only the email body text. Do not include a subject line.")
-        appendLine("Do not make promises beyond what the QA rules support.")
-        appendLine()
-        appendLine("QA knowledge:")
-        appendLine(buildRuleSegments(promptRuleIds).take(8000))
-        buildFrameGuidanceText()?.let { guidance ->
-            appendLine()
-            appendLine("Style guidance (salutation, greeting, acknowledgment, closing):")
-            appendLine(guidance)
-        }
     }
 
-    private fun buildFrameGuidanceText(): String? {
+    private fun buildMatchedSystemPrompt(): String = buildString {
+        append(buildBaseSystemPrompt())
+        appendLine()
+        appendLine("You are composing a reply by stitching matched QA rule segments.")
+        appendLine(
+            "CRITICAL: Preserve each SEGMENT wording and facts verbatim — only add transition sentences, " +
+                "integrate the salutation framework, and deduplicate greetings."
+        )
+        appendLine("Do not rewrite, paraphrase, or add promises beyond what the segments state.")
+    }
+
+    private fun buildFreeFormSystemPrompt(): String = buildString {
+        append(buildBaseSystemPrompt())
+        appendLine()
+        appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
+        appendLine("Do not make specific commitments beyond what the context supports.")
+    }
+
+    private fun buildMatchedUserContent(inboundText: String, promptRuleIds: List<Long>): String = buildString {
+        val frame = replySnippetService.resolveManualFrame()
+        frame.salutation?.takeIf { it.isNotBlank() }?.let { appendLine("SALUTATION=$it") }
+        frame.greeting?.takeIf { it.isNotBlank() }?.let { appendLine("GREETING=$it") }
+        replySnippetService.resolveAck(null)?.takeIf { it.isNotBlank() }?.let { appendLine("ACK=$it") }
+        promptRuleIds.forEachIndexed { index, ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                appendLine("SEGMENT ${index + 1}=${rule.replyBody}")
+            }
+        }
+        frame.closing?.takeIf { it.isNotBlank() }?.let { appendLine("CLOSING=$it") }
+        appendLine()
+        appendLine("Inbound email:")
+        appendLine(inboundText.take(4000))
+    }
+
+    private fun buildFreeFormUserContent(
+        inboundText: String,
+        expertProfile: String?,
+        mailHistory: String?
+    ): String = buildString {
+        expertProfile?.takeIf { it.isNotBlank() }?.let {
+            appendLine("Expert profile:")
+            appendLine(it)
+            appendLine()
+        }
+        mailHistory?.takeIf { it.isNotBlank() }?.let {
+            appendLine("Mail history:")
+            appendLine(it)
+            appendLine()
+        }
+        appendLine("Inbound email:")
+        appendLine(inboundText.take(4000))
+    }
+
+    internal fun buildFrameGuidanceText(): String? {
         val frame = replySnippetService.resolveManualFrame()
         val parts = mutableListOf<String>()
         frame.salutation?.takeIf { it.isNotBlank() }?.let { parts += "Salutation: $it" }
@@ -118,18 +225,11 @@ class AiReplyDraftService(
         return parts.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
 
-    private fun buildRuleSegments(qaRuleIds: List<Long>): String =
-        qaRuleIds.mapNotNull { ruleId ->
-            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
-                val title = rule.sectionTitle?.trim().orEmpty()
-                if (title.isEmpty()) rule.replyBody else "$title\n${rule.replyBody}"
-            }
-        }.joinToString("\n\n")
-
     private fun fallback(
         resolved: ResolvedQaRules,
         operatorTurns: List<AiReplyTurn>,
-        lastDraft: String?
+        lastDraft: String?,
+        mode: AiReplyMode
     ): AiReplyDraftResult {
         val draftText = if (operatorTurns.isEmpty()) {
             if (resolved.promptRuleIds.isEmpty()) {
@@ -143,7 +243,8 @@ class AiReplyDraftService(
         return AiReplyDraftResult(
             draftText = draftText,
             usedLlm = false,
-            qaRuleIds = resolved.sendQaRuleIds
+            qaRuleIds = resolved.sendQaRuleIds,
+            mode = mode
         )
     }
 }
