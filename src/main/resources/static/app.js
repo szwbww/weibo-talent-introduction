@@ -5462,6 +5462,9 @@ async function showUnmatchedDetail(id) {
     const suggest = record.expertContactId
         ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
         : null;
+    const history = record.expertContactId
+        ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
+        : null;
     const candidates = data.candidates || [];
     const contact = data.contact;
     const panel = $("#unmatchedDetailPanel");
@@ -5551,6 +5554,16 @@ async function showUnmatchedDetail(id) {
 
     const composeWorkbenchHtml = suggest ? renderComposedReplyWorkbenchHtml(suggest, id) : "";
 
+    const historyMails = (history && history.mails) || [];
+    const historyHtml = record.expertContactId && historyMails.length ? `
+        <details class="detail-section mail-history-detail">
+            <summary>与该专家的历史信件记录（${historyMails.length} 封）</summary>
+            <div class="mail-timeline">
+                ${historyMails.slice().reverse().map(renderMailItem).join("")}
+            </div>
+        </details>
+    ` : "";
+
     panel.innerHTML = `
         <div class="panel-head">
             <h2>来信详情与处理</h2>
@@ -5597,6 +5610,8 @@ async function showUnmatchedDetail(id) {
             </div>` : ""}
 
             ${linkedExpertHtml}
+
+            ${historyHtml}
 
             ${qaReplyHtml}
 

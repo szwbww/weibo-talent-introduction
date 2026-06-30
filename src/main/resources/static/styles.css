@@ -1571,6 +1571,15 @@ textarea {
     z-index: 1;
 }
 
+.mail-history-detail > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.mail-history-detail > .mail-timeline {
+    margin-top: 12px;
+}
+
 .mail-item {
     position: relative;
     border-radius: var(--radius-sm);
