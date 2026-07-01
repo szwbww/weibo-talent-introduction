@@ -58,7 +58,8 @@ class AutoMailReplyService(
     private val dmarcReportIngestService: DmarcReportIngestService,
     private val mailContentService: MailContentService,
     private val mailInboxCursorService: MailInboxCursorService,
-    private val autoReplySettingService: AutoReplySettingService
+    private val autoReplySettingService: AutoReplySettingService,
+    private val inboundMailTagService: InboundMailTagService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
@@ -1026,8 +1027,22 @@ class AutoMailReplyService(
                 updatedAt = now
             )
         )
+        applyAutoTags(saved, cleanedBody, received.body)
         if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
         return saved
+    }
+
+    private fun applyAutoTags(
+        saved: InboundMailProcessing,
+        cleanedBody: String?,
+        fallbackBody: String?
+    ) {
+        runCatching {
+            val tagBody = cleanedBody ?: saved.body ?: fallbackBody
+            if (!tagBody.isNullOrBlank()) {
+                saved.id?.let { inboundMailTagService.autoApplyQaTags(it, tagBody) }
+            }
+        }.onFailure { log.warn("auto tag failed for inbound ${saved.id}", it) }
     }
 
     private fun confirmProcessed(
@@ -1042,7 +1057,7 @@ class AutoMailReplyService(
         cleanedBody: String? = null
     ) {
         val now = LocalDateTime.now()
-        inboundMailProcessingRepository.save(
+        val saved = inboundMailProcessingRepository.save(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
                 imapUid = received.imapUid,
@@ -1061,6 +1076,7 @@ class AutoMailReplyService(
                 updatedAt = now
             )
         )
+        applyAutoTags(saved, cleanedBody, body ?: received.body)
         if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
     }
 }

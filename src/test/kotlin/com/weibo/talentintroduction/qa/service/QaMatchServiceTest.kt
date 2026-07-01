@@ -234,6 +234,40 @@ class QaMatchServiceTest {
     }
 
     @Test
+    fun `matchAllRuleIds returns raw hits including superseded child rules`() {
+        val overviewRule = QaRule(
+            id = 100,
+            categoryId = 2,
+            keywords = "learn more,more information,understand the program",
+            priority = 5,
+            replySubject = "Program overview",
+            replyBody = "Overview answer",
+            supersedesChildren = true
+        )
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                overviewRule,
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,funding",
+                    priority = 80,
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+
+        val body = "I would like to learn more about the program. What funding support is available?"
+        val allIds = service.matchAllRuleIds(body)
+        val matchResult = service.match(body)
+
+        assertTrue(allIds.contains(100L))
+        assertTrue(allIds.contains(1L))
+        assertTrue(allIds.size > (matchResult?.matchedRuleIds?.size ?: 0))
+    }
+
+    @Test
     fun `child rule aggregation unchanged when overview does not match`() {
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
             listOf(

@@ -78,6 +78,7 @@ class AutoMailReplyServiceTest {
     private val dmarcReportIngestService = Mockito.mock(DmarcReportIngestService::class.java)
     private val mailContentService = MailContentService()
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
+    private val inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -108,7 +109,8 @@ class AutoMailReplyServiceTest {
         dmarcReportIngestService,
         mailContentService,
         cursorService,
-        autoReplySettingService
+        autoReplySettingService,
+        inboundMailTagService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -973,6 +975,50 @@ class AutoMailReplyServiceTest {
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
         Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
         assertEquals(ConversationStatus.QA_AUTO_REPLIED.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `auto tag failure does not block inbound processing`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(body = "Could you share the program details?")
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+        Mockito.doAnswer { throw RuntimeException("tag boom") }
+            .`when`(inboundMailTagService)
+            .autoApplyQaTags(
+                Mockito.anyLong(),
+                Mockito.nullable(String::class.java),
+                Mockito.nullable(String::class.java),
+                Mockito.anyString()
+            )
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.QA_REPLIED, result.outcome)
+        assertEquals(true, result.recorded)
+        Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(inboundMailTagService).autoApplyQaTags(
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.nullable(String::class.java),
+            Mockito.anyString()
+        )
     }
 
     @Test

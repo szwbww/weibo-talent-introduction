@@ -43,6 +43,13 @@ class QaMatchService(
         )
     }
 
+    fun matchAllRuleIds(messageBody: String): List<Long> {
+        val normalizedBody = normalize(messageBody)
+        return qaRuleRepository.findAllEnabledOrdered()
+            .mapNotNull { rule -> matchRule(rule, normalizedBody)?.let { rule.id } }
+            .distinct()
+    }
+
     fun match(messageBody: String): QaMatchResult? {
         val normalizedBody = normalize(messageBody)
         val rawMatches = qaRuleRepository.findAllEnabledOrdered()

@@ -165,4 +165,50 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
 
     @Query("SELECT COUNT(*) FROM inbound_mail_processing")
     fun countAll(): Long
+
+    @Query(
+        """
+        SELECT p.* FROM inbound_mail_processing p
+        WHERE p.received_at >= :from AND p.received_at < :to
+          AND (:qaRuleId IS NULL OR EXISTS (
+                SELECT 1 FROM inbound_mail_tag t
+                WHERE t.inbound_processing_id = p.id AND t.qa_rule_id = :qaRuleId))
+          AND (:label IS NULL OR EXISTS (
+                SELECT 1 FROM inbound_mail_tag t2
+                WHERE t2.inbound_processing_id = p.id
+                  AND t2.tag_type = 'CUSTOM'
+                  AND t2.label = :label))
+        ORDER BY p.received_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listInboundSummary(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        qaRuleId: Long?,
+        label: String?,
+        limit: Int,
+        offset: Int
+    ): List<InboundMailProcessing>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM inbound_mail_processing p
+        WHERE p.received_at >= :from AND p.received_at < :to
+          AND (:qaRuleId IS NULL OR EXISTS (
+                SELECT 1 FROM inbound_mail_tag t
+                WHERE t.inbound_processing_id = p.id AND t.qa_rule_id = :qaRuleId))
+          AND (:label IS NULL OR EXISTS (
+                SELECT 1 FROM inbound_mail_tag t2
+                WHERE t2.inbound_processing_id = p.id
+                  AND t2.tag_type = 'CUSTOM'
+                  AND t2.label = :label))
+        """
+    )
+    fun countInboundSummary(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        qaRuleId: Long?,
+        label: String?
+    ): Long
 }

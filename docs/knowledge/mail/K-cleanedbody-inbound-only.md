@@ -2,8 +2,8 @@
 id: K-cleanedbody-inbound-only
 domain: mail
 created: 2026-06-29
-last_used: 2026-06-30
-hit_count: 3
+last_used: 2026-07-01
+hit_count: 5
 source: create-p:translate-source-cleaned-body
 severity: P2
 ---
