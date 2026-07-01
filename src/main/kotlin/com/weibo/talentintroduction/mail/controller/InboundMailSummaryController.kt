@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.TagStatItem
 import com.weibo.talentintroduction.mail.service.TagStatsResult
 import com.weibo.talentintroduction.mail.service.TagView
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -30,8 +31,8 @@ class InboundMailSummaryController(
     @GetMapping("/mails")
     fun listMails(
         @RequestParam(required = false) tagKey: String?,
-        @RequestParam from: LocalDateTime,
-        @RequestParam to: LocalDateTime,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime,
         @RequestParam(defaultValue = "20") pageSize: Int,
         @RequestParam(defaultValue = "0") pageOffset: Int
     ): InboundSummaryListResponse {
