@@ -2844,21 +2844,34 @@ tr td {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 16px;
-    margin-top: 16px;
+    margin-top: 0;
 }
 
 .inbound-summary-layout {
-    grid-template-columns: minmax(320px, 0.45fr) minmax(0, 0.55fr);
-    margin-top: 16px;
-    min-height: 520px;
+    grid-template-columns: minmax(360px, 0.46fr) minmax(0, 0.54fr);
+    margin-top: 0;
+    min-height: 560px;
+    align-items: stretch;
+}
+
+#view-inbound-summary .toolbar {
+    justify-content: flex-start;
+}
+
+#view-inbound-summary .toolbar input {
+    min-width: 138px;
+}
+
+.inbound-chart-panel {
+    min-height: 150px;
 }
 
 .inbound-chart-panel .panel-head {
-    margin-bottom: 8px;
+    margin-bottom: 0;
 }
 
 .inbound-list-toolbar {
-    padding: 0 16px 12px;
+    padding: 12px 16px 10px;
 }
 
 .inbound-list-toolbar input {
@@ -2868,8 +2881,9 @@ tr td {
 .inbound-tag-filters {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     padding: 0 16px 12px;
+    border-bottom: 1px solid var(--line);
 }
 
 .inbound-tag-chip {
@@ -2882,7 +2896,7 @@ tr td {
     line-height: 1.5;
     border: 1px solid var(--border);
     background: var(--surface);
-    color: var(--text);
+    color: var(--text-main);
     cursor: default;
     max-width: 100%;
 }
@@ -2912,7 +2926,9 @@ tr td {
 }
 
 .inbound-tag-chip.filter-chip.selected {
-    box-shadow: 0 0 0 2px var(--primary);
+    background: rgba(var(--primary-rgb), 0.1);
+    border-color: rgba(var(--primary-rgb), 0.38);
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.18);
 }
 
 .inbound-tag-chip .chip-x {
@@ -2931,16 +2947,16 @@ tr td {
 }
 
 .inbound-mail-list {
-    max-height: 520px;
+    height: 444px;
     overflow-y: auto;
-    border-top: 1px solid var(--border);
+    border-top: none;
 }
 
 .inbound-mail-row {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .inbound-mail-row:hover {
@@ -2948,9 +2964,10 @@ tr td {
 }
 
 .inbound-mail-row.selected {
-    background: rgba(59, 130, 246, 0.12);
-    border-left: 3px solid var(--primary);
-    padding-left: 13px;
+    background: linear-gradient(90deg, rgba(var(--primary-rgb), 0.13), rgba(var(--primary-rgb), 0.05));
+    box-shadow: inset 3px 0 0 var(--primary);
+    border-left: none;
+    padding-left: 16px;
 }
 
 .inbound-mail-row-main {
@@ -2974,7 +2991,7 @@ tr td {
 .inbound-mail-row-subject {
     font-size: 13px;
     margin-bottom: 6px;
-    color: var(--text);
+    color: #475569;
 }
 
 .inbound-mail-row-meta {
@@ -2990,8 +3007,8 @@ tr td {
 }
 
 .inbound-tag-editor {
-    padding: 16px 16px 0;
-    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 0;
+    border-bottom: 1px solid var(--line);
 }
 
 .inbound-tag-editor-head {
@@ -3004,7 +3021,7 @@ tr td {
 
 .inbound-tag-editor-head h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .inbound-tag-editor-actions {
@@ -3022,18 +3039,19 @@ tr td {
 }
 
 .inbound-thread {
-    padding: 16px;
-    max-height: 560px;
+    padding: 18px 20px;
+    height: 480px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
+    background: linear-gradient(180deg, #ffffff, #fafcff);
 }
 
 .inbound-thread-bubble {
-    max-width: 85%;
+    max-width: 86%;
     padding: 12px 14px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
 }
 
@@ -3044,12 +3062,13 @@ tr td {
 
 .inbound-thread-bubble.outbound {
     align-self: flex-end;
-    background: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.25);
+    background: #eef4ff;
+    border-color: #c9daf8;
 }
 
 .inbound-thread-bubble.current {
-    box-shadow: 0 0 0 2px #f59e0b, 0 0 12px rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.24);
+    border-color: rgba(217, 119, 6, 0.35);
 }
 
 .inbound-thread-bubble-subject {
@@ -3071,15 +3090,17 @@ tr td {
 }
 
 .tag-bar-chart {
-    padding: 8px 16px 16px;
+    min-height: 104px;
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    justify-content: center;
+    gap: 9px;
 }
 
 .tag-bar-row {
     display: grid;
-    grid-template-columns: minmax(80px, 120px) minmax(0, 1fr) 48px;
+    grid-template-columns: minmax(90px, 120px) minmax(0, 1fr) 36px;
     gap: 10px;
     align-items: center;
     font-size: 12px;
@@ -3097,15 +3118,15 @@ tr td {
 }
 
 .tag-bar-track {
-    height: 10px;
-    background: rgba(148, 163, 184, 0.2);
+    height: 8px;
+    background: #eef2f7;
     border-radius: 999px;
     overflow: hidden;
 }
 
 .tag-bar-track .bar {
     height: 100%;
-    background: var(--primary);
+    background: linear-gradient(90deg, #3b82f6, #06b6d4);
     border-radius: 999px;
     min-width: 2px;
 }
@@ -3120,31 +3141,33 @@ tr td {
 }
 
 .tag-pie {
-    padding: 8px 16px 16px;
+    min-height: 104px;
+    padding: 14px 16px;
     display: grid;
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 16px;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 14px;
     align-items: center;
 }
 
 .tag-pie svg {
-    width: 160px;
-    height: 160px;
+    width: 106px;
+    height: 106px;
+    justify-self: center;
     transform: rotate(-90deg);
 }
 
 .tag-pie-legend {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
     font-size: 12px;
-    max-height: 180px;
+    max-height: 116px;
     overflow-y: auto;
 }
 
 .tag-pie-legend-item {
     display: grid;
-    grid-template-columns: 12px minmax(0, 1fr) auto auto;
+    grid-template-columns: 10px minmax(0, 1fr) auto auto;
     gap: 8px;
     align-items: center;
 }
@@ -3155,9 +3178,9 @@ tr td {
 }
 
 .tag-pie-swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
 }
 
 /* Prefer reduced motion */
@@ -3231,6 +3254,20 @@ tr td {
     .qa-layout,
     .contacts-layout {
         grid-template-columns: 1fr !important;
+    }
+
+    .inbound-charts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .inbound-mail-list,
+    .inbound-thread {
+        height: auto;
+        max-height: none;
+    }
+
+    .tag-pie {
+        grid-template-columns: 1fr;
     }
 
     .contact-detail-panel {
@@ -4911,7 +4948,7 @@ tr td {
 
 .ai-reply-section .ai-chat-panel {
     border: 1px solid var(--panel-border);
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: #fff;
     padding: 14px;
 }
@@ -4920,7 +4957,8 @@ tr td {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 420px;
+    height: 310px;
+    max-height: 310px;
     overflow-y: auto;
     margin-bottom: 12px;
 }
@@ -4929,18 +4967,18 @@ tr td {
     border-radius: 10px;
     padding: 10px 12px;
     max-width: 92%;
+    border: 1px solid var(--panel-border);
 }
 
 .ai-chat-bubble.ai-chat-operator {
     align-self: flex-end;
     background: #eef4ff;
-    border: 1px solid #c9daf8;
+    border-color: #c9daf8;
 }
 
 .ai-chat-bubble.ai-chat-assistant {
     align-self: flex-start;
     background: #f8f9fb;
-    border: 1px solid var(--panel-border);
 }
 
 .ai-chat-label {
@@ -4977,13 +5015,22 @@ tr td {
 
 #view-ai-training .ai-training-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
     gap: 16px;
     align-items: start;
 }
 
 #view-ai-training .ai-training-simulate-panel {
     grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    grid-template-areas:
+        "head head"
+        "tools tools"
+        "preview chat"
+        "meta meta";
+    gap: 12px 16px;
+    padding: 0 16px 16px;
 }
 
 #view-ai-training .ai-training-panel .panel-head {
@@ -4992,6 +5039,20 @@ tr td {
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
+}
+
+#view-ai-training .ai-training-simulate-panel .panel-head {
+    grid-area: head;
+    margin: 0 -16px 0;
+}
+
+#view-ai-training .ai-training-panel .table-wrap {
+    max-height: 438px;
+    overflow: auto;
+}
+
+#view-ai-training .ai-training-panel table td {
+    color: #475569;
 }
 
 #view-ai-training .toolbar-inline {
@@ -5008,28 +5069,52 @@ tr td {
     margin-bottom: 12px;
 }
 
+#view-ai-training .ai-training-prompt-form {
+    padding: 14px 16px 16px;
+}
+
+#view-ai-training .ai-training-prompt-form .field span {
+    font-weight: 600;
+    font-size: 12px;
+    color: #475569;
+}
+
 #view-ai-training .ai-training-prompt-form textarea {
     width: 100%;
     border: 1px solid var(--panel-border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     padding: 10px 12px;
     font: inherit;
     resize: vertical;
 }
 
 #view-ai-training .ai-training-simulate-toolbar {
+    grid-area: tools;
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    margin-bottom: 12px;
+    margin-bottom: 0;
+    align-content: flex-start;
+}
+
+#view-ai-training .ai-training-simulate-toolbar input,
+#view-ai-training .ai-training-simulate-toolbar select {
+    min-width: 0 !important;
+    flex: 1 1 180px;
+}
+
+#view-ai-training .ai-training-simulate-toolbar .button {
+    flex: 0 0 auto;
 }
 
 #view-ai-training .ai-training-inbound-preview {
-    margin-bottom: 12px;
+    grid-area: preview;
+    margin-bottom: 0;
     padding: 12px;
     border: 1px solid var(--panel-border);
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     background: #fafbfd;
+    min-height: 170px;
 }
 
 #view-ai-training .ai-training-inbound-preview .pre {
@@ -5038,12 +5123,33 @@ tr td {
     margin-top: 8px;
 }
 
+#view-ai-training .ai-reply-section {
+    grid-area: chat;
+    min-width: 0;
+}
+
 #view-ai-training .ai-training-simulate-meta {
+    grid-area: meta;
     margin-top: 8px;
 }
 
 @media (max-width: 1100px) {
     #view-ai-training .ai-training-grid {
         grid-template-columns: 1fr;
+    }
+
+    #view-ai-training .ai-training-simulate-panel {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "head"
+            "tools"
+            "preview"
+            "chat"
+            "meta";
+        gap: 12px;
+    }
+
+    #view-ai-training .ai-training-simulate-panel .panel-head {
+        margin-bottom: 0;
     }
 }
