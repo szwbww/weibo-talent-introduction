@@ -65,6 +65,8 @@ talent-introduction:
     initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
     operator-status-sync-cron: ${MAIL_SCHEDULING_OPERATOR_STATUS_SYNC_CRON:-}
+    ai-qa-extraction-cron: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_CRON:-}
+    ai-qa-extraction-max-contacts: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_MAX_CONTACTS:20}
   manual-outreach:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
   unsubscribe:

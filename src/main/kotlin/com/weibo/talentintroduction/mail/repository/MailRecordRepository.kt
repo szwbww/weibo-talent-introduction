@@ -27,6 +27,33 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     fun findByMailSendAttemptId(mailSendAttemptId: Long): MailRecord?
     fun findAllByExpertContactIdOrderByCreatedAtAsc(expertContactId: Long): List<MailRecord>
 
+    @Query(
+        """
+        SELECT * FROM mail_record
+        WHERE expert_contact_id = :contactId AND direction = 'INBOUND'
+        ORDER BY COALESCE(received_at, created_at) DESC, id DESC
+        LIMIT 1
+        """
+    )
+    fun findLatestInboundByExpertContactId(contactId: Long): MailRecord?
+
+    @Query(
+        """
+        SELECT mr.expert_contact_id
+        FROM mail_record mr
+        INNER JOIN expert_contact ec ON ec.id = mr.expert_contact_id
+        WHERE mr.direction = 'INBOUND'
+          AND mr.expert_contact_id IS NOT NULL
+          AND (:keyword IS NULL OR :keyword = ''
+               OR ec.expert_name LIKE CONCAT('%', :keyword, '%')
+               OR ec.expert_email LIKE CONCAT('%', :keyword, '%'))
+        GROUP BY mr.expert_contact_id
+        ORDER BY MAX(mr.id) DESC
+        LIMIT :limit
+        """
+    )
+    fun findExpertContactIdsWithInboundMail(keyword: String?, limit: Int): List<Long>
+
     fun existsByExpertContactIdAndDirectionAndMailType(
         expertContactId: Long,
         direction: String,

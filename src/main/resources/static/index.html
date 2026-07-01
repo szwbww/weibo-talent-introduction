@@ -128,6 +128,14 @@
                 </svg>
                 <span>来信汇总</span>
             </button>
+            <button class="nav-tab" data-view="ai-training">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z"/>
+                    <circle cx="12" cy="13" r="2"/>
+                    <path d="M9 2h6"/>
+                </svg>
+                <span>AI 训练</span>
+            </button>
             <button class="nav-tab" data-view="tasks">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
@@ -675,6 +683,83 @@
                         <div class="detail-empty muted">请在左侧选择一封来信。</div>
                     </div>
                     <div id="inboundThread" class="inbound-thread"></div>
+                </section>
+            </div>
+        </section>
+
+        <!-- View: AI Training -->
+        <section class="view" id="view-ai-training">
+            <div class="ai-training-grid">
+                <section class="panel ai-training-panel">
+                    <div class="panel-head">
+                        <h2>提炼 QA 知识库</h2>
+                        <div class="toolbar-inline">
+                            <select id="aiTrainingSourceFilter">
+                                <option value="">全部来源</option>
+                                <option value="MANUAL_IMPORT">人工导入</option>
+                                <option value="AUTO_EXTRACTED">自动提炼</option>
+                            </select>
+                            <button class="button" id="reloadAiTrainingQaBtn">刷新</button>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>主题</th>
+                                <th>来源</th>
+                                <th>关键词</th>
+                                <th>标准回复要点</th>
+                            </tr>
+                            </thead>
+                            <tbody id="aiTrainingQaTable"></tbody>
+                        </table>
+                    </div>
+                    <div id="aiTrainingQaPager" class="list-pager" hidden>
+                        <button class="button small" id="aiTrainingQaPrevPage">上一页</button>
+                        <span id="aiTrainingQaPageInfo" class="list-pager-info"></span>
+                        <button class="button small" id="aiTrainingQaNextPage">下一页</button>
+                    </div>
+                </section>
+
+                <section class="panel ai-training-panel">
+                    <div class="panel-head"><h2>AI 提示词与约束</h2></div>
+                    <form id="aiTrainingPromptForm" class="ai-training-prompt-form">
+                        <label class="field">
+                            <span>自由回复系统提示词</span>
+                            <textarea id="aiTrainingFreeFormPrompt" rows="8" placeholder="留空则使用系统默认提示词"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>约束项（每行一条）</span>
+                            <textarea id="aiTrainingConstraints" rows="6" placeholder="例如：Do not promise fees&#10;Reply in English when inbound is English"></textarea>
+                        </label>
+                        <div class="toolbar-inline">
+                            <button type="submit" class="button primary">保存配置</button>
+                            <span id="aiTrainingPromptUpdatedAt" class="muted"></span>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="panel ai-training-panel ai-training-simulate-panel">
+                    <div class="panel-head"><h2>历史邮件模拟回复</h2></div>
+                    <div class="ai-training-simulate-toolbar">
+                        <input type="search" id="aiTrainingExpertKeyword" placeholder="搜索专家姓名或邮箱" style="min-width: 220px;">
+                        <button class="button" id="aiTrainingSearchExpertsBtn">搜索专家</button>
+                        <select id="aiTrainingExpertSelect" style="min-width: 260px;">
+                            <option value="">选择有来信的专家</option>
+                        </select>
+                    </div>
+                    <div id="aiTrainingInboundPreview" class="ai-training-inbound-preview muted">选择专家后展示最近来信。</div>
+                    <div class="ai-reply-section">
+                        <div class="ai-chat-panel">
+                            <div id="aiTrainingSimulateMessages" class="ai-chat-messages"></div>
+                            <div class="ai-chat-input-row">
+                                <textarea id="aiTrainingPromptOverride" class="ai-chat-input" rows="2" placeholder="可选：临时补充要求，仅影响本次模拟，不落库"></textarea>
+                                <button type="button" class="button primary" id="aiTrainingSimulateBtn">生成模拟回复</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="aiTrainingSimulateMeta" class="muted ai-training-simulate-meta"></div>
                 </section>
             </div>
         </section>

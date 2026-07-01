@@ -1,0 +1,163 @@
+[
+  {
+    "topic": "项目内容与两类计划",
+    "question": "What is this project / innovation vs entrepreneur talent?",
+    "answer": "Two tracks: Innovation Talent (PhD + 3+ years at a well-known institution, serve China 2-3 years, no relocation required, multiple visits per year, costs covered) and Entrepreneur Talent (business plan to start in China, remote control allowed, 1-2 visits per year).",
+    "keywords": "national project,innovation talent,entrepreneur,what is this project",
+    "sourceRef": "PROJECT_CONTENT"
+  },
+  {
+    "topic": "申报形式",
+    "question": "Can I apply individually or as a team?",
+    "answer": "You may apply individually or jointly and may bring a team to China for entrepreneurship.",
+    "keywords": "individual,team,joint application",
+    "sourceRef": "ENTRY_FORMAT"
+  },
+  {
+    "topic": "申报条件与材料",
+    "question": "What documents are required?",
+    "answer": "Doctoral degree certificate, passport/ID, CV (papers/patents/projects/awards), proof of patents and awards, and official proof of postdoctoral and current employment (official letters, contracts, appointment letters).",
+    "keywords": "what documents,materials needed,cv,proof,certificate",
+    "sourceRef": "APPLYING_CRITERIA"
+  },
+  {
+    "topic": "入选后角色",
+    "question": "What is my role after selection?",
+    "answer": "Serve as a research advisor or co-entrepreneur with the partner enterprise without affecting your current position.",
+    "keywords": "consultant,what is my job,my role",
+    "sourceRef": "ROLE"
+  },
+  {
+    "topic": "职责与权益",
+    "question": "What are my duties and rights?",
+    "answer": "Support the enterprise with your expertise; receive salary support and coordination assistance.",
+    "keywords": "duties,rights,benefits",
+    "sourceRef": "DUTY_AND_RIGHT"
+  },
+  {
+    "topic": "全职/兼职/远程",
+    "question": "Full-time, part-time, or remote?",
+    "answer": "Most candidates choose remote guidance with 1-2 short visits to China per year; part-time advisory is also possible.",
+    "keywords": "remote,visit,full time,relocate,part time",
+    "sourceRef": "FULL_TIME_PART_TIME"
+  },
+  {
+    "topic": "是否须常驻中国",
+    "question": "Do I need to relocate to China?",
+    "answer": "No relocation required; you may visit China multiple times per year with travel costs covered; there is a two-year consideration period after selection.",
+    "keywords": "relocate,come to china,stay,residency",
+    "sourceRef": "WORKPLACE"
+  },
+  {
+    "topic": "资助与薪资",
+    "question": "What funding or salary is available?",
+    "answer": "Selected candidates receive government project funding (RMB 3-12 million) for research plus salary from the enterprise; full-time roles may include additional housing allowance.",
+    "keywords": "funding,subsidy,housing allowance,who funds,salary",
+    "sourceRef": "SALARY"
+  },
+  {
+    "topic": "申报流程与时间线",
+    "question": "What is the application timeline?",
+    "answer": "Submit materials, our PhD team matches an enterprise and prepares the application, then submits for review; the full cycle typically takes six months or more.",
+    "keywords": "timeline,when submitted,when results,milestone,process",
+    "sourceRef": "PROJECT_STREAM"
+  },
+  {
+    "topic": "提交窗口",
+    "question": "When is the submission deadline?",
+    "answer": "Materials are generally submitted March-May with results announced November-December; follow the latest official notice.",
+    "keywords": "when to apply,submission window,deadline",
+    "sourceRef": "DEADLINE"
+  },
+  {
+    "topic": "我方优势",
+    "question": "Why should I work with your agency?",
+    "answer": "Rich experience, government subsidies, startup funding support, and arrival assistance including travel and local onboarding.",
+    "keywords": "advantage,why you,support",
+    "sourceRef": "OUR_ADVANTAGE"
+  },
+  {
+    "topic": "承诺视频 / VCR",
+    "question": "Why do you need a video with passport?",
+    "answer": "To prevent AI-forged or duplicate applications, we need a short video holding your passport and reading a commitment statement (about 3-7 minutes), submitted with your materials.",
+    "keywords": "video,vcr,record,passport,statement,promise",
+    "sourceRef": "VCR_VIDEO"
+  },
+  {
+    "topic": "单一申报承诺",
+    "question": "Can I apply through multiple agencies?",
+    "answer": "The same project may only be submitted through one agency per year; duplicate submissions invalidate the application. Please make a single-application commitment.",
+    "keywords": "only apply,duplicate,one company,one agency,commitment",
+    "sourceRef": "SINGLE_APPLICATION"
+  },
+  {
+    "topic": "会议安排",
+    "question": "How do we schedule a meeting?",
+    "answer": "Zoom, Teams, or Webex are all fine; typically 15-20 minutes; we schedule at your timezone and send the link before the call.",
+    "keywords": "meeting,zoom,teams,webex,time zone,schedule a call",
+    "sourceRef": "MEETING_SCHEDULE"
+  },
+  {
+    "topic": "资料保密与绝不收费",
+    "question": "Is my data confidential? Do you charge fees?",
+    "answer": "Materials are kept strictly confidential and used only for the application; we never charge any fees; sensitive technical details may be redacted if you prefer.",
+    "keywords": "confidential,secret,money,transfer,fee,scam",
+    "sourceRef": "CONFIDENTIAL_NO_FEE"
+  },
+  {
+    "topic": "代理资质与政府合作",
+    "question": "Are you an official agency? Can you prove government cooperation?",
+    "answer": "The talent program is confidential with no public website, but our cooperation with government offices is documented through talent-office certificates and official talent summits we can share.",
+    "keywords": "accredited,official,government,prove,certificate",
+    "sourceRef": "AGENCY_CREDENTIALS"
+  },
+  {
+    "topic": "多代理竞争与权益保障",
+    "question": "Another agency already has my materials. How are my rights protected?",
+    "answer": "Duplicate submissions require video authorization from the expert to prevent misuse; we guarantee transparent subsidy disbursement and an open process.",
+    "keywords": "other agency,switch,guarantee,rights,subsidy not paid",
+    "sourceRef": "MULTI_AGENCY_RIGHTS"
+  },
+  {
+    "topic": "联系方式偏好",
+    "question": "Please contact me only by email / I am not on LinkedIn.",
+    "answer": "Understood; we will continue communication by email only.",
+    "keywords": "only email,not on linkedin,no social media,contact me via",
+    "sourceRef": "EMAIL_ONLY_CONTACT"
+  },
+  {
+    "topic": "项目敏感性与信任建立",
+    "question": "This national project seems sensitive.",
+    "answer": "The program is legitimate and information is handled confidentially; we can build trust step by step at your pace.",
+    "keywords": "sensitive,confidential,national project,trust",
+    "sourceRef": "PROJECT_SENSITIVITY"
+  },
+  {
+    "topic": "合作企业信息",
+    "question": "Which company will I work with? Is it a good match?",
+    "answer": "We introduce a matched partner enterprise with profile, website, address, and how your research aligns with their needs.",
+    "keywords": "which company,partner company,is it a match,profile",
+    "sourceRef": "PARTNER_COMPANY"
+  },
+  {
+    "topic": "入选后流程",
+    "question": "What happens after I am selected?",
+    "answer": "After selection you finalize the research topic and sign a labor contract with the enterprise; we can arrange free visits to China plus local onboarding (SIM card, bank account, submission support).",
+    "keywords": "after selected,research topic,labor contract,arrival,bank account",
+    "sourceRef": "AFTER_SELECTED"
+  },
+  {
+    "topic": "成功率与未入选",
+    "question": "What is the success rate if I am not selected?",
+    "answer": "This is a national-level program with roughly 10% success rate; if not selected this round you may apply again next year.",
+    "keywords": "success rate,not selected,probability",
+    "sourceRef": "SUCCESS_RATE"
+  },
+  {
+    "topic": "反向信息采集清单",
+    "question": "What additional information may we request?",
+    "answer": "We may verify education, request employment proofs from each institution, awards/patent lists, invitation letters if needed, recent achievements, and passport verification. This is an operator follow-up template, not an auto-reply.",
+    "keywords": "employment proof,invitation letter,recent achievements,passport verification",
+    "sourceRef": "REVERSE_INFO_CHECKLIST"
+  }
+]

@@ -12,5 +12,7 @@ data class MailSchedulingProperties(
     val initialOutreachCron: String = "-",
     val initialOutreachCampaignId: Long = 0,
     val initialOutreachBatchSize: Int = 10,
-    val operatorStatusSyncCron: String = "-"
+    val operatorStatusSyncCron: String = "-",
+    val aiQaExtractionCron: String = "-",
+    val aiQaExtractionMaxContacts: Int = 20
 )

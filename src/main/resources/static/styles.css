@@ -4974,3 +4974,76 @@ tr td {
     padding: 8px 10px;
     font: inherit;
 }
+
+#view-ai-training .ai-training-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+    gap: 16px;
+    align-items: start;
+}
+
+#view-ai-training .ai-training-simulate-panel {
+    grid-column: 1 / -1;
+}
+
+#view-ai-training .ai-training-panel .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+#view-ai-training .toolbar-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#view-ai-training .ai-training-prompt-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+#view-ai-training .ai-training-prompt-form textarea {
+    width: 100%;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    resize: vertical;
+}
+
+#view-ai-training .ai-training-simulate-toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+#view-ai-training .ai-training-inbound-preview {
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    background: #fafbfd;
+}
+
+#view-ai-training .ai-training-inbound-preview .pre {
+    max-height: 180px;
+    overflow: auto;
+    margin-top: 8px;
+}
+
+#view-ai-training .ai-training-simulate-meta {
+    margin-top: 8px;
+}
+
+@media (max-width: 1100px) {
+    #view-ai-training .ai-training-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -36,7 +36,8 @@ class AiReplyDraftService(
     private val qaMatchService: QaMatchService,
     private val qaRuleRepository: QaRuleRepository,
     private val llmStitchService: LlmStitchService,
-    private val replySnippetService: ReplySnippetService
+    private val replySnippetService: ReplySnippetService,
+    private val aiPromptConfigService: AiPromptConfigService
 ) {
     fun generate(
         inboundText: String,
@@ -44,14 +45,29 @@ class AiReplyDraftService(
         qaRuleIds: List<Long>? = null,
         operatorInstruction: String? = null,
         expertProfile: String? = null,
-        mailHistory: String? = null
+        mailHistory: String? = null,
+        simulateOnly: Boolean = false
     ): AiReplyDraftResult {
-        val resolved = resolveQaRules(inboundText, qaRuleIds)
+        val resolved = if (simulateOnly) {
+            ResolvedQaRules(sendQaRuleIds = emptyList(), promptRuleIds = emptyList())
+        } else {
+            resolveQaRules(inboundText, qaRuleIds)
+        }
         val mode = if (resolved.sendQaRuleIds.isNotEmpty()) AiReplyMode.QA_MATCHED else AiReplyMode.FREE_FORM
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
 
         if (!properties.enabled) {
-            return fallback(resolved, operatorTurns, lastDraft, mode)
+            return fallback(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                mode = mode,
+                simulateOnly = simulateOnly,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction
+            )
         }
 
         val messages = when (mode) {
@@ -89,7 +105,17 @@ class AiReplyDraftService(
                 mode = mode
             )
         } else {
-            fallback(resolved, operatorTurns, lastDraft, mode)
+            fallback(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                mode = mode,
+                simulateOnly = simulateOnly,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction
+            )
         }
     }
 
@@ -171,11 +197,14 @@ class AiReplyDraftService(
         appendLine("Do not rewrite, paraphrase, or add promises beyond what the segments state.")
     }
 
-    private fun buildFreeFormSystemPrompt(): String = buildString {
-        append(buildBaseSystemPrompt())
-        appendLine()
-        appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
-        appendLine("Do not make specific commitments beyond what the context supports.")
+    private fun buildFreeFormSystemPrompt(): String {
+        val defaultPrompt = buildString {
+            append(buildBaseSystemPrompt())
+            appendLine()
+            appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
+            appendLine("Do not make specific commitments beyond what the context supports.")
+        }
+        return aiPromptConfigService.getEffectiveFreeFormSystemPrompt(defaultPrompt)
     }
 
     private fun buildMatchedUserContent(inboundText: String, promptRuleIds: List<Long>): String = buildString {
@@ -229,13 +258,25 @@ class AiReplyDraftService(
         resolved: ResolvedQaRules,
         operatorTurns: List<AiReplyTurn>,
         lastDraft: String?,
-        mode: AiReplyMode
+        mode: AiReplyMode,
+        simulateOnly: Boolean = false,
+        inboundText: String = "",
+        expertProfile: String? = null,
+        mailHistory: String? = null,
+        operatorInstruction: String? = null
     ): AiReplyDraftResult {
         val draftText = if (operatorTurns.isEmpty()) {
-            if (resolved.promptRuleIds.isEmpty()) {
-                ""
-            } else {
-                llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
+            when {
+                resolved.promptRuleIds.isNotEmpty() ->
+                    llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
+                simulateOnly ->
+                    composeSimulateDeterministicDraft(
+                        inboundText = inboundText,
+                        expertProfile = expertProfile,
+                        mailHistory = mailHistory,
+                        operatorInstruction = operatorInstruction
+                    )
+                else -> ""
             }
         } else {
             lastDraft.orEmpty()
@@ -246,5 +287,59 @@ class AiReplyDraftService(
             qaRuleIds = resolved.sendQaRuleIds,
             mode = mode
         )
+    }
+
+    internal fun composeSimulateDeterministicDraft(
+        inboundText: String,
+        expertProfile: String?,
+        mailHistory: String?,
+        operatorInstruction: String?
+    ): String {
+        val frame = replySnippetService.resolveManualFrame()
+        return buildString {
+            frame.salutation?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+                appendLine()
+            }
+            frame.greeting?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+                appendLine()
+            }
+            replySnippetService.resolveAck(null)?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+                appendLine()
+            }
+            extractTrainingKnowledgeSummary(expertProfile)?.let {
+                appendLine(it)
+            } ?: appendLine(
+                "Thank you for your email. We appreciate your interest and will follow up with more information soon."
+            )
+            operatorInstruction?.takeIf { it.isNotBlank() }?.let {
+                appendLine()
+                appendLine("(Simulation note: ${it.take(500)})")
+            }
+            frame.closing?.takeIf { it.isNotBlank() }?.let {
+                appendLine()
+                appendLine(it)
+            }
+        }.trim()
+    }
+
+    internal fun extractTrainingKnowledgeSummary(expertProfile: String?): String? {
+        if (expertProfile.isNullOrBlank()) {
+            return null
+        }
+        val marker = "Training knowledge base:"
+        val start = expertProfile.indexOf(marker)
+        if (start < 0) {
+            return null
+        }
+        return expertProfile.substring(start + marker.length)
+            .lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("Answer:") }
+            ?.removePrefix("Answer:")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
     }
 }

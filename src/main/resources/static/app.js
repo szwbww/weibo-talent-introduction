@@ -68,7 +68,19 @@ const state = {
         report: null
     },
     replySnippets: [],
-    selectedReplySnippetId: null
+    selectedReplySnippetId: null,
+    aiTraining: {
+        qaPage: 0,
+        qaSize: 20,
+        qaTotal: 0,
+        qaSource: "",
+        qaItems: [],
+        promptConfig: null,
+        simulateExperts: [],
+        selectedContactId: null,
+        simulateResult: null,
+        expertKeyword: ""
+    }
 };
 
 const composedReplyState = {
@@ -112,6 +124,7 @@ const viewMeta = {
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
     "inbound-summary": ["来信汇总", "按标签汇总来信、查看往来记录与标签统计。"],
+    "ai-training": ["AI 回复训练", "导入提炼 QA、配置提示词与约束，用历史邮件模拟 AI 回复效果。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -1225,6 +1238,7 @@ async function refreshCurrentView() {
         if (state.view === "contacts") await loadContacts();
         if (state.view === "mailbox") await loadMailbox();
         if (state.view === "inbound-summary") await loadInboundSummary();
+        if (state.view === "ai-training") await loadAiTraining();
         if (state.view === "tasks") await loadTasks();
         if (state.view === "monitoring") await loadMonitoring();
     } catch (error) {
@@ -1712,6 +1726,164 @@ const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING"];
 async function loadReplySnippets() {
     state.replySnippets = await api("/api/reply-snippets");
     renderReplySnippetsPanels();
+}
+
+const aiTrainingSourceLabels = {
+    MANUAL_IMPORT: "人工导入",
+    AUTO_EXTRACTED: "自动提炼"
+};
+
+function renderAiTrainingQaPager() {
+    const pager = $("#aiTrainingQaPager");
+    const size = state.aiTraining.qaSize;
+    const total = state.aiTraining.qaTotal;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    if (total <= size) {
+        pager.hidden = true;
+        return;
+    }
+    pager.hidden = false;
+    $("#aiTrainingQaPageInfo").textContent = `第 ${state.aiTraining.qaPage + 1} / ${totalPages} 页（共 ${total} 条）`;
+    $("#aiTrainingQaPrevPage").disabled = state.aiTraining.qaPage <= 0;
+    $("#aiTrainingQaNextPage").disabled = state.aiTraining.qaPage >= totalPages - 1;
+}
+
+function renderAiTrainingQaTable() {
+    const rows = state.aiTraining.qaItems.map((item) => {
+        const sourceLabel = aiTrainingSourceLabels[item.source] || item.source;
+        const sourceBadgeClass = item.source === "AUTO_EXTRACTED" ? "ok" : "primary";
+        return `
+        <tr>
+            <td><strong>${escapeHtml(item.topic)}</strong></td>
+            <td>${badge(sourceLabel, sourceBadgeClass)}</td>
+            <td class="muted-cell">${escapeHtml(item.keywords || "-")}</td>
+            <td class="muted-cell">${escapeHtml((item.answer || "").slice(0, 240))}${(item.answer || "").length > 240 ? "…" : ""}</td>
+        </tr>`;
+    }).join("");
+    $("#aiTrainingQaTable").innerHTML = rows
+        || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
+    renderAiTrainingQaPager();
+}
+
+async function loadAiTrainingQa() {
+    const params = new URLSearchParams();
+    params.set("page", String(state.aiTraining.qaPage));
+    params.set("size", String(state.aiTraining.qaSize));
+    if (state.aiTraining.qaSource) {
+        params.set("source", state.aiTraining.qaSource);
+    }
+    const data = await api(`/api/ai-training/qa?${params}`);
+    state.aiTraining.qaItems = data.items || [];
+    state.aiTraining.qaTotal = data.total ?? state.aiTraining.qaItems.length;
+    renderAiTrainingQaTable();
+}
+
+function fillAiTrainingPromptForm(config) {
+    state.aiTraining.promptConfig = config;
+    $("#aiTrainingFreeFormPrompt").value = config?.freeFormSystemPrompt || "";
+    $("#aiTrainingConstraints").value = config?.constraints || "";
+    $("#aiTrainingPromptUpdatedAt").textContent = config?.updatedAt
+        ? `最近更新：${formatDateTime(config.updatedAt)}`
+        : "使用系统默认提示词";
+}
+
+async function loadAiTrainingPromptConfig() {
+    const config = await api("/api/ai-training/prompt-config");
+    fillAiTrainingPromptForm(config);
+}
+
+function renderAiTrainingExpertSelect() {
+    const select = $("#aiTrainingExpertSelect");
+    const current = state.aiTraining.selectedContactId;
+    const options = [`<option value="">选择有来信的专家</option>`]
+        .concat(state.aiTraining.simulateExperts.map((expert) => {
+            const label = `${expert.expertName || expert.expertEmail || expert.contactId}${
+                expert.lastSubject ? ` — ${expert.lastSubject.slice(0, 40)}` : ""
+            }`;
+            return `<option value="${expert.contactId}">${escapeHtml(label)}</option>`;
+        }));
+    select.innerHTML = options.join("");
+    if (current) {
+        select.value = String(current);
+    }
+}
+
+async function loadAiTrainingSimulateExperts() {
+    const params = new URLSearchParams();
+    if (state.aiTraining.expertKeyword) {
+        params.set("keyword", state.aiTraining.expertKeyword);
+    }
+    params.set("limit", "100");
+    state.aiTraining.simulateExperts = await api(`/api/ai-training/simulate/experts?${params}`);
+    renderAiTrainingExpertSelect();
+}
+
+function renderAiTrainingSimulatePanel(result) {
+    state.aiTraining.simulateResult = result;
+    const preview = $("#aiTrainingInboundPreview");
+    const messages = $("#aiTrainingSimulateMessages");
+    const meta = $("#aiTrainingSimulateMeta");
+    if (!result) {
+        preview.textContent = "选择专家后展示最近来信。";
+        preview.classList.add("muted");
+        messages.innerHTML = "";
+        meta.textContent = "";
+        return;
+    }
+    preview.classList.remove("muted");
+    preview.innerHTML = `
+        <div><strong>${escapeHtml(result.expertName || result.expertEmail || "专家")}</strong></div>
+        <div class="muted">${escapeHtml(result.inboundSubject || "无主题")}</div>
+        <pre class="pre">${escapeHtml(result.inboundText || "")}</pre>
+    `;
+    messages.innerHTML = `
+        <div class="ai-chat-bubble ai-chat-assistant">
+            <div class="ai-chat-label">AI 模拟草稿（只读，不外发）</div>
+            <div class="pre">${escapeHtml(result.draftText || "(空草稿)")}</div>
+        </div>
+    `;
+    meta.textContent = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+}
+
+async function runAiTrainingSimulate() {
+    const contactId = Number($("#aiTrainingExpertSelect").value);
+    if (!contactId) {
+        showStatus("请先选择专家", "warn");
+        return;
+    }
+    state.aiTraining.selectedContactId = contactId;
+    const promptOverride = $("#aiTrainingPromptOverride").value.trim();
+    const result = await api("/api/ai-training/simulate", {
+        method: "POST",
+        body: JSON.stringify({
+            expertContactId: contactId,
+            promptOverride: promptOverride || null
+        })
+    });
+    renderAiTrainingSimulatePanel(result);
+    showStatus("模拟回复已生成（未外发）", "ok");
+}
+
+async function saveAiTrainingPromptConfig(event) {
+    event.preventDefault();
+    const payload = {
+        freeFormSystemPrompt: $("#aiTrainingFreeFormPrompt").value.trim() || null,
+        constraints: $("#aiTrainingConstraints").value.trim() || null
+    };
+    const saved = await api("/api/ai-training/prompt-config", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    fillAiTrainingPromptForm(saved);
+    showStatus("提示词配置已保存", "ok");
+}
+
+async function loadAiTraining() {
+    await Promise.all([
+        loadAiTrainingQa(),
+        loadAiTrainingPromptConfig(),
+        loadAiTrainingSimulateExperts()
+    ]);
 }
 
 function renderReplySnippetRow(snippet, showDefault) {
@@ -6712,6 +6884,45 @@ function bindEvents() {
         if (select.id === "operatorStatusSelect" || select.id === "indexLevelSelect" || select.id === "autoReplySelect") {
             updateSaveButtonState();
         }
+    });
+    $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
+        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingSourceFilter")?.addEventListener("change", (event) => {
+        state.aiTraining.qaSource = event.target.value;
+        state.aiTraining.qaPage = 0;
+        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingQaPrevPage")?.addEventListener("click", () => {
+        if (state.aiTraining.qaPage > 0) {
+            state.aiTraining.qaPage -= 1;
+            loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#aiTrainingQaNextPage")?.addEventListener("click", () => {
+        state.aiTraining.qaPage += 1;
+        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingPromptForm")?.addEventListener("submit", (event) => {
+        saveAiTrainingPromptConfig(event).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingSearchExpertsBtn")?.addEventListener("click", () => {
+        state.aiTraining.expertKeyword = $("#aiTrainingExpertKeyword").value.trim();
+        loadAiTrainingSimulateExperts().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingExpertKeyword")?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            state.aiTraining.expertKeyword = $("#aiTrainingExpertKeyword").value.trim();
+            loadAiTrainingSimulateExperts().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#aiTrainingExpertSelect")?.addEventListener("change", () => {
+        state.aiTraining.selectedContactId = Number($("#aiTrainingExpertSelect").value) || null;
+        renderAiTrainingSimulatePanel(null);
+    });
+    $("#aiTrainingSimulateBtn")?.addEventListener("click", () => {
+        runAiTrainingSimulate().catch((error) => showStatus(error.message, "error"));
     });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
     document.addEventListener("submit", (event) => {

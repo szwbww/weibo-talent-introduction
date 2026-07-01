@@ -21,6 +21,12 @@ class AiReplyDraftServiceTest {
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
     private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+    private val aiPromptConfigService = Mockito.mock(AiPromptConfigService::class.java)
+
+    init {
+        Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
+            .thenAnswer { invocation -> invocation.getArgument(0) }
+    }
 
     @Suppress("UNCHECKED_CAST")
     private fun provider(client: LlmDraftClient?): ObjectProvider<LlmDraftClient> {
@@ -70,7 +76,8 @@ class AiReplyDraftServiceTest {
             qaMatchService,
             qaRuleRepository,
             stitch,
-            replySnippetService
+            replySnippetService,
+            aiPromptConfigService
         )
 
     private fun sampleRule(id: Long = 1L) = QaRule(
@@ -399,6 +406,41 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `uses configured free form prompt when present`() {
+        stubEmptyFrame()
+        val customPrompt = "Custom free-form prompt with extra constraints."
+        Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
+            .thenReturn(customPrompt)
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "Configured draft"
+            }
+        }
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList()
+        )
+
+        val systemPrompt = capturedMessages.single().first { it.role == "system" }.content
+        assertTrue(systemPrompt.contains("Custom free-form prompt"))
+    }
+
+    @Test
     fun `continuation locks mode and qaRuleIds via explicit qaRuleIds`() {
         stubEmptyFrame()
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
@@ -424,5 +466,41 @@ class AiReplyDraftServiceTest {
         Mockito.verifyNoInteractions(qaMatchService)
         val userContent = capturedMessages.single().first { it.role == "user" }.content
         assertTrue(userContent.contains("SEGMENT 1=Rule 7 body"))
+    }
+
+    @Test
+    fun `simulateOnly returns deterministic draft when llm disabled`() {
+        stubDefaultFrame()
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "What is the funding?",
+            operatorTurns = emptyList(),
+            expertProfile = "Name: Dr. Test\nTraining knowledge base:\nTopic: Funding\nAnswer: Up to 12M RMB",
+            mailHistory = "[INBOUND] Question",
+            simulateOnly = true
+        )
+
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+        assertTrue(result.draftText.contains("12M RMB"))
+        Mockito.verifyNoInteractions(qaMatchService)
+    }
+
+    @Test
+    fun `simulateOnly falls back to generic draft without training knowledge`() {
+        stubEmptyFrame()
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            simulateOnly = true
+        )
+
+        assertFalse(result.usedLlm)
+        assertTrue(result.draftText.contains("Thank you for your email"))
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+        Mockito.verifyNoInteractions(qaMatchService)
     }
 }
