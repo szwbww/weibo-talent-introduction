@@ -60,14 +60,7 @@ object QaReplyComposer {
         )
     }
 
-    private fun formatSection(rule: QaRule): String {
-        val title = rule.sectionTitle?.trim().orEmpty()
-        return if (title.isEmpty()) {
-            rule.replyBody
-        } else {
-            "$title\n${rule.replyBody}"
-        }
-    }
+    private fun formatSection(rule: QaRule): String = rule.replyBody
 
     fun selectPrimary(matches: List<QaRuleMatch>): QaRuleMatch =
         matches.minWith(

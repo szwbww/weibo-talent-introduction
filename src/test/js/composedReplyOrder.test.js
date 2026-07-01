@@ -61,8 +61,8 @@ describe("composed reply order (from app.js)", () => {
                 categoryName: "Funding",
                 composeOrder: 10,
                 rules: [
-                    { id: 10, displayName: "Rule A", sectionTitle: "A", replyBody: "Body A" },
-                    { id: 20, displayName: "Rule B", sectionTitle: "B", replyBody: "Body B" }
+                    { id: 10, displayName: "Rule A", sectionTitle: "SECTITLE_A", replyBody: "Body A" },
+                    { id: 20, displayName: "Rule B", sectionTitle: "SECTITLE_B", replyBody: "Body B" }
                 ]
             }
         ]
@@ -72,6 +72,15 @@ describe("composed reply order (from app.js)", () => {
         const sb = createComposeSandbox();
         const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
         assert.ok(preview.indexOf("Body B") < preview.indexOf("Body A"));
+    });
+
+    it("preview omits section titles from rule segments", () => {
+        const sb = createComposeSandbox();
+        const preview = sb.buildDeterministicComposedPreview([20, 10], suggest, "", null);
+        assert.ok(!preview.includes("SECTITLE_A"));
+        assert.ok(!preview.includes("SECTITLE_B"));
+        assert.ok(preview.includes("Body A"));
+        assert.ok(preview.includes("Body B"));
     });
 
     it("free text appears before closing in preview", () => {

@@ -75,10 +75,7 @@ class LlmStitchService(
 
     private fun buildRuleSegments(qaRuleIds: List<Long>): String =
         qaRuleIds.mapNotNull { ruleId ->
-            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
-                val title = rule.sectionTitle?.trim().orEmpty()
-                if (title.isEmpty()) rule.replyBody else "$title\n${rule.replyBody}"
-            }
+            qaRuleRepository.findById(ruleId).orElse(null)?.replyBody
         }.joinToString("\n\n")
 }
 

@@ -69,7 +69,7 @@ class QaReplyComposerTest {
     }
 
     @Test
-    fun `multiple matches include section titles when present`() {
+    fun `multiple matches omit section titles from composed body`() {
         val fundingRule = QaRule(
             id = 10,
             categoryId = 1,
@@ -97,15 +97,51 @@ class QaReplyComposerTest {
             composeOrder
         )
 
+        assertFalse(result.replyBody.contains("Funding & timeline"))
+        assertFalse(result.replyBody.contains("Meeting arrangement"))
+        assertTrue(result.replyBody.contains("Funding answer"))
+        assertTrue(result.replyBody.contains("Meeting answer"))
         assertEquals(
             listOf(
                 QaReplyComposer.GREETING,
-                "Funding & timeline\nFunding answer",
-                "Meeting arrangement\nMeeting answer",
+                "Funding answer",
+                "Meeting answer",
                 QaReplyComposer.CLOSING
             ).joinToString("\n\n"),
             result.replyBody
         )
+    }
+
+    @Test
+    fun `duplicate section titles appear zero times in composed body`() {
+        val sharedTitle = "Role & work style"
+        val ruleOne = QaRule(
+            id = 10,
+            categoryId = 1,
+            keywords = "role",
+            priority = 80,
+            replySubject = "Role A",
+            replyBody = "Role answer one",
+            sectionTitle = sharedTitle
+        )
+        val ruleTwo = QaRule(
+            id = 20,
+            categoryId = 1,
+            keywords = "style",
+            priority = 50,
+            replySubject = "Role B",
+            replyBody = "Role answer two",
+            sectionTitle = sharedTitle
+        )
+
+        val result = QaReplyComposer.compose(
+            listOf(QaRuleMatch(ruleOne, 1), QaRuleMatch(ruleTwo, 1)),
+            composeOrder
+        )
+
+        assertFalse(result.replyBody.contains(sharedTitle))
+        assertTrue(result.replyBody.contains("Role answer one"))
+        assertTrue(result.replyBody.contains("Role answer two"))
     }
 
     @Test
@@ -135,8 +171,8 @@ class QaReplyComposerTest {
         )
 
         assertTrue(result.replyBody.contains("Funding answer"))
-        assertTrue(result.replyBody.contains("Meeting arrangement\nMeeting answer"))
-        assertFalse(result.replyBody.contains("Funding & timeline"))
+        assertTrue(result.replyBody.contains("Meeting answer"))
+        assertFalse(result.replyBody.contains("Meeting arrangement"))
     }
 
     @Test

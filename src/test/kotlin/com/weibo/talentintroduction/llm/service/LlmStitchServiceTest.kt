@@ -131,4 +131,32 @@ class LlmStitchServiceTest {
         assertTrue(result.draftText.contains("Funding info"))
         assertFalse(result.usedLlm)
     }
+
+    @Test
+    fun `deterministic draft omits section titles from rule segments`() {
+        val properties = LlmProperties(enabled = false)
+        val service = LlmStitchService(
+            properties,
+            provider(null),
+            qaRuleRepository,
+            replySnippetService
+        )
+        val rule = com.weibo.talentintroduction.qa.domain.QaRule(
+            id = 4,
+            categoryId = 1,
+            keywords = "role",
+            replyBody = "Role details here",
+            replySubject = "Re",
+            sectionTitle = "Role & work style",
+            enabled = true
+        )
+        stubDefaultFrame()
+        Mockito.`when`(qaRuleRepository.findById(4L)).thenReturn(Optional.of(rule))
+
+        val result = service.polishDraft(listOf(4), "What is the role?", null)
+
+        assertFalse(result.draftText.contains("Role & work style"))
+        assertTrue(result.draftText.contains("Role details here"))
+        assertFalse(result.usedLlm)
+    }
 }

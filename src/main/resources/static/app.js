@@ -5021,9 +5021,8 @@ function buildComposedSegments(selectedRuleIds, suggest, freeText, ackContent) {
     selectedRuleIds.forEach((ruleId, index) => {
         const rule = findSuggestRule(suggest, ruleId);
         if (!rule) return;
-        const title = (rule.sectionTitle || "").trim();
         const label = rule.displayName || rule.sectionTitle || `规则 #${ruleId}`;
-        const text = title ? `${title}\n${rule.replyBody}` : rule.replyBody;
+        const text = rule.replyBody;
         segments.push({ type: "rule", ruleId, label, text, ruleIndex: index });
     });
     const trimmedFree = (freeText || "").trim();
