@@ -47,6 +47,21 @@ const state = {
         onlyPending: false,
         tagFilter: ""
     },
+    inboundSummary: {
+        from: "",
+        to: "",
+        page: 0,
+        pageSize: 20,
+        activeTagKey: "",
+        search: "",
+        mails: [],
+        total: 0,
+        selectedId: null,
+        stats: null,
+        options: [],
+        thread: null,
+        datesInitialized: false
+    },
     qaAudit: {
         from: "",
         to: "",
@@ -96,6 +111,7 @@ const viewMeta = {
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
+    "inbound-summary": ["来信汇总", "按标签汇总来信、查看往来记录与标签统计。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
 };
 
@@ -1208,6 +1224,7 @@ async function refreshCurrentView() {
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
         if (state.view === "mailbox") await loadMailbox();
+        if (state.view === "inbound-summary") await loadInboundSummary();
         if (state.view === "tasks") await loadTasks();
         if (state.view === "monitoring") await loadMonitoring();
     } catch (error) {
@@ -7058,6 +7075,7 @@ function initBulkAutoReply() {
     $("#mailboxRefreshBtn").addEventListener("click", () => {
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
+    bindInboundSummaryEvents();
     $("#mailboxSearchBtn").addEventListener("click", () => {
         state.mailbox.page = 0;
         loadMailbox().catch((e) => showStatus(e.message, "error"));
@@ -7586,6 +7604,474 @@ function renderMailboxPagination() {
         ${pageBtns}
         <button class="button secondary" data-action="mailbox-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
     `;
+}
+
+const INBOUND_TAG_CHART_COLORS = [
+    "#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#ec4899",
+    "#14b8a6", "#f97316", "#a855f7", "#0ea5e9"
+];
+
+function defaultInboundFromDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(d);
+}
+
+function inboundSummaryExclusiveToDate(dateStr) {
+    if (!dateStr) return "";
+    const parts = dateStr.split("-").map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2] + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
+function initInboundSummaryDatesIfNeeded() {
+    if (state.inboundSummary.datesInitialized) return;
+    state.inboundSummary.from = defaultInboundFromDate();
+    state.inboundSummary.to = monitoringToday();
+    state.inboundSummary.datesInitialized = true;
+    const fromEl = $("#inboundFrom");
+    const toEl = $("#inboundTo");
+    if (fromEl) fromEl.value = state.inboundSummary.from;
+    if (toEl) toEl.value = state.inboundSummary.to;
+}
+
+function syncInboundSummaryDatesFromInputs() {
+    const fromEl = $("#inboundFrom");
+    const toEl = $("#inboundTo");
+    if (fromEl?.value) state.inboundSummary.from = fromEl.value;
+    if (toEl?.value) state.inboundSummary.to = toEl.value;
+}
+
+function inboundSummaryOperatorName() {
+    const name = ($("#currentUserDisplay")?.textContent || "").trim();
+    return name || null;
+}
+
+function renderInboundTagChip(tag, options = {}) {
+    const {
+        filterKey = null,
+        removable = false,
+        clickable = false,
+        extraClass = ""
+    } = options;
+    const inactive = tag.active === false;
+    const classes = ["inbound-tag-chip", tag.tagType === "QA" ? "qa" : "custom"];
+    if (inactive) classes.push("inactive");
+    if (clickable) classes.push("filter-chip");
+    if (clickable && filterKey && state.inboundSummary.activeTagKey === filterKey) classes.push("selected");
+    if (extraClass) classes.push(extraClass);
+    const attrs = [];
+    if (filterKey) attrs.push(`data-tag-key="${escapeHtml(filterKey)}"`);
+    if (tag.tagId != null) attrs.push(`data-tag-id="${escapeHtml(tag.tagId)}"`);
+    const removeBtn = removable
+        ? `<button type="button" class="chip-x" data-action="inbound-remove-tag" data-tag-id="${escapeHtml(tag.tagId)}" title="删除标签">×</button>`
+        : "";
+    return `<span class="${classes.join(" ")}" ${attrs.join(" ")}>${escapeHtml(tag.label || "")}${removeBtn}</span>`;
+}
+
+function renderInboundStatChip(item) {
+    const tag = { label: item.label, tagType: item.tagType, active: item.active !== false };
+    return renderInboundTagChip(tag, { filterKey: item.tagKey, clickable: true });
+}
+
+async function loadInboundSummary() {
+    initInboundSummaryDatesIfNeeded();
+    syncInboundSummaryDatesFromInputs();
+    await Promise.all([
+        reloadInboundStats(),
+        loadInboundMails()
+    ]);
+    if (state.inboundSummary.selectedId) {
+        await selectInboundMail(state.inboundSummary.selectedId, { preserveSelection: true });
+    } else {
+        renderInboundDetailEmpty();
+    }
+}
+
+async function reloadInboundStats() {
+    const [stats, optionsResp] = await Promise.all([
+        api("/api/inbound-summary/tags/stats"),
+        api("/api/inbound-summary/tags/options")
+    ]);
+    state.inboundSummary.stats = stats;
+    state.inboundSummary.options = optionsResp.items || [];
+    renderTagBarChart(stats);
+    renderTagPieChart(stats);
+    renderInboundTagFilters(state.inboundSummary.options);
+}
+
+async function loadInboundMails() {
+    syncInboundSummaryDatesFromInputs();
+    const params = new URLSearchParams();
+    params.set("from", `${state.inboundSummary.from}T00:00:00`);
+    params.set("to", `${inboundSummaryExclusiveToDate(state.inboundSummary.to)}T00:00:00`);
+    params.set("pageSize", String(state.inboundSummary.pageSize));
+    params.set("pageOffset", String(state.inboundSummary.page * state.inboundSummary.pageSize));
+    if (state.inboundSummary.activeTagKey) {
+        params.set("tagKey", state.inboundSummary.activeTagKey);
+    }
+    const data = await api(`/api/inbound-summary/mails?${params}`);
+    state.inboundSummary.mails = data.records || [];
+    state.inboundSummary.total = data.totalCount || 0;
+    renderInboundMailList();
+    renderInboundPagination();
+}
+
+function filteredInboundMails() {
+    const q = (state.inboundSummary.search || "").trim().toLowerCase();
+    if (!q) return state.inboundSummary.mails || [];
+    return (state.inboundSummary.mails || []).filter((mail) => {
+        const haystack = [
+            mail.fromEmail,
+            mail.subject,
+            mail.expertName,
+            mail.processStatus
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(q);
+    });
+}
+
+function renderInboundTagFilters(options) {
+    const container = $("#inboundTagFilters");
+    if (!container) return;
+    const items = options || [];
+    if (items.length === 0) {
+        container.innerHTML = `<span class="muted">暂无标签过滤项</span>`;
+        return;
+    }
+    const allChip = `<span class="inbound-tag-chip filter-chip ${state.inboundSummary.activeTagKey ? "" : "selected"}" data-tag-key="">全部</span>`;
+    container.innerHTML = allChip + items.map((item) => renderInboundStatChip(item)).join("");
+}
+
+function renderInboundMailList() {
+    const list = $("#inboundMailList");
+    if (!list) return;
+    const rows = filteredInboundMails();
+    if (rows.length === 0) {
+        list.innerHTML = `<div class="detail-empty muted" style="padding: 24px;">暂无来信记录</div>`;
+        return;
+    }
+    list.innerHTML = rows.map((mail) => {
+        const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "-";
+        const selected = state.inboundSummary.selectedId === mail.inboundId ? " selected" : "";
+        const tags = (mail.tags || []).map((tag) => renderInboundTagChip(tag)).join("");
+        return `
+            <div class="inbound-mail-row${selected}" data-action="select-inbound-mail" data-id="${escapeHtml(mail.inboundId)}">
+                <div class="inbound-mail-row-main">
+                    <span class="inbound-mail-row-from">${escapeHtml(mail.fromEmail || "-")}</span>
+                    <span class="inbound-mail-row-time">${escapeHtml(timeStr)}</span>
+                </div>
+                <div class="inbound-mail-row-subject">${escapeHtml(mail.subject || "(无主题)")}</div>
+                <div class="inbound-mail-row-meta">${escapeHtml(mail.expertName || "未关联专家")}</div>
+                <div class="inbound-mail-row-tags">${tags || `<span class="muted">无标签</span>`}</div>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderInboundPagination() {
+    const container = $("#inboundPagination");
+    if (!container) return;
+    const total = state.inboundSummary.total || 0;
+    const page = state.inboundSummary.page;
+    const maxPage = Math.max(0, Math.ceil(total / state.inboundSummary.pageSize) - 1);
+    container.innerHTML = `
+        <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
+        <button class="button secondary" data-action="inbound-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
+        <button class="button secondary" data-action="inbound-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
+    `;
+}
+
+function renderInboundDetailEmpty() {
+    const editor = $("#inboundTagEditor");
+    const thread = $("#inboundThread");
+    if (editor) {
+        editor.innerHTML = `<div class="detail-empty muted">请在左侧选择一封来信。</div>`;
+    }
+    if (thread) thread.innerHTML = "";
+}
+
+async function selectInboundMail(inboundId, options = {}) {
+    state.inboundSummary.selectedId = inboundId;
+    renderInboundMailList();
+    const threadData = await api(`/api/inbound-summary/mails/${inboundId}/thread`);
+    state.inboundSummary.thread = threadData;
+    renderInboundTagEditor(threadData);
+    renderInboundThread(threadData);
+}
+
+function renderInboundTagEditor(threadData) {
+    const editor = $("#inboundTagEditor");
+    if (!editor) return;
+    const tags = threadData.tags || [];
+    const chips = tags.map((tag) => renderInboundTagChip(tag, { removable: true })).join("")
+        || `<span class="muted">暂无标签</span>`;
+    editor.innerHTML = `
+        <div class="inbound-tag-editor-head">
+            <h3>邮件标签</h3>
+            <div class="inbound-tag-editor-actions">
+                <button type="button" class="button secondary small" data-action="inbound-auto-tags">自动添加 QA 标签</button>
+                <button type="button" class="button primary small" data-action="inbound-add-tag-open">+ 添加标签</button>
+            </div>
+        </div>
+        <div class="inbound-tag-editor-chips">${chips}</div>
+    `;
+}
+
+function renderInboundThread(threadData) {
+    const container = $("#inboundThread");
+    if (!container) return;
+    const messages = threadData.messages || [];
+    if (messages.length === 0) {
+        container.innerHTML = `<div class="detail-empty muted">暂无往来记录</div>`;
+        return;
+    }
+    const currentMessageId = threadData.currentMessageId || null;
+    container.innerHTML = messages.map((msg) => {
+        const isInbound = (msg.direction || "").toUpperCase() === "INBOUND";
+        const isCurrent = currentMessageId && msg.messageId && msg.messageId === currentMessageId;
+        const classes = [
+            "inbound-thread-bubble",
+            isInbound ? "inbound" : "outbound",
+            isCurrent ? "current" : ""
+        ].filter(Boolean).join(" ");
+        const timeStr = (msg.receivedAt || msg.sentAt || "")
+            ? String(msg.receivedAt || msg.sentAt).replace("T", " ").slice(0, 19)
+            : "-";
+        const directionLabel = isInbound ? "来信" : "去信";
+        return `
+            <div class="${classes}">
+                <div class="inbound-thread-bubble-subject">${escapeHtml(msg.subject || "(无主题)")}</div>
+                <div class="inbound-thread-bubble-meta">${escapeHtml(directionLabel)} · ${escapeHtml(timeStr)}</div>
+                <div class="inbound-thread-bubble-body pre">${escapeHtml(msg.body || "")}</div>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderTagBarChart(stats) {
+    const container = $("#inboundTagBarChart");
+    if (!container) return;
+    const items = stats?.items || [];
+    if (items.length === 0) {
+        container.innerHTML = `<div class="muted">暂无标签数据</div>`;
+        return;
+    }
+    const maxCount = Math.max(...items.map((item) => Number(item.count) || 0), 1);
+    container.innerHTML = items.slice(0, 12).map((item) => {
+        const count = Number(item.count) || 0;
+        const width = Math.max(2, Math.round((count / maxCount) * 100));
+        const inactive = item.active === false;
+        return `
+            <div class="tag-bar-row">
+                <span class="tag-bar-label ${inactive ? "inactive" : ""}">${escapeHtml(item.label || "")}</span>
+                <div class="tag-bar-track"><div class="bar ${inactive ? "inactive" : ""}" style="width:${width}%"></div></div>
+                <span class="tag-bar-count">${escapeHtml(count)}</span>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderTagPieChart(stats) {
+    const container = $("#inboundTagPieChart");
+    if (!container) return;
+    const items = (stats?.items || []).slice(0, 8);
+    const total = Number(stats?.total) || items.reduce((sum, item) => sum + (Number(item.count) || 0), 0) || 1;
+    if (items.length === 0) {
+        container.innerHTML = `<div class="muted">暂无标签数据</div>`;
+        return;
+    }
+    const radius = 54;
+    const circumference = 2 * Math.PI * radius;
+    let offset = 0;
+    const arcs = items.map((item, index) => {
+        const count = Number(item.count) || 0;
+        const length = (count / total) * circumference;
+        const dash = `${length} ${circumference - length}`;
+        const color = item.active === false ? "#94a3b8" : INBOUND_TAG_CHART_COLORS[index % INBOUND_TAG_CHART_COLORS.length];
+        const arc = `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${color}" stroke-width="18"
+            stroke-dasharray="${dash}" stroke-dashoffset="${-offset}"></circle>`;
+        offset += length;
+        return arc;
+    }).join("");
+    const legend = items.map((item, index) => {
+        const count = Number(item.count) || 0;
+        const pct = ((count / total) * 100).toFixed(1);
+        const inactive = item.active === false;
+        const color = inactive ? "#94a3b8" : INBOUND_TAG_CHART_COLORS[index % INBOUND_TAG_CHART_COLORS.length];
+        return `
+            <div class="tag-pie-legend-item ${inactive ? "inactive" : ""}">
+                <span class="tag-pie-swatch" style="background:${color}"></span>
+                <span class="tag-pie-legend-label">${escapeHtml(item.label || "")}</span>
+                <span>${escapeHtml(count)}</span>
+                <span class="muted">${escapeHtml(pct)}%</span>
+            </div>
+        `;
+    }).join("");
+    container.innerHTML = `
+        <svg viewBox="0 0 160 160" aria-hidden="true">${arcs}</svg>
+        <div class="tag-pie-legend">${legend}</div>
+    `;
+}
+
+async function refreshInboundAfterTagChange() {
+    await Promise.all([
+        reloadInboundStats(),
+        loadInboundMails()
+    ]);
+    if (state.inboundSummary.selectedId) {
+        await selectInboundMail(state.inboundSummary.selectedId, { preserveSelection: true });
+    }
+}
+
+async function inboundAutoApplyTags() {
+    const inboundId = state.inboundSummary.selectedId;
+    if (!inboundId) return;
+    const operatorName = inboundSummaryOperatorName();
+    await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+        method: "POST",
+        body: JSON.stringify(operatorName ? { operatorName } : {})
+    });
+    showStatus("已自动添加 QA 标签", "ok");
+    await refreshInboundAfterTagChange();
+}
+
+async function inboundRemoveTag(tagId) {
+    await api(`/api/inbound-summary/tags/${tagId}`, { method: "DELETE" });
+    showStatus("标签已删除", "ok");
+    await refreshInboundAfterTagChange();
+}
+
+function showInboundAddTagModal() {
+    $("#inboundAddTagModal").hidden = false;
+    document.body.classList.add("modal-open");
+    $("#inboundAddTagType").value = "qa";
+    $("#inboundAddTagCustomGroup").hidden = true;
+    $("#inboundAddTagQaGroup").hidden = false;
+    $("#inboundAddTagCustomLabel").value = "";
+    populateInboundAddTagQaOptions().catch((error) => showStatus(error.message, "error"));
+}
+
+function hideInboundAddTagModal() {
+    $("#inboundAddTagModal").hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
+async function populateInboundAddTagQaOptions() {
+    if (!state.qaRules || state.qaRules.length === 0) {
+        const data = await api("/api/qa/rules");
+        state.qaRules = data || [];
+    }
+    const select = $("#inboundAddTagQaRule");
+    const enabledRules = (state.qaRules || []).filter((rule) => rule.enabled !== false);
+    select.innerHTML = enabledRules.map((rule) => {
+        const label = rule.displayName || rule.keywords?.split(",")[0]?.trim() || `规则#${rule.id}`;
+        return `<option value="${escapeHtml(rule.id)}">${escapeHtml(label)}</option>`;
+    }).join("") || `<option value="">暂无可用 QA 规则</option>`;
+}
+
+async function submitInboundAddTag() {
+    const inboundId = state.inboundSummary.selectedId;
+    if (!inboundId) return;
+    const type = $("#inboundAddTagType").value;
+    const operatorName = inboundSummaryOperatorName();
+    const payload = operatorName ? { operatorName } : {};
+    if (type === "qa") {
+        const qaRuleId = Number($("#inboundAddTagQaRule").value);
+        if (!qaRuleId) throw new Error("请选择 QA 规则");
+        payload.qaRuleId = qaRuleId;
+    } else {
+        const label = $("#inboundAddTagCustomLabel").value.trim();
+        if (!label) throw new Error("请输入自定义标签");
+        payload.label = label;
+    }
+    await api(`/api/inbound-summary/mails/${inboundId}/tags`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    hideInboundAddTagModal();
+    showStatus("标签已添加", "ok");
+    await refreshInboundAfterTagChange();
+}
+
+function bindInboundSummaryEvents() {
+    $("#inboundSummaryRefreshBtn")?.addEventListener("click", () => {
+        loadInboundSummary().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundFrom")?.addEventListener("change", () => {
+        state.inboundSummary.page = 0;
+        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundTo")?.addEventListener("change", () => {
+        state.inboundSummary.page = 0;
+        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundSearch")?.addEventListener("input", (event) => {
+        state.inboundSummary.search = event.target.value;
+        renderInboundMailList();
+    });
+    $("#inboundTagFilters")?.addEventListener("click", (event) => {
+        const chip = event.target.closest("[data-tag-key]");
+        if (!chip) return;
+        const tagKey = chip.dataset.tagKey || "";
+        state.inboundSummary.activeTagKey = state.inboundSummary.activeTagKey === tagKey ? "" : tagKey;
+        state.inboundSummary.page = 0;
+        renderInboundTagFilters(state.inboundSummary.options);
+        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundMailList")?.addEventListener("click", (event) => {
+        const row = event.target.closest("[data-action='select-inbound-mail']");
+        if (!row) return;
+        selectInboundMail(Number(row.dataset.id)).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundPagination")?.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "inbound-prev") {
+            state.inboundSummary.page = Math.max(0, state.inboundSummary.page - 1);
+        }
+        if (button.dataset.action === "inbound-next") {
+            state.inboundSummary.page += 1;
+        }
+        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundTagEditor")?.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "inbound-auto-tags") {
+            inboundAutoApplyTags().catch((error) => showStatus(error.message, "error"));
+            return;
+        }
+        if (button.dataset.action === "inbound-add-tag-open") {
+            if (!state.inboundSummary.selectedId) return;
+            showInboundAddTagModal();
+            return;
+        }
+        if (button.dataset.action === "inbound-remove-tag") {
+            inboundRemoveTag(Number(button.dataset.tagId)).catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#inboundAddTagType")?.addEventListener("change", (event) => {
+        const isQa = event.target.value === "qa";
+        $("#inboundAddTagQaGroup").hidden = !isQa;
+        $("#inboundAddTagCustomGroup").hidden = isQa;
+        if (isQa) {
+            populateInboundAddTagQaOptions().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#inboundAddTagSubmitBtn")?.addEventListener("click", () => {
+        submitInboundAddTag().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#inboundAddTagCloseBtn")?.addEventListener("click", hideInboundAddTagModal);
+    $("#inboundAddTagBackdrop")?.addEventListener("click", hideInboundAddTagModal);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#inboundAddTagModal").hidden) {
+            hideInboundAddTagModal();
+        }
+    });
 }
 
 function bootstrap() {

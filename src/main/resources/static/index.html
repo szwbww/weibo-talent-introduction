@@ -121,6 +121,13 @@
                 <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
                 <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
             </button>
+            <button class="nav-tab" data-view="inbound-summary">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                <span>来信汇总</span>
+            </button>
             <button class="nav-tab" data-view="tasks">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
@@ -631,6 +638,47 @@
             </section>
         </section>
 
+        <!-- View: Inbound Mail Summary -->
+        <section class="view" id="view-inbound-summary">
+            <div class="toolbar">
+                <input type="date" id="inboundFrom">
+                <span>至</span>
+                <input type="date" id="inboundTo">
+                <button class="button secondary" id="inboundSummaryRefreshBtn">刷新</button>
+            </div>
+
+            <div class="inbound-charts-row">
+                <section class="panel inbound-chart-panel">
+                    <div class="panel-head"><h2>标签邮件数量排行</h2></div>
+                    <div id="inboundTagBarChart" class="tag-bar-chart"></div>
+                </section>
+                <section class="panel inbound-chart-panel">
+                    <div class="panel-head"><h2>标签占比</h2></div>
+                    <div id="inboundTagPieChart" class="tag-pie"></div>
+                </section>
+            </div>
+
+            <div class="split-layout inbound-summary-layout">
+                <section class="panel inbound-list-panel">
+                    <div class="panel-head"><h2>来信列表</h2></div>
+                    <div class="inbound-list-toolbar">
+                        <input id="inboundSearch" type="search" placeholder="搜索发件人、主题、专家名…">
+                    </div>
+                    <div id="inboundTagFilters" class="inbound-tag-filters"></div>
+                    <div id="inboundMailList" class="inbound-mail-list"></div>
+                    <div class="pagination" id="inboundPagination"></div>
+                </section>
+
+                <section class="panel inbound-detail-panel">
+                    <div class="panel-head"><h2>来信详情</h2></div>
+                    <div id="inboundTagEditor" class="inbound-tag-editor">
+                        <div class="detail-empty muted">请在左侧选择一封来信。</div>
+                    </div>
+                    <div id="inboundThread" class="inbound-thread"></div>
+                </section>
+            </div>
+        </section>
+
         <!-- View 6: Async Task execution log audit -->
         <section class="view" id="view-tasks">
             <div class="toolbar">
@@ -915,6 +963,36 @@
 </div>
 
 <!-- Modal 1: Account Edit Dialog -->
+<div class="modal-shell" id="inboundAddTagModal" hidden>
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>添加标签</h3>
+            <button type="button" class="button secondary" id="inboundAddTagCloseBtn">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="inboundAddTagType">标签类型</label>
+                <select id="inboundAddTagType">
+                    <option value="qa">QA 规则标签</option>
+                    <option value="custom">自定义标签</option>
+                </select>
+            </div>
+            <div class="form-group" id="inboundAddTagQaGroup">
+                <label for="inboundAddTagQaRule">QA 规则</label>
+                <select id="inboundAddTagQaRule"></select>
+            </div>
+            <div class="form-group" id="inboundAddTagCustomGroup" hidden>
+                <label for="inboundAddTagCustomLabel">自定义标签</label>
+                <input id="inboundAddTagCustomLabel" type="text" maxlength="255" placeholder="输入标签文字">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="button primary" id="inboundAddTagSubmitBtn">添加</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop" id="inboundAddTagBackdrop"></div>
+</div>
+
 <div class="modal-shell" id="accountModal" hidden>
     <button class="modal-backdrop" id="accountModalBackdrop" type="button" aria-label="关闭账号配置"></button>
     <section class="panel editor-panel modal-panel" id="accountEditorPanel" role="dialog" aria-modal="true" aria-labelledby="accountEditorTitle">
