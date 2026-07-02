@@ -3,7 +3,7 @@ id: K-es-tag-to-mail-cross-store-join
 domain: mail
 created: 2026-07-02
 last_used: 2026-07-02
-hit_count: 1
+hit_count: 2
 source: create-p:ai-training-redesign
 ---
 经验：按 ES `tags` 字段筛选 MySQL `mail_record` 数据是跨存储查询，不能在单个 SQL 中完成。

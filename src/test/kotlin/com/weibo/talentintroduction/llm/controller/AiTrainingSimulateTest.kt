@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.llm.service.AiPromptConfigService
 import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
 import com.weibo.talentintroduction.llm.service.LlmStitchService
@@ -35,8 +36,10 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.Optional
@@ -136,10 +139,10 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound()
         Mockito.`when`(
-            mailRecordRepository.findInboundMailsForSimulation(true, emptyList(), null, null, 20, 0)
+            mailRecordRepository.findInboundMailsForSimulation(true, listOf(-1L), null, null, 20, 0)
         ).thenReturn(listOf(inbound))
         Mockito.`when`(
-            mailRecordRepository.countInboundMailsForSimulation(true, emptyList(), null, null)
+            mailRecordRepository.countInboundMailsForSimulation(true, listOf(-1L), null, null)
         ).thenReturn(1L)
         Mockito.`when`(expertContactRepository.findAllById(listOf(10L))).thenReturn(listOf(contact))
         Mockito.`when`(inboundMailProcessingRepository.findAllByExpertContactId(10L)).thenReturn(emptyList())
@@ -150,6 +153,8 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.total").value(1))
             .andExpect(jsonPath("$.items[0].expertContactId").value(10))
             .andExpect(jsonPath("$.items[0].body").value("What is the funding?"))
+
+        Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(true, listOf(-1L), null, null, 20, 0)
     }
 
     @Test
@@ -157,10 +162,10 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound()
         Mockito.`when`(
-            mailRecordRepository.findInboundMailsForSimulation(true, emptyList(), 3L, null, 20, 0)
+            mailRecordRepository.findInboundMailsForSimulation(true, listOf(-1L), 3L, null, 20, 0)
         ).thenReturn(listOf(inbound))
         Mockito.`when`(
-            mailRecordRepository.countInboundMailsForSimulation(true, emptyList(), 3L, null)
+            mailRecordRepository.countInboundMailsForSimulation(true, listOf(-1L), 3L, null)
         ).thenReturn(1L)
         Mockito.`when`(expertContactRepository.findAllById(listOf(10L))).thenReturn(listOf(contact))
         Mockito.`when`(inboundMailProcessingRepository.findAllByExpertContactId(10L)).thenReturn(emptyList())
@@ -170,7 +175,7 @@ class AiTrainingSimulateTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.items.length()").value(1))
 
-        Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(true, emptyList(), 3L, null, 20, 0)
+        Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(true, listOf(-1L), 3L, null, 20, 0)
     }
 
     @Test
@@ -241,6 +246,101 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.isCustom").value(true))
             .andExpect(jsonPath("$.freeFormSystemPrompt").value("Custom only"))
             .andExpect(jsonPath("$.constraints").value("Line one"))
+    }
+
+    @Test
+    fun `createQa creates manual import entry`() {
+        Mockito.`when`(
+            aiTrainingQaService.create(
+                "中介角色定位",
+                "Are you a mediator?",
+                "We are an authorized agency.",
+                "mediator,intermediary"
+            )
+        ).thenReturn(
+            AiTrainingQaDto(
+                id = 42L,
+                topic = "中介角色定位",
+                question = "Are you a mediator?",
+                answer = "We are an authorized agency.",
+                keywords = "mediator,intermediary",
+                source = "MANUAL_IMPORT",
+                sourceRef = "MANUAL:123",
+                enabled = true,
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+
+        mockMvc.perform(
+            post("/api/ai-training/qa")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "topic": "中介角色定位",
+                      "question": "Are you a mediator?",
+                      "answer": "We are an authorized agency.",
+                      "keywords": "mediator,intermediary"
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(42))
+            .andExpect(jsonPath("$.source").value("MANUAL_IMPORT"))
+    }
+
+    @Test
+    fun `updateQa updates existing entry`() {
+        Mockito.`when`(
+            aiTrainingQaService.update(
+                7L,
+                "信息来源渠道",
+                "How did you find me?",
+                "Through public academic databases.",
+                "how did you find me"
+            )
+        ).thenReturn(
+            AiTrainingQaDto(
+                id = 7L,
+                topic = "信息来源渠道",
+                question = "How did you find me?",
+                answer = "Through public academic databases.",
+                keywords = "how did you find me",
+                source = "MANUAL_IMPORT",
+                sourceRef = "HOW_FOUND_ME",
+                enabled = true,
+                createdAt = null,
+                updatedAt = "2026-07-02T10:00:00"
+            )
+        )
+
+        mockMvc.perform(
+            put("/api/ai-training/qa/7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "topic": "信息来源渠道",
+                      "question": "How did you find me?",
+                      "answer": "Through public academic databases.",
+                      "keywords": "how did you find me"
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(7))
+            .andExpect(jsonPath("$.answer").value("Through public academic databases."))
+    }
+
+    @Test
+    fun `deleteQa removes entry`() {
+        mockMvc.perform(delete("/api/ai-training/qa/9"))
+            .andExpect(status().isOk)
+
+        Mockito.verify(aiTrainingQaService).delete(9L)
     }
 
     @Test

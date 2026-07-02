@@ -695,6 +695,7 @@
                                 <option value="MANUAL_IMPORT">人工导入</option>
                                 <option value="AUTO_EXTRACTED">自动提炼</option>
                             </select>
+                            <button type="button" class="button primary" id="aiTrainingAddQaBtn">添加条目</button>
                             <button class="button" id="reloadAiTrainingQaBtn">刷新</button>
                         </div>
                     </div>
@@ -706,6 +707,7 @@
                                 <th>来源</th>
                                 <th>关键词</th>
                                 <th>标准回复要点</th>
+                                <th style="text-align: right;">操作</th>
                             </tr>
                             </thead>
                             <tbody id="aiTrainingQaTable"></tbody>
@@ -1250,6 +1252,26 @@
 </div>
 
 <!-- Modal: Reply Snippet Edit Dialog -->
+<div class="modal-shell" id="aiTrainingQaModal" hidden>
+    <button class="modal-backdrop" id="aiTrainingQaModalBackdrop" type="button" aria-label="关闭 QA 条目编辑"></button>
+    <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="aiTrainingQaEditorTitle">
+        <div class="panel-head modal-head">
+            <h2 id="aiTrainingQaEditorTitle">添加 QA 条目</h2>
+            <button class="button secondary" id="aiTrainingQaModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+        </div>
+        <form id="aiTrainingQaForm" class="form-grid">
+            <label class="span-2">主题<input name="topic" required placeholder="如：中介角色定位"></label>
+            <label class="span-2">问题（可选）<textarea name="question" rows="3" placeholder="专家可能提出的问题"></textarea></label>
+            <label class="span-2">标准回复<textarea name="answer" rows="6" required placeholder="AI 训练用的标准回复正文"></textarea></label>
+            <label class="span-2">关键词（可选，逗号分隔）<input name="keywords" placeholder="mediator,intermediary,your role"></label>
+            <div class="form-actions modal-actions">
+                <button class="button primary" type="submit">保存条目</button>
+                <button class="button secondary" type="button" id="aiTrainingQaCancelBtn">取消</button>
+            </div>
+        </form>
+    </section>
+</div>
+
 <div class="modal-shell" id="replySnippetModal" hidden>
     <button class="modal-backdrop" id="replySnippetModalBackdrop" type="button" aria-label="关闭片段编辑"></button>
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="replySnippetEditorTitle">

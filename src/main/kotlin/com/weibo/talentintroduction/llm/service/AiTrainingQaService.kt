@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.llm.service
 import com.weibo.talentintroduction.llm.domain.AiTrainingQa
 import com.weibo.talentintroduction.llm.repository.AiTrainingQaRepository
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 data class AiTrainingQaDto(
     val id: Long,
@@ -38,6 +39,47 @@ class AiTrainingQaService(
         val toIndex = (fromIndex + normalizedSize).coerceAtMost(filtered.size)
         val items = filtered.subList(fromIndex, toIndex).map { it.toDto() }
         return AiTrainingQaPage(items = items, total = total, page = normalizedPage, size = normalizedSize)
+    }
+
+    fun create(topic: String, question: String?, answer: String, keywords: String?): AiTrainingQaDto {
+        val now = LocalDateTime.now()
+        val saved = repository.save(
+            AiTrainingQa(
+                topic = topic.trim(),
+                question = question?.trim()?.takeIf { it.isNotEmpty() },
+                answer = answer.trim(),
+                keywords = keywords?.trim()?.takeIf { it.isNotEmpty() },
+                source = "MANUAL_IMPORT",
+                sourceRef = "MANUAL:${System.currentTimeMillis()}",
+                enabled = true,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return saved.toDto()
+    }
+
+    fun update(id: Long, topic: String, question: String?, answer: String, keywords: String?): AiTrainingQaDto {
+        val existing = repository.findById(id).orElseThrow {
+            IllegalArgumentException("QA entry not found: $id")
+        }
+        val saved = repository.save(
+            existing.copy(
+                topic = topic.trim(),
+                question = question?.trim()?.takeIf { it.isNotEmpty() },
+                answer = answer.trim(),
+                keywords = keywords?.trim()?.takeIf { it.isNotEmpty() },
+                updatedAt = LocalDateTime.now()
+            )
+        )
+        return saved.toDto()
+    }
+
+    fun delete(id: Long) {
+        if (!repository.existsById(id)) {
+            throw IllegalArgumentException("QA entry not found: $id")
+        }
+        repository.deleteById(id)
     }
 
     fun buildKnowledgeContext(): String {

@@ -159,5 +159,19 @@
     "answer": "We may verify education, request employment proofs from each institution, awards/patent lists, invitation letters if needed, recent achievements, and passport verification. This is an operator follow-up template, not an auto-reply.",
     "keywords": "employment proof,invitation letter,recent achievements,passport verification",
     "sourceRef": "REVERSE_INFO_CHECKLIST"
+  },
+  {
+    "topic": "中介角色定位",
+    "question": "Are you acting as a mediator? What is your role in this process?",
+    "answer": "We are a professional talent service agency authorized by local government talent offices. We assist with the full application process including enterprise matching, material preparation, and submission. We are not a simple middleman — we provide end-to-end support funded by government subsidies, and we never charge experts any fees.",
+    "keywords": "mediator,middleman,intermediary,broker,your role,acting as",
+    "sourceRef": "MEDIATOR_ROLE"
+  },
+  {
+    "topic": "信息来源渠道",
+    "question": "How did you come to know me? How did you find my contact information?",
+    "answer": "We identified your profile through publicly available academic databases and research publications (such as ORCID, Google Scholar, and university faculty pages). Your research background and expertise closely match the requirements of China's national talent programs, which is why we reached out.",
+    "keywords": "how did you find me,how did you know,where did you get,my information,my contact,come to know",
+    "sourceRef": "HOW_FOUND_ME"
   }
 ]

@@ -79,6 +79,7 @@ const state = {
         qaTotal: 0,
         qaSource: "",
         qaItems: [],
+        editingQaId: null,
         promptConfig: null,
         promptIsCustom: false,
         expertTagOptions: [],
@@ -1784,11 +1785,73 @@ function renderAiTrainingQaTable() {
             <td>${badge(sourceLabel, sourceBadgeClass)}</td>
             <td class="muted-cell">${escapeHtml(item.keywords || "-")}</td>
             <td class="muted-cell">${escapeHtml((item.answer || "").slice(0, 240))}${(item.answer || "").length > 240 ? "…" : ""}</td>
+            <td style="text-align: right; white-space: nowrap;">
+                <button type="button" class="button small" data-action="edit-ai-training-qa" data-qa-id="${item.id}">编辑</button>
+                <button type="button" class="button small" data-action="delete-ai-training-qa" data-qa-id="${item.id}">删除</button>
+            </td>
         </tr>`;
     }).join("");
     $("#aiTrainingQaTable").innerHTML = rows
-        || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
+        || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
     renderAiTrainingQaPager();
+}
+
+function showAiTrainingQaModal() {
+    $("#aiTrainingQaModal").hidden = false;
+    document.body.classList.add("modal-open");
+}
+
+function hideAiTrainingQaModal() {
+    const form = $("#aiTrainingQaForm");
+    form?.reset();
+    $("#aiTrainingQaModal").hidden = true;
+    document.body.classList.remove("modal-open");
+    state.aiTraining.editingQaId = null;
+}
+
+function showQaEditModal(qaItem) {
+    const form = $("#aiTrainingQaForm");
+    if (!form) return;
+    state.aiTraining.editingQaId = qaItem?.id || null;
+    $("#aiTrainingQaEditorTitle").textContent = qaItem ? "编辑 QA 条目" : "添加 QA 条目";
+    form.topic.value = qaItem?.topic || "";
+    form.question.value = qaItem?.question || "";
+    form.answer.value = qaItem?.answer || "";
+    form.keywords.value = qaItem?.keywords || "";
+    showAiTrainingQaModal();
+}
+
+async function saveAiTrainingQaItem(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formValues(form);
+    const payload = {
+        topic: values.topic,
+        question: values.question || null,
+        answer: values.answer,
+        keywords: values.keywords || null
+    };
+    if (state.aiTraining.editingQaId) {
+        await api(`/api/ai-training/qa/${state.aiTraining.editingQaId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+    } else {
+        await api("/api/ai-training/qa", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    }
+    hideAiTrainingQaModal();
+    await loadAiTrainingQa();
+    showStatus("QA 条目已保存", "ok");
+}
+
+async function deleteQaItem(id) {
+    if (!confirm("确认删除该 QA 条目？")) return;
+    await api(`/api/ai-training/qa/${id}`, { method: "DELETE" });
+    await loadAiTrainingQa();
+    showStatus("QA 条目已删除", "ok");
 }
 
 async function loadAiTrainingQa() {
@@ -1859,12 +1922,31 @@ function renderAiTrainingTagPills(containerId, options, selectedValue, valueKey)
     container.innerHTML = allChip + chips;
 }
 
+function mergeExpertTagAggregations(levelTagsList) {
+    const byTag = new Map();
+    (levelTagsList || []).forEach((tags) => {
+        (tags || []).forEach((item) => {
+            const tag = item?.tag;
+            if (!tag) return;
+            const existing = byTag.get(tag);
+            const count = item.count || 0;
+            if (existing) {
+                existing.count += count;
+            } else {
+                byTag.set(tag, { tag, count });
+            }
+        });
+    });
+    return Array.from(byTag.values()).sort((a, b) => String(a.tag).localeCompare(String(b.tag)));
+}
+
 async function loadAiTrainingTagOptions() {
-    const [expertTags, inboundOptions] = await Promise.all([
+    const [candidateTags, applicationTags, inboundOptions] = await Promise.all([
+        api("/api/experts/tags/aggregation?level=CANDIDATE"),
         api("/api/experts/tags/aggregation?level=APPLICATION"),
         api("/api/inbound-summary/tags/options")
     ]);
-    state.aiTraining.expertTagOptions = (expertTags || []).map((item) => ({
+    state.aiTraining.expertTagOptions = mergeExpertTagAggregations([candidateTags, applicationTags]).map((item) => ({
         tag: item.tag,
         label: expertTagLabels[item.tag] || item.tag,
         count: item.count
@@ -7424,6 +7506,26 @@ function bindEvents() {
     });
     $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
         loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingAddQaBtn")?.addEventListener("click", () => showQaEditModal());
+    $("#aiTrainingQaForm")?.addEventListener("submit", (event) => {
+        saveAiTrainingQaItem(event).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingQaCancelBtn")?.addEventListener("click", hideAiTrainingQaModal);
+    $("#aiTrainingQaModalCloseBtn")?.addEventListener("click", hideAiTrainingQaModal);
+    $("#aiTrainingQaModalBackdrop")?.addEventListener("click", hideAiTrainingQaModal);
+    $("#aiTrainingQaTable")?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action]");
+        if (!button) return;
+        const qaId = Number(button.dataset.qaId);
+        const item = state.aiTraining.qaItems.find((row) => row.id === qaId);
+        if (button.dataset.action === "edit-ai-training-qa" && item) {
+            showQaEditModal(item);
+            return;
+        }
+        if (button.dataset.action === "delete-ai-training-qa" && qaId) {
+            deleteQaItem(qaId).catch((error) => showStatus(error.message, "error"));
+        }
     });
     $("#aiTrainingSourceFilter")?.addEventListener("change", (event) => {
         state.aiTraining.qaSource = event.target.value;

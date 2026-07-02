@@ -9,13 +9,16 @@ import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.TagView
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -37,12 +40,32 @@ class AiTrainingController(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val llmProperties: LlmProperties
 ) {
+    companion object {
+        /** Spring JDBC rejects empty IN lists; ignored when unrestricted=true. */
+        private val UNRESTRICTED_CONTACT_IDS = listOf(-1L)
+    }
+
     @GetMapping("/qa")
     fun listQa(
         @RequestParam(required = false) source: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): AiTrainingQaPage = aiTrainingQaService.list(source, page, size)
+
+    @PostMapping("/qa")
+    fun createQa(@RequestBody request: AiTrainingQaUpsertRequest): AiTrainingQaDto =
+        aiTrainingQaService.create(request.topic, request.question, request.answer, request.keywords)
+
+    @PutMapping("/qa/{id}")
+    fun updateQa(
+        @PathVariable id: Long,
+        @RequestBody request: AiTrainingQaUpsertRequest
+    ): AiTrainingQaDto = aiTrainingQaService.update(id, request.topic, request.question, request.answer, request.keywords)
+
+    @DeleteMapping("/qa/{id}")
+    fun deleteQa(@PathVariable id: Long) {
+        aiTrainingQaService.delete(id)
+    }
 
     @GetMapping("/prompt-config")
     fun getPromptConfig(): AiPromptConfigDto = aiPromptConfigService.getDto()
@@ -186,7 +209,7 @@ class AiTrainingController(
 
     private fun resolveContactFilter(expertTag: String?): ContactFilter {
         if (expertTag == null) {
-            return ContactFilter(unrestricted = true, contactIds = emptyList(), emptyResult = false)
+            return ContactFilter(unrestricted = true, contactIds = UNRESTRICTED_CONTACT_IDS, emptyResult = false)
         }
         val orcidIds = findOrcidIdsByExpertTag(expertTag)
         if (orcidIds.isEmpty()) {
@@ -303,6 +326,13 @@ data class AiTrainingSimulateExpertResponse(
 data class AiTrainingSimulateRequest(
     val expertContactId: Long,
     val promptOverride: String? = null
+)
+
+data class AiTrainingQaUpsertRequest(
+    val topic: String,
+    val question: String? = null,
+    val answer: String,
+    val keywords: String? = null
 )
 
 data class AiTrainingSimulateResponse(
