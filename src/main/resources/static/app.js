@@ -45,7 +45,8 @@ const state = {
         accountsLoaded: false,
         dateDefaultsApplied: false,
         onlyPending: false,
-        tagFilter: ""
+        tagFilter: "",
+        detailContext: null
     },
     inboundSummary: {
         from: "",
@@ -5117,6 +5118,13 @@ async function showMailDetail(source, id) {
         // 复用工单详情面板（内联，不弹框），仅展示，不含任何处理功能
         const panel = $("#unmatchedDetailPanel");
         panel.hidden = false;
+        const inboundProcessingId = detail.inboundProcessingId || null;
+        state.mailbox.detailContext = inboundProcessingId
+            ? { source, id: Number(id), inboundProcessingId }
+            : null;
+        const tagSectionHtml = inboundProcessingId
+            ? renderMailboxInboundTagEditor(detail.inboundTags || [], inboundProcessingId)
+            : "";
         panel.innerHTML = `
             <div class="panel-head">
                 <h2>邮件详情</h2>
@@ -5134,6 +5142,7 @@ async function showMailDetail(source, id) {
                     <div class="metadata-card"><div class="metadata-card-header"><span>发送状态</span></div><div class="metadata-card-value">${escapeHtml(sendStatusLabel)}</div></div>
                     <div class="metadata-card" style="grid-column: 1 / -1;"><div class="metadata-card-header"><span>主题</span></div><div class="metadata-card-value">${escapeHtml(detail.subject || "-")}</div></div>
                 </div>
+                ${tagSectionHtml}
                 ${detail.hasAttachment ? `
                 <div class="detail-section">
                     <h3>附件</h3>
@@ -5676,6 +5685,7 @@ function initAiReplyWorkbench(recordId) {
 
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
+    state.mailbox.detailContext = null;
     const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
     const [data, options, logs] = await Promise.all([
         detailPromise,
@@ -5889,6 +5899,7 @@ async function handleUnmatchedAction(element) {
     }
     if (action === "close-unmatched-detail") {
         $("#unmatchedDetailPanel").hidden = true;
+        state.mailbox.detailContext = null;
         return;
     }
     if (action === "preview-auto-reply") {
@@ -6037,6 +6048,18 @@ async function handleUnmatchedAction(element) {
         }
         await showUnmatchedDetail(id);
         await refreshMailboxAfterPendingAction();
+        return;
+    }
+    if (action === "mailbox-auto-tags") {
+        await mailboxAutoApplyTags();
+        return;
+    }
+    if (action === "mailbox-add-tag-open") {
+        showMailboxAddTagModal();
+        return;
+    }
+    if (action === "mailbox-remove-tag") {
+        await mailboxRemoveTag(Number(element.dataset.tagId));
         return;
     }
     if (action === "compose-move-up") {
@@ -6939,6 +6962,7 @@ function bindEvents() {
     });
     $("#closeUnmatchedDetailBtn")?.addEventListener("click", () => {
         $("#unmatchedDetailPanel").hidden = true;
+        state.mailbox.detailContext = null;
     });
     const updateFilterBadge = () => {
         const active = [
@@ -7771,6 +7795,7 @@ function renderMailboxTable() {
                 <div class="mailbox-card-tags">
                     ${directionBadge}
                     ${renderMailboxTagBadges(row.tags)}
+                    ${(row.inboundTags || []).map((tag) => renderInboundTagChip(tag)).join("")}
                     ${sourceBadge}
                     ${attachment}
                     ${sendStatus}
@@ -7866,7 +7891,8 @@ function renderInboundTagChip(tag, options = {}) {
         filterKey = null,
         removable = false,
         clickable = false,
-        extraClass = ""
+        extraClass = "",
+        removeAction = "inbound-remove-tag"
     } = options;
     const inactive = tag.active === false;
     const classes = ["inbound-tag-chip", tag.tagType === "QA" ? "qa" : "custom"];
@@ -7878,7 +7904,7 @@ function renderInboundTagChip(tag, options = {}) {
     if (filterKey) attrs.push(`data-tag-key="${escapeHtml(filterKey)}"`);
     if (tag.tagId != null) attrs.push(`data-tag-id="${escapeHtml(tag.tagId)}"`);
     const removeBtn = removable
-        ? `<button type="button" class="chip-x" data-action="inbound-remove-tag" data-tag-id="${escapeHtml(tag.tagId)}" title="删除标签">×</button>`
+        ? `<button type="button" class="chip-x" data-action="${escapeHtml(removeAction)}" data-tag-id="${escapeHtml(tag.tagId)}" title="删除标签">×</button>`
         : "";
     return `<span class="${classes.join(" ")}" ${attrs.join(" ")}>${escapeHtml(tag.label || "")}${removeBtn}</span>`;
 }
@@ -8032,6 +8058,71 @@ function renderInboundTagEditor(threadData) {
     `;
 }
 
+function renderMailboxInboundTagEditor(tags, inboundProcessingId) {
+    const chips = (tags || []).map((tag) => renderInboundTagChip(tag, {
+        removable: true,
+        removeAction: "mailbox-remove-tag"
+    })).join("") || `<span class="muted">暂无标签</span>`;
+    return `
+        <div class="detail-section" id="mailboxInboundTagEditor" data-inbound-id="${escapeHtml(inboundProcessingId)}">
+            <div class="inbound-tag-editor-head">
+                <h3>邮件标签</h3>
+                <div class="inbound-tag-editor-actions">
+                    <button type="button" class="button secondary small" data-action="mailbox-auto-tags">自动添加 QA 标签</button>
+                    <button type="button" class="button primary small" data-action="mailbox-add-tag-open">+ 添加标签</button>
+                </div>
+            </div>
+            <div class="inbound-tag-editor-chips">${chips}</div>
+        </div>
+    `;
+}
+
+function mailboxTagEditInboundId() {
+    return state.mailbox.detailContext?.inboundProcessingId || null;
+}
+
+function showMailboxAddTagModal() {
+    const inboundId = mailboxTagEditInboundId();
+    if (!inboundId) return;
+    state.mailbox.addTagInboundId = inboundId;
+    showInboundAddTagModal();
+}
+
+async function refreshMailboxInboundTagsAfterChange() {
+    const ctx = state.mailbox.detailContext;
+    if (!ctx?.inboundProcessingId) return;
+    const detail = await api(`/api/mail/mailbox/${encodeURIComponent(ctx.source)}/${ctx.id}`);
+    const editor = $("#mailboxInboundTagEditor");
+    if (editor) {
+        editor.outerHTML = renderMailboxInboundTagEditor(detail.inboundTags || [], ctx.inboundProcessingId);
+    }
+    const row = (state.mailbox.items || []).find((item) =>
+        item.source === ctx.source && Number(item.id) === Number(ctx.id)
+    );
+    if (row) {
+        row.inboundTags = detail.inboundTags || [];
+        renderMailboxTable();
+    }
+}
+
+async function mailboxAutoApplyTags() {
+    const inboundId = mailboxTagEditInboundId();
+    if (!inboundId) return;
+    const operatorName = inboundSummaryOperatorName();
+    await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+        method: "POST",
+        body: JSON.stringify(operatorName ? { operatorName } : {})
+    });
+    showStatus("已自动添加 QA 标签", "ok");
+    await refreshMailboxInboundTagsAfterChange();
+}
+
+async function mailboxRemoveTag(tagId) {
+    await api(`/api/inbound-summary/tags/${tagId}`, { method: "DELETE" });
+    showStatus("标签已删除", "ok");
+    await refreshMailboxInboundTagsAfterChange();
+}
+
 function renderInboundThread(threadData) {
     const container = $("#inboundThread");
     if (!container) return;
@@ -8169,6 +8260,7 @@ function showInboundAddTagModal() {
 function hideInboundAddTagModal() {
     $("#inboundAddTagModal").hidden = true;
     document.body.classList.remove("modal-open");
+    state.mailbox.addTagInboundId = null;
 }
 
 async function populateInboundAddTagQaOptions() {
@@ -8185,7 +8277,7 @@ async function populateInboundAddTagQaOptions() {
 }
 
 async function submitInboundAddTag() {
-    const inboundId = state.inboundSummary.selectedId;
+    const inboundId = state.mailbox.addTagInboundId || state.inboundSummary.selectedId;
     if (!inboundId) return;
     const type = $("#inboundAddTagType").value;
     const operatorName = inboundSummaryOperatorName();
@@ -8205,6 +8297,11 @@ async function submitInboundAddTag() {
     });
     hideInboundAddTagModal();
     showStatus("标签已添加", "ok");
+    state.mailbox.addTagInboundId = null;
+    if (state.mailbox.detailContext?.inboundProcessingId === inboundId) {
+        await refreshMailboxInboundTagsAfterChange();
+        return;
+    }
     await refreshInboundAfterTagChange();
 }
 

@@ -22,7 +22,8 @@ class MailboxService(
     private val senderAccountRepository: MailSenderAccountRepository,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val mailAttachmentRepository: MailAttachmentRepository,
-    private val expertContactRepository: ExpertContactRepository
+    private val expertContactRepository: ExpertContactRepository,
+    private val inboundMailTagService: InboundMailTagService
 ) {
     fun listMailbox(
         direction: String?,
@@ -68,6 +69,9 @@ class MailboxService(
             onlyPending = onlyPending
         )
 
+        val inboundIds = rows.mapNotNull { it.inboundProcessingId }
+        val inboundTagsById = inboundMailTagService.listTagsBatch(inboundIds)
+
         val items = rows.map { row ->
             val timestamp = (row.sentAt ?: row.receivedAt)?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             MailboxItemResponse(
@@ -89,7 +93,8 @@ class MailboxService(
                 tags = computeTags(row),
                 processStatus = row.processStatus,
                 reasonType = row.reasonType,
-                inboundProcessingId = row.inboundProcessingId
+                inboundProcessingId = row.inboundProcessingId,
+                inboundTags = row.inboundProcessingId?.let { inboundTagsById[it] } ?: emptyList()
             )
         }
 
@@ -157,7 +162,8 @@ class MailboxService(
             timestamp = timestamp,
             processStatus = null,
             reasonType = null,
-            inboundProcessingId = null
+            inboundProcessingId = null,
+            inboundTags = emptyList()
         )
     }
 
@@ -187,7 +193,8 @@ class MailboxService(
             timestamp = timestamp,
             processStatus = record.processStatus,
             reasonType = record.reasonType,
-            inboundProcessingId = recordId
+            inboundProcessingId = recordId,
+            inboundTags = inboundMailTagService.listTags(recordId)
         )
     }
 

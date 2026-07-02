@@ -24,12 +24,14 @@ class MailboxServiceTest {
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
     private val mailboxService = MailboxService(
         mailRecordRepository,
         senderAccountRepository,
         inboundMailProcessingRepository,
         mailAttachmentRepository,
-        expertContactRepository
+        expertContactRepository,
+        inboundMailTagService
     )
 
     private val activeAccount = MailSenderAccount(
@@ -176,6 +178,85 @@ class MailboxServiceTest {
         assertEquals("SENT", item.sendStatus)
         assertEquals("2026-06-22T10:00:00", item.timestamp)
         assertTrue(item.tags.containsAll(listOf("专家", "发件", "自动回复")))
+        assertTrue(item.inboundTags.isEmpty())
+    }
+
+    @Test
+    fun `listMailbox fills inboundTags for inbound processing rows`() {
+        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(listOf(activeAccount))
+
+        val inboundRow = MailboxRow(
+            source = "INBOUND_PROCESSING",
+            id = 20L,
+            expertContactId = 99L,
+            direction = "INBOUND",
+            mailType = "REPLY",
+            senderAccountCode = "active_acc",
+            triggeredBy = null,
+            matchedQaRuleId = null,
+            subject = "Question",
+            bodyPreview = "Body",
+            sendStatus = null,
+            sentAt = null,
+            receivedAt = LocalDateTime.of(2026, 6, 22, 10, 0),
+            processStatus = "PROCESSED",
+            reasonType = null,
+            expertEmail = "expert@example.com",
+            expertName = "Dr. Expert",
+            hasAttachment = 0L,
+            inboundProcessingId = 20L
+        )
+        val tagView = TagView(
+            tagId = 1L,
+            tagType = "QA",
+            qaRuleId = 5L,
+            label = "薪资",
+            source = "AUTO",
+            active = true
+        )
+
+        Mockito.`when`(
+            mailRecordRepository.listMailbox(
+                accountCodes = listOf("active_acc"),
+                direction = null,
+                accountCode = null,
+                keyword = null,
+                recipientEmail = null,
+                startTime = null,
+                endTime = null,
+                onlyPending = 0,
+                limit = 20,
+                offset = 0L
+            )
+        ).thenReturn(listOf(inboundRow))
+        Mockito.`when`(
+            mailRecordRepository.countMailbox(
+                accountCodes = listOf("active_acc"),
+                direction = null,
+                accountCode = null,
+                keyword = null,
+                recipientEmail = null,
+                startTime = null,
+                endTime = null,
+                onlyPending = 0
+            )
+        ).thenReturn(1L)
+        Mockito.`when`(inboundMailTagService.listTagsBatch(listOf(20L))).thenReturn(mapOf(20L to listOf(tagView)))
+
+        val response = mailboxService.listMailbox(
+            direction = null,
+            accountCode = null,
+            keyword = null,
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            pending = false,
+            page = 0,
+            size = 20
+        )
+
+        assertEquals(1, response.items.size)
+        assertEquals(listOf(tagView), response.items[0].inboundTags)
     }
 
     @Test
@@ -385,6 +466,7 @@ class MailboxServiceTest {
         assertEquals("MAIL_RECORD", detail.source)
         assertEquals("OUTBOUND", detail.direction)
         assertFalse(detail.hasAttachment)
+        assertTrue(detail.inboundTags.isEmpty())
     }
 
     @Test
@@ -413,6 +495,18 @@ class MailboxServiceTest {
         )
         Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
         Mockito.`when`(mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc("in-msg")).thenReturn(null)
+        Mockito.`when`(inboundMailTagService.listTags(12L)).thenReturn(
+            listOf(
+                TagView(
+                    tagId = 3L,
+                    tagType = "CUSTOM",
+                    qaRuleId = null,
+                    label = "跟进",
+                    source = "MANUAL",
+                    active = true
+                )
+            )
+        )
 
         val detail = mailboxService.getMailboxDetail("INBOUND_PROCESSING", 12L)
 
@@ -421,6 +515,8 @@ class MailboxServiceTest {
         assertEquals("INBOUND", detail.direction)
         assertEquals(12L, detail.inboundProcessingId)
         assertEquals("expert@example.com", detail.expertEmail)
+        assertEquals(1, detail.inboundTags.size)
+        assertEquals("跟进", detail.inboundTags[0].label)
     }
 
     @Test

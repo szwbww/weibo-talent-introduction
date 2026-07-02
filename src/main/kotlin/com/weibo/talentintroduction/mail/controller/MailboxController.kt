@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.mail.service.MailboxService
+import com.weibo.talentintroduction.mail.service.TagView
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
@@ -27,7 +28,8 @@ data class MailboxItemResponse(
     val tags: List<String>,
     val processStatus: String?,
     val reasonType: String?,
-    val inboundProcessingId: Long?
+    val inboundProcessingId: Long?,
+    val inboundTags: List<TagView> = emptyList()
 )
 
 data class MailboxListResponse(
@@ -54,7 +56,8 @@ data class MailboxDetailResponse(
     val timestamp: String?,
     val processStatus: String?,
     val reasonType: String?,
-    val inboundProcessingId: Long?
+    val inboundProcessingId: Long?,
+    val inboundTags: List<TagView> = emptyList()
 )
 
 @RestController
