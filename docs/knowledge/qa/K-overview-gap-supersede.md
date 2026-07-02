@@ -3,7 +3,7 @@ id: K-overview-gap-supersede
 domain: qa
 created: 2026-06-26
 last_used: 2026-07-02
-hit_count: 10
+hit_count: 11
 source: fix-v:qa-rules-phase2b:fix-1
 severity: P1
 ---

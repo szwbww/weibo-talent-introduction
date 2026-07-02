@@ -3,7 +3,7 @@ id: K-free-form-fallback-nonempty
 domain: qa
 created: 2026-07-01
 last_used: 2026-07-02
-hit_count: 4
+hit_count: 5
 source: fix-v:04-frontend-tab:fix-1
 severity: P1
 ---

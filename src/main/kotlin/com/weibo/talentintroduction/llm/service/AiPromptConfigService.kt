@@ -33,6 +33,9 @@ object FreeFormPromptDefaults {
         appendLine()
         appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
         appendLine("Do not make specific commitments beyond what the context supports.")
+        appendLine("Request materials in stages: at an early stage ask only for CV, patent certificates, and a publication list, and explain why each is useful.")
+        appendLine("Never request passport, degree certificate, or employment proof in an early auto reply; those come later, after a call or clear interest.")
+        appendLine("If the expert shows hesitation or distrust, lead with confidentiality, no-fee assurance, and evidence of government cooperation, and offer a low-commitment next step.")
     }
 }
 

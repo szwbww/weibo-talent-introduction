@@ -2,7 +2,7 @@
   {
     "topic": "项目内容与两类计划",
     "question": "What is this project / innovation vs entrepreneur talent?",
-    "answer": "Two tracks: Innovation Talent (PhD + 3+ years at a well-known institution, serve China 2-3 years, no relocation required, multiple visits per year, costs covered) and Entrepreneur Talent (business plan to start in China, remote control allowed, 1-2 visits per year).",
+    "answer": "Two tracks: Innovation Talent (PhD + 3+ years at a well-known institution, serve China 2-3 years, no relocation required, multiple visits per year, costs covered) and Entrepreneur Talent (business plan to start in China, remote control allowed, 1-2 visits per year). Selected candidates may receive government research funding in the range of 3-12 million RMB (RMB 3,000,000-12,000,000), with enterprises providing personal salary support separately; full-time roles may also include additional housing allowance.",
     "keywords": "national project,innovation talent,entrepreneur,what is this project",
     "sourceRef": "PROJECT_CONTENT"
   },
@@ -16,7 +16,7 @@
   {
     "topic": "申报条件与材料",
     "question": "What documents are required?",
-    "answer": "Doctoral degree certificate, passport/ID, CV (papers/patents/projects/awards), proof of patents and awards, and official proof of postdoctoral and current employment (official letters, contracts, appointment letters).",
+    "answer": "Applicants should hold the title of associate professor or above, have outstanding research achievements in their field, and be able to contribute to industrial services and scientific and technological innovation. We can discuss fit first -- no documents needed at this stage.",
     "keywords": "what documents,materials needed,cv,proof,certificate",
     "sourceRef": "APPLYING_CRITERIA"
   },
@@ -51,7 +51,7 @@
   {
     "topic": "资助与薪资",
     "question": "What funding or salary is available?",
-    "answer": "Selected candidates receive government project funding (RMB 3-12 million) for research plus salary from the enterprise; full-time roles may include additional housing allowance.",
+    "answer": "Selected candidates receive government project funding (RMB 3-12 million, RMB 3,000,000-12,000,000) for research plus salary from the enterprise separately; full-time roles may include additional housing allowance.",
     "keywords": "funding,subsidy,housing allowance,who funds,salary",
     "sourceRef": "SALARY"
   },
@@ -78,9 +78,9 @@
   },
   {
     "topic": "承诺视频 / VCR",
-    "question": "Why do you need a video with passport?",
-    "answer": "To prevent AI-forged or duplicate applications, we need a short video holding your passport and reading a commitment statement (about 3-7 minutes), submitted with your materials.",
-    "keywords": "video,vcr,record,passport,statement,promise",
+    "question": "Why do you need a confirmation video?",
+    "answer": "Identity-verification details are handled by an operator after clear interest and a short call. We can walk you through the safeguards and next steps at your pace; this is not an early auto-reply topic.",
+    "keywords": "video,vcr,record,statement,promise,confirmation video",
     "sourceRef": "VCR_VIDEO"
   },
   {
@@ -140,6 +140,13 @@
     "sourceRef": "PARTNER_COMPANY"
   },
   {
+    "topic": "轻问材料",
+    "question": "What documents should I send at this stage?",
+    "answer": "Thank you for your interest in getting started. At this early stage, we ask for only three items:\n\nYour CV (resume): this helps us match you with the right enterprise and research direction.\n\nPatent certificates: these highlight your innovation track record and can strengthen your application.\n\nA publication list: this substantiates your research level, which is a key review criterion.\n\nAll materials are kept strictly confidential, we never charge any fees, and you may redact sensitive technical details if you prefer.",
+    "keywords": "what documents,materials needed,cv,what to send,provide,what do you need,send my documents,what should i send",
+    "sourceRef": "MATERIALS_LIGHT"
+  },
+  {
     "topic": "入选后流程",
     "question": "What happens after I am selected?",
     "answer": "After selection you finalize the research topic and sign a labor contract with the enterprise; we can arrange free visits to China plus local onboarding (SIM card, bank account, submission support).",
@@ -156,8 +163,8 @@
   {
     "topic": "反向信息采集清单",
     "question": "What additional information may we request?",
-    "answer": "We may verify education, request employment proofs from each institution, awards/patent lists, invitation letters if needed, recent achievements, and passport verification. This is an operator follow-up template, not an auto-reply.",
-    "keywords": "employment proof,invitation letter,recent achievements,passport verification",
+    "answer": "Follow-up verification (education, awards/patent lists, invitation letters if needed, recent achievements) is handled by an operator after clear interest. This is an operator follow-up template, not an auto-reply.",
+    "keywords": "invitation letter,recent achievements,operator follow-up,additional information",
     "sourceRef": "REVERSE_INFO_CHECKLIST"
   },
   {
