@@ -2142,8 +2142,13 @@ async function handleSuppressionAction(button) {
 const expertTagLabels = {
     auto_promoted: "自动晋升",
     verified: "已验证",
-    discovered: "新发现"
+    discovered: "新发现",
+    "承诺回复材料": "承诺回复材料",
+    "重点关注": "重点关注",
+    "待补充信息": "待补充信息"
 };
+
+const EXPERT_PRESET_TAGS = ["承诺回复材料", "重点关注", "待补充信息"];
 
 const expertTagColors = {
     auto_promoted: "#3b82f6",
@@ -2261,17 +2266,303 @@ async function loadRegions(level, { filters = {} } = {}) {
     }
 }
 
+async function loadExpertTagOptions(level, { filters = {} } = {}) {
+    try {
+        const params = new URLSearchParams({ level });
+        if (filters.operatorStatus) params.set("operatorStatus", filters.operatorStatus);
+        if (filters.emailDomain) params.set("emailDomain", filters.emailDomain);
+        if (filters.region) params.set("region", filters.region);
+        const tags = await api(`/api/experts/tags/aggregation?${params}`);
+        const filterDropdown = $("#expertTagFilter");
+        const currentFilterVal = filterDropdown ? filterDropdown.value : "";
+
+        if (filterDropdown) {
+            filterDropdown.innerHTML = '<option value="">全部标签</option>';
+            tags.forEach(item => {
+                const opt = document.createElement("option");
+                opt.value = item.tag;
+                const label = expertTagLabels[item.tag] || item.tag;
+                opt.textContent = `${label} (${item.count})`;
+                filterDropdown.appendChild(opt);
+            });
+            filterDropdown.value = currentFilterVal;
+            if (filterDropdown.value !== currentFilterVal) {
+                filterDropdown.value = "";
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load expert tags:", e);
+    }
+}
+
+function renderExpertTagEditor(tags, orcidId, level) {
+    const chips = (tags || []).map(tag => `
+        <span class="expert-tag tag-${escapeHtml(tag)}">
+            ${escapeHtml(expertTagLabels[tag] || tag)}
+            <button type="button" class="expert-tag-remove" data-action="expert-remove-tag" data-tag="${escapeHtml(tag)}" title="删除标签">×</button>
+        </span>
+    `).join("") || `<span class="muted">暂无标签</span>`;
+    return `
+        <div class="detail-section expert-tag-editor" id="expertTagEditor" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}">
+            <div class="inbound-tag-editor-head">
+                <h3>专家标签</h3>
+                <div class="inbound-tag-editor-actions">
+                    <button type="button" class="button primary small" data-action="expert-add-tag-open">+ 添加标签</button>
+                </div>
+            </div>
+            <div class="inbound-tag-editor-chips">${chips}</div>
+        </div>
+    `;
+}
+
+function openExpertTagAddDialog(existingTags = []) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("actionDialog");
+        const form = document.getElementById("actionDialogForm");
+        const titleEl = document.getElementById("actionDialogTitle");
+        const bodyEl = document.getElementById("actionDialogBody");
+        titleEl.textContent = "添加专家标签";
+        const availablePresets = EXPERT_PRESET_TAGS.filter(tag => !(existingTags || []).includes(tag));
+        bodyEl.innerHTML = `
+            <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                <label style="font-weight: bold; margin-bottom: 4px;">预设标签</label>
+                <select id="expertPresetTag" class="input" style="width: 100%; box-sizing: border-box;">
+                    <option value="">选择预设...</option>
+                    ${availablePresets.map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(expertTagLabels[tag] || tag)}</option>`).join("")}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                <label style="font-weight: bold; margin-bottom: 4px;">或自定义标签</label>
+                <input type="text" id="expertCustomTag" class="input" placeholder="输入自定义标签" style="width: 100%; box-sizing: border-box;">
+            </div>
+        `;
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            const preset = document.getElementById("expertPresetTag")?.value?.trim() || "";
+            const custom = document.getElementById("expertCustomTag")?.value?.trim() || "";
+            const tag = custom || preset;
+            cleanup();
+            resolve(tag || null);
+        };
+        const cleanup = () => {
+            form.removeEventListener("submit", handleSubmit);
+            const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+            cancelBtn.removeEventListener("click", handleCancel);
+            dialog.close();
+        };
+        const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+        cancelBtn.addEventListener("click", handleCancel);
+        form.addEventListener("submit", handleSubmit);
+        dialog.showModal();
+    });
+}
+
+async function fetchExpertTagsFromEs(orcidId, level) {
+    if (!orcidId) return [];
+    const params = new URLSearchParams({ orcidId, level });
+    const profile = await api(`/api/experts/profile?${params}`);
+    return profile.tags || [];
+}
+
+async function refreshExpertTagsFromEs(orcidId, level) {
+    return fetchExpertTagsFromEs(orcidId, level);
+}
+
+async function mutateExpertTag(orcidId, level, tag, action) {
+    const endpoint = action === "add" ? "/api/experts/tags/add" : "/api/experts/tags/remove";
+    const result = await api(endpoint, {
+        method: "POST",
+        body: JSON.stringify({ orcidId, tag, level })
+    });
+    if (!result.success) {
+        throw new Error(result.message || "标签操作失败");
+    }
+    await loadContacts();
+    await loadExpertTagOptions(level, {
+        filters: {
+            operatorStatus: $("#contactStatusFilter")?.value || "",
+            emailDomain: $("#expertEmailDomainFilter")?.value || "",
+            region: $("#expertRegionFilter")?.value || ""
+        }
+    });
+    return refreshExpertTagsFromEs(orcidId, level);
+}
+
+function updateExpertTagEditor(orcidId, tags, level) {
+    const editor = $("#expertTagEditor");
+    if (!editor || editor.dataset.orcid !== orcidId) return;
+    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level);
+}
+
+function buildContactFilterSummary() {
+    const parts = [];
+    const level = $("#expertIndexLevel").value;
+    parts.push(`层级: ${indexLevelLabels[level] || level}`);
+    const operatorStatus = $("#contactStatusFilter")?.value || "";
+    if (operatorStatus) parts.push(`状态: ${operatorStatusLabels[operatorStatus] || operatorStatus}`);
+    const tag = $("#expertTagFilter")?.value || "";
+    if (tag) parts.push(`标签: ${expertTagLabels[tag] || tag}`);
+    const emailDomain = $("#expertEmailDomainFilter")?.value || "";
+    if (emailDomain) parts.push(`邮箱: @${emailDomain}`);
+    const region = $("#expertRegionFilter")?.value || "";
+    if (region) parts.push(`地区: ${region}`);
+    return parts.join(" · ") || "无额外筛选";
+}
+
+const ES_MAX_RESULT_WINDOW = 10000;
+const ES_PAGE_SIZE_MAX = 1000;
+
+async function collectBatchMailContactIds() {
+    const level = $("#expertIndexLevel").value;
+    const operatorStatus = $("#contactStatusFilter")?.value || "";
+    const tag = $("#expertTagFilter")?.value || "";
+    const emailDomain = $("#expertEmailDomainFilter")?.value || "";
+    const region = $("#expertRegionFilter")?.value || "";
+    const totalHits = state.contactsTotalHits || 0;
+    if (totalHits <= 0) return [];
+    if (totalHits > ES_MAX_RESULT_WINDOW) {
+        throw new Error(
+            `筛选结果 ${totalHits} 条超过 ES 深分页上限 ${ES_MAX_RESULT_WINDOW}，无法完整批量发送，请缩小筛选范围`
+        );
+    }
+
+    const contactIds = [];
+    let from = 0;
+    while (from < totalHits) {
+        const size = Math.min(ES_PAGE_SIZE_MAX, totalHits - from);
+        const params = new URLSearchParams({
+            level,
+            size: String(size),
+            from: String(from)
+        });
+        if (tag) params.set("tag", tag);
+        if (operatorStatus) params.set("operatorStatus", operatorStatus);
+        if (emailDomain) params.set("emailDomain", emailDomain);
+        if (region) params.set("region", region);
+        let data;
+        try {
+            data = await api(`/api/experts?${params}`);
+        } catch (e) {
+            throw new Error(
+                `拉取筛选结果第 ${from + 1}-${from + size} 条失败，已中止批量发送：${e.message || "请求出错"}`
+            );
+        }
+        (data.experts || []).forEach((item) => {
+            if (item.contactId) contactIds.push(item.contactId);
+        });
+        from += size;
+    }
+    return contactIds;
+}
+
+function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptions) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("actionDialog");
+        const form = document.getElementById("actionDialogForm");
+        const titleEl = document.getElementById("actionDialogTitle");
+        const bodyEl = document.getElementById("actionDialogBody");
+        titleEl.textContent = "批量发送邮件";
+        bodyEl.innerHTML = `
+            <div style="margin-bottom: 12px;">
+                <div><strong>筛选条件:</strong> ${escapeHtml(summary)}</div>
+                <div style="margin-top: 6px;">命中 ${totalHits} 位专家，其中 ${sendableCount} 位可发送（已建立联系）</div>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+                <label style="font-weight: bold; margin-bottom: 4px;">邮件模板</label>
+                <select id="batchMailOption" class="input" style="width: 100%; box-sizing: border-box;" required>
+                    ${templateOptions.map(option => `
+                        <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
+                            ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
+                        </option>
+                    `).join("")}
+                </select>
+            </div>
+        `;
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            const mailOption = document.getElementById("batchMailOption")?.value || "";
+            cleanup();
+            resolve(mailOption ? { mailOption } : null);
+        };
+        const cleanup = () => {
+            form.removeEventListener("submit", handleSubmit);
+            const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+            cancelBtn.removeEventListener("click", handleCancel);
+            dialog.close();
+        };
+        const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
+        cancelBtn.addEventListener("click", handleCancel);
+        form.addEventListener("submit", handleSubmit);
+        dialog.showModal();
+    });
+}
+
+async function handleBatchTagMail() {
+    const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+    const replyMode = $("#contactReplyModeFilter")?.value || "";
+    const useDbContactPath = needsAttention || replyMode;
+    if (useDbContactPath) {
+        showStatus("批量发送邮件需在 ES 查询模式下使用（请清除人工关注/回复模式筛选）", "warn");
+        return;
+    }
+    let contactIds;
+    try {
+        contactIds = await collectBatchMailContactIds();
+    } catch (e) {
+        showStatus(e.message, "error");
+        return;
+    }
+    if (contactIds.length === 0) {
+        showStatus("当前筛选结果中没有可发送邮件的专家（需已建立联系）", "warn");
+        return;
+    }
+    const options = await loadMailSendOptions();
+    const templateOptions = options.filter(option => option.optionType === "TEMPLATE");
+    if (templateOptions.length === 0) {
+        showStatus("没有可用的邮件模板", "error");
+        return;
+    }
+    const summary = buildContactFilterSummary();
+    const payload = await openBatchTagMailDialog(summary, state.contactsTotalHits || 0, contactIds.length, templateOptions);
+    if (!payload) return;
+    const [optionType, optionValue] = payload.mailOption.split(":");
+    const result = await api("/api/expert-contacts/batch-mail", {
+        method: "POST",
+        body: JSON.stringify({
+            contactIds,
+            optionType,
+            optionValue,
+            senderAccountCode: null
+        })
+    });
+    const level = result.failed > 0 ? "warn" : "ok";
+    showStatus(`批量发送完成：成功 ${result.success}，失败 ${result.failed}`, level);
+    if (result.failed > 0 && result.errors?.length) {
+        console.warn("Batch mail errors:", result.errors);
+    }
+    await loadContacts();
+}
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = Number($("#expertIndexSize").value || "50");
     const operatorStatus = $("#contactStatusFilter")?.value || "";
     const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
     const replyMode = $("#contactReplyModeFilter")?.value || "";
-    const followUpMarked = $("#contactFollowUpFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
-    const useDbContactPath = needsAttention || replyMode || followUpMarked;
+    const useDbContactPath = needsAttention || replyMode;
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
@@ -2325,6 +2616,13 @@ async function loadContacts() {
             emailDomain: aggregationEmailDomain
         }
     });
+    loadExpertTagOptions(level, {
+        filters: {
+            operatorStatus,
+            emailDomain: aggregationEmailDomain,
+            region: aggregationRegion
+        }
+    });
 
     let contacts = [];
     let totalHits = 0;
@@ -2334,7 +2632,6 @@ async function loadContacts() {
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
         if (replyMode) params.set("replyMode", replyMode);
-        if (followUpMarked) params.set("followUpMarked", followUpMarked);
         const data = await api(`/api/expert-contacts?${params}`);
         let rawContacts = data.contacts || data;
         if (emailDomain) {
@@ -2355,8 +2652,6 @@ async function loadContacts() {
             contactStatus: c.currentStatus,
             operatorStatus: c.operatorStatus,
             needsManualAttention: c.needsManualAttention,
-            followUpMarked: c.followUpMarked,
-            followUpMarkedAt: c.followUpMarkedAt || null,
             country: "",
             employment: "",
             keyword: "",
@@ -2407,13 +2702,7 @@ async function loadContacts() {
     }
 
     const sortBy = $("#expertSortBy")?.value || "";
-    if (followUpMarked) {
-        contacts.sort((a, b) => {
-            if (!a.followUpMarkedAt) return 1;
-            if (!b.followUpMarkedAt) return -1;
-            return new Date(b.followUpMarkedAt) - new Date(a.followUpMarkedAt);
-        });
-    } else if ((operatorStatus || needsAttention || replyMode) && sortBy === "updatedAt") {
+    if ((operatorStatus || needsAttention || replyMode) && sortBy === "updatedAt") {
         contacts.sort((a, b) => {
             if (!a.updatedAt) return 1;
             if (!b.updatedAt) return -1;
@@ -2457,9 +2746,6 @@ function renderContactListItems() {
             contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
             contact.keyword || ""
         ].filter(Boolean).join("\n");
-        const followUpIcon = contact.followUpMarked
-            ? `<span class="follow-up-mark" title="待跟进${contact.followUpMarkedAt ? ` · ${escapeHtml(contact.followUpMarkedAt)}` : ""}">📌</span>`
-            : "";
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}" ${hoverInfo ? `title="${escapeHtml(hoverInfo)}"` : ""}>
             <label class="expert-checkbox" onclick="event.stopPropagation()">
@@ -2468,7 +2754,7 @@ function renderContactListItems() {
             <div class="expert-content-wrapper">
                 <div class="expert-row-main">
                     <div class="expert-name-block">
-                        <div class="list-item-title expert-title">${followUpIcon}${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
+                        <div class="list-item-title expert-title">${escapeHtml(contact.displayName || contact.email || contact.orcidId)}</div>
                         <div class="list-item-meta expert-meta">
                             <span>${escapeHtml(indexLevelLabels[contact.indexLevel] || contact.indexLevelName || contact.indexLevel)}</span>
                             <span>${escapeHtml(contact.country || "国家未知")}</span>
@@ -3958,10 +4244,12 @@ function scrollBackToContactsList() {
     document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function showExpertDetail(expert) {
+async function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
+    const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
+    const expertTags = expert.orcidId ? await fetchExpertTagsFromEs(expert.orcidId, tagLevel) : [];
     $("#contactHeadActions").hidden = true;
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
@@ -3980,6 +4268,8 @@ function showExpertDetail(expert) {
                     </p>
                 </div>
             </div>
+
+            ${expert.orcidId ? renderExpertTagEditor(expertTags, expert.orcidId, tagLevel) : ""}
 
             <div class="metadata-grid">
                 <div class="metadata-card">
@@ -4300,9 +4590,6 @@ async function loadContactDetail(contactId) {
             <button class="button primary" id="saveContactChangesBtn" data-contact-id="${contact.id}" disabled>
                 保存变更
             </button>
-            <button class="button ${contact.followUpMarked ? "" : "primary"}" data-action="toggle-follow-up" data-id="${contact.id}" data-marked="${contact.followUpMarked ? "true" : "false"}">
-                ${contact.followUpMarked ? "取消待跟进" : "标记待跟进"}
-            </button>
         </div>
         <div class="contact-head-mail-row">
             <span class="contact-head-label">手动发送邮件:</span>
@@ -4321,6 +4608,9 @@ async function loadContactDetail(contactId) {
 
     const banner = renderManualAttentionBanner(contact);
     const contactDetail = $("#contactDetail");
+    const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
+    const orcidId = contact.orcidId || expert.orcidId || "";
+    const expertTags = orcidId ? await fetchExpertTagsFromEs(orcidId, tagLevel) : [];
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
@@ -4336,6 +4626,8 @@ async function loadContactDetail(contactId) {
                     </p>
                 </div>
             </div>
+
+            ${renderExpertTagEditor(expertTags, orcidId, tagLevel)}
 
             <div class="mail-timeline">
                 ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
@@ -4733,7 +5025,7 @@ async function handleContactAction(element) {
         if (expert?.contactId) {
             await loadContactDetail(expert.contactId);
         } else if (expert) {
-            showExpertDetail(expert);
+            await showExpertDetail(expert);
         }
         return;
     }
@@ -4760,17 +5052,41 @@ async function handleContactAction(element) {
         await loadContactDetail(id);
         return;
     }
-    if (action === "toggle-follow-up") {
-        const marked = element.dataset.marked === "true";
-        if (marked) {
-            await api(`/api/expert-contacts/${id}/mark-follow-up`, { method: "DELETE" });
-            showStatus("已取消待跟进");
-        } else {
-            await api(`/api/expert-contacts/${id}/mark-follow-up`, { method: "POST" });
-            showStatus("已标记待跟进");
+    if (action === "expert-add-tag-open") {
+        const editor = $("#expertTagEditor");
+        if (!editor) return;
+        const orcidId = editor.dataset.orcid;
+        const level = editor.dataset.level;
+        const existingTags = await fetchExpertTagsFromEs(orcidId, level);
+        const tag = await openExpertTagAddDialog(existingTags);
+        if (!tag) return;
+        if (existingTags.includes(tag)) {
+            showStatus("标签已存在", "warn");
+            return;
         }
-        await loadContactDetail(id);
-        await loadContacts();
+        try {
+            const tags = await mutateExpertTag(orcidId, level, tag, "add");
+            updateExpertTagEditor(orcidId, tags, level);
+            showStatus("标签已添加", "ok");
+        } catch (e) {
+            showStatus(e.message, "error");
+        }
+        return;
+    }
+    if (action === "expert-remove-tag") {
+        const editor = $("#expertTagEditor");
+        if (!editor) return;
+        const orcidId = editor.dataset.orcid;
+        const level = editor.dataset.level;
+        const tag = element.dataset.tag;
+        if (!tag) return;
+        try {
+            const tags = await mutateExpertTag(orcidId, level, tag, "remove");
+            updateExpertTagEditor(orcidId, tags, level);
+            showStatus("标签已删除", "ok");
+        } catch (e) {
+            showStatus(e.message, "error");
+        }
         return;
     }
     if (action === "toggle-reply-mode") {
@@ -5687,13 +6003,19 @@ function initAiReplyWorkbench(recordId) {
 
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
-    state.mailbox.detailContext = null;
+    state.mailbox.detailContext = {
+        source: "INBOUND_PROCESSING",
+        id: Number(id),
+        inboundProcessingId: Number(id)
+    };
     const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
-    const [data, options, logs] = await Promise.all([
+    const [data, options, logs, threadData] = await Promise.all([
         detailPromise,
         loadMailSendOptions(),
-        api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] }))
+        api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
+        api(`/api/inbound-summary/mails/${id}/thread`).catch(() => ({ tags: [] }))
     ]);
+    const inboundTags = threadData.tags || [];
     const record = data.record;
     const suggest = record.expertContactId
         ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
@@ -5832,6 +6154,8 @@ async function showUnmatchedDetail(id) {
                     <div class="metadata-card-value">${escapeHtml(record.senderAccountCode)}</div>
                 </div>
             </div>
+
+            ${renderMailboxInboundTagEditor(inboundTags, Number(id))}
 
             ${record.body ? `
             <div class="detail-section">
@@ -6974,7 +7298,6 @@ function bindEvents() {
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
             $("#contactReplyModeFilter").value !== "",
-            $("#contactFollowUpFilter")?.value !== "",
             $("#expertTagFilter").value !== "",
             $("#expertEmailDomainFilter")?.value !== "",
             $("#expertRegionFilter")?.value !== ""
@@ -6989,7 +7312,7 @@ function bindEvents() {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
-        "contactFollowUpFilter", "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
+        "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
@@ -7797,7 +8120,6 @@ function renderMailboxTable() {
                 <div class="mailbox-card-tags">
                     ${directionBadge}
                     ${renderMailboxTagBadges(row.tags)}
-                    ${(row.inboundTags || []).map((tag) => renderInboundTagChip(tag)).join("")}
                     ${sourceBadge}
                     ${attachment}
                     ${sendStatus}
@@ -8129,13 +8451,6 @@ async function refreshMailboxInboundTagsAfterChange() {
     const editor = $("#mailboxInboundTagEditor");
     if (editor) {
         editor.outerHTML = renderMailboxInboundTagEditor(detail.inboundTags || [], ctx.inboundProcessingId);
-    }
-    const row = (state.mailbox.items || []).find((item) =>
-        item.source === ctx.source && Number(item.id) === Number(ctx.id)
-    );
-    if (row) {
-        row.inboundTags = detail.inboundTags || [];
-        renderMailboxTable();
     }
 }
 

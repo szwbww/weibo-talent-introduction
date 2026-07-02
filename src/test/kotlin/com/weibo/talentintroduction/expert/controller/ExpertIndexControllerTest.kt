@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.expert.service.BulkSyncResult
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.RegionCount
+import com.weibo.talentintroduction.expert.service.TagCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -264,5 +265,115 @@ class ExpertIndexControllerTest {
         )
         assertEquals(0L, response.totalHits)
         Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe")
+    }
+
+    @Test
+    fun `addTag resolves esDocId and delegates to writerService`() {
+        val profile = ExpertProfile(
+            esDocId = "es-doc-1",
+            orcidId = "orcid-1",
+            email = "test@example.com",
+            givenNames = "Expert",
+            familyNames = "One",
+            country = "US",
+            keyword = null,
+            employment = null
+        )
+        Mockito.`when`(searchService.findByOrcidId("orcid-1", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
+        Mockito.`when`(writerService.addTag("es-doc-1", "承诺回复材料", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(true)
+
+        val result = controller.addTag(
+            ExpertTagMutationRequest(
+                orcidId = "orcid-1",
+                tag = "承诺回复材料",
+                level = ExpertIndexLevel.CANDIDATE
+            )
+        )
+
+        assertTrue(result.success)
+        Mockito.verify(writerService).addTag("es-doc-1", "承诺回复材料", ExpertIndexLevel.CANDIDATE)
+    }
+
+    @Test
+    fun `removeTag falls back to orcidId when esDocId is null`() {
+        val profile = ExpertProfile(
+            esDocId = null,
+            orcidId = "orcid-1",
+            email = "test@example.com",
+            givenNames = "Expert",
+            familyNames = "One",
+            country = "US",
+            keyword = null,
+            employment = null
+        )
+        Mockito.`when`(searchService.findByOrcidId("orcid-1", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
+        Mockito.`when`(writerService.removeTag("orcid-1", "承诺回复材料", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(true)
+
+        val result = controller.removeTag(
+            ExpertTagMutationRequest(
+                orcidId = "orcid-1",
+                tag = "承诺回复材料",
+                level = ExpertIndexLevel.CANDIDATE
+            )
+        )
+
+        assertTrue(result.success)
+        Mockito.verify(writerService).removeTag("orcid-1", "承诺回复材料", ExpertIndexLevel.CANDIDATE)
+    }
+
+    @Test
+    fun `aggregateTags delegates to searchService without tag dimension`() {
+        val expected = listOf(TagCount("承诺回复材料", 5L))
+        Mockito.`when`(
+            searchService.aggregateTags(
+                ExpertIndexLevel.CANDIDATE,
+                "REPLIED",
+                "gmail.com",
+                "Europe"
+            )
+        ).thenReturn(expected)
+
+        val response = controller.aggregateTags(
+            level = ExpertIndexLevel.CANDIDATE,
+            operatorStatus = "REPLIED",
+            emailDomain = "gmail.com",
+            region = "Europe"
+        )
+
+        assertEquals(1, response.size)
+        assertEquals("承诺回复材料", response[0].tag)
+        assertEquals(5L, response[0].count)
+        Mockito.verify(searchService).aggregateTags(
+            ExpertIndexLevel.CANDIDATE,
+            "REPLIED",
+            "gmail.com",
+            "Europe"
+        )
+    }
+
+    @Test
+    fun `getExpertProfile returns tags from searchService findByOrcidId`() {
+        val profile = ExpertProfile(
+            esDocId = "es-doc-1",
+            orcidId = "orcid-1",
+            email = "test@example.com",
+            givenNames = "Expert",
+            familyNames = "One",
+            country = "US",
+            keyword = null,
+            employment = null,
+            tags = listOf("承诺回复材料")
+        )
+        Mockito.`when`(searchService.findByOrcidId("orcid-1", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
+
+        val response = controller.getExpertProfile("orcid-1", ExpertIndexLevel.CANDIDATE)
+
+        assertEquals("orcid-1", response.orcidId)
+        assertEquals(listOf("承诺回复材料"), response.tags)
     }
 }

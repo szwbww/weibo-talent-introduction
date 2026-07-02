@@ -427,6 +427,74 @@ class ExpertSearchService(
             }
         }
     }
+    fun findByOrcidId(orcidId: String, level: ExpertIndexLevel): ExpertProfile? {
+        require(orcidId.isNotBlank()) { "orcidId must not be blank" }
+
+        val requestBody = mapOf(
+            "size" to 1,
+            "_source" to sourceFields(),
+            "query" to mapOf("term" to mapOf("orcidId" to orcidId))
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return null
+
+        val hits = response.path("hits").path("hits")
+        if (!hits.isArray || hits.isEmpty) {
+            return null
+        }
+        return toExpertProfile(hits[0])
+    }
+
+    fun aggregateTags(
+        level: ExpertIndexLevel,
+        operatorStatus: String? = null,
+        emailDomain: String? = null,
+        region: String? = null
+    ): List<TagCount> {
+        val filters = buildExpertFilters(tag = null, operatorStatus, emailDomain, region)
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+
+        val requestBody = mapOf(
+            "size" to 0,
+            "query" to query,
+            "aggs" to mapOf(
+                "tags" to mapOf(
+                    "terms" to mapOf(
+                        "field" to "tags",
+                        "size" to 100
+                    )
+                )
+            )
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        val buckets = response.path("aggregations")
+            .path("tags")
+            .path("buckets")
+
+        return buckets.map { bucket ->
+            TagCount(
+                tag = bucket.path("key").asText(),
+                count = bucket.path("doc_count").asLong()
+            )
+        }
+    }
+
     fun aggregateRegions(
         level: ExpertIndexLevel,
         tag: String? = null,
@@ -606,5 +674,10 @@ data class EmailDomainCount(
 
 data class RegionCount(
     val region: String,
+    val count: Long
+)
+
+data class TagCount(
+    val tag: String,
     val count: Long
 )

@@ -22,6 +22,7 @@ import com.weibo.talentintroduction.mail.service.ManualExpertMailService
 import com.weibo.talentintroduction.mail.service.ManualMailOption
 import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.ManualMailSendResult
+import com.weibo.talentintroduction.mail.service.BatchMailSendResult
 import com.weibo.talentintroduction.campaign.service.AutoReplySummary
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -171,6 +172,10 @@ class ExpertContactManagementController(
     ): ManualMailSendResult =
         manualExpertMailService.sendManualMail(contactId, request.toCommand())
 
+    @PostMapping("/batch-mail")
+    fun sendBatchMail(@RequestBody request: BatchMailSendRequest): BatchMailSendResult =
+        manualExpertMailService.sendBatchMail(request.contactIds, request.toCommand())
+
     @PostMapping("/{contactId}/meeting-schedules")
     fun createMeetingSchedule(
         @PathVariable contactId: Long,
@@ -270,6 +275,21 @@ data class ManualMailSendRequest(
             optionValue = optionValue,
             senderAccountCode = senderAccountCode,
             sourceInboundId = sourceInboundId
+        )
+}
+
+data class BatchMailSendRequest(
+    val contactIds: List<Long>,
+    val optionType: String,
+    val optionValue: String,
+    val senderAccountCode: String? = null
+) {
+    fun toCommand(): ManualMailSendCommand =
+        ManualMailSendCommand(
+            optionType = optionType,
+            optionValue = optionValue,
+            senderAccountCode = senderAccountCode,
+            sourceInboundId = null
         )
 }
 

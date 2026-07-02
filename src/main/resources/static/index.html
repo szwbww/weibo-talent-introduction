@@ -457,19 +457,9 @@
                         </select>
                     </label>
                     <label class="toolbar-label">
-                        待跟进:
-                        <select id="contactFollowUpFilter">
-                            <option value="">全部</option>
-                            <option value="true">仅看待跟进</option>
-                        </select>
-                    </label>
-                    <label class="toolbar-label">
                         标签筛选:
                         <select id="expertTagFilter">
                             <option value="">全部标签</option>
-                            <option value="auto_promoted">自动晋升</option>
-                            <option value="verified">已验证</option>
-                            <option value="discovered">新发现</option>
                         </select>
                     </label>
                     <label class="toolbar-label">
@@ -503,6 +493,7 @@
                         </div>
                     </div>
                     <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
+                    <button class="button" id="batchTagMailBtn" onclick="handleBatchTagMail()">批量发送邮件</button>
                     <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                     <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
                     <button class="button secondary" id="backfillOperatorStatusBtn" onclick="handleBackfillOperatorStatus()">回刷 ES</button>

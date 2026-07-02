@@ -60,6 +60,7 @@ function createContactsSandbox(options = {}) {
         renderContactListSkeleton: () => {},
         loadEmailProviders: options.includeEmailProviders ? undefined : () => {},
         loadRegions: options.includeRegions ? undefined : () => {},
+        loadExpertTagOptions: options.includeExpertTagOptions ? undefined : () => {},
         api: async () => ({}),
         URLSearchParams,
         escapeHtml: (v) => String(v == null ? "" : v),
@@ -80,6 +81,9 @@ function createContactsSandbox(options = {}) {
     }
     if (options.includeRegions) {
         vm.runInContext(extractFn("loadRegions"), sandbox);
+    }
+    if (options.includeExpertTagOptions) {
+        vm.runInContext(extractFn("loadExpertTagOptions"), sandbox);
     }
     vm.runInContext(extractFn("renderContactListItems"), sandbox);
     vm.runInContext(extractFn("loadContacts"), sandbox);
@@ -232,7 +236,7 @@ describe("loadEmailProviders batch config dropdown full results (I-5)", () => {
 
 describe("loadContacts level change keeps batchSendEmailDomain full (I-5)", () => {
     it("requests filtered and full email-providers when level changes with active filters", async () => {
-        const sb = createContactsSandbox({ includeEmailProviders: true, includeRegions: true });
+        const sb = createContactsSandbox({ includeEmailProviders: true, includeRegions: true, includeExpertTagOptions: true });
         const urls = [];
 
         sb.$("#expertIndexLevel").value = "APPLICATION";
@@ -252,6 +256,9 @@ describe("loadContacts level change keeps batchSendEmailDomain full (I-5)", () =
             }
             if (url.includes("/api/experts/regions")) {
                 return [{ region: "Europe", count: 10 }];
+            }
+            if (url.includes("/api/experts/tags/aggregation")) {
+                return [{ tag: "verified", count: 2 }];
             }
             return { experts: [], totalHits: 0 };
         };

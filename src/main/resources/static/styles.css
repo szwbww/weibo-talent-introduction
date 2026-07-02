@@ -3881,6 +3881,29 @@ tr td {
     border-color: rgba(217, 115, 13, 0.18);
 }
 
+.expert-tag-editor .inbound-tag-editor-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.expert-tag .expert-tag-remove {
+    margin-left: 4px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0.7;
+}
+
+.expert-tag .expert-tag-remove:hover {
+    opacity: 1;
+}
+
 /* Mailbox card list */
 .mailbox-list {
     display: flex;

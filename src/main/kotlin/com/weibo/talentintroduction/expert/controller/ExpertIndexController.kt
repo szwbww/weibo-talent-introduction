@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.RegionCount
+import com.weibo.talentintroduction.expert.service.TagCount
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
@@ -231,6 +232,61 @@ class ExpertIndexController(
     ): List<RegionCount> {
         return expertSearchService.aggregateRegions(level, tag, operatorStatus, emailDomain)
     }
+
+    @PostMapping("/tags/add")
+    fun addTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+        require(request.orcidId.isNotBlank()) { "orcidId is required" }
+        require(request.tag.isNotBlank()) { "tag is required" }
+        val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
+            ?: return TagMutationResult(success = false, message = "Expert not found: ${request.orcidId}")
+        val docId = profile.esDocId ?: request.orcidId
+        val ok = expertIndexWriterService.addTag(docId, request.tag.trim(), request.level)
+        return TagMutationResult(
+            success = ok,
+            message = if (ok) null else "Failed to add tag"
+        )
+    }
+
+    @PostMapping("/tags/remove")
+    fun removeTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+        require(request.orcidId.isNotBlank()) { "orcidId is required" }
+        require(request.tag.isNotBlank()) { "tag is required" }
+        val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
+            ?: return TagMutationResult(success = false, message = "Expert not found: ${request.orcidId}")
+        val docId = profile.esDocId ?: request.orcidId
+        val ok = expertIndexWriterService.removeTag(docId, request.tag.trim(), request.level)
+        return TagMutationResult(
+            success = ok,
+            message = if (ok) null else "Failed to remove tag"
+        )
+    }
+
+    @GetMapping("/tags/aggregation")
+    fun aggregateTags(
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+        @RequestParam(required = false) operatorStatus: String? = null,
+        @RequestParam(required = false) emailDomain: String? = null,
+        @RequestParam(required = false) region: String? = null
+    ): List<TagCount> {
+        return expertSearchService.aggregateTags(level, operatorStatus, emailDomain, region)
+    }
+
+    @GetMapping("/profile")
+    fun getExpertProfile(
+        @RequestParam orcidId: String,
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+    ): ExpertProfileTagsResponse {
+        require(orcidId.isNotBlank()) { "orcidId is required" }
+        val profile = expertSearchService.findByOrcidId(orcidId, level)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Expert not found: $orcidId"
+            )
+        return ExpertProfileTagsResponse(
+            orcidId = profile.orcidId,
+            tags = profile.tags.orEmpty()
+        )
+    }
 }
 
 data class ExpertListResponse(
@@ -249,6 +305,22 @@ data class BackfillResult(
     val success: Int,
     val failure: Int,
     val skipped: Int
+)
+
+data class ExpertTagMutationRequest(
+    val orcidId: String,
+    val tag: String,
+    val level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+)
+
+data class TagMutationResult(
+    val success: Boolean,
+    val message: String? = null
+)
+
+data class ExpertProfileTagsResponse(
+    val orcidId: String,
+    val tags: List<String> = emptyList()
 )
 
 data class ExpertIndexResponse(

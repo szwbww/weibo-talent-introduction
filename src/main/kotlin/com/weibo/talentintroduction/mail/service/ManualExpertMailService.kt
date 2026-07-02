@@ -116,6 +116,27 @@ class ManualExpertMailService(
         )
     }
 
+    fun sendBatchMail(contactIds: List<Long>, command: ManualMailSendCommand): BatchMailSendResult {
+        var success = 0
+        var failed = 0
+        val errors = mutableListOf<String>()
+        contactIds.forEach { contactId ->
+            try {
+                sendManualMail(contactId, command)
+                success += 1
+            } catch (ex: Exception) {
+                failed += 1
+                errors.add("contactId=$contactId: ${ex.message ?: ex.javaClass.simpleName}")
+            }
+        }
+        return BatchMailSendResult(
+            total = contactIds.size,
+            success = success,
+            failed = failed,
+            errors = errors
+        )
+    }
+
     private fun compose(
         contact: ExpertContact,
         accountCode: String,
@@ -179,6 +200,7 @@ class ManualExpertMailService(
             "INTRODUCTION" -> ConversationStatus.INTRO_SENT
             "MEETING_INVITATION" -> ConversationStatus.MEETING_SCHEDULING
             "MANUAL_QA_REPLY" -> ConversationStatus.QA_AUTO_REPLIED
+            "MATERIAL_REMINDER" -> ConversationStatus.fromName(currentStatus)
             else -> ConversationStatus.fromName(currentStatus)
         }
 
@@ -186,11 +208,12 @@ class ManualExpertMailService(
         when (templateCode) {
             "INTRODUCTION" -> "项目介绍邮件"
             "MEETING_INVITATION" -> "会议邀约邮件"
+            "MATERIAL_REMINDER" -> "材料提醒邮件"
             else -> this
         }
 
     companion object {
-        private val fixedTemplateCodes = setOf("INTRODUCTION", "MEETING_INVITATION")
+        private val fixedTemplateCodes = setOf("INTRODUCTION", "MEETING_INVITATION", "MATERIAL_REMINDER")
     }
 }
 
@@ -221,6 +244,13 @@ data class ManualMailSendResult(
     val subject: String,
     val sendStatus: String,
     val messageId: String?
+)
+
+data class BatchMailSendResult(
+    val total: Int,
+    val success: Int,
+    val failed: Int,
+    val errors: List<String> = emptyList()
 )
 
 private data class ManualComposedMail(
