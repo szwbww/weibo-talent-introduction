@@ -66,6 +66,20 @@ function createTagFetchSandbox() {
     return sandbox;
 }
 
+function createMailboxExpertTagSandbox() {
+    const sandbox = {
+        expertTagLabels: {
+            discovered: "新发现",
+            "承诺回复材料": "承诺回复材料"
+        },
+        escapeHtml: (v) => String(v == null ? "" : v)
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("renderExpertTagEditor"), sandbox);
+    vm.runInContext(extractFn("renderMailboxExpertTagEditor"), sandbox);
+    return sandbox;
+}
+
 describe("collectBatchMailContactIds pagination (P1-1)", () => {
     it("requests from=0,size=1000 and from=1000,size=201 when totalHits=1201", async () => {
         const sb = createBatchCollectSandbox();
@@ -167,5 +181,28 @@ describe("fetchExpertTagsFromEs authoritative tags (P1-2)", () => {
         const html = sb.renderExpertTagEditor(["承诺回复材料"], "0000-0001", "CANDIDATE");
         assert.ok(html.includes("承诺回复材料"));
         assert.ok(html.includes('data-orcid="0000-0001"'));
+    });
+
+    it("can render a mailbox-scoped expert tag editor", () => {
+        const sb = createTagFetchSandbox();
+        const html = sb.renderExpertTagEditor(["discovered"], "0000-0002", "APPLICATION", "mailboxExpertTagEditor");
+        assert.ok(html.includes('id="mailboxExpertTagEditor"'));
+        assert.ok(html.includes('data-orcid="0000-0002"'));
+        assert.ok(html.includes('data-level="APPLICATION"'));
+    });
+
+    it("renders mailbox expert tags from unmatched processing contact payload", () => {
+        const sb = createMailboxExpertTagSandbox();
+        const html = sb.renderMailboxExpertTagEditor(
+            { orcidId: "0000-0002-4464-150X", currentIndexLevel: "CANDIDATE" },
+            ["discovered"],
+            "mailboxProcessingExpertTagEditor"
+        );
+
+        assert.ok(html.includes("专家标签"));
+        assert.ok(html.includes('id="mailboxProcessingExpertTagEditor"'));
+        assert.ok(html.includes('data-orcid="0000-0002-4464-150X"'));
+        assert.ok(html.includes('data-level="CANDIDATE"'));
+        assert.ok(html.includes("新发现"));
     });
 });

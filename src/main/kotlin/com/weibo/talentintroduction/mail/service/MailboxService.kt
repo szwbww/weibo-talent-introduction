@@ -163,7 +163,9 @@ class MailboxService(
             processStatus = null,
             reasonType = null,
             inboundProcessingId = null,
-            inboundTags = emptyList()
+            inboundTags = emptyList(),
+            expertOrcidId = contact?.orcidId,
+            expertIndexLevel = contact?.currentIndexLevel
         )
     }
 
@@ -194,7 +196,9 @@ class MailboxService(
             processStatus = record.processStatus,
             reasonType = record.reasonType,
             inboundProcessingId = recordId,
-            inboundTags = inboundMailTagService.listTags(recordId)
+            inboundTags = inboundMailTagService.listTags(recordId),
+            expertOrcidId = contact?.orcidId,
+            expertIndexLevel = contact?.currentIndexLevel
         )
     }
 

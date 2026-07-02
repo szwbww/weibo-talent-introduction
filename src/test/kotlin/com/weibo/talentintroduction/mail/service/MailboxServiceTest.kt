@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -456,8 +457,16 @@ class MailboxServiceTest {
             mailSendAttemptId = null,
             createdAt = null
         )
+        val contact = ExpertContact(
+            id = 9L,
+            campaignId = 1L,
+            orcidId = "0000-0002-4464-150X",
+            expertEmail = "alex@cfs.energy",
+            expertName = "A. J. Creely",
+            currentIndexLevel = "CANDIDATE"
+        )
         Mockito.`when`(mailRecordRepository.findByIdOrNull(5L)).thenReturn(record)
-        Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.empty())
+        Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(5L)).thenReturn(emptyList())
 
         val detail = mailboxService.getMailboxDetail("MAIL_RECORD", 5L)
@@ -467,6 +476,8 @@ class MailboxServiceTest {
         assertEquals("OUTBOUND", detail.direction)
         assertFalse(detail.hasAttachment)
         assertTrue(detail.inboundTags.isEmpty())
+        assertEquals("0000-0002-4464-150X", detail.expertOrcidId)
+        assertEquals("CANDIDATE", detail.expertIndexLevel)
     }
 
     @Test
@@ -487,13 +498,22 @@ class MailboxServiceTest {
             reasonType = "UNMATCHED_CONTACT",
             resolvedAt = null,
             resolvedBy = null,
-            expertContactId = null,
+            expertContactId = 9L,
             retryCount = 0,
             lastError = null,
             createdAt = null,
             updatedAt = null
         )
+        val contact = ExpertContact(
+            id = 9L,
+            campaignId = 1L,
+            orcidId = "0000-0002-4464-150X",
+            expertEmail = "alex@cfs.energy",
+            expertName = "A. J. Creely",
+            currentIndexLevel = "APPLICATION"
+        )
         Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
+        Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc("in-msg")).thenReturn(null)
         Mockito.`when`(inboundMailTagService.listTags(12L)).thenReturn(
             listOf(
@@ -514,7 +534,9 @@ class MailboxServiceTest {
         assertEquals("INBOUND_PROCESSING", detail.source)
         assertEquals("INBOUND", detail.direction)
         assertEquals(12L, detail.inboundProcessingId)
-        assertEquals("expert@example.com", detail.expertEmail)
+        assertEquals("alex@cfs.energy", detail.expertEmail)
+        assertEquals("0000-0002-4464-150X", detail.expertOrcidId)
+        assertEquals("APPLICATION", detail.expertIndexLevel)
         assertEquals(1, detail.inboundTags.size)
         assertEquals("跟进", detail.inboundTags[0].label)
     }

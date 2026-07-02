@@ -2295,7 +2295,7 @@ async function loadExpertTagOptions(level, { filters = {} } = {}) {
     }
 }
 
-function renderExpertTagEditor(tags, orcidId, level) {
+function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor") {
     const chips = (tags || []).map(tag => `
         <span class="expert-tag tag-${escapeHtml(tag)}">
             ${escapeHtml(expertTagLabels[tag] || tag)}
@@ -2303,7 +2303,7 @@ function renderExpertTagEditor(tags, orcidId, level) {
         </span>
     `).join("") || `<span class="muted">暂无标签</span>`;
     return `
-        <div class="detail-section expert-tag-editor" id="expertTagEditor" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}">
+        <div class="detail-section expert-tag-editor" id="${escapeHtml(editorId)}" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}">
             <div class="inbound-tag-editor-head">
                 <h3>专家标签</h3>
                 <div class="inbound-tag-editor-actions">
@@ -2393,10 +2393,17 @@ async function mutateExpertTag(orcidId, level, tag, action) {
     return refreshExpertTagsFromEs(orcidId, level);
 }
 
-function updateExpertTagEditor(orcidId, tags, level) {
-    const editor = $("#expertTagEditor");
+function updateExpertTagEditor(orcidId, tags, level, editorId = "expertTagEditor") {
+    const editor = document.getElementById(editorId);
     if (!editor || editor.dataset.orcid !== orcidId) return;
-    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level);
+    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId);
+}
+
+function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor") {
+    const orcidId = expertRef?.expertOrcidId || expertRef?.orcidId || "";
+    if (!orcidId) return "";
+    const level = expertRef?.expertIndexLevel || expertRef?.currentIndexLevel || "CANDIDATE";
+    return renderExpertTagEditor(tags, orcidId, level, editorId);
 }
 
 function buildContactFilterSummary() {
@@ -5053,10 +5060,11 @@ async function handleContactAction(element) {
         return;
     }
     if (action === "expert-add-tag-open") {
-        const editor = $("#expertTagEditor");
+        const editor = element.closest(".expert-tag-editor") || $("#expertTagEditor");
         if (!editor) return;
         const orcidId = editor.dataset.orcid;
         const level = editor.dataset.level;
+        const editorId = editor.id || "expertTagEditor";
         const existingTags = await fetchExpertTagsFromEs(orcidId, level);
         const tag = await openExpertTagAddDialog(existingTags);
         if (!tag) return;
@@ -5066,7 +5074,7 @@ async function handleContactAction(element) {
         }
         try {
             const tags = await mutateExpertTag(orcidId, level, tag, "add");
-            updateExpertTagEditor(orcidId, tags, level);
+            updateExpertTagEditor(orcidId, tags, level, editorId);
             showStatus("标签已添加", "ok");
         } catch (e) {
             showStatus(e.message, "error");
@@ -5074,15 +5082,16 @@ async function handleContactAction(element) {
         return;
     }
     if (action === "expert-remove-tag") {
-        const editor = $("#expertTagEditor");
+        const editor = element.closest(".expert-tag-editor") || $("#expertTagEditor");
         if (!editor) return;
         const orcidId = editor.dataset.orcid;
         const level = editor.dataset.level;
+        const editorId = editor.id || "expertTagEditor";
         const tag = element.dataset.tag;
         if (!tag) return;
         try {
             const tags = await mutateExpertTag(orcidId, level, tag, "remove");
-            updateExpertTagEditor(orcidId, tags, level);
+            updateExpertTagEditor(orcidId, tags, level, editorId);
             showStatus("标签已删除", "ok");
         } catch (e) {
             showStatus(e.message, "error");
@@ -5443,6 +5452,15 @@ async function showMailDetail(source, id) {
         const tagSectionHtml = inboundProcessingId
             ? renderMailboxInboundTagEditor(detail.inboundTags || [], inboundProcessingId)
             : "";
+        const expertOrcidId = detail.expertOrcidId || "";
+        const expertIndexLevel = detail.expertIndexLevel || "CANDIDATE";
+        const expertTagSectionHtml = expertOrcidId
+            ? renderMailboxExpertTagEditor(
+                detail,
+                await fetchExpertTagsFromEs(expertOrcidId, expertIndexLevel),
+                "mailboxExpertTagEditor"
+            )
+            : "";
         panel.innerHTML = `
             <div class="panel-head">
                 <h2>邮件详情</h2>
@@ -5461,6 +5479,7 @@ async function showMailDetail(source, id) {
                     <div class="metadata-card" style="grid-column: 1 / -1;"><div class="metadata-card-header"><span>主题</span></div><div class="metadata-card-value">${escapeHtml(detail.subject || "-")}</div></div>
                 </div>
                 ${tagSectionHtml}
+                ${expertTagSectionHtml}
                 ${detail.hasAttachment ? `
                 <div class="detail-section">
                     <h3>附件</h3>
@@ -6025,6 +6044,14 @@ async function showUnmatchedDetail(id) {
         : null;
     const candidates = data.candidates || [];
     const contact = data.contact;
+    const processingExpertTags = contact?.orcidId
+        ? await fetchExpertTagsFromEs(contact.orcidId, contact.currentIndexLevel || "CANDIDATE")
+        : [];
+    const processingExpertTagHtml = renderMailboxExpertTagEditor(
+        contact,
+        processingExpertTags,
+        "mailboxProcessingExpertTagEditor"
+    );
     const panel = $("#unmatchedDetailPanel");
     panel.hidden = false;
 
@@ -6156,6 +6183,7 @@ async function showUnmatchedDetail(id) {
             </div>
 
             ${renderMailboxInboundTagEditor(inboundTags, Number(id))}
+            ${processingExpertTagHtml}
 
             ${record.body ? `
             <div class="detail-section">
@@ -7284,7 +7312,12 @@ function bindEvents() {
     $("#loadUnmatchedBtn")?.addEventListener("click", refreshUnmatchedBadge);
     $("#unmatchedDetailPanel").addEventListener("click", (event) => {
         const button = event.target.closest("[data-action]");
-        if (button) handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
+        if (!button) return;
+        if (button.dataset.action === "expert-add-tag-open" || button.dataset.action === "expert-remove-tag") {
+            handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+            return;
+        }
+        handleUnmatchedAction(button).catch((error) => showStatus(error.message, "error"));
     });
     $("#closeUnmatchedDetailBtn")?.addEventListener("click", () => {
         $("#unmatchedDetailPanel").hidden = true;

@@ -57,7 +57,9 @@ data class MailboxDetailResponse(
     val processStatus: String?,
     val reasonType: String?,
     val inboundProcessingId: Long?,
-    val inboundTags: List<TagView> = emptyList()
+    val inboundTags: List<TagView> = emptyList(),
+    val expertOrcidId: String? = null,
+    val expertIndexLevel: String? = null
 )
 
 @RestController
