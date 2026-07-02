@@ -8032,7 +8032,7 @@ function renderInboundMailList() {
     list.innerHTML = Array.from(groups.values()).map((group) => {
         const mailRows = group.mails.map((mail) => renderInboundMailRow(mail, { grouped: true })).join("");
         return `
-            <details class="inbound-expert-group" open>
+            <details class="inbound-expert-group">
                 <summary class="inbound-expert-group-header">
                     <span class="inbound-expert-group-name">${escapeHtml(group.expertName)}</span>
                     <span class="inbound-expert-group-email">${escapeHtml(group.fromEmail)}</span>

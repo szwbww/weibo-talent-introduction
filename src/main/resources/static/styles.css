@@ -2885,18 +2885,25 @@ tr td {
 }
 
 .inbound-expert-group {
-    border-bottom: 1px solid var(--line);
+    margin: 10px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
 }
 
 .inbound-expert-group-header {
-    display: flex;
+    position: relative;
+    display: grid;
+    grid-template-columns: 22px minmax(145px, 1.05fr) minmax(130px, 1fr) auto;
     align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
+    gap: 8px;
+    min-height: 58px;
+    padding: 10px 14px 10px 12px;
     cursor: pointer;
     list-style: none;
-    background: rgba(148, 163, 184, 0.08);
-    font-size: 13px;
+    background: #ffffff;
 }
 
 .inbound-expert-group-header::-webkit-details-marker {
@@ -2905,33 +2912,72 @@ tr td {
 
 .inbound-expert-group-header::before {
     content: "▸";
-    color: var(--text-muted);
-    font-size: 11px;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: var(--primary);
+    background: rgba(var(--primary-rgb), 0.08);
+    font-size: 10px;
+    font-weight: 700;
     transition: transform 0.15s ease;
+    margin-left: 3px;
+}
+
+.inbound-expert-group-header::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--primary);
 }
 
 .inbound-expert-group[open] > .inbound-expert-group-header::before {
     transform: rotate(90deg);
 }
 
+.inbound-expert-group[open] {
+    border-color: rgba(var(--primary-rgb), 0.24);
+}
+
+.inbound-expert-group[open] > .inbound-expert-group-header {
+    background: linear-gradient(90deg, rgba(var(--primary-rgb), 0.045), rgba(255, 255, 255, 1) 58%);
+    border-bottom: 1px solid var(--line);
+}
+
 .inbound-expert-group-name {
-    font-weight: 600;
-    color: var(--text-main);
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #172033;
 }
 
 .inbound-expert-group-email {
-    color: var(--text-muted);
-    font-size: 12px;
+    min-width: 0;
+    color: #64748b;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .inbound-expert-group-count {
-    margin-left: auto;
+    justify-self: end;
+    padding: 4px 10px;
+    border-radius: 999px;
+    color: var(--warning);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
     font-size: 12px;
-    color: var(--text-muted);
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .inbound-mail-row-grouped {
-    padding-left: 28px;
+    padding-left: 38px;
+    background: rgba(15, 23, 42, 0.012);
 }
 
 .inbound-tag-filters {
@@ -3358,6 +3404,14 @@ tr td {
     .inbound-thread {
         height: auto;
         max-height: none;
+    }
+
+    .inbound-expert-group-header {
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+    }
+
+    .inbound-expert-group-email {
+        grid-column: 2 / -1;
     }
 
     .tag-pie {
