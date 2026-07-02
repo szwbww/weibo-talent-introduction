@@ -83,17 +83,38 @@ class InboundMailSummaryController(
         val inbound = inboundMailProcessingRepository.findById(inboundId)
             .orElseThrow { IllegalArgumentException("Inbound mail processing not found: $inboundId") }
         val tags = inboundMailTagService.listTags(inboundId)
+        val processingByMessageId = if (inbound.expertContactId != null) {
+            inboundMailProcessingRepository.findAllByExpertContactId(inbound.expertContactId)
+                .mapNotNull { processing ->
+                    processing.messageId?.let { messageId ->
+                        messageId to requireNotNull(processing.id)
+                    }
+                }
+                .toMap()
+        } else {
+            emptyMap()
+        }
         val messages = if (inbound.expertContactId != null) {
             mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(inbound.expertContactId)
-                .map { it.toThreadMessage() }
+                .map { record ->
+                    val inboundProcessingId = record.resolveInboundProcessingId(processingByMessageId)
+                    record.toThreadMessage(inboundProcessingId)
+                }
         } else {
             listOf(inbound.toThreadMessage())
+        }
+        val processingIds = messages.mapNotNull { it.inboundProcessingId }
+        val tagsByProcessing = inboundMailTagService.listTagsBatch(processingIds)
+        val messagesWithTags = messages.map { message ->
+            message.inboundProcessingId?.let { processingId ->
+                message.copy(tags = tagsByProcessing[processingId].orEmpty())
+            } ?: message
         }
         return InboundSummaryThreadResponse(
             inboundId = inboundId,
             currentMessageId = inbound.messageId,
             tags = tags,
-            messages = messages
+            messages = messagesWithTags
         )
     }
 
@@ -185,7 +206,9 @@ data class ThreadMessageView(
     val subject: String?,
     val body: String?,
     val sentAt: LocalDateTime?,
-    val receivedAt: LocalDateTime?
+    val receivedAt: LocalDateTime?,
+    val inboundProcessingId: Long? = null,
+    val tags: List<TagView> = emptyList()
 )
 
 data class TagOptionsResponse(
@@ -206,13 +229,21 @@ data class TagOperatorRequest(
     val operatorName: String? = null
 )
 
-private fun MailRecord.toThreadMessage() = ThreadMessageView(
+private fun MailRecord.resolveInboundProcessingId(processingByMessageId: Map<String, Long>): Long? {
+    if (!direction.equals("INBOUND", ignoreCase = true)) {
+        return null
+    }
+    return sourceInboundId ?: messageId?.let { processingByMessageId[it] }
+}
+
+private fun MailRecord.toThreadMessage(inboundProcessingId: Long? = null) = ThreadMessageView(
     messageId = messageId,
     direction = direction,
     subject = subject,
     body = cleanedBody ?: body,
     sentAt = sentAt,
-    receivedAt = receivedAt
+    receivedAt = receivedAt,
+    inboundProcessingId = inboundProcessingId
 )
 
 private fun InboundMailProcessing.toThreadMessage() = ThreadMessageView(
@@ -221,5 +252,6 @@ private fun InboundMailProcessing.toThreadMessage() = ThreadMessageView(
     subject = subject,
     body = cleanedBody ?: body,
     sentAt = null,
-    receivedAt = receivedAt
+    receivedAt = receivedAt,
+    inboundProcessingId = id
 )

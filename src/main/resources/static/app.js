@@ -61,7 +61,9 @@ const state = {
         stats: null,
         options: [],
         thread: null,
-        datesInitialized: false
+        datesInitialized: false,
+        groupByExpert: true,
+        tagEditInboundId: null
     },
     qaAudit: {
         from: "",
@@ -7983,6 +7985,25 @@ function renderInboundTagFilters(options) {
     container.innerHTML = allChip + items.map((item) => renderInboundStatChip(item)).join("");
 }
 
+function renderInboundMailRow(mail, options = {}) {
+    const { grouped = false } = options;
+    const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "-";
+    const selected = state.inboundSummary.selectedId === mail.inboundId ? " selected" : "";
+    const tags = (mail.tags || []).map((tag) => renderInboundTagChip(tag)).join("");
+    const groupedClass = grouped ? " inbound-mail-row-grouped" : "";
+    return `
+        <div class="inbound-mail-row${selected}${groupedClass}" data-action="select-inbound-mail" data-id="${escapeHtml(mail.inboundId)}">
+            <div class="inbound-mail-row-main">
+                <span class="inbound-mail-row-from">${escapeHtml(mail.fromEmail || "-")}</span>
+                <span class="inbound-mail-row-time">${escapeHtml(timeStr)}</span>
+            </div>
+            <div class="inbound-mail-row-subject">${escapeHtml(mail.subject || "(无主题)")}</div>
+            <div class="inbound-mail-row-meta">${escapeHtml(mail.expertName || "未关联专家")}</div>
+            <div class="inbound-mail-row-tags">${tags || `<span class="muted">无标签</span>`}</div>
+        </div>
+    `;
+}
+
 function renderInboundMailList() {
     const list = $("#inboundMailList");
     if (!list) return;
@@ -7991,20 +8012,34 @@ function renderInboundMailList() {
         list.innerHTML = `<div class="detail-empty muted" style="padding: 24px;">暂无来信记录</div>`;
         return;
     }
-    list.innerHTML = rows.map((mail) => {
-        const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "-";
-        const selected = state.inboundSummary.selectedId === mail.inboundId ? " selected" : "";
-        const tags = (mail.tags || []).map((tag) => renderInboundTagChip(tag)).join("");
+    if (!state.inboundSummary.groupByExpert) {
+        list.innerHTML = rows.map((mail) => renderInboundMailRow(mail)).join("");
+        return;
+    }
+    const groups = new Map();
+    rows.forEach((mail) => {
+        const key = mail.expertContactId != null ? String(mail.expertContactId) : "unknown";
+        if (!groups.has(key)) {
+            groups.set(key, {
+                expertContactId: mail.expertContactId,
+                expertName: mail.expertName || "未关联专家",
+                fromEmail: mail.fromEmail || "-",
+                mails: []
+            });
+        }
+        groups.get(key).mails.push(mail);
+    });
+    list.innerHTML = Array.from(groups.values()).map((group) => {
+        const mailRows = group.mails.map((mail) => renderInboundMailRow(mail, { grouped: true })).join("");
         return `
-            <div class="inbound-mail-row${selected}" data-action="select-inbound-mail" data-id="${escapeHtml(mail.inboundId)}">
-                <div class="inbound-mail-row-main">
-                    <span class="inbound-mail-row-from">${escapeHtml(mail.fromEmail || "-")}</span>
-                    <span class="inbound-mail-row-time">${escapeHtml(timeStr)}</span>
-                </div>
-                <div class="inbound-mail-row-subject">${escapeHtml(mail.subject || "(无主题)")}</div>
-                <div class="inbound-mail-row-meta">${escapeHtml(mail.expertName || "未关联专家")}</div>
-                <div class="inbound-mail-row-tags">${tags || `<span class="muted">无标签</span>`}</div>
-            </div>
+            <details class="inbound-expert-group" open>
+                <summary class="inbound-expert-group-header">
+                    <span class="inbound-expert-group-name">${escapeHtml(group.expertName)}</span>
+                    <span class="inbound-expert-group-email">${escapeHtml(group.fromEmail)}</span>
+                    <span class="inbound-expert-group-count">${escapeHtml(group.mails.length)} 封来信</span>
+                </summary>
+                <div class="inbound-expert-group-mails">${mailRows}</div>
+            </details>
         `;
     }).join("");
 }
@@ -8036,7 +8071,6 @@ async function selectInboundMail(inboundId, options = {}) {
     renderInboundMailList();
     const threadData = await api(`/api/inbound-summary/mails/${inboundId}/thread`);
     state.inboundSummary.thread = threadData;
-    renderInboundTagEditor(threadData);
     renderInboundThread(threadData);
 }
 
@@ -8123,6 +8157,25 @@ async function mailboxRemoveTag(tagId) {
     await refreshMailboxInboundTagsAfterChange();
 }
 
+function renderInboundThreadBubbleTags(msg) {
+    const isInbound = (msg.direction || "").toUpperCase() === "INBOUND";
+    const inboundId = msg.inboundProcessingId;
+    if (!isInbound || !inboundId) {
+        return "";
+    }
+    const tags = (msg.tags || []).map((tag) => renderInboundTagChip(tag, { removable: true })).join("")
+        || `<span class="muted">暂无标签</span>`;
+    return `
+        <div class="inbound-thread-bubble-tags">
+            <div class="inbound-thread-bubble-tag-chips">${tags}</div>
+            <div class="inbound-thread-bubble-tag-actions">
+                <button type="button" class="button secondary small" data-action="inbound-auto-tags" data-inbound-id="${escapeHtml(inboundId)}">自动 QA 标签</button>
+                <button type="button" class="button primary small" data-action="inbound-add-tag-open" data-inbound-id="${escapeHtml(inboundId)}">+ 添加标签</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderInboundThread(threadData) {
     const container = $("#inboundThread");
     if (!container) return;
@@ -8144,11 +8197,16 @@ function renderInboundThread(threadData) {
             ? String(msg.receivedAt || msg.sentAt).replace("T", " ").slice(0, 19)
             : "-";
         const directionLabel = isInbound ? "来信" : "去信";
+        const currentBadge = isCurrent ? `<span class="inbound-thread-current-badge">当前来信</span>` : "";
         return `
             <div class="${classes}">
-                <div class="inbound-thread-bubble-subject">${escapeHtml(msg.subject || "(无主题)")}</div>
+                <div class="inbound-thread-bubble-subject">
+                    ${escapeHtml(msg.subject || "(无主题)")}
+                    ${currentBadge}
+                </div>
                 <div class="inbound-thread-bubble-meta">${escapeHtml(directionLabel)} · ${escapeHtml(timeStr)}</div>
                 <div class="inbound-thread-bubble-body pre">${escapeHtml(msg.body || "")}</div>
+                ${renderInboundThreadBubbleTags(msg)}
             </div>
         `;
     }).join("");
@@ -8219,18 +8277,19 @@ function renderTagPieChart(stats) {
     `;
 }
 
-async function refreshInboundAfterTagChange() {
-    await Promise.all([
-        reloadInboundStats(),
-        loadInboundMails()
-    ]);
-    if (state.inboundSummary.selectedId) {
-        await selectInboundMail(state.inboundSummary.selectedId, { preserveSelection: true });
+async function refreshInboundThreadAfterTagChange(inboundId) {
+    const threadData = await api(`/api/inbound-summary/mails/${inboundId}/thread`);
+    state.inboundSummary.thread = threadData;
+    renderInboundThread(threadData);
+    const currentMsg = (threadData.messages || []).find((msg) => Number(msg.inboundProcessingId) === Number(inboundId));
+    const mail = (state.inboundSummary.mails || []).find((item) => Number(item.inboundId) === Number(inboundId));
+    if (mail && currentMsg) {
+        mail.tags = currentMsg.tags || [];
+        renderInboundMailList();
     }
 }
 
-async function inboundAutoApplyTags() {
-    const inboundId = state.inboundSummary.selectedId;
+async function inboundAutoApplyTags(inboundId) {
     if (!inboundId) return;
     const operatorName = inboundSummaryOperatorName();
     await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
@@ -8238,13 +8297,15 @@ async function inboundAutoApplyTags() {
         body: JSON.stringify(operatorName ? { operatorName } : {})
     });
     showStatus("已自动添加 QA 标签", "ok");
-    await refreshInboundAfterTagChange();
+    await refreshInboundThreadAfterTagChange(inboundId);
 }
 
-async function inboundRemoveTag(tagId) {
+async function inboundRemoveTag(tagId, inboundId) {
     await api(`/api/inbound-summary/tags/${tagId}`, { method: "DELETE" });
     showStatus("标签已删除", "ok");
-    await refreshInboundAfterTagChange();
+    if (inboundId) {
+        await refreshInboundThreadAfterTagChange(inboundId);
+    }
 }
 
 function showInboundAddTagModal() {
@@ -8261,6 +8322,7 @@ function hideInboundAddTagModal() {
     $("#inboundAddTagModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.mailbox.addTagInboundId = null;
+    state.inboundSummary.tagEditInboundId = null;
 }
 
 async function populateInboundAddTagQaOptions() {
@@ -8277,7 +8339,7 @@ async function populateInboundAddTagQaOptions() {
 }
 
 async function submitInboundAddTag() {
-    const inboundId = state.mailbox.addTagInboundId || state.inboundSummary.selectedId;
+    const inboundId = state.mailbox.addTagInboundId || state.inboundSummary.tagEditInboundId || state.inboundSummary.selectedId;
     if (!inboundId) return;
     const type = $("#inboundAddTagType").value;
     const operatorName = inboundSummaryOperatorName();
@@ -8298,11 +8360,12 @@ async function submitInboundAddTag() {
     hideInboundAddTagModal();
     showStatus("标签已添加", "ok");
     state.mailbox.addTagInboundId = null;
+    state.inboundSummary.tagEditInboundId = null;
     if (state.mailbox.detailContext?.inboundProcessingId === inboundId) {
         await refreshMailboxInboundTagsAfterChange();
         return;
     }
-    await refreshInboundAfterTagChange();
+    await refreshInboundThreadAfterTagChange(inboundId);
 }
 
 function bindInboundSummaryEvents() {
@@ -8319,6 +8382,10 @@ function bindInboundSummaryEvents() {
     });
     $("#inboundSearch")?.addEventListener("input", (event) => {
         state.inboundSummary.search = event.target.value;
+        renderInboundMailList();
+    });
+    $("#inboundGroupByExpert")?.addEventListener("change", (event) => {
+        state.inboundSummary.groupByExpert = event.target.checked;
         renderInboundMailList();
     });
     $("#inboundTagFilters")?.addEventListener("click", (event) => {
@@ -8346,20 +8413,25 @@ function bindInboundSummaryEvents() {
         }
         loadInboundMails().catch((error) => showStatus(error.message, "error"));
     });
-    $("#inboundTagEditor")?.addEventListener("click", (event) => {
+    $("#inboundThread")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
+        const inboundId = Number(button.dataset.inboundId);
         if (button.dataset.action === "inbound-auto-tags") {
-            inboundAutoApplyTags().catch((error) => showStatus(error.message, "error"));
+            inboundAutoApplyTags(inboundId).catch((error) => showStatus(error.message, "error"));
             return;
         }
         if (button.dataset.action === "inbound-add-tag-open") {
-            if (!state.inboundSummary.selectedId) return;
+            if (!inboundId) return;
+            state.inboundSummary.tagEditInboundId = inboundId;
             showInboundAddTagModal();
             return;
         }
         if (button.dataset.action === "inbound-remove-tag") {
-            inboundRemoveTag(Number(button.dataset.tagId)).catch((error) => showStatus(error.message, "error"));
+            const bubble = button.closest(".inbound-thread-bubble");
+            const bubbleInboundId = Number(bubble?.querySelector("[data-inbound-id]")?.dataset.inboundId);
+            inboundRemoveTag(Number(button.dataset.tagId), bubbleInboundId || null)
+                .catch((error) => showStatus(error.message, "error"));
         }
     });
     $("#inboundAddTagType")?.addEventListener("change", (event) => {

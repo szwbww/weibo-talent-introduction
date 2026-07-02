@@ -38,6 +38,8 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         processStatus: String
     ): Long
 
+    fun findAllByExpertContactId(expertContactId: Long): List<InboundMailProcessing>
+
     @Query("""
         SELECT * FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
@@ -170,6 +172,7 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         """
         SELECT p.* FROM inbound_mail_processing p
         WHERE p.received_at >= :from AND p.received_at < :to
+          AND p.expert_contact_id IS NOT NULL
           AND (:qaRuleId IS NULL OR EXISTS (
                 SELECT 1 FROM inbound_mail_tag t
                 WHERE t.inbound_processing_id = p.id AND t.qa_rule_id = :qaRuleId))
@@ -195,6 +198,7 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         """
         SELECT COUNT(*) FROM inbound_mail_processing p
         WHERE p.received_at >= :from AND p.received_at < :to
+          AND p.expert_contact_id IS NOT NULL
           AND (:qaRuleId IS NULL OR EXISTS (
                 SELECT 1 FROM inbound_mail_tag t
                 WHERE t.inbound_processing_id = p.id AND t.qa_rule_id = :qaRuleId))

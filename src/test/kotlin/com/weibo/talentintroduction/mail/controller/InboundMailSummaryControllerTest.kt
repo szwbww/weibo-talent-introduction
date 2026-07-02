@@ -62,7 +62,7 @@ class InboundMailSummaryControllerTest {
                     receivedAt = from.plusHours(1),
                     processStatus = "PROCESSED",
                     processReason = "QA_MATCHED",
-                    expertContactId = null
+                    expertContactId = 42L
                 )
             )
         )
@@ -75,6 +75,7 @@ class InboundMailSummaryControllerTest {
             )
         ).thenReturn(1L)
         Mockito.`when`(inboundMailTagService.listTagsBatch(listOf(100L))).thenReturn(emptyMap())
+        Mockito.`when`(expertContactRepository.findAllById(listOf(42L))).thenReturn(emptyList())
 
         mockMvc.perform(
             get("/api/inbound-summary/mails")

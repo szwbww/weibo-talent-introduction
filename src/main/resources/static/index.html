@@ -671,6 +671,7 @@
                     <div class="panel-head"><h2>来信列表</h2></div>
                     <div class="inbound-list-toolbar">
                         <input id="inboundSearch" type="search" placeholder="搜索发件人、主题、专家名…">
+                        <label class="checkbox-row"><input type="checkbox" id="inboundGroupByExpert" checked> 按专家聚合</label>
                     </div>
                     <div id="inboundTagFilters" class="inbound-tag-filters"></div>
                     <div id="inboundMailList" class="inbound-mail-list"></div>
@@ -679,9 +680,7 @@
 
                 <section class="panel inbound-detail-panel">
                     <div class="panel-head"><h2>来信详情</h2></div>
-                    <div id="inboundTagEditor" class="inbound-tag-editor">
-                        <div class="detail-empty muted">请在左侧选择一封来信。</div>
-                    </div>
+                    <div id="inboundTagEditor" class="inbound-tag-editor" hidden></div>
                     <div id="inboundThread" class="inbound-thread"></div>
                 </section>
             </div>
