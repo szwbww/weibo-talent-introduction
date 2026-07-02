@@ -3,14 +3,22 @@ package com.weibo.talentintroduction.llm.controller
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchResult
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
+import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
 import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
@@ -56,6 +64,15 @@ class AiTrainingSimulateTest {
 
     @MockBean
     private lateinit var mailRecordRepository: MailRecordRepository
+
+    @MockBean
+    private lateinit var expertSearchService: ExpertSearchService
+
+    @MockBean
+    private lateinit var inboundMailTagService: InboundMailTagService
+
+    @MockBean
+    private lateinit var inboundMailProcessingRepository: InboundMailProcessingRepository
 
     @MockBean
     private lateinit var qaMatchService: QaMatchService
@@ -112,6 +129,118 @@ class AiTrainingSimulateTest {
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
         Mockito.verifyNoInteractions(qaMatchService)
+    }
+
+    @Test
+    fun `listSimulateMails returns all inbound mails without filters`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound()
+        Mockito.`when`(
+            mailRecordRepository.findInboundMailsForSimulation(true, emptyList(), null, null, 20, 0)
+        ).thenReturn(listOf(inbound))
+        Mockito.`when`(
+            mailRecordRepository.countInboundMailsForSimulation(true, emptyList(), null, null)
+        ).thenReturn(1L)
+        Mockito.`when`(expertContactRepository.findAllById(listOf(10L))).thenReturn(listOf(contact))
+        Mockito.`when`(inboundMailProcessingRepository.findAllByExpertContactId(10L)).thenReturn(emptyList())
+        Mockito.`when`(inboundMailTagService.listTagsBatch(emptyList())).thenReturn(emptyMap())
+
+        mockMvc.perform(get("/api/ai-training/simulate/mails"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+            .andExpect(jsonPath("$.items[0].expertContactId").value(10))
+            .andExpect(jsonPath("$.items[0].body").value("What is the funding?"))
+    }
+
+    @Test
+    fun `listSimulateMails filters by inbound tag key`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound()
+        Mockito.`when`(
+            mailRecordRepository.findInboundMailsForSimulation(true, emptyList(), 3L, null, 20, 0)
+        ).thenReturn(listOf(inbound))
+        Mockito.`when`(
+            mailRecordRepository.countInboundMailsForSimulation(true, emptyList(), 3L, null)
+        ).thenReturn(1L)
+        Mockito.`when`(expertContactRepository.findAllById(listOf(10L))).thenReturn(listOf(contact))
+        Mockito.`when`(inboundMailProcessingRepository.findAllByExpertContactId(10L)).thenReturn(emptyList())
+        Mockito.`when`(inboundMailTagService.listTagsBatch(emptyList())).thenReturn(emptyMap())
+
+        mockMvc.perform(get("/api/ai-training/simulate/mails?inboundTagKey=qa:3"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+
+        Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(true, emptyList(), 3L, null, 20, 0)
+    }
+
+    @Test
+    fun `listSimulateMails filters by expert tag through ES orcid lookup`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound()
+        Mockito.`when`(
+            expertSearchService.searchExperts(1000, ExpertIndexLevel.CANDIDATE, "verified")
+        ).thenReturn(ExpertSearchResult(experts = listOf(sampleExpertProfile("verified")), totalHits = 1))
+        Mockito.`when`(
+            expertSearchService.searchExperts(1000, ExpertIndexLevel.APPLICATION, "verified")
+        ).thenReturn(ExpertSearchResult(emptyList(), 0))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0000-0000-0000-0001")))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(
+            mailRecordRepository.findInboundMailsForSimulation(false, listOf(10L), null, null, 20, 0)
+        ).thenReturn(listOf(inbound))
+        Mockito.`when`(
+            mailRecordRepository.countInboundMailsForSimulation(false, listOf(10L), null, null)
+        ).thenReturn(1L)
+        Mockito.`when`(expertContactRepository.findAllById(listOf(10L))).thenReturn(listOf(contact))
+        Mockito.`when`(
+            expertSearchService.searchByOrcidIds(listOf("0000-0000-0000-0001"), ExpertIndexLevel.CANDIDATE)
+        ).thenReturn(listOf(sampleExpertProfile("verified")))
+        Mockito.`when`(
+            expertSearchService.searchByOrcidIds(listOf("0000-0000-0000-0001"), ExpertIndexLevel.APPLICATION)
+        ).thenReturn(emptyList())
+        Mockito.`when`(inboundMailProcessingRepository.findAllByExpertContactId(10L)).thenReturn(emptyList())
+        Mockito.`when`(inboundMailTagService.listTagsBatch(emptyList())).thenReturn(emptyMap())
+
+        mockMvc.perform(get("/api/ai-training/simulate/mails?expertTag=verified"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].expertTags[0]").value("verified"))
+
+        Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(false, listOf(10L), null, null, 20, 0)
+    }
+
+    @Test
+    fun `getEffectivePromptConfig returns default values`() {
+        Mockito.`when`(aiPromptConfigService.getEffectiveDto()).thenReturn(
+            AiPromptConfigEffectiveDto(
+                freeFormSystemPrompt = FreeFormPromptDefaults.defaultFreeFormSystemPrompt(),
+                constraints = null,
+                updatedAt = null,
+                isCustom = false
+            )
+        )
+
+        mockMvc.perform(get("/api/ai-training/prompt-config/effective"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.isCustom").value(false))
+            .andExpect(jsonPath("$.freeFormSystemPrompt").isNotEmpty)
+    }
+
+    @Test
+    fun `getEffectivePromptConfig returns custom values`() {
+        Mockito.`when`(aiPromptConfigService.getEffectiveDto()).thenReturn(
+            AiPromptConfigEffectiveDto(
+                freeFormSystemPrompt = "Custom only",
+                constraints = "Line one",
+                updatedAt = "2026-07-02T10:00:00",
+                isCustom = true
+            )
+        )
+
+        mockMvc.perform(get("/api/ai-training/prompt-config/effective"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.isCustom").value(true))
+            .andExpect(jsonPath("$.freeFormSystemPrompt").value("Custom only"))
+            .andExpect(jsonPath("$.constraints").value("Line one"))
     }
 
     @Test
@@ -178,6 +307,17 @@ class AiTrainingSimulateTest {
         Mockito.`when`(aiReplyContextBuilder.buildExpertProfile(contact)).thenReturn("Name: Dr. Test")
         Mockito.`when`(aiReplyContextBuilder.buildMailHistory(listOf(inbound))).thenReturn("[INBOUND] Question")
     }
+
+    private fun sampleExpertProfile(tag: String) = ExpertProfile(
+        orcidId = "0000-0000-0000-0001",
+        email = "test@example.com",
+        givenNames = "Dr.",
+        familyNames = "Test",
+        country = null,
+        keyword = null,
+        employment = null,
+        tags = listOf(tag)
+    )
 
     private fun sampleContact(
         id: Long = 10L,

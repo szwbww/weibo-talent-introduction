@@ -11,6 +11,31 @@ data class AiPromptConfigDto(
     val updatedAt: String?
 )
 
+data class AiPromptConfigEffectiveDto(
+    val freeFormSystemPrompt: String,
+    val constraints: String?,
+    val updatedAt: String?,
+    val isCustom: Boolean
+)
+
+object FreeFormPromptDefaults {
+    fun baseSystemPrompt(): String = buildString {
+        appendLine("You are a recruiting assistant for academic expert outreach.")
+        appendLine("Your goal is to encourage a reply and advance the conversation toward scheduling a meeting.")
+        appendLine("Tone: warm, professional, concise.")
+        appendLine("Reply in the same language as the inbound email.")
+        appendLine("Keep the reply to at most 4 paragraphs.")
+        appendLine("Output only the email body text. Do not include a subject line.")
+    }
+
+    fun defaultFreeFormSystemPrompt(): String = buildString {
+        append(baseSystemPrompt())
+        appendLine()
+        appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
+        appendLine("Do not make specific commitments beyond what the context supports.")
+    }
+}
+
 @Service
 class AiPromptConfigService(
     private val repository: AiPromptConfigRepository
@@ -24,6 +49,19 @@ class AiPromptConfigService(
             freeFormSystemPrompt = raw.freeFormSystemPrompt,
             constraints = raw.constraints,
             updatedAt = raw.updatedAt?.toString()
+        )
+    }
+
+    fun getEffectiveDto(): AiPromptConfigEffectiveDto {
+        val raw = getRaw()
+        val customPrompt = raw.freeFormSystemPrompt?.trim().orEmpty()
+        val customConstraints = raw.constraints?.trim().orEmpty()
+        val isCustom = customPrompt.isNotBlank() || customConstraints.isNotBlank()
+        return AiPromptConfigEffectiveDto(
+            freeFormSystemPrompt = customPrompt.ifBlank { FreeFormPromptDefaults.defaultFreeFormSystemPrompt() },
+            constraints = raw.constraints?.takeIf { it.isNotBlank() },
+            updatedAt = raw.updatedAt?.toString(),
+            isCustom = isCustom
         )
     }
 

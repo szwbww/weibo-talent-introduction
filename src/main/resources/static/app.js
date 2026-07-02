@@ -73,16 +73,25 @@ const state = {
     replySnippets: [],
     selectedReplySnippetId: null,
     aiTraining: {
+        activeTab: "simulate",
         qaPage: 0,
         qaSize: 20,
         qaTotal: 0,
         qaSource: "",
         qaItems: [],
         promptConfig: null,
-        simulateExperts: [],
-        selectedContactId: null,
-        simulateResult: null,
-        expertKeyword: ""
+        promptIsCustom: false,
+        expertTagOptions: [],
+        inboundTagOptions: [],
+        selectedExpertTag: "",
+        selectedInboundTagKey: "",
+        simulateMails: [],
+        simulateMailsTotal: 0,
+        simulateMailsPage: 0,
+        simulateMailsSize: 20,
+        selectedSimulateMailContactId: null,
+        selectedSimulateMail: null,
+        simulateResult: null
     }
 };
 
@@ -1736,6 +1745,20 @@ const aiTrainingSourceLabels = {
     AUTO_EXTRACTED: "自动提炼"
 };
 
+function switchAiTrainingTab(tab) {
+    state.aiTraining.activeTab = tab;
+    document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === tab);
+    });
+    document.querySelectorAll("#view-ai-training .ai-tab-content").forEach((panel) => {
+        const panelId = panel.id;
+        const active = (tab === "qa" && panelId === "aiTabQa")
+            || (tab === "prompts" && panelId === "aiTabPrompts")
+            || (tab === "simulate" && panelId === "aiTabSimulate");
+        panel.classList.toggle("active", active);
+    });
+}
+
 function renderAiTrainingQaPager() {
     const pager = $("#aiTrainingQaPager");
     const size = state.aiTraining.qaSize;
@@ -1783,78 +1806,214 @@ async function loadAiTrainingQa() {
 
 function fillAiTrainingPromptForm(config) {
     state.aiTraining.promptConfig = config;
+    state.aiTraining.promptIsCustom = Boolean(config?.isCustom);
     $("#aiTrainingFreeFormPrompt").value = config?.freeFormSystemPrompt || "";
     $("#aiTrainingConstraints").value = config?.constraints || "";
+    const statusEl = $("#aiTrainingPromptStatus");
+    const infoEl = $("#aiTrainingPromptInfo");
+    const restoreBtn = $("#aiTrainingRestoreDefaultBtn");
+    if (statusEl) {
+        statusEl.textContent = state.aiTraining.promptIsCustom
+            ? "自定义提示词生效中"
+            : "当前使用系统默认提示词";
+    }
+    if (infoEl) {
+        infoEl.textContent = state.aiTraining.promptIsCustom
+            ? "当前显示已保存的自定义提示词"
+            : "当前显示系统生效提示词";
+    }
+    if (restoreBtn) {
+        restoreBtn.hidden = !state.aiTraining.promptIsCustom;
+    }
     $("#aiTrainingPromptUpdatedAt").textContent = config?.updatedAt
         ? `最近更新：${formatDateTime(config.updatedAt)}`
-        : "使用系统默认提示词";
+        : "";
 }
 
 async function loadAiTrainingPromptConfig() {
-    const config = await api("/api/ai-training/prompt-config");
+    const config = await api("/api/ai-training/prompt-config/effective");
     fillAiTrainingPromptForm(config);
 }
 
-function renderAiTrainingExpertSelect() {
-    const select = $("#aiTrainingExpertSelect");
-    const current = state.aiTraining.selectedContactId;
-    const options = [`<option value="">选择有来信的专家</option>`]
-        .concat(state.aiTraining.simulateExperts.map((expert) => {
-            const label = `${expert.expertName || expert.expertEmail || expert.contactId}${
-                expert.lastSubject ? ` — ${expert.lastSubject.slice(0, 40)}` : ""
-            }`;
-            return `<option value="${expert.contactId}">${escapeHtml(label)}</option>`;
-        }));
-    select.innerHTML = options.join("");
-    if (current) {
-        select.value = String(current);
-    }
+async function restoreAiTrainingPromptDefault() {
+    await api("/api/ai-training/prompt-config", {
+        method: "PUT",
+        body: JSON.stringify({ freeFormSystemPrompt: null, constraints: null })
+    });
+    await loadAiTrainingPromptConfig();
+    showStatus("已恢复系统默认提示词", "ok");
 }
 
-async function loadAiTrainingSimulateExperts() {
+function renderAiTrainingTagPills(containerId, options, selectedValue, valueKey) {
+    const container = $(containerId);
+    if (!container) return;
+    const items = options || [];
+    const allChip = `<button type="button" class="ai-training-tag-chip${selectedValue ? "" : " selected"}" data-value="">全部</button>`;
+    const chips = items.map((item) => {
+        const value = item[valueKey];
+        const label = item.label || item.tag || value;
+        const count = item.count != null ? ` (${item.count})` : "";
+        const selected = selectedValue === value ? " selected" : "";
+        return `<button type="button" class="ai-training-tag-chip${selected}" data-value="${escapeHtml(value)}">${escapeHtml(label)}${escapeHtml(count)}</button>`;
+    }).join("");
+    container.innerHTML = allChip + chips;
+}
+
+async function loadAiTrainingTagOptions() {
+    const [expertTags, inboundOptions] = await Promise.all([
+        api("/api/experts/tags/aggregation?level=APPLICATION"),
+        api("/api/inbound-summary/tags/options")
+    ]);
+    state.aiTraining.expertTagOptions = (expertTags || []).map((item) => ({
+        tag: item.tag,
+        label: expertTagLabels[item.tag] || item.tag,
+        count: item.count
+    }));
+    state.aiTraining.inboundTagOptions = inboundOptions.items || [];
+    renderAiTrainingTagPills(
+        "#aiTrainingExpertTagFilters",
+        state.aiTraining.expertTagOptions,
+        state.aiTraining.selectedExpertTag,
+        "tag"
+    );
+    renderAiTrainingTagPills(
+        "#aiTrainingInboundTagFilters",
+        state.aiTraining.inboundTagOptions,
+        state.aiTraining.selectedInboundTagKey,
+        "tagKey"
+    );
+}
+
+function renderAiTrainingSimulateMailPager() {
+    const pager = $("#aiSimulateMailPager");
+    const size = state.aiTraining.simulateMailsSize;
+    const total = state.aiTraining.simulateMailsTotal;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    if (!pager) return;
+    if (total <= size) {
+        pager.hidden = true;
+        return;
+    }
+    pager.hidden = false;
+    $("#aiSimulateMailPageInfo").textContent = `第 ${state.aiTraining.simulateMailsPage + 1} / ${totalPages} 页（共 ${total} 条）`;
+    $("#aiSimulateMailPrevPage").disabled = state.aiTraining.simulateMailsPage <= 0;
+    $("#aiSimulateMailNextPage").disabled = state.aiTraining.simulateMailsPage >= totalPages - 1;
+}
+
+function renderAiTrainingMailList() {
+    const container = $("#aiSimulateMailList");
+    if (!container) return;
+    const mails = state.aiTraining.simulateMails || [];
+    if (mails.length === 0) {
+        container.innerHTML = `<div class="ai-training-mail-empty muted">暂无匹配的来信记录</div>`;
+        renderAiTrainingSimulateMailPager();
+        return;
+    }
+    container.innerHTML = mails.map((mail) => {
+        const selected = state.aiTraining.selectedSimulateMailContactId === mail.expertContactId ? " selected" : "";
+        const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "-";
+        const expertTags = (mail.expertTags || []).map((tag) =>
+            `<span class="ai-training-tag-chip small">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
+        ).join("");
+        const inboundTags = (mail.inboundTags || []).map((tag) =>
+            `<span class="ai-training-tag-chip small inbound">${escapeHtml(tag.label)}</span>`
+        ).join("");
+        return `
+            <button type="button" class="ai-training-mail-item${selected}" data-contact-id="${mail.expertContactId}">
+                <div class="ai-training-mail-item-head">
+                    <strong>${escapeHtml(mail.expertName || mail.expertEmail || "专家")}</strong>
+                    <span class="muted">${escapeHtml(timeStr)}</span>
+                </div>
+                <div class="ai-training-mail-item-subject">${escapeHtml(mail.subject || "无主题")}</div>
+                <div class="ai-training-mail-item-tags">${expertTags}${inboundTags}</div>
+            </button>`;
+    }).join("");
+    renderAiTrainingSimulateMailPager();
+}
+
+function renderAiTrainingMailDetail(mail) {
+    const detail = $("#aiSimulateMailDetail");
+    if (!detail) return;
+    if (!mail) {
+        detail.classList.add("muted");
+        detail.innerHTML = "选择左侧邮件查看完整正文。";
+        return;
+    }
+    detail.classList.remove("muted");
+    detail.innerHTML = `
+        <div class="ai-training-mail-detail-head">
+            <div><strong>${escapeHtml(mail.expertName || mail.expertEmail || "专家")}</strong></div>
+            <div class="muted">${escapeHtml(mail.expertEmail || "")}</div>
+            <div class="muted">${escapeHtml(mail.subject || "无主题")}</div>
+        </div>
+        <pre class="pre">${escapeHtml(mail.body || "")}</pre>
+    `;
+}
+
+function selectSimulateMail(mail) {
+    state.aiTraining.selectedSimulateMailContactId = mail.expertContactId;
+    state.aiTraining.selectedSimulateMail = mail;
+    state.aiTraining.simulateResult = null;
+    renderAiTrainingMailList();
+    renderAiTrainingMailDetail(mail);
+    $("#aiTrainingSimulateMessages").innerHTML = "";
+    $("#aiTrainingSimulateMeta").textContent = "";
+}
+
+async function loadAiTrainingSimulateMails() {
     const params = new URLSearchParams();
-    if (state.aiTraining.expertKeyword) {
-        params.set("keyword", state.aiTraining.expertKeyword);
+    params.set("page", String(state.aiTraining.simulateMailsPage));
+    params.set("size", String(state.aiTraining.simulateMailsSize));
+    if (state.aiTraining.selectedExpertTag) {
+        params.set("expertTag", state.aiTraining.selectedExpertTag);
     }
-    params.set("limit", "100");
-    state.aiTraining.simulateExperts = await api(`/api/ai-training/simulate/experts?${params}`);
-    renderAiTrainingExpertSelect();
+    if (state.aiTraining.selectedInboundTagKey) {
+        params.set("inboundTagKey", state.aiTraining.selectedInboundTagKey);
+    }
+    const data = await api(`/api/ai-training/simulate/mails?${params}`);
+    state.aiTraining.simulateMails = data.items || [];
+    state.aiTraining.simulateMailsTotal = data.total ?? state.aiTraining.simulateMails.length;
+    const selectedId = state.aiTraining.selectedSimulateMailContactId;
+    const stillSelected = selectedId
+        && state.aiTraining.simulateMails.some((mail) => mail.expertContactId === selectedId);
+    if (!stillSelected) {
+        state.aiTraining.selectedSimulateMailContactId = null;
+        state.aiTraining.selectedSimulateMail = null;
+        state.aiTraining.simulateResult = null;
+        renderAiTrainingMailDetail(null);
+        $("#aiTrainingSimulateMessages").innerHTML = "";
+        $("#aiTrainingSimulateMeta").textContent = "";
+    }
+    renderAiTrainingMailList();
 }
 
-function renderAiTrainingSimulatePanel(result) {
+function renderAiTrainingSimulateResult(result) {
     state.aiTraining.simulateResult = result;
-    const preview = $("#aiTrainingInboundPreview");
     const messages = $("#aiTrainingSimulateMessages");
     const meta = $("#aiTrainingSimulateMeta");
     if (!result) {
-        preview.textContent = "选择专家后展示最近来信。";
-        preview.classList.add("muted");
-        messages.innerHTML = "";
-        meta.textContent = "";
+        if (messages) messages.innerHTML = "";
+        if (meta) meta.textContent = "";
         return;
     }
-    preview.classList.remove("muted");
-    preview.innerHTML = `
-        <div><strong>${escapeHtml(result.expertName || result.expertEmail || "专家")}</strong></div>
-        <div class="muted">${escapeHtml(result.inboundSubject || "无主题")}</div>
-        <pre class="pre">${escapeHtml(result.inboundText || "")}</pre>
-    `;
-    messages.innerHTML = `
-        <div class="ai-chat-bubble ai-chat-assistant">
-            <div class="ai-chat-label">AI 模拟草稿（只读，不外发）</div>
-            <div class="pre">${escapeHtml(result.draftText || "(空草稿)")}</div>
-        </div>
-    `;
-    meta.textContent = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+    if (messages) {
+        messages.innerHTML = `
+            <div class="ai-chat-bubble ai-chat-assistant">
+                <div class="ai-chat-label">AI 模拟草稿（只读，不外发）</div>
+                <div class="pre">${escapeHtml(result.draftText || "(空草稿)")}</div>
+            </div>`;
+    }
+    if (meta) {
+        meta.textContent = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+    }
 }
 
 async function runAiTrainingSimulate() {
-    const contactId = Number($("#aiTrainingExpertSelect").value);
+    const contactId = state.aiTraining.selectedSimulateMailContactId;
     if (!contactId) {
-        showStatus("请先选择专家", "warn");
+        showStatus("请先选择邮件", "warn");
         return;
     }
-    state.aiTraining.selectedContactId = contactId;
     const promptOverride = $("#aiTrainingPromptOverride").value.trim();
     const result = await api("/api/ai-training/simulate", {
         method: "POST",
@@ -1863,7 +2022,7 @@ async function runAiTrainingSimulate() {
             promptOverride: promptOverride || null
         })
     });
-    renderAiTrainingSimulatePanel(result);
+    renderAiTrainingSimulateResult(result);
     showStatus("模拟回复已生成（未外发）", "ok");
 }
 
@@ -1873,11 +2032,11 @@ async function saveAiTrainingPromptConfig(event) {
         freeFormSystemPrompt: $("#aiTrainingFreeFormPrompt").value.trim() || null,
         constraints: $("#aiTrainingConstraints").value.trim() || null
     };
-    const saved = await api("/api/ai-training/prompt-config", {
+    await api("/api/ai-training/prompt-config", {
         method: "PUT",
         body: JSON.stringify(payload)
     });
-    fillAiTrainingPromptForm(saved);
+    await loadAiTrainingPromptConfig();
     showStatus("提示词配置已保存", "ok");
 }
 
@@ -1885,7 +2044,8 @@ async function loadAiTraining() {
     await Promise.all([
         loadAiTrainingQa(),
         loadAiTrainingPromptConfig(),
-        loadAiTrainingSimulateExperts()
+        loadAiTrainingTagOptions(),
+        loadAiTrainingSimulateMails()
     ]);
 }
 
@@ -7283,20 +7443,56 @@ function bindEvents() {
     $("#aiTrainingPromptForm")?.addEventListener("submit", (event) => {
         saveAiTrainingPromptConfig(event).catch((error) => showStatus(error.message, "error"));
     });
-    $("#aiTrainingSearchExpertsBtn")?.addEventListener("click", () => {
-        state.aiTraining.expertKeyword = $("#aiTrainingExpertKeyword").value.trim();
-        loadAiTrainingSimulateExperts().catch((error) => showStatus(error.message, "error"));
+    $("#aiTrainingRestoreDefaultBtn")?.addEventListener("click", () => {
+        restoreAiTrainingPromptDefault().catch((error) => showStatus(error.message, "error"));
     });
-    $("#aiTrainingExpertKeyword")?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            state.aiTraining.expertKeyword = $("#aiTrainingExpertKeyword").value.trim();
-            loadAiTrainingSimulateExperts().catch((error) => showStatus(error.message, "error"));
+    document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
+        button.addEventListener("click", () => switchAiTrainingTab(button.dataset.tab));
+    });
+    $("#aiTrainingExpertTagFilters")?.addEventListener("click", (event) => {
+        const chip = event.target.closest(".ai-training-tag-chip");
+        if (!chip) return;
+        state.aiTraining.selectedExpertTag = chip.dataset.value || "";
+        state.aiTraining.simulateMailsPage = 0;
+        renderAiTrainingTagPills(
+            "#aiTrainingExpertTagFilters",
+            state.aiTraining.expertTagOptions,
+            state.aiTraining.selectedExpertTag,
+            "tag"
+        );
+        loadAiTrainingSimulateMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingInboundTagFilters")?.addEventListener("click", (event) => {
+        const chip = event.target.closest(".ai-training-tag-chip");
+        if (!chip) return;
+        state.aiTraining.selectedInboundTagKey = chip.dataset.value || "";
+        state.aiTraining.simulateMailsPage = 0;
+        renderAiTrainingTagPills(
+            "#aiTrainingInboundTagFilters",
+            state.aiTraining.inboundTagOptions,
+            state.aiTraining.selectedInboundTagKey,
+            "tagKey"
+        );
+        loadAiTrainingSimulateMails().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiSimulateMailList")?.addEventListener("click", (event) => {
+        const item = event.target.closest(".ai-training-mail-item");
+        if (!item) return;
+        const contactId = Number(item.dataset.contactId);
+        const mail = (state.aiTraining.simulateMails || []).find((row) => row.expertContactId === contactId);
+        if (mail) {
+            selectSimulateMail(mail);
         }
     });
-    $("#aiTrainingExpertSelect")?.addEventListener("change", () => {
-        state.aiTraining.selectedContactId = Number($("#aiTrainingExpertSelect").value) || null;
-        renderAiTrainingSimulatePanel(null);
+    $("#aiSimulateMailPrevPage")?.addEventListener("click", () => {
+        if (state.aiTraining.simulateMailsPage > 0) {
+            state.aiTraining.simulateMailsPage -= 1;
+            loadAiTrainingSimulateMails().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#aiSimulateMailNextPage")?.addEventListener("click", () => {
+        state.aiTraining.simulateMailsPage += 1;
+        loadAiTrainingSimulateMails().catch((error) => showStatus(error.message, "error"));
     });
     $("#aiTrainingSimulateBtn")?.addEventListener("click", () => {
         runAiTrainingSimulate().catch((error) => showStatus(error.message, "error"));

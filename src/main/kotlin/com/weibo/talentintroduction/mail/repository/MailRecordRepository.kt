@@ -54,6 +54,71 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     )
     fun findExpertContactIdsWithInboundMail(keyword: String?, limit: Int): List<Long>
 
+    @Query(
+        """
+        SELECT mr.* FROM mail_record mr
+        INNER JOIN (
+            SELECT expert_contact_id, MAX(id) AS latest_id
+            FROM mail_record
+            WHERE direction = 'INBOUND'
+              AND expert_contact_id IS NOT NULL
+              AND (:unrestricted = true OR expert_contact_id IN (:contactIds))
+              AND (:qaRuleId IS NULL OR EXISTS (
+                    SELECT 1 FROM inbound_mail_tag t
+                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+                    WHERE p.expert_contact_id = mail_record.expert_contact_id
+                      AND t.qa_rule_id = :qaRuleId))
+              AND (:customLabel IS NULL OR EXISTS (
+                    SELECT 1 FROM inbound_mail_tag t2
+                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+                    WHERE p2.expert_contact_id = mail_record.expert_contact_id
+                      AND t2.tag_type = 'CUSTOM'
+                      AND t2.label = :customLabel))
+            GROUP BY expert_contact_id
+        ) latest ON mr.id = latest.latest_id
+        ORDER BY mr.id DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun findInboundMailsForSimulation(
+        unrestricted: Boolean,
+        contactIds: List<Long>,
+        qaRuleId: Long?,
+        customLabel: String?,
+        limit: Int,
+        offset: Int
+    ): List<MailRecord>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT expert_contact_id
+            FROM mail_record
+            WHERE direction = 'INBOUND'
+              AND expert_contact_id IS NOT NULL
+              AND (:unrestricted = true OR expert_contact_id IN (:contactIds))
+              AND (:qaRuleId IS NULL OR EXISTS (
+                    SELECT 1 FROM inbound_mail_tag t
+                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+                    WHERE p.expert_contact_id = mail_record.expert_contact_id
+                      AND t.qa_rule_id = :qaRuleId))
+              AND (:customLabel IS NULL OR EXISTS (
+                    SELECT 1 FROM inbound_mail_tag t2
+                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+                    WHERE p2.expert_contact_id = mail_record.expert_contact_id
+                      AND t2.tag_type = 'CUSTOM'
+                      AND t2.label = :customLabel))
+            GROUP BY expert_contact_id
+        ) grouped
+        """
+    )
+    fun countInboundMailsForSimulation(
+        unrestricted: Boolean,
+        contactIds: List<Long>,
+        qaRuleId: Long?,
+        customLabel: String?
+    ): Long
+
     fun existsByExpertContactIdAndDirectionAndMailType(
         expertContactId: Long,
         direction: String,

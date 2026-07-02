@@ -177,14 +177,7 @@ class AiReplyDraftService(
         }
     }
 
-    private fun buildBaseSystemPrompt(): String = buildString {
-        appendLine("You are a recruiting assistant for academic expert outreach.")
-        appendLine("Your goal is to encourage a reply and advance the conversation toward scheduling a meeting.")
-        appendLine("Tone: warm, professional, concise.")
-        appendLine("Reply in the same language as the inbound email.")
-        appendLine("Keep the reply to at most 4 paragraphs.")
-        appendLine("Output only the email body text. Do not include a subject line.")
-    }
+    private fun buildBaseSystemPrompt(): String = FreeFormPromptDefaults.baseSystemPrompt()
 
     private fun buildMatchedSystemPrompt(): String = buildString {
         append(buildBaseSystemPrompt())
@@ -197,15 +190,8 @@ class AiReplyDraftService(
         appendLine("Do not rewrite, paraphrase, or add promises beyond what the segments state.")
     }
 
-    private fun buildFreeFormSystemPrompt(): String {
-        val defaultPrompt = buildString {
-            append(buildBaseSystemPrompt())
-            appendLine()
-            appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
-            appendLine("Do not make specific commitments beyond what the context supports.")
-        }
-        return aiPromptConfigService.getEffectiveFreeFormSystemPrompt(defaultPrompt)
-    }
+    private fun buildFreeFormSystemPrompt(): String =
+        aiPromptConfigService.getEffectiveFreeFormSystemPrompt(FreeFormPromptDefaults.defaultFreeFormSystemPrompt())
 
     private fun buildMatchedUserContent(inboundText: String, promptRuleIds: List<Long>): String = buildString {
         val frame = replySnippetService.resolveManualFrame()

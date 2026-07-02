@@ -679,7 +679,13 @@
 
         <!-- View: AI Training -->
         <section class="view" id="view-ai-training">
-            <div class="ai-training-grid">
+            <div class="ai-training-tabs">
+                <button type="button" class="ai-tab" data-tab="qa">QA 知识库</button>
+                <button type="button" class="ai-tab" data-tab="prompts">AI 提示词与约束</button>
+                <button type="button" class="ai-tab active" data-tab="simulate">历史邮件模拟回复</button>
+            </div>
+
+            <div class="ai-tab-content" id="aiTabQa">
                 <section class="panel ai-training-panel">
                     <div class="panel-head">
                         <h2>提炼 QA 知识库</h2>
@@ -711,45 +717,69 @@
                         <button class="button small" id="aiTrainingQaNextPage">下一页</button>
                     </div>
                 </section>
+            </div>
 
+            <div class="ai-tab-content" id="aiTabPrompts">
                 <section class="panel ai-training-panel">
-                    <div class="panel-head"><h2>AI 提示词与约束</h2></div>
-                    <form id="aiTrainingPromptForm" class="ai-training-prompt-form">
+                    <div class="panel-head">
+                        <h2>AI 提示词与约束</h2>
+                        <span id="aiTrainingPromptStatus" class="muted ai-training-prompt-status"></span>
+                    </div>
+                    <p id="aiTrainingPromptInfo" class="ai-training-prompt-info muted">当前显示系统生效提示词</p>
+                    <form id="aiTrainingPromptForm" class="ai-training-prompt-form ai-training-prompt-grid">
                         <label class="field">
                             <span>自由回复系统提示词</span>
-                            <textarea id="aiTrainingFreeFormPrompt" rows="8" placeholder="留空则使用系统默认提示词"></textarea>
+                            <textarea id="aiTrainingFreeFormPrompt" rows="12"></textarea>
                         </label>
                         <label class="field">
                             <span>约束项（每行一条）</span>
-                            <textarea id="aiTrainingConstraints" rows="6" placeholder="例如：Do not promise fees&#10;Reply in English when inbound is English"></textarea>
+                            <textarea id="aiTrainingConstraints" rows="12" placeholder="例如：Do not promise fees&#10;Reply in English when inbound is English"></textarea>
                         </label>
-                        <div class="toolbar-inline">
+                        <div class="toolbar-inline ai-training-prompt-actions">
                             <button type="submit" class="button primary">保存配置</button>
+                            <button type="button" class="button" id="aiTrainingRestoreDefaultBtn" hidden>恢复默认</button>
                             <span id="aiTrainingPromptUpdatedAt" class="muted"></span>
                         </div>
                     </form>
                 </section>
+            </div>
 
+            <div class="ai-tab-content active" id="aiTabSimulate">
                 <section class="panel ai-training-panel ai-training-simulate-panel">
                     <div class="panel-head"><h2>历史邮件模拟回复</h2></div>
-                    <div class="ai-training-simulate-toolbar">
-                        <input type="search" id="aiTrainingExpertKeyword" placeholder="搜索专家姓名或邮箱" style="min-width: 220px;">
-                        <button class="button" id="aiTrainingSearchExpertsBtn">搜索专家</button>
-                        <select id="aiTrainingExpertSelect" style="min-width: 260px;">
-                            <option value="">选择有来信的专家</option>
-                        </select>
-                    </div>
-                    <div id="aiTrainingInboundPreview" class="ai-training-inbound-preview muted">选择专家后展示最近来信。</div>
-                    <div class="ai-reply-section">
-                        <div class="ai-chat-panel">
-                            <div id="aiTrainingSimulateMessages" class="ai-chat-messages"></div>
-                            <div class="ai-chat-input-row">
-                                <textarea id="aiTrainingPromptOverride" class="ai-chat-input" rows="2" placeholder="可选：临时补充要求，仅影响本次模拟，不落库"></textarea>
-                                <button type="button" class="button primary" id="aiTrainingSimulateBtn">生成模拟回复</button>
-                            </div>
+                    <div class="ai-training-tag-filters">
+                        <div class="ai-training-tag-row">
+                            <span class="ai-training-tag-label">专家标签</span>
+                            <div id="aiTrainingExpertTagFilters" class="ai-training-tag-pills"></div>
+                        </div>
+                        <div class="ai-training-tag-row">
+                            <span class="ai-training-tag-label">回信标签</span>
+                            <div id="aiTrainingInboundTagFilters" class="ai-training-tag-pills"></div>
                         </div>
                     </div>
-                    <div id="aiTrainingSimulateMeta" class="muted ai-training-simulate-meta"></div>
+                    <div class="ai-training-simulate-layout">
+                        <div class="ai-training-mail-list-wrap">
+                            <div id="aiSimulateMailList" class="ai-training-mail-list"></div>
+                            <div id="aiSimulateMailPager" class="list-pager" hidden>
+                                <button class="button small" id="aiSimulateMailPrevPage">上一页</button>
+                                <span id="aiSimulateMailPageInfo" class="list-pager-info"></span>
+                                <button class="button small" id="aiSimulateMailNextPage">下一页</button>
+                            </div>
+                        </div>
+                        <div class="ai-training-mail-detail-wrap">
+                            <div id="aiSimulateMailDetail" class="ai-training-mail-detail muted">选择左侧邮件查看完整正文。</div>
+                            <div class="ai-reply-section">
+                                <div class="ai-chat-panel">
+                                    <div id="aiTrainingSimulateMessages" class="ai-chat-messages"></div>
+                                    <div class="ai-chat-input-row">
+                                        <textarea id="aiTrainingPromptOverride" class="ai-chat-input" rows="2" placeholder="可选：临时补充要求，仅影响本次模拟，不落库"></textarea>
+                                        <button type="button" class="button primary" id="aiTrainingSimulateBtn">生成模拟回复</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="aiTrainingSimulateMeta" class="muted ai-training-simulate-meta"></div>
+                        </div>
+                    </div>
                 </section>
             </div>
         </section>

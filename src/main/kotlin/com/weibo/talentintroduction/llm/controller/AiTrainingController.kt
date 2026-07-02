@@ -2,13 +2,19 @@ package com.weibo.talentintroduction.llm.controller
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.llm.service.AiPromptConfigDto
+import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.service.InboundMailTagService
+import com.weibo.talentintroduction.mail.service.TagView
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -26,6 +32,9 @@ class AiTrainingController(
     private val aiReplyContextBuilder: AiReplyContextBuilder,
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
+    private val expertSearchService: ExpertSearchService,
+    private val inboundMailTagService: InboundMailTagService,
+    private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val llmProperties: LlmProperties
 ) {
     @GetMapping("/qa")
@@ -38,9 +47,78 @@ class AiTrainingController(
     @GetMapping("/prompt-config")
     fun getPromptConfig(): AiPromptConfigDto = aiPromptConfigService.getDto()
 
+    @GetMapping("/prompt-config/effective")
+    fun getEffectivePromptConfig(): AiPromptConfigEffectiveDto = aiPromptConfigService.getEffectiveDto()
+
     @PutMapping("/prompt-config")
     fun updatePromptConfig(@RequestBody request: AiPromptConfigDto): AiPromptConfigDto =
         aiPromptConfigService.update(request.freeFormSystemPrompt, request.constraints)
+
+    @GetMapping("/simulate/mails")
+    fun listSimulateMails(
+        @RequestParam(required = false) expertTag: String?,
+        @RequestParam(required = false) inboundTagKey: String?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int
+    ): AiTrainingSimulateMailPage {
+        val normalizedPage = page.coerceAtLeast(0)
+        val normalizedSize = size.coerceIn(1, 100)
+        val normalizedExpertTag = expertTag?.trim()?.takeIf { it.isNotEmpty() }
+        val (qaRuleId, customLabel) = parseTagKey(inboundTagKey)
+
+        val contactFilter = resolveContactFilter(normalizedExpertTag)
+        if (contactFilter.emptyResult) {
+            return AiTrainingSimulateMailPage(items = emptyList(), total = 0, page = normalizedPage, size = normalizedSize)
+        }
+
+        val offset = normalizedPage * normalizedSize
+        val records = mailRecordRepository.findInboundMailsForSimulation(
+            unrestricted = contactFilter.unrestricted,
+            contactIds = contactFilter.contactIds,
+            qaRuleId = qaRuleId,
+            customLabel = customLabel,
+            limit = normalizedSize,
+            offset = offset
+        )
+        val total = mailRecordRepository.countInboundMailsForSimulation(
+            unrestricted = contactFilter.unrestricted,
+            contactIds = contactFilter.contactIds,
+            qaRuleId = qaRuleId,
+            customLabel = customLabel
+        )
+
+        val contactIds = records.mapNotNull { it.expertContactId }.distinct()
+        val contactsById = if (contactIds.isEmpty()) {
+            emptyMap()
+        } else {
+            expertContactRepository.findAllById(contactIds).associateBy { requireNotNull(it.id) }
+        }
+        val expertTagsByOrcid = loadExpertTagsByOrcid(contactsById.values.mapNotNull { it.orcidId }.distinct())
+        val inboundTagsByContact = loadInboundTagsByContact(contactIds, records)
+
+        val items = records.mapNotNull { mail ->
+            val contactId = mail.expertContactId ?: return@mapNotNull null
+            val contact = contactsById[contactId] ?: return@mapNotNull null
+            val body = mail.cleanedBody?.takeIf { it.isNotBlank() } ?: mail.body.orEmpty()
+            AiTrainingSimulateMailItem(
+                expertContactId = contactId,
+                expertName = contact.expertName,
+                expertEmail = contact.expertEmail,
+                subject = mail.subject,
+                receivedAt = mail.receivedAt?.toString(),
+                body = body,
+                inboundTags = inboundTagsByContact[contactId].orEmpty(),
+                expertTags = expertTagsByOrcid[contact.orcidId].orEmpty()
+            )
+        }
+
+        return AiTrainingSimulateMailPage(
+            items = items,
+            total = total,
+            page = normalizedPage,
+            size = normalizedSize
+        )
+    }
 
     @GetMapping("/simulate/experts")
     fun listSimulateExperts(
@@ -99,7 +177,121 @@ class AiTrainingController(
             expertEmail = contact.expertEmail
         )
     }
+
+    private data class ContactFilter(
+        val unrestricted: Boolean,
+        val contactIds: List<Long>,
+        val emptyResult: Boolean
+    )
+
+    private fun resolveContactFilter(expertTag: String?): ContactFilter {
+        if (expertTag == null) {
+            return ContactFilter(unrestricted = true, contactIds = emptyList(), emptyResult = false)
+        }
+        val orcidIds = findOrcidIdsByExpertTag(expertTag)
+        if (orcidIds.isEmpty()) {
+            return ContactFilter(unrestricted = false, contactIds = emptyList(), emptyResult = true)
+        }
+        val contactIds = expertContactRepository.findByOrcidIdIn(orcidIds).mapNotNull { it.id }
+        if (contactIds.isEmpty()) {
+            return ContactFilter(unrestricted = false, contactIds = emptyList(), emptyResult = true)
+        }
+        return ContactFilter(unrestricted = false, contactIds = contactIds, emptyResult = false)
+    }
+
+    private fun findOrcidIdsByExpertTag(tag: String): List<String> {
+        val candidate = expertSearchService.searchExperts(
+            size = 1000,
+            level = ExpertIndexLevel.CANDIDATE,
+            tag = tag
+        ).experts
+        val application = expertSearchService.searchExperts(
+            size = 1000,
+            level = ExpertIndexLevel.APPLICATION,
+            tag = tag
+        ).experts
+        return (candidate + application).map { it.orcidId }.distinct()
+    }
+
+    private fun loadExpertTagsByOrcid(orcidIds: List<String>): Map<String, List<String>> {
+        if (orcidIds.isEmpty()) return emptyMap()
+        val candidate = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.CANDIDATE)
+            .associate { it.orcidId to (it.tags.orEmpty()) }
+        val application = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.APPLICATION)
+            .associate { it.orcidId to (it.tags.orEmpty()) }
+        return orcidIds.associateWith { orcidId ->
+            (candidate[orcidId].orEmpty() + application[orcidId].orEmpty()).distinct()
+        }
+    }
+
+    private fun loadInboundTagsByContact(
+        contactIds: List<Long>,
+        records: List<com.weibo.talentintroduction.mail.domain.MailRecord>
+    ): Map<Long, List<AiTrainingInboundTagView>> {
+        if (contactIds.isEmpty()) return emptyMap()
+        val processingIdByContact = mutableMapOf<Long, Long>()
+        records.forEach { mail ->
+            val contactId = mail.expertContactId ?: return@forEach
+            val processingId = mail.sourceInboundId
+                ?: inboundMailProcessingRepository.findAllByExpertContactId(contactId)
+                    .maxByOrNull { it.receivedAt ?: it.createdAt ?: java.time.LocalDateTime.MIN }
+                    ?.id
+            if (processingId != null) {
+                processingIdByContact[contactId] = processingId
+            }
+        }
+        val tagsByProcessing = inboundMailTagService.listTagsBatch(processingIdByContact.values.distinct())
+        return processingIdByContact.mapValues { (_, processingId) ->
+            tagsByProcessing[processingId].orEmpty().map { toInboundTagView(it) }
+        }
+    }
+
+    private fun toInboundTagView(tag: TagView): AiTrainingInboundTagView {
+        val tagKey = when (tag.tagType) {
+            "QA" -> "qa:${tag.qaRuleId}"
+            else -> "custom:${tag.label}"
+        }
+        return AiTrainingInboundTagView(
+            tagKey = tagKey,
+            label = tag.label,
+            tagType = tag.tagType
+        )
+    }
+
+    private fun parseTagKey(tagKey: String?): Pair<Long?, String?> {
+        if (tagKey.isNullOrBlank()) return null to null
+        return when {
+            tagKey.startsWith("qa:") -> tagKey.removePrefix("qa:").toLongOrNull()?.let { it to null }
+                ?: throw IllegalArgumentException("Invalid tagKey: $tagKey")
+            tagKey.startsWith("custom:") -> null to tagKey.removePrefix("custom:")
+            else -> throw IllegalArgumentException("Invalid tagKey: $tagKey")
+        }
+    }
 }
+
+data class AiTrainingSimulateMailPage(
+    val items: List<AiTrainingSimulateMailItem>,
+    val total: Long,
+    val page: Int,
+    val size: Int
+)
+
+data class AiTrainingSimulateMailItem(
+    val expertContactId: Long,
+    val expertName: String?,
+    val expertEmail: String,
+    val subject: String?,
+    val receivedAt: String?,
+    val body: String,
+    val inboundTags: List<AiTrainingInboundTagView>,
+    val expertTags: List<String>
+)
+
+data class AiTrainingInboundTagView(
+    val tagKey: String,
+    val label: String,
+    val tagType: String
+)
 
 data class AiTrainingSimulateExpertResponse(
     val contactId: Long,
