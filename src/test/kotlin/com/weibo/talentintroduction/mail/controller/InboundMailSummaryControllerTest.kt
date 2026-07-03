@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
+import com.weibo.talentintroduction.mail.service.TagStatItem
+import com.weibo.talentintroduction.mail.service.TagStatsResult
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
@@ -85,5 +87,36 @@ class InboundMailSummaryControllerTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.totalCount").value(1))
             .andExpect(jsonPath("$.records[0].inboundId").value(100))
+    }
+
+    @Test
+    fun `tag stats accepts same date scope as mail list`() {
+        val from = LocalDateTime.of(2026, 4, 4, 0, 0)
+        val to = LocalDateTime.of(2026, 7, 4, 0, 0)
+        Mockito.`when`(inboundMailTagService.stats(from, to)).thenReturn(
+            TagStatsResult(
+                items = listOf(
+                    TagStatItem(
+                        tagKey = "qa:5",
+                        label = "Duty and rights",
+                        tagType = "QA",
+                        count = 1,
+                        active = true
+                    )
+                ),
+                total = 1
+            )
+        )
+
+        mockMvc.perform(
+            get("/api/inbound-summary/tags/stats")
+                .param("from", "2026-04-04T00:00:00")
+                .param("to", "2026-07-04T00:00:00")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+            .andExpect(jsonPath("$.items[0].tagKey").value("qa:5"))
+
+        Mockito.verify(inboundMailTagService).stats(from, to)
     }
 }

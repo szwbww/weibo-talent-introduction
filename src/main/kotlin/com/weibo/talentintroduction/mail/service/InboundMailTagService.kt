@@ -1,8 +1,10 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.InboundMailTag
+import com.weibo.talentintroduction.mail.repository.CustomTagCount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
+import com.weibo.talentintroduction.mail.repository.QaTagCount
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
@@ -168,9 +170,19 @@ class InboundMailTagService(
         }
     }
 
+    fun stats(from: LocalDateTime, to: LocalDateTime): TagStatsResult {
+        val qaCounts = inboundMailTagRepository.countQaTagsGroupedByRule(from, to)
+        val customCounts = inboundMailTagRepository.countCustomTagsGroupedByLabel(from, to)
+        return buildStats(qaCounts, customCounts)
+    }
+
     fun stats(): TagStatsResult {
         val qaCounts = inboundMailTagRepository.countQaTagsGroupedByRule()
         val customCounts = inboundMailTagRepository.countCustomTagsGroupedByLabel()
+        return buildStats(qaCounts, customCounts)
+    }
+
+    private fun buildStats(qaCounts: List<QaTagCount>, customCounts: List<CustomTagCount>): TagStatsResult {
         val ruleIds = qaCounts.map { it.qaRuleId }
         val rulesById = if (ruleIds.isEmpty()) {
             emptyMap()

@@ -149,16 +149,18 @@ class InboundMailTagServiceTest {
     }
 
     @Test
-    fun `stats aggregates full table counts`() {
-        Mockito.`when`(tagRepository.countQaTagsGroupedByRule()).thenReturn(
+    fun `stats aggregates date-scoped summary counts`() {
+        val from = LocalDateTime.of(2026, 4, 4, 0, 0)
+        val to = LocalDateTime.of(2026, 7, 4, 0, 0)
+        Mockito.`when`(tagRepository.countQaTagsGroupedByRule(from, to)).thenReturn(
             listOf(QaTagCount(1L, "Funding support", 3L))
         )
-        Mockito.`when`(tagRepository.countCustomTagsGroupedByLabel()).thenReturn(
+        Mockito.`when`(tagRepository.countCustomTagsGroupedByLabel(from, to)).thenReturn(
             listOf(CustomTagCount("VIP", 2L))
         )
         Mockito.`when`(qaRuleRepository.findAllById(listOf(1L))).thenReturn(listOf(fundingRule.copy(enabled = false)))
 
-        val stats = service.stats()
+        val stats = service.stats(from, to)
 
         assertEquals(5L, stats.total)
         assertEquals(2, stats.items.size)
@@ -166,17 +168,21 @@ class InboundMailTagServiceTest {
         assertFalse(stats.items[0].active)
         assertEquals(3L, stats.items[0].count)
         assertEquals("Funding support", stats.items[0].label)
+        Mockito.verify(tagRepository).countQaTagsGroupedByRule(from, to)
+        Mockito.verify(tagRepository).countCustomTagsGroupedByLabel(from, to)
     }
 
     @Test
     fun `stats preserves snapshot label when qa rule deleted`() {
-        Mockito.`when`(tagRepository.countQaTagsGroupedByRule()).thenReturn(
+        val from = LocalDateTime.of(2026, 4, 4, 0, 0)
+        val to = LocalDateTime.of(2026, 7, 4, 0, 0)
+        Mockito.`when`(tagRepository.countQaTagsGroupedByRule(from, to)).thenReturn(
             listOf(QaTagCount(99L, "Legacy funding tag", 4L))
         )
-        Mockito.`when`(tagRepository.countCustomTagsGroupedByLabel()).thenReturn(emptyList())
+        Mockito.`when`(tagRepository.countCustomTagsGroupedByLabel(from, to)).thenReturn(emptyList())
         Mockito.`when`(qaRuleRepository.findAllById(listOf(99L))).thenReturn(emptyList())
 
-        val stats = service.stats()
+        val stats = service.stats(from, to)
 
         assertEquals(1, stats.items.size)
         assertEquals("Legacy funding tag", stats.items[0].label)

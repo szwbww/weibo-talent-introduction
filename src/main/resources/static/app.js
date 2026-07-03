@@ -8536,6 +8536,14 @@ function syncInboundSummaryDatesFromInputs() {
     if (toEl?.value) state.inboundSummary.to = toEl.value;
 }
 
+function inboundSummaryDateParams() {
+    syncInboundSummaryDatesFromInputs();
+    const params = new URLSearchParams();
+    params.set("from", `${state.inboundSummary.from}T00:00:00`);
+    params.set("to", `${inboundSummaryExclusiveToDate(state.inboundSummary.to)}T00:00:00`);
+    return params;
+}
+
 function inboundSummaryOperatorName() {
     const name = ($("#currentUserDisplay")?.textContent || "").trim();
     return name || null;
@@ -8584,9 +8592,10 @@ async function loadInboundSummary() {
 }
 
 async function reloadInboundStats() {
+    const params = inboundSummaryDateParams();
     const [stats, optionsResp] = await Promise.all([
-        api("/api/inbound-summary/tags/stats"),
-        api("/api/inbound-summary/tags/options")
+        api(`/api/inbound-summary/tags/stats?${params}`),
+        api(`/api/inbound-summary/tags/options?${params}`)
     ]);
     state.inboundSummary.stats = stats;
     state.inboundSummary.options = optionsResp.items || [];
@@ -8596,10 +8605,7 @@ async function reloadInboundStats() {
 }
 
 async function loadInboundMails() {
-    syncInboundSummaryDatesFromInputs();
-    const params = new URLSearchParams();
-    params.set("from", `${state.inboundSummary.from}T00:00:00`);
-    params.set("to", `${inboundSummaryExclusiveToDate(state.inboundSummary.to)}T00:00:00`);
+    const params = inboundSummaryDateParams();
     params.set("pageSize", String(state.inboundSummary.pageSize));
     params.set("pageOffset", String(state.inboundSummary.page * state.inboundSummary.pageSize));
     if (state.inboundSummary.activeTagKey) {
@@ -9020,11 +9026,11 @@ function bindInboundSummaryEvents() {
     });
     $("#inboundFrom")?.addEventListener("change", () => {
         state.inboundSummary.page = 0;
-        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+        loadInboundSummary().catch((error) => showStatus(error.message, "error"));
     });
     $("#inboundTo")?.addEventListener("change", () => {
         state.inboundSummary.page = 0;
-        loadInboundMails().catch((error) => showStatus(error.message, "error"));
+        loadInboundSummary().catch((error) => showStatus(error.message, "error"));
     });
     $("#inboundSearch")?.addEventListener("input", (event) => {
         state.inboundSummary.search = event.target.value;

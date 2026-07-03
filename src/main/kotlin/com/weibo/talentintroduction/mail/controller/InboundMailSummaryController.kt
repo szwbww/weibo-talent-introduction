@@ -119,11 +119,25 @@ class InboundMailSummaryController(
     }
 
     @GetMapping("/tags/stats")
-    fun tagStats(): TagStatsResult = inboundMailTagService.stats()
+    fun tagStats(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?
+    ): TagStatsResult = if (from != null && to != null) {
+        inboundMailTagService.stats(from, to)
+    } else {
+        inboundMailTagService.stats()
+    }
 
     @GetMapping("/tags/options")
-    fun tagOptions(): TagOptionsResponse {
-        val stats = inboundMailTagService.stats()
+    fun tagOptions(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?
+    ): TagOptionsResponse {
+        val stats = if (from != null && to != null) {
+            inboundMailTagService.stats(from, to)
+        } else {
+            inboundMailTagService.stats()
+        }
         return TagOptionsResponse(items = stats.items)
     }
 
