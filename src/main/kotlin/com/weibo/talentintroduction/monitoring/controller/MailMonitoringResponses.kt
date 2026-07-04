@@ -99,6 +99,8 @@ data class SenderAccountHealthRow(
     val accountCode: String,
     val senderEmail: String,
     val enabled: Boolean,
+    val autoSendPaused: Boolean,
+    val autoSendPausedReason: String?,
     val todaySentCount: Int,
     val dailySendLimit: Int,
     val introductionCount: Long,
@@ -132,4 +134,19 @@ data class RegionStatRow(
     val repliedCount: Long,
     val replyRate: Double,
     val promotionCount: Long
+)
+
+data class ReputationHistoryResponse(
+    val domain: String?,
+    val domains: List<String>,
+    val history: List<ReputationHistoryRow>
+)
+
+data class ReputationHistoryRow(
+    val date: String,
+    val spamRate: Double?,
+    val domainReputation: String?,
+    val spfSuccessRate: Double?,
+    val dkimSuccessRate: Double?,
+    val dmarcSuccessRate: Double?
 )

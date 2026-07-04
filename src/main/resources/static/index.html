@@ -233,6 +233,22 @@
 
             <section class="panel">
                 <div class="panel-head">
+                    <h2>域信誉趋势</h2>
+                    <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+                        <select id="monitoringReputationDomain"></select>
+                        <select id="monitoringReputationDays">
+                            <option value="7">近 7 天</option>
+                            <option value="30" selected>近 30 天</option>
+                            <option value="90">近 90 天</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="monitoringReputationStatus" class="muted" style="padding: 0 24px 8px; font-size: 13px;"></div>
+                <div id="monitoringReputationChart" style="padding: 0 24px 24px; overflow-x: auto;"></div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
                     <div class="tabs" id="monitoringSubTabs" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <button class="tab button secondary active" data-subtab="introductions">首发邮件</button>
                         <button class="tab button secondary" data-subtab="inbound">收信分类</button>

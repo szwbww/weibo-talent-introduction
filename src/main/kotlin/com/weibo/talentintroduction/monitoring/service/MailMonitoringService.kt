@@ -243,6 +243,8 @@ class MailMonitoringService(
                 accountCode = account.accountCode,
                 senderEmail = account.senderEmail,
                 enabled = account.enabled,
+                autoSendPaused = account.autoSendPaused,
+                autoSendPausedReason = account.autoSendPausedReason,
                 todaySentCount = account.todaySentCount,
                 dailySendLimit = account.dailySendLimit,
                 introductionCount = stat?.introductionCount ?: 0,

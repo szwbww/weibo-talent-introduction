@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.monitoring.controller
 
 import com.weibo.talentintroduction.monitoring.service.MailMonitoringService
+import com.weibo.talentintroduction.postmaster.repository.DomainReputationHistoryRepository
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -13,7 +14,8 @@ import java.time.LocalDate
 @RestController
 @RequestMapping("/api/mail-monitoring")
 class MailMonitoringController(
-    private val mailMonitoringService: MailMonitoringService
+    private val mailMonitoringService: MailMonitoringService,
+    private val domainReputationHistoryRepository: DomainReputationHistoryRepository
 ) {
     @GetMapping("/summary")
     fun summary(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?): MailMonitoringService.DailySummary =
@@ -91,4 +93,33 @@ class MailMonitoringController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
     ): List<RegionStatRow> =
         mailMonitoringService.regionDistribution(date)
+
+    @GetMapping("/reputation-history")
+    fun reputationHistory(
+        @RequestParam(required = false) domain: String?,
+        @RequestParam(required = false, defaultValue = "30") days: Int
+    ): ReputationHistoryResponse {
+        val availableDomains = domainReputationHistoryRepository.findDistinctDomains()
+        val selectedDomain = domain?.takeIf { it.isNotBlank() }
+            ?: availableDomains.firstOrNull()
+        val history = selectedDomain?.let {
+            domainReputationHistoryRepository.findByDomainOrderByReportDateDesc(it, days.coerceIn(1, 200))
+                .sortedBy { row -> row.reportDate }
+                .map { row ->
+                    ReputationHistoryRow(
+                        date = row.reportDate.toString(),
+                        spamRate = row.spamRate,
+                        domainReputation = row.domainReputation,
+                        spfSuccessRate = row.spfSuccessRate,
+                        dkimSuccessRate = row.dkimSuccessRate,
+                        dmarcSuccessRate = row.dmarcSuccessRate
+                    )
+                }
+        } ?: emptyList()
+        return ReputationHistoryResponse(
+            domain = selectedDomain,
+            domains = availableDomains,
+            history = history
+        )
+    }
 }

@@ -34,6 +34,10 @@ const state = {
         senderHealth: [],
         providerDistribution: [],
         regionDistribution: [],
+        reputationHistory: [],
+        reputationDomains: [],
+        reputationDomain: "",
+        reputationDays: 30,
         lastRefreshedAt: null,
         autoRefreshTimer: null
     },
@@ -7133,6 +7137,7 @@ async function loadMonitoring() {
     renderMonitoringCards();
     renderMonitoringProviderDistribution();
     renderMonitoringRegionDistribution();
+    await loadMonitoringReputation();
     renderMonitoringSenderHealth();
     renderMonitoringSenderOptions();
     await loadMonitoringSubTab();
@@ -7247,6 +7252,95 @@ function renderMonitoringRegionDistribution() {
             <td>${escapeHtml(row.promotionCount ?? 0)}</td>
         </tr>
     `).join("") || `<tr><td colspan="5" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+}
+
+async function loadMonitoringReputation() {
+    const domainSelect = $("#monitoringReputationDomain");
+    const daysSelect = $("#monitoringReputationDays");
+    if (!domainSelect || !daysSelect) return;
+    const days = Number(daysSelect.value || state.monitoring.reputationDays || 30);
+    state.monitoring.reputationDays = days;
+    const params = new URLSearchParams({ days: String(days) });
+    if (state.monitoring.reputationDomain) {
+        params.set("domain", state.monitoring.reputationDomain);
+    }
+    try {
+        const data = await api(`/api/mail-monitoring/reputation-history?${params}`);
+        state.monitoring.reputationHistory = data.history || [];
+        state.monitoring.reputationDomains = data.domains || [];
+        if (data.domain) {
+            state.monitoring.reputationDomain = data.domain;
+        }
+        if (!state.monitoring.reputationDomain && state.monitoring.reputationDomains.length > 0) {
+            state.monitoring.reputationDomain = state.monitoring.reputationDomains[0];
+        }
+        domainSelect.innerHTML = (state.monitoring.reputationDomains.length > 0
+            ? state.monitoring.reputationDomains
+            : [state.monitoring.reputationDomain].filter(Boolean)
+        ).map((domain) =>
+            `<option value="${escapeHtml(domain)}">${escapeHtml(domain)}</option>`
+        ).join("") || `<option value="">暂无域名</option>`;
+        domainSelect.value = state.monitoring.reputationDomain || "";
+        daysSelect.value = String(days);
+        renderMonitoringReputationChart();
+    } catch (_) {
+        state.monitoring.reputationHistory = [];
+        renderMonitoringReputationChart();
+    }
+}
+
+function renderMonitoringReputationChart() {
+    const statusEl = $("#monitoringReputationStatus");
+    const chartEl = $("#monitoringReputationChart");
+    if (!statusEl || !chartEl) return;
+    const rows = state.monitoring.reputationHistory || [];
+    const domain = state.monitoring.reputationDomain || "-";
+    const pausedAccounts = (state.monitoring.senderHealth || []).filter((row) =>
+        row.autoSendPaused && String(row.autoSendPausedReason || "").startsWith("REPUTATION:")
+    );
+    const latest = rows[rows.length - 1];
+    const latestSpam = latest?.spamRate != null ? formatPercent(latest.spamRate) : "-";
+    statusEl.innerHTML = `
+        当前域名：<strong>${escapeHtml(domain)}</strong>
+        · 最新投诉率：${escapeHtml(latestSpam)}
+        · REPUTATION 暂停账号：${escapeHtml(pausedAccounts.length)}
+        ${pausedAccounts.length > 0 ? `（${escapeHtml(pausedAccounts.map((row) => row.accountCode).join(", "))}）` : ""}
+    `;
+    if (rows.length === 0) {
+        chartEl.innerHTML = `<p class="text-muted" style="text-align:center; padding: 24px 0;">暂无 Postmaster 采集数据</p>`;
+        return;
+    }
+    const width = Math.max(640, rows.length * 36);
+    const height = 220;
+    const padding = { top: 16, right: 16, bottom: 32, left: 48 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const maxRate = Math.max(0.004, ...rows.map((row) => row.spamRate ?? 0));
+    const pauseLine = 0.003;
+    const resumeLine = 0.001;
+    const xStep = rows.length > 1 ? plotWidth / (rows.length - 1) : 0;
+    const toX = (index) => padding.left + index * xStep;
+    const toY = (rate) => padding.top + plotHeight - (rate / maxRate) * plotHeight;
+    const points = rows.map((row, index) => `${toX(index)},${toY(row.spamRate ?? 0)}`).join(" ");
+    const pauseY = toY(pauseLine);
+    const resumeY = toY(resumeLine);
+    const labels = rows.map((row, index) => {
+        const x = toX(index);
+        return `<text x="${x}" y="${height - 8}" text-anchor="middle" font-size="10" fill="#64748b">${escapeHtml((row.date || "").slice(5))}</text>`;
+    }).join("");
+    chartEl.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="域投诉率趋势">
+            <line x1="${padding.left}" y1="${pauseY}" x2="${width - padding.right}" y2="${pauseY}" stroke="#ef4444" stroke-dasharray="4 4" />
+            <text x="${width - padding.right}" y="${pauseY - 4}" text-anchor="end" font-size="10" fill="#ef4444">暂停线 0.3%</text>
+            <line x1="${padding.left}" y1="${resumeY}" x2="${width - padding.right}" y2="${resumeY}" stroke="#22c55e" stroke-dasharray="4 4" />
+            <text x="${width - padding.right}" y="${resumeY - 4}" text-anchor="end" font-size="10" fill="#22c55e">恢复线 0.1%</text>
+            <polyline fill="none" stroke="#3b82f6" stroke-width="2" points="${points}" />
+            ${rows.map((row, index) => `<circle cx="${toX(index)}" cy="${toY(row.spamRate ?? 0)}" r="3" fill="#2563eb" />`).join("")}
+            ${labels}
+            <text x="8" y="${padding.top + 8}" font-size="10" fill="#64748b">${escapeHtml(formatPercent(maxRate))}</text>
+            <text x="8" y="${padding.top + plotHeight}" font-size="10" fill="#64748b">0%</text>
+        </svg>
+    `;
 }
 
 function renderMonitoringSenderOptions() {
@@ -7438,6 +7532,14 @@ function bindMonitoringEvents() {
     $("#monitoringSenderAccount").addEventListener("change", () => {
         state.monitoring.page = 0;
         loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringReputationDomain")?.addEventListener("change", (event) => {
+        state.monitoring.reputationDomain = event.target.value || "";
+        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringReputationDays")?.addEventListener("change", (event) => {
+        state.monitoring.reputationDays = Number(event.target.value || 30);
+        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
     });
     $("#monitoringSubTabs").addEventListener("click", (event) => {
         const tab = event.target.closest("[data-subtab]");

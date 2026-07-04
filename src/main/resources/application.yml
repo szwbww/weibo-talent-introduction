@@ -67,6 +67,14 @@ talent-introduction:
     operator-status-sync-cron: ${MAIL_SCHEDULING_OPERATOR_STATUS_SYNC_CRON:-}
     ai-qa-extraction-cron: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_CRON:-}
     ai-qa-extraction-max-contacts: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_MAX_CONTACTS:20}
+  postmaster:
+    enabled: ${POSTMASTER_ENABLED:false}
+    credentials-json: ${POSTMASTER_CREDENTIALS_JSON:}
+    domains: ${POSTMASTER_DOMAINS:}
+    cron: ${POSTMASTER_CRON:0 0 8 * * *}
+    pause-threshold-spam-rate: ${POSTMASTER_PAUSE_THRESHOLD_SPAM_RATE:0.003}
+    resume-threshold-spam-rate: ${POSTMASTER_RESUME_THRESHOLD_SPAM_RATE:0.001}
+    resume-consecutive-days: ${POSTMASTER_RESUME_CONSECUTIVE_DAYS:3}
   manual-outreach:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
   unsubscribe:
