@@ -1332,6 +1332,19 @@
     </form>
 </dialog>
 
+<!-- Modal: AI Document Analysis -->
+<div class="modal-shell" id="aiAnalysisModal" hidden>
+    <button class="modal-backdrop" id="aiAnalysisModalBackdrop" type="button" aria-label="关闭 AI 分析"></button>
+    <section class="panel editor-panel modal-panel ai-analysis-modal" role="dialog" aria-modal="true" aria-labelledby="aiAnalysisModalTitle">
+        <div class="panel-head modal-head">
+            <h2 id="aiAnalysisModalTitle">AI 智能分析</h2>
+            <button class="button secondary" id="aiAnalysisModalCloseBtn" type="button" data-action="close-ai-analysis">×</button>
+        </div>
+        <div class="modal-body ai-analysis-modal-body" id="aiAnalysisModalBody"></div>
+        <div class="modal-actions ai-analysis-modal-footer" id="aiAnalysisModalFooter"></div>
+    </section>
+</div>
+
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
 <script src="app.js?v=20260619-animations"></script>

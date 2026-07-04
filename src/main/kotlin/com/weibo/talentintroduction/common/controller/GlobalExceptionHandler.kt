@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.common.controller
 
+import com.weibo.talentintroduction.document.service.AnalysisFailedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -21,6 +22,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException::class)
     fun handleNotFound(ex: NoSuchElementException): ResponseEntity<ApiErrorResponse> =
         error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.message ?: "Resource not found")
+
+    @ExceptionHandler(AnalysisFailedException::class)
+    fun handleAnalysisFailed(ex: AnalysisFailedException): ResponseEntity<ApiErrorResponse> =
+        error(HttpStatus.INTERNAL_SERVER_ERROR, "ANALYSIS_FAILED", ex.message ?: "分析失败，请重试")
 
     @ExceptionHandler(
         HttpMessageNotReadableException::class,

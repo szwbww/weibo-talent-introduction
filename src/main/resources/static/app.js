@@ -5010,7 +5010,7 @@ async function loadContactDetail(contactId) {
                 </div>
 
                 <div class="metadata-card span-all" id="expertDocumentsSection">
-                    ${renderExpertDocuments(documents)}
+                    ${renderExpertDocuments(documents, contactId)}
                 </div>
 
                 <div class="metadata-card span-all" id="expertOperatorLogsSection">
@@ -5112,7 +5112,7 @@ async function loadEmailAliases(contactId, contact) {
     }
 }
 
-function renderExpertDocuments(documents) {
+function renderExpertDocuments(documents, contactId) {
     const list = Array.isArray(documents) ? documents : (documents?.records || []);
     if (list.length === 0) {
         return `
@@ -5124,9 +5124,12 @@ function renderExpertDocuments(documents) {
         `;
     }
     return `
-        <div class="metadata-card-header">
-            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span>专家上传资料</span>
+        <div class="metadata-card-header document-card-header">
+            <div class="document-card-header-title">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>专家上传资料</span>
+            </div>
+            <button class="button small primary" type="button" data-action="open-ai-analysis" data-contact-id="${contactId}">AI 智能分析</button>
         </div>
         <div class="document-list">
             ${list.map(doc => `
@@ -5144,6 +5147,196 @@ function renderExpertDocuments(documents) {
             `).join("")}
         </div>
     `;
+}
+
+const AI_ANALYSIS_DEFAULT_TYPES = new Set(["CV", "PHD_DEGREE", "MASTER_DEGREE", "BACHELOR_DEGREE"]);
+const aiAnalysisState = {
+    contactId: null,
+    documents: [],
+    results: [],
+    mode: "select",
+    error: null
+};
+
+function isDefaultAiAnalysisDocument(doc) {
+    return AI_ANALYSIS_DEFAULT_TYPES.has(doc.documentType);
+}
+
+async function openAiAnalysisModal(contactId) {
+    aiAnalysisState.contactId = contactId;
+    aiAnalysisState.error = null;
+    aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+    const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
+    aiAnalysisState.results = existing.fields || [];
+    aiAnalysisState.mode = aiAnalysisState.results.length > 0 ? "results" : "select";
+    renderAiAnalysisModal();
+    const modal = $("#aiAnalysisModal");
+    if (modal) modal.hidden = false;
+}
+
+function closeAiAnalysisModal() {
+    const modal = $("#aiAnalysisModal");
+    if (modal) modal.hidden = true;
+    aiAnalysisState.contactId = null;
+    aiAnalysisState.documents = [];
+    aiAnalysisState.results = [];
+    aiAnalysisState.mode = "select";
+    aiAnalysisState.error = null;
+}
+
+function renderAiAnalysisFileSelect() {
+    const docs = Array.isArray(aiAnalysisState.documents) ? aiAnalysisState.documents : [];
+    if (docs.length === 0) {
+        return `<p class="ai-analysis-empty">暂无可用资料文件。</p>`;
+    }
+    return `
+        <p class="ai-analysis-hint">选择要分析的文件（默认勾选 CV 与学位类文件）：</p>
+        <div class="ai-analysis-file-list">
+            ${docs.map(doc => `
+                <label class="ai-analysis-file-item">
+                    <input type="checkbox" name="aiAnalysisAttachment" value="${doc.attachmentId}"
+                        ${isDefaultAiAnalysisDocument(doc) ? "checked" : ""}>
+                    <span class="ai-analysis-file-name">${escapeHtml(doc.fileName || "?")}</span>
+                    <span class="badge">${escapeHtml(labelDocumentType(doc.documentType))}</span>
+                </label>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderAiAnalysisResults() {
+    const fields = aiAnalysisState.results || [];
+    if (fields.length === 0) {
+        return `<p class="ai-analysis-empty">暂无分析结果。</p>`;
+    }
+    return `
+        <div class="analysis-field-list">
+            ${fields.map(field => `
+                <div class="analysis-field-row" data-field-id="${field.id}">
+                    <label class="analysis-field-label">${escapeHtml(field.fieldLabel || field.fieldKey)}</label>
+                    <div class="analysis-field-input-wrap">
+                        <input class="analysis-field-input" type="text"
+                            data-action="ai-analysis-field-input"
+                            data-field-id="${field.id}"
+                            value="${escapeHtml(field.value || "")}">
+                        ${field.sourceFileName ? `
+                            <span class="source-badge ${field.verified ? "" : "source-badge-warn"}"
+                                title="${escapeHtml(field.sourceExcerpt || "")}">
+                                ${field.verified ? "" : "⚠ "}${escapeHtml(field.sourceFileName)}
+                            </span>
+                        ` : ""}
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderAiAnalysisModal() {
+    const body = $("#aiAnalysisModalBody");
+    const title = $("#aiAnalysisModalTitle");
+    const footer = $("#aiAnalysisModalFooter");
+    if (!body || !title || !footer) return;
+
+    if (aiAnalysisState.mode === "loading") {
+        title.textContent = "AI 智能分析";
+        body.innerHTML = `
+            <div class="ai-analysis-loading">
+                <div class="ai-analysis-spinner"></div>
+                <p>正在分析文档，请稍候…</p>
+            </div>
+        `;
+        footer.innerHTML = `<button type="button" class="button secondary" data-action="close-ai-analysis">关闭</button>`;
+        return;
+    }
+
+    if (aiAnalysisState.mode === "results") {
+        title.textContent = "AI 分析结果";
+        body.innerHTML = aiAnalysisState.error
+            ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisResults()}`
+            : renderAiAnalysisResults();
+        footer.innerHTML = `
+            <button type="button" class="button secondary" data-action="ai-analysis-add-field">+ 添加字段</button>
+            <button type="button" class="button secondary" data-action="ai-analysis-reanalyze">重新分析</button>
+            <button type="button" class="button secondary" data-action="close-ai-analysis">关闭</button>
+        `;
+        return;
+    }
+
+    title.textContent = "选择分析文件";
+    body.innerHTML = aiAnalysisState.error
+        ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisFileSelect()}`
+        : renderAiAnalysisFileSelect();
+    footer.innerHTML = `
+        <button type="button" class="button primary" data-action="start-ai-analysis">开始分析</button>
+        <button type="button" class="button secondary" data-action="close-ai-analysis">取消</button>
+    `;
+}
+
+async function startAiAnalysis() {
+    const contactId = aiAnalysisState.contactId;
+    if (!contactId) return;
+    const checked = Array.from(document.querySelectorAll('input[name="aiAnalysisAttachment"]:checked'))
+        .map(el => Number(el.value))
+        .filter(id => Number.isFinite(id));
+    if (checked.length === 0) {
+        aiAnalysisState.error = "请至少选择一个文件";
+        renderAiAnalysisModal();
+        return;
+    }
+    aiAnalysisState.error = null;
+    aiAnalysisState.mode = "loading";
+    renderAiAnalysisModal();
+    try {
+        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+            method: "POST",
+            body: JSON.stringify({ attachmentIds: checked })
+        });
+        aiAnalysisState.results = result.fields || [];
+        aiAnalysisState.mode = "results";
+        showStatus("AI 分析完成");
+    } catch (e) {
+        aiAnalysisState.mode = "select";
+        aiAnalysisState.error = e.message || "分析失败，请重试";
+    }
+    renderAiAnalysisModal();
+}
+
+async function saveAiAnalysisField(fieldId, value) {
+    const contactId = aiAnalysisState.contactId;
+    if (!contactId || !fieldId) return;
+    try {
+        const updated = await api(`/api/expert-contacts/${contactId}/ai-analysis/${fieldId}`, {
+            method: "PUT",
+            body: JSON.stringify({ value })
+        });
+        const idx = aiAnalysisState.results.findIndex(item => item.id === fieldId);
+        if (idx >= 0) {
+            aiAnalysisState.results[idx] = updated;
+        }
+    } catch (e) {
+        showStatus(e.message || "保存失败", "error");
+    }
+}
+
+async function addAiAnalysisField() {
+    const contactId = aiAnalysisState.contactId;
+    if (!contactId) return;
+    const fieldKey = window.prompt("字段 key（英文，如 custom_note）");
+    if (!fieldKey) return;
+    const fieldLabel = window.prompt("字段名称（中文显示名）");
+    if (!fieldLabel) return;
+    const value = window.prompt("字段值") || "";
+    try {
+        const created = await api(`/api/expert-contacts/${contactId}/ai-analysis/fields`, {
+            method: "POST",
+            body: JSON.stringify({ fieldKey, fieldLabel, value })
+        });
+        aiAnalysisState.results.push(created);
+        renderAiAnalysisModal();
+    } catch (e) {
+        showStatus(e.message || "添加字段失败", "error");
+    }
 }
 
 function renderOperatorLogs(logs) {
@@ -5451,6 +5644,29 @@ async function handleContactAction(element) {
     if (action === "preview-document") {
         const previewUrl = element.dataset.url;
         if (previewUrl) window.open(`${contextPath}${previewUrl}`, "_blank");
+        return;
+    }
+    if (action === "open-ai-analysis") {
+        const contactId = Number(element.dataset.contactId);
+        if (contactId) await openAiAnalysisModal(contactId);
+        return;
+    }
+    if (action === "close-ai-analysis") {
+        closeAiAnalysisModal();
+        return;
+    }
+    if (action === "start-ai-analysis") {
+        await startAiAnalysis();
+        return;
+    }
+    if (action === "ai-analysis-reanalyze") {
+        aiAnalysisState.mode = "select";
+        aiAnalysisState.error = null;
+        renderAiAnalysisModal();
+        return;
+    }
+    if (action === "ai-analysis-add-field") {
+        await addAiAnalysisField();
         return;
     }
 }
@@ -7424,6 +7640,18 @@ function bindEvents() {
     $("#contactDetail").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiAnalysisModal")?.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiAnalysisModalBackdrop")?.addEventListener("click", closeAiAnalysisModal);
+    $("#aiAnalysisModal")?.addEventListener("focusout", (event) => {
+        const input = event.target.closest(".analysis-field-input[data-field-id]");
+        if (!input) return;
+        const fieldId = Number(input.dataset.fieldId);
+        if (!Number.isFinite(fieldId)) return;
+        saveAiAnalysisField(fieldId, input.value);
     });
     $("#contactHeadActions").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-action]");
