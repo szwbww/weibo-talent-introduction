@@ -14,8 +14,8 @@ import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
-import com.weibo.talentintroduction.template.service.MailTemplateService
-import com.weibo.talentintroduction.template.service.RenderedMailTemplate
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -33,7 +33,7 @@ class MeetingScheduleServiceTest {
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val mailDeliveryService = Mockito.mock(MailDeliveryService::class.java)
-    private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
+    private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
     private val conversationStateService = ConversationStateService(expertContactRepository, statusHistoryRepository)
 
@@ -44,7 +44,7 @@ class MeetingScheduleServiceTest {
         mailSenderAccountRepository = mailSenderAccountRepository,
         mailSenderAccountService = mailSenderAccountService,
         mailDeliveryService = mailDeliveryService,
-        mailTemplateService = mailTemplateService,
+        mailComposeTemplateService = mailComposeTemplateService,
         conversationStateService = conversationStateService
     )
 
@@ -121,11 +121,17 @@ class MeetingScheduleServiceTest {
             .thenAnswer { invocation -> invocation.getArgument<MeetingSchedule>(0) }
         Mockito.`when`(mailSenderAccountService.selectAccountForSending()).thenReturn(account)
         Mockito.`when`(
-            mailTemplateService.render(
+            mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_CONFIRMATION"),
                 anyValue(emptyMap<String, String>())
             )
-        ).thenReturn(RenderedMailTemplate("Meeting Confirmed", "Confirmed meeting link"))
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Meeting Confirmed",
+                body = "Confirmed meeting link",
+                mailType = "MEETING_CONFIRMATION"
+            )
+        )
         Mockito.`when`(
             mailDeliveryService.send(
                 eqValue(account),

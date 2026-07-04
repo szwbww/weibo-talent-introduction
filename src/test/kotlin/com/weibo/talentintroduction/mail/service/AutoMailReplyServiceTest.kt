@@ -21,7 +21,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.service.QaMatchResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
-import com.weibo.talentintroduction.template.service.MailTemplateService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -42,7 +42,7 @@ class AutoMailReplyServiceTest {
     private val inboundIntentRepository = Mockito.mock(InboundIntentRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
     private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
-    private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
+    private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
     private val conversationStateService = ConversationStateService(contactRepository, statusHistoryRepository)
@@ -92,7 +92,7 @@ class AutoMailReplyServiceTest {
         mailAttachmentService,
         MailBodyCleaner(),
         InboundIntentClassifier(),
-        mailTemplateService,
+        mailComposeTemplateService,
         qaMatchService,
         conversationStateService,
         meetingScheduleService,
@@ -1272,7 +1272,7 @@ class AutoMailReplyServiceTest {
             anyValue(account),
             anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
         )
-        Mockito.verifyNoInteractions(mailTemplateService)
+        Mockito.verifyNoInteractions(mailComposeTemplateService)
         val handoffCaptor = ArgumentCaptor.forClass(ManualHandoff::class.java)
         Mockito.verify(manualHandoffRepository).save(handoffCaptor.capture())
         assertEquals("RECIPIENT_UNSUBSCRIBED", handoffCaptor.value.reason)

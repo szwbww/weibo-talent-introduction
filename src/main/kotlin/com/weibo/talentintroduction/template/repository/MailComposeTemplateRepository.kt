@@ -8,6 +8,8 @@ interface MailComposeTemplateRepository : CrudRepository<MailComposeTemplate, Lo
     fun findAllByOrderByIdAsc(): List<MailComposeTemplate>
 
     fun findAllByEnabledTrueOrderByIdAsc(): List<MailComposeTemplate>
+
+    fun findByTemplateCodeAndEnabledTrue(templateCode: String): MailComposeTemplate?
 }
 
 interface MailComposeTemplateBlockRepository : CrudRepository<MailComposeTemplateBlock, Long> {

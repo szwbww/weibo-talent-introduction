@@ -9,11 +9,10 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
-import com.weibo.talentintroduction.template.domain.MailTemplate
-import com.weibo.talentintroduction.template.repository.MailTemplateRepository
+import com.weibo.talentintroduction.template.domain.MailComposeTemplate
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
-import com.weibo.talentintroduction.template.service.MailTemplateService
-import com.weibo.talentintroduction.template.service.RenderedMailTemplate
+import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -30,8 +29,6 @@ class ManualExpertMailServiceTest {
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val mailDeliveryService = Mockito.mock(MailDeliveryService::class.java)
-    private val mailTemplateRepository = Mockito.mock(MailTemplateRepository::class.java)
-    private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
@@ -42,8 +39,6 @@ class ManualExpertMailServiceTest {
         mailSenderAccountService,
         mailSenderAccountRepository,
         mailDeliveryService,
-        mailTemplateRepository,
-        mailTemplateService,
         mailComposeTemplateService,
         conversationStateService
     )
@@ -108,12 +103,32 @@ class ManualExpertMailServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
         Mockito.`when`(mailSenderAccountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.getById(10L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 10,
+                templateCode = "INTRODUCTION",
+                templateName = "Introduction",
+                subject = "Intro Subject",
+                description = null,
+                mailType = "INTRODUCTION",
+                enabled = true,
+                blocks = emptyList(),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
         Mockito.`when`(
-            mailTemplateService.render(
-                eqValue("INTRODUCTION"),
+            mailComposeTemplateService.render(
+                eqValue(10L),
                 anyValue(emptyMap<String, String>())
             )
-        ).thenReturn(RenderedMailTemplate(subject = "Intro Subject", body = "Intro Body"))
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Intro Subject",
+                body = "Intro Body",
+                mailType = "INTRODUCTION"
+            )
+        )
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -142,7 +157,7 @@ class ManualExpertMailServiceTest {
 
         service.sendManualMail(
             1,
-            ManualMailSendCommand(optionType = "TEMPLATE", optionValue = "INTRODUCTION", senderAccountCode = null)
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
         )
 
         val captor = ArgumentCaptor.forClass(MailSenderAccount::class.java)
@@ -158,7 +173,7 @@ class ManualExpertMailServiceTest {
 
         val result = service.sendManualMail(
             1,
-            ManualMailSendCommand(optionType = "TEMPLATE", optionValue = "INTRODUCTION", senderAccountCode = null)
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
         )
 
         assertEquals("SUCCESS", result.sendStatus)
@@ -195,25 +210,24 @@ class ManualExpertMailServiceTest {
     }
 
     @Test
-    fun `listSendOptions returns only TEMPLATE and COMPOSE_TEMPLATE`() {
-        Mockito.`when`(mailTemplateRepository.findAllByEnabledTrueOrderByTemplateCodeAsc()).thenReturn(
+    fun `listSendOptions returns only compose templates`() {
+        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(
             listOf(
-                MailTemplate(
-                    id = 1,
+                MailComposeTemplate(
+                    id = 10,
                     templateCode = "INTRODUCTION",
                     templateName = "Introduction",
                     subject = "Intro",
-                    body = "body",
+                    mailType = "INTRODUCTION",
                     enabled = true
                 )
             )
         )
-        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(emptyList())
 
         val options = service.listSendOptions()
 
         assertTrue(options.isNotEmpty())
-        assertTrue(options.all { it.optionType in setOf("TEMPLATE", "COMPOSE_TEMPLATE") })
+        assertTrue(options.all { it.optionType == "COMPOSE_TEMPLATE" })
         assertTrue(options.none { it.optionType == "QA" })
     }
 }

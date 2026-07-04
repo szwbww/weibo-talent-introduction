@@ -11,8 +11,8 @@ import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.service.QaMatchResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
-import com.weibo.talentintroduction.template.service.MailTemplateService
-import com.weibo.talentintroduction.template.service.RenderedMailTemplate
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -28,7 +28,7 @@ class AutoReplyPreviewServiceTest {
     private val mailBodyCleaner = MailBodyCleaner()
     private val inboundIntentClassifier = InboundIntentClassifier()
     private val qaMatchService = Mockito.mock(QaMatchService::class.java)
-    private val mailTemplateService = Mockito.mock(MailTemplateService::class.java)
+    private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
@@ -40,7 +40,7 @@ class AutoReplyPreviewServiceTest {
         mailBodyCleaner,
         inboundIntentClassifier,
         qaMatchService,
-        mailTemplateService,
+        mailComposeTemplateService,
         mailSenderAccountService,
         mailRecordRepository,
         expertContactRepository,
@@ -147,12 +147,12 @@ class AutoReplyPreviewServiceTest {
         stubRecord(body = "I am interested in this opportunity")
         stubSenderAccount()
         Mockito.`when`(
-            mailTemplateService.render(
+            mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>())
             )
         ).thenReturn(
-            RenderedMailTemplate(subject = "Meeting invite", body = "<p>Please join us</p>")
+            ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
         )
 
         val result = service.preview(processingId)
@@ -169,12 +169,12 @@ class AutoReplyPreviewServiceTest {
         stubSenderAccount()
         stubMeetingSent(meetingSent = true)
         Mockito.`when`(
-            mailTemplateService.render(
+            mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>())
             )
         ).thenReturn(
-            RenderedMailTemplate(subject = "Meeting invite", body = "<p>Please join us</p>")
+            ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
         )
 
         val result = service.preview(processingId)
@@ -271,12 +271,12 @@ class AutoReplyPreviewServiceTest {
         stubSenderAccount()
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@test.com")).thenReturn(true)
         Mockito.`when`(
-            mailTemplateService.render(
+            mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>())
             )
         ).thenReturn(
-            RenderedMailTemplate(subject = "Meeting invite", body = "<p>Please join us</p>")
+            ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
         )
 
         val result = service.preview(processingId)

@@ -10,7 +10,7 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.ComposedMail
-import com.weibo.talentintroduction.template.service.MailTemplateService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -24,7 +24,7 @@ class MeetingScheduleService(
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailDeliveryService: MailDeliveryService,
-    private val mailTemplateService: MailTemplateService,
+    private val mailComposeTemplateService: MailComposeTemplateService,
     private val conversationStateService: ConversationStateService
 ) {
     fun extractAndCreate(contactId: Long, mailRecord: MailRecord): MeetingSchedule {
@@ -106,7 +106,7 @@ class MeetingScheduleService(
         )
 
         val account = mailSenderAccountService.selectAccountForSending()
-        val rendered = mailTemplateService.render(
+        val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_CONFIRMATION",
             variables = mapOf(
                 "meetingTime" to command.chinaTime,
@@ -123,7 +123,7 @@ class MeetingScheduleService(
 
         val composed = ComposedMail(
             to = contact.expertEmail,
-            subject = rendered.subject ?: "Meeting Confirmed: Research Collaboration Discussion",
+            subject = rendered.subject,
             body = rendered.body
         )
         val delivered = mailDeliveryService.send(account, composed)

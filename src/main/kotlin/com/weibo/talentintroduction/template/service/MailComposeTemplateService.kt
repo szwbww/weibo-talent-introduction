@@ -35,9 +35,11 @@ class MailComposeTemplateService(
         val now = LocalDateTime.now()
         val saved = templateRepository.save(
             MailComposeTemplate(
+                templateCode = command.templateCode?.trim()?.takeIf { it.isNotBlank() },
                 templateName = command.templateName.trim(),
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
+                mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() },
                 enabled = command.enabled,
                 createdAt = now,
                 updatedAt = now
@@ -55,9 +57,11 @@ class MailComposeTemplateService(
         val now = LocalDateTime.now()
         templateRepository.save(
             existing.copy(
+                templateCode = command.templateCode?.trim()?.takeIf { it.isNotBlank() } ?: existing.templateCode,
                 templateName = command.templateName.trim(),
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
+                mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: existing.mailType,
                 enabled = command.enabled,
                 updatedAt = now
             )
@@ -87,14 +91,31 @@ class MailComposeTemplateService(
         templateRepository.deleteById(id)
     }
 
-    fun render(id: Long): ComposeTemplateRenderResult {
+    fun render(id: Long, variables: Map<String, String> = emptyMap()): ComposeTemplateRenderResult {
         val template = findTemplate(id)
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
-        val resolved = resolveBlocks(blocks)
+        return renderTemplate(template, blocks, variables)
+    }
+
+    fun renderByCode(templateCode: String, variables: Map<String, String> = emptyMap()): ComposeTemplateRenderResult {
+        val template = templateRepository.findByTemplateCodeAndEnabledTrue(templateCode)
+            ?: error("Enabled compose template not found: $templateCode")
+        val templateId = template.id ?: error("Compose template id is required")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+        return renderTemplate(template, blocks, variables)
+    }
+
+    private fun renderTemplate(
+        template: MailComposeTemplate,
+        blocks: List<MailComposeTemplateBlock>,
+        variables: Map<String, String>
+    ): ComposeTemplateRenderResult {
+        val resolved = resolveBlocks(blocks, variables)
         return ComposeTemplateRenderResult(
-            subject = template.subject,
+            subject = renderText(template.subject, variables),
             body = resolved.includedTexts.joinToString("\n\n"),
-            qaRuleIds = resolved.qaRuleIds
+            qaRuleIds = resolved.qaRuleIds,
+            mailType = template.mailType
         )
     }
 
@@ -118,9 +139,11 @@ class MailComposeTemplateService(
             .map { block -> toBlockDetail(block) }
         return MailComposeTemplateDetail(
             id = templateId,
+            templateCode = template.templateCode,
             templateName = template.templateName,
             subject = template.subject,
             description = template.description,
+            mailType = template.mailType,
             enabled = template.enabled,
             blocks = blocks,
             createdAt = template.createdAt,
@@ -194,7 +217,10 @@ class MailComposeTemplateService(
         }
     }
 
-    private fun resolveBlocks(blocks: List<MailComposeTemplateBlock>): ResolvedBlocks {
+    private fun resolveBlocks(
+        blocks: List<MailComposeTemplateBlock>,
+        variables: Map<String, String> = emptyMap()
+    ): ResolvedBlocks {
         val includedTexts = mutableListOf<String>()
         val qaRuleIds = mutableListOf<Long>()
         val previewBlocks = mutableListOf<ComposeTemplatePreviewBlock>()
@@ -219,7 +245,7 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val text = rule.replyBody.trim()
+                    val text = renderText(rule.replyBody, variables).trim()
                     if (text.isNotBlank()) {
                         includedTexts += text
                         qaRuleIds += refId
@@ -250,7 +276,7 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val text = snippet.content.trim()
+                    val text = renderText(snippet.content, variables).trim()
                     if (text.isNotBlank()) {
                         includedTexts += text
                     }
@@ -265,7 +291,7 @@ class MailComposeTemplateService(
                     )
                 }
                 ComposeBlockType.CUSTOM_TEXT -> {
-                    val text = block.customText?.trim().orEmpty()
+                    val text = block.customText?.let { renderText(it, variables) }?.trim().orEmpty()
                     if (text.isNotBlank()) {
                         includedTexts += text
                     }
@@ -311,12 +337,19 @@ class MailComposeTemplateService(
         val qaRuleIds: List<Long>,
         val previewBlocks: List<ComposeTemplatePreviewBlock>
     )
+
+    private fun renderText(text: String, variables: Map<String, String>): String =
+        variables.entries.fold(text) { rendered, (key, value) ->
+            rendered.replace("\${$key}", value)
+        }
 }
 
 data class MailComposeTemplateCommand(
+    val templateCode: String? = null,
     val templateName: String,
     val subject: String,
     val description: String? = null,
+    val mailType: String? = null,
     val enabled: Boolean = true,
     val blocks: List<MailComposeTemplateBlockCommand>
 )
@@ -330,9 +363,11 @@ data class MailComposeTemplateBlockCommand(
 
 data class MailComposeTemplateDetail(
     val id: Long,
+    val templateCode: String?,
     val templateName: String,
     val subject: String,
     val description: String?,
+    val mailType: String?,
     val enabled: Boolean,
     val blocks: List<MailComposeTemplateBlockDetail>,
     val createdAt: LocalDateTime?,
@@ -351,7 +386,8 @@ data class MailComposeTemplateBlockDetail(
 data class ComposeTemplateRenderResult(
     val subject: String,
     val body: String,
-    val qaRuleIds: List<Long>
+    val qaRuleIds: List<Long> = emptyList(),
+    val mailType: String? = null
 )
 
 data class ComposeTemplatePreviewResult(

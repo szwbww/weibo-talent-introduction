@@ -2784,7 +2784,7 @@ async function handleBatchTagMail() {
         return;
     }
     const options = await loadMailSendOptions();
-    const templateOptions = options.filter(option => option.optionType === "TEMPLATE");
+    const templateOptions = options.filter(option => option.optionType === "COMPOSE_TEMPLATE");
     if (templateOptions.length === 0) {
         showStatus("没有可用的邮件模板", "error");
         return;
@@ -5459,20 +5459,12 @@ async function loadMailSendOptions() {
 }
 
 function renderMailSendOptionGroups(options) {
-    const systemTemplates = options.filter((option) => option.optionType === "TEMPLATE");
-    const composeTemplates = options.filter((option) => option.optionType === "COMPOSE_TEMPLATE");
+    const mailTemplates = options.filter((option) => option.optionType === "COMPOSE_TEMPLATE");
     const renderOption = (option) => `
         <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
             ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
         </option>`;
-    const groups = [];
-    if (systemTemplates.length) {
-        groups.push(`<optgroup label="系统模板">${systemTemplates.map(renderOption).join("")}</optgroup>`);
-    }
-    if (composeTemplates.length) {
-        groups.push(`<optgroup label="邮件模板">${composeTemplates.map(renderOption).join("")}</optgroup>`);
-    }
-    return groups.join("") || `<option value="">无可用模板</option>`;
+    return mailTemplates.map(renderOption).join("") || `<option value="">无可用模板</option>`;
 }
 
 async function loadMailTemplatesView() {
@@ -5540,7 +5532,7 @@ function openComposeTemplateEditor(template) {
     form.enabled.checked = template?.enabled !== false;
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
-    $("#composeTemplatePreviewPanel").textContent = "保存前可点击「刷新预览」查看本地拼接效果；已保存模板将调用服务端预览。";
+    renderLocalComposeTemplatePreview();
     $("#composeTemplateModal").hidden = false;
 }
 
@@ -5552,10 +5544,11 @@ function hideComposeTemplateEditor() {
 function renderComposeTemplateBlockRows(blocks) {
     const container = $("#composeTemplateBlocksList");
     if (!container) return;
-    const rows = (blocks.length ? blocks : [{ blockType: "QA_RULE", blockOrder: 0 }]).map((block, index) =>
+    const rows = (blocks.length ? blocks : [{ blockType: "CUSTOM_TEXT", blockOrder: 0 }]).map((block, index) =>
         composeTemplateBlockRowHtml(index, block)
     );
     container.innerHTML = rows.join("");
+    updateComposeTemplatePreviewMeta();
 }
 
 function composeTemplateBlockRowHtml(index, block) {
@@ -5572,6 +5565,7 @@ function composeTemplateBlockRowHtml(index, block) {
     }).join("");
     return `
     <div class="compose-template-block-row" data-block-index="${index}" draggable="true">
+        <span class="block-drag-handle">⋮⋮</span>
         <span class="block-order">#${index + 1}</span>
         <select class="block-type-select" data-field="blockType">
             <option value="QA_RULE" ${blockType === "QA_RULE" ? "selected" : ""}>QA 规则</option>
@@ -5586,7 +5580,7 @@ function composeTemplateBlockRowHtml(index, block) {
         <div class="block-actions">
             <button type="button" class="button small" data-action="move-compose-block-up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
             <button type="button" class="button small" data-action="move-compose-block-down" data-index="${index}">↓</button>
-            <button type="button" class="button small" data-action="remove-compose-block" data-index="${index}">删除</button>
+            <button type="button" class="button small danger" data-action="remove-compose-block" data-index="${index}">×</button>
         </div>
     </div>`;
 }
@@ -5613,9 +5607,11 @@ async function refreshComposeTemplatePreview() {
     if (templateId) {
         const preview = await api(`/api/compose-templates/${templateId}/preview`);
         panel.innerHTML = renderComposeTemplatePreviewHtml(preview);
+        $("#composeTemplatePreviewStatus").textContent = "服务端预览";
+        updateComposeTemplatePreviewMeta(preview.blocks?.length);
         return;
     }
-    panel.textContent = "请先保存模板后再预览，或在保存前检查各内容块配置。";
+    renderLocalComposeTemplatePreview();
 }
 
 function renderComposeTemplatePreviewHtml(preview) {
@@ -5627,9 +5623,41 @@ function renderComposeTemplatePreviewHtml(preview) {
         return `<div class="compose-block-pill">#${block.blockOrder + 1} ${escapeHtml(label)}</div>`;
     }).join("");
     return `
-        <div style="margin-bottom:8px;"><strong>主题：</strong>${escapeHtml(preview.subject || "")}</div>
-        <div style="margin-bottom:8px;">${blockNotes}</div>
-        <div class="pre">${escapeHtml(preview.body || "")}</div>`;
+        <div class="compose-preview-mail-head">
+            <div><span>Subject</span><strong>${escapeHtml(preview.subject || "")}</strong></div>
+        </div>
+        <div class="compose-preview-block-notes">${blockNotes}</div>
+        <div class="compose-preview-mail-body">${escapeHtml(preview.body || "")}</div>`;
+}
+
+function renderLocalComposeTemplatePreview() {
+    const form = $("#composeTemplateForm");
+    const panel = $("#composeTemplatePreviewPanel");
+    if (!form || !panel) return;
+    const blocks = collectComposeTemplateBlocksFromForm();
+    const body = blocks.map((block) => {
+        if (block.blockType === "CUSTOM_TEXT") return block.customText || "";
+        if (block.blockType === "QA_RULE") return "[QA 规则内容将在服务端预览时渲染]";
+        if (block.blockType === "REPLY_SNIPPET") return "[回复片段内容将在服务端预览时渲染]";
+        return "";
+    }).filter((text) => text.trim()).join("\n\n");
+    panel.innerHTML = `
+        <div class="compose-preview-mail-head">
+            <div><span>To</span><strong>expert@example.com</strong></div>
+            <div><span>Subject</span><strong>${escapeHtml(form.subject.value || "邮件主题")}</strong></div>
+        </div>
+        <div class="compose-preview-mail-body">${escapeHtml(body || "添加内容块后显示预览。")}</div>`;
+    $("#composeTemplatePreviewStatus").textContent = "本地预览";
+    updateComposeTemplatePreviewMeta(blocks.length);
+}
+
+function updateComposeTemplatePreviewMeta(blockCount) {
+    const count = blockCount ?? $$("#composeTemplateBlocksList .compose-template-block-row").length;
+    const countEl = $("#composeTemplatePreviewBlockCount");
+    if (countEl) countEl.textContent = `${count} 个`;
+    const selected = state.composeTemplates.find((item) => Number(item.id) === Number(state.selectedComposeTemplateId));
+    const mailTypeEl = $("#composeTemplatePreviewMailType");
+    if (mailTypeEl) mailTypeEl.textContent = selected?.mailType || selected?.templateCode || "COMPOSE_TEMPLATE";
 }
 
 async function saveComposeTemplate(event) {
@@ -5700,16 +5728,19 @@ function handleComposeTemplateBlocksListClick(event) {
     if (action === "remove-compose-block") {
         blocks.splice(index, 1);
         renderComposeTemplateBlockRows(blocks);
+        renderLocalComposeTemplatePreview();
         return;
     }
     if (action === "move-compose-block-up" && index > 0) {
         [blocks[index - 1], blocks[index]] = [blocks[index], blocks[index - 1]];
         renderComposeTemplateBlockRows(blocks);
+        renderLocalComposeTemplatePreview();
         return;
     }
     if (action === "move-compose-block-down" && index < blocks.length - 1) {
         [blocks[index + 1], blocks[index]] = [blocks[index], blocks[index + 1]];
         renderComposeTemplateBlockRows(blocks);
+        renderLocalComposeTemplatePreview();
     }
 }
 
@@ -5727,6 +5758,7 @@ function handleComposeTemplateBlockTypeChange(event) {
         customText: ""
     };
     renderComposeTemplateBlockRows(blocks);
+    renderLocalComposeTemplatePreview();
 }
 
 async function handleContactAction(element) {
@@ -7997,14 +8029,17 @@ function bindEvents() {
     $("#composeTemplateModalBackdrop")?.addEventListener("click", hideComposeTemplateEditor);
     $("#addComposeTemplateBlockBtn")?.addEventListener("click", () => {
         const blocks = collectComposeTemplateBlocksFromForm();
-        blocks.push({ blockOrder: blocks.length, blockType: "QA_RULE", refId: null, customText: null });
+        blocks.push({ blockOrder: blocks.length, blockType: "CUSTOM_TEXT", refId: null, customText: "" });
         renderComposeTemplateBlockRows(blocks);
+        renderLocalComposeTemplatePreview();
     });
     $("#refreshComposeTemplatePreviewBtn")?.addEventListener("click", () => {
         refreshComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
     });
     $("#composeTemplateBlocksList")?.addEventListener("click", handleComposeTemplateBlocksListClick);
     $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
+    $("#composeTemplateBlocksList")?.addEventListener("input", renderLocalComposeTemplatePreview);
+    $("#composeTemplateForm")?.subject?.addEventListener("input", renderLocalComposeTemplatePreview);
     $("#composeTemplatesTable")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleComposeTemplateAction(button).catch((error) => showStatus(error.message, "error"));

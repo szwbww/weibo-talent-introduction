@@ -2,15 +2,15 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
-import com.weibo.talentintroduction.template.service.MailTemplateService
-import com.weibo.talentintroduction.template.service.RenderedMailTemplate
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 
 class IntroductionMailComposerTest {
     private val accountService = Mockito.mock(MailSenderAccountService::class.java)
-    private val templateService = Mockito.mock(MailTemplateService::class.java)
+    private val templateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val composer = IntroductionMailComposer(accountService, templateService)
 
     @Test
@@ -36,9 +36,9 @@ class IntroductionMailComposerTest {
                 )
             )
         Mockito.`when`(
-            templateService.render(
-                "INTRODUCTION",
-                mapOf(
+            templateService.renderByCode(
+                templateCode = "INTRODUCTION",
+                variables = mapOf(
                     "senderEmail" to "chenjj@qftechtalent.com",
                     "senderName" to "Chen",
                     "senderTitle" to "Customer Care Officer",
@@ -47,9 +47,10 @@ class IntroductionMailComposerTest {
                 )
             )
         ).thenReturn(
-            RenderedMailTemplate(
+            ComposeTemplateRenderResult(
                 subject = "Research Collaboration Opportunity",
-                body = "Rendered body"
+                body = "Rendered body",
+                mailType = "INTRODUCTION"
             )
         )
 

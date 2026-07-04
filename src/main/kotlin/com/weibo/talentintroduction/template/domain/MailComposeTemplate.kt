@@ -7,9 +7,11 @@ import java.time.LocalDateTime
 @Table("mail_compose_template")
 data class MailComposeTemplate(
     @Id val id: Long? = null,
+    val templateCode: String? = null,
     val templateName: String,
     val subject: String,
     val description: String? = null,
+    val mailType: String? = null,
     val enabled: Boolean = true,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null

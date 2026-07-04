@@ -1354,31 +1354,72 @@
     <button class="modal-backdrop" id="composeTemplateModalBackdrop" type="button" aria-label="关闭邮件模板编辑"></button>
     <section class="panel editor-panel modal-panel compose-template-editor" role="dialog" aria-modal="true" aria-labelledby="composeTemplateEditorTitle">
         <div class="panel-head modal-head">
-            <h2 id="composeTemplateEditorTitle">新建邮件模板</h2>
-            <button class="button secondary" id="composeTemplateModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <div class="compose-template-title">
+                <span class="compose-template-title-icon">✉</span>
+                <div>
+                    <h2 id="composeTemplateEditorTitle">新建邮件模板</h2>
+                    <span class="modal-head-subtitle">编辑模板内容、变量与发送预览</span>
+                </div>
+            </div>
+            <button class="modal-close-btn" id="composeTemplateModalCloseBtn" type="button">×</button>
         </div>
-        <form id="composeTemplateForm" class="form-grid">
-            <label>模板名称<input name="templateName" required maxlength="100"></label>
-            <label>邮件主题<input name="subject" required maxlength="255"></label>
-            <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
-            <div class="full-width compose-template-blocks-section">
-                <div class="compose-template-blocks-head">
-                    <h3>内容块（按顺序拼接）</h3>
-                    <button type="button" class="button small" id="addComposeTemplateBlockBtn">+ 添加内容块</button>
+        <form id="composeTemplateForm" class="compose-template-form">
+            <div class="compose-template-body">
+                <div class="compose-template-main">
+                    <section class="compose-template-card compose-template-basic-card">
+                        <div class="compose-template-card-head">
+                            <h3>基础信息</h3>
+                            <span class="compose-template-soft-badge">邮件模板</span>
+                        </div>
+                        <div class="compose-template-fields">
+                            <label>模板名称<input name="templateName" required maxlength="100"></label>
+                            <label>邮件主题<input name="subject" required maxlength="255"></label>
+                            <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
+                        </div>
+                    </section>
+                    <section class="compose-template-card compose-template-blocks-section">
+                        <div class="compose-template-blocks-head">
+                            <div>
+                                <h3>内容块</h3>
+                                <span>全部按顺序拼接，内容均作为模板正文处理</span>
+                            </div>
+                            <button type="button" class="button small" id="addComposeTemplateBlockBtn">+ 添加内容块</button>
+                        </div>
+                        <div class="compose-template-variable-row" aria-label="可用变量">
+                            <span>${senderName}</span>
+                            <span>${senderTitle}</span>
+                            <span>${teamName}</span>
+                            <span>${countryName}</span>
+                            <span>${senderEmail}</span>
+                            <span>${senderDisplayName}</span>
+                        </div>
+                        <div id="composeTemplateBlocksList"></div>
+                    </section>
                 </div>
-                <div id="composeTemplateBlocksList"></div>
+                <aside class="compose-template-side">
+                    <section class="compose-template-card compose-template-preview-section">
+                        <div class="compose-template-blocks-head">
+                            <div>
+                                <h3>邮件预览</h3>
+                                <span id="composeTemplatePreviewStatus">本地预览</span>
+                            </div>
+                            <button type="button" class="button small" id="refreshComposeTemplatePreviewBtn">刷新预览</button>
+                        </div>
+                        <div id="composeTemplatePreviewPanel" class="compose-template-preview"></div>
+                        <div class="compose-template-preview-meta">
+                            <div><span>发送类型</span><strong id="composeTemplatePreviewMailType">COMPOSE_TEMPLATE</strong></div>
+                            <div><span>变量</span><strong>6 个</strong></div>
+                            <div><span>内容块</span><strong id="composeTemplatePreviewBlockCount">0 个</strong></div>
+                        </div>
+                    </section>
+                </aside>
             </div>
-            <div class="full-width compose-template-preview-section">
-                <div class="compose-template-blocks-head">
-                    <h3>邮件预览</h3>
-                    <button type="button" class="button small" id="refreshComposeTemplatePreviewBtn">刷新预览</button>
+            <div class="compose-template-footer">
+                <label class="checkbox-row compose-template-enabled-row"><input name="enabled" type="checkbox" checked> 启用模板</label>
+                <div class="compose-template-footer-actions">
+                    <button type="button" class="button" id="composeTemplateCancelBtn">取消</button>
+                    <button type="submit" class="button primary">保存</button>
                 </div>
-                <div id="composeTemplatePreviewPanel" class="pre compose-template-preview"></div>
-            </div>
-            <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用模板</label>
-            <div class="form-actions modal-actions">
-                <button type="button" class="button" id="composeTemplateCancelBtn">取消</button>
-                <button type="submit" class="button primary">保存</button>
             </div>
         </form>
     </section>

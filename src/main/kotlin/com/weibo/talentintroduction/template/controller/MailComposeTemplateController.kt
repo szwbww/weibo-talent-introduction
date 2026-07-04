@@ -52,17 +52,21 @@ class MailComposeTemplateController(
 }
 
 data class MailComposeTemplateRequest(
+    val templateCode: String? = null,
     val templateName: String,
     val subject: String,
     val description: String? = null,
+    val mailType: String? = null,
     val enabled: Boolean = true,
     val blocks: List<MailComposeTemplateBlockRequest> = emptyList()
 ) {
     fun toCommand(): MailComposeTemplateCommand =
         MailComposeTemplateCommand(
+            templateCode = templateCode,
             templateName = templateName,
             subject = subject,
             description = description,
+            mailType = mailType,
             enabled = enabled,
             blocks = blocks.map { it.toCommand() }
         )

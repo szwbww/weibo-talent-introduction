@@ -7,7 +7,7 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
-import com.weibo.talentintroduction.template.service.MailTemplateService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 
 enum class AutoReplyPreviewKind {
@@ -39,7 +39,7 @@ class AutoReplyPreviewService(
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val qaMatchService: QaMatchService,
-    private val mailTemplateService: MailTemplateService,
+    private val mailComposeTemplateService: MailComposeTemplateService,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailRecordRepository: MailRecordRepository,
     private val expertContactRepository: ExpertContactRepository,
@@ -83,7 +83,7 @@ class AutoReplyPreviewService(
 
             AutoIntentAction.SEND_MEETING_INVITATION -> {
                 val account = mailSenderAccountService.getEnabledAccount(record.senderAccountCode)
-                val rendered = mailTemplateService.render(
+                val rendered = mailComposeTemplateService.renderByCode(
                     templateCode = "MEETING_INVITATION",
                     variables = mailTemplateVariables(account)
                 )
@@ -94,7 +94,7 @@ class AutoReplyPreviewService(
                     } else {
                         AutoReplyPreviewKind.MEETING_INVITATION
                     },
-                    replySubject = rendered.subject ?: "Re: ${record.subject.orEmpty()}".trim(),
+                    replySubject = rendered.subject.ifBlank { "Re: ${record.subject.orEmpty()}".trim() },
                     replyBody = rendered.body
                 )
             }

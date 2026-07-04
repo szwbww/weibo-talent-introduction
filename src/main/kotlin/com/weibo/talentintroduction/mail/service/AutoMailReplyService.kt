@@ -22,7 +22,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.qa.service.QaMatchService
-import com.weibo.talentintroduction.template.service.MailTemplateService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -41,7 +41,7 @@ class AutoMailReplyService(
     private val mailAttachmentService: MailAttachmentService,
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
-    private val mailTemplateService: MailTemplateService,
+    private val mailComposeTemplateService: MailComposeTemplateService,
     private val qaMatchService: QaMatchService,
     private val conversationStateService: ConversationStateService,
     private val meetingScheduleService: MeetingScheduleService,
@@ -943,13 +943,13 @@ class AutoMailReplyService(
         received: ReceivedMail,
         sourceInboundId: Long
     ): MailRecord {
-        val rendered = mailTemplateService.render(
+        val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_INVITATION",
             variables = mailTemplateVariables(account)
         )
         val mail = ComposedMail(
             to = received.from,
-            subject = rendered.subject ?: "Re: ${received.subject.orEmpty()}".trim(),
+            subject = rendered.subject.ifBlank { "Re: ${received.subject.orEmpty()}".trim() },
             body = rendered.body
         )
         val delivered = mailDeliveryService.send(account, mail)

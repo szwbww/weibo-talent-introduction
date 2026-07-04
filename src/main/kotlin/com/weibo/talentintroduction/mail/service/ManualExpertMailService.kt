@@ -6,13 +6,12 @@ import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
-import com.weibo.talentintroduction.template.repository.MailTemplateRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
-import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -25,25 +24,11 @@ class ManualExpertMailService(
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailDeliveryService: MailDeliveryService,
-    private val mailTemplateRepository: MailTemplateRepository,
-    private val mailTemplateService: MailTemplateService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val conversationStateService: ConversationStateService
 ) {
     fun listSendOptions(): List<ManualMailOption> {
-        val templateOptions = mailTemplateRepository.findAllByEnabledTrueOrderByTemplateCodeAsc()
-            .filter { it.templateCode in fixedTemplateCodes }
-            .map { template ->
-                ManualMailOption(
-                    optionType = ManualMailOptionType.TEMPLATE.name,
-                    optionValue = template.templateCode,
-                    optionName = template.templateName.toChineseTemplateName(template.templateCode),
-                    subject = template.subject,
-                    description = "固定邮件模板"
-                )
-            }
-
-        val composeTemplateOptions = mailComposeTemplateService.listEnabled()
+        return mailComposeTemplateService.listEnabled()
             .map { template ->
                 ManualMailOption(
                     optionType = ManualMailOptionType.COMPOSE_TEMPLATE.name,
@@ -53,8 +38,6 @@ class ManualExpertMailService(
                     description = "邮件模板"
                 )
             }
-
-        return templateOptions + composeTemplateOptions
     }
 
     @Transactional
@@ -160,51 +143,32 @@ class ManualExpertMailService(
             throw IllegalArgumentException("Unsupported manual mail option type: ${command.optionType}")
         }
         return when (optionType) {
-            ManualMailOptionType.TEMPLATE -> composeTemplate(contact, accountCode, command.optionValue)
-            ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(contact, command.optionValue.toLong())
+            ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(
+                contact,
+                accountCode,
+                command.optionValue.toLong()
+            )
         }
     }
 
-    private fun composeTemplate(
+    private fun composeComposeTemplate(
         contact: ExpertContact,
         accountCode: String,
-        templateCode: String
+        templateId: Long
     ): ManualComposedMail {
-        require(templateCode in fixedTemplateCodes) { "Unsupported fixed mail template: $templateCode" }
-        val account = mailSenderAccountService.getEnabledAccount(accountCode)
-        val rendered = mailTemplateService.render(
-            templateCode = templateCode,
-            variables = mapOf(
-                "senderEmail" to account.senderEmail,
-                "senderName" to account.senderName,
-                "senderTitle" to account.senderTitle.orEmpty(),
-                "teamName" to account.teamName.orEmpty(),
-                "countryName" to account.countryName.orEmpty(),
-                "senderDisplayName" to account.senderDisplayName.orEmpty()
-            )
-        )
-
-        return ManualComposedMail(
-            mailType = templateCode,
-            mail = ComposedMail(
-                to = contact.expertEmail,
-                subject = rendered.subject ?: templateCode.toChineseTemplateName(templateCode),
-                body = rendered.body
-            ),
-            matchedQaRuleId = null
-        )
-    }
-
-    private fun composeComposeTemplate(contact: ExpertContact, templateId: Long): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         require(template.enabled) { "Compose template is disabled: $templateId" }
-        val rendered = mailComposeTemplateService.render(templateId)
+        val account = mailSenderAccountService.getEnabledAccount(accountCode)
+        val rendered = mailComposeTemplateService.render(
+            templateId,
+            mailTemplateVariables(account)
+        )
         require(rendered.body.isNotBlank()) {
             "邮件模板正文为空：所有内容块均不可用，请检查模板配置"
         }
 
         return ManualComposedMail(
-            mailType = "COMPOSE_TEMPLATE",
+            mailType = rendered.mailType ?: "COMPOSE_TEMPLATE",
             mail = ComposedMail(
                 to = contact.expertEmail,
                 subject = rendered.subject,
@@ -224,21 +188,18 @@ class ManualExpertMailService(
             else -> ConversationStatus.fromName(currentStatus)
         }
 
-    private fun String.toChineseTemplateName(templateCode: String): String =
-        when (templateCode) {
-            "INTRODUCTION" -> "项目介绍邮件"
-            "MEETING_INVITATION" -> "会议邀约邮件"
-            "MATERIAL_REMINDER" -> "材料提醒邮件"
-            else -> this
-        }
-
-    companion object {
-        private val fixedTemplateCodes = setOf("INTRODUCTION", "MEETING_INVITATION", "MATERIAL_REMINDER")
-    }
+    private fun mailTemplateVariables(account: MailSenderAccount): Map<String, String> =
+        mapOf(
+            "senderEmail" to account.senderEmail,
+            "senderName" to account.senderName,
+            "senderTitle" to account.senderTitle.orEmpty(),
+            "teamName" to account.teamName.orEmpty(),
+            "countryName" to account.countryName.orEmpty(),
+            "senderDisplayName" to account.senderDisplayName.orEmpty()
+        )
 }
 
 enum class ManualMailOptionType {
-    TEMPLATE,
     COMPOSE_TEMPLATE
 }
 

@@ -1,17 +1,17 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
-import com.weibo.talentintroduction.template.service.MailTemplateService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 
 @Service
 class IntroductionMailComposer(
     private val mailSenderAccountService: MailSenderAccountService,
-    private val mailTemplateService: MailTemplateService
+    private val mailComposeTemplateService: MailComposeTemplateService
 ) {
     fun compose(accountCode: String, expert: ExpertProfile): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
-        val rendered = mailTemplateService.render(
+        val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "INTRODUCTION",
             variables = mapOf(
                 "senderEmail" to account.senderEmail,
@@ -24,7 +24,7 @@ class IntroductionMailComposer(
 
         return ComposedMail(
             to = expert.email ?: error("Expert email is required for introduction mail"),
-            subject = rendered.subject ?: "Research Collaboration Opportunity",
+            subject = rendered.subject,
             body = rendered.body
         )
     }
