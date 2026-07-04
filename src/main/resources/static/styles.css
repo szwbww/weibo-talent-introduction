@@ -5384,6 +5384,115 @@ tr td {
     display: block;
 }
 
+#view-mail-templates .mail-templates-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 0;
+}
+
+#view-mail-templates .mail-templates-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 10px 16px;
+    font: inherit;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+#view-mail-templates .mail-templates-tab:hover {
+    color: #334155;
+}
+
+#view-mail-templates .mail-templates-tab.active {
+    color: var(--primary, #2563eb);
+    border-bottom-color: var(--primary, #2563eb);
+}
+
+#view-mail-templates .mail-templates-panel {
+    display: none;
+}
+
+#view-mail-templates .mail-templates-panel.active {
+    display: block;
+}
+
+.compose-template-blocks-section,
+.compose-template-preview-section {
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    background: var(--surface);
+}
+
+.compose-template-blocks-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.compose-template-blocks-head h3 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.compose-template-block-row {
+    display: grid;
+    grid-template-columns: auto 140px 1fr auto;
+    gap: 8px;
+    align-items: start;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
+}
+
+.compose-template-block-row .block-order {
+    font-weight: 600;
+    color: #64748b;
+    padding-top: 8px;
+}
+
+.compose-template-block-row .block-ref select,
+.compose-template-block-row .block-ref textarea {
+    width: 100%;
+}
+
+.compose-template-preview {
+    min-height: 120px;
+    max-height: 280px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 13px;
+    padding: 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: #f8fafc;
+}
+
+.compose-block-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px 4px 2px 0;
+    border-radius: 999px;
+    font-size: 11px;
+    background: #e2e8f0;
+    color: #334155;
+}
+
+.compose-block-pill.skipped {
+    background: #fee2e2;
+    color: #991b1b;
+    text-decoration: line-through;
+}
+
 #view-ai-training .ai-training-panel .panel-head {
     display: flex;
     align-items: center;

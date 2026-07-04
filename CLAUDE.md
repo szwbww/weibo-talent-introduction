@@ -61,6 +61,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 人工 QA 组装路径必须让 UI 预览、payload、外发正文和审计 ordinal 共用同一 `qaRuleIds` 顺序契约，避免运营调整顺序只影响日志不影响正文。(K-composed-reply-order-contract)
 - 前端邮件正文展示点分散在 app.js 多处（专家详情、收发件箱、未匹配详情、自动回复预览等），统一类名 `.pre`；任何要在「所有正文位置」统一加能力的需求须按全集逐点改，改前先 grep `class="pre"` 复核行号。(K-mail-body-display-sites)
 - QA 复合覆盖规则与缺口检测共存时，缺口检测必须用覆盖前命中集计算覆盖度，或把 `supersedesChildren=true` 复合规则视为覆盖总览型多主题意图；否则概览型多问来信会被误转人工。(K-overview-gap-supersede)
+- 新增前端侧栏 Tab/视图须四处同步注册：① `index.html` 侧栏 `.nav-tab[data-view]`；② `index.html` `<section class="view" id="view-<name>">`；③ `app.js` `viewMeta`；④ `app.js` `refreshCurrentView()`。缺一即切换报错。(K-view-registration-triad)
 
 ---
 

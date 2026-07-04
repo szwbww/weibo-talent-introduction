@@ -8,6 +8,9 @@ const state = {
     accounts: [],
     categories: [],
     qaRules: [],
+    composeTemplates: [],
+    mailTemplatesSubTab: "qa",
+    selectedComposeTemplateId: null,
     suppressions: [],
     suppressionsPage: 0,
     suppressionsTotal: 0,
@@ -135,8 +138,7 @@ const contextPath = (() => {
 const viewMeta = {
     monitoring: ["邮件监控", "当日活动概览、自动回复全链路、发件账号健康。"],
     accounts: ["邮箱账号", "维护发送账号、权重、限额和连通性。"],
-    qa: ["QA 规则", "维护英文关键词规则、自动回复和人工处理策略。"],
-    "reply-snippets": ["回复片段配置", "管理尊语、致谢语、开场白与结束语片段。"],
+    "mail-templates": ["邮件模板", "统一管理 QA 规则、回复片段与邮件模板。"],
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家联系", "查看联系状态、邮件时间线和人工处理。"],
     mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
@@ -1234,6 +1236,9 @@ function setView(view) {
         state.monitoring.autoRefreshTimer = null;
     }
     state.view = view;
+    if (view === "mail-templates") {
+        state.mailSendOptions = [];
+    }
     $$(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
     $$(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
     $("#viewTitle").textContent = viewMeta[view][0];
@@ -1249,8 +1254,7 @@ function setView(view) {
 async function refreshCurrentView() {
     try {
         if (state.view === "accounts") await loadAccounts();
-        if (state.view === "qa") await loadQa();
-        if (state.view === "reply-snippets") await loadReplySnippets();
+        if (state.view === "mail-templates") await loadMailTemplatesView();
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
         if (state.view === "mailbox") await loadMailbox();
@@ -4847,11 +4851,7 @@ async function loadContactDetail(contactId) {
         <div class="contact-head-mail-row">
             <span class="contact-head-label">手动发送邮件:</span>
             <select id="manualMailOption" aria-label="选择要发送的邮件">
-                ${options.map((option) => `
-                    <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
-                        ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
-                    </option>
-                `).join("")}
+                ${renderMailSendOptionGroups(options)}
             </select>
             <button class="button primary" data-action="send-manual-mail" data-id="${contact.id}">
                 <span>发送邮件</span>
@@ -5456,6 +5456,277 @@ async function loadMailSendOptions() {
     }
     state.mailSendOptions = await api("/api/expert-contacts/mail-send-options");
     return state.mailSendOptions;
+}
+
+function renderMailSendOptionGroups(options) {
+    const systemTemplates = options.filter((option) => option.optionType === "TEMPLATE");
+    const composeTemplates = options.filter((option) => option.optionType === "COMPOSE_TEMPLATE");
+    const renderOption = (option) => `
+        <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
+            ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
+        </option>`;
+    const groups = [];
+    if (systemTemplates.length) {
+        groups.push(`<optgroup label="系统模板">${systemTemplates.map(renderOption).join("")}</optgroup>`);
+    }
+    if (composeTemplates.length) {
+        groups.push(`<optgroup label="邮件模板">${composeTemplates.map(renderOption).join("")}</optgroup>`);
+    }
+    return groups.join("") || `<option value="">无可用模板</option>`;
+}
+
+async function loadMailTemplatesView() {
+    await Promise.all([loadQa(), loadReplySnippets(), loadComposeTemplates()]);
+    switchMailTemplatesSubTab(state.mailTemplatesSubTab || "qa");
+}
+
+function switchMailTemplatesSubTab(tab) {
+    state.mailTemplatesSubTab = tab;
+    document.querySelectorAll("#view-mail-templates .mail-templates-tab").forEach((button) => {
+        button.classList.toggle("active", button.dataset.subTab === tab);
+    });
+    const panelMap = {
+        qa: "mailTemplatesPanelQa",
+        "reply-snippets": "mailTemplatesPanelReplySnippets",
+        "compose-templates": "mailTemplatesPanelComposeTemplates"
+    };
+    document.querySelectorAll("#view-mail-templates .mail-templates-panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === panelMap[tab]);
+    });
+}
+
+const composeBlockTypeLabels = {
+    QA_RULE: "QA 规则",
+    REPLY_SNIPPET: "回复片段",
+    CUSTOM_TEXT: "自定义文本"
+};
+
+async function loadComposeTemplates() {
+    state.composeTemplates = await api("/api/compose-templates");
+    renderComposeTemplatesTable();
+}
+
+function renderComposeTemplatesTable() {
+    const table = $("#composeTemplatesTable");
+    if (!table) return;
+    table.innerHTML = state.composeTemplates.map((template) => {
+        const blockPills = (template.blocks || []).map((block) => {
+            const label = block.refDisplayName
+                || (block.blockType === "CUSTOM_TEXT" ? "自定义文本" : composeBlockTypeLabels[block.blockType] || block.blockType);
+            return `<span class="compose-block-pill">${escapeHtml(label)}</span>`;
+        }).join("");
+        return `
+        <tr>
+            <td><strong>${escapeHtml(template.templateName)}</strong></td>
+            <td>${escapeHtml(template.subject)}</td>
+            <td>${blockPills || '<span class="muted">无内容块</span>'}</td>
+            <td>${badge(template.enabled ? "启用" : "禁用", template.enabled ? "ok" : "warn")}</td>
+            <td style="text-align: right; white-space: nowrap;">
+                <button type="button" class="button small" data-action="edit-compose-template" data-id="${template.id}">编辑</button>
+                <button type="button" class="button small" data-action="preview-compose-template" data-id="${template.id}">预览</button>
+                <button type="button" class="button small" data-action="toggle-compose-template" data-id="${template.id}" data-enabled="${template.enabled}">${template.enabled ? "禁用" : "启用"}</button>
+                <button type="button" class="button small" data-action="delete-compose-template" data-id="${template.id}">删除</button>
+            </td>
+        </tr>`;
+    }).join("") || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无邮件模板</td></tr>`;
+}
+
+function openComposeTemplateEditor(template) {
+    state.selectedComposeTemplateId = template?.id ?? null;
+    const form = $("#composeTemplateForm");
+    form.templateName.value = template?.templateName || "";
+    form.subject.value = template?.subject || "";
+    form.description.value = template?.description || "";
+    form.enabled.checked = template?.enabled !== false;
+    $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
+    renderComposeTemplateBlockRows(template?.blocks || []);
+    $("#composeTemplatePreviewPanel").textContent = "保存前可点击「刷新预览」查看本地拼接效果；已保存模板将调用服务端预览。";
+    $("#composeTemplateModal").hidden = false;
+}
+
+function hideComposeTemplateEditor() {
+    $("#composeTemplateModal").hidden = true;
+    state.selectedComposeTemplateId = null;
+}
+
+function renderComposeTemplateBlockRows(blocks) {
+    const container = $("#composeTemplateBlocksList");
+    if (!container) return;
+    const rows = (blocks.length ? blocks : [{ blockType: "QA_RULE", blockOrder: 0 }]).map((block, index) =>
+        composeTemplateBlockRowHtml(index, block)
+    );
+    container.innerHTML = rows.join("");
+}
+
+function composeTemplateBlockRowHtml(index, block) {
+    const blockType = block.blockType || "QA_RULE";
+    const enabledQaRules = state.qaRules.filter((rule) => rule.enabled);
+    const enabledSnippets = (state.replySnippets || []).filter((snippet) => snippet.enabled);
+    const qaOptions = enabledQaRules.map((rule) => {
+        const name = rule.displayName || rule.replySubject || `Rule #${rule.id}`;
+        return `<option value="${rule.id}" ${String(block.refId) === String(rule.id) ? "selected" : ""}>${escapeHtml(name)}</option>`;
+    }).join("");
+    const snippetOptions = enabledSnippets.map((snippet) => {
+        const label = `${replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType} #${snippet.id}`;
+        return `<option value="${snippet.id}" ${String(block.refId) === String(snippet.id) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("");
+    return `
+    <div class="compose-template-block-row" data-block-index="${index}" draggable="true">
+        <span class="block-order">#${index + 1}</span>
+        <select class="block-type-select" data-field="blockType">
+            <option value="QA_RULE" ${blockType === "QA_RULE" ? "selected" : ""}>QA 规则</option>
+            <option value="REPLY_SNIPPET" ${blockType === "REPLY_SNIPPET" ? "selected" : ""}>回复片段</option>
+            <option value="CUSTOM_TEXT" ${blockType === "CUSTOM_TEXT" ? "selected" : ""}>自定义文本</option>
+        </select>
+        <div class="block-ref">
+            ${blockType === "QA_RULE" ? `<select data-field="refId"><option value="">请选择 QA 规则</option>${qaOptions}</select>` : ""}
+            ${blockType === "REPLY_SNIPPET" ? `<select data-field="refId"><option value="">请选择回复片段</option>${snippetOptions}</select>` : ""}
+            ${blockType === "CUSTOM_TEXT" ? `<textarea data-field="customText" rows="4" placeholder="输入自定义文本">${escapeHtml(block.customText || "")}</textarea>` : ""}
+        </div>
+        <div class="block-actions">
+            <button type="button" class="button small" data-action="move-compose-block-up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="button small" data-action="move-compose-block-down" data-index="${index}">↓</button>
+            <button type="button" class="button small" data-action="remove-compose-block" data-index="${index}">删除</button>
+        </div>
+    </div>`;
+}
+
+function collectComposeTemplateBlocksFromForm() {
+    const rows = $$("#composeTemplateBlocksList .compose-template-block-row");
+    return rows.map((row, index) => {
+        const blockType = row.querySelector('[data-field="blockType"]')?.value || "QA_RULE";
+        const refIdRaw = row.querySelector('[data-field="refId"]')?.value;
+        const customText = row.querySelector('[data-field="customText"]')?.value || "";
+        return {
+            blockOrder: index,
+            blockType,
+            refId: refIdRaw ? Number(refIdRaw) : null,
+            customText: blockType === "CUSTOM_TEXT" ? customText : null
+        };
+    });
+}
+
+async function refreshComposeTemplatePreview() {
+    const panel = $("#composeTemplatePreviewPanel");
+    if (!panel) return;
+    const templateId = state.selectedComposeTemplateId;
+    if (templateId) {
+        const preview = await api(`/api/compose-templates/${templateId}/preview`);
+        panel.innerHTML = renderComposeTemplatePreviewHtml(preview);
+        return;
+    }
+    panel.textContent = "请先保存模板后再预览，或在保存前检查各内容块配置。";
+}
+
+function renderComposeTemplatePreviewHtml(preview) {
+    const blockNotes = (preview.blocks || []).map((block) => {
+        const label = block.refDisplayName || composeBlockTypeLabels[block.blockType] || block.blockType;
+        if (!block.included) {
+            return `<div class="compose-block-pill skipped">#${block.blockOrder + 1} ${escapeHtml(label)} — 已跳过${block.skipReason ? `（${escapeHtml(block.skipReason)}）` : ""}</div>`;
+        }
+        return `<div class="compose-block-pill">#${block.blockOrder + 1} ${escapeHtml(label)}</div>`;
+    }).join("");
+    return `
+        <div style="margin-bottom:8px;"><strong>主题：</strong>${escapeHtml(preview.subject || "")}</div>
+        <div style="margin-bottom:8px;">${blockNotes}</div>
+        <div class="pre">${escapeHtml(preview.body || "")}</div>`;
+}
+
+async function saveComposeTemplate(event) {
+    event.preventDefault();
+    const form = $("#composeTemplateForm");
+    const blocks = collectComposeTemplateBlocksFromForm();
+    if (!blocks.length) {
+        showStatus("请至少添加一个内容块", "error");
+        return;
+    }
+    const payload = {
+        templateName: form.templateName.value.trim(),
+        subject: form.subject.value.trim(),
+        description: form.description.value.trim() || null,
+        enabled: form.enabled.checked,
+        blocks
+    };
+    if (state.selectedComposeTemplateId) {
+        await api(`/api/compose-templates/${state.selectedComposeTemplateId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+    } else {
+        await api("/api/compose-templates", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    }
+    hideComposeTemplateEditor();
+    state.mailSendOptions = [];
+    await loadComposeTemplates();
+    showStatus("邮件模板已保存", "ok");
+}
+
+async function handleComposeTemplateAction(button) {
+    const action = button.dataset.action;
+    const id = Number(button.dataset.id);
+    const template = state.composeTemplates.find((item) => Number(item.id) === id);
+    if (action === "edit-compose-template") {
+        openComposeTemplateEditor(template);
+    }
+    if (action === "preview-compose-template") {
+        const preview = await api(`/api/compose-templates/${id}/preview`);
+        $("#composeTemplatePreviewPanel").innerHTML = renderComposeTemplatePreviewHtml(preview);
+        openComposeTemplateEditor(template);
+        await refreshComposeTemplatePreview();
+    }
+    if (action === "toggle-compose-template") {
+        const enabled = button.dataset.enabled === "true";
+        await api(`/api/compose-templates/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+        state.mailSendOptions = [];
+        await loadComposeTemplates();
+    }
+    if (action === "delete-compose-template") {
+        if (!confirm("确定删除该邮件模板？")) return;
+        await api(`/api/compose-templates/${id}`, { method: "DELETE" });
+        state.mailSendOptions = [];
+        await loadComposeTemplates();
+    }
+}
+
+function handleComposeTemplateBlocksListClick(event) {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const action = button.dataset.action;
+    const blocks = collectComposeTemplateBlocksFromForm();
+    const index = Number(button.dataset.index);
+    if (action === "remove-compose-block") {
+        blocks.splice(index, 1);
+        renderComposeTemplateBlockRows(blocks);
+        return;
+    }
+    if (action === "move-compose-block-up" && index > 0) {
+        [blocks[index - 1], blocks[index]] = [blocks[index], blocks[index - 1]];
+        renderComposeTemplateBlockRows(blocks);
+        return;
+    }
+    if (action === "move-compose-block-down" && index < blocks.length - 1) {
+        [blocks[index + 1], blocks[index]] = [blocks[index], blocks[index + 1]];
+        renderComposeTemplateBlockRows(blocks);
+    }
+}
+
+function handleComposeTemplateBlockTypeChange(event) {
+    const select = event.target.closest(".block-type-select");
+    if (!select) return;
+    const row = select.closest(".compose-template-block-row");
+    if (!row) return;
+    const index = Number(row.dataset.blockIndex);
+    const blocks = collectComposeTemplateBlocksFromForm();
+    blocks[index] = {
+        blockOrder: index,
+        blockType: select.value,
+        refId: null,
+        customText: ""
+    };
+    renderComposeTemplateBlockRows(blocks);
 }
 
 async function handleContactAction(element) {
@@ -6482,6 +6753,42 @@ function initAiReplyWorkbench(recordId) {
     if (container) container.innerHTML = "";
 }
 
+async function loadEnabledQaRulesForPendingReply() {
+    const rules = state.qaRules?.length
+        ? state.qaRules
+        : await api("/api/qa/rules");
+    if (!state.qaRules?.length) {
+        state.qaRules = rules;
+    }
+    return rules.filter((rule) => rule.enabled);
+}
+
+function formatQaRuleOptionName(rule) {
+    return rule.displayName?.trim()
+        || rule.replySubject?.trim()
+        || `Rule #${rule.id}`;
+}
+
+function buildUnmatchedQaReplyHtml(qaRules, recordId) {
+    const enabledRules = (qaRules || []).filter((rule) => rule.enabled);
+    if (!enabledRules.length) {
+        return "";
+    }
+    return `
+        <div class="detail-section" style="margin-top:12px;">
+            <h3>QA 邮件回复（单规则）</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select id="unmatchedQaOption" style="flex:1;">
+                    ${enabledRules.map((rule) => `
+                        <option value="${escapeHtml(String(rule.id))}">${escapeHtml(formatQaRuleOptionName(rule))}${rule.replySubject ? ` - ${escapeHtml(rule.replySubject)}` : ""}</option>
+                    `).join("")}
+                </select>
+                <button class="button primary" data-action="send-pending-qa-reply" data-record-id="${recordId}">发送 QA 邮件</button>
+            </div>
+        </div>
+    `;
+}
+
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
     state.mailbox.detailContext = {
@@ -6490,9 +6797,9 @@ async function showUnmatchedDetail(id) {
         inboundProcessingId: Number(id)
     };
     const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
-    const [data, options, logs, threadData] = await Promise.all([
+    const [data, qaRules, logs, threadData] = await Promise.all([
         detailPromise,
-        loadMailSendOptions(),
+        loadEnabledQaRulesForPendingReply(),
         api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
         api(`/api/inbound-summary/mails/${id}/thread`).catch(() => ({ tags: [] }))
     ]);
@@ -6584,20 +6891,7 @@ async function showUnmatchedDetail(id) {
         </div>
     `;
 
-    const qaOptions = options.filter(o => o.optionType === "QA");
-    const qaReplyHtml = qaOptions.length > 0 ? `
-        <div class="detail-section" style="margin-top:12px;">
-            <h3>QA 邮件回复（单规则）</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <select id="unmatchedQaOption" style="flex:1;">
-                    ${qaOptions.map(o => `
-                        <option value="${escapeHtml(o.optionValue)}">${escapeHtml(o.optionName)}${o.subject ? ` - ${escapeHtml(o.subject)}` : ""}</option>
-                    `).join("")}
-                </select>
-                <button class="button primary" data-action="send-pending-qa-reply" data-record-id="${id}">发送 QA 邮件</button>
-            </div>
-        </div>
-    ` : "";
+    const qaReplyHtml = buildUnmatchedQaReplyHtml(qaRules, id);
 
     const composeWorkbenchHtml = suggest ? renderComposedReplyWorkbenchHtml(suggest, id) : "";
 
@@ -7687,6 +7981,38 @@ function bindEvents() {
     $("#replySnippetsPanels")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleReplySnippetAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    document.querySelectorAll("#view-mail-templates .mail-templates-tab").forEach((button) => {
+        button.addEventListener("click", () => switchMailTemplatesSubTab(button.dataset.subTab));
+    });
+    $("#reloadComposeTemplatesBtn")?.addEventListener("click", () => {
+        loadComposeTemplates().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#newComposeTemplateBtn")?.addEventListener("click", () => openComposeTemplateEditor(null));
+    $("#composeTemplateForm")?.addEventListener("submit", (event) => {
+        saveComposeTemplate(event).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#composeTemplateCancelBtn")?.addEventListener("click", hideComposeTemplateEditor);
+    $("#composeTemplateModalCloseBtn")?.addEventListener("click", hideComposeTemplateEditor);
+    $("#composeTemplateModalBackdrop")?.addEventListener("click", hideComposeTemplateEditor);
+    $("#addComposeTemplateBlockBtn")?.addEventListener("click", () => {
+        const blocks = collectComposeTemplateBlocksFromForm();
+        blocks.push({ blockOrder: blocks.length, blockType: "QA_RULE", refId: null, customText: null });
+        renderComposeTemplateBlockRows(blocks);
+    });
+    $("#refreshComposeTemplatePreviewBtn")?.addEventListener("click", () => {
+        refreshComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#composeTemplateBlocksList")?.addEventListener("click", handleComposeTemplateBlocksListClick);
+    $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
+    $("#composeTemplatesTable")?.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (button) handleComposeTemplateAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#composeTemplateModal")?.hidden) {
+            hideComposeTemplateEditor();
+        }
     });
     $("#reloadSuppressionsBtn").addEventListener("click", () => {
         loadSuppressions().catch((error) => showStatus(error.message, "error"));

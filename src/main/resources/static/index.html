@@ -84,20 +84,14 @@
                 </svg>
                 <span>邮箱账号</span>
             </button>
-            <button class="nav-tab" data-view="qa">
-                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span>QA 规则</span>
-            </button>
-            <button class="nav-tab" data-view="reply-snippets">
+            <button class="nav-tab" data-view="mail-templates">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                     <polyline points="14 2 14 8 20 8"/>
                     <line x1="16" y1="13" x2="8" y2="13"/>
                     <line x1="16" y1="17" x2="8" y2="17"/>
                 </svg>
-                <span>回复片段</span>
+                <span>邮件模板</span>
             </button>
             <button class="nav-tab" data-view="suppressions">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -312,64 +306,102 @@
             </section>
         </section>
 
-        <!-- View 3: QA Rules configuration -->
-        <section class="view" id="view-qa">
-            <div class="toolbar">
-                <button class="button primary" id="newQaRuleBtn">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    新增 QA 匹配规则
-                </button>
-                <button class="button" id="reloadQaBtn">同步刷新</button>
+        <!-- View: Mail Templates (QA rules + reply snippets + compose templates) -->
+        <section class="view" id="view-mail-templates">
+            <div class="mail-templates-tabs">
+                <button type="button" class="mail-templates-tab active" data-sub-tab="qa">QA 规则</button>
+                <button type="button" class="mail-templates-tab" data-sub-tab="reply-snippets">回复片段</button>
+                <button type="button" class="mail-templates-tab" data-sub-tab="compose-templates">邮件模板</button>
             </div>
-            <section class="panel">
-                <div class="panel-head">
-                    <h2>英文常见 FAQ 关键词匹配及规则路由</h2>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>规则代码</th>
-                            <th>分类显示名称</th>
-                            <th>业务分类 ID</th>
-                            <th>回复邮件主题</th>
-                            <th>触发匹配关键词</th>
-                            <th>匹配优先级</th>
-                            <th>状态</th>
-                            <th style="text-align: right;">管理操作</th>
-                        </tr>
-                        </thead>
-                        <tbody id="qaRulesTable"></tbody>
-                    </table>
-                </div>
-            </section>
-            <section class="panel" style="margin-top:16px;">
-                <div class="panel-head">
-                    <h2>组装回复审计（引擎命中 vs 人工选用）</h2>
-                </div>
-                <div class="toolbar" style="padding: 0 16px 12px;">
-                    <label class="toolbar-label">从 <input type="date" id="qaAuditFrom"></label>
-                    <label class="toolbar-label">至 <input type="date" id="qaAuditTo"></label>
-                    <button class="button" id="loadQaAuditBtn">加载报表</button>
-                </div>
-                <div id="qaAuditPanel" style="padding: 0 16px 16px;"></div>
-            </section>
-        </section>
 
-        <!-- View: Reply Snippet Configuration -->
-        <section class="view" id="view-reply-snippets">
-            <div class="toolbar">
-                <button class="button primary" id="newReplySnippetBtn">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    新建片段
-                </button>
-                <button class="button" id="reloadReplySnippetsBtn">同步刷新</button>
+            <div class="mail-templates-panel active" id="mailTemplatesPanelQa">
+                <div class="toolbar">
+                    <button class="button primary" id="newQaRuleBtn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        新增 QA 匹配规则
+                    </button>
+                    <button class="button" id="reloadQaBtn">同步刷新</button>
+                </div>
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>英文常见 FAQ 关键词匹配及规则路由</h2>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>规则代码</th>
+                                <th>分类显示名称</th>
+                                <th>业务分类 ID</th>
+                                <th>回复邮件主题</th>
+                                <th>触发匹配关键词</th>
+                                <th>匹配优先级</th>
+                                <th>状态</th>
+                                <th style="text-align: right;">管理操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="qaRulesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="panel" style="margin-top:16px;">
+                    <div class="panel-head">
+                        <h2>组装回复审计（引擎命中 vs 人工选用）</h2>
+                    </div>
+                    <div class="toolbar" style="padding: 0 16px 12px;">
+                        <label class="toolbar-label">从 <input type="date" id="qaAuditFrom"></label>
+                        <label class="toolbar-label">至 <input type="date" id="qaAuditTo"></label>
+                        <button class="button" id="loadQaAuditBtn">加载报表</button>
+                    </div>
+                    <div id="qaAuditPanel" style="padding: 0 16px 16px;"></div>
+                </section>
             </div>
-            <div id="replySnippetsPanels"></div>
+
+            <div class="mail-templates-panel" id="mailTemplatesPanelReplySnippets">
+                <div class="toolbar">
+                    <button class="button primary" id="newReplySnippetBtn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        新建片段
+                    </button>
+                    <button class="button" id="reloadReplySnippetsBtn">同步刷新</button>
+                </div>
+                <div id="replySnippetsPanels"></div>
+            </div>
+
+            <div class="mail-templates-panel" id="mailTemplatesPanelComposeTemplates">
+                <div class="toolbar">
+                    <button class="button primary" id="newComposeTemplateBtn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        新建邮件模板
+                    </button>
+                    <button class="button" id="reloadComposeTemplatesBtn">同步刷新</button>
+                </div>
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>邮件模板（QA 规则 + 回复片段 + 自定义文本）</h2>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>模板名称</th>
+                                <th>邮件主题</th>
+                                <th>内容块</th>
+                                <th>状态</th>
+                                <th style="text-align: right;">管理操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="composeTemplatesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
         </section>
 
         <!-- View: Email Suppression List -->
@@ -1318,6 +1350,40 @@
 </div>
 
 <!-- Modal: Manual Suppression Add -->
+<div class="modal-shell" id="composeTemplateModal" hidden>
+    <button class="modal-backdrop" id="composeTemplateModalBackdrop" type="button" aria-label="关闭邮件模板编辑"></button>
+    <section class="panel editor-panel modal-panel compose-template-editor" role="dialog" aria-modal="true" aria-labelledby="composeTemplateEditorTitle">
+        <div class="panel-head modal-head">
+            <h2 id="composeTemplateEditorTitle">新建邮件模板</h2>
+            <button class="button secondary" id="composeTemplateModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+        </div>
+        <form id="composeTemplateForm" class="form-grid">
+            <label>模板名称<input name="templateName" required maxlength="100"></label>
+            <label>邮件主题<input name="subject" required maxlength="255"></label>
+            <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
+            <div class="full-width compose-template-blocks-section">
+                <div class="compose-template-blocks-head">
+                    <h3>内容块（按顺序拼接）</h3>
+                    <button type="button" class="button small" id="addComposeTemplateBlockBtn">+ 添加内容块</button>
+                </div>
+                <div id="composeTemplateBlocksList"></div>
+            </div>
+            <div class="full-width compose-template-preview-section">
+                <div class="compose-template-blocks-head">
+                    <h3>邮件预览</h3>
+                    <button type="button" class="button small" id="refreshComposeTemplatePreviewBtn">刷新预览</button>
+                </div>
+                <div id="composeTemplatePreviewPanel" class="pre compose-template-preview"></div>
+            </div>
+            <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用模板</label>
+            <div class="form-actions modal-actions">
+                <button type="button" class="button" id="composeTemplateCancelBtn">取消</button>
+                <button type="submit" class="button primary">保存</button>
+            </div>
+        </form>
+    </section>
+</div>
+
 <div class="modal-shell" id="suppressionModal" hidden>
     <button class="modal-backdrop" id="suppressionModalBackdrop" type="button" aria-label="关闭退订名单编辑"></button>
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="suppressionEditorTitle">

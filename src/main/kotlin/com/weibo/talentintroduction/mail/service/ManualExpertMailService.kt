@@ -5,12 +5,13 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
+import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
-import com.weibo.talentintroduction.qa.repository.QaRuleRepository
-import com.weibo.talentintroduction.template.domain.MailTemplate
 import com.weibo.talentintroduction.template.repository.MailTemplateRepository
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.template.service.MailTemplateService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -20,12 +21,13 @@ import java.time.LocalDateTime
 class ManualExpertMailService(
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
+    private val mailRecordQaRuleRepository: MailRecordQaRuleRepository,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailDeliveryService: MailDeliveryService,
     private val mailTemplateRepository: MailTemplateRepository,
     private val mailTemplateService: MailTemplateService,
-    private val qaRuleRepository: QaRuleRepository,
+    private val mailComposeTemplateService: MailComposeTemplateService,
     private val conversationStateService: ConversationStateService
 ) {
     fun listSendOptions(): List<ManualMailOption> {
@@ -41,21 +43,18 @@ class ManualExpertMailService(
                 )
             }
 
-        val qaOptions = qaRuleRepository.findAllEnabledOrdered()
-            .map { rule ->
-                val name = rule.displayName?.takeIf { it.isNotBlank() }
-                    ?: rule.replySubject?.takeIf { it.isNotBlank() }
-                    ?: "Rule #${rule.id}"
+        val composeTemplateOptions = mailComposeTemplateService.listEnabled()
+            .map { template ->
                 ManualMailOption(
-                    optionType = ManualMailOptionType.QA.name,
-                    optionValue = rule.id?.toString() ?: "",
-                    optionName = name,
-                    subject = rule.replySubject,
-                    description = "QA 问答邮件"
+                    optionType = ManualMailOptionType.COMPOSE_TEMPLATE.name,
+                    optionValue = template.id?.toString() ?: "",
+                    optionName = template.templateName,
+                    subject = template.subject,
+                    description = "邮件模板"
                 )
             }
 
-        return templateOptions + qaOptions
+        return templateOptions + composeTemplateOptions
     }
 
     @Transactional
@@ -72,7 +71,7 @@ class ManualExpertMailService(
         val delivered = mailDeliveryService.send(account, composed.mail)
         val now = LocalDateTime.now()
 
-        mailRecordRepository.save(
+        val saved = mailRecordRepository.save(
             MailRecord(
                 expertContactId = contactId,
                 direction = "OUTBOUND",
@@ -91,6 +90,19 @@ class ManualExpertMailService(
                 createdAt = now
             )
         )
+
+        if (composed.qaRuleIds.isNotEmpty()) {
+            val mailRecordId = saved.id ?: error("Mail record id is required")
+            composed.qaRuleIds.forEachIndexed { ordinal, qaRuleId ->
+                mailRecordQaRuleRepository.save(
+                    MailRecordQaRule(
+                        mailRecordId = mailRecordId,
+                        qaRuleId = qaRuleId,
+                        ordinal = ordinal
+                    )
+                )
+            }
+        }
 
         mailSenderAccountRepository.save(account.copy(lastSentAt = now))
 
@@ -142,10 +154,14 @@ class ManualExpertMailService(
         accountCode: String,
         command: ManualMailSendCommand
     ): ManualComposedMail {
-        val optionType = ManualMailOptionType.valueOf(command.optionType.uppercase())
+        val optionType = try {
+            ManualMailOptionType.valueOf(command.optionType.uppercase())
+        } catch (ex: IllegalArgumentException) {
+            throw IllegalArgumentException("Unsupported manual mail option type: ${command.optionType}")
+        }
         return when (optionType) {
             ManualMailOptionType.TEMPLATE -> composeTemplate(contact, accountCode, command.optionValue)
-            ManualMailOptionType.QA -> composeQa(contact, command.optionValue.toLong())
+            ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(contact, command.optionValue.toLong())
         }
     }
 
@@ -179,19 +195,23 @@ class ManualExpertMailService(
         )
     }
 
-    private fun composeQa(contact: ExpertContact, qaRuleId: Long): ManualComposedMail {
-        val rule = qaRuleRepository.findById(qaRuleId)
-            .orElseThrow { error("QA rule not found: $qaRuleId") }
-        require(rule.enabled) { "QA rule is disabled: $qaRuleId" }
+    private fun composeComposeTemplate(contact: ExpertContact, templateId: Long): ManualComposedMail {
+        val template = mailComposeTemplateService.getById(templateId)
+        require(template.enabled) { "Compose template is disabled: $templateId" }
+        val rendered = mailComposeTemplateService.render(templateId)
+        require(rendered.body.isNotBlank()) {
+            "邮件模板正文为空：所有内容块均不可用，请检查模板配置"
+        }
 
         return ManualComposedMail(
-            mailType = "MANUAL_QA_REPLY",
+            mailType = "COMPOSE_TEMPLATE",
             mail = ComposedMail(
                 to = contact.expertEmail,
-                subject = rule.replySubject ?: "Re: Talent Program",
-                body = rule.replyBody
+                subject = rendered.subject,
+                body = rendered.body
             ),
-            matchedQaRuleId = rule.id
+            matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
+            qaRuleIds = rendered.qaRuleIds
         )
     }
 
@@ -199,8 +219,8 @@ class ManualExpertMailService(
         when (mailType) {
             "INTRODUCTION" -> ConversationStatus.INTRO_SENT
             "MEETING_INVITATION" -> ConversationStatus.MEETING_SCHEDULING
-            "MANUAL_QA_REPLY" -> ConversationStatus.QA_AUTO_REPLIED
             "MATERIAL_REMINDER" -> ConversationStatus.fromName(currentStatus)
+            "COMPOSE_TEMPLATE" -> ConversationStatus.fromName(currentStatus)
             else -> ConversationStatus.fromName(currentStatus)
         }
 
@@ -219,7 +239,7 @@ class ManualExpertMailService(
 
 enum class ManualMailOptionType {
     TEMPLATE,
-    QA
+    COMPOSE_TEMPLATE
 }
 
 data class ManualMailOption(
@@ -256,5 +276,6 @@ data class BatchMailSendResult(
 private data class ManualComposedMail(
     val mailType: String,
     val mail: ComposedMail,
-    val matchedQaRuleId: Long?
+    val matchedQaRuleId: Long?,
+    val qaRuleIds: List<Long> = emptyList()
 )
