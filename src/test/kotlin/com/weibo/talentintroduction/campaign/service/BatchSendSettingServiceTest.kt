@@ -104,7 +104,7 @@ class BatchSendSettingServiceTest {
             autoEnabled = true, cron = "0 15 3 * * ?",
             dailyCap = 200, roundSize = 20,
             perMailIntervalMs = 500, perRoundIntervalMs = 30000,
-            selfCheckTtlMinutes = 15, emailDomain = "gmail.com"
+            selfCheckTtlMinutes = 15, emailDomain = "gmail.com", templateId = 42L
         )
         `when`(repository.save(any())).thenAnswer { it.arguments[0] }
         `when`(repository.findAll()).thenReturn(listOf(
@@ -115,7 +115,8 @@ class BatchSendSettingServiceTest {
             row("batchSend.perMailIntervalMs", "500"),
             row("batchSend.perRoundIntervalMs", "30000"),
             row("batchSend.selfCheckTtlMinutes", "15"),
-            row("batchSend.emailDomain", "gmail.com")
+            row("batchSend.emailDomain", "gmail.com"),
+            row("batchSend.templateId", "42")
         ))
 
         val result = service().updateConfig(cmd)
@@ -128,9 +129,10 @@ class BatchSendSettingServiceTest {
         assertEquals(30000L, result.perRoundIntervalMs)
         assertEquals(15, result.selfCheckTtlMinutes)
         assertEquals("gmail.com", result.emailDomain)
+        assertEquals(42L, result.templateId)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(8)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(9)).save(captor.capture())
         captor.allValues.forEach { saved ->
             assertTrue(saved.settingKey.startsWith("batchSend."))
         }
@@ -151,7 +153,7 @@ class BatchSendSettingServiceTest {
         service().updateConfig(cmd)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(8)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(9)).save(captor.capture())
         val autoEnabledSave = captor.allValues.first { it.settingKey == "batchSend.autoEnabled" }
         assertEquals(7L, autoEnabledSave.id)
         assertEquals("true", autoEnabledSave.settingValue)
@@ -335,5 +337,29 @@ class BatchSendSettingServiceTest {
         service().updateConfig(cmd)
 
         verify(eventPublisher, never()).publishEvent(any())
+    }
+
+    @Test
+    fun `getConfig returns null templateId when key missing or blank`() {
+        `when`(repository.findAll()).thenReturn(listOf(
+            row("batchSend.templateId", "")
+        ))
+        assertEquals(null, service().getConfig().templateId)
+
+        `when`(repository.findAll()).thenReturn(emptyList())
+        assertEquals(null, service().getConfig().templateId)
+    }
+
+    @Test
+    fun `updateConfig rejects non-positive templateId`() {
+        val cmd = BatchSendConfigUpdateRequest(
+            autoEnabled = true, cron = "0 0 0 * * ?",
+            dailyCap = 100, roundSize = 10,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
+            selfCheckTtlMinutes = 30, templateId = 0L
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            service().updateConfig(cmd)
+        }
     }
 }

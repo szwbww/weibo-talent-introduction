@@ -3340,17 +3340,22 @@ const taskLaunchConfigs = {
             const summary = summarizeManualOutreachPending(countRes);
             let batchConfig = null;
             let batchStatus = null;
+            let composeTemplates = [];
             try {
                 batchConfig = await api("/api/mail/batch-send/config");
             } catch (e) { /* config optional */ }
             try {
                 batchStatus = await api("/api/mail/batch-send/status");
             } catch (e) { /* status optional */ }
+            try {
+                composeTemplates = await api("/api/compose-templates");
+            } catch (e) { /* templates optional */ }
             return {
                 desc: summary.confirmMessage,
                 canRun: summary.total > 0,
                 batchConfig,
                 batchStatus,
+                composeTemplates,
                 summary
             };
         },
@@ -3467,6 +3472,7 @@ async function openTaskLaunchModal(taskType) {
 
     // Batch send: fill config form + initialize control bar from preloaded status
     if (isBatchSend) {
+        if (pre && pre.composeTemplates) batchSendComposeTemplates = pre.composeTemplates;
         if (pre && pre.batchConfig) fillBatchSendConfigForm(pre.batchConfig);
         const startBtn = $("#batchSendStartBtn");
         if (startBtn) startBtn.onclick = handleBatchSendToggle;
@@ -3486,6 +3492,15 @@ async function openTaskLaunchModal(taskType) {
         }
         const freqSel = $("#batchSendFrequency");
         if (freqSel) freqSel.addEventListener("change", syncBatchSendTimeFieldVisibility);
+        const templateSel = $("#batchSendTemplateId");
+        if (templateSel && !templateSel.dataset.previewBound) {
+            templateSel.dataset.previewBound = "1";
+            templateSel.addEventListener("change", () => {
+                const raw = templateSel.value;
+                const id = raw ? Number(raw) : null;
+                refreshBatchSendTemplatePreview(id && id > 0 ? id : null);
+            });
+        }
         // Initial controls state from preloaded status (or fresh fetch if missing)
         if (pre && pre.batchStatus) {
             applyBatchSendControls(pre.batchStatus);
@@ -3873,6 +3888,7 @@ async function executeManualOutreach() {
 // ----- Batch Send controls (phase 04: I-2 / I-5 / I-8 / I-9 / L4-1 / L4-2) -----
 let batchSendStatusTimer = null;
 let batchSendBannerTimer = null;
+let batchSendComposeTemplates = [];
 const BATCH_SEND_STATUS_POLL_MS = 10000;
 const BATCH_SEND_BANNER_POLL_MS = 30000;
 
@@ -4012,6 +4028,47 @@ function fillBatchSendConfigForm(config) {
     setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
     setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
     setVal("batchSendEmailDomain", config.emailDomain ?? "");
+    fillBatchSendTemplateSelector(batchSendComposeTemplates, config.templateId ?? null);
+}
+
+function fillBatchSendTemplateSelector(templates, selectedId) {
+    const select = $("#batchSendTemplateId");
+    if (!select) return;
+    const list = Array.isArray(templates) ? templates : [];
+    const isIntroduction = (t) => t.mailType === "INTRODUCTION";
+    const enabledIntro = list.filter((t) => t.enabled && isIntroduction(t));
+    const selected = selectedId ? list.find((t) => t.id === selectedId) : null;
+
+    let effectiveSelectedId = selectedId;
+    if (selected && !isIntroduction(selected)) {
+        effectiveSelectedId = null;
+    }
+
+    let optionsHtml = enabledIntro
+        .map((t) => `<option value="${t.id}">${escapeHtml(t.templateName)}</option>`)
+        .join("");
+    if (selected && isIntroduction(selected) && !selected.enabled) {
+        optionsHtml = `<option value="${selected.id}">${escapeHtml(selected.templateName)} (已禁用)</option>${optionsHtml}`;
+    }
+
+    select.innerHTML = `<option value="">默认 (INTRODUCTION)</option>${optionsHtml}`;
+    select.value = effectiveSelectedId ? String(effectiveSelectedId) : "";
+    refreshBatchSendTemplatePreview(effectiveSelectedId || null);
+}
+
+async function refreshBatchSendTemplatePreview(templateId) {
+    const preview = $("#batchSendTemplatePreview");
+    if (!preview) return;
+    if (!templateId) {
+        preview.innerHTML = '<span class="muted">使用系统默认 INTRODUCTION 模板</span>';
+        return;
+    }
+    try {
+        const p = await api(`/api/compose-templates/${templateId}/preview`);
+        preview.innerHTML = `<strong>${escapeHtml(p.subject || "")}</strong><div class="pre">${escapeHtml(p.body || "")}</div>`;
+    } catch (e) {
+        preview.innerHTML = '<span class="muted">预览加载失败</span>';
+    }
 }
 
 function syncBatchSendTimeFieldVisibility() {
@@ -4050,7 +4107,16 @@ function readBatchSendConfigForm() {
         perMailIntervalMs: Math.round(num("batchSendPerMailIntervalSec") * 1000),
         perRoundIntervalMs: Math.round(num("batchSendPerRoundIntervalSec") * 1000),
         selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin")),
-        emailDomain: val("batchSendEmailDomain") || ""
+        emailDomain: val("batchSendEmailDomain") || "",
+        templateId: (() => {
+            const raw = val("batchSendTemplateId");
+            if (!raw) return null;
+            const n = Number(raw);
+            if (!Number.isFinite(n) || n <= 0) return null;
+            const tmpl = batchSendComposeTemplates.find((t) => t.id === n);
+            if (!tmpl || tmpl.mailType !== "INTRODUCTION") return null;
+            return n;
+        })()
     };
     if (payload.roundSize < 1) throw new Error("每轮数量需 ≥ 1");
     if (payload.dailyCap < payload.roundSize) throw new Error("每批上限需 ≥ 每轮数量");
@@ -4135,7 +4201,11 @@ function renderBatchSendAccountTable(statusView) {
         const sent = statusView?.sentTotal ?? 0;
         const failed = statusView?.failedTotal ?? 0;
         const round = statusView?.roundNumber ?? 0;
-        const summaryHtml = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>`;
+        const templateName = statusView?.templateName;
+        const templatePart = templateName
+            ? ` · 当前模板 <strong>${escapeHtml(templateName)}</strong>`
+            : "";
+        const summaryHtml = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>${templatePart}`;
         // 内容未变化时跳过重写，避免轮询导致汇总行闪烁。
         if (summary.__lastHtml !== summaryHtml) {
             summary.__lastHtml = summaryHtml;

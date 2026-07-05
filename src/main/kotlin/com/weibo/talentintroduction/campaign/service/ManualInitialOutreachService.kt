@@ -294,7 +294,8 @@ class ManualInitialOutreachService(
 
                     // 3. Compose mail
                     val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
-                    val mail = introductionMailComposer.compose(account.accountCode, expert).copy(messageId = messageId)
+                    val mail = introductionMailComposer.compose(account.accountCode, expert, config.templateId)
+                        .copy(messageId = messageId)
 
                     // 4. Persist attempt as PREPARED (audit trail) — upsert to respect UNIQUE(orcid_id, mail_type) (I-7)
                     val now = LocalDateTime.now()

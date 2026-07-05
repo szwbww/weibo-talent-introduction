@@ -75,9 +75,12 @@ function createBatchSendSandbox() {
         clearInterval: () => {}
     };
     vm.createContext(sandbox);
+    sandbox.batchSendComposeTemplates = [];
+    sandbox.refreshBatchSendTemplatePreview = () => {};
     for (const name of BATCH_SEND_FNS) {
         vm.runInContext(extractFn(name), sandbox);
     }
+    vm.runInContext(extractFn("fillBatchSendTemplateSelector"), sandbox);
     sandbox.__store = store;
     return sandbox;
 }
@@ -364,6 +367,57 @@ describe("Batch Send Controls (phase 04)", () => {
                 batchSendSelfCheckTtlMin: "30"
             });
             assert.throws(() => sb.readBatchSendConfigForm(), /数字/);
+        });
+    });
+
+    describe("template selector I-4", () => {
+        const composeTemplates = [
+            { id: 1, templateName: "Intro A", mailType: "INTRODUCTION", enabled: true },
+            { id: 2, templateName: "Intro Disabled", mailType: "INTRODUCTION", enabled: false },
+            { id: 3, templateName: "QA Reply", mailType: "QA_AUTO_REPLY", enabled: true }
+        ];
+
+        function setMinimalConfigForm(sb) {
+            setConfigForm(sb, {
+                batchSendAutoEnabled: true,
+                batchSendFrequency: "daily",
+                batchSendTime: "00:00",
+                batchSendDailyCap: "1000",
+                batchSendRoundSize: "50",
+                batchSendPerMailIntervalSec: "1",
+                batchSendPerRoundIntervalSec: "60",
+                batchSendSelfCheckTtlMin: "30"
+            });
+        }
+
+        it("rejects non-INTRODUCTION selectedId from dropdown and save payload", () => {
+            const sb = createBatchSendSandbox();
+            sb.$("#batchSendTemplateId");
+            sb.fillBatchSendTemplateSelector(composeTemplates, 3);
+            const select = sb.__store.get("batchSendTemplateId");
+            assert.strictEqual(select.value, "");
+            assert.ok(!select.innerHTML.includes("QA Reply"));
+            sb.batchSendComposeTemplates = composeTemplates;
+            setMinimalConfigForm(sb);
+            assert.strictEqual(sb.readBatchSendConfigForm().templateId, null);
+        });
+
+        it("shows disabled INTRODUCTION template with (已禁用) label", () => {
+            const sb = createBatchSendSandbox();
+            sb.$("#batchSendTemplateId");
+            sb.fillBatchSendTemplateSelector(composeTemplates, 2);
+            const select = sb.__store.get("batchSendTemplateId");
+            assert.strictEqual(select.value, "2");
+            assert.ok(select.innerHTML.includes("Intro Disabled (已禁用)"));
+        });
+
+        it("does not persist tampered non-INTRODUCTION templateId on save", () => {
+            const sb = createBatchSendSandbox();
+            sb.$("#batchSendTemplateId");
+            sb.batchSendComposeTemplates = composeTemplates;
+            setMinimalConfigForm(sb);
+            sb.__store.get("batchSendTemplateId").value = "3";
+            assert.strictEqual(sb.readBatchSendConfigForm().templateId, null);
         });
     });
 

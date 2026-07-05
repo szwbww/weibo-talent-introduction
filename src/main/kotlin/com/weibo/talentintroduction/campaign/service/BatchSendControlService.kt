@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
@@ -33,6 +34,7 @@ class BatchSendControlService(
     private val manualInitialOutreachService: ManualInitialOutreachService,
     private val batchSendSettingService: BatchSendSettingService,
     private val mailSenderAccountService: MailSenderAccountService,
+    private val mailComposeTemplateService: MailComposeTemplateService,
     @Qualifier("manualOutreachExecutor") private val manualOutreachExecutor: Executor
 ) {
     private val log = LoggerFactory.getLogger(BatchSendControlService::class.java)
@@ -168,6 +170,9 @@ class BatchSendControlService(
         val progress = progressStore.get(TASK_TYPE)
         val details = progress?.details
         val mode = if (state.status == "IDLE" && config.autoEnabled) "AUTO" else state.mode
+        val templateName = config.templateId?.let { templateId ->
+            runCatching { mailComposeTemplateService.getById(templateId).templateName }.getOrNull()
+        }
         return BatchSendStatusView(
             status = state.status,
             mode = mode,
@@ -183,7 +188,8 @@ class BatchSendControlService(
             message = progress?.message,
             warmupAccountCount = mailSenderAccountService.warmupActiveCount(),
             todayTotalCapacity = mailSenderAccountService.todayTotalCapacity(),
-            todayRemainingCapacity = mailSenderAccountService.remainingDailyCapacity()
+            todayRemainingCapacity = mailSenderAccountService.remainingDailyCapacity(),
+            templateName = templateName
         )
     }
 
@@ -383,5 +389,6 @@ data class BatchSendStatusView(
     val message: String?,
     val warmupAccountCount: Int = 0,
     val todayTotalCapacity: Int = 0,
-    val todayRemainingCapacity: Int = 0
+    val todayRemainingCapacity: Int = 0,
+    val templateName: String? = null
 )

@@ -930,6 +930,18 @@
                 <div id="batchSendConfigPanel" class="batch-send-config-panel" hidden>
                     <p class="batch-send-config-panel-hint">保存后立即生效，影响后续定时与手动执行。</p>
 
+                    <!-- 邮件模板 -->
+                    <fieldset class="bsc-group">
+                        <legend class="bsc-group-legend">邮件模板</legend>
+                        <div class="bsc-field">
+                            <span class="bsc-field-label">介绍邮件模板</span>
+                            <select id="batchSendTemplateId" class="bsc-input bsc-select">
+                                <option value="">默认 (INTRODUCTION)</option>
+                            </select>
+                        </div>
+                        <div id="batchSendTemplatePreview" class="batch-send-template-preview muted">使用系统默认 INTRODUCTION 模板</div>
+                    </fieldset>
+
                     <!-- 定时调度 -->
                     <fieldset class="bsc-group">
                         <legend class="bsc-group-legend">定时调度</legend>

@@ -26,7 +26,8 @@ class BatchSendSettingService(
             perMailIntervalMs = longValue(values, KEY_PER_MAIL_INTERVAL_MS, DEFAULT_PER_MAIL_INTERVAL_MS),
             perRoundIntervalMs = longValue(values, KEY_PER_ROUND_INTERVAL_MS, DEFAULT_PER_ROUND_INTERVAL_MS),
             selfCheckTtlMinutes = intValue(values, KEY_SELF_CHECK_TTL_MINUTES, DEFAULT_SELF_CHECK_TTL_MINUTES),
-            emailDomain = strValue(values, KEY_EMAIL_DOMAIN, DEFAULT_EMAIL_DOMAIN)
+            emailDomain = strValue(values, KEY_EMAIL_DOMAIN, DEFAULT_EMAIL_DOMAIN),
+            templateId = nullableLongValue(values, KEY_TEMPLATE_ID)
         )
     }
 
@@ -41,6 +42,7 @@ class BatchSendSettingService(
         upsert(KEY_PER_ROUND_INTERVAL_MS, cmd.perRoundIntervalMs.toString())
         upsert(KEY_SELF_CHECK_TTL_MINUTES, cmd.selfCheckTtlMinutes.toString())
         upsert(KEY_EMAIL_DOMAIN, cmd.emailDomain)
+        upsert(KEY_TEMPLATE_ID, cmd.templateId?.toString() ?: "")
         if (cmd.cron != oldCron) {
             eventPublisher.publishEvent(BatchSendCronChangedEvent(oldCron, cmd.cron))
         }
@@ -75,6 +77,7 @@ class BatchSendSettingService(
         require(cmd.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
         require(cmd.cron.isNotBlank()) { "cron must not be blank" }
         CronExpression.parse(cmd.cron)
+        cmd.templateId?.let { require(it > 0) { "templateId must be > 0" } }
     }
 
     private fun upsert(key: String, value: String) {
@@ -108,6 +111,12 @@ class BatchSendSettingService(
     private fun strValue(values: Map<String, String>, key: String, default: String): String =
         values[key] ?: default
 
+    private fun nullableLongValue(values: Map<String, String>, key: String): Long? {
+        val value = values[key] ?: return null
+        if (value.isBlank()) return null
+        return value.toLongOrNull()?.takeIf { it > 0 }
+    }
+
     private fun cronValue(values: Map<String, String>, key: String, default: String): String {
         val value = values[key] ?: return default
         return try {
@@ -130,6 +139,7 @@ class BatchSendSettingService(
         const val KEY_RUNTIME_MODE = "batchSend.runtimeMode"
         const val KEY_PAUSE_REASON = "batchSend.pauseReason"
         const val KEY_EMAIL_DOMAIN = "batchSend.emailDomain"
+        const val KEY_TEMPLATE_ID = "batchSend.templateId"
 
         const val DEFAULT_AUTO_ENABLED = false
         const val DEFAULT_CRON = "0 0 0 * * ?"
@@ -153,7 +163,8 @@ data class BatchSendConfig(
     val perMailIntervalMs: Long,
     val perRoundIntervalMs: Long,
     val selfCheckTtlMinutes: Int,
-    val emailDomain: String = ""
+    val emailDomain: String = "",
+    val templateId: Long? = null
 )
 
 data class BatchSendConfigUpdateRequest(
@@ -164,7 +175,8 @@ data class BatchSendConfigUpdateRequest(
     val perMailIntervalMs: Long,
     val perRoundIntervalMs: Long,
     val selfCheckTtlMinutes: Int,
-    val emailDomain: String = ""
+    val emailDomain: String = "",
+    val templateId: Long? = null
 )
 
 data class BatchSendRuntimeState(

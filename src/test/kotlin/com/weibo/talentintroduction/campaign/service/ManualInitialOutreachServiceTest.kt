@@ -223,7 +223,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
 
         val result = service.runBulkOutreach(12345L)
@@ -252,7 +252,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenThrow(RuntimeException("SMTP connection failed"))
 
         val result = service.runBulkOutreach(12345L)
@@ -335,7 +335,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","",""))))
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
@@ -357,7 +357,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","",""))))
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
@@ -382,7 +382,7 @@ class ManualInitialOutreachServiceTest {
         stubScrolledExperts(listOf(expert("0001", "a@b.com")))
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","",""))))
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
@@ -413,7 +413,7 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(oldAttempt)
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg-1", "SENT"))
 
         val result = service.runBulkOutreach(12345L)
@@ -443,7 +443,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg1", "SENT"))
 
         val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
@@ -518,7 +518,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
 
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 2))
@@ -548,7 +548,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
 
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 2, dailyCap = 1000))
@@ -580,7 +580,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
 
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 2, dailyCap = 10))
@@ -606,7 +606,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
 
         service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
@@ -650,7 +650,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(expertContactRepository.existsByOrcidId("0002")).thenReturn(false)
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 1, dailyCap = 10))
 
@@ -688,7 +688,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
 
         service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
@@ -715,7 +715,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("bad@example.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("bad@example.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(
             DeliveredMail(
                 messageId = "msg-1",
@@ -767,7 +767,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(
             DeliveredMail(
                 messageId = "msg-1",
@@ -807,7 +807,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenAnswer { invocation ->
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenAnswer { invocation ->
             val expertArg = invocation.getArgument<ExpertProfile>(1)
             ComposedMail(expertArg.email ?: "", "Subject", "Body")
         }
@@ -849,7 +849,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(
             DeliveredMail(
                 messageId = "msg-1",
@@ -938,7 +938,7 @@ class ManualInitialOutreachServiceTest {
         )).thenReturn(7L)
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")))).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 5, dailyCap = 1000))
 
@@ -1061,7 +1061,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(listOf(warmupAccount))
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), eqValue(true)))
             .thenReturn(warmupAccount)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("",""))))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull()))
             .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(warmupAccount), anyValue(ComposedMail("", "", ""))))
             .thenReturn(DeliveredMail("msg1", "SENT"))

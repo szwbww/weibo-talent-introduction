@@ -9,18 +9,20 @@ class IntroductionMailComposer(
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailComposeTemplateService: MailComposeTemplateService
 ) {
-    fun compose(accountCode: String, expert: ExpertProfile): ComposedMail {
+    fun compose(accountCode: String, expert: ExpertProfile, templateId: Long? = null): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
-        val rendered = mailComposeTemplateService.renderByCode(
-            templateCode = "INTRODUCTION",
-            variables = mapOf(
-                "senderEmail" to account.senderEmail,
-                "senderName" to account.senderName,
-                "senderTitle" to account.senderTitle.orEmpty(),
-                "teamName" to account.teamName.orEmpty(),
-                "countryName" to account.countryName.orEmpty()
-            )
+        val variables = mapOf(
+            "senderEmail" to account.senderEmail,
+            "senderName" to account.senderName,
+            "senderTitle" to account.senderTitle.orEmpty(),
+            "teamName" to account.teamName.orEmpty(),
+            "countryName" to account.countryName.orEmpty()
         )
+        val rendered = if (templateId != null) {
+            mailComposeTemplateService.render(templateId, variables)
+        } else {
+            mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables)
+        }
 
         return ComposedMail(
             to = expert.email ?: error("Expert email is required for introduction mail"),

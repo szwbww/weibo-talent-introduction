@@ -71,4 +71,62 @@ class IntroductionMailComposerTest {
         assertEquals("Research Collaboration Opportunity", mail.subject)
         assertEquals("Rendered body", mail.body)
     }
+
+    @Test
+    fun `composes introduction mail using template id when provided`() {
+        Mockito.`when`(accountService.getEnabledAccount("chenjj"))
+            .thenReturn(
+                MailSenderAccount(
+                    accountCode = "chenjj",
+                    senderEmail = "chenjj@qftechtalent.com",
+                    senderName = "Chen",
+                    senderTitle = null,
+                    senderDisplayName = "Chen",
+                    teamName = null,
+                    countryName = null,
+                    smtpHost = "smtp.example.com",
+                    smtpPort = 465,
+                    smtpUsername = "chenjj@qftechtalent.com",
+                    smtpPassword = "secret",
+                    imapHost = "imap.example.com",
+                    imapPort = 993,
+                    imapUsername = "chenjj@qftechtalent.com",
+                    imapPassword = "secret"
+                )
+            )
+        val variables = mapOf(
+            "senderEmail" to "chenjj@qftechtalent.com",
+            "senderName" to "Chen",
+            "senderTitle" to "",
+            "teamName" to "",
+            "countryName" to ""
+        )
+        Mockito.`when`(templateService.render(7L, variables))
+            .thenReturn(
+                ComposeTemplateRenderResult(
+                    subject = "Custom intro",
+                    body = "Custom body",
+                    mailType = "INTRODUCTION"
+                )
+            )
+
+        val mail = composer.compose(
+            "chenjj",
+            ExpertProfile(
+                orcidId = "0000-0001",
+                email = "expert@example.com",
+                givenNames = "Ada",
+                familyNames = "Lovelace",
+                country = null,
+                keyword = null,
+                employment = null
+            ),
+            templateId = 7L
+        )
+
+        assertEquals("Custom intro", mail.subject)
+        assertEquals("Custom body", mail.body)
+        Mockito.verify(templateService).render(7L, variables)
+        Mockito.verify(templateService, Mockito.never()).renderByCode(Mockito.anyString(), Mockito.anyMap())
+    }
 }

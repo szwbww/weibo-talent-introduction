@@ -20,6 +20,7 @@ class BatchSendControlServiceTest {
     private val manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
     private val batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
+    private val mailComposeTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
     private val manualOutreachExecutor = Mockito.mock(Executor::class.java)
 
     private val control = BatchSendControlService(
@@ -28,6 +29,7 @@ class BatchSendControlServiceTest {
         manualInitialOutreachService = manualInitialOutreachService,
         batchSendSettingService = batchSendSettingService,
         mailSenderAccountService = mailSenderAccountService,
+        mailComposeTemplateService = mailComposeTemplateService,
         manualOutreachExecutor = manualOutreachExecutor
     )
 
