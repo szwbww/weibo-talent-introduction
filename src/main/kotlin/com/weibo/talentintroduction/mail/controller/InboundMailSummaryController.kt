@@ -149,8 +149,8 @@ class InboundMailSummaryController(
         val inbound = inboundMailProcessingRepository.findById(inboundId)
             .orElseThrow { IllegalArgumentException("Inbound mail processing not found: $inboundId") }
         val body = inbound.cleanedBody ?: inbound.body
-        inboundMailTagService.autoApplyQaTags(inboundId, body, request?.operatorName)
-        return TagListResponse(tags = inboundMailTagService.listTags(inboundId))
+        val addedCount = inboundMailTagService.autoApplyQaTags(inboundId, body, request?.operatorName)
+        return TagListResponse(tags = inboundMailTagService.listTags(inboundId), addedCount = addedCount)
     }
 
     @PostMapping("/mails/{inboundId}/tags")
@@ -230,7 +230,8 @@ data class TagOptionsResponse(
 )
 
 data class TagListResponse(
-    val tags: List<TagView>
+    val tags: List<TagView>,
+    val addedCount: Int? = null
 )
 
 data class AddTagRequest(

@@ -67,6 +67,26 @@ class QaMatchServiceTest {
     }
 
     @Test
+    fun `matches information keyword when inbound asks for details`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 3,
+                    categoryId = 2,
+                    keywords = "more information",
+                    replySubject = "Program overview",
+                    replyBody = "Overview answer"
+                )
+            )
+        )
+
+        val result = service.match("I want to know more details.")
+
+        assertEquals(3, result?.ruleId)
+        assertEquals("Program overview", result?.replySubject)
+    }
+
+    @Test
     fun `prefers rule with more matched keywords before priority`() {
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
             listOf(

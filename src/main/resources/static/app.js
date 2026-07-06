@@ -11,6 +11,9 @@ const state = {
     composeTemplates: [],
     mailTemplatesSubTab: "qa",
     selectedComposeTemplateId: null,
+    composeTemplatePreviewExperts: [],
+    composeTemplatePreviewAccounts: [],
+    composeTemplatePreviewOptionsLoaded: false,
     suppressions: [],
     suppressionsPage: 0,
     suppressionsTotal: 0,
@@ -2640,13 +2643,38 @@ async function mutateExpertTag(orcidId, level, tag, action) {
             region: $("#expertRegionFilter")?.value || ""
         }
     });
-    return refreshExpertTagsFromEs(orcidId, level);
+    const refreshedTags = await refreshExpertTagsFromEs(orcidId, level);
+    if (action === "add") {
+        return refreshedTags.includes(tag) ? refreshedTags : [...refreshedTags, tag];
+    }
+    return refreshedTags.filter((item) => item !== tag);
 }
 
 function updateExpertTagEditor(orcidId, tags, level, editorId = "expertTagEditor") {
     const editor = document.getElementById(editorId);
     if (!editor || editor.dataset.orcid !== orcidId) return;
     editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId);
+}
+
+function setTagEditorLoading(editor, loading, message = "处理中...") {
+    if (!editor) return;
+    editor.classList.toggle("tag-editor-loading", loading);
+    editor.setAttribute("aria-busy", loading ? "true" : "false");
+    editor.querySelectorAll("button").forEach((button) => {
+        button.disabled = loading;
+    });
+    let overlay = editor.querySelector(":scope > .tag-editor-loading-overlay");
+    if (loading) {
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "tag-editor-loading-overlay";
+            overlay.innerHTML = `<span class="tag-editor-spinner"></span><span class="tag-editor-loading-text"></span>`;
+            editor.appendChild(overlay);
+        }
+        overlay.querySelector(".tag-editor-loading-text").textContent = message;
+    } else if (overlay) {
+        overlay.remove();
+    }
 }
 
 function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor") {
@@ -5563,6 +5591,143 @@ const composeBlockTypeLabels = {
     CUSTOM_TEXT: "自定义文本"
 };
 
+const composeTemplatePreviewVariables = {
+    senderName: "Chen Jingjing",
+    senderTitle: "Talent Director",
+    teamName: "QF Tech Talent Team",
+    countryName: "China",
+    senderEmail: "sender@example.com",
+    senderDisplayName: "QF Tech Talent Team",
+    expertName: "Alex Morgan",
+    expertFamilyName: "",
+    researchFields: "",
+    institution: "Example University",
+    keyword: "AI",
+    expertCountry: "United States"
+};
+
+function renderComposeTemplateText(text, variables = composeTemplatePreviewVariables) {
+    const raw = String(text ?? "");
+    return raw
+        .replace(/\$\{(\w+)\|([^}]*)\}/g, (_match, key, fallback) => {
+            const value = variables[key];
+            return value ? value : fallback;
+        })
+        .replace(/\$\{(\w+)\}/g, (match, key) => {
+            const value = variables[key];
+            return value == null ? match : value;
+        });
+}
+
+function extractComposeTemplatePlaceholders(text) {
+    const keys = [];
+    String(text ?? "").replace(/\$\{(\w+)(?:\|[^}]*)?\}/g, (_match, key) => {
+        keys.push(key);
+        return "";
+    });
+    return [...new Set(keys)];
+}
+
+function composeTemplateTextHasAllPlaceholders(text, variables) {
+    return extractComposeTemplatePlaceholders(text).every((key) => {
+        const value = variables[key];
+        return value != null && String(value).trim() !== "";
+    });
+}
+
+function composeTemplatePreviewExpertLabel(expert) {
+    const name = expert.expertName || expert.displayName || expert.name || "未命名专家";
+    const email = expert.expertEmail || expert.email || "";
+    return email ? `${name} <${email}>` : name;
+}
+
+function composeTemplatePreviewAccountLabel(account) {
+    const code = account.accountCode || account.senderEmail || "邮箱账号";
+    const email = account.senderEmail || "";
+    return email ? `${code} <${email}>` : code;
+}
+
+function findComposeTemplatePreviewOption(items, inputValue, labelFn) {
+    const value = String(inputValue || "").trim();
+    if (!value) return null;
+    return items.find((item) => labelFn(item) === value)
+        || items.find((item) => labelFn(item).toLowerCase().includes(value.toLowerCase()))
+        || null;
+}
+
+function expertFamilyNameFromName(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : "";
+}
+
+function selectedComposeTemplatePreviewVariables() {
+    const expertInput = $("#composeTemplatePreviewExpertInput")?.value;
+    const accountInput = $("#composeTemplatePreviewAccountInput")?.value;
+    const expert = findComposeTemplatePreviewOption(
+        state.composeTemplatePreviewExperts || [],
+        expertInput,
+        composeTemplatePreviewExpertLabel
+    );
+    const account = findComposeTemplatePreviewOption(
+        state.composeTemplatePreviewAccounts || [],
+        accountInput,
+        composeTemplatePreviewAccountLabel
+    );
+    const expertName = expert?.expertName || expert?.displayName || "";
+    const accountVars = account ? {
+        accountCode: account.accountCode || "",
+        senderName: account.senderName || "",
+        senderTitle: account.senderTitle || "",
+        teamName: account.teamName || "",
+        countryName: account.countryName || "",
+        senderEmail: account.senderEmail || "",
+        senderDisplayName: account.senderDisplayName || account.senderName || ""
+    } : {};
+    const expertVars = expert ? {
+        expertName,
+        expertFamilyName: expert.expertFamilyName || expertFamilyNameFromName(expertName),
+        researchFields: expert.researchFields || "",
+        institution: expert.institution || "",
+        keyword: expert.keyword || "",
+        expertCountry: expert.expertCountry || expert.country || "",
+        expertEmail: expert.expertEmail || expert.email || ""
+    } : {};
+    return {
+        ...composeTemplatePreviewVariables,
+        ...accountVars,
+        ...expertVars
+    };
+}
+
+function populateComposeTemplatePreviewDatalists() {
+    const expertList = $("#composeTemplatePreviewExpertOptions");
+    if (expertList) {
+        expertList.innerHTML = (state.composeTemplatePreviewExperts || [])
+            .map((expert) => `<option value="${escapeHtml(composeTemplatePreviewExpertLabel(expert))}"></option>`)
+            .join("");
+    }
+    const accountList = $("#composeTemplatePreviewAccountOptions");
+    if (accountList) {
+        accountList.innerHTML = (state.composeTemplatePreviewAccounts || [])
+            .map((account) => `<option value="${escapeHtml(composeTemplatePreviewAccountLabel(account))}"></option>`)
+            .join("");
+    }
+}
+
+async function loadComposeTemplatePreviewOptions() {
+    if (state.composeTemplatePreviewOptionsLoaded) return;
+    const [contactsResult, accounts] = await Promise.all([
+        api("/api/expert-contacts").catch(() => ({ contacts: [] })),
+        api("/api/mail/sender-accounts").catch(() => [])
+    ]);
+    state.composeTemplatePreviewExperts = Array.isArray(contactsResult)
+        ? contactsResult
+        : contactsResult.contacts || [];
+    state.composeTemplatePreviewAccounts = Array.isArray(accounts) ? accounts : [];
+    state.composeTemplatePreviewOptionsLoaded = true;
+    populateComposeTemplatePreviewDatalists();
+}
+
 async function loadComposeTemplates() {
     state.composeTemplates = await api("/api/compose-templates");
     renderComposeTemplatesTable();
@@ -5603,6 +5768,9 @@ function openComposeTemplateEditor(template) {
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
     renderLocalComposeTemplatePreview();
+    loadComposeTemplatePreviewOptions()
+        .then(() => renderLocalComposeTemplatePreview())
+        .catch((error) => showStatus(error.message, "error"));
     $("#composeTemplateModal").hidden = false;
 }
 
@@ -5673,14 +5841,6 @@ function collectComposeTemplateBlocksFromForm() {
 async function refreshComposeTemplatePreview() {
     const panel = $("#composeTemplatePreviewPanel");
     if (!panel) return;
-    const templateId = state.selectedComposeTemplateId;
-    if (templateId) {
-        const preview = await api(`/api/compose-templates/${templateId}/preview`);
-        panel.innerHTML = renderComposeTemplatePreviewHtml(preview);
-        $("#composeTemplatePreviewStatus").textContent = "服务端预览";
-        updateComposeTemplatePreviewMeta(preview.blocks?.length);
-        return;
-    }
     renderLocalComposeTemplatePreview();
 }
 
@@ -5705,17 +5865,52 @@ function renderLocalComposeTemplatePreview() {
     const panel = $("#composeTemplatePreviewPanel");
     if (!form || !panel) return;
     const blocks = collectComposeTemplateBlocksFromForm();
+    const variables = selectedComposeTemplatePreviewVariables();
+    const strictPlaceholders = $("#composeTemplatePreviewStrictPlaceholders")?.checked === true;
+    let skippedCount = 0;
     const body = blocks.map((block) => {
-        if (block.blockType === "CUSTOM_TEXT") return block.customText || "";
-        if (block.blockType === "QA_RULE") return "[QA 规则内容将在服务端预览时渲染]";
-        if (block.blockType === "REPLY_SNIPPET") return "[回复片段内容将在服务端预览时渲染]";
+        if (block.blockType === "CUSTOM_TEXT") {
+            const text = block.customText || "";
+            if (strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
+                skippedCount += 1;
+                return "";
+            }
+            return renderComposeTemplateText(text, variables);
+        }
+        if (block.blockType === "QA_RULE") {
+            const rule = state.qaRules.find((item) => Number(item.id) === Number(block.refId));
+            const text = rule?.replyBody || "";
+            if (text && strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
+                skippedCount += 1;
+                return "";
+            }
+            return text ? renderComposeTemplateText(text, variables) : "[QA 规则内容将在服务端预览时渲染]";
+        }
+        if (block.blockType === "REPLY_SNIPPET") {
+            const snippet = (state.replySnippets || []).find((item) => Number(item.id) === Number(block.refId));
+            const text = snippet?.content || "";
+            if (text && strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
+                skippedCount += 1;
+                return "";
+            }
+            return text ? renderComposeTemplateText(text, variables) : "[回复片段内容将在服务端预览时渲染]";
+        }
         return "";
     }).filter((text) => text.trim()).join("\n\n");
+    const subjectText = form.subject.value || "邮件主题";
+    const renderedSubject = strictPlaceholders && !composeTemplateTextHasAllPlaceholders(subjectText, variables)
+        ? "占位符未满足，无法预览"
+        : renderComposeTemplateText(subjectText, variables);
+    const toEmail = variables.expertEmail || "expert@example.com";
+    const skippedHtml = skippedCount > 0
+        ? `<div class="compose-preview-skipped">已跳过 ${skippedCount} 段：存在未满足占位符</div>`
+        : "";
     panel.innerHTML = `
         <div class="compose-preview-mail-head">
-            <div><span>To</span><strong>expert@example.com</strong></div>
-            <div><span>Subject</span><strong>${escapeHtml(form.subject.value || "邮件主题")}</strong></div>
+            <div><span>To</span><strong>${escapeHtml(toEmail)}</strong></div>
+            <div><span>Subject</span><strong>${escapeHtml(renderedSubject)}</strong></div>
         </div>
+        ${skippedHtml}
         <div class="compose-preview-mail-body">${escapeHtml(body || "添加内容块后显示预览。")}</div>`;
     $("#composeTemplatePreviewStatus").textContent = "本地预览";
     updateComposeTemplatePreviewMeta(blocks.length);
@@ -5770,10 +5965,7 @@ async function handleComposeTemplateAction(button) {
         openComposeTemplateEditor(template);
     }
     if (action === "preview-compose-template") {
-        const preview = await api(`/api/compose-templates/${id}/preview`);
-        $("#composeTemplatePreviewPanel").innerHTML = renderComposeTemplatePreviewHtml(preview);
         openComposeTemplateEditor(template);
-        await refreshComposeTemplatePreview();
     }
     if (action === "toggle-compose-template") {
         const enabled = button.dataset.enabled === "true";
@@ -5816,7 +6008,10 @@ function handleComposeTemplateBlocksListClick(event) {
 
 function handleComposeTemplateBlockTypeChange(event) {
     const select = event.target.closest(".block-type-select");
-    if (!select) return;
+    if (!select) {
+        renderLocalComposeTemplatePreview();
+        return;
+    }
     const row = select.closest(".compose-template-block-row");
     if (!row) return;
     const index = Number(row.dataset.blockIndex);
@@ -5884,11 +6079,13 @@ async function handleContactAction(element) {
             showStatus("标签已存在", "warn");
             return;
         }
+        setTagEditorLoading(editor, true, "正在添加标签...");
         try {
             const tags = await mutateExpertTag(orcidId, level, tag, "add");
             updateExpertTagEditor(orcidId, tags, level, editorId);
             showStatus("标签已添加", "ok");
         } catch (e) {
+            setTagEditorLoading(editor, false);
             showStatus(e.message, "error");
         }
         return;
@@ -5901,11 +6098,13 @@ async function handleContactAction(element) {
         const editorId = editor.id || "expertTagEditor";
         const tag = element.dataset.tag;
         if (!tag) return;
+        setTagEditorLoading(editor, true, "正在删除标签...");
         try {
             const tags = await mutateExpertTag(orcidId, level, tag, "remove");
             updateExpertTagEditor(orcidId, tags, level, editorId);
             showStatus("标签已删除", "ok");
         } catch (e) {
+            setTagEditorLoading(editor, false);
             showStatus(e.message, "error");
         }
         return;
@@ -7263,7 +7462,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "mailbox-auto-tags") {
-        await mailboxAutoApplyTags();
+        await mailboxAutoApplyTags(element);
         return;
     }
     if (action === "mailbox-add-tag-open") {
@@ -8110,6 +8309,11 @@ function bindEvents() {
     $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
     $("#composeTemplateBlocksList")?.addEventListener("input", renderLocalComposeTemplatePreview);
     $("#composeTemplateForm")?.subject?.addEventListener("input", renderLocalComposeTemplatePreview);
+    $("#composeTemplatePreviewExpertInput")?.addEventListener("input", renderLocalComposeTemplatePreview);
+    $("#composeTemplatePreviewAccountInput")?.addEventListener("input", renderLocalComposeTemplatePreview);
+    document.querySelectorAll('input[name="composeTemplatePreviewPlaceholderMode"]').forEach((input) => {
+        input.addEventListener("change", renderLocalComposeTemplatePreview);
+    });
     $("#composeTemplatesTable")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleComposeTemplateAction(button).catch((error) => showStatus(error.message, "error"));
@@ -9552,16 +9756,22 @@ async function refreshMailboxInboundTagsAfterChange() {
     }
 }
 
-async function mailboxAutoApplyTags() {
+async function mailboxAutoApplyTags(trigger = null) {
     const inboundId = mailboxTagEditInboundId();
     if (!inboundId) return;
+    const editor = trigger?.closest("#mailboxInboundTagEditor") || $("#mailboxInboundTagEditor");
     const operatorName = inboundSummaryOperatorName();
-    await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
-        method: "POST",
-        body: JSON.stringify(operatorName ? { operatorName } : {})
-    });
-    showStatus("已自动添加 QA 标签", "ok");
-    await refreshMailboxInboundTagsAfterChange();
+    setTagEditorLoading(editor, true, "正在自动匹配 QA 标签...");
+    try {
+        const result = await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+            method: "POST",
+            body: JSON.stringify(operatorName ? { operatorName } : {})
+        });
+        showAutoApplyTagStatus(result);
+        await refreshMailboxInboundTagsAfterChange();
+    } finally {
+        setTagEditorLoading(editor, false);
+    }
 }
 
 async function mailboxRemoveTag(tagId) {
@@ -9702,15 +9912,33 @@ async function refreshInboundThreadAfterTagChange(inboundId) {
     }
 }
 
-async function inboundAutoApplyTags(inboundId) {
+async function inboundAutoApplyTags(inboundId, trigger = null) {
     if (!inboundId) return;
+    const editor = trigger?.closest(".inbound-thread-bubble-tags") || $("#inboundTagEditor");
     const operatorName = inboundSummaryOperatorName();
-    await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
-        method: "POST",
-        body: JSON.stringify(operatorName ? { operatorName } : {})
-    });
+    setTagEditorLoading(editor, true, "正在自动匹配 QA 标签...");
+    try {
+        const result = await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+            method: "POST",
+            body: JSON.stringify(operatorName ? { operatorName } : {})
+        });
+        showAutoApplyTagStatus(result);
+        await refreshInboundThreadAfterTagChange(inboundId);
+    } finally {
+        setTagEditorLoading(editor, false);
+    }
+}
+
+function showAutoApplyTagStatus(result) {
+    if (result && result.addedCount === 0) {
+        showStatus("未匹配到 QA 规则", "error");
+        return;
+    }
+    if (result && typeof result.addedCount === "number") {
+        showStatus(`已自动添加 ${result.addedCount} 个 QA 标签`, "ok");
+        return;
+    }
     showStatus("已自动添加 QA 标签", "ok");
-    await refreshInboundThreadAfterTagChange(inboundId);
 }
 
 async function inboundRemoveTag(tagId, inboundId) {
@@ -9831,7 +10059,7 @@ function bindInboundSummaryEvents() {
         if (!button) return;
         const inboundId = Number(button.dataset.inboundId);
         if (button.dataset.action === "inbound-auto-tags") {
-            inboundAutoApplyTags(inboundId).catch((error) => showStatus(error.message, "error"));
+            inboundAutoApplyTags(inboundId, button).catch((error) => showStatus(error.message, "error"));
             return;
         }
         if (button.dataset.action === "inbound-add-tag-open") {

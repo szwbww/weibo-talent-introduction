@@ -25,6 +25,7 @@ class ManualExpertMailService(
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailDeliveryService: MailDeliveryService,
     private val mailComposeTemplateService: MailComposeTemplateService,
+    private val mailContentService: MailContentService,
     private val conversationStateService: ConversationStateService
 ) {
     fun listSendOptions(): List<ManualMailOption> {
@@ -171,7 +172,9 @@ class ManualExpertMailService(
             mail = ComposedMail(
                 to = contact.expertEmail,
                 subject = rendered.subject,
-                body = rendered.body
+                body = mailContentService.plainTextToHtml(rendered.body),
+                html = true,
+                text = rendered.body
             ),
             matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
             qaRuleIds = rendered.qaRuleIds

@@ -32,6 +32,7 @@ class ManualExpertMailServiceTest {
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
+    private val mailContentService = MailContentService()
     private val service = ManualExpertMailService(
         expertContactRepository,
         mailRecordRepository,
@@ -40,6 +41,7 @@ class ManualExpertMailServiceTest {
         mailSenderAccountRepository,
         mailDeliveryService,
         mailComposeTemplateService,
+        mailContentService,
         conversationStateService
     )
 
@@ -178,6 +180,38 @@ class ManualExpertMailServiceTest {
         assertEquals("SUCCESS", result.sendStatus)
         Mockito.verify(mailSenderAccountService).selectAccountForManualSending()
         Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForSending()
+    }
+
+    @Test
+    fun `sendManualMail sends compose template as html with plain text fallback`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        Mockito.`when`(
+            mailComposeTemplateService.render(
+                eqValue(10L),
+                anyValue(emptyMap<String, String>())
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Intro Subject",
+                body = "First paragraph.\n\nSecond paragraph.",
+                mailType = "INTRODUCTION"
+            )
+        )
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        val captor = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(account),
+            captor.capture() ?: ComposedMail("stub", "stub", "stub")
+        )
+        assertTrue(captor.value.html)
+        assertEquals("<p>First paragraph.</p><p>Second paragraph.</p>", captor.value.body)
+        assertEquals("First paragraph.\n\nSecond paragraph.", captor.value.text)
     }
 
     @Test

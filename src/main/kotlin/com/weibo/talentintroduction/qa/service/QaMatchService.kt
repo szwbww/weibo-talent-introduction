@@ -170,6 +170,8 @@ class QaMatchService(
     private fun normalize(value: String): String =
         value.lowercase(Locale.ROOT)
             .replace(Regex("\\s+"), " ")
+            .replace("details", "information")
+            .replace("detail", "information")
             .trim()
 
     companion object {
