@@ -149,7 +149,8 @@ class AutoReplyPreviewServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
@@ -171,7 +172,8 @@ class AutoReplyPreviewServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
@@ -273,7 +275,8 @@ class AutoReplyPreviewServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
@@ -12,6 +13,7 @@ import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import kotlin.random.Random
 
 @Service
 class InitialOutreachService(
@@ -22,7 +24,8 @@ class InitialOutreachService(
     private val expertContactRepository: ExpertContactRepository,
     private val txHelper: ManualOutreachTxHelper,
     private val emailSuppressionService: EmailSuppressionService,
-    private val autoReplySettingService: AutoReplySettingService
+    private val autoReplySettingService: AutoReplySettingService,
+    private val schedulingProperties: MailSchedulingProperties
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
@@ -30,16 +33,16 @@ class InitialOutreachService(
         val sentResults = mutableListOf<InitialOutreachSendResult>()
         var skipped = 0
 
-        experts.forEach { expert ->
+        experts.forEachIndexed { index, expert ->
             if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
                 skipped += 1
-                return@forEach
+                return@forEachIndexed
             }
 
             val email = expert.email
             if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
                 skipped += 1
-                return@forEach
+                return@forEachIndexed
             }
 
             val account = senderAccountAssignmentService.selectAccount(expert, assignments)
@@ -73,7 +76,7 @@ class InitialOutreachService(
                     expertId = expert.orcidId,
                     distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
                 )
-                return@forEach
+                return@forEachIndexed
             }
 
             if (delivered.status == "SENT") {
@@ -109,6 +112,10 @@ class InitialOutreachService(
                 senderAccountCode = account.accountCode,
                 status = delivered.status
             )
+
+            if (delivered.status == "SENT" && index < experts.lastIndex) {
+                sleepBeforeNextSend()
+            }
         }
 
         return InitialOutreachBatchResult(
@@ -119,6 +126,14 @@ class InitialOutreachService(
             skipped = skipped,
             results = sentResults
         )
+    }
+
+    private fun sleepBeforeNextSend() {
+        val baseMs = schedulingProperties.initialOutreachSendIntervalMs
+        val jitterMs = schedulingProperties.initialOutreachSendJitterMs
+        if (baseMs <= 0 && jitterMs <= 0) return
+        val jitter = if (jitterMs > 0) Random.nextLong(jitterMs) else 0L
+        Thread.sleep(baseMs + jitter)
     }
 }
 

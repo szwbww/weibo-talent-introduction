@@ -2,8 +2,8 @@
 id: K-composed-reply-order-contract
 domain: qa
 created: 2026-06-26
-last_used: 2026-07-04
-hit_count: 14
+last_used: 2026-07-06
+hit_count: 15
 source: fix-v:qa-rules-phase3:fix-1
 severity: P1
 ---

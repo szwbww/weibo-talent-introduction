@@ -3,7 +3,7 @@ id: K-message-id-fingerprint
 domain: mail
 created: 2026-07-06
 last_used: 2026-07-06
-hit_count: 1
+hit_count: 2
 source: create-p:mail-personalization-anti-spam
 ---
 

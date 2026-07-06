@@ -121,7 +121,8 @@ class ManualExpertMailServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.render(
                 eqValue(10L),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
@@ -189,7 +190,8 @@ class ManualExpertMailServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.render(
                 eqValue(10L),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(

@@ -3,7 +3,7 @@ id: K-renderText-all-callers
 domain: template
 created: 2026-07-06
 last_used: 2026-07-06
-hit_count: 3
+hit_count: 4
 source: create-p:template-expert-variables-and-fallback
 ---
 

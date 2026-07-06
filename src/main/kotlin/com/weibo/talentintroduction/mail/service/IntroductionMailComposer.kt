@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 @Service
 class IntroductionMailComposer(
@@ -24,16 +25,21 @@ class IntroductionMailComposer(
             "keyword" to expert.keyword.orEmpty(),
             "expertCountry" to expert.country.orEmpty()
         )
+        val variantSeed = expert.orcidId.hashCode()
         val rendered = if (templateId != null) {
-            mailComposeTemplateService.render(templateId, variables)
+            mailComposeTemplateService.render(templateId, variables, variantSeed)
         } else {
-            mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables)
+            mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
         }
+
+        val domain = account.senderEmail.substringAfter("@")
+        val messageId = "<intro-${expert.orcidId}-${UUID.randomUUID()}@$domain>"
 
         return ComposedMail(
             to = expert.email ?: error("Expert email is required for introduction mail"),
             subject = rendered.subject,
-            body = rendered.body
+            body = rendered.body,
+            messageId = messageId
         )
     }
 }

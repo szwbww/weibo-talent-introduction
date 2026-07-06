@@ -7,6 +7,8 @@ import com.weibo.talentintroduction.template.domain.MailComposeTemplate
 import com.weibo.talentintroduction.template.domain.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -16,7 +18,8 @@ class MailComposeTemplateService(
     private val templateRepository: MailComposeTemplateRepository,
     private val blockRepository: MailComposeTemplateBlockRepository,
     private val qaRuleRepository: QaRuleRepository,
-    private val replySnippetRepository: ReplySnippetRepository
+    private val replySnippetRepository: ReplySnippetRepository,
+    private val objectMapper: ObjectMapper
 ) {
     fun listAll(): List<MailComposeTemplateDetail> =
         templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
@@ -91,28 +94,34 @@ class MailComposeTemplateService(
         templateRepository.deleteById(id)
     }
 
-    fun render(id: Long, variables: Map<String, String> = emptyMap()): ComposeTemplateRenderResult {
+    fun render(id: Long, variables: Map<String, String> = emptyMap(), variantSeed: Int = 0): ComposeTemplateRenderResult {
         val template = findTemplate(id)
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
-        return renderTemplate(template, blocks, variables)
+        return renderTemplate(template, blocks, variables, variantSeed)
     }
 
-    fun renderByCode(templateCode: String, variables: Map<String, String> = emptyMap()): ComposeTemplateRenderResult {
+    fun renderByCode(
+        templateCode: String,
+        variables: Map<String, String> = emptyMap(),
+        variantSeed: Int = 0
+    ): ComposeTemplateRenderResult {
         val template = templateRepository.findByTemplateCodeAndEnabledTrue(templateCode)
             ?: error("Enabled compose template not found: $templateCode")
         val templateId = template.id ?: error("Compose template id is required")
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
-        return renderTemplate(template, blocks, variables)
+        return renderTemplate(template, blocks, variables, variantSeed)
     }
 
     private fun renderTemplate(
         template: MailComposeTemplate,
         blocks: List<MailComposeTemplateBlock>,
-        variables: Map<String, String>
+        variables: Map<String, String>,
+        variantSeed: Int = 0
     ): ComposeTemplateRenderResult {
-        val resolved = resolveBlocks(blocks, variables)
+        val subjectText = selectSubjectVariant(template, variantSeed)
+        val resolved = resolveBlocks(blocks, variables, variantSeed)
         return ComposeTemplateRenderResult(
-            subject = renderText(template.subject, variables),
+            subject = renderText(subjectText, variables),
             body = resolved.includedTexts.joinToString("\n\n"),
             qaRuleIds = resolved.qaRuleIds,
             mailType = template.mailType
@@ -219,7 +228,8 @@ class MailComposeTemplateService(
 
     private fun resolveBlocks(
         blocks: List<MailComposeTemplateBlock>,
-        variables: Map<String, String> = emptyMap()
+        variables: Map<String, String> = emptyMap(),
+        variantSeed: Int = 0
     ): ResolvedBlocks {
         val includedTexts = mutableListOf<String>()
         val qaRuleIds = mutableListOf<Long>()
@@ -271,12 +281,13 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "回复片段不存在", refId, null)
                         return@forEach
                     }
-                    val displayName = "${snippet.snippetType} #${snippet.id}"
-                    if (!snippet.enabled) {
+                    val resolvedSnippet = resolveSnippetVariant(snippet, variantSeed)
+                    val displayName = "${resolvedSnippet.snippetType} #${resolvedSnippet.id}"
+                    if (!resolvedSnippet.enabled) {
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val text = renderText(snippet.content, variables).trim()
+                    val text = renderText(resolvedSnippet.content, variables).trim()
                     if (text.isNotBlank()) {
                         includedTexts += text
                     }
@@ -314,6 +325,28 @@ class MailComposeTemplateService(
             qaRuleIds = qaRuleIds,
             previewBlocks = previewBlocks
         )
+    }
+
+    private fun resolveSnippetVariant(snippet: ReplySnippet, variantSeed: Int): ReplySnippet {
+        val variantGroup = snippet.variantGroup?.trim()?.takeIf { it.isNotBlank() } ?: return snippet
+        val groupSnippets = replySnippetRepository.findByVariantGroupAndEnabledTrueOrderByDisplayOrderAsc(variantGroup)
+        if (groupSnippets.isEmpty()) return snippet
+        return groupSnippets[Math.floorMod(variantSeed, groupSnippets.size)]
+    }
+
+    private fun selectSubjectVariant(template: MailComposeTemplate, seed: Int): String {
+        val variants = parseSubjectVariants(template.subjectVariants)
+        if (variants.isNullOrEmpty()) return template.subject
+        return variants[Math.floorMod(seed, variants.size)]
+    }
+
+    private fun parseSubjectVariants(json: String?): List<String>? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            objectMapper.readValue(json, Array<String>::class.java).toList()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun skippedPreviewBlock(

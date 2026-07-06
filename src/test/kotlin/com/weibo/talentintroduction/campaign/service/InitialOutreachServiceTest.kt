@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -15,6 +16,7 @@ import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -30,6 +32,10 @@ class InitialOutreachServiceTest {
     private val txHelper = Mockito.mock(ManualOutreachTxHelper::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
+    private val schedulingProperties = MailSchedulingProperties(
+        initialOutreachSendIntervalMs = 0,
+        initialOutreachSendJitterMs = 0
+    )
 
     private val service = InitialOutreachService(
         expertSearchService = expertSearchService,
@@ -39,7 +45,8 @@ class InitialOutreachServiceTest {
         expertContactRepository = expertContactRepository,
         txHelper = txHelper,
         emailSuppressionService = emailSuppressionService,
-        autoReplySettingService = autoReplySettingService
+        autoReplySettingService = autoReplySettingService,
+        schedulingProperties = schedulingProperties
     )
 
     private var contactIdSeq = 100L
@@ -244,6 +251,40 @@ class InitialOutreachServiceTest {
             campaignId = 0L, orcidId = "", expertEmail = "", expertName = null
         )))
         assertEquals(false, contactCaptor.value.autoReplyEnabled)
+    }
+
+    @Test
+    fun `sendInitialBatch sleeps between successful sends when interval configured`() {
+        val intervalService = InitialOutreachService(
+            expertSearchService = expertSearchService,
+            senderAccountAssignmentService = senderAccountAssignmentService,
+            introductionMailComposer = introductionMailComposer,
+            mailDeliveryService = mailDeliveryService,
+            expertContactRepository = expertContactRepository,
+            txHelper = txHelper,
+            emailSuppressionService = emailSuppressionService,
+            autoReplySettingService = autoReplySettingService,
+            schedulingProperties = MailSchedulingProperties(
+                initialOutreachSendIntervalMs = 100,
+                initialOutreachSendJitterMs = 0
+            )
+        )
+        val experts = listOf(expert("0001"), expert("0002"))
+        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-1", "SENT"))
+
+        val start = System.currentTimeMillis()
+        intervalService.sendInitialBatch(campaignId = 1L, size = 2)
+        val elapsed = System.currentTimeMillis() - start
+
+        assertTrue(elapsed >= 100, "Expected at least 100ms delay between sends, got ${elapsed}ms")
     }
 
     private fun expert(orcidId: String): ExpertProfile =

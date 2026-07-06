@@ -123,7 +123,8 @@ class MeetingScheduleServiceTest {
         Mockito.`when`(
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_CONFIRMATION"),
-                anyValue(emptyMap<String, String>())
+                anyValue(emptyMap<String, String>()),
+                Mockito.anyInt()
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
