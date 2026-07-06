@@ -59,6 +59,84 @@ class MailComposeTemplateServiceTest {
     }
 
     @Test
+    fun `renderText replaces placeholder when variable has value`() {
+        assertEquals("Hello Chen", renderSubject("Hello ${'$'}{senderName}", mapOf("senderName" to "Chen")))
+    }
+
+    @Test
+    fun `renderText preserves placeholder when variable is missing`() {
+        assertEquals("Hello ${'$'}{unknown}", renderSubject("Hello ${'$'}{unknown}", emptyMap()))
+    }
+
+    @Test
+    fun `renderText uses value for fallback placeholder when variable is non-empty`() {
+        assertEquals(
+            "Topic: AI",
+            renderSubject("Topic: ${'$'}{researchFields|Science}", mapOf("researchFields" to "AI"))
+        )
+    }
+
+    @Test
+    fun `renderText uses fallback when variable is empty string`() {
+        assertEquals(
+            "Topic: Science",
+            renderSubject("Topic: ${'$'}{researchFields|Science}", mapOf("researchFields" to ""))
+        )
+    }
+
+    @Test
+    fun `renderText uses fallback when variable key is missing`() {
+        assertEquals(
+            "Topic: Science",
+            renderSubject("Topic: ${'$'}{researchFields|Science}", emptyMap())
+        )
+    }
+
+    @Test
+    fun `renderText treats only first pipe as fallback separator`() {
+        assertEquals(
+            "Value: 含|管道符",
+            renderSubject("Value: ${'$'}{key|含|管道符}", emptyMap())
+        )
+    }
+
+    @Test
+    fun `renderText handles mixed plain and fallback placeholders`() {
+        assertEquals(
+            "Hi Chen, topic: Default",
+            renderSubject(
+                "Hi ${'$'}{senderName}, topic: ${'$'}{researchFields|Default}",
+                mapOf("senderName" to "Chen", "researchFields" to "")
+            )
+        )
+    }
+
+    private fun renderSubject(subject: String, variables: Map<String, String>): String {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("TEST"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "TEST",
+                    templateName = "Test",
+                    subject = subject,
+                    mailType = "TEST"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Body"
+                    )
+                )
+            )
+        return service.renderByCode("TEST", variables).subject
+    }
+
+    @Test
     fun `update preserves template code and mail type when request omits them`() {
         Mockito.`when`(templateRepository.findById(10))
             .thenReturn(

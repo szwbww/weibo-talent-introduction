@@ -338,10 +338,20 @@ class MailComposeTemplateService(
         val previewBlocks: List<ComposeTemplatePreviewBlock>
     )
 
-    private fun renderText(text: String, variables: Map<String, String>): String =
-        variables.entries.fold(text) { rendered, (key, value) ->
+    private fun renderText(text: String, variables: Map<String, String>): String {
+        val withFallback = FALLBACK_PLACEHOLDER_REGEX.replace(text) { match ->
+            val key = match.groupValues[1]
+            val fallback = match.groupValues[2]
+            variables[key]?.takeIf { it.isNotEmpty() } ?: fallback
+        }
+        return variables.entries.fold(withFallback) { rendered, (key, value) ->
             rendered.replace("\${$key}", value)
         }
+    }
+
+    companion object {
+        private val FALLBACK_PLACEHOLDER_REGEX = Regex("""\$\{(\w+)\|([^}]*)\}""")
+    }
 }
 
 data class MailComposeTemplateCommand(

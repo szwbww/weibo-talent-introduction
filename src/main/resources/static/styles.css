@@ -5570,6 +5570,12 @@ tr td {
     font-family: var(--font-mono);
 }
 
+.compose-template-variable-hint {
+    margin: -8px 0 16px;
+    color: #8090ab;
+    font-size: 12px;
+}
+
 .compose-template-block-row {
     display: grid;
     grid-template-columns: 22px 48px 170px minmax(0, 1fr) auto;

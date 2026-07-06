@@ -16,7 +16,13 @@ class IntroductionMailComposer(
             "senderName" to account.senderName,
             "senderTitle" to account.senderTitle.orEmpty(),
             "teamName" to account.teamName.orEmpty(),
-            "countryName" to account.countryName.orEmpty()
+            "countryName" to account.countryName.orEmpty(),
+            "expertName" to expert.displayName,
+            "expertFamilyName" to expert.familyNames.orEmpty(),
+            "researchFields" to expert.researchFields.orEmpty(),
+            "institution" to expert.institution.orEmpty(),
+            "keyword" to expert.keyword.orEmpty(),
+            "expertCountry" to expert.country.orEmpty()
         )
         val rendered = if (templateId != null) {
             mailComposeTemplateService.render(templateId, variables)

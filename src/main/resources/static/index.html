@@ -1397,7 +1397,7 @@
                             </div>
                             <button type="button" class="button small" id="addComposeTemplateBlockBtn">+ 添加内容块</button>
                         </div>
-                        <div class="compose-template-variable-row" aria-label="可用变量">
+                        <div class="compose-template-variable-row" aria-label="发送方变量">
                             <span>${senderName}</span>
                             <span>${senderTitle}</span>
                             <span>${teamName}</span>
@@ -1405,6 +1405,15 @@
                             <span>${senderEmail}</span>
                             <span>${senderDisplayName}</span>
                         </div>
+                        <div class="compose-template-variable-row" aria-label="专家变量（仅项目介绍邮件可用）">
+                            <span>${expertName}</span>
+                            <span>${expertFamilyName}</span>
+                            <span>${researchFields}</span>
+                            <span>${institution}</span>
+                            <span>${keyword}</span>
+                            <span>${expertCountry}</span>
+                        </div>
+                        <p class="compose-template-variable-hint">提示: 支持默认值语法 ${变量名|默认值}，变量为空时使用默认值</p>
                         <div id="composeTemplateBlocksList"></div>
                     </section>
                 </div>
@@ -1420,7 +1429,7 @@
                         <div id="composeTemplatePreviewPanel" class="compose-template-preview"></div>
                         <div class="compose-template-preview-meta">
                             <div><span>发送类型</span><strong id="composeTemplatePreviewMailType">COMPOSE_TEMPLATE</strong></div>
-                            <div><span>变量</span><strong>6 个</strong></div>
+                            <div><span>变量</span><strong>12 个</strong></div>
                             <div><span>内容块</span><strong id="composeTemplatePreviewBlockCount">0 个</strong></div>
                         </div>
                     </section>
