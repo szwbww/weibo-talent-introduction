@@ -102,7 +102,6 @@ class ManualExpertMailServiceTest {
 
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
-        Mockito.`when`(mailSenderAccountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(mailComposeTemplateService.getById(10L)).thenReturn(
             MailComposeTemplateDetail(
                 id = 10,
@@ -207,6 +206,74 @@ class ManualExpertMailServiceTest {
             anyValue(LocalDateTime.now()),
             anyValue { contact }
         )
+    }
+
+    @Test
+    fun `sendManualMail with explicit disabled account succeeds`() {
+        val disabledAccount = stubAccount().copy(accountCode = "disabled_sender", enabled = false)
+        stubTemplateSend(disabledAccount)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("disabled_sender")).thenReturn(disabledAccount)
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(
+                optionType = "COMPOSE_TEMPLATE",
+                optionValue = "10",
+                senderAccountCode = "disabled_sender"
+            )
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("disabled_sender", result.senderAccountCode)
+        Mockito.verify(mailSenderAccountService).getManualSendAccount("disabled_sender")
+        Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForManualSending()
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(disabledAccount),
+            anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+    }
+
+    @Test
+    fun `sendManualMail succeeds when selectAccountForManualSending returns disabled account`() {
+        val disabledAccount = stubAccount().copy(enabled = false)
+        stubTemplateSend(disabledAccount)
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("sender", result.senderAccountCode)
+        Mockito.verify(mailSenderAccountService).selectAccountForManualSending()
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(disabledAccount),
+            anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+    }
+
+    @Test
+    fun `sendManualMail rejects simulator account`() {
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("SIMULATOR_NOOP"))
+            .thenThrow(IllegalStateException("Mail sender account is not allowed for manual send: SIMULATOR_NOOP"))
+
+        val ex = assertThrows<IllegalStateException> {
+            service.sendManualMail(
+                1,
+                ManualMailSendCommand(
+                    optionType = "COMPOSE_TEMPLATE",
+                    optionValue = "10",
+                    senderAccountCode = "SIMULATOR_NOOP"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("SIMULATOR_NOOP"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
     }
 
     @Test

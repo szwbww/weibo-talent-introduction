@@ -978,6 +978,66 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `disabled account ingests inbound but blocks QA auto reply`() {
+        val account = account("sender").copy(enabled = false)
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+
+        val result = service.processSingle(account, reply(), skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT, result.outcome)
+        assertEquals("ACCOUNT_AUTO_SEND_DISABLED", result.reason)
+        assertEquals(true, result.recorded)
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        val inboundCaptor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(inboundCaptor.capture())
+        assertEquals("MANUAL_REVIEW", inboundCaptor.value.processStatus)
+        assertEquals("ACCOUNT_AUTO_SEND_DISABLED", inboundCaptor.value.processReason)
+    }
+
+    @Test
+    fun `disabled account ingests inbound but blocks meeting invitation auto send`() {
+        val account = account("sender").copy(enabled = false)
+        val contact = introSentContact()
+        stubAutoReplyPipeline(
+            account,
+            contact,
+            reply(body = "I am interested in this opportunity")
+        )
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+        ).thenReturn(false)
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        assertEquals(0, result.meetingInvitations)
+        assertEquals(0, result.replied)
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        val inboundCaptor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(inboundCaptor.capture())
+        assertEquals("ACCOUNT_AUTO_SEND_DISABLED", inboundCaptor.value.processReason)
+    }
+
+    @Test
     fun `auto tag failure does not block inbound processing`() {
         val account = account("sender")
         val contact = introSentContact()

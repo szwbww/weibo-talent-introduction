@@ -51,7 +51,7 @@ class MailboxServiceTest {
 
     @Test
     fun `returns empty list when no active accounts exist`() {
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(emptyList())
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(emptyList())
 
         val response = mailboxService.listMailbox(
             direction = null,
@@ -72,7 +72,7 @@ class MailboxServiceTest {
 
     @Test
     fun `returns empty list when filtered account is not active`() {
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(listOf(activeAccount))
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(listOf(activeAccount))
 
         val response = mailboxService.listMailbox(
             direction = null,
@@ -88,13 +88,13 @@ class MailboxServiceTest {
 
         assertEquals(0L, response.totalCount)
         assertTrue(response.items.isEmpty())
-        Mockito.verify(senderAccountRepository).findAllByEnabledTrue()
+        Mockito.verify(senderAccountRepository).findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
         Mockito.verifyNoMoreInteractions(mailRecordRepository)
     }
 
     @Test
     fun `delegates to repository with active accounts filter and converts row to response`() {
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(listOf(activeAccount))
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(listOf(activeAccount))
 
         val now = LocalDateTime.of(2026, 6, 22, 10, 0, 0)
         val mockRow = MailboxRow(
@@ -184,7 +184,7 @@ class MailboxServiceTest {
 
     @Test
     fun `listMailbox fills inboundTags for inbound processing rows`() {
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(listOf(activeAccount))
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(listOf(activeAccount))
 
         val inboundRow = MailboxRow(
             source = "INBOUND_PROCESSING",
@@ -380,7 +380,7 @@ class MailboxServiceTest {
 
     @Test
     fun `pending filter passes onlyPending flag to repository`() {
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue()).thenReturn(listOf(activeAccount))
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(listOf(activeAccount))
         Mockito.`when`(
             mailRecordRepository.listMailbox(
                 accountCodes = listOf("active_acc"),

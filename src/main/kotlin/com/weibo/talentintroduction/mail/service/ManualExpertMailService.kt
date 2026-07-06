@@ -48,9 +48,9 @@ class ManualExpertMailService(
 
         val account = command.senderAccountCode
             ?.takeIf { it.isNotBlank() }
-            ?.let(mailSenderAccountService::getEnabledAccount)
+            ?.let(mailSenderAccountService::getManualSendAccount)
             ?: mailSenderAccountService.selectAccountForManualSending()
-        val composed = compose(contact, account.accountCode, command)
+        val composed = compose(contact, account, command)
         val delivered = mailDeliveryService.send(account, composed.mail)
         val now = LocalDateTime.now()
 
@@ -134,7 +134,7 @@ class ManualExpertMailService(
 
     private fun compose(
         contact: ExpertContact,
-        accountCode: String,
+        account: MailSenderAccount,
         command: ManualMailSendCommand
     ): ManualComposedMail {
         val optionType = try {
@@ -145,7 +145,7 @@ class ManualExpertMailService(
         return when (optionType) {
             ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(
                 contact,
-                accountCode,
+                account,
                 command.optionValue.toLong()
             )
         }
@@ -153,12 +153,11 @@ class ManualExpertMailService(
 
     private fun composeComposeTemplate(
         contact: ExpertContact,
-        accountCode: String,
+        account: MailSenderAccount,
         templateId: Long
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         require(template.enabled) { "Compose template is disabled: $templateId" }
-        val account = mailSenderAccountService.getEnabledAccount(accountCode)
         val rendered = mailComposeTemplateService.render(
             templateId,
             mailTemplateVariables(account)

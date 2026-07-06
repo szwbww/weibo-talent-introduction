@@ -199,7 +199,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
@@ -258,7 +258,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -268,7 +268,8 @@ class PendingMailOperationServiceTest {
         val result = service.sendQaReply(1, 10, null, "op")
 
         assertEquals("SUCCESS", result.sendStatus)
-        Mockito.verify(mailSenderAccountService).selectAccountForManualSending()
+        Mockito.verify(mailSenderAccountService).getManualSendAccount("sender")
+        Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForManualSending()
         Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForSending()
     }
 
@@ -288,7 +289,7 @@ class PendingMailOperationServiceTest {
 
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -333,7 +334,7 @@ class PendingMailOperationServiceTest {
 
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -368,7 +369,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule1))
         Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(rule2))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -432,7 +433,7 @@ class PendingMailOperationServiceTest {
 
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -564,7 +565,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10, 11)))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule1))
         Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(rule2))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
@@ -652,7 +653,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
@@ -689,7 +690,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10, 11)))
         Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(ruleB))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(ruleA))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
@@ -732,7 +733,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
@@ -774,7 +775,7 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
@@ -793,5 +794,109 @@ class PendingMailOperationServiceTest {
         sentMails.clear()
         service.sendManualComposedReply(1, listOf(10), null, null, 999L, null, "op")
         assertFalse(sentMails.single().text!!.contains("Thank you for sharing your CV."))
+    }
+
+    @Test
+    fun `send qa reply uses inbound sender account when request account is null`() {
+        val record = inbound(1).copy(senderAccountCode = "LiLei")
+        val rule = QaRule(
+            id = 10, categoryId = 1, keywords = "test",
+            replySubject = "QA Subject", replyBody = "QA Body",
+            displayName = "Test QA Rule", enabled = true
+        )
+        val account = stubAccount().copy(accountCode = "LiLei")
+        val delivered = DeliveredMail(messageId = "msg-lilei", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("LiLei")).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 203) }
+
+        service.sendQaReply(1, 10, null, "op")
+
+        Mockito.verify(mailSenderAccountService).getManualSendAccount("LiLei")
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("LiLei", recordCaptor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `send manual rich reply uses explicit sender account when provided`() {
+        val record = inbound(1).copy(senderAccountCode = "LiLei")
+        val lukaiAccount = stubAccount().copy(accountCode = "LuKai")
+        val delivered = DeliveredMail(messageId = "msg-lukai", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("LuKai")).thenReturn(lukaiAccount)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(lukaiAccount), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 201) }
+        Mockito.`when`(mailBodyCleaner.clean("<p>Hello</p>")).thenReturn("Hello")
+
+        service.sendManualRichReply(1, "LuKai", "Hello", "<p>Hello</p>", null, "op")
+
+        Mockito.verify(mailSenderAccountService).getManualSendAccount("LuKai")
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("LuKai", recordCaptor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `send manual composed reply uses inbound sender account when request account is null`() {
+        val record = inbound(1).copy(senderAccountCode = "LiLei", cleanedBody = "question")
+        val rule = qaRule(10, 1, "Composed Body")
+        val account = stubAccount().copy(accountCode = "LiLei")
+        val delivered = DeliveredMail(messageId = "msg-composed", status = "SUCCESS")
+
+        stubDefaultFrame()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaMatchService.suggestComposition("question")).thenReturn(stubSuggest(listOf(10)))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("LiLei")).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 204) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { it.getArgument<MailRecordQaRule>(0).copy(id = 1) }
+
+        service.sendManualComposedReply(1, listOf(10), null, null, null, null, "op")
+
+        Mockito.verify(mailSenderAccountService).getManualSendAccount("LiLei")
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("LiLei", recordCaptor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `send manual rich reply works with disabled inbound account`() {
+        val record = inbound(1).copy(senderAccountCode = "LiLei")
+        val disabledAccount = stubAccount().copy(accountCode = "LiLei", enabled = false)
+        val delivered = DeliveredMail(messageId = "msg-disabled", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("LiLei")).thenReturn(disabledAccount)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(disabledAccount), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 205) }
+        Mockito.`when`(mailBodyCleaner.clean("<p>Hi</p>")).thenReturn("Hi")
+
+        val result = service.sendManualRichReply(1, null, "Hi", "<p>Hi</p>", null, "op")
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("LiLei", result.senderAccountCode)
     }
 }

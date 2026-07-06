@@ -45,7 +45,9 @@ class UnmatchedInboundMailService(
             email = email,
             subject = subject
         )
-        val activeCodes = senderAccountRepository.findAllByEnabledTrue().map { it.accountCode }
+        val activeCodes = senderAccountRepository
+            .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+            .map { it.accountCode }
         val (manualReviewTotal, counts) = if (activeCodes.isEmpty()) {
             0L to emptyMap()
         } else {

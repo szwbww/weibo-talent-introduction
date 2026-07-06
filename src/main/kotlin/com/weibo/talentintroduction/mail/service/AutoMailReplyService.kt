@@ -313,6 +313,37 @@ class AutoMailReplyService(
             meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
         }
 
+        if (!account.enabled) {
+            markManualReview(
+                contact = effectiveContact,
+                received = received,
+                status = ConversationStatus.MANUAL_HANDOFF,
+                reason = "ACCOUNT_AUTO_SEND_DISABLED",
+                note = "Auto-send disabled for account ${account.accountCode}"
+            )
+            confirmManualReviewWithBody(
+                account = account,
+                received = received,
+                expertContactId = contactId,
+                reason = "ACCOUNT_AUTO_SEND_DISABLED",
+                reasonType = "UNCLEAR_INTENT",
+                cleanedBody = cleanedBody,
+                skipImapAck = skipImapAck
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.MANUAL_REVIEW_BY_INTENT,
+                recorded = true,
+                expertContactId = contactId,
+                inboundMailRecordId = inboundMailRecordId,
+                intentCode = intent.intentCode,
+                autoAction = intent.autoAction,
+                matchedKeywords = intent.matchedKeywords,
+                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
+                previousStatus = contact.currentStatus,
+                reason = "ACCOUNT_AUTO_SEND_DISABLED"
+            )
+        }
+
         when (intent.autoAction) {
             AutoIntentAction.MANUAL_REVIEW -> {
                 val reason = manualReviewReason(intent.intentCode)

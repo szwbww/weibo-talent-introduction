@@ -65,7 +65,7 @@ class UnmatchedInboundMailServiceTest {
         Mockito.`when`(
             inboundMailProcessingRepository.countManualReviewQueue(null, null, null)
         ).thenReturn(1L)
-        Mockito.`when`(senderAccountRepository.findAllByEnabledTrue())
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
             .thenReturn(listOf(MailSenderAccount(accountCode = "acc1", senderEmail = "a@b.com", senderName = "A", senderTitle = null, senderDisplayName = null, teamName = null, countryName = null, smtpHost = "h", smtpPort = 587, smtpUsername = "u", smtpPassword = "p", imapHost = "h", imapPort = 993, imapUsername = "u", imapPassword = "p")))
         Mockito.`when`(
             inboundMailProcessingRepository.countManualReviewByAccounts(listOf("acc1"))

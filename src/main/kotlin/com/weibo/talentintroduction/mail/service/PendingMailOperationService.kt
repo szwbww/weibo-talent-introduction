@@ -97,10 +97,7 @@ class PendingMailOperationService(
             .orElseThrow { error("QA rule not found: $qaRuleId") }
         require(rule.enabled) { "QA rule is disabled: $qaRuleId" }
 
-        val account = senderAccountCode
-            ?.takeIf { it.isNotBlank() }
-            ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForManualSending()
+        val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
         val plainBody = rule.replyBody
         val mail = ComposedMail(
@@ -200,10 +197,7 @@ class PendingMailOperationService(
             null
         }
 
-        val account = senderAccountCode
-            ?.takeIf { it.isNotBlank() }
-            ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForManualSending()
+        val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
         val mail = ComposedMail(
             to = contact.expertEmail,
@@ -354,10 +348,7 @@ class PendingMailOperationService(
         val freeTextPreview = freeTextBody?.trim()?.takeIf { it.isNotBlank() }?.take(200)
         val subject = composed.replySubject ?: "Re: ${record.subject.orEmpty()}".trim()
 
-        val account = senderAccountCode
-            ?.takeIf { it.isNotBlank() }
-            ?.let(mailSenderAccountService::getEnabledAccount)
-            ?: mailSenderAccountService.selectAccountForManualSending()
+        val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
         val mail = ComposedMail(
             to = contact.expertEmail,
@@ -434,6 +425,13 @@ class PendingMailOperationService(
             messageId = delivered.messageId
         )
     }
+
+    private fun resolvePendingReplyAccount(
+        requestedAccountCode: String?,
+        inboundSenderAccountCode: String
+    ) = mailSenderAccountService.getManualSendAccount(
+        requestedAccountCode?.takeIf { it.isNotBlank() } ?: inboundSenderAccountCode
+    )
 
     private fun appendFreeText(composedBody: String, freeTextBody: String?): String {
         val free = freeTextBody?.trim().orEmpty()

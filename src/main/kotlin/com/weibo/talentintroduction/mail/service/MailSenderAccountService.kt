@@ -35,26 +35,35 @@ class MailSenderAccountService(
         repository.findAllByEnabledTrue()
 
     fun listAutoReceiveAccounts(): List<MailSenderAccount> =
-        repository.findAllByEnabledTrueAndAccountCodeNot(SIMULATOR_ACCOUNT_CODE)
+        repository.findAllByAccountCodeNot(SIMULATOR_ACCOUNT_CODE)
 
-    fun getAutoReceiveAccount(accountCode: String): MailSenderAccount {
+    fun getReceiveAccount(accountCode: String): MailSenderAccount {
         val account = repository.findByAccountCode(accountCode)
             ?: error("Mail sender account not found: $accountCode")
         if (account.accountCode == SIMULATOR_ACCOUNT_CODE) {
-            error("Mail sender account is not allowed for auto receive: $accountCode")
-        }
-        if (!account.enabled) {
-            error("Mail sender account is disabled: $accountCode")
+            error("Mail sender account is not allowed for receive: $accountCode")
         }
         return account
     }
 
+    fun getAutoReceiveAccount(accountCode: String): MailSenderAccount =
+        getReceiveAccount(accountCode)
+
     fun getAutoReceiveAccountOrNull(accountCode: String): MailSenderAccount? =
         try {
-            getAutoReceiveAccount(accountCode)
+            getReceiveAccount(accountCode)
         } catch (_: Exception) {
             null
         }
+
+    fun getManualSendAccount(accountCode: String): MailSenderAccount {
+        val account = repository.findByAccountCode(accountCode)
+            ?: error("Mail sender account not found: $accountCode")
+        if (account.accountCode == SIMULATOR_ACCOUNT_CODE) {
+            error("Mail sender account is not allowed for manual send: $accountCode")
+        }
+        return account
+    }
 
     fun createAccount(command: MailSenderAccountCreateCommand): MailSenderAccount {
         require(command.accountCode.isNotBlank()) { "accountCode is required" }
@@ -186,7 +195,7 @@ class MailSenderAccountService(
             ?: error("No available mail sender account")
 
     fun selectAccountForManualSending(): MailSenderAccount =
-        repository.findAllByEnabledTrue()
+        repository.findAllByAccountCodeNot(SIMULATOR_ACCOUNT_CODE)
             .filter { isManualSendable(it) }
             .maxWithOrNull(compareBy<MailSenderAccount> { selectionScore(it) }.thenBy { it.id ?: 0L })
             ?: error("No available mail sender account for manual send")
@@ -216,9 +225,7 @@ class MailSenderAccountService(
             account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun isManualSendable(account: MailSenderAccount): Boolean =
-        account.enabled &&
-            !account.autoSendPaused &&
-            account.accountCode != SIMULATOR_ACCOUNT_CODE
+        account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun selectionScore(account: MailSenderAccount): Double {
         val effectiveLimit = warmup.effectiveDailyLimit(account)

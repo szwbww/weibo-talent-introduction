@@ -36,7 +36,9 @@ class MailboxService(
         page: Int,
         size: Int
     ): MailboxListResponse {
-        val activeAccounts = senderAccountRepository.findAllByEnabledTrue()
+        val activeAccounts = senderAccountRepository.findAllByAccountCodeNot(
+            MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
+        )
         val activeCodes = activeAccounts.map { it.accountCode }
         if (activeCodes.isEmpty()) return MailboxListResponse(emptyList(), 0)
 

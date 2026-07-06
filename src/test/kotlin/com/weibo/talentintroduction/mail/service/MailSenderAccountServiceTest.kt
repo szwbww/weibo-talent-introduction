@@ -33,7 +33,7 @@ class MailSenderAccountServiceTest {
 
     @Test
     fun `selectAccountForManualSending selects account at daily limit`() {
-        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
             listOf(
                 account("exhausted", strategyWeight = 100, dailySendLimit = 100, todaySentCount = 100)
             )
@@ -45,8 +45,8 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
-    fun `selectAccountForManualSending excludes auto-paused accounts`() {
-        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+    fun `selectAccountForManualSending includes auto-paused accounts`() {
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
             listOf(
                 account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true),
                 account("ok", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 100, autoSendPaused = false)
@@ -55,14 +55,27 @@ class MailSenderAccountServiceTest {
 
         val selected = service.selectAccountForManualSending()
 
-        assertEquals("ok", selected.accountCode)
+        assertEquals("paused", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForManualSending includes disabled accounts`() {
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+            listOf(
+                account("disabled", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, enabled = false),
+                account("ok", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 0)
+            )
+        )
+
+        val selected = service.selectAccountForManualSending()
+
+        assertEquals("disabled", selected.accountCode)
     }
 
     @Test
     fun `selectAccountForManualSending excludes simulator account`() {
-        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
             listOf(
-                account("SIMULATOR_NOOP", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0),
                 account("real", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 100)
             )
         )
@@ -74,11 +87,7 @@ class MailSenderAccountServiceTest {
 
     @Test
     fun `selectAccountForManualSending throws when no eligible account`() {
-        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
-            listOf(
-                account("paused", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, autoSendPaused = true)
-            )
-        )
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(emptyList())
 
         val ex = assertThrows(IllegalStateException::class.java) {
             service.selectAccountForManualSending()
@@ -421,27 +430,73 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
-    fun `listAutoReceiveAccounts returns enabled real accounts only`() {
-        Mockito.`when`(repository.findAllByEnabledTrueAndAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
-            listOf(account("a1"), account("a2"))
+    fun `listAutoReceiveAccounts returns all non-simulator accounts including disabled`() {
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+            listOf(account("a1"), account("a2", enabled = false))
         )
 
         val result = service.listAutoReceiveAccounts()
 
         assertEquals(2, result.size)
-        assertTrue(result.all { it.enabled })
+        assertTrue(result.any { !it.enabled })
         assertTrue(result.none { it.accountCode == "SIMULATOR_NOOP" })
     }
 
     @Test
     fun `listAutoReceiveAccounts excludes SIMULATOR_NOOP`() {
-        Mockito.`when`(repository.findAllByEnabledTrueAndAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
             emptyList()
         )
 
         val result = service.listAutoReceiveAccounts()
 
         assertEquals(0, result.size)
+    }
+
+    @Test
+    fun `getReceiveAccount returns real account regardless of enabled`() {
+        Mockito.`when`(repository.findByAccountCode("disabled_acct")).thenReturn(
+            account("disabled_acct", enabled = false)
+        )
+
+        val result = service.getReceiveAccount("disabled_acct")
+
+        assertEquals("disabled_acct", result.accountCode)
+    }
+
+    @Test
+    fun `getReceiveAccount rejects SIMULATOR_NOOP`() {
+        Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP")).thenReturn(
+            account("SIMULATOR_NOOP", enabled = true)
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.getReceiveAccount("SIMULATOR_NOOP")
+        }
+        assertTrue(ex.message!!.contains("not allowed"))
+    }
+
+    @Test
+    fun `getManualSendAccount returns disabled account`() {
+        Mockito.`when`(repository.findByAccountCode("disabled_acct")).thenReturn(
+            account("disabled_acct", enabled = false, autoSendPaused = true)
+        )
+
+        val result = service.getManualSendAccount("disabled_acct")
+
+        assertEquals("disabled_acct", result.accountCode)
+    }
+
+    @Test
+    fun `getManualSendAccount rejects SIMULATOR_NOOP`() {
+        Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP")).thenReturn(
+            account("SIMULATOR_NOOP", enabled = true)
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.getManualSendAccount("SIMULATOR_NOOP")
+        }
+        assertTrue(ex.message!!.contains("not allowed"))
     }
 
     @Test
@@ -456,6 +511,17 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
+    fun `getAutoReceiveAccount allows disabled account`() {
+        Mockito.`when`(repository.findByAccountCode("disabled_acct")).thenReturn(
+            account("disabled_acct", enabled = false)
+        )
+
+        val result = service.getAutoReceiveAccount("disabled_acct")
+
+        assertEquals("disabled_acct", result.accountCode)
+    }
+
+    @Test
     fun `getAutoReceiveAccount rejects SIMULATOR_NOOP`() {
         Mockito.`when`(repository.findByAccountCode("SIMULATOR_NOOP")).thenReturn(
             account("SIMULATOR_NOOP", enabled = true)
@@ -465,18 +531,6 @@ class MailSenderAccountServiceTest {
             service.getAutoReceiveAccount("SIMULATOR_NOOP")
         }
         assertTrue(ex.message!!.contains("not allowed"))
-    }
-
-    @Test
-    fun `getAutoReceiveAccount rejects disabled account`() {
-        Mockito.`when`(repository.findByAccountCode("disabled_acct")).thenReturn(
-            account("disabled_acct", enabled = false)
-        )
-
-        val ex = assertThrows(IllegalStateException::class.java) {
-            service.getAutoReceiveAccount("disabled_acct")
-        }
-        assertTrue(ex.message!!.contains("disabled"))
     }
 
     @Test

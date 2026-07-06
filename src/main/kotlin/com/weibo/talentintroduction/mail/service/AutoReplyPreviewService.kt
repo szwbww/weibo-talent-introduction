@@ -58,7 +58,7 @@ class AutoReplyPreviewService(
             .isNotEmpty()
 
         val contactId = record.expertContactId
-        val wouldBeBlockedBy = buildWouldBeBlockedBy(contactId, record.fromEmail)
+        val wouldBeBlockedBy = buildWouldBeBlockedBy(contactId, record.fromEmail, record.senderAccountCode)
 
         val base = AutoReplyPreviewResult(
             previewKind = AutoReplyPreviewKind.MANUAL_HANDOFF,
@@ -82,7 +82,7 @@ class AutoReplyPreviewService(
             )
 
             AutoIntentAction.SEND_MEETING_INVITATION -> {
-                val account = mailSenderAccountService.getEnabledAccount(record.senderAccountCode)
+                val account = mailSenderAccountService.getManualSendAccount(record.senderAccountCode)
                 val rendered = mailComposeTemplateService.renderByCode(
                     templateCode = "MEETING_INVITATION",
                     variables = mailTemplateVariables(account)
@@ -123,10 +123,22 @@ class AutoReplyPreviewService(
         }
     }
 
-    private fun buildWouldBeBlockedBy(contactId: Long?, fromEmail: String): List<String> {
+    private fun buildWouldBeBlockedBy(
+        contactId: Long?,
+        fromEmail: String,
+        senderAccountCode: String
+    ): List<String> {
         val blocked = mutableListOf<String>()
         if (emailSuppressionService.isSuppressed(fromEmail)) {
             blocked += "RECIPIENT_UNSUBSCRIBED"
+        }
+        val account = try {
+            mailSenderAccountService.getManualSendAccount(senderAccountCode)
+        } catch (_: Exception) {
+            null
+        }
+        if (account != null && !account.enabled) {
+            blocked += "ACCOUNT_AUTO_SEND_DISABLED"
         }
         if (contactId == null) {
             return blocked

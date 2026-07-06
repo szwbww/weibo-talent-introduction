@@ -287,6 +287,20 @@ class AutoReplyPreviewServiceTest {
     }
 
     @Test
+    fun `disabled sender account still shows QA body and marks ACCOUNT_AUTO_SEND_DISABLED`() {
+        stubContact(autoReplyEnabled = true, currentStatus = ConversationStatus.WAITING_REPLY.name)
+        stubRecord(body = "Can I work remotely part time?")
+        stubSenderAccount(enabled = false)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+
+        val result = service.preview(processingId)
+
+        assertEquals(AutoReplyPreviewKind.QA_AUTO_REPLIED, result.previewKind)
+        assertEquals("QA reply body", result.replyBody)
+        assertTrue(result.wouldBeBlockedBy.contains("ACCOUNT_AUTO_SEND_DISABLED"))
+    }
+
+    @Test
     fun `attachment with unknown text sets attachmentIntentIgnored and follows QA branch`() {
         stubRecord(body = "Hello there, just checking in")
         Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(processingId))
@@ -355,8 +369,8 @@ class AutoReplyPreviewServiceTest {
         ).thenReturn(meetingSent)
     }
 
-    private fun stubSenderAccount() {
-        Mockito.`when`(mailSenderAccountService.getEnabledAccount("sender-1")).thenReturn(
+    private fun stubSenderAccount(enabled: Boolean = true) {
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender-1")).thenReturn(
             MailSenderAccount(
                 accountCode = "sender-1",
                 senderEmail = "sender@test.com",
@@ -372,7 +386,8 @@ class AutoReplyPreviewServiceTest {
                 imapHost = "imap.test.com",
                 imapPort = 993,
                 imapUsername = "u",
-                imapPassword = "p"
+                imapPassword = "p",
+                enabled = enabled
             )
         )
     }
