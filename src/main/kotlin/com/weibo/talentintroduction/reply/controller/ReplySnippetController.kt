@@ -60,6 +60,7 @@ data class ReplySnippetCreateRequest(
     val snippetType: String,
     val content: String,
     val displayOrder: Int = 100,
+    val variantGroup: String? = null,
     val isDefault: Boolean = false,
     val enabled: Boolean = true
 ) {
@@ -68,6 +69,7 @@ data class ReplySnippetCreateRequest(
             snippetType = snippetType,
             content = content,
             displayOrder = displayOrder,
+            variantGroup = variantGroup,
             isDefault = isDefault,
             enabled = enabled
         )
@@ -76,6 +78,7 @@ data class ReplySnippetCreateRequest(
 data class ReplySnippetUpdateRequest(
     val content: String,
     val displayOrder: Int,
+    val variantGroup: String? = null,
     val isDefault: Boolean,
     val enabled: Boolean
 ) {
@@ -83,6 +86,7 @@ data class ReplySnippetUpdateRequest(
         ReplySnippetUpdateCommand(
             content = content,
             displayOrder = displayOrder,
+            variantGroup = variantGroup,
             isDefault = isDefault,
             enabled = enabled
         )
@@ -93,6 +97,7 @@ data class ReplySnippetResponse(
     val snippetType: String,
     val content: String,
     val displayOrder: Int,
+    val variantGroup: String?,
     val isDefault: Boolean,
     val enabled: Boolean
 )
@@ -103,6 +108,7 @@ private fun ReplySnippet.toResponse(): ReplySnippetResponse =
         snippetType = snippetType,
         content = content,
         displayOrder = displayOrder,
+        variantGroup = variantGroup,
         isDefault = isDefault,
         enabled = enabled
     )

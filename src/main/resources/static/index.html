@@ -1350,6 +1350,7 @@
             </label>
             <label>片段 ID<input name="id" disabled placeholder="系统自动生成"></label>
             <label>显示排序<input name="displayOrder" type="number" value="100" required></label>
+            <label>变体组<input name="variantGroup" type="text" placeholder="如 greeting（留空则不参与变体选择）"></label>
             <label class="span-2">片段内容<textarea name="content" rows="6" placeholder="英文回复片段正文" required></textarea></label>
             <label class="checkbox-row" id="replySnippetDefaultRow"><input name="isDefault" type="checkbox"> 设为该类型默认片段</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该片段</label>
@@ -1386,6 +1387,12 @@
                         <div class="compose-template-fields">
                             <label>模板名称<input name="templateName" required maxlength="100"></label>
                             <label>邮件主题<input name="subject" required maxlength="255"></label>
+                            <div class="full-width">
+                                <span class="field-label">主题变体</span>
+                                <div id="subjectVariantsContainer"></div>
+                                <button type="button" class="button small" id="addSubjectVariantBtn">+ 添加变体</button>
+                                <p class="compose-template-variable-hint">留空则使用上方默认主题</p>
+                            </div>
                             <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
                         </div>
                     </section>

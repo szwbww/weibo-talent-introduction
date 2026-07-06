@@ -57,6 +57,7 @@ data class MailComposeTemplateRequest(
     val subject: String,
     val description: String? = null,
     val mailType: String? = null,
+    val subjectVariants: String? = null,
     val enabled: Boolean = true,
     val blocks: List<MailComposeTemplateBlockRequest> = emptyList()
 ) {
@@ -67,6 +68,7 @@ data class MailComposeTemplateRequest(
             subject = subject,
             description = description,
             mailType = mailType,
+            subjectVariants = subjectVariants,
             enabled = enabled,
             blocks = blocks.map { it.toCommand() }
         )

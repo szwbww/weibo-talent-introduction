@@ -2149,10 +2149,14 @@ function renderReplySnippetRow(snippet, showDefault) {
     const defaultAction = showDefault && !snippet.isDefault
         ? `<button class="button" data-action="reply-snippet-default" data-id="${snippet.id}">设默认</button>`
         : "";
+    const variantGroupCell = snippet.variantGroup
+        ? `<td>${badge(snippet.variantGroup, "info")}</td>`
+        : "<td></td>";
     return `
         <tr>
             <td class="muted-cell">${escapeHtml((snippet.content || "").slice(0, 120))}</td>
             <td>${snippet.displayOrder}</td>
+            ${variantGroupCell}
             ${defaultCell}
             <td>${badge(snippet.enabled ? "启用" : "禁用", snippet.enabled ? "ok" : "error")}</td>
             <td class="actions">
@@ -2171,7 +2175,7 @@ function renderReplySnippetTypePanel(type, snippets) {
     const defaultHeader = showDefault ? "<th>默认</th>" : "";
     const rows = snippets
         .map((snippet) => renderReplySnippetRow(snippet, showDefault))
-        .join("") || `<tr><td colspan="${showDefault ? 5 : 4}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
+        .join("") || `<tr><td colspan="${showDefault ? 6 : 5}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
     return `
         <section class="panel" style="margin-bottom:16px;">
             <div class="panel-head">
@@ -2183,6 +2187,7 @@ function renderReplySnippetTypePanel(type, snippets) {
                         <tr>
                             <th>内容</th>
                             <th>排序</th>
+                            <th>变体组</th>
                             ${defaultHeader}
                             <th>状态</th>
                             <th style="text-align: right;">操作</th>
@@ -2242,6 +2247,7 @@ function fillReplySnippetForm(snippet, presetType) {
     form.snippetType.disabled = Boolean(snippet?.id);
     form.content.value = snippet?.content || "";
     form.displayOrder.value = snippet?.displayOrder ?? 100;
+    form.variantGroup.value = snippet?.variantGroup || "";
     form.enabled.checked = snippet?.enabled ?? true;
     form.isDefault.checked = snippet?.isDefault ?? false;
     updateReplySnippetDefaultFieldVisibility();
@@ -2254,6 +2260,7 @@ async function saveReplySnippet(event) {
     const payload = {
         content: values.content,
         displayOrder: numberValue(values.displayOrder, 100),
+        variantGroup: values.variantGroup?.trim() || null,
         isDefault: form.isDefault.checked,
         enabled: form.enabled.checked
     };
@@ -5758,6 +5765,56 @@ function renderComposeTemplatesTable() {
     }).join("") || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无邮件模板</td></tr>`;
 }
 
+function parseSubjectVariantsJson(raw) {
+    if (!raw || !String(raw).trim()) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map((item) => String(item ?? "")) : [];
+    } catch {
+        return [];
+    }
+}
+
+function renderSubjectVariantRows(variants) {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return;
+    const rows = (variants || []).map((value, index) => `
+        <div class="subject-variant-row" data-variant-index="${index}" style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="text" class="subject-variant-input" value="${escapeHtml(value || "")}" maxlength="255" placeholder="变体主题" style="flex:1;">
+            <button type="button" class="button small danger" data-action="remove-subject-variant" data-index="${index}">×</button>
+        </div>`).join("");
+    container.innerHTML = rows;
+}
+
+function addSubjectVariantRow() {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return;
+    const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
+    variants.push("");
+    renderSubjectVariantRows(variants);
+    const lastInput = container.querySelector(".subject-variant-input:last-child");
+    lastInput?.focus();
+}
+
+function removeSubjectVariantRow(index) {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return;
+    const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
+    variants.splice(index, 1);
+    renderSubjectVariantRows(variants);
+}
+
+function collectSubjectVariants() {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return null;
+    const variants = Array.from(container.querySelectorAll(".subject-variant-input"))
+        .map((input) => input.value.trim())
+        .filter(Boolean);
+    return variants.length ? JSON.stringify(variants) : null;
+}
+
 function openComposeTemplateEditor(template) {
     state.selectedComposeTemplateId = template?.id ?? null;
     const form = $("#composeTemplateForm");
@@ -5765,6 +5822,7 @@ function openComposeTemplateEditor(template) {
     form.subject.value = template?.subject || "";
     form.description.value = template?.description || "";
     form.enabled.checked = template?.enabled !== false;
+    renderSubjectVariantRows(parseSubjectVariantsJson(template?.subjectVariants));
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
     renderLocalComposeTemplatePreview();
@@ -5937,6 +5995,7 @@ async function saveComposeTemplate(event) {
         templateName: form.templateName.value.trim(),
         subject: form.subject.value.trim(),
         description: form.description.value.trim() || null,
+        subjectVariants: collectSubjectVariants(),
         enabled: form.enabled.checked,
         blocks
     };
@@ -8301,6 +8360,12 @@ function bindEvents() {
         blocks.push({ blockOrder: blocks.length, blockType: "CUSTOM_TEXT", refId: null, customText: "" });
         renderComposeTemplateBlockRows(blocks);
         renderLocalComposeTemplatePreview();
+    });
+    $("#addSubjectVariantBtn")?.addEventListener("click", addSubjectVariantRow);
+    $("#subjectVariantsContainer")?.addEventListener("click", (event) => {
+        const button = event.target.closest('[data-action="remove-subject-variant"]');
+        if (!button) return;
+        removeSubjectVariantRow(Number(button.dataset.index));
     });
     $("#refreshComposeTemplatePreviewBtn")?.addEventListener("click", () => {
         refreshComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));

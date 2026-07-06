@@ -112,6 +112,7 @@ class ManualExpertMailServiceTest {
                 subject = "Intro Subject",
                 description = null,
                 mailType = "INTRODUCTION",
+                subjectVariants = null,
                 enabled = true,
                 blocks = emptyList(),
                 createdAt = null,

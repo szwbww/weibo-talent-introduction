@@ -43,6 +43,7 @@ class MailComposeTemplateService(
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() },
+                subjectVariants = command.subjectVariants,
                 enabled = command.enabled,
                 createdAt = now,
                 updatedAt = now
@@ -65,6 +66,7 @@ class MailComposeTemplateService(
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: existing.mailType,
+                subjectVariants = command.subjectVariants,
                 enabled = command.enabled,
                 updatedAt = now
             )
@@ -153,6 +155,7 @@ class MailComposeTemplateService(
             subject = template.subject,
             description = template.description,
             mailType = template.mailType,
+            subjectVariants = template.subjectVariants,
             enabled = template.enabled,
             blocks = blocks,
             createdAt = template.createdAt,
@@ -393,6 +396,7 @@ data class MailComposeTemplateCommand(
     val subject: String,
     val description: String? = null,
     val mailType: String? = null,
+    val subjectVariants: String? = null,
     val enabled: Boolean = true,
     val blocks: List<MailComposeTemplateBlockCommand>
 )
@@ -411,6 +415,7 @@ data class MailComposeTemplateDetail(
     val subject: String,
     val description: String?,
     val mailType: String?,
+    val subjectVariants: String?,
     val enabled: Boolean,
     val blocks: List<MailComposeTemplateBlockDetail>,
     val createdAt: LocalDateTime?,
