@@ -32,6 +32,8 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -698,6 +700,60 @@ class ExpertDiscoveryServiceTest {
         val result = svc.enrichExistingExperts(maxExperts = 2)
         assertEquals(2, result.enriched)
         assertEquals(0, result.failed)
+    }
+
+    @Test
+    fun `enrichExistingExperts skips expert enriched exactly 30 days ago`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val enrichedAt = LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_LOCAL_DATE) + " 10:00:00"
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0030", email = "e30@example.com",
+            givenNames = "Test", familyNames = "Thirty",
+            country = "US", keyword = null, employment = null,
+            enrichedAt = enrichedAt
+        )
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(expert)))
+
+        val result = svc.enrichExistingExperts(maxExperts = 1)
+
+        assertEquals(0, result.enriched)
+        assertEquals(0, result.failed)
+        Mockito.verify(openAlex, Mockito.never()).enrichAuthorByOrcid(Mockito.anyString())
+    }
+
+    @Test
+    fun `enrichExistingExperts re-enriches expert enriched 31 days ago`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val enrichedAt = LocalDate.now().minusDays(31).format(DateTimeFormatter.ISO_LOCAL_DATE) + " 10:00:00"
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-0031", email = "e31@example.com",
+            givenNames = "Test", familyNames = "ThirtyOne",
+            country = "US", keyword = null, employment = null,
+            enrichedAt = enrichedAt
+        )
+        val enrichment = AuthorEnrichment(hIndex = 12, citationCount = 200, worksCount = 8)
+
+        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(expert)))
+        Mockito.doReturn(enrichment).`when`(openAlex).enrichAuthorByOrcid(Mockito.anyString())
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(org.springframework.http.HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        val result = svc.enrichExistingExperts(maxExperts = 1)
+
+        assertEquals(1, result.enriched)
+        assertEquals(0, result.failed)
+        Mockito.verify(openAlex).enrichAuthorByOrcid("0000-0031")
     }
 
     @Test

@@ -522,6 +522,33 @@
                             <option value="">全部地区</option>
                         </select>
                     </label>
+                    <label class="toolbar-label">
+                        H-Index ≥:
+                        <input type="number" id="expertHIndexMinFilter" min="0" step="1" placeholder="不限" style="width: 70px;">
+                    </label>
+                    <label class="toolbar-label">
+                        引用数 ≥:
+                        <input type="number" id="expertCitationMinFilter" min="0" step="1" placeholder="不限" style="width: 70px;">
+                    </label>
+                    <label class="toolbar-label">
+                        近 N 年发表:
+                        <select id="expertRecentYearsFilter">
+                            <option value="">不限</option>
+                            <option value="3">近 3 年</option>
+                            <option value="5">近 5 年</option>
+                            <option value="10">近 10 年</option>
+                        </select>
+                    </label>
+                    <label class="toolbar-label">
+                        数据完整度:
+                        <select id="expertHasFieldFilter" multiple size="1" style="min-width: 100px;">
+                            <option value="employment">有职位</option>
+                            <option value="degree">有学历</option>
+                            <option value="institution">有机构</option>
+                            <option value="researchFields">有研究方向</option>
+                            <option value="patentTitles">有专利</option>
+                        </select>
+                    </label>
                 </div>
                 <div class="toolbar-group toolbar-actions">
                     <button class="button" id="loadContactsBtn" title="筛选条件修改后会自动刷新，此按钮用于手动重新加载">
@@ -536,6 +563,7 @@
                         <div class="dropdown-menu" id="discoverModeMenu" hidden style="right: auto; left: 0;">
                             <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速晋升（扫描 RAW）</button>
                             <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（外部数据源）</button>
+                            <button class="dropdown-item" onclick="handleDiscoverOption('enrich')">补充学术数据（OpenAlex）</button>
                             <hr class="dropdown-divider">
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>

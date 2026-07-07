@@ -21,6 +21,8 @@ class ExpertSearchService(
     private val expertIndexService: ExpertIndexService
 ) {
     companion object {
+        val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles")
+
         fun notContactedWithEmailFilters(emailDomain: String? = null): List<Map<String, Any>> {
             val filters = mutableListOf(
                 mapOf("exists" to mapOf("field" to "email")),
@@ -46,12 +48,18 @@ class ExpertSearchService(
         from: Int = 0,
         operatorStatus: String? = null,
         emailDomain: String? = null,
-        region: String? = null
+        region: String? = null,
+        hIndexMin: Int? = null,
+        citationCountMin: Int? = null,
+        recentYears: Int? = null,
+        hasField: List<String>? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
-        val filters = buildExpertFilters(tag, operatorStatus, emailDomain, region)
+        val filters = buildExpertFilters(
+            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField
+        )
 
         val query = if (filters.isEmpty()) {
             mapOf("match_all" to emptyMap<String, Any>())
@@ -223,7 +231,13 @@ class ExpertSearchService(
                 ?.map { it.asText() }
                 ?.filter { it.isNotBlank() },
             updatedAt = source.nullableText("updatedAt"),
-            operatorStatus = source.nullableText("operatorStatus")
+            operatorStatus = source.nullableText("operatorStatus"),
+            recentWorkTitles = source.path("recentWorkTitles").takeIf { it.isArray }
+                ?.map { it.asText() }?.filter { it.isNotBlank() },
+            patentTitles = source.path("patentTitles").takeIf { it.isArray }
+                ?.map { it.asText() }?.filter { it.isNotBlank() },
+            enrichedAt = source.nullableText("enrichedAt"),
+            enrichmentSource = source.nullableText("enrichmentSource")
         )
     }
 
@@ -244,7 +258,8 @@ class ExpertSearchService(
             "dataSource", "externalIds", "worksCount",
             "tags",
             "updatedAt",
-            "operatorStatus"
+            "operatorStatus",
+            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
@@ -552,7 +567,11 @@ class ExpertSearchService(
         tag: String?,
         operatorStatus: String?,
         emailDomain: String?,
-        region: String?
+        region: String?,
+        hIndexMin: Int? = null,
+        citationCountMin: Int? = null,
+        recentYears: Int? = null,
+        hasField: List<String>? = null
     ): MutableList<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>()
 
@@ -577,6 +596,17 @@ class ExpertSearchService(
 
         if (!region.isNullOrBlank()) {
             filters.add(regionFilter(region))
+        }
+
+        hIndexMin?.let { filters.add(mapOf("range" to mapOf("hIndex" to mapOf("gte" to it)))) }
+        citationCountMin?.let { filters.add(mapOf("range" to mapOf("citationCount" to mapOf("gte" to it)))) }
+        recentYears?.let {
+            val cutoff = java.time.Year.now().value - it
+            filters.add(mapOf("range" to mapOf("lastPublicationYear" to mapOf("gte" to cutoff))))
+        }
+        hasField?.forEach { field ->
+            require(field in ALLOWED_HAS_FIELDS) { "Invalid hasField: $field" }
+            filters.add(mapOf("exists" to mapOf("field" to field)))
         }
 
         return filters

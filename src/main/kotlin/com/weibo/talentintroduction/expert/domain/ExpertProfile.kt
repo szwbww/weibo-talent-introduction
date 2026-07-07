@@ -24,7 +24,11 @@ data class ExpertProfile(
     val worksCount: Int? = null,
     val tags: List<String>? = null,
     val updatedAt: String? = null,
-    val operatorStatus: String? = null
+    val operatorStatus: String? = null,
+    val recentWorkTitles: List<String>? = null,
+    val patentTitles: List<String>? = null,
+    val enrichedAt: String? = null,
+    val enrichmentSource: String? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

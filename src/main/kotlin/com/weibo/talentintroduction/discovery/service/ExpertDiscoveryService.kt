@@ -37,8 +37,10 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
@@ -799,7 +801,10 @@ class ExpertDiscoveryService(
                 for (profile in batch) {
                     if (enriched + failed >= maxExperts) { limitReached = true; break }
                     scanned++
-                    if (profile.hIndex != null) continue
+                    if (profile.enrichedAt != null) {
+                        val enrichedDate = LocalDate.parse(profile.enrichedAt.take(10))
+                        if (ChronoUnit.DAYS.between(enrichedDate, LocalDate.now()) <= 30) continue
+                    }
                     val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
                     if (orcid != null) {
                         val enrichment = openAlex.enrichAuthorByOrcid(orcid)
@@ -836,8 +841,17 @@ class ExpertDiscoveryService(
     private fun updateExpertAcademicFields(orcidId: String, enrichment: AuthorEnrichment): Boolean {
         val now = LocalDateTime.now().format(dateFormatter)
         var candidateUpdated = false
-        val doc = mutableMapOf<String, Any?>("hIndex" to enrichment.hIndex, "citationCount" to enrichment.citationCount, "updatedAt" to now)
+        val doc = mutableMapOf<String, Any?>(
+            "hIndex" to enrichment.hIndex,
+            "citationCount" to enrichment.citationCount,
+            "updatedAt" to now,
+            "enrichedAt" to now,
+            "enrichmentSource" to "OPENALEX"
+        )
         enrichment.worksCount?.let { doc["worksCount"] = it }
+        enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
+        enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
+        enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             try {

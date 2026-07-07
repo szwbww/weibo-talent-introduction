@@ -310,6 +310,7 @@ const taskButtonMapping = {
     EXPERT_REVALIDATION: { label: "重新验证", btnId: "discoverBtn" },
     RAW_PROMOTION_SCAN: { label: "快速晋升（扫描 RAW）", btnId: "discoverBtn" },
     EXPERT_DISCOVERY: { label: "深度发现（外部数据源）", btnId: "discoverBtn" },
+    EXPERT_ENRICHMENT: { label: "补充学术数据（OpenAlex）", btnId: "discoverBtn" },
     MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
     CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
 };
@@ -429,7 +430,7 @@ async function pollTaskWatcher(taskType) {
                 message: `${label} ${meta.label}`,
                 level: meta.level
             });
-            if (taskType === "MANUAL_INITIAL_OUTREACH" || taskType === "RAW_PROMOTION_SCAN" || taskType === "EXPERT_DISCOVERY" || taskType === "EXPERT_REVALIDATION") {
+            if (taskType === "MANUAL_INITIAL_OUTREACH" || taskType === "RAW_PROMOTION_SCAN" || taskType === "EXPERT_DISCOVERY" || taskType === "EXPERT_REVALIDATION" || taskType === "EXPERT_ENRICHMENT") {
                 loadContacts();
             }
         }
@@ -2859,6 +2860,7 @@ async function loadContacts() {
 
     const tagFilterEl = $("#expertTagFilter");
     const regionFilterEl = $("#expertRegionFilter");
+    const academicFilterIds = ["expertHIndexMinFilter", "expertCitationMinFilter", "expertRecentYearsFilter", "expertHasFieldFilter"];
     if (useDbContactPath) {
         tag = "";
         if (tagFilterEl) {
@@ -2873,6 +2875,19 @@ async function loadContacts() {
             regionFilterEl.parentElement.style.opacity = "0.5";
             regionFilterEl.parentElement.title = "地区筛选仅在 ES 查询模式下可用";
         }
+        academicFilterIds.forEach((id) => {
+            const el = $(`#${id}`);
+            if (el) {
+                if (el.tagName === "SELECT" && el.multiple && el.options) {
+                    Array.from(el.options).forEach((opt) => { opt.selected = false; });
+                } else {
+                    el.value = "";
+                }
+                el.disabled = true;
+                el.parentElement.style.opacity = "0.5";
+                el.parentElement.title = "学术筛选仅在 ES 查询模式下可用";
+            }
+        });
     } else {
         if (tagFilterEl) {
             tagFilterEl.disabled = false;
@@ -2884,6 +2899,14 @@ async function loadContacts() {
             regionFilterEl.parentElement.style.opacity = "1";
             regionFilterEl.parentElement.title = "";
         }
+        academicFilterIds.forEach((id) => {
+            const el = $(`#${id}`);
+            if (el) {
+                el.disabled = false;
+                el.parentElement.style.opacity = "1";
+                el.parentElement.title = "";
+            }
+        });
     }
 
     const levelChanged = state.lastEmailProvidersLevel !== level;
@@ -2948,7 +2971,14 @@ async function loadContacts() {
             employment: "",
             keyword: "",
             tags: c.tags || [],
-            updatedAt: c.updatedAt || null
+            updatedAt: c.updatedAt || null,
+            hIndex: null,
+            citationCount: null,
+            lastPublicationYear: null,
+            researchFields: "",
+            institution: "",
+            worksCount: null,
+            enrichedAt: null
         }));
     } else {
         const params = new URLSearchParams();
@@ -2961,6 +2991,17 @@ async function loadContacts() {
         if (region) params.set("region", region);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
+        const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
+        const citationMin = $("#expertCitationMinFilter")?.value || "";
+        const recentYears = $("#expertRecentYearsFilter")?.value || "";
+        const hasFieldEl = $("#expertHasFieldFilter");
+        const hasField = hasFieldEl?.selectedOptions
+            ? Array.from(hasFieldEl.selectedOptions).map((o) => o.value)
+            : [];
+        if (hIndexMin) params.set("hIndexMin", hIndexMin);
+        if (citationMin) params.set("citationCountMin", citationMin);
+        if (recentYears) params.set("recentYears", recentYears);
+        hasField.forEach((f) => params.append("hasField", f));
         const data = await api(`/api/experts?${params}`);
         const rawExperts = data.experts || data;
         totalHits = data.totalHits ?? rawExperts.length;
@@ -2978,7 +3019,14 @@ async function loadContacts() {
             employment: e.employment,
             keyword: e.keyword,
             tags: e.tags || [],
-            updatedAt: e.updatedAt || null
+            updatedAt: e.updatedAt || null,
+            hIndex: e.hIndex ?? null,
+            citationCount: e.citationCount ?? null,
+            lastPublicationYear: e.lastPublicationYear ?? null,
+            researchFields: e.researchFields || "",
+            institution: e.institution || "",
+            worksCount: e.worksCount ?? null,
+            enrichedAt: e.enrichedAt || null
         }));
     }
     } catch (e) {
@@ -3034,6 +3082,12 @@ function renderContactListItems() {
         const tagsHtml = (contact.tags || []).map(tag =>
             `<span class="expert-tag tag-${escapeHtml(tag)}">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
         ).join("");
+        const hIndexBadge = contact.hIndex != null
+            ? `<span class="academic-badge academic-hindex" title="H-Index">h ${contact.hIndex}</span>`
+            : "";
+        const enrichedBadge = contact.enrichedAt
+            ? `<span class="academic-badge academic-enriched" title="数据已补充 ${escapeHtml(contact.enrichedAt)}">已补充</span>`
+            : "";
         const hoverInfo = [
             contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
             contact.keyword || ""
@@ -3055,9 +3109,10 @@ function renderContactListItems() {
                     </div>
                     ${badge(status, statusType)}
                 </div>
-                ${contact.employment || tagsHtml ? `
+                ${contact.employment || tagsHtml || hIndexBadge || enrichedBadge ? `
                 <div class="expert-row-sub">
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
+                    ${hIndexBadge}${enrichedBadge}
                     ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
                 </div>` : ""}
             </div>
@@ -3721,8 +3776,55 @@ async function handleDiscoverOption(mode) {
         await handlePromoteRaw();
     } else if (mode === 'revalidate') {
         await handleRevalidateCandidates();
+    } else if (mode === 'enrich') {
+        await handleEnrichExperts();
     } else {
         await handleDiscover();
+    }
+}
+
+async function handleEnrichExperts() {
+    const taskType = "EXPERT_ENRICHMENT";
+    const running = await isTaskRunning(taskType);
+    if (running) {
+        openTaskModal(taskType, "补充学术数据（OpenAlex）", "discoverBtn", { knownActiveAtOpen: true });
+        return;
+    }
+    const hasRunning = await progressStoreHasRunningTask();
+    if (hasRunning) {
+        showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+        return;
+    }
+    openTaskModal(taskType, "补充学术数据（OpenAlex）", "discoverBtn", { launchRequested: true });
+    const capturedGeneration = currentTaskModal?.generation;
+    try {
+        const response = await api("/api/expert-discovery/enrich", { method: "POST" });
+        const executionId = response?.executionId ?? response?.id;
+        if (executionId != null) {
+            await bindTaskModalExecution(taskType, capturedGeneration, executionId);
+        }
+        markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+        const result = response?.result || response || {};
+        const enriched = result.enriched ?? result.taskSuccessCount ?? result.successCount ?? 0;
+        const failed = result.failed ?? result.taskFailureCount ?? result.failureCount ?? 0;
+        notifyTaskCompletionOnce({
+            taskType,
+            executionId,
+            status: "COMPLETED",
+            message: `学术数据补充完成: 成功 ${enriched}, 失败 ${failed}`,
+            level: failed > 0 ? "warn" : "ok"
+        });
+    } catch (e) {
+        if (e.message.includes("正在执行中")) {
+            showStatus(e.message, "warn");
+            stopTaskWatcher(taskType, true);
+            return;
+        }
+        showStatus(`补充学术数据失败: ${e.message}`, "error");
+        showTaskErrorLog(e.message);
+        stopTaskModalPolling();
+        stopTaskWatcher(taskType, true);
+        hideProgressBar();
     }
 }
 
@@ -4606,6 +4708,124 @@ function scrollBackToContactsList() {
     document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function scrollBackToContactsList() {
+    document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderDetailSubTabs(activeTab = "academic") {
+    const tabs = [
+        { key: "academic", label: "学术档案" },
+        { key: "contact", label: "联系详情" },
+        { key: "template", label: "模板预览" }
+    ];
+    return `
+    <div class="detail-sub-tabs">
+        ${tabs.map((t) => `
+            <button type="button" class="detail-sub-tab ${t.key === activeTab ? "active" : ""}" data-sub-tab="${t.key}">
+                ${t.label}
+            </button>
+        `).join("")}
+    </div>`;
+}
+
+function renderAcademicProfilePanel(expert) {
+    return `
+        <div class="metadata-grid academic-metrics-row">
+            <div class="metadata-card">
+                <div class="metadata-card-header"><span>H-INDEX</span></div>
+                <div class="metadata-card-value academic-metric-value">${expert.hIndex ?? "-"}</div>
+            </div>
+            <div class="metadata-card">
+                <div class="metadata-card-header"><span>引用数</span></div>
+                <div class="metadata-card-value academic-metric-value">${expert.citationCount != null ? expert.citationCount.toLocaleString() : "-"}</div>
+            </div>
+            <div class="metadata-card">
+                <div class="metadata-card-header"><span>发表数</span></div>
+                <div class="metadata-card-value academic-metric-value">${expert.worksCount ?? "-"}</div>
+            </div>
+            <div class="metadata-card">
+                <div class="metadata-card-header"><span>最近发表</span></div>
+                <div class="metadata-card-value academic-metric-value">${expert.lastPublicationYear ?? "-"}</div>
+            </div>
+        </div>
+        ${expert.researchFields ? `
+        <div class="metadata-grid">
+            <div class="metadata-card span-all">
+                <div class="metadata-card-header"><span>研究方向</span></div>
+                <div class="metadata-card-value">${escapeHtml(expert.researchFields)}</div>
+            </div>
+        </div>` : ""}
+        ${expert.institution ? `
+        <div class="metadata-grid">
+            <div class="metadata-card span-all">
+                <div class="metadata-card-header"><span>机构</span></div>
+                <div class="metadata-card-value">${escapeHtml(expert.institution)}</div>
+            </div>
+        </div>` : ""}
+        ${expert.enrichedAt ? `
+        <div class="enrichment-status-info">
+            <span>数据来源: OpenAlex</span>
+            <span>更新时间: ${escapeHtml(expert.enrichedAt)}</span>
+        </div>` : `
+        <div class="enrichment-status-info enrichment-empty">
+            <span>尚未补充学术数据</span>
+        </div>`}
+    `;
+}
+
+function activateDetailSubTab(btn) {
+    const tabKey = btn.dataset.subTab;
+    const detail = btn.closest(".detail");
+    if (!detail || !tabKey) return;
+    detail.querySelectorAll(".detail-sub-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.subTab === tabKey);
+    });
+    detail.querySelectorAll(".detail-tab-panel").forEach((p) => {
+        p.hidden = p.dataset.panel !== tabKey;
+    });
+    if (tabKey === "template") {
+        const panel = detail.querySelector('[data-panel="template"]');
+        if (panel && !panel.dataset.loaded) {
+            loadTemplatePreview(panel, state.selectedExpertOrcid);
+        }
+    }
+}
+
+async function loadTemplatePreview(panel, orcidId) {
+    if (!orcidId) {
+        panel.innerHTML = `<div class="tpl-var-empty">无 ORCID，无法预览模板变量。</div>`;
+        return;
+    }
+    panel.innerHTML = `<div class="tpl-var-loading">加载模板变量中...</div>`;
+    panel.dataset.loaded = "true";
+    try {
+        const level = $("#expertIndexLevel")?.value || "CANDIDATE";
+        const vars = await api(`/api/experts/template-variables?orcidId=${encodeURIComponent(orcidId)}&level=${level}`);
+        const filled = vars.filter((v) => v.filled).length;
+        const total = vars.length;
+        const coveragePercent = total > 0 ? Math.round(filled / total * 100) : 0;
+        panel.innerHTML = `
+            <div class="tpl-var-summary">
+                <span class="tpl-var-coverage">变量覆盖: ${filled}/${total} (${coveragePercent}%)</span>
+                <div class="tpl-var-progress-track">
+                    <div class="tpl-var-progress-fill" style="width: ${coveragePercent}%"></div>
+                </div>
+            </div>
+            <div class="tpl-var-grid">
+                ${vars.map((v) => `
+                    <div class="tpl-var-item ${v.filled ? "tpl-var-filled" : "tpl-var-empty-val"}">
+                        <div class="tpl-var-key">\${${escapeHtml(v.key)}}</div>
+                        <div class="tpl-var-value">${v.filled ? escapeHtml(v.value) : "—"}</div>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    } catch (e) {
+        panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
+        panel.dataset.loaded = "";
+    }
+}
+
 async function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
@@ -4633,7 +4853,13 @@ async function showExpertDetail(expert) {
 
             ${expert.orcidId ? renderExpertTagEditor(expertTags, expert.orcidId, tagLevel) : ""}
 
-            <div class="metadata-grid">
+            ${renderDetailSubTabs("academic")}
+
+            <div class="detail-tab-panel" data-panel="academic">
+                ${renderAcademicProfilePanel(expert)}
+            </div>
+            <div class="detail-tab-panel" data-panel="contact" hidden>
+                <div class="metadata-grid">
                 <div class="metadata-card">
                     <div class="metadata-card-header">
                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -4693,9 +4919,9 @@ async function showExpertDetail(expert) {
                         ${renderKeywords(expert.keyword)}
                     </div>
                 </div>
-            </div>
+                </div>
 
-            ${expert.contactId ? `
+                ${expert.contactId ? `
                 <div class="toolbar" style="margin-top: 4px;">
                     <button class="button primary" data-action="select-contact" data-id="${expert.contactId}">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -4703,6 +4929,10 @@ async function showExpertDetail(expert) {
                     </button>
                 </div>
             ` : ""}
+            </div>
+            <div class="detail-tab-panel" data-panel="template" hidden>
+                <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
+            </div>
         </div>
     `;
     requestAnimationFrame(() => {
@@ -4987,6 +5217,12 @@ async function loadContactDetail(contactId) {
 
             ${renderExpertTagEditor(expertTags, orcidId, tagLevel)}
 
+            ${renderDetailSubTabs("contact")}
+
+            <div class="detail-tab-panel" data-panel="academic" hidden>
+                ${renderAcademicProfilePanel(expert)}
+            </div>
+            <div class="detail-tab-panel" data-panel="contact">
             <div class="mail-timeline">
                 ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
             </div>
@@ -5125,6 +5361,10 @@ async function loadContactDetail(contactId) {
                 <div class="metadata-card span-all" id="expertOperatorLogsSection">
                     ${renderOperatorLogs(logs)}
                 </div>
+            </div>
+            </div>
+            <div class="detail-tab-panel" data-panel="template" hidden>
+                <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
             </div>
 
         </div>
@@ -8440,6 +8680,11 @@ function bindEvents() {
         if (item) handleContactAction(item).catch((error) => showStatus(error.message, "error"));
     });
     $("#contactDetail").addEventListener("click", (event) => {
+        const subTabBtn = event.target.closest("[data-sub-tab]");
+        if (subTabBtn) {
+            activateDetailSubTab(subTabBtn);
+            return;
+        }
         const button = event.target.closest("button[data-action]");
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
     });
@@ -8661,7 +8906,11 @@ function bindEvents() {
             $("#contactReplyModeFilter").value !== "",
             $("#expertTagFilter").value !== "",
             $("#expertEmailDomainFilter")?.value !== "",
-            $("#expertRegionFilter")?.value !== ""
+            $("#expertRegionFilter")?.value !== "",
+            ($("#expertHIndexMinFilter")?.value || "") !== "",
+            ($("#expertCitationMinFilter")?.value || "") !== "",
+            ($("#expertRecentYearsFilter")?.value || "") !== "",
+            ($("#expertHasFieldFilter")?.selectedOptions?.length || 0) > 0
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
         countEl.hidden = active === 0;
@@ -8674,8 +8923,17 @@ function bindEvents() {
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
-        "expertRegionFilter"].forEach((id) => {
+        "expertRegionFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
+        "expertRecentYearsFilter", "expertHasFieldFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
+    });
+    ["expertHIndexMinFilter", "expertCitationMinFilter"].forEach((id) => {
+        const el = $(`#${id}`);
+        if (el) {
+            el.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") reloadContactsFromStart();
+            });
+        }
     });
     updateFilterBadge();
     $("#filterToggleBtn").addEventListener("click", () => {

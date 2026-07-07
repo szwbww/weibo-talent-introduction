@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.TagCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -39,12 +40,13 @@ class ExpertIndexControllerTest {
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val filterService = Mockito.mock(EligibilityFilterService::class.java)
+    private val introductionMailComposer = Mockito.mock(IntroductionMailComposer::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService, syncService,
-        revalidationService, taskExecutionService, progressStore, filterService
+        revalidationService, taskExecutionService, progressStore, filterService, introductionMailComposer
     )
 
     private fun anyTaskProgress(): TaskProgress {
@@ -175,7 +177,7 @@ class ExpertIndexControllerTest {
             employment = null,
             operatorStatus = null
         )
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null))
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null, null, null, null, null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
         val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
             id = 1L,
@@ -206,7 +208,7 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `listExperts passes emailDomain parameter to searchService`() {
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null))
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null, null, null, null, null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
 
         val response = controller.listExperts(
@@ -220,7 +222,7 @@ class ExpertIndexControllerTest {
             region = null
         )
         assertEquals(0L, response.totalHits)
-        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null)
+        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null, null, null, null, null)
     }
 
     @Test
@@ -250,7 +252,7 @@ class ExpertIndexControllerTest {
 
     @Test
     fun `listExperts passes region parameter to searchService`() {
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe"))
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe", null, null, null, null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
 
         val response = controller.listExperts(
@@ -264,7 +266,7 @@ class ExpertIndexControllerTest {
             region = "Europe"
         )
         assertEquals(0L, response.totalHits)
-        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe")
+        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe", null, null, null, null)
     }
 
     @Test

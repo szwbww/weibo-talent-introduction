@@ -2,8 +2,8 @@
 id: K-introduction-compose-callers
 domain: template
 created: 2026-07-06
-last_used: 2026-07-06
-hit_count: 5
+last_used: 2026-07-07
+hit_count: 7
 source: create-p:template-expert-variables-and-fallback
 ---
 

@@ -6093,3 +6093,141 @@ tr td {
         max-height: 280px;
     }
 }
+
+/* === 学术徽章（列表项） === */
+.academic-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    line-height: 1.6;
+}
+.academic-hindex {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+.academic-enriched {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+    font-weight: 500;
+}
+
+/* === 详情 sub-tab === */
+.detail-sub-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+.detail-sub-tab {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.detail-sub-tab:hover {
+    color: var(--text-main);
+}
+.detail-sub-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* === 学术指标行 === */
+.academic-metrics-row {
+    grid-template-columns: repeat(4, 1fr);
+}
+.academic-metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+/* === enrichment 状态信息 === */
+.enrichment-status-info {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px 0;
+    border-top: 1px solid var(--panel-border);
+    margin-top: 8px;
+}
+.enrichment-status-info.enrichment-empty {
+    color: #b45309;
+    font-style: italic;
+}
+
+/* === 模板变量预览 === */
+.tpl-var-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.tpl-var-coverage {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+}
+.tpl-var-progress-track {
+    flex: 1;
+    height: 6px;
+    background: var(--panel-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.tpl-var-progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+.tpl-var-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 6px;
+}
+.tpl-var-item {
+    padding: 8px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.tpl-var-filled {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+.tpl-var-empty-val {
+    background: #fffbeb;
+    border-color: #fde68a;
+}
+.tpl-var-key {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text-muted);
+}
+.tpl-var-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-main);
+    word-break: break-all;
+}
+.tpl-var-empty, .tpl-var-loading {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}

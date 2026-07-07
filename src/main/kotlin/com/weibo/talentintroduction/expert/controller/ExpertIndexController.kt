@@ -15,6 +15,8 @@ import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.TagCount
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
+import com.weibo.talentintroduction.mail.service.TemplateVariableItem
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -40,7 +42,8 @@ class ExpertIndexController(
     private val revalidationService: ExpertRevalidationService,
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
-    private val eligibilityFilterService: EligibilityFilterService
+    private val eligibilityFilterService: EligibilityFilterService,
+    private val introductionMailComposer: IntroductionMailComposer
 ) {
     @GetMapping
     fun listExperts(
@@ -51,9 +54,16 @@ class ExpertIndexController(
         @RequestParam(defaultValue = "0") from: Int,
         @RequestParam(required = false) operatorStatus: String?,
         @RequestParam(required = false) emailDomain: String?,
-        @RequestParam(required = false) region: String?
+        @RequestParam(required = false) region: String?,
+        @RequestParam(required = false) hIndexMin: Int? = null,
+        @RequestParam(required = false) citationCountMin: Int? = null,
+        @RequestParam(required = false) recentYears: Int? = null,
+        @RequestParam(required = false) hasField: List<String>? = null
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(size, level, tag, sortBy, from, operatorStatus, emailDomain, region)
+        val result = expertSearchService.searchExperts(
+            size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
+            hIndexMin, citationCountMin, recentYears, hasField
+        )
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
@@ -271,6 +281,21 @@ class ExpertIndexController(
         return expertSearchService.aggregateTags(level, operatorStatus, emailDomain, region)
     }
 
+    @GetMapping("/template-variables")
+    fun getTemplateVariables(
+        @RequestParam orcidId: String,
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+        @RequestParam(required = false) accountCode: String?
+    ): List<TemplateVariableItem> {
+        require(orcidId.isNotBlank()) { "orcidId is required" }
+        val expert = expertSearchService.findByOrcidId(orcidId, level)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Expert not found: $orcidId"
+            )
+        return introductionMailComposer.buildTemplateVariables(expert, accountCode)
+    }
+
     @GetMapping("/profile")
     fun getExpertProfile(
         @RequestParam orcidId: String,
@@ -341,7 +366,14 @@ data class ExpertIndexResponse(
     val needsManualAttention: Boolean = false,
     val autoReplyEnabled: Boolean = true,
     val tags: List<String> = emptyList(),
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val hIndex: Int? = null,
+    val citationCount: Int? = null,
+    val lastPublicationYear: Int? = null,
+    val researchFields: String? = null,
+    val institution: String? = null,
+    val worksCount: Int? = null,
+    val enrichedAt: String? = null
 ) {
     companion object {
         fun from(
@@ -375,7 +407,14 @@ data class ExpertIndexResponse(
                 needsManualAttention = needsManualAttention,
                 autoReplyEnabled = autoReplyEnabled,
                 tags = expert.tags.orEmpty(),
-                updatedAt = expert.updatedAt
+                updatedAt = expert.updatedAt,
+                hIndex = expert.hIndex,
+                citationCount = expert.citationCount,
+                lastPublicationYear = expert.lastPublicationYear,
+                researchFields = expert.researchFields,
+                institution = expert.institution,
+                worksCount = expert.worksCount,
+                enrichedAt = expert.enrichedAt
             )
     }
 }

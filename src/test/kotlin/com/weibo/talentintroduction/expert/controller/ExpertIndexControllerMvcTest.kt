@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncSe
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
 import com.weibo.talentintroduction.expert.service.CandidateFilterView
@@ -61,6 +62,9 @@ class ExpertIndexControllerMvcTest {
 
     @MockBean
     private lateinit var eligibilityFilterService: EligibilityFilterService
+
+    @MockBean
+    private lateinit var introductionMailComposer: IntroductionMailComposer
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue

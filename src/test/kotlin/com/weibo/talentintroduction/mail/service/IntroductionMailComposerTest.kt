@@ -39,7 +39,14 @@ class IntroductionMailComposerTest {
         "researchFields" to expert.researchFields.orEmpty(),
         "institution" to expert.institution.orEmpty(),
         "keyword" to expert.keyword.orEmpty(),
-        "expertCountry" to expert.country.orEmpty()
+        "expertCountry" to expert.country.orEmpty(),
+        "employment" to expert.employment.orEmpty(),
+        "hIndex" to (expert.hIndex?.toString()).orEmpty(),
+        "worksCount" to (expert.worksCount?.toString()).orEmpty(),
+        "lastPublicationYear" to (expert.lastPublicationYear?.toString()).orEmpty(),
+        "degree" to expert.degree.orEmpty(),
+        "recentWorkTitle" to (expert.recentWorkTitles?.firstOrNull()).orEmpty(),
+        "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty()
     )
 
     private fun introductionVariables(

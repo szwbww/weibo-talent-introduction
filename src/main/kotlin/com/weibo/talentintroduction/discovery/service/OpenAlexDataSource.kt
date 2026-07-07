@@ -108,13 +108,54 @@ class OpenAlexDataSource(
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
             val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
+            val topics = response.path("topics")
+                .takeIf { it.isArray }
+                ?.sortedByDescending { it.path("count").asInt(0) }
+                ?.take(5)
+                ?.mapNotNull { it.path("display_name").asText(null) }
+            val worksUrl = response.path("works_api_url").asText(null)
+            val recentWorkTitles = if (worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
+            val patentTitles = if (worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
             AuthorEnrichment(
                 hIndex = response.path("summary_stats").path("h_index").let { if (it.isInt) it.asInt() else null },
                 citationCount = response.path("cited_by_count").let { if (it.isInt) it.asInt() else null },
-                worksCount = response.path("works_count").let { if (it.isInt) it.asInt() else null }
+                worksCount = response.path("works_count").let { if (it.isInt) it.asInt() else null },
+                topics = topics,
+                recentWorkTitles = recentWorkTitles,
+                patentTitles = patentTitles
             )
         } catch (e: Exception) {
             log.debug("OpenAlex author enrichment failed for {}: {}", openAlexAuthorId, e.message)
+            null
+        }
+    }
+
+    private fun fetchRecentWorks(worksUrl: String, limit: Int): List<String>? {
+        val url = "$worksUrl?sort=publication_year:desc&per_page=$limit&select=title,publication_year" +
+            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+        return try {
+            if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
+            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
+            response.path("results")
+                .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
+                .takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            log.debug("OpenAlex recent works fetch failed for {}: {}", worksUrl, e.message)
+            null
+        }
+    }
+
+    private fun fetchPatents(worksUrl: String, limit: Int): List<String>? {
+        val url = "$worksUrl?filter=type:patent&per_page=$limit&select=title,publication_year" +
+            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+        return try {
+            if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
+            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
+            response.path("results")
+                .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
+                .takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            log.debug("OpenAlex patents fetch failed for {}: {}", worksUrl, e.message)
             null
         }
     }
@@ -135,4 +176,11 @@ class OpenAlexDataSource(
     }
 }
 
-data class AuthorEnrichment(val hIndex: Int?, val citationCount: Int?, val worksCount: Int?)
+data class AuthorEnrichment(
+    val hIndex: Int?,
+    val citationCount: Int?,
+    val worksCount: Int?,
+    val topics: List<String>? = null,
+    val recentWorkTitles: List<String>? = null,
+    val patentTitles: List<String>? = null
+)
