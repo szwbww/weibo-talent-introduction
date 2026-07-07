@@ -96,6 +96,12 @@ talent-introduction:
       polite-email: ${OPENALEX_POLITE_EMAIL:}
       base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
       request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
+      connect-timeout-ms: ${OPENALEX_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${OPENALEX_READ_TIMEOUT_MS:15000}
+      enrichment-delay-ms: ${OPENALEX_ENRICHMENT_DELAY_MS:300}
+      enrichment-batch-size: ${OPENALEX_ENRICHMENT_BATCH_SIZE:50}
+      fetch-works-enabled: ${OPENALEX_FETCH_WORKS_ENABLED:false}
+      fetch-patents-enabled: ${OPENALEX_FETCH_PATENTS_ENABLED:false}
     crossref:
       enabled: ${CROSSREF_ENABLED:false}
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}

@@ -8,8 +8,13 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.RestTemplate
 
 class OpenAlexDataSourceTest {
@@ -112,5 +117,240 @@ class OpenAlexDataSourceTest {
         ).thenThrow(RuntimeException("API unavailable"))
 
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+    }
+
+    @Test
+    fun `enrichAuthorByOrcidWithReason returns RateLimited on HTTP 429`() {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        val outcome = dataSource.enrichAuthorByOrcidWithReason("0000-0001-2345-6789")
+        assertInstanceOf(EnrichmentOutcome.RateLimited::class.java, outcome)
+    }
+
+    @Test
+    fun `enrichAuthorByOrcidWithReason returns ApiError on HTTP 500`() {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpServerErrorException.create(
+                HttpStatus.INTERNAL_SERVER_ERROR, "Server Error", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        val outcome = dataSource.enrichAuthorByOrcidWithReason("0000-0001-2345-6789")
+        assertInstanceOf(EnrichmentOutcome.ApiError::class.java, outcome)
+    }
+
+    @Test
+    fun `enrichAuthor rethrows 429 instead of returning null`() {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        assertThrows(HttpClientErrorException::class.java) {
+            dataSource.enrichAuthor("A1234567")
+        }
+    }
+
+    @Test
+    fun `batchEnrichByOrcids parses multiple authors from search response`() {
+        val batchJson = """
+            {
+              "meta": {"count": 3},
+              "results": [
+                {
+                  "orcid": "https://orcid.org/0000-0001",
+                  "works_count": 10,
+                  "cited_by_count": 100,
+                  "summary_stats": {"h_index": 5},
+                  "topics": [{"display_name": "AI", "count": 3}],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
+                },
+                {
+                  "orcid": "https://orcid.org/0000-0002",
+                  "works_count": 20,
+                  "cited_by_count": 200,
+                  "summary_stats": {"h_index": 8},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A2"
+                },
+                {
+                  "orcid": "https://orcid.org/0000-0003",
+                  "works_count": 30,
+                  "cited_by_count": 300,
+                  "summary_stats": {"h_index": 12},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A3"
+                }
+              ]
+            }
+        """.trimIndent()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(batchJson))
+
+        val orcids = listOf("0000-0001", "0000-0002", "0000-0003", "0000-0004", "0000-0005")
+        val outcomes = dataSource.batchEnrichByOrcids(orcids)
+
+        assertEquals(5, outcomes.size)
+        assertInstanceOf(EnrichmentOutcome.Success::class.java, outcomes["0000-0001"])
+        assertInstanceOf(EnrichmentOutcome.Success::class.java, outcomes["0000-0002"])
+        assertInstanceOf(EnrichmentOutcome.Success::class.java, outcomes["0000-0003"])
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["0000-0004"])
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["0000-0005"])
+
+        val first = outcomes["0000-0001"] as EnrichmentOutcome.Success
+        assertEquals(5, first.data.hIndex)
+        assertNull(first.data.recentWorkTitles)
+        assertNull(first.data.patentTitles)
+    }
+
+    @Test
+    fun `batchEnrichByOrcids returns RateLimited for all orcids on HTTP 429`() {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        val orcids = listOf("0000-0001", "0000-0002")
+        val outcomes = dataSource.batchEnrichByOrcids(orcids)
+
+        assertTrue(outcomes.values.all { it is EnrichmentOutcome.RateLimited })
+    }
+
+    @Test
+    fun `batchEnrichByOrcids skips works and patents when disabled`() {
+        val batchJson = """
+            {
+              "meta": {"count": 1},
+              "results": [
+                {
+                  "orcid": "https://orcid.org/0000-0001",
+                  "works_count": 10,
+                  "cited_by_count": 100,
+                  "summary_stats": {"h_index": 5},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
+                }
+              ]
+            }
+        """.trimIndent()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(batchJson))
+
+        dataSource.batchEnrichByOrcids(listOf("0000-0001"))
+
+        Mockito.verify(restTemplate, Mockito.times(1)).getForObject(
+            Mockito.anyString(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `batchEnrichByOrcids fetches works when enabled`() {
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor
+        )
+        val batchJson = """
+            {
+              "meta": {"count": 1},
+              "results": [
+                {
+                  "orcid": "https://orcid.org/0000-0001",
+                  "works_count": 10,
+                  "cited_by_count": 100,
+                  "summary_stats": {"h_index": 5},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
+                }
+              ]
+            }
+        """.trimIndent()
+        val worksJson = """
+            {"results":[{"title":"Recent Paper"}]}
+        """.trimIndent()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.contains("/authors?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(batchJson))
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.contains("/works?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(worksJson))
+
+        val outcomes = worksEnabledSource.batchEnrichByOrcids(listOf("0000-0001"))
+
+        val success = outcomes["0000-0001"] as EnrichmentOutcome.Success
+        assertEquals(listOf("Recent Paper"), success.data.recentWorkTitles)
+        Mockito.verify(restTemplate, Mockito.times(2)).getForObject(
+            Mockito.anyString(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `batchEnrichByOrcids keeps base Success when works fetch is rate limited`() {
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor
+        )
+        val batchJson = """
+            {
+              "meta": {"count": 2},
+              "results": [
+                {
+                  "orcid": "https://orcid.org/0000-0001",
+                  "works_count": 10,
+                  "cited_by_count": 100,
+                  "summary_stats": {"h_index": 5},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
+                },
+                {
+                  "orcid": "https://orcid.org/0000-0002",
+                  "works_count": 20,
+                  "cited_by_count": 200,
+                  "summary_stats": {"h_index": 8},
+                  "topics": [],
+                  "works_api_url": "https://api.openalex.org/works?filter=author.id:A2"
+                }
+              ]
+            }
+        """.trimIndent()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.contains("/authors?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(batchJson))
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.contains("/works?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        val outcomes = worksEnabledSource.batchEnrichByOrcids(listOf("0000-0001", "0000-0002"))
+
+        val first = outcomes["0000-0001"] as EnrichmentOutcome.Success
+        assertEquals(5, first.data.hIndex)
+        assertNull(first.data.recentWorkTitles)
+        assertNull(first.data.patentTitles)
+        assertInstanceOf(EnrichmentOutcome.RateLimited::class.java, outcomes["0000-0002"])
     }
 }

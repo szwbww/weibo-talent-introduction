@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
 import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
+import com.weibo.talentintroduction.discovery.service.EnrichmentStats
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
 import com.weibo.talentintroduction.discovery.service.OrcidDataSource
@@ -202,24 +203,51 @@ class ExpertDiscoveryController(
         }
     }
 
+    @GetMapping("/enrich/stats")
+    fun getEnrichmentStats(): EnrichmentStats {
+        return discoveryService.getEnrichmentStats()
+    }
+
     @PostMapping("/enrich")
-    fun enrichExperts(
-        @RequestParam(defaultValue = "500") maxExperts: Int
-    ): ResponseEntity<Any> {
-        var execution: TaskExecution? = null
+    fun enrichExperts(): ResponseEntity<Any> {
+        val taskType = "EXPERT_ENRICHMENT"
+        val (started, token) = progressStore.tryStartWithToken(taskType, TaskProgress(
+            taskType = taskType, status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
+        ))
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务正在执行中，请等待完成"))
+        }
+        var executionId: Long? = null
         try {
-            execution = taskExecutionService.runAndRecord(
-                "EXPERT_ENRICHMENT", "MANUAL", mapOf("maxExperts" to maxExperts),
-                onStarted = { executionId -> progressStore.setCurrentExecutionId("EXPERT_ENRICHMENT", executionId) }
+            val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
+                taskType, "MANUAL", emptyMap<String, Any>(),
+                onStarted = { id ->
+                    executionId = id
+                    progressStore.bindExecutionId(taskType, token, id)
+                }
             ) {
-                discoveryService.enrichExistingExperts(maxExperts)
+                discoveryService.enrichExistingExperts()
             }
-            return ResponseEntity.ok(execution)
+            return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
+        } catch (ex: Exception) {
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "FAILED",
+                batchNumber = 0, processedCount = 0, totalCount = 0,
+                message = ex.message ?: "初始化失败"
+            ), executionId)
+            throw ex
         } finally {
-            if (execution?.id != null) {
-                progressStore.clearExecutionContext("EXPERT_ENRICHMENT", execution.id!!)
+            val execId = executionId
+            if (execId != null) {
+                progressStore.clearExecutionContext(taskType, execId)
             } else {
-                progressStore.clear("EXPERT_ENRICHMENT")
+                progressStore.clearExecutionContext(taskType, token)
+            }
+            val remaining = progressStore.get(taskType)
+            if (remaining?.status in setOf("RUNNING", "CANCELLING")) {
+                progressStore.clear(taskType)
             }
         }
     }

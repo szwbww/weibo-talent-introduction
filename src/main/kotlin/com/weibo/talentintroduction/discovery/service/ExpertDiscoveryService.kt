@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
@@ -37,10 +38,8 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
@@ -64,6 +63,7 @@ class ExpertDiscoveryService(
     private val restTemplate: RestTemplate,
     private val esProperties: ElasticsearchProperties,
     private val discoveryProperties: ExpertDiscoveryProperties,
+    private val openAlexProperties: OpenAlexProperties,
     private val objectMapper: ObjectMapper,
     private val progressStore: TaskProgressStore,
     private val cursorRepository: DiscoverySourceCursorRepository,
@@ -786,56 +786,217 @@ class ExpertDiscoveryService(
         }
     }
 
-    fun enrichExistingExperts(maxExperts: Int = 500): EnrichmentResult {
-        val openAlex = openAlexProvider.getIfAvailable() ?: return EnrichmentResult(0, 0)
-        var enriched = 0; var failed = 0; var scanned = 0
-        val execId = progressStore.getCurrentExecutionId("EXPERT_ENRICHMENT")
-        progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
-            taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = maxExperts.toLong(), message = "初始化中..."
+    fun getEnrichmentStats(): EnrichmentStats {
+        val total = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE)
+        val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters())
+        val enrichedRecently = total - pending
+        return EnrichmentStats(pending, enrichedRecently, total)
+    }
+
+    private fun buildEnrichmentFilters(): List<Map<String, Any>> {
+        val thirtyDaysAgo = LocalDateTime.now().minusDays(30).format(dateFormatter)
+        return listOf(
+            mapOf(
+                "bool" to mapOf(
+                    "should" to listOf(
+                        mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))))),
+                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to thirtyDaysAgo)))
+                    ),
+                    "minimum_should_match" to 1
+                )
+            )
+        )
+    }
+
+    fun enrichExistingExperts(): EnrichmentResult {
+        val taskType = "EXPERT_ENRICHMENT"
+        val execId = progressStore.getCurrentExecutionId(taskType)
+        val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters())
+        progressStore.update(taskType, TaskProgress(
+            taskType = taskType, status = "RUNNING",
+            batchNumber = 0, processedCount = 0, totalCount = pendingCount, message = "初始化中..."
         ), execId)
 
+        val openAlex = openAlexProvider.getIfAvailable()
+        if (openAlex == null) {
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "COMPLETED",
+                batchNumber = -1, processedCount = 0, totalCount = pendingCount,
+                message = "OpenAlex 未启用，跳过补充"
+            ), execId)
+            return EnrichmentResult(0, 0)
+        }
+
+        var enriched = 0
+        var failed = 0
+        var scanned = 0
+        val failureReasons = mutableMapOf<String, Int>()
+        var consecutiveRateLimits = 0
+        var circuitBreakerTripped = false
+
         try {
-            expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
-                var limitReached = false
-                for (profile in batch) {
-                    if (enriched + failed >= maxExperts) { limitReached = true; break }
-                    scanned++
-                    if (profile.enrichedAt != null) {
-                        val enrichedDate = LocalDate.parse(profile.enrichedAt.take(10))
-                        if (ChronoUnit.DAYS.between(enrichedDate, LocalDate.now()) <= 30) continue
+            var batchNumber = 0
+            expertSearchService.scrollExpertsFiltered(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters()) { batch ->
+                if (circuitBreakerTripped || progressStore.isCancelled(taskType)) {
+                    log.info("Enrichment task cancelled or circuit breaker tripped at batch {}", batchNumber)
+                    return@scrollExpertsFiltered false
+                }
+                batchNumber++
+                val enrichedBefore = enriched
+                val failedBefore = failed
+                val failureReasonsBefore = HashMap(failureReasons)
+
+                val withOrcid = batch.filter { !it.orcidId.startsWith("EMAIL-") }
+                val noOrcid = batch.size - withOrcid.size
+                scanned += batch.size
+                if (noOrcid > 0) {
+                    failed += noOrcid
+                    failureReasons.merge("NO_ORCID_ID", noOrcid) { a, b -> a + b }
+                }
+
+                for (chunk in withOrcid.chunked(openAlexProperties.enrichmentBatchSize)) {
+                    if (circuitBreakerTripped || progressStore.isCancelled(taskType)) break
+
+                    val outcomes = openAlex.batchEnrichByOrcids(chunk.map { it.orcidId })
+                    val allRateLimited = outcomes.values.all { it is EnrichmentOutcome.RateLimited }
+                    if (allRateLimited) {
+                        consecutiveRateLimits++
+                        failed += outcomes.size
+                        failureReasons.merge("RATE_LIMITED", outcomes.size) { a, b -> a + b }
+                        if (consecutiveRateLimits >= 5) {
+                            failureReasons["CIRCUIT_BREAKER"] = 1
+                            circuitBreakerTripped = true
+                            log.warn("Enrichment: 连续 {} 次限流，熔断退出", consecutiveRateLimits)
+                        } else {
+                            val retryAfterMs = (outcomes.values.first() as EnrichmentOutcome.RateLimited).retryAfterMs
+                            val backoffMs = (retryAfterMs
+                                ?: (2000L * (1L shl (consecutiveRateLimits - 1))))
+                                .coerceAtMost(60_000)
+                            log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
+                            Thread.sleep(backoffMs)
+                        }
+                        continue
                     }
-                    val orcid = profile.orcidId.takeIf { !it.startsWith("EMAIL-") }
-                    if (orcid != null) {
-                        val enrichment = openAlex.enrichAuthorByOrcid(orcid)
-                        if (enrichment != null) {
-                            if (updateExpertAcademicFields(profile.orcidId, enrichment)) enriched++ else failed++
-                        } else failed++
+                    consecutiveRateLimits = 0
+
+                    for (profile in chunk) {
+                        when (val outcome = outcomes[profile.orcidId] ?: EnrichmentOutcome.NotFound) {
+                            is EnrichmentOutcome.Success -> {
+                                if (updateExpertAcademicFields(profile.orcidId, outcome.data)) {
+                                    enriched++
+                                } else {
+                                    failed++
+                                    failureReasons.merge("ES_UPDATE_FAILED", 1) { a, b -> a + b }
+                                }
+                            }
+                            is EnrichmentOutcome.NotFound -> {
+                                failed++
+                                failureReasons.merge("ORCID_NOT_IN_OPENALEX", 1) { a, b -> a + b }
+                            }
+                            is EnrichmentOutcome.ApiError -> {
+                                failed++
+                                failureReasons.merge("OPENALEX_API_ERROR", 1) { a, b -> a + b }
+                            }
+                            is EnrichmentOutcome.RateLimited -> {
+                                consecutiveRateLimits++
+                                failed++
+                                failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
+                                if (consecutiveRateLimits >= 5) {
+                                    failureReasons["CIRCUIT_BREAKER"] = 1
+                                    circuitBreakerTripped = true
+                                    log.warn("Enrichment: 连续 {} 次限流，熔断退出", consecutiveRateLimits)
+                                    break
+                                }
+                                val backoffMs = (outcome.retryAfterMs
+                                    ?: (2000L * (1L shl (consecutiveRateLimits - 1))))
+                                    .coerceAtMost(60_000)
+                                log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
+                                Thread.sleep(backoffMs)
+                            }
+                        }
                     }
                 }
-                progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
-                    taskType = "EXPERT_ENRICHMENT", status = "RUNNING",
-                    batchNumber = batchNumber, processedCount = enriched.toLong(), totalCount = maxExperts.toLong(),
-                    message = "批次 $batchNumber: 已丰富 $enriched/$maxExperts",
-                    details = mapOf("enriched" to enriched, "failed" to failed, "scanned" to scanned)
+
+                val processed = enriched + failed
+                val batchPassed = enriched - enrichedBefore
+                val batchRejected = failed - failedBefore
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "RUNNING",
+                    batchNumber = batchNumber,
+                    processedCount = processed.toLong(),
+                    totalCount = pendingCount,
+                    message = "批次 $batchNumber: 已处理 $processed/$pendingCount, 成功 $enriched, 失败 $failed",
+                    details = mapOf(
+                        "enriched" to enriched,
+                        "failed" to failed,
+                        "scanned" to scanned,
+                        "failureReasons" to HashMap(failureReasons)
+                    ),
+                    batchProcessed = batch.size,
+                    batchPassed = batchPassed.coerceAtLeast(0),
+                    batchRejected = batchRejected.coerceAtLeast(0),
+                    batchRejectReasons = computeBatchRejectReasons(failureReasonsBefore, failureReasons)
                 ), execId)
-                !limitReached && enriched + failed < maxExperts
+                !progressStore.isCancelled(taskType) && !circuitBreakerTripped
             }
-            progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
-                taskType = "EXPERT_ENRICHMENT", status = "COMPLETED",
-                batchNumber = -1, processedCount = enriched.toLong(), totalCount = enriched.toLong(),
-                message = "完成: 丰富 $enriched, 失败 $failed"
+
+            if (progressStore.isCancelled(taskType)) {
+                val processed = enriched + failed
+                log.info("Enrichment cancelled: enriched={}, failed={}, scanned={}", enriched, failed, scanned)
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "CANCELLED",
+                    batchNumber = -1, processedCount = processed.toLong(), totalCount = pendingCount,
+                    message = "已暂停: 成功 $enriched, 失败 $failed",
+                    details = mapOf(
+                        "enriched" to enriched,
+                        "failed" to failed,
+                        "scanned" to scanned,
+                        "failureReasons" to HashMap(failureReasons)
+                    )
+                ), execId)
+                return EnrichmentResult(enriched, failed, HashMap(failureReasons), wasCancelled = true)
+            }
+
+            val processed = enriched + failed
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "COMPLETED",
+                batchNumber = -1, processedCount = processed.toLong(), totalCount = pendingCount,
+                message = "完成: 成功 $enriched, 失败 $failed",
+                details = mapOf(
+                    "enriched" to enriched,
+                    "failed" to failed,
+                    "scanned" to scanned,
+                    "failureReasons" to HashMap(failureReasons)
+                )
             ), execId)
         } catch (e: Exception) {
-            progressStore.update("EXPERT_ENRICHMENT", TaskProgress(
-                taskType = "EXPERT_ENRICHMENT", status = "FAILED",
-                batchNumber = -1, processedCount = enriched.toLong(), totalCount = 0,
-                message = "失败: ${e.message}"
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "FAILED",
+                batchNumber = -1, processedCount = (enriched + failed).toLong(), totalCount = pendingCount,
+                message = "失败: ${e.message}",
+                details = mapOf(
+                    "enriched" to enriched,
+                    "failed" to failed,
+                    "failureReasons" to HashMap(failureReasons)
+                )
             ), execId)
             throw e
         }
-        log.info("Enrichment complete: enriched={}, failed={}, scanned={}", enriched, failed, scanned)
-        return EnrichmentResult(enriched, failed)
+        log.info("Enrichment complete: enriched={}, failed={}, scanned={}, failureReasons={}", enriched, failed, scanned, failureReasons)
+        return EnrichmentResult(enriched, failed, HashMap(failureReasons))
+    }
+
+    private fun documentExistsInIndex(level: ExpertIndexLevel, orcidId: String): Boolean {
+        val index = expertIndexService.indexName(level)
+        val url = "${esProperties.baseUrl}/$index/_doc/$orcidId"
+        return try {
+            restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
+            true
+        } catch (e: HttpClientErrorException) {
+            false
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun updateExpertAcademicFields(orcidId: String, enrichment: AuthorEnrichment): Boolean {
@@ -854,6 +1015,7 @@ class ExpertDiscoveryService(
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+            if (!documentExistsInIndex(level, orcidId)) continue
             try {
                 val index = expertIndexService.indexName(level)
                 val updateUrl = "${esProperties.baseUrl}/$index/_update/$orcidId"
@@ -1044,8 +1206,16 @@ class ExpertDiscoveryService(
     }
 }
 
-data class EnrichmentResult(val enriched: Int, val failed: Int) : TaskExecutionSummaryProvider {
+data class EnrichmentStats(val pending: Long, val enrichedLast30d: Long, val total: Long)
+
+data class EnrichmentResult(
+    val enriched: Int,
+    val failed: Int,
+    val failureReasons: Map<String, Int> = emptyMap(),
+    val wasCancelled: Boolean = false
+) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = enriched
     override val taskFailureCount: Int get() = failed
-    override val taskFinalStatus: String? get() = null
+    override val taskFinalStatus: String?
+        get() = if (wasCancelled) "CANCELLED" else null
 }

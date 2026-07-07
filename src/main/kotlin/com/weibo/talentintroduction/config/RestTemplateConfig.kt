@@ -83,4 +83,15 @@ class RestTemplateConfig {
             .setConnectTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
             .setReadTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
             .build()
+
+    @Bean
+    @Qualifier("openAlexRestTemplate")
+    fun openAlexRestTemplate(
+        openAlexProperties: OpenAlexProperties,
+        builder: RestTemplateBuilder
+    ): RestTemplate =
+        builder
+            .setConnectTimeout(Duration.ofMillis(openAlexProperties.connectTimeoutMs.toLong()))
+            .setReadTimeout(Duration.ofMillis(openAlexProperties.readTimeoutMs.toLong()))
+            .build()
 }

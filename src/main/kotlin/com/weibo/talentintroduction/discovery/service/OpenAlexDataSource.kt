@@ -8,14 +8,17 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
 
 @Service
 @ConditionalOnProperty(prefix = "talent-introduction.expert-discovery.openalex", name = ["enabled"], havingValue = "true")
 class OpenAlexDataSource(
-    private val restTemplate: RestTemplate,
+    @Qualifier("openAlexRestTemplate") private val restTemplate: RestTemplate,
     private val properties: OpenAlexProperties,
     private val europePmc: EuropePmcDataSource,
     private val pdfEmailExtractor: PdfEmailExtractor
@@ -108,22 +111,12 @@ class OpenAlexDataSource(
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
             val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
-            val topics = response.path("topics")
-                .takeIf { it.isArray }
-                ?.sortedByDescending { it.path("count").asInt(0) }
-                ?.take(5)
-                ?.mapNotNull { it.path("display_name").asText(null) }
-            val worksUrl = response.path("works_api_url").asText(null)
-            val recentWorkTitles = if (worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
-            val patentTitles = if (worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
-            AuthorEnrichment(
-                hIndex = response.path("summary_stats").path("h_index").let { if (it.isInt) it.asInt() else null },
-                citationCount = response.path("cited_by_count").let { if (it.isInt) it.asInt() else null },
-                worksCount = response.path("works_count").let { if (it.isInt) it.asInt() else null },
-                topics = topics,
-                recentWorkTitles = recentWorkTitles,
-                patentTitles = patentTitles
-            )
+            parseAuthorEnrichmentFromNode(response, fetchWorksAndPatents = true)
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) throw e
+            log.debug("OpenAlex author enrichment failed for {}: {} (HTTP {})", openAlexAuthorId, e.message, code)
+            null
         } catch (e: Exception) {
             log.debug("OpenAlex author enrichment failed for {}: {}", openAlexAuthorId, e.message)
             null
@@ -139,6 +132,11 @@ class OpenAlexDataSource(
             response.path("results")
                 .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
                 .takeIf { it.isNotEmpty() }
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) throw e
+            log.debug("OpenAlex recent works fetch failed for {}: {} (HTTP {})", worksUrl, e.message, code)
+            null
         } catch (e: Exception) {
             log.debug("OpenAlex recent works fetch failed for {}: {}", worksUrl, e.message)
             null
@@ -154,6 +152,11 @@ class OpenAlexDataSource(
             response.path("results")
                 .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
                 .takeIf { it.isNotEmpty() }
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) throw e
+            log.debug("OpenAlex patents fetch failed for {}: {} (HTTP {})", worksUrl, e.message, code)
+            null
         } catch (e: Exception) {
             log.debug("OpenAlex patents fetch failed for {}: {}", worksUrl, e.message)
             null
@@ -161,6 +164,13 @@ class OpenAlexDataSource(
     }
 
     fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? {
+        return when (val outcome = enrichAuthorByOrcidWithReason(orcid)) {
+            is EnrichmentOutcome.Success -> outcome.data
+            else -> null
+        }
+    }
+
+    fun enrichAuthorByOrcidWithReason(orcid: String): EnrichmentOutcome {
         val searchUrl = "${properties.baseUrl}/authors?filter=orcid:$orcid" +
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
@@ -168,12 +178,123 @@ class OpenAlexDataSource(
             val searchResponse = restTemplate.getForObject(searchUrl, JsonNode::class.java)
             val authorId = searchResponse?.path("results")?.get(0)?.path("id")?.asText(null)
                 ?.removePrefix("https://openalex.org/")
-            if (authorId != null) enrichAuthor(authorId) else null
+            if (authorId == null) {
+                return EnrichmentOutcome.NotFound
+            }
+            val enrichment = enrichAuthor(authorId)
+            if (enrichment != null) EnrichmentOutcome.Success(enrichment) else EnrichmentOutcome.NotFound
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) {
+                val retryAfter = e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                return EnrichmentOutcome.RateLimited(retryAfter)
+            }
+            log.debug("OpenAlex ORCID lookup failed for {}: {} (HTTP {})", orcid, e.message, code)
+            EnrichmentOutcome.ApiError("HTTP $code: ${e.message}")
         } catch (e: Exception) {
             log.debug("OpenAlex ORCID lookup failed for {}: {}", orcid, e.message)
-            null
+            EnrichmentOutcome.ApiError(e.message ?: "unknown error")
         }
     }
+
+    fun batchEnrichByOrcids(orcids: List<String>): Map<String, EnrichmentOutcome> {
+        if (orcids.isEmpty()) return emptyMap()
+
+        val filterValue = orcids.joinToString("|")
+        val url = "${properties.baseUrl}/authors?filter=orcid:$filterValue&per_page=${orcids.size}" +
+            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+
+        if (properties.enrichmentDelayMs > 0) Thread.sleep(properties.enrichmentDelayMs)
+
+        val response = try {
+            restTemplate.getForObject(url, JsonNode::class.java)
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) {
+                val retryAfter = e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                return orcids.associateWith { EnrichmentOutcome.RateLimited(retryAfter) }
+            }
+            return orcids.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+        } catch (e: Exception) {
+            return orcids.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
+        }
+
+        val foundEntries = mutableListOf<Pair<String, JsonNode>>()
+        response?.path("results")?.forEach { node ->
+            val orcid = node.path("orcid").asText(null)
+                ?.removePrefix("https://orcid.org/") ?: return@forEach
+            foundEntries += orcid to node
+        }
+
+        val results = mutableMapOf<String, EnrichmentOutcome>()
+        for (orcid in orcids) {
+            if (foundEntries.none { it.first == orcid }) {
+                results[orcid] = EnrichmentOutcome.NotFound
+            }
+        }
+
+        val needsWorksOrPatents = properties.fetchWorksEnabled || properties.fetchPatentsEnabled
+        for ((index, entry) in foundEntries.withIndex()) {
+            val (orcid, node) = entry
+            val worksApiUrl = node.path("works_api_url").asText(null)
+            val baseEnrichment = parseAuthorEnrichmentFromNode(node, fetchWorksAndPatents = false)
+
+            if (!needsWorksOrPatents || worksApiUrl == null) {
+                results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
+                continue
+            }
+
+            try {
+                val recentWorkTitles = if (properties.fetchWorksEnabled) fetchRecentWorks(worksApiUrl, 3) else null
+                val patentTitles = if (properties.fetchPatentsEnabled) fetchPatents(worksApiUrl, 3) else null
+                results[orcid] = EnrichmentOutcome.Success(
+                    baseEnrichment.copy(recentWorkTitles = recentWorkTitles, patentTitles = patentTitles)
+                )
+            } catch (e: HttpStatusCodeException) {
+                val code = e.statusCode.value()
+                if (code == 429 || code == 503) {
+                    val retryAfter = e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                    results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
+                    val rateLimited = EnrichmentOutcome.RateLimited(retryAfter)
+                    for (remaining in foundEntries.drop(index + 1)) {
+                        if (remaining.first !in results) {
+                            results[remaining.first] = rateLimited
+                        }
+                    }
+                    break
+                }
+                results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
+            }
+        }
+
+        return orcids.associateWith { results[it] ?: EnrichmentOutcome.NotFound }
+    }
+
+    private fun parseAuthorEnrichmentFromNode(node: JsonNode, fetchWorksAndPatents: Boolean): AuthorEnrichment {
+        val topics = node.path("topics")
+            .takeIf { it.isArray }
+            ?.sortedByDescending { it.path("count").asInt(0) }
+            ?.take(5)
+            ?.mapNotNull { it.path("display_name").asText(null) }
+        val worksUrl = node.path("works_api_url").asText(null)
+        val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
+        val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
+        return AuthorEnrichment(
+            hIndex = node.path("summary_stats").path("h_index").let { if (it.isInt) it.asInt() else null },
+            citationCount = node.path("cited_by_count").let { if (it.isInt) it.asInt() else null },
+            worksCount = node.path("works_count").let { if (it.isInt) it.asInt() else null },
+            topics = topics,
+            recentWorkTitles = recentWorkTitles,
+            patentTitles = patentTitles
+        )
+    }
+}
+
+sealed class EnrichmentOutcome {
+    data class Success(val data: AuthorEnrichment) : EnrichmentOutcome()
+    object NotFound : EnrichmentOutcome()
+    data class ApiError(val message: String) : EnrichmentOutcome()
+    data class RateLimited(val retryAfterMs: Long? = null) : EnrichmentOutcome()
 }
 
 data class AuthorEnrichment(

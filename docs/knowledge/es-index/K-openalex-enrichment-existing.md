@@ -3,7 +3,7 @@ id: K-openalex-enrichment-existing
 domain: discovery
 created: 2026-07-07
 last_used: 2026-07-07
-hit_count: 3
+hit_count: 7
 source: create-p:expert-enrichment-backend
 ---
 

@@ -28,4 +28,11 @@ class RestTemplateConfigTest {
         assertEquals(1, restTemplate.interceptors.size)
         assertTrue(restTemplate.interceptors[0] is RetryingClientHttpRequestInterceptor)
     }
+
+    @Test
+    fun `openAlexRestTemplate has no retry interceptor`() {
+        val restTemplate = config.openAlexRestTemplate(OpenAlexProperties(), RestTemplateBuilder())
+
+        assertTrue(restTemplate.interceptors.isEmpty())
+    }
 }

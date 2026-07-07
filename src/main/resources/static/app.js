@@ -585,7 +585,7 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         if (cancelBtn) {
             cancelBtn.disabled = false;
             cancelBtn.hidden = false;
-            cancelBtn.textContent = "取消任务";
+            cancelBtn.textContent = taskType === "EXPERT_ENRICHMENT" ? "暂停" : "取消任务";
         }
         if (errorsDiv) errorsDiv.hidden = true;
         if (errorContent) errorContent.textContent = "";
@@ -770,6 +770,14 @@ function updateTaskModalFromProgress(progress, generation) {
     }
     if (progress.details && progress.details.demotionReasons != null) {
         messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.demotionReasons);
+    }
+    if (progress.details && progress.details.failureReasons != null) {
+        messageEl.innerHTML = escapeHtml(progress.message || "") + renderFilterReasonsTable(progress.details.failureReasons);
+    }
+
+    if (cancelBtn && !cancelBtn.hidden && currentTaskModal && currentTaskModal.taskType === "EXPERT_ENRICHMENT"
+        && progress.status === "RUNNING") {
+        cancelBtn.textContent = "暂停";
     }
 
     // Batch send (MANUAL_INITIAL_OUTREACH): render per-account stats from progress.details (I-8).
@@ -3209,7 +3217,11 @@ const filterReasonLabels = {
     "EMAIL:NO_MX_RECORD": "邮箱 MX 记录不存在",
     "EMAIL:INVALID_FORMAT": "邮箱格式无效",
     "EMAIL:DISPOSABLE_EMAIL": "一次性邮箱域名",
-    "EMAIL:EMPTY_EMAIL": "邮箱为空"
+    "EMAIL:EMPTY_EMAIL": "邮箱为空",
+    NO_ORCID_ID: "无 ORCID ID",
+    ORCID_NOT_IN_OPENALEX: "OpenAlex 未收录此 ORCID",
+    OPENALEX_API_ERROR: "OpenAlex API 错误",
+    ES_UPDATE_FAILED: "ES 更新失败"
 };
 
 const filterItems = [
@@ -3418,6 +3430,20 @@ const taskLaunchConfigs = {
         showKeyword: true,
         showMaxPromotions: false,
         run: executeDiscover
+    },
+    EXPERT_ENRICHMENT: {
+        title: "补充学术数据（OpenAlex）",
+        desc: "正在加载统计信息...",
+        btnId: "discoverBtn",
+        showKeyword: false,
+        showMaxPromotions: false,
+        preload: async () => {
+            const stats = await api("/api/expert-discovery/enrich/stats");
+            const desc = `CANDIDATE 层共 ${stats.total} 人，其中 ${stats.pending} 人待补充学术数据` +
+                (stats.enrichedLast30d > 0 ? `（${stats.enrichedLast30d} 人已在 30 天内补充）` : '') + '。';
+            return { desc, canRun: stats.pending > 0 };
+        },
+        run: executeEnrichExperts
     },
     MANUAL_INITIAL_OUTREACH: {
         title: "批量发送介绍邮件",
@@ -3790,6 +3816,11 @@ async function handleEnrichExperts() {
         openTaskModal(taskType, "补充学术数据（OpenAlex）", "discoverBtn", { knownActiveAtOpen: true });
         return;
     }
+    openTaskLaunchModal(taskType);
+}
+
+async function executeEnrichExperts() {
+    const taskType = "EXPERT_ENRICHMENT";
     const hasRunning = await progressStoreHasRunningTask();
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");

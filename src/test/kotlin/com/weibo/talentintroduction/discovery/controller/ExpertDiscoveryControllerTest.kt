@@ -9,6 +9,8 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
 import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
+import com.weibo.talentintroduction.discovery.service.EnrichmentResult
+import com.weibo.talentintroduction.discovery.service.EnrichmentStats
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
 import com.weibo.talentintroduction.discovery.service.OrcidDataSource
@@ -225,5 +227,47 @@ class ExpertDiscoveryControllerTest {
             val source = sources.find { it["sourceName"] == name }
             assertEquals(false, source?.get("enabled"), "$name should be disabled by default")
         }
+    }
+
+    @Test
+    fun `getEnrichmentStats returns stats from service`() {
+        Mockito.doReturn(EnrichmentStats(pending = 10, enrichedLast30d = 90, total = 100))
+            .`when`(discoveryService).getEnrichmentStats()
+
+        val stats = controller.getEnrichmentStats()
+
+        assertEquals(10, stats.pending)
+        assertEquals(90, stats.enrichedLast30d)
+        assertEquals(100, stats.total)
+    }
+
+    @Test
+    fun `enrichExperts returns 409 when task is running`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
+
+        val result = controller.enrichExperts()
+        assertEquals(409, result.statusCodeValue)
+    }
+
+    @Test
+    fun `enrichExperts returns ok on success`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(EnrichmentResult(enriched = 3, failed = 1))
+            .`when`(discoveryService).enrichExistingExperts()
+
+        val result = controller.enrichExperts()
+        assertEquals(200, result.statusCodeValue)
+        val body = result.body as TaskLaunchResponse<*>
+        assertEquals(1L, body.executionId)
+        val enrichResult = body.result as EnrichmentResult
+        assertEquals(3, enrichResult.enriched)
+        assertEquals(1, enrichResult.failed)
     }
 }

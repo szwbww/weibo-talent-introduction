@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
@@ -65,6 +66,10 @@ class ExpertDiscoveryServiceTest {
         candidateIndexName = "orcid_info_candidate",
         applicationIndexName = "orcid_info_application"
     )
+    private val openAlexProperties = OpenAlexProperties(
+        enabled = true,
+        enrichmentBatchSize = 50
+    )
 
     @BeforeEach
     fun setUp() {
@@ -109,14 +114,15 @@ class ExpertDiscoveryServiceTest {
 
     private fun createService(
         props: ExpertDiscoveryProperties = discoveryProperties,
-        executor: Executor = Executor { it.run() }
+        executor: Executor = Executor { it.run() },
+        openAlexProps: OpenAlexProperties = openAlexProperties
     ): ExpertDiscoveryService {
         return ExpertDiscoveryService(
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
-            props, objectMapper, progressStore, cursorRepository, executor
+            props, openAlexProps, objectMapper, progressStore, cursorRepository, executor
         )
     }
 
@@ -672,7 +678,7 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `enrichExistingExperts stops at maxExperts limit`() {
+    fun `enrichExistingExperts processes all pending experts without limit`() {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
@@ -686,9 +692,14 @@ class ExpertDiscoveryServiceTest {
         }
         val enrichment = AuthorEnrichment(hIndex = 10, citationCount = 100, worksCount = 5)
 
-        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(experts))
-
-        Mockito.doReturn(enrichment).`when`(openAlex).enrichAuthorByOrcid(Mockito.anyString())
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, listOf(experts))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 5L, 5L)
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val orcids = invocation.arguments[0] as List<String>
+            orcids.associateWith { EnrichmentOutcome.Success(enrichment) }
+        }.`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
         Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
             .`when`(restTemplate).exchange(
                 Mockito.anyString(),
@@ -697,8 +708,8 @@ class ExpertDiscoveryServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = svc.enrichExistingExperts(maxExperts = 2)
-        assertEquals(2, result.enriched)
+        val result = svc.enrichExistingExperts()
+        assertEquals(5, result.enriched)
         assertEquals(0, result.failed)
     }
 
@@ -708,20 +719,14 @@ class ExpertDiscoveryServiceTest {
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
 
-        val enrichedAt = LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_LOCAL_DATE) + " 10:00:00"
-        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
-            orcidId = "0000-0030", email = "e30@example.com",
-            givenNames = "Test", familyNames = "Thirty",
-            country = "US", keyword = null, employment = null,
-            enrichedAt = enrichedAt
-        )
-        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 0L)
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, emptyList())
 
-        val result = svc.enrichExistingExperts(maxExperts = 1)
+        val result = svc.enrichExistingExperts()
 
         assertEquals(0, result.enriched)
         assertEquals(0, result.failed)
-        Mockito.verify(openAlex, Mockito.never()).enrichAuthorByOrcid(Mockito.anyString())
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList())
     }
 
     @Test
@@ -739,8 +744,14 @@ class ExpertDiscoveryServiceTest {
         )
         val enrichment = AuthorEnrichment(hIndex = 12, citationCount = 200, worksCount = 8)
 
-        ScrollExpertsMockHelper.stubScrollExperts(expertSearchService, listOf(listOf(expert)))
-        Mockito.doReturn(enrichment).`when`(openAlex).enrichAuthorByOrcid(Mockito.anyString())
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val orcids = invocation.arguments[0] as List<String>
+            orcids.associateWith { EnrichmentOutcome.Success(enrichment) }
+        }.`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
         Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
             .`when`(restTemplate).exchange(
                 Mockito.anyString(),
@@ -749,11 +760,138 @@ class ExpertDiscoveryServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = svc.enrichExistingExperts(maxExperts = 1)
+        val result = svc.enrichExistingExperts()
 
         assertEquals(1, result.enriched)
         assertEquals(0, result.failed)
-        Mockito.verify(openAlex).enrichAuthorByOrcid("0000-0031")
+        Mockito.verify(openAlex).batchEnrichByOrcids(listOf("0000-0031"))
+    }
+
+    @Test
+    fun `enrichExistingExperts uses batch API`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val experts = (1..500).map { i ->
+            com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = String.format("0000-%04d", i), email = "e$i@example.com",
+                givenNames = "Test", familyNames = "$i",
+                country = "US", keyword = null, employment = null
+            )
+        }
+        val enrichment = AuthorEnrichment(hIndex = 10, citationCount = 100, worksCount = 5)
+
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, listOf(experts))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 500L, 500L)
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val orcids = invocation.arguments[0] as List<String>
+            orcids.associateWith { EnrichmentOutcome.Success(enrichment) }
+        }.`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(org.springframework.http.HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        val result = svc.enrichExistingExperts()
+
+        assertEquals(500, result.enriched)
+        Mockito.verify(openAlex, Mockito.times(10)).batchEnrichByOrcids(Mockito.anyList())
+    }
+
+    @Test
+    fun `enrichExistingExperts backs off on RateLimited batch`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val experts = (1..55).map { i ->
+            com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = String.format("0000-%04d", i), email = "e$i@example.com",
+                givenNames = "Test", familyNames = "$i",
+                country = "US", keyword = null, employment = null
+            )
+        }
+        val enrichment = AuthorEnrichment(hIndex = 10, citationCount = 100, worksCount = 5)
+        var batchCalls = 0
+
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, listOf(experts))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 55L, 55L)
+        Mockito.doAnswer { invocation ->
+            batchCalls++
+            @Suppress("UNCHECKED_CAST")
+            val orcids = invocation.arguments[0] as List<String>
+            if (batchCalls == 1) {
+                orcids.associateWith { EnrichmentOutcome.RateLimited(10L) }
+            } else {
+                orcids.associateWith { EnrichmentOutcome.Success(enrichment) }
+            }
+        }.`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(org.springframework.http.HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        val result = svc.enrichExistingExperts()
+
+        assertEquals(5, result.enriched)
+        assertEquals(50, result.failureReasons["RATE_LIMITED"])
+        Mockito.verify(openAlex, Mockito.times(2)).batchEnrichByOrcids(Mockito.anyList())
+    }
+
+    @Test
+    fun `enrichExistingExperts trips circuit breaker after 5 consecutive RateLimited batches`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val experts = (1..250).map { i ->
+            com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = String.format("0000-%04d", i), email = "e$i@example.com",
+                givenNames = "Test", familyNames = "$i",
+                country = "US", keyword = null, employment = null
+            )
+        }
+
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, listOf(experts))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 250L, 250L)
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val orcids = invocation.arguments[0] as List<String>
+            orcids.associateWith { EnrichmentOutcome.RateLimited(null) }
+        }.`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+
+        val result = svc.enrichExistingExperts()
+
+        assertEquals(1, result.failureReasons["CIRCUIT_BREAKER"])
+        assertEquals(250, result.failureReasons["RATE_LIMITED"])
+        assertEquals(0, result.enriched)
+        Mockito.verify(openAlex, Mockito.times(5)).batchEnrichByOrcids(Mockito.anyList())
+    }
+
+    @Test
+    fun `enrichExistingExperts resumes from where it left off on next run`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 100L, 0L)
+        ScrollExpertsMockHelper.stubScrollExpertsFiltered(expertSearchService, emptyList())
+
+        val result = svc.enrichExistingExperts()
+
+        assertEquals(0, result.enriched)
+        assertEquals(0, result.failed)
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList())
     }
 
     @Test

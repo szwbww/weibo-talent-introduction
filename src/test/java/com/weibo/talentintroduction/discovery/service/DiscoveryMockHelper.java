@@ -126,6 +126,23 @@ public class DiscoveryMockHelper {
             );
     }
 
+    public static void stubEsEnrichmentHeadExists(RestTemplate mock) {
+        Mockito.doReturn(ResponseEntity.ok().<Void>build())
+            .when(mock).exchange(
+                Mockito.contains("orcid_info/_doc/"),
+                Mockito.eq(HttpMethod.HEAD),
+                Mockito.any(),
+                Mockito.eq(Void.class)
+            );
+        Mockito.doReturn(ResponseEntity.ok().<Void>build())
+            .when(mock).exchange(
+                Mockito.contains("orcid_info_candidate/_doc/"),
+                Mockito.eq(HttpMethod.HEAD),
+                Mockito.any(),
+                Mockito.eq(Void.class)
+            );
+    }
+
     public static void stubEsDedupSearchError(RestTemplate mock) {
         Mockito.doThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
             .when(mock).exchange(
