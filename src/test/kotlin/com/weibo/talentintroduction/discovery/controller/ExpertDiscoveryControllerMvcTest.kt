@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.LocalDateTime
+import java.util.concurrent.Executor
 
 @WebMvcTest(ExpertDiscoveryController::class)
 @EnableConfigurationProperties(EuropePmcProperties::class, ExpertDiscoveryProperties::class)
@@ -43,6 +44,9 @@ class ExpertDiscoveryControllerMvcTest {
 
     @MockBean
     private lateinit var progressStore: TaskProgressStore
+
+    @MockBean(name = "enrichmentExecutor")
+    private lateinit var enrichmentExecutor: Executor
 
     @MockBean
     private lateinit var openAlexProvider: ObjectProvider<OpenAlexDataSource>

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.expert.service;
 
 import com.weibo.talentintroduction.expert.domain.ExpertProfile;
+import com.weibo.talentintroduction.task.service.TaskProgressStore;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import java.util.List;
@@ -66,6 +67,26 @@ public class ScrollExpertsMockHelper {
         );
     }
 
+    public static void stubSearchAfterExpertsFiltered(
+        ExpertSearchService mock,
+        List<List<ExpertProfile>> batches
+    ) {
+        Mockito.doAnswer((Answer<Void>) invocation -> {
+            var args = invocation.getArguments();
+            var handler = (kotlin.jvm.functions.Function1<List<ExpertProfile>, Boolean>) args[args.length - 1];
+            for (var batch : batches) {
+                var shouldContinue = handler.invoke(batch);
+                if (!shouldContinue) break;
+            }
+            return null;
+        }).when(mock).searchAfterExpertsFiltered(
+            Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.class),
+            Mockito.anyList(),
+            Mockito.anyInt(),
+            Mockito.any(kotlin.jvm.functions.Function1.class)
+        );
+    }
+
     public static void stubCountExperts(
         com.weibo.talentintroduction.expert.service.ExpertSearchService mock,
         long total,
@@ -77,6 +98,56 @@ public class ScrollExpertsMockHelper {
         }).when(mock).countExperts(
             Mockito.eq(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
             Mockito.anyList()
+        );
+    }
+
+    public static void verifyCountExpertsFilterContains(
+        ExpertSearchService mock,
+        String substring
+    ) {
+        var captor = org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        Mockito.verify(mock).countExperts(
+            Mockito.eq(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
+            captor.capture()
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(
+            captor.getValue().toString().contains(substring),
+            "Expected filter to contain: " + substring
+        );
+    }
+
+    public static void stubEnrichmentCancelOnBackoffMessage(TaskProgressStore mock) {
+        var cancelDuringBackoff = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Mockito.doAnswer(invocation -> {
+            var progress = (com.weibo.talentintroduction.task.service.TaskProgress) invocation.getArgument(1);
+            if (progress.getMessage() != null && progress.getMessage().contains("限流退避中")) {
+                cancelDuringBackoff.set(true);
+            }
+            return null;
+        }).when(mock).update(
+            Mockito.eq("EXPERT_ENRICHMENT"),
+            Mockito.any(com.weibo.talentintroduction.task.service.TaskProgress.class),
+            Mockito.nullable(Long.class)
+        );
+        Mockito.doAnswer(invocation -> cancelDuringBackoff.get())
+            .when(mock).isCancelled(Mockito.eq("EXPERT_ENRICHMENT"));
+    }
+
+    public static void verifyEnrichmentProgressContainsStatus(
+        TaskProgressStore mock,
+        String expectedStatus
+    ) {
+        var captor = org.mockito.ArgumentCaptor.forClass(com.weibo.talentintroduction.task.service.TaskProgress.class);
+        Mockito.verify(mock, Mockito.atLeastOnce()).update(
+            Mockito.eq("EXPERT_ENRICHMENT"),
+            captor.capture(),
+            Mockito.nullable(Long.class)
+        );
+        var matched = captor.getAllValues().stream()
+            .anyMatch(progress -> expectedStatus.equals(progress.getStatus()));
+        org.junit.jupiter.api.Assertions.assertTrue(
+            matched,
+            "Expected EXPERT_ENRICHMENT progress status " + expectedStatus
         );
     }
 

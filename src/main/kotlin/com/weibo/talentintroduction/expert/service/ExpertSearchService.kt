@@ -442,6 +442,50 @@ class ExpertSearchService(
             }
         }
     }
+
+    fun searchAfterExpertsFiltered(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        batchSize: Int = 500,
+        handler: (List<ExpertProfile>) -> Boolean
+    ) {
+        val index = expertIndexService.indexName(level)
+        var searchAfter: String? = null
+
+        while (true) {
+            val query = if (filters.isEmpty()) {
+                mapOf("match_all" to emptyMap<String, Any>())
+            } else {
+                mapOf("bool" to mapOf("filter" to filters))
+            }
+            val requestBody = mutableMapOf<String, Any>(
+                "size" to batchSize,
+                "_source" to sourceFields(),
+                "query" to query,
+                "sort" to listOf(mapOf("orcidId" to "asc"))
+            )
+            if (searchAfter != null) {
+                requestBody["search_after"] = listOf(searchAfter)
+            }
+
+            val response = restTemplate.exchange(
+                "${properties.baseUrl}/$index/_search",
+                HttpMethod.POST,
+                HttpEntity(requestBody, headers()),
+                JsonNode::class.java
+            ).body ?: break
+
+            val hits = response.path("hits").path("hits")
+            if (hits.isEmpty) break
+
+            val experts = hits.map { hit -> toExpertProfile(hit) }
+            if (!handler(experts)) break
+            if (hits.size() < batchSize) break
+
+            searchAfter = hits[hits.size() - 1].path("sort").get(0).asText()
+        }
+    }
+
     fun findByOrcidId(orcidId: String, level: ExpertIndexLevel): ExpertProfile? {
         require(orcidId.isNotBlank()) { "orcidId must not be blank" }
 

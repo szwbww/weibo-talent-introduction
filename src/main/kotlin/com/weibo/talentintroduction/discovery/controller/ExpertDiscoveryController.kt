@@ -18,6 +18,7 @@ import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -26,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 @RestController
 @RequestMapping("/api/expert-discovery")
@@ -33,6 +36,8 @@ class ExpertDiscoveryController(
     private val discoveryService: ExpertDiscoveryService,
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
+    @Qualifier("enrichmentExecutor")
+    private val enrichmentExecutor: Executor,
     private val discoveryProperties: ExpertDiscoveryProperties,
     private val openAlexProvider: ObjectProvider<OpenAlexDataSource>,
     private val crossrefProvider: ObjectProvider<CrossrefDataSource>,
@@ -211,7 +216,7 @@ class ExpertDiscoveryController(
     @PostMapping("/enrich")
     fun enrichExperts(): ResponseEntity<Any> {
         val taskType = "EXPERT_ENRICHMENT"
-        val (started, token) = progressStore.tryStartWithToken(taskType, TaskProgress(
+        val (started, pendingToken) = progressStore.tryStartWithToken(taskType, TaskProgress(
             taskType = taskType, status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
         ))
@@ -219,36 +224,46 @@ class ExpertDiscoveryController(
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
-        var executionId: Long? = null
+
         try {
-            val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
-                taskType, "MANUAL", emptyMap<String, Any>(),
-                onStarted = { id ->
-                    executionId = id
-                    progressStore.bindExecutionId(taskType, token, id)
+            enrichmentExecutor.execute {
+                var executionId: Long? = null
+                try {
+                    taskExecutionService.runAndRecordWithResult(
+                        taskType, "MANUAL", emptyMap<String, Any>(),
+                        onStarted = { id ->
+                            executionId = id
+                            progressStore.bindExecutionId(taskType, pendingToken, id)
+                        }
+                    ) {
+                        discoveryService.enrichExistingExperts()
+                    }
+                } catch (ex: Exception) {
+                    progressStore.update(taskType, TaskProgress(
+                        taskType = taskType, status = "FAILED",
+                        batchNumber = 0, processedCount = 0, totalCount = 0,
+                        message = ex.message ?: "初始化失败",
+                        executionId = executionId
+                    ), executionId)
+                } finally {
+                    val execId = executionId
+                    if (execId != null) {
+                        progressStore.clearExecutionContext(taskType, execId)
+                    } else {
+                        progressStore.clearExecutionContext(taskType, pendingToken)
+                    }
+                    val remaining = progressStore.get(taskType)
+                    if (remaining?.status in setOf("RUNNING", "CANCELLING")) {
+                        progressStore.clear(taskType)
+                    }
                 }
-            ) {
-                discoveryService.enrichExistingExperts()
             }
-            return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
-        } catch (ex: Exception) {
-            progressStore.update(taskType, TaskProgress(
-                taskType = taskType, status = "FAILED",
-                batchNumber = 0, processedCount = 0, totalCount = 0,
-                message = ex.message ?: "初始化失败"
-            ), executionId)
-            throw ex
-        } finally {
-            val execId = executionId
-            if (execId != null) {
-                progressStore.clearExecutionContext(taskType, execId)
-            } else {
-                progressStore.clearExecutionContext(taskType, token)
-            }
-            val remaining = progressStore.get(taskType)
-            if (remaining?.status in setOf("RUNNING", "CANCELLING")) {
-                progressStore.clear(taskType)
-            }
+        } catch (reEx: RejectedExecutionException) {
+            progressStore.clear(taskType)
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "任务启动失败，请稍后重试"))
         }
+
+        return ResponseEntity.accepted().body(mapOf("message" to "任务已启动"))
     }
 }

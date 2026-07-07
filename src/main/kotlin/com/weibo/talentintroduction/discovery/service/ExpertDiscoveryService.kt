@@ -787,31 +787,54 @@ class ExpertDiscoveryService(
     }
 
     fun getEnrichmentStats(): EnrichmentStats {
+        val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
         val total = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE)
-        val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters())
+        val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters(cutoff))
         val enrichedRecently = total - pending
         return EnrichmentStats(pending, enrichedRecently, total)
     }
 
-    private fun buildEnrichmentFilters(): List<Map<String, Any>> {
-        val thirtyDaysAgo = LocalDateTime.now().minusDays(30).format(dateFormatter)
+    private fun buildEnrichmentFilters(cutoff: String): List<Map<String, Any>> {
         return listOf(
             mapOf(
                 "bool" to mapOf(
                     "should" to listOf(
                         mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))))),
-                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to thirtyDaysAgo)))
+                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to cutoff)))
                     ),
-                    "minimum_should_match" to 1
+                    "minimum_should_match" to 1,
+                    "must_not" to listOf(
+                        mapOf("prefix" to mapOf("orcidId" to "EMAIL-"))
+                    )
                 )
             )
         )
     }
 
+    private fun sleepInterruptible(taskType: String, ms: Long): Boolean {
+        if (ms <= 0) return progressStore.isCancelled(taskType)
+        var remaining = ms
+        while (remaining > 0) {
+            if (progressStore.isCancelled(taskType)) return true
+            val slice = minOf(remaining, 1000L)
+            Thread.sleep(slice)
+            remaining -= slice
+        }
+        return progressStore.isCancelled(taskType)
+    }
+
+    private fun computeEnrichmentBackoffMs(consecutiveRateLimits: Int, retryAfterMs: Long?): Long {
+        val exponential = 2000L * (1L shl (consecutiveRateLimits - 1).coerceAtMost(20))
+        return (retryAfterMs ?: exponential).coerceAtMost(openAlexProperties.enrichmentMaxBackoffMs)
+    }
+
     fun enrichExistingExperts(): EnrichmentResult {
         val taskType = "EXPERT_ENRICHMENT"
         val execId = progressStore.getCurrentExecutionId(taskType)
-        val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters())
+        val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
+        val filters = buildEnrichmentFilters(cutoff)
+        val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, filters)
+        val rateLimitMode = openAlexProperties.enrichmentRateLimitMode.uppercase(Locale.ROOT)
         progressStore.update(taskType, TaskProgress(
             taskType = taskType, status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = pendingCount, message = "初始化中..."
@@ -830,90 +853,101 @@ class ExpertDiscoveryService(
         var enriched = 0
         var failed = 0
         var scanned = 0
+        var rateLimitWaits = 0
         val failureReasons = mutableMapOf<String, Int>()
         var consecutiveRateLimits = 0
         var circuitBreakerTripped = false
 
         try {
             var batchNumber = 0
-            expertSearchService.scrollExpertsFiltered(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters()) { batch ->
+            expertSearchService.searchAfterExpertsFiltered(ExpertIndexLevel.CANDIDATE, filters) { batch ->
                 if (circuitBreakerTripped || progressStore.isCancelled(taskType)) {
                     log.info("Enrichment task cancelled or circuit breaker tripped at batch {}", batchNumber)
-                    return@scrollExpertsFiltered false
+                    return@searchAfterExpertsFiltered false
                 }
                 batchNumber++
                 val enrichedBefore = enriched
                 val failedBefore = failed
                 val failureReasonsBefore = HashMap(failureReasons)
-
-                val withOrcid = batch.filter { !it.orcidId.startsWith("EMAIL-") }
-                val noOrcid = batch.size - withOrcid.size
                 scanned += batch.size
-                if (noOrcid > 0) {
-                    failed += noOrcid
-                    failureReasons.merge("NO_ORCID_ID", noOrcid) { a, b -> a + b }
-                }
 
-                for (chunk in withOrcid.chunked(openAlexProperties.enrichmentBatchSize)) {
+                for (chunk in batch.chunked(openAlexProperties.enrichmentBatchSize)) {
                     if (circuitBreakerTripped || progressStore.isCancelled(taskType)) break
 
-                    val outcomes = openAlex.batchEnrichByOrcids(chunk.map { it.orcidId })
-                    val allRateLimited = outcomes.values.all { it is EnrichmentOutcome.RateLimited }
-                    if (allRateLimited) {
+                    val profilesByOrcid = chunk.associateBy { it.orcidId }
+                    var retryOrcids = chunk.map { it.orcidId }
+
+                    while (retryOrcids.isNotEmpty()) {
+                        if (circuitBreakerTripped || progressStore.isCancelled(taskType)) break
+
+                        if (openAlexProperties.enrichmentDelayMs > 0) {
+                            if (sleepInterruptible(taskType, openAlexProperties.enrichmentDelayMs)) break
+                        }
+
+                        val outcomes = openAlex.batchEnrichByOrcids(retryOrcids)
+                        val rateLimitedOrcids = outcomes.filterValues { it is EnrichmentOutcome.RateLimited }.keys
+
+                        for (orcidId in retryOrcids) {
+                            if (orcidId in rateLimitedOrcids) continue
+                            val profile = profilesByOrcid[orcidId] ?: continue
+                            when (val outcome = outcomes[orcidId] ?: EnrichmentOutcome.NotFound) {
+                                is EnrichmentOutcome.Success -> {
+                                    if (updateExpertAcademicFields(profile.orcidId, outcome.data)) {
+                                        enriched++
+                                    } else {
+                                        failed++
+                                        failureReasons.merge("ES_UPDATE_FAILED", 1) { a, b -> a + b }
+                                    }
+                                }
+                                is EnrichmentOutcome.NotFound -> {
+                                    failed++
+                                    failureReasons.merge("ORCID_NOT_IN_OPENALEX", 1) { a, b -> a + b }
+                                }
+                                is EnrichmentOutcome.ApiError -> {
+                                    failed++
+                                    failureReasons.merge("OPENALEX_API_ERROR", 1) { a, b -> a + b }
+                                }
+                                is EnrichmentOutcome.RateLimited -> Unit
+                            }
+                        }
+
+                        if (rateLimitedOrcids.isEmpty()) {
+                            consecutiveRateLimits = 0
+                            break
+                        }
+
                         consecutiveRateLimits++
-                        failed += outcomes.size
-                        failureReasons.merge("RATE_LIMITED", outcomes.size) { a, b -> a + b }
-                        if (consecutiveRateLimits >= 5) {
+                        rateLimitWaits++
+                        if (rateLimitMode == "ABORT" && consecutiveRateLimits >= 5) {
                             failureReasons["CIRCUIT_BREAKER"] = 1
                             circuitBreakerTripped = true
-                            log.warn("Enrichment: 连续 {} 次限流，熔断退出", consecutiveRateLimits)
-                        } else {
-                            val retryAfterMs = (outcomes.values.first() as EnrichmentOutcome.RateLimited).retryAfterMs
-                            val backoffMs = (retryAfterMs
-                                ?: (2000L * (1L shl (consecutiveRateLimits - 1))))
-                                .coerceAtMost(60_000)
-                            log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
-                            Thread.sleep(backoffMs)
+                            log.warn("Enrichment: 连续 {} 次限流，熔断退出 (ABORT 模式)", consecutiveRateLimits)
+                            break
                         }
-                        continue
-                    }
-                    consecutiveRateLimits = 0
 
-                    for (profile in chunk) {
-                        when (val outcome = outcomes[profile.orcidId] ?: EnrichmentOutcome.NotFound) {
-                            is EnrichmentOutcome.Success -> {
-                                if (updateExpertAcademicFields(profile.orcidId, outcome.data)) {
-                                    enriched++
-                                } else {
-                                    failed++
-                                    failureReasons.merge("ES_UPDATE_FAILED", 1) { a, b -> a + b }
-                                }
-                            }
-                            is EnrichmentOutcome.NotFound -> {
-                                failed++
-                                failureReasons.merge("ORCID_NOT_IN_OPENALEX", 1) { a, b -> a + b }
-                            }
-                            is EnrichmentOutcome.ApiError -> {
-                                failed++
-                                failureReasons.merge("OPENALEX_API_ERROR", 1) { a, b -> a + b }
-                            }
-                            is EnrichmentOutcome.RateLimited -> {
-                                consecutiveRateLimits++
-                                failed++
-                                failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
-                                if (consecutiveRateLimits >= 5) {
-                                    failureReasons["CIRCUIT_BREAKER"] = 1
-                                    circuitBreakerTripped = true
-                                    log.warn("Enrichment: 连续 {} 次限流，熔断退出", consecutiveRateLimits)
-                                    break
-                                }
-                                val backoffMs = (outcome.retryAfterMs
-                                    ?: (2000L * (1L shl (consecutiveRateLimits - 1))))
-                                    .coerceAtMost(60_000)
-                                log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
-                                Thread.sleep(backoffMs)
-                            }
-                        }
+                        val firstRateLimited = outcomes[rateLimitedOrcids.first()] as EnrichmentOutcome.RateLimited
+                        val backoffMs = computeEnrichmentBackoffMs(consecutiveRateLimits, firstRateLimited.retryAfterMs)
+                        val processed = enriched + failed
+                        log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
+                        progressStore.update(taskType, TaskProgress(
+                            taskType = taskType, status = "RUNNING",
+                            batchNumber = batchNumber,
+                            processedCount = processed.toLong(),
+                            totalCount = pendingCount,
+                            message = "限流退避中 ${backoffMs / 1000}s（第 $rateLimitWaits 次），已处理 $processed/$pendingCount，成功 $enriched，失败 $failed",
+                            details = mapOf(
+                                "enriched" to enriched,
+                                "failed" to failed,
+                                "scanned" to scanned,
+                                "failureReasons" to HashMap(failureReasons),
+                                "rateLimitWaits" to rateLimitWaits,
+                                "currentBackoffMs" to backoffMs,
+                                "mode" to rateLimitMode
+                            )
+                        ), execId)
+
+                        if (sleepInterruptible(taskType, backoffMs)) break
+                        retryOrcids = rateLimitedOrcids.toList()
                     }
                 }
 
@@ -930,7 +964,9 @@ class ExpertDiscoveryService(
                         "enriched" to enriched,
                         "failed" to failed,
                         "scanned" to scanned,
-                        "failureReasons" to HashMap(failureReasons)
+                        "failureReasons" to HashMap(failureReasons),
+                        "rateLimitWaits" to rateLimitWaits,
+                        "mode" to rateLimitMode
                     ),
                     batchProcessed = batch.size,
                     batchPassed = batchPassed.coerceAtLeast(0),
@@ -951,10 +987,36 @@ class ExpertDiscoveryService(
                         "enriched" to enriched,
                         "failed" to failed,
                         "scanned" to scanned,
-                        "failureReasons" to HashMap(failureReasons)
+                        "failureReasons" to HashMap(failureReasons),
+                        "rateLimitWaits" to rateLimitWaits,
+                        "mode" to rateLimitMode
                     )
                 ), execId)
                 return EnrichmentResult(enriched, failed, HashMap(failureReasons), wasCancelled = true)
+            }
+
+            if (circuitBreakerTripped) {
+                val processed = enriched + failed
+                log.warn(
+                    "Enrichment circuit breaker tripped: enriched={}, failed={}, scanned={}, failureReasons={}",
+                    enriched, failed, scanned, failureReasons
+                )
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "FAILED",
+                    batchNumber = -1, processedCount = processed.toLong(), totalCount = pendingCount,
+                    message = "连续限流熔断退出 (ABORT 模式): 成功 $enriched, 失败 $failed",
+                    details = mapOf(
+                        "enriched" to enriched,
+                        "failed" to failed,
+                        "scanned" to scanned,
+                        "failureReasons" to HashMap(failureReasons),
+                        "rateLimitWaits" to rateLimitWaits,
+                        "mode" to rateLimitMode
+                    )
+                ), execId)
+                return EnrichmentResult(
+                    enriched, failed, HashMap(failureReasons), circuitBreakerTripped = true
+                )
             }
 
             val processed = enriched + failed
@@ -966,7 +1028,9 @@ class ExpertDiscoveryService(
                     "enriched" to enriched,
                     "failed" to failed,
                     "scanned" to scanned,
-                    "failureReasons" to HashMap(failureReasons)
+                    "failureReasons" to HashMap(failureReasons),
+                    "rateLimitWaits" to rateLimitWaits,
+                    "mode" to rateLimitMode
                 )
             ), execId)
         } catch (e: Exception) {
@@ -977,7 +1041,9 @@ class ExpertDiscoveryService(
                 details = mapOf(
                     "enriched" to enriched,
                     "failed" to failed,
-                    "failureReasons" to HashMap(failureReasons)
+                    "failureReasons" to HashMap(failureReasons),
+                    "rateLimitWaits" to rateLimitWaits,
+                    "mode" to rateLimitMode
                 )
             ), execId)
             throw e
@@ -1212,10 +1278,15 @@ data class EnrichmentResult(
     val enriched: Int,
     val failed: Int,
     val failureReasons: Map<String, Int> = emptyMap(),
-    val wasCancelled: Boolean = false
+    val wasCancelled: Boolean = false,
+    val circuitBreakerTripped: Boolean = false
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = enriched
     override val taskFailureCount: Int get() = failed
     override val taskFinalStatus: String?
-        get() = if (wasCancelled) "CANCELLED" else null
+        get() = when {
+            wasCancelled -> "CANCELLED"
+            circuitBreakerTripped -> "FAILED"
+            else -> null
+        }
 }

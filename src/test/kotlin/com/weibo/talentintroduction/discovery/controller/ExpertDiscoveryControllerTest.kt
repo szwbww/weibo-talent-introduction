@@ -29,11 +29,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.http.HttpStatus
+import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 class ExpertDiscoveryControllerTest {
     private val discoveryService = Mockito.mock(ExpertDiscoveryService::class.java)
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+    private val enrichmentExecutor = Mockito.mock(Executor::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
@@ -52,7 +56,7 @@ class ExpertDiscoveryControllerTest {
     private val europePmcProperties = EuropePmcProperties()
     private val discoveryProperties = ExpertDiscoveryProperties()
     private val controller = ExpertDiscoveryController(
-        discoveryService, taskExecutionService, progressStore, discoveryProperties,
+        discoveryService, taskExecutionService, progressStore, enrichmentExecutor, discoveryProperties,
         openAlexProvider, crossrefProvider, arxivProvider,
         pmcOaProvider, orcidProvider, coreProvider, europePmcProperties
     )
@@ -63,6 +67,15 @@ class ExpertDiscoveryControllerTest {
 
     private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
     private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
+
+    @org.junit.jupiter.api.BeforeEach
+    fun setUp() {
+        Mockito.doAnswer { invocation ->
+            val runnable = invocation.getArgument<Runnable>(0)
+            runnable.run()
+            null
+        }.`when`(enrichmentExecutor).execute(Mockito.any(Runnable::class.java))
+    }
 
     @Test
     fun `triggerDiscovery returns 409 when task is running`() {
@@ -210,7 +223,7 @@ class ExpertDiscoveryControllerTest {
     fun `getAvailableSources reflects Europe PMC enabled state`() {
         val disabledProps = EuropePmcProperties(enabled = false)
         val disabledController = ExpertDiscoveryController(
-            discoveryService, taskExecutionService, progressStore, discoveryProperties,
+            discoveryService, taskExecutionService, progressStore, enrichmentExecutor, discoveryProperties,
             openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider, disabledProps
         )
@@ -251,7 +264,7 @@ class ExpertDiscoveryControllerTest {
     }
 
     @Test
-    fun `enrichExperts returns ok on success`() {
+    fun `enrichExperts returns 202 when task starts asynchronously`() {
         Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
             .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
@@ -263,11 +276,22 @@ class ExpertDiscoveryControllerTest {
             .`when`(discoveryService).enrichExistingExperts()
 
         val result = controller.enrichExperts()
-        assertEquals(200, result.statusCodeValue)
-        val body = result.body as TaskLaunchResponse<*>
-        assertEquals(1L, body.executionId)
-        val enrichResult = body.result as EnrichmentResult
-        assertEquals(3, enrichResult.enriched)
-        assertEquals(1, enrichResult.failed)
+        assertEquals(HttpStatus.ACCEPTED, result.statusCode)
+        val body = result.body as Map<*, *>
+        assertEquals("任务已启动", body["message"])
+        Mockito.verify(discoveryService).enrichExistingExperts()
+    }
+
+    @Test
+    fun `enrichExperts returns 409 when executor rejects submission`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.doThrow(RejectedExecutionException("pool saturated"))
+            .`when`(enrichmentExecutor).execute(Mockito.any(Runnable::class.java))
+
+        val result = controller.enrichExperts()
+        assertEquals(409, result.statusCodeValue)
+        Mockito.verify(progressStore).clear("EXPERT_ENRICHMENT")
+        Mockito.verify(discoveryService, Mockito.never()).enrichExistingExperts()
     }
 }

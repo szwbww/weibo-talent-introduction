@@ -204,14 +204,18 @@ class OpenAlexDataSource(
         val url = "${properties.baseUrl}/authors?filter=orcid:$filterValue&per_page=${orcids.size}" +
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
 
-        if (properties.enrichmentDelayMs > 0) Thread.sleep(properties.enrichmentDelayMs)
-
         val response = try {
             restTemplate.getForObject(url, JsonNode::class.java)
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) {
-                val retryAfter = e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                val retryAfterHeader = e.responseHeaders?.getFirst("Retry-After")
+                val bodyPreview = e.responseBodyAsString.take(500)
+                log.warn(
+                    "OpenAlex batch rate limited: status={}, Retry-After={}, body={}",
+                    code, retryAfterHeader, bodyPreview
+                )
+                val retryAfter = retryAfterHeader?.toLongOrNull()?.times(1000)
                 return orcids.associateWith { EnrichmentOutcome.RateLimited(retryAfter) }
             }
             return orcids.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }

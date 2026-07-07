@@ -3835,16 +3835,6 @@ async function executeEnrichExperts() {
             await bindTaskModalExecution(taskType, capturedGeneration, executionId);
         }
         markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
-        const result = response?.result || response || {};
-        const enriched = result.enriched ?? result.taskSuccessCount ?? result.successCount ?? 0;
-        const failed = result.failed ?? result.taskFailureCount ?? result.failureCount ?? 0;
-        notifyTaskCompletionOnce({
-            taskType,
-            executionId,
-            status: "COMPLETED",
-            message: `学术数据补充完成: 成功 ${enriched}, 失败 ${failed}`,
-            level: failed > 0 ? "warn" : "ok"
-        });
     } catch (e) {
         if (e.message.includes("正在执行中")) {
             showStatus(e.message, "warn");

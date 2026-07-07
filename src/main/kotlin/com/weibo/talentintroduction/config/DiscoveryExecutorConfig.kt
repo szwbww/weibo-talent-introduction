@@ -22,4 +22,16 @@ class DiscoveryExecutorConfig(
         executor.initialize()
         return executor
     }
+
+    @Bean("enrichmentExecutor")
+    fun enrichmentExecutor(): Executor {
+        val executor = ThreadPoolTaskExecutor()
+        executor.corePoolSize = 1
+        executor.maxPoolSize = 1
+        executor.setQueueCapacity(0)
+        executor.setThreadNamePrefix("enrichment-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.initialize()
+        return executor
+    }
 }

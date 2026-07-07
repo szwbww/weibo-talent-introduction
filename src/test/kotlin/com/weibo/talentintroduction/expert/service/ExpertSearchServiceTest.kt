@@ -689,6 +689,55 @@ class ExpertSearchServiceTest {
     }
 
     @Test
+    fun `searchAfterExpertsFiltered paginates with search_after and stops early`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "hits": {
+                "hits": [
+                  {
+                    "_source": {"orcidId": "0001", "email": "a@b.com"},
+                    "sort": ["0001"]
+                  },
+                  {
+                    "_source": {"orcidId": "0002", "email": "b@b.com"},
+                    "sort": ["0002"]
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+
+        var processedCount = 0
+        service.searchAfterExpertsFiltered(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("term" to mapOf("operatorStatus" to "CONTACTED"))),
+            batchSize = 2
+        ) { batch ->
+            processedCount += batch.size
+            false
+        }
+
+        assertEquals(2, processedCount)
+        val firstRequest = capture.value.body as Map<*, *>
+        val sort = firstRequest["sort"] as List<*>
+        assertTrue(sort.toString().contains("orcidId"))
+        assertEquals(null, firstRequest["search_after"])
+    }
+
+    @Test
     fun `scrollExpertsFiltered sends search request with filters and cleans up`() {
         val page1 = mapper.readTree(
             """

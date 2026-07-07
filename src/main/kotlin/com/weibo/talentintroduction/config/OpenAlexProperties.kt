@@ -15,6 +15,8 @@ data class OpenAlexProperties(
     val readTimeoutMs: Int = 15000,
     val enrichmentDelayMs: Long = 300,
     val enrichmentBatchSize: Int = 50,
+    val enrichmentRateLimitMode: String = "WAIT",
+    val enrichmentMaxBackoffMs: Long = 1_800_000,
     val fetchWorksEnabled: Boolean = false,
     val fetchPatentsEnabled: Boolean = false
 )
