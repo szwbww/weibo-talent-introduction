@@ -220,10 +220,10 @@ button, input, select, textarea {
 
 /* Main */
 .main {
-    padding: 28px 32px;
+    padding: 16px 20px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
     overflow-y: auto;
     height: 100vh;
     max-height: 100vh;
@@ -236,15 +236,16 @@ button, input, select, textarea {
 #view-contacts.active {
     flex: 1 1 auto;
     min-height: 0;
+    gap: 8px;
 }
 
 .topbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     border-bottom: 1px solid var(--panel-border);
-    padding-bottom: 16px;
+    padding-bottom: 10px;
 }
 
 h1 {
@@ -333,7 +334,8 @@ p {
 /* Toolbar groups: filters vs actions */
 .contacts-toolbar {
     justify-content: space-between;
-    row-gap: 8px;
+    row-gap: 6px;
+    padding: 8px 12px;
 }
 
 .toolbar-group {
@@ -414,8 +416,31 @@ p {
 }
 
 /* Filter toggle (only shown on mobile, see responsive section) */
-.toolbar .filter-toggle {
+/* filter-toggle is now always visible (desktop + mobile) */
+
+.contacts-toolbar .toolbar-filters {
     display: none;
+    width: 100%;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+}
+
+.contacts-toolbar .toolbar-filters.open {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+}
+
+.contacts-toolbar .toolbar-filters.open .toolbar-label {
+    font-size: 11px;
+}
+
+.contacts-toolbar .toolbar-filters.open .toolbar-label select,
+.contacts-toolbar .toolbar-filters.open .toolbar-label input {
+    min-width: 80px;
+    height: 28px;
+    min-height: 28px;
 }
 
 .filter-count-badge {
@@ -431,6 +456,46 @@ p {
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
+}
+
+/* Tag-chip multi-select (数据完整度) */
+.tag-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    user-select: none;
+    line-height: 1;
+}
+
+.tag-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+}
+
+.tag-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(var(--primary-rgb), 0.3);
 }
 
 /* Back to list button (only shown in single-column layout, see responsive section) */
@@ -4662,14 +4727,14 @@ tr td {
 .batch-send-paused-banner {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    margin-bottom: 12px;
+    gap: 8px;
+    padding: 6px 14px;
+    margin-bottom: 0;
     border-radius: var(--radius-sm);
     background-color: var(--error-bg);
     border: 1px solid var(--error-border);
     color: var(--error);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
 }
 .batch-send-paused-banner-icon {

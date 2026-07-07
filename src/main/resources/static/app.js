@@ -8924,7 +8924,7 @@ function bindEvents() {
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
-        "expertRecentYearsFilter", "expertHasFieldFilter"].forEach((id) => {
+        "expertRecentYearsFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
     ["expertHIndexMinFilter", "expertCitationMinFilter"].forEach((id) => {
@@ -8941,6 +8941,31 @@ function bindEvents() {
         const open = group.classList.toggle("open");
         $("#filterToggleBtn").setAttribute("aria-expanded", String(open));
     });
+
+    /* ── Tag-chip multi-select for 数据完整度 ── */
+    (function initHasFieldTags() {
+        const container = $("#hasFieldTagSelect");
+        if (!container) return;
+        const chips = container.querySelectorAll(".tag-chip");
+
+        /* Shim: expose .selectedOptions so existing query code works unchanged */
+        const shimEl = document.createElement("span");
+        shimEl.id = "expertHasFieldFilter";
+        shimEl.style.display = "none";
+        Object.defineProperty(shimEl, "selectedOptions", {
+            get() {
+                return Array.from(chips)
+                    .filter((c) => c.classList.contains("active"))
+                    .map((c) => ({ value: c.dataset.value }));
+            }
+        });
+        container.appendChild(shimEl);
+
+        chips.forEach((chip) => chip.addEventListener("click", () => {
+            chip.classList.toggle("active");
+            reloadContactsFromStart();
+        }));
+    })();
     $("#contactPrevPage").addEventListener("click", () => {
         if (state.contactsPage > 0) {
             state.contactsPage -= 1;
