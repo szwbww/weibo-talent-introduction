@@ -56,9 +56,23 @@ class MailVariableService(
                 key = key,
                 label = label,
                 nullable = key in EXPERT_KEYS,
-                example = VARIABLE_EXAMPLES[key].orEmpty()
+                example = VARIABLE_EXAMPLES[key].orEmpty(),
+                esField = ES_FIELD_BY_KEY[key]
             )
         }
+
+    fun filterableEsFields(text: String): List<String> {
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val esFieldByKey = variableMetadata().associate { it.key to it.esField }
+        val fields = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            esFieldByKey[parsed.key]?.let { fields.add(it) }
+        }
+        return fields.toList()
+    }
 
     fun toTemplateVariableItems(variables: Map<String, String>): List<TemplateVariableItem> =
         variables.map { (key, value) ->
@@ -78,7 +92,12 @@ class MailVariableService(
         val variables = buildVariables(account, expert)
         val rendered = mailComposeTemplateService.renderWithVariables(text, variables)
         val fallbackKeys = detectFallbackKeys(text, variables)
-        return RenderPreviewResult(rendered = rendered, fallbackKeys = fallbackKeys)
+        return RenderPreviewResult(
+            rendered = rendered,
+            fallbackKeys = fallbackKeys,
+            variables = buildPreviewVariables(text, variables, fallbackKeys),
+            invalidTokens = unknownPlaceholderTokens(text)
+        )
     }
 
     fun validatePlaceholders(text: String): List<String> {
@@ -104,6 +123,46 @@ class MailVariableService(
         require(violations.isEmpty()) {
             "Invalid placeholders: ${violations.joinToString(", ")}"
         }
+    }
+
+    private fun buildPreviewVariables(
+        text: String,
+        variables: Map<String, String>,
+        fallbackKeys: List<String>
+    ): List<PreviewVariableItem> {
+        val metaByKey = variableMetadata().associateBy { it.key }
+        val fallbackSet = fallbackKeys.toSet()
+        val keysInText = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            keysInText.add(parsePlaceholderToken(match.groupValues[1]).key)
+        }
+        return keysInText.mapNotNull { key ->
+            val meta = metaByKey[key] ?: return@mapNotNull null
+            val value = variables[key].orEmpty()
+            PreviewVariableItem(
+                key = key,
+                label = meta.label,
+                value = value,
+                filled = value.isNotBlank(),
+                usedFallback = key in fallbackSet
+            )
+        }
+    }
+
+    private fun unknownPlaceholderTokens(text: String): List<String> {
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val metaByKey = variableMetadata().associateBy { it.key }
+        val tokens = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val token = match.value
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            if (metaByKey[parsed.key] == null) {
+                tokens.add(token)
+            }
+        }
+        return tokens.toList()
     }
 
     private fun detectFallbackKeys(text: String, variables: Map<String, String>): List<String> {
@@ -205,6 +264,28 @@ class MailVariableService(
             "unsubscribeUrl" to "退订链接"
         )
 
+        val ES_FIELD_BY_KEY: Map<String, String?> = mapOf(
+            "senderEmail" to null,
+            "senderName" to null,
+            "senderTitle" to null,
+            "teamName" to null,
+            "countryName" to null,
+            "expertName" to null,
+            "expertFamilyName" to "familyNames",
+            "researchFields" to "researchFields",
+            "institution" to "institution",
+            "keyword" to "keyword",
+            "expertCountry" to "country",
+            "employment" to "employment",
+            "hIndex" to "hIndex",
+            "worksCount" to "worksCount",
+            "lastPublicationYear" to "lastPublicationYear",
+            "degree" to "degree",
+            "recentWorkTitle" to "recentWorkTitles",
+            "patentTitle" to "patentTitles",
+            "unsubscribeUrl" to null
+        )
+
         private val VARIABLE_EXAMPLES: Map<String, String> = mapOf(
             "senderEmail" to "chenjj@qftechtalent.com",
             "senderName" to "Chen",
@@ -233,12 +314,23 @@ data class VariableMeta(
     val key: String,
     val label: String,
     val nullable: Boolean,
-    val example: String
+    val example: String,
+    val esField: String? = null
+)
+
+data class PreviewVariableItem(
+    val key: String,
+    val label: String,
+    val value: String,
+    val filled: Boolean,
+    val usedFallback: Boolean
 )
 
 data class RenderPreviewResult(
     val rendered: String,
-    val fallbackKeys: List<String>
+    val fallbackKeys: List<String>,
+    val variables: List<PreviewVariableItem> = emptyList(),
+    val invalidTokens: List<String> = emptyList()
 )
 
 private data class ParsedPlaceholder(

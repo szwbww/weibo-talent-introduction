@@ -6391,3 +6391,46 @@ tr td {
     color: var(--text-muted);
     font-size: 13px;
 }
+
+.preview-drawer-shell { position: fixed; inset: 0; z-index: 60; }
+.preview-drawer-shell[hidden] { display: none; }
+.preview-drawer-backdrop { position: absolute; inset: 0; border: none; background: rgba(15, 23, 42, 0.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default; opacity: 0; transition: opacity 0.2s ease; }
+.preview-drawer-shell.open .preview-drawer-backdrop { opacity: 1; }
+.preview-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); display: flex; flex-direction: column; background: var(--panel-bg, #ffffff); border-left: 1px solid var(--border); box-shadow: -16px 0 40px -16px rgba(15, 23, 42, 0.28); transform: translateX(100%); transition: transform 0.24s cubic-bezier(0.22, 0.8, 0.36, 1); }
+.preview-drawer-shell.open .preview-drawer { transform: translateX(0); }
+.preview-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.preview-drawer-title-group { display: flex; align-items: center; gap: 8px; }
+.preview-drawer-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-main); }
+.preview-source-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--primary-light); color: var(--primary); }
+.preview-drawer-close { width: 28px; height: 28px; padding: 0; line-height: 1; }
+.preview-drawer-context { padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.preview-ctx-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-bottom: 8px; }
+.preview-ctx-row { display: flex; gap: 8px; align-items: flex-end; }
+.preview-ctx-grow { flex: 1; min-width: 0; }
+.preview-ctx-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.preview-ctx-field input, .preview-ctx-field select { width: 100%; font-size: 13px; height: 32px; }
+.preview-dice-btn { white-space: nowrap; height: 32px; }
+.preview-coverage { margin: 8px 0 0; font-size: 12px; color: var(--text-muted); }
+.preview-coverage strong { color: var(--text-main); font-weight: 600; }
+.preview-drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.preview-mail-card { background: var(--bg-main); border-radius: 10px; padding: 12px 14px; }
+.preview-mail-meta { width: 100%; font-size: 12px; table-layout: fixed; border-collapse: collapse; }
+.preview-mail-meta td { padding: 2px 0; vertical-align: top; }
+.preview-mail-meta td:first-child { color: var(--text-muted); width: 52px; }
+.preview-mail-meta td:last-child { color: var(--text-main); word-break: break-all; }
+.preview-mail-divider { border-top: 1px solid var(--border); margin: 10px 0; }
+.preview-mail-body { font-size: 13px; line-height: 1.7; color: var(--text-main); }
+.preview-var-value-tag { background: #dcfce7; color: #166534; border-radius: 3px; padding: 0 3px; }
+.preview-var-fallback-tag { background: #fef3c7; color: #92400e; border-radius: 3px; padding: 0 3px; }
+.preview-var-section { margin-top: 14px; }
+.preview-var-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--text-muted); }
+.preview-var-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.preview-var-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.preview-var-dot.filled { background: #16a34a; }
+.preview-var-dot.fallback { background: #f59e0b; }
+.preview-var-dot.invalid { background: #dc2626; }
+.preview-var-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--text-muted); width: 148px; flex-shrink: 0; }
+.preview-var-label { color: var(--text-muted); width: 64px; flex-shrink: 0; }
+.preview-var-value { color: var(--text-main); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-drawer-error { margin: 12px 0 0; font-size: 12px; color: #b91c1c; background: #fef2f2; border-radius: 8px; padding: 8px 12px; }
+@media (max-width: 640px) { .preview-drawer { width: 100vw; border-left: none; } }

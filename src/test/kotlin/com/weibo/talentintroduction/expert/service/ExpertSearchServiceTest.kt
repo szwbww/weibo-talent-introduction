@@ -1108,4 +1108,163 @@ class ExpertSearchServiceTest {
         val innerBool = (regionFilter as Map<*, *>)["bool"] as Map<*, *>
         assertEquals(1, innerBool["minimum_should_match"])
     }
+
+    @Test
+    fun `countByFieldPresence uses exists filters for SATISFY_ALL`() {
+        val responseNode = mapper.readTree("""{"count": 7}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val count = service.countByFieldPresence(
+            ExpertIndexLevel.CANDIDATE,
+            listOf("institution", "country"),
+            FieldPresenceMode.SATISFY_ALL
+        )
+
+        assertEquals(7L, count)
+        val requestPayload = capture.value.body as Map<*, *>
+        val filter = ((requestPayload["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
+        assertTrue(filter.toString().contains("exists") && filter.toString().contains("institution"))
+        assertTrue(filter.toString().contains("exists") && filter.toString().contains("country"))
+    }
+
+    @Test
+    fun `countByFieldPresence uses should must_not exists for MISSING_ANY`() {
+        val responseNode = mapper.readTree("""{"count": 3}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_application/_count"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val count = service.countByFieldPresence(
+            ExpertIndexLevel.APPLICATION,
+            listOf("institution"),
+            FieldPresenceMode.MISSING_ANY
+        )
+
+        assertEquals(3L, count)
+        val requestPayload = capture.value.body as Map<*, *>
+        val bool = ((requestPayload["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
+        val innerBool = ((bool.first() as Map<*, *>)["bool"] as Map<*, *>)
+        assertEquals(1, innerBool["minimum_should_match"])
+        assertTrue(innerBool["should"].toString().contains("must_not"))
+    }
+
+    @Test
+    fun `findRandomByFieldPresence wraps query with function_score random_score and size 20`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "Ada", "familyNames": "Lovelace", "institution": "MIT"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val expert = service.findRandomByFieldPresence(
+            ExpertIndexLevel.CANDIDATE,
+            listOf("institution"),
+            FieldPresenceMode.SATISFY_ALL
+        )
+
+        assertNotNull(expert)
+        assertEquals("0001", expert!!.orcidId)
+        val requestPayload = capture.value.body as Map<*, *>
+        assertEquals(20, requestPayload["size"])
+        val functionScore = (requestPayload["query"] as Map<*, *>)["function_score"] as Map<*, *>
+        assertTrue(functionScore.containsKey("random_score"))
+    }
+
+    @Test
+    fun `findRandomByFieldPresence filters blank institution for SATISFY_ALL batch`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "One", "institution": "   "}},
+                  {"_source": {"orcidId": "0002", "email": "b@b.com", "givenNames": "B", "familyNames": "Two", "institution": "MIT"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val expert = service.findRandomByFieldPresence(
+            ExpertIndexLevel.CANDIDATE,
+            listOf("institution"),
+            FieldPresenceMode.SATISFY_ALL
+        )
+
+        assertNotNull(expert)
+        assertEquals("0002", expert!!.orcidId)
+    }
+
+    @Test
+    fun `findRandomByFieldPresence returns null when SATISFY_ALL batch has only blank text values`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "One", "institution": ""}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val expert = service.findRandomByFieldPresence(
+            ExpertIndexLevel.CANDIDATE,
+            listOf("institution"),
+            FieldPresenceMode.SATISFY_ALL
+        )
+
+        assertNull(expert)
+    }
 }

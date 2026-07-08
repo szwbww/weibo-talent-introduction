@@ -1556,23 +1556,60 @@
     </section>
 </div>
 
-<!-- Modal: Variable Render Preview -->
-<div class="modal-shell" id="varPreviewModal" hidden>
-    <button class="modal-backdrop" id="varPreviewModalBackdrop" type="button" aria-label="关闭变量预览"></button>
-    <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="varPreviewModalTitle">
-        <div class="panel-head modal-head">
-            <h2 id="varPreviewModalTitle">专家变量渲染预览</h2>
-            <button class="button secondary" id="varPreviewModalCloseBtn" type="button">×</button>
+<!-- Preview Drawer: Unified Variable Render Preview -->
+<div class="preview-drawer-shell" id="previewDrawer" hidden>
+  <button class="preview-drawer-backdrop" id="previewDrawerBackdrop" type="button" aria-label="关闭预览"></button>
+  <aside class="preview-drawer" role="dialog" aria-modal="true" aria-labelledby="previewDrawerTitle">
+    <header class="preview-drawer-head">
+      <div class="preview-drawer-title-group">
+        <h2 id="previewDrawerTitle">邮件预览</h2>
+        <span class="preview-source-badge" id="previewSourceBadge">变量渲染</span>
+      </div>
+      <button class="button secondary preview-drawer-close" id="previewDrawerCloseBtn" type="button" aria-label="关闭">×</button>
+    </header>
+    <div class="preview-drawer-context">
+      <div class="preview-ctx-grid">
+        <label class="preview-ctx-field">以专家渲染
+          <input type="text" id="previewOrcidInput" placeholder="ORCID，如 0000-0001-2345-6789" />
+        </label>
+        <label class="preview-ctx-field">范围
+          <select id="previewScopeSel">
+            <option value="CANDIDATE">全部候选（L2）</option>
+            <option value="APPLICATION">已回信（L1）</option>
+          </select>
+        </label>
+      </div>
+      <div class="preview-ctx-row">
+        <label class="preview-ctx-field preview-ctx-grow">抽样模式
+          <select id="previewModeSel">
+            <option value="SATISFY_ALL">随机 · 全满足</option>
+            <option value="MISSING_ANY">随机 · 有缺失</option>
+          </select>
+        </label>
+        <button class="button secondary preview-dice-btn" id="previewDiceBtn" type="button">随机抽取</button>
+        <button class="button secondary" id="previewRefreshBtn" type="button">刷新预览</button>
+      </div>
+      <p class="preview-coverage" id="previewCoverage" hidden></p>
+    </div>
+    <div class="preview-drawer-body">
+      <div class="preview-mail-card">
+        <table class="preview-mail-meta">
+          <tr><td>To</td><td id="previewMailTo">—</td></tr>
+          <tr><td>Subject</td><td id="previewMailSubject">—</td></tr>
+        </table>
+        <div class="preview-mail-divider"></div>
+        <div class="preview-mail-body pre" id="previewMailBody"></div>
+      </div>
+      <div class="preview-var-section">
+        <div class="preview-var-head">
+          <span>变量状态</span>
+          <span class="preview-var-stat" id="previewVarStat"></span>
         </div>
-        <div class="var-preview-orcid-row">
-            <label>专家 ORCID（无绑定联系人时可填）
-                <input id="varPreviewOrcidInput" type="text" placeholder="0000-0001-2345-6789">
-            </label>
-            <button type="button" class="button small" id="varPreviewRefreshBtn">刷新预览</button>
-        </div>
-        <div id="varPreviewBody" class="var-preview-body pre"></div>
-        <div id="varPreviewFallbacks" class="var-fallback-hints"></div>
-    </section>
+        <div id="previewVarRows"></div>
+      </div>
+      <p class="preview-drawer-error" id="previewDrawerError" hidden></p>
+    </div>
+  </aside>
 </div>
 
 <!-- App Core controller -->

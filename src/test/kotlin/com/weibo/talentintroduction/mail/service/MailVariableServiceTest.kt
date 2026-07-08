@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepos
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -224,5 +225,74 @@ class MailVariableServiceTest {
         assertEquals(MailVariableService.VARIABLE_LABELS.size, metadata.size)
         assertTrue(metadata.any { it.key == "expertFamilyName" && it.label == "专家姓氏" })
         assertTrue(metadata.any { it.key == "unsubscribeUrl" && it.label == "退订链接" && !it.nullable })
+    }
+
+    @Test
+    fun `variableMetadata maps twelve filterable es fields and seven null keys`() {
+        val metadata = service.variableMetadata().associateBy { it.key }
+        val filterableKeys = listOf(
+            "expertFamilyName",
+            "researchFields",
+            "institution",
+            "keyword",
+            "expertCountry",
+            "employment",
+            "hIndex",
+            "worksCount",
+            "lastPublicationYear",
+            "degree",
+            "recentWorkTitle",
+            "patentTitle"
+        )
+        filterableKeys.forEach { key ->
+            assertTrue(metadata.containsKey(key), "missing key $key")
+            assertTrue(!metadata[key]!!.esField.isNullOrBlank(), "expected esField for $key")
+        }
+        listOf(
+            "senderEmail",
+            "senderName",
+            "senderTitle",
+            "teamName",
+            "countryName",
+            "expertName",
+            "unsubscribeUrl"
+        ).forEach { key ->
+            assertNull(metadata[key]?.esField, "expected null esField for $key")
+        }
+    }
+
+    @Test
+    fun `filterableEsFields extracts deduplicated es fields in stable order`() {
+        val fields = service.filterableEsFields(
+            "Hi \${institution} at \${institution} in \${expertCountry} from \${senderName}"
+        )
+
+        assertEquals(listOf("institution", "country"), fields)
+    }
+
+    @Test
+    fun `renderPreview exposes variable states and unknown tokens only`() {
+        val sparseExpert = expert.copy(familyNames = null, institution = "Oxford")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(sparseExpert)
+
+        val preview = service.renderPreview(
+            "Dear \${expertFamilyName|there}, at \${institution}, unknown \${bogus}",
+            account,
+            contact
+        )
+
+        assertEquals("Dear there, at Oxford, unknown \${bogus}", preview.rendered)
+        assertEquals(listOf("expertFamilyName"), preview.fallbackKeys)
+        assertEquals(listOf("\${bogus}"), preview.invalidTokens)
+        assertFalse(preview.invalidTokens.contains("\${expertFamilyName|there}"))
+
+        val familyName = preview.variables.single { it.key == "expertFamilyName" }
+        assertTrue(familyName.usedFallback)
+        assertFalse(familyName.filled)
+
+        val institution = preview.variables.single { it.key == "institution" }
+        assertTrue(institution.filled)
+        assertFalse(institution.usedFallback)
     }
 }

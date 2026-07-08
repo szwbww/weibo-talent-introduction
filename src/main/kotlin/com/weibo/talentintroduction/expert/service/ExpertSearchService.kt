@@ -509,6 +509,104 @@ class ExpertSearchService(
         return toExpertProfile(hits[0])
     }
 
+    fun countByFieldPresence(
+        level: ExpertIndexLevel,
+        fields: List<String>,
+        mode: FieldPresenceMode
+    ): Long {
+        if (fields.isEmpty()) {
+            return countExperts(level, emptyList())
+        }
+        return countExperts(level, buildFieldPresenceFilters(fields, mode))
+    }
+
+    fun findRandomByFieldPresence(
+        level: ExpertIndexLevel,
+        fields: List<String>,
+        mode: FieldPresenceMode
+    ): ExpertProfile? {
+        val innerQuery = buildFieldPresenceQuery(fields, mode)
+        val requestBody = mapOf(
+            "size" to 20,
+            "_source" to sourceFields(),
+            "query" to mapOf(
+                "function_score" to mapOf(
+                    "query" to innerQuery,
+                    "random_score" to emptyMap<String, Any>()
+                )
+            )
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return null
+
+        val experts = response.path("hits")
+            .path("hits")
+            .map { hit -> toExpertProfile(hit) }
+        if (experts.isEmpty()) {
+            return null
+        }
+        if (mode == FieldPresenceMode.SATISFY_ALL && fields.isNotEmpty()) {
+            val candidates = experts.filter { profile ->
+                fields.all { field -> profile.hasNonBlankEsField(field) }
+            }
+            return candidates.randomOrNull()
+        }
+        return experts.random()
+    }
+
+    private fun buildFieldPresenceQuery(fields: List<String>, mode: FieldPresenceMode): Map<String, Any> =
+        if (fields.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else if (mode == FieldPresenceMode.MISSING_ANY) {
+            val bool = buildFieldPresenceFilters(fields, mode).single()["bool"] as Map<String, Any>
+            mapOf("bool" to bool)
+        } else {
+            mapOf("bool" to mapOf("filter" to buildFieldPresenceFilters(fields, mode)))
+        }
+
+    private fun buildFieldPresenceFilters(fields: List<String>, mode: FieldPresenceMode): List<Map<String, Any>> =
+        when (mode) {
+            FieldPresenceMode.SATISFY_ALL -> fields.map { field ->
+                mapOf("exists" to mapOf("field" to field))
+            }
+            FieldPresenceMode.MISSING_ANY -> listOf(
+                mapOf(
+                    "bool" to mapOf(
+                        "should" to fields.map { field ->
+                            mapOf(
+                                "bool" to mapOf(
+                                    "must_not" to listOf(mapOf("exists" to mapOf("field" to field)))
+                                )
+                            )
+                        },
+                        "minimum_should_match" to 1
+                    )
+                )
+            )
+        }
+
+    private fun ExpertProfile.hasNonBlankEsField(esField: String): Boolean =
+        when (esField) {
+            "familyNames" -> !familyNames.isNullOrBlank()
+            "institution" -> !institution.isNullOrBlank()
+            "keyword" -> !keyword.isNullOrBlank()
+            "employment" -> !employment.isNullOrBlank()
+            "researchFields" -> !researchFields.isNullOrBlank()
+            "country" -> !country.isNullOrBlank()
+            "degree" -> !degree.isNullOrBlank()
+            "hIndex" -> hIndex != null
+            "worksCount" -> worksCount != null
+            "lastPublicationYear" -> lastPublicationYear != null
+            "recentWorkTitles" -> !recentWorkTitles.isNullOrEmpty()
+            "patentTitles" -> !patentTitles.isNullOrEmpty()
+            else -> true
+        }
+
     fun aggregateTags(
         level: ExpertIndexLevel,
         operatorStatus: String? = null,
@@ -755,3 +853,8 @@ data class TagCount(
     val tag: String,
     val count: Long
 )
+
+enum class FieldPresenceMode {
+    SATISFY_ALL,
+    MISSING_ANY
+}

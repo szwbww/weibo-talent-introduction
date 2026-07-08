@@ -2,7 +2,11 @@ package com.weibo.talentintroduction.qa.controller
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.FieldPresenceMode
 import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.PreviewVariableItem
 import com.weibo.talentintroduction.mail.service.VariableMeta
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
@@ -26,7 +30,8 @@ class QaRuleManagementController(
     private val service: QaRuleManagementService,
     private val qaRuleAuditService: com.weibo.talentintroduction.qa.service.QaRuleAuditService,
     private val mailVariableService: MailVariableService,
-    private val expertContactRepository: ExpertContactRepository
+    private val expertContactRepository: ExpertContactRepository,
+    private val expertSearchService: ExpertSearchService
 ) {
     @GetMapping("/template-variables-meta")
     fun templateVariablesMeta(): List<VariableMeta> =
@@ -38,8 +43,48 @@ class QaRuleManagementController(
         val result = mailVariableService.renderPreview(request.text, account = null, contact)
         return QaRenderPreviewResponse(
             rendered = result.rendered,
-            fallbackKeys = result.fallbackKeys
+            fallbackKeys = result.fallbackKeys,
+            variables = result.variables.map { it.toResponse() },
+            invalidTokens = result.invalidTokens
         )
+    }
+
+    @PostMapping("/preview/random-expert")
+    fun randomExpert(@RequestBody request: QaRandomExpertRequest): QaRandomExpertResponse {
+        return try {
+            val level = parsePreviewLevel(request.level)
+            val mode = parseFieldPresenceMode(request.mode)
+            val filteredFields = mailVariableService.filterableEsFields(request.text)
+            val totalCount = expertSearchService.countByFieldPresence(level, emptyList(), FieldPresenceMode.SATISFY_ALL)
+            val matchCount = if (filteredFields.isEmpty()) {
+                totalCount
+            } else {
+                expertSearchService.countByFieldPresence(level, filteredFields, mode)
+            }
+            val expert = expertSearchService.findRandomByFieldPresence(level, filteredFields, mode)
+            QaRandomExpertResponse(
+                expert = expert?.let {
+                    PreviewExpertSummary(
+                        orcidId = it.orcidId,
+                        displayName = it.displayName,
+                        email = it.email,
+                        indexLevel = level.name
+                    )
+                },
+                matchCount = matchCount,
+                totalCount = totalCount,
+                filteredFields = filteredFields,
+                error = null
+            )
+        } catch (e: Exception) {
+            QaRandomExpertResponse(
+                expert = null,
+                matchCount = 0,
+                totalCount = 0,
+                filteredFields = emptyList(),
+                error = e.message ?: "随机抽样失败"
+            )
+        }
     }
 
     @GetMapping("/categories")
@@ -91,6 +136,16 @@ class QaRuleManagementController(
             to = java.time.LocalDateTime.parse(to)
         )
 
+    private fun parsePreviewLevel(level: String?): ExpertIndexLevel =
+        runCatching { ExpertIndexLevel.valueOf(level?.trim()?.uppercase() ?: "CANDIDATE") }
+            .getOrDefault(ExpertIndexLevel.CANDIDATE)
+
+    private fun parseFieldPresenceMode(mode: String?): FieldPresenceMode =
+        when (mode?.trim()?.uppercase()) {
+            "MISSING_ANY" -> FieldPresenceMode.MISSING_ANY
+            else -> FieldPresenceMode.SATISFY_ALL
+        }
+
     private fun resolvePreviewContact(request: QaRenderPreviewRequest): ExpertContact {
         request.contactId?.let { contactId ->
             return expertContactRepository.findById(contactId)
@@ -117,8 +172,48 @@ data class QaRenderPreviewRequest(
 
 data class QaRenderPreviewResponse(
     val rendered: String,
-    val fallbackKeys: List<String>
+    val fallbackKeys: List<String>,
+    val variables: List<PreviewVariableResponse> = emptyList(),
+    val invalidTokens: List<String> = emptyList()
 )
+
+data class PreviewVariableResponse(
+    val key: String,
+    val label: String,
+    val value: String,
+    val filled: Boolean,
+    val usedFallback: Boolean
+)
+
+data class QaRandomExpertRequest(
+    val text: String,
+    val level: String = "CANDIDATE",
+    val mode: String = "SATISFY_ALL"
+)
+
+data class PreviewExpertSummary(
+    val orcidId: String,
+    val displayName: String,
+    val email: String?,
+    val indexLevel: String
+)
+
+data class QaRandomExpertResponse(
+    val expert: PreviewExpertSummary?,
+    val matchCount: Long,
+    val totalCount: Long,
+    val filteredFields: List<String>,
+    val error: String?
+)
+
+private fun PreviewVariableItem.toResponse(): PreviewVariableResponse =
+    PreviewVariableResponse(
+        key = key,
+        label = label,
+        value = value,
+        filled = filled,
+        usedFallback = usedFallback
+    )
 
 data class QaCategoryCreateRequest(
     val categoryCode: String,

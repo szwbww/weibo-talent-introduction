@@ -106,10 +106,15 @@ const state = {
     },
     variableMeta: null,
     variableMetaLoaded: false,
-    varPreviewContext: {
+    previewDrawer: {
         targetId: null,
         contactId: null,
-        orcidId: null
+        orcidId: null,
+        level: "CANDIDATE",
+        mode: "SATISFY_ALL",
+        expertEmail: null,
+        matchCount: null,
+        totalCount: null
     }
 };
 
@@ -1855,57 +1860,196 @@ function resolveVarPreviewContact(previewBtn) {
     };
 }
 
-function hideVariablePreviewModal() {
-    $("#varPreviewModal").hidden = true;
-    document.body.classList.remove("modal-open");
+function resolvePreviewDrawerContact() {
+    const ctx = state.previewDrawer;
+    if (ctx.contactId) {
+        const contact = (state.contacts || []).find((item) => item.contactId === ctx.contactId);
+        if (contact?.expertEmail) {
+            return contact.expertEmail;
+        }
+    }
+    if (ctx.expertEmail) {
+        return ctx.expertEmail;
+    }
+    const orcidId = $("#previewOrcidInput")?.value?.trim() || ctx.orcidId || "";
+    if (orcidId) {
+        const contact = (state.contacts || []).find((item) => item.orcidId === orcidId);
+        if (contact?.expertEmail) {
+            return contact.expertEmail;
+        }
+    }
+    return null;
 }
 
-function renderVariablePreviewResult(result) {
-    const body = $("#varPreviewBody");
-    const fallbacks = $("#varPreviewFallbacks");
-    if (body) {
-        body.textContent = result.rendered || "";
+function resolvePreviewDrawerSubject(targetId) {
+    if (targetId === "qaRuleReplyBody") {
+        const subject = $("#qaRuleForm")?.replySubject?.value?.trim();
+        return subject || null;
     }
-    if (fallbacks) {
-        const keys = result.fallbackKeys || [];
-        fallbacks.innerHTML = keys.map((key) => {
-            const meta = (state.variableMeta || []).find((item) => item.key === key);
-            const label = meta?.label || key;
-            return `<span class="var-fallback-hint">「${escapeHtml(label)}」该专家此字段为空，将使用兜底文案</span>`;
+    return null;
+}
+
+function highlightPreviewMailBody(rendered, variables) {
+    let html = escapeHtml(rendered || "");
+    const sorted = [...(variables || [])]
+        .filter((item) => item.value)
+        .sort((a, b) => b.value.length - a.value.length);
+    sorted.forEach((item) => {
+        const escapedValue = escapeHtml(item.value);
+        if (!escapedValue || !html.includes(escapedValue)) {
+            return;
+        }
+        const tagClass = item.usedFallback ? "preview-var-fallback-tag" : "preview-var-value-tag";
+        html = html.replace(escapedValue, `<span class="${tagClass}">${escapedValue}</span>`);
+    });
+    return html;
+}
+
+function renderPreviewDrawerResult(result) {
+    const toEl = $("#previewMailTo");
+    const subjectEl = $("#previewMailSubject");
+    const bodyEl = $("#previewMailBody");
+    const rowsEl = $("#previewVarRows");
+    const statEl = $("#previewVarStat");
+    const errorEl = $("#previewDrawerError");
+    if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = "";
+    }
+    const toEmail = resolvePreviewDrawerContact();
+    if (toEl) {
+        toEl.textContent = toEmail || "—";
+    }
+    const subject = resolvePreviewDrawerSubject(state.previewDrawer.targetId);
+    if (subjectEl) {
+        subjectEl.textContent = subject || "—";
+    }
+    if (bodyEl) {
+        bodyEl.innerHTML = highlightPreviewMailBody(result.rendered, result.variables);
+    }
+    const variables = result.variables || [];
+    const invalidTokens = result.invalidTokens || [];
+    let filledCount = 0;
+    let fallbackCount = 0;
+    variables.forEach((item) => {
+        if (item.usedFallback) {
+            fallbackCount += 1;
+        } else if (item.filled) {
+            filledCount += 1;
+        } else {
+            fallbackCount += 1;
+        }
+    });
+    if (statEl) {
+        statEl.textContent = `${filledCount} 有值 · ${fallbackCount} 兜底 · ${invalidTokens.length} 非法`;
+    }
+    if (rowsEl) {
+        const variableRows = variables.map((item) => {
+            const dotClass = item.usedFallback ? "fallback" : item.filled ? "filled" : "fallback";
+            return `<div class="preview-var-row">
+                <span class="preview-var-dot ${dotClass}"></span>
+                <span class="preview-var-key">${escapeHtml(item.key)}</span>
+                <span class="preview-var-label">${escapeHtml(item.label)}</span>
+                <span class="preview-var-value" title="${escapeHtml(item.value || "")}">${escapeHtml(item.value || "—")}</span>
+            </div>`;
         }).join("");
+        const invalidRows = invalidTokens.map((token) => `<div class="preview-var-row">
+                <span class="preview-var-dot invalid"></span>
+                <span class="preview-var-key">${escapeHtml(token)}</span>
+                <span class="preview-var-label">—</span>
+                <span class="preview-var-value">白名单外，将原样发出</span>
+            </div>`).join("");
+        rowsEl.innerHTML = variableRows + invalidRows;
     }
 }
 
-async function showVariablePreview(previewBtn) {
-    const targetId = previewBtn?.dataset?.varPreviewTarget;
+function updatePreviewCoverage(matchCount, totalCount) {
+    const coverageEl = $("#previewCoverage");
+    if (!coverageEl) {
+        return;
+    }
+    if (matchCount == null || totalCount == null || totalCount <= 0) {
+        coverageEl.hidden = true;
+        coverageEl.innerHTML = "";
+        return;
+    }
+    const pct = Math.round((matchCount / totalCount) * 100);
+    coverageEl.hidden = false;
+    coverageEl.innerHTML = `满足全部占位符：<strong>${matchCount} / ${totalCount}</strong>（${pct}%）`;
+}
+
+function syncBodyScrollLock() {
+    const drawerOpen = !$("#previewDrawer")?.hidden;
+    const modalOpen = Array.from(document.querySelectorAll(".modal-shell")).some((el) => !el.hidden);
+    if (drawerOpen || modalOpen) {
+        document.body.classList.add("modal-open");
+    } else {
+        document.body.classList.remove("modal-open");
+    }
+}
+
+function closePreviewDrawer() {
+    const shell = $("#previewDrawer");
+    if (!shell || shell.hidden) {
+        return;
+    }
+    shell.classList.remove("open");
+    window.setTimeout(() => {
+        shell.hidden = true;
+        syncBodyScrollLock();
+    }, 240);
+}
+
+function openPreviewDrawer({ targetId, contactId, orcidId }) {
     const textarea = resolveVarTextarea(targetId);
     const text = textarea?.value || "";
     if (!text.trim()) {
         showStatus("请先输入正文再预览", "error");
         return;
     }
-    const contact = resolveVarPreviewContact(previewBtn);
-    state.varPreviewContext = { targetId, ...contact };
-    const orcidInput = $("#varPreviewOrcidInput");
+    const level = $("#previewScopeSel")?.value || "CANDIDATE";
+    const mode = $("#previewModeSel")?.value || "SATISFY_ALL";
+    state.previewDrawer = {
+        targetId,
+        contactId: contactId || null,
+        orcidId: orcidId || null,
+        level,
+        mode,
+        expertEmail: null,
+        matchCount: null,
+        totalCount: null
+    };
+    const orcidInput = $("#previewOrcidInput");
     if (orcidInput) {
-        orcidInput.value = contact.orcidId || "";
+        orcidInput.value = orcidId || "";
     }
-    $("#varPreviewModal").hidden = false;
-    document.body.classList.add("modal-open");
-    await refreshVariablePreviewFromContext();
+    if ($("#previewScopeSel")) {
+        $("#previewScopeSel").value = level;
+    }
+    if ($("#previewModeSel")) {
+        $("#previewModeSel").value = mode;
+    }
+    const shell = $("#previewDrawer");
+    shell.hidden = false;
+    requestAnimationFrame(() => shell.classList.add("open"));
+    syncBodyScrollLock();
+    refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
 }
 
-async function refreshVariablePreviewFromContext() {
-    const textarea = resolveVarTextarea(state.varPreviewContext.targetId);
+async function refreshPreviewDrawer() {
+    const textarea = resolveVarTextarea(state.previewDrawer.targetId);
     const text = textarea?.value || "";
-    const orcidInput = $("#varPreviewOrcidInput");
-    const orcidId = orcidInput?.value?.trim() || state.varPreviewContext.orcidId || "";
+    const orcidInput = $("#previewOrcidInput");
+    const orcidId = orcidInput?.value?.trim() || state.previewDrawer.orcidId || "";
+    const level = $("#previewScopeSel")?.value || state.previewDrawer.level || "CANDIDATE";
+    state.previewDrawer.level = level;
+    state.previewDrawer.mode = $("#previewModeSel")?.value || state.previewDrawer.mode || "SATISFY_ALL";
     const payload = { text };
-    if (state.varPreviewContext.contactId) {
-        payload.contactId = state.varPreviewContext.contactId;
+    if (state.previewDrawer.contactId) {
+        payload.contactId = state.previewDrawer.contactId;
     } else if (orcidId) {
         payload.orcidId = orcidId;
-        payload.level = "CANDIDATE";
+        payload.level = level;
     } else {
         showStatus("请绑定专家或填写 ORCID 后再预览", "error");
         return;
@@ -1914,7 +2058,54 @@ async function refreshVariablePreviewFromContext() {
         method: "POST",
         body: JSON.stringify(payload)
     });
-    renderVariablePreviewResult(result);
+    renderPreviewDrawerResult(result);
+}
+
+async function randomPreviewExpert() {
+    const textarea = resolveVarTextarea(state.previewDrawer.targetId);
+    const text = textarea?.value || "";
+    const level = $("#previewScopeSel")?.value || "CANDIDATE";
+    const mode = $("#previewModeSel")?.value || "SATISFY_ALL";
+    state.previewDrawer.level = level;
+    state.previewDrawer.mode = mode;
+    const errorEl = $("#previewDrawerError");
+    if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = "";
+    }
+    const result = await api("/api/qa/preview/random-expert", {
+        method: "POST",
+        body: JSON.stringify({ text, level, mode })
+    });
+    if (result.error) {
+        if (errorEl) {
+            errorEl.hidden = false;
+            errorEl.textContent = `随机抽样暂不可用：${result.error}`;
+        }
+        return;
+    }
+    state.previewDrawer.matchCount = result.matchCount;
+    state.previewDrawer.totalCount = result.totalCount;
+    updatePreviewCoverage(result.matchCount, result.totalCount);
+    if (!result.expert) {
+        if (errorEl) {
+            errorEl.hidden = false;
+            errorEl.textContent = "没有满足条件的专家";
+        }
+        return;
+    }
+    const orcidInput = $("#previewOrcidInput");
+    if (orcidInput) {
+        orcidInput.value = result.expert.orcidId || "";
+    }
+    state.previewDrawer.orcidId = result.expert.orcidId || null;
+    state.previewDrawer.contactId = null;
+    state.previewDrawer.expertEmail = result.expert.email || null;
+    if ($("#previewScopeSel") && result.expert.indexLevel) {
+        $("#previewScopeSel").value = result.expert.indexLevel;
+        state.previewDrawer.level = result.expert.indexLevel;
+    }
+    await refreshPreviewDrawer();
 }
 
 function showQaRuleEditor() {
@@ -8908,17 +9099,22 @@ function bindEvents() {
         const previewBtn = event.target.closest(".var-preview-btn");
         if (previewBtn) {
             event.preventDefault();
-            showVariablePreview(previewBtn).catch((error) => showStatus(error.message, "error"));
+            const targetId = previewBtn?.dataset?.varPreviewTarget;
+            const contact = resolveVarPreviewContact(previewBtn);
+            openPreviewDrawer({ targetId, ...contact });
         }
     });
-    $("#varPreviewModalCloseBtn")?.addEventListener("click", hideVariablePreviewModal);
-    $("#varPreviewModalBackdrop")?.addEventListener("click", hideVariablePreviewModal);
-    $("#varPreviewRefreshBtn")?.addEventListener("click", () => {
-        refreshVariablePreviewFromContext().catch((error) => showStatus(error.message, "error"));
+    $("#previewDrawerCloseBtn")?.addEventListener("click", closePreviewDrawer);
+    $("#previewDrawerBackdrop")?.addEventListener("click", closePreviewDrawer);
+    $("#previewRefreshBtn")?.addEventListener("click", () => {
+        refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#previewDiceBtn")?.addEventListener("click", () => {
+        randomPreviewExpert().catch((error) => showStatus(error.message, "error"));
     });
     document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#varPreviewModal").hidden) {
-            hideVariablePreviewModal();
+        if (event.key === "Escape" && !$("#previewDrawer").hidden) {
+            closePreviewDrawer();
         }
     });
     $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
