@@ -22,10 +22,13 @@ class AiReplyDraftServiceTest {
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
     private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
     private val aiPromptConfigService = Mockito.mock(AiPromptConfigService::class.java)
+    private val aiTrainingDialogueService = Mockito.mock(AiTrainingDialogueService::class.java)
 
     init {
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenAnswer { invocation -> invocation.getArgument(0) }
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
+            .thenReturn(emptyList())
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -77,7 +80,8 @@ class AiReplyDraftServiceTest {
             qaRuleRepository,
             stitch,
             replySnippetService,
-            aiPromptConfigService
+            aiPromptConfigService,
+            aiTrainingDialogueService
         )
 
     private fun sampleRule(id: Long = 1L) = QaRule(
@@ -502,5 +506,145 @@ class AiReplyDraftServiceTest {
         assertTrue(result.draftText.contains("Thank you for your email"))
         assertEquals(emptyList<Long>(), result.qaRuleIds)
         Mockito.verifyNoInteractions(qaMatchService)
+    }
+
+    @Test
+    fun `free form injects few-shot without affecting qaRuleIds`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited and official?"))
+            .thenReturn(
+                CompositionSuggestResult(
+                    suggestedRuleIds = emptyList(),
+                    suggestedRules = emptyList(),
+                    rulesByCategory = emptyList(),
+                    gapItems = emptyList(),
+                    gapDetected = false,
+                    matchedCategoryIds = emptyList()
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(
+            aiTrainingDialogueService.selectRelevantDialogues(
+                "Are you accredited and official?",
+                2
+            )
+        )
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot(
+                        sourceRef = "DIALOG_2143",
+                        messages = listOf(
+                            LlmChatMessage(role = "user", content = "Are you an officially accredited agency?"),
+                            LlmChatMessage(role = "assistant", content = "Our government cooperation is documented.")
+                        )
+                    )
+                )
+            )
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "Few-shot draft"
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Are you accredited and official?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+        assertEquals(listOf("DIALOG_2143"), result.fewShotDialogRefs)
+        val messages = capturedMessages.single()
+        assertTrue(messages[1].content.contains("officially accredited agency"))
+        assertTrue(messages.first { it.role == "system" }.content.contains("reference examples"))
+    }
+
+    @Test
+    fun `qa matched mode keeps fewShotDialogRefs empty`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findById(3L)).thenReturn(Optional.of(sampleRule(3)))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "Matched"
+        }).generate(
+            inboundText = "Unrelated",
+            operatorTurns = emptyList(),
+            qaRuleIds = listOf(3)
+        )
+
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    @Test
+    fun `free form without keyword match keeps messages unchanged`() {
+        stubEmptyFrame()
+        val draftService = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null)
+        val baseline = draftService.buildFreeFormMessages(
+            inboundText = "Hello without keywords",
+            operatorTurns = emptyList(),
+            expertProfile = "Name: Dr. Smith",
+            mailHistory = "History"
+        )
+        val result = draftService.buildFreeFormMessages(
+            inboundText = "Hello without keywords",
+            operatorTurns = emptyList(),
+            expertProfile = "Name: Dr. Smith",
+            mailHistory = "History"
+        )
+
+        assertEquals(baseline.messages, result.messages)
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+    }
+
+    @Test
+    fun `matched messages never include dialogue seed text`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule()))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val messages = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null).buildMatchedMessages(
+            inboundText = "Are you accredited through another agency?",
+            operatorTurns = emptyList(),
+            promptRuleIds = listOf(1)
+        )
+
+        val joined = messages.joinToString("\n") { it.content }
+        assertFalse(joined.contains("officially accredited agency"))
+        assertFalse(joined.contains("reference examples"))
+    }
+
+    @Test
+    fun `fallback draft excludes dialogue seed fragments when llm disabled`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited through another agency?"))
+            .thenReturn(
+                CompositionSuggestResult(
+                    suggestedRuleIds = emptyList(),
+                    suggestedRules = emptyList(),
+                    rulesByCategory = emptyList(),
+                    gapItems = emptyList(),
+                    gapDetected = false,
+                    matchedCategoryIds = emptyList()
+                )
+            )
+        val allRules = listOf(sampleRule(10))
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(allRules)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(allRules[0]))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "Are you accredited through another agency?",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.draftText.contains("government cooperation is documented"))
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
     }
 }

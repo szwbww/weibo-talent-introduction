@@ -757,6 +757,7 @@
         <section class="view" id="view-ai-training">
             <div class="ai-training-tabs">
                 <button type="button" class="ai-tab" data-tab="qa">QA 知识库</button>
+                <button type="button" class="ai-tab" data-tab="dialogues">对话范例</button>
                 <button type="button" class="ai-tab" data-tab="prompts">AI 提示词与约束</button>
                 <button type="button" class="ai-tab active" data-tab="simulate">历史邮件模拟回复</button>
             </div>
@@ -793,6 +794,26 @@
                         <button class="button small" id="aiTrainingQaPrevPage">上一页</button>
                         <span id="aiTrainingQaPageInfo" class="list-pager-info"></span>
                         <button class="button small" id="aiTrainingQaNextPage">下一页</button>
+                    </div>
+                </section>
+            </div>
+
+            <div class="ai-tab-content" id="aiTabDialogues">
+                <section class="panel ai-training-panel">
+                    <div class="panel-head">
+                        <h2>对话范例（few-shot）</h2>
+                        <div class="toolbar-inline">
+                            <span class="muted">来源：聊天记录5.27 · 启动自动播种</span>
+                            <button class="button" id="reloadAiTrainingDialoguesBtn">刷新</button>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr><th>编号</th><th>标题</th><th>关键词</th><th>轮数</th><th>状态</th></tr>
+                            </thead>
+                            <tbody id="aiTrainingDialogueTable"></tbody>
+                        </table>
                     </div>
                 </section>
             </div>

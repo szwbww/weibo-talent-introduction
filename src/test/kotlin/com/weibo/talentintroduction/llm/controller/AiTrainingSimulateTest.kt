@@ -14,6 +14,8 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
+import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
+import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
 import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -89,9 +91,14 @@ class AiTrainingSimulateTest {
     @MockBean
     private lateinit var llmDraftClientProvider: ObjectProvider<LlmDraftClient>
 
+    @MockBean
+    private lateinit var aiTrainingDialogueService: AiTrainingDialogueService
+
     @BeforeEach
     fun setUp() {
         Mockito.`when`(llmDraftClientProvider.getIfAvailable()).thenReturn(null)
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
+            .thenReturn(emptyList())
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenAnswer { invocation -> invocation.getArgument(0) }
         Mockito.`when`(replySnippetService.resolveManualFrame()).thenReturn(
@@ -129,9 +136,62 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.usedLlm").value(false))
             .andExpect(jsonPath("$.llmEnabled").value(false))
             .andExpect(jsonPath("$.mode").value("FREE_FORM"))
+            .andExpect(jsonPath("$.injectedDialogRefs").isArray)
+            .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
         Mockito.verifyNoInteractions(qaMatchService)
+    }
+
+    @Test
+    fun `simulate with dialogue keywords keeps deterministic fallback when llm disabled`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound(body = "Are you accredited through another agency?")
+        stubSimulateReadPath(contact, inbound)
+        Mockito.`when`(
+            aiReplyContextBuilder.appendKnowledgeToProfile("Name: Dr. Test", "Topic: Agency trust\nAnswer: Standard reply")
+        ).thenReturn(
+            "Name: Dr. Test\nTraining knowledge base:\nTopic: Agency trust\nAnswer: Standard reply"
+        )
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
+            .thenReturn("Topic: Agency trust\nAnswer: Standard reply")
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("Standard reply")))
+            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.not(
+                org.hamcrest.Matchers.containsString("transparent disbursement")
+            )))
+            .andExpect(jsonPath("$.usedLlm").value(false))
+
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    @Test
+    fun `listDialogues returns seeded dialogue views`() {
+        val views = (1..10).map { index ->
+            AiTrainingDialogueView(
+                sourceRef = "DIALOG_$index",
+                title = "Dialogue $index",
+                keywords = "keyword$index",
+                turnCount = index + 2,
+                enabled = true
+            )
+        }
+        Mockito.`when`(aiTrainingDialogueService.listViews()).thenReturn(views)
+
+        mockMvc.perform(get("/api/ai-training/dialogues"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(10))
+            .andExpect(jsonPath("$[0].sourceRef").value("DIALOG_1"))
+            .andExpect(jsonPath("$[0].title").value("Dialogue 1"))
+            .andExpect(jsonPath("$[0].keywords").value("keyword1"))
+            .andExpect(jsonPath("$[0].turnCount").value(3))
+            .andExpect(jsonPath("$[0].enabled").value(true))
     }
 
     @Test
@@ -434,15 +494,16 @@ class AiTrainingSimulateTest {
 
     private fun sampleInbound(
         contactId: Long = 10L,
-        subject: String = "Question"
+        subject: String = "Question",
+        body: String = "What is the funding?"
     ) = MailRecord(
         id = 99L,
         expertContactId = contactId,
         direction = "INBOUND",
         mailType = "REPLY",
         subject = subject,
-        body = "What is the funding?",
-        cleanedBody = "What is the funding?",
+        body = body,
+        cleanedBody = body,
         messageId = null,
         inReplyTo = null,
         matchedQaRuleId = null,

@@ -3,7 +3,7 @@ id: K-mail-body-display-sites
 domain: mail
 created: 2026-06-29
 last_used: 2026-07-08
-hit_count: 15
+hit_count: 16
 source: create-p:translate-button-everywhere
 severity: P2
 ---

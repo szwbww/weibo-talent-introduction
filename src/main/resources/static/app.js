@@ -90,6 +90,7 @@ const state = {
         qaSource: "",
         qaItems: [],
         editingQaId: null,
+        dialogueItems: [],
         promptConfig: null,
         promptIsCustom: false,
         expertTagOptions: [],
@@ -2215,6 +2216,7 @@ function switchAiTrainingTab(tab) {
     document.querySelectorAll("#view-ai-training .ai-tab-content").forEach((panel) => {
         const panelId = panel.id;
         const active = (tab === "qa" && panelId === "aiTabQa")
+            || (tab === "dialogues" && panelId === "aiTabDialogues")
             || (tab === "prompts" && panelId === "aiTabPrompts")
             || (tab === "simulate" && panelId === "aiTabSimulate");
         panel.classList.toggle("active", active);
@@ -2255,6 +2257,25 @@ function renderAiTrainingQaTable() {
     $("#aiTrainingQaTable").innerHTML = rows
         || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
     renderAiTrainingQaPager();
+}
+
+function renderAiTrainingDialogueTable() {
+    const rows = (state.aiTraining.dialogueItems || []).map((item) => `
+        <tr>
+            <td><code>${escapeHtml(item.sourceRef)}</code></td>
+            <td><strong>${escapeHtml(item.title)}</strong></td>
+            <td class="muted-cell">${escapeHtml(item.keywords || "-")}</td>
+            <td class="muted-cell">${item.turnCount}</td>
+            <td>${badge(item.enabled ? "启用" : "停用", item.enabled ? "ok" : "warn")}</td>
+        </tr>`).join("");
+    $("#aiTrainingDialogueTable").innerHTML = rows
+        || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无对话范例</td></tr>`;
+}
+
+async function loadAiTrainingDialogues() {
+    const items = await api("/api/ai-training/dialogues");
+    state.aiTraining.dialogueItems = Array.isArray(items) ? items : [];
+    renderAiTrainingDialogueTable();
 }
 
 function showAiTrainingQaModal() {
@@ -2500,7 +2521,7 @@ function selectSimulateMail(mail) {
     renderAiTrainingMailList();
     renderAiTrainingMailDetail(mail);
     $("#aiTrainingSimulateMessages").innerHTML = "";
-    $("#aiTrainingSimulateMeta").textContent = "";
+    $("#aiTrainingSimulateMeta").innerHTML = "";
 }
 
 async function loadAiTrainingSimulateMails() {
@@ -2525,7 +2546,7 @@ async function loadAiTrainingSimulateMails() {
         state.aiTraining.simulateResult = null;
         renderAiTrainingMailDetail(null);
         $("#aiTrainingSimulateMessages").innerHTML = "";
-        $("#aiTrainingSimulateMeta").textContent = "";
+        $("#aiTrainingSimulateMeta").innerHTML = "";
     }
     renderAiTrainingMailList();
 }
@@ -2536,7 +2557,7 @@ function renderAiTrainingSimulateResult(result) {
     const meta = $("#aiTrainingSimulateMeta");
     if (!result) {
         if (messages) messages.innerHTML = "";
-        if (meta) meta.textContent = "";
+        if (meta) meta.innerHTML = "";
         return;
     }
     if (messages) {
@@ -2547,7 +2568,9 @@ function renderAiTrainingSimulateResult(result) {
             </div>`;
     }
     if (meta) {
-        meta.textContent = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+        const baseText = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+        const refBadges = (result.injectedDialogRefs || []).map((ref) => badge(`注入范例 ${ref}`, "info")).join(" ");
+        meta.innerHTML = escapeHtml(baseText) + (refBadges ? ` ${refBadges}` : "");
     }
 }
 
@@ -2586,6 +2609,7 @@ async function saveAiTrainingPromptConfig(event) {
 async function loadAiTraining() {
     await Promise.all([
         loadAiTrainingQa(),
+        loadAiTrainingDialogues(),
         loadAiTrainingPromptConfig(),
         loadAiTrainingTagOptions(),
         loadAiTrainingSimulateMails()
@@ -9349,6 +9373,9 @@ function bindEvents() {
     });
     $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
         loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#reloadAiTrainingDialoguesBtn")?.addEventListener("click", () => {
+        loadAiTrainingDialogues().catch((error) => showStatus(error.message, "error"));
     });
     $("#aiTrainingAddQaBtn")?.addEventListener("click", () => showQaEditModal());
     $("#aiTrainingQaForm")?.addEventListener("submit", (event) => {

@@ -12,6 +12,8 @@ import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
+import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
+import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
@@ -38,7 +40,8 @@ class AiTrainingController(
     private val expertSearchService: ExpertSearchService,
     private val inboundMailTagService: InboundMailTagService,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
-    private val llmProperties: LlmProperties
+    private val llmProperties: LlmProperties,
+    private val aiTrainingDialogueService: AiTrainingDialogueService
 ) {
     companion object {
         /** Spring JDBC rejects empty IN lists; ignored when unrestricted=true. */
@@ -66,6 +69,9 @@ class AiTrainingController(
     fun deleteQa(@PathVariable id: Long) {
         aiTrainingQaService.delete(id)
     }
+
+    @GetMapping("/dialogues")
+    fun listDialogues(): List<AiTrainingDialogueView> = aiTrainingDialogueService.listViews()
 
     @GetMapping("/prompt-config")
     fun getPromptConfig(): AiPromptConfigDto = aiPromptConfigService.getDto()
@@ -197,7 +203,8 @@ class AiTrainingController(
             inboundText = inboundText,
             inboundSubject = latestInbound.subject,
             expertName = contact.expertName,
-            expertEmail = contact.expertEmail
+            expertEmail = contact.expertEmail,
+            injectedDialogRefs = result.fewShotDialogRefs
         )
     }
 
@@ -343,5 +350,6 @@ data class AiTrainingSimulateResponse(
     val inboundText: String,
     val inboundSubject: String?,
     val expertName: String?,
-    val expertEmail: String?
+    val expertEmail: String?,
+    val injectedDialogRefs: List<String> = emptyList()
 )

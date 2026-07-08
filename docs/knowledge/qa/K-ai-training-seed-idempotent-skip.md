@@ -2,8 +2,8 @@
 id: K-ai-training-seed-idempotent-skip
 domain: qa
 created: 2026-07-02
-last_used: 2026-07-02
-hit_count: 2
+last_used: 2026-07-08
+hit_count: 3
 source: create-p:qa-material-tiering-and-trust
 ---
 经验：`AiTrainingQaSeeder` 启动播种 `ai_training_qa` 时按 `(source=MANUAL_IMPORT, sourceRef)` **存在即跳过**（`AiTrainingQaSeeder.kt:29` `findBySourceAndSourceRef`），只对全新库生效。仅编辑 `ai-training/qa-seed.json` 的 `answer/keywords` 不会更新已播种库的既有行。

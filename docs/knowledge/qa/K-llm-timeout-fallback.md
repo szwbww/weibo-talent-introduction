@@ -2,8 +2,8 @@
 id: K-llm-timeout-fallback
 domain: qa
 created: 2026-06-26
-last_used: 2026-07-04
-hit_count: 7
+last_used: 2026-07-08
+hit_count: 8
 source: fix-v:qa-rules-phase3:fix-1
 severity: P1
 ---

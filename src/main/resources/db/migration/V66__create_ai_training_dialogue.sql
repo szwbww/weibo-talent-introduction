@@ -1,0 +1,11 @@
+CREATE TABLE ai_training_dialogue (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    source_ref VARCHAR(128) NOT NULL,
+    keywords VARCHAR(1024),
+    turns_json MEDIUMTEXT NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_ai_training_dialogue_source_ref (source_ref)
+);
