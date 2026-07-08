@@ -2,8 +2,8 @@
 id: K-introduction-compose-hardcode
 domain: mail
 created: 2026-07-05
-last_used: 2026-07-07
-hit_count: 4
+last_used: 2026-07-08
+hit_count: 5
 source: create-p:batch-send-template-selector
 ---
 

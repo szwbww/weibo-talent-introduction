@@ -2,8 +2,8 @@
 id: K-view-registration-triad
 domain: frontend
 created: 2026-07-01
-last_used: 2026-07-07
-hit_count: 12
+last_used: 2026-07-08
+hit_count: 13
 source: create-p:ai-training-tab
 ---
 经验：静态后台（`src/main/resources/static/`）新增一个侧栏 Tab/视图，必须四处同步注册，缺一即切换时 `viewMeta[view]` undefined 报错或不加载。
