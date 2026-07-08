@@ -1327,7 +1327,16 @@
             </label>
             <label>匹配优先级 (数字越小越优先)<input name="priority" type="number" value="100" required></label>
             <label class="span-2">自动回复英文主题<input name="replySubject" placeholder="如: Re: About our global talent invitation program"></label>
-            <label class="span-2">自动回复邮件英文正文<textarea name="replyBody" rows="8" placeholder="使用 HTML 或纯文本编写自动回复的正文内容" required></textarea></label>
+            <label class="span-2">自动回复邮件英文正文
+                <div class="var-editor-wrap">
+                    <div class="var-editor-toolbar">
+                        <div class="var-chip-bar" data-var-target="qaRuleReplyBody"></div>
+                        <button type="button" class="button small var-preview-btn" data-var-preview-target="qaRuleReplyBody">以专家预览</button>
+                    </div>
+                    <div class="var-validation-hint" id="varHint-qaRuleReplyBody" hidden></div>
+                    <textarea id="qaRuleReplyBody" name="replyBody" rows="8" placeholder="使用 HTML 或纯文本编写自动回复的正文内容" required></textarea>
+                </div>
+            </label>
             <label class="checkbox-row"><input name="autoReplyEnabled" type="checkbox" checked> 允许系统匹配到该规则后自动回复邮件</label>
             <label class="checkbox-row"><input name="handoffRequired" type="checkbox"> 命中该分类后同时将状态标记为人工跟进 (Handoff)</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该规则判定</label>
@@ -1379,7 +1388,16 @@
             <label>片段 ID<input name="id" disabled placeholder="系统自动生成"></label>
             <label>显示排序<input name="displayOrder" type="number" value="100" required></label>
             <label>变体组<input name="variantGroup" type="text" placeholder="如 greeting（留空则不参与变体选择）"></label>
-            <label class="span-2">片段内容<textarea name="content" rows="6" placeholder="英文回复片段正文" required></textarea></label>
+            <label class="span-2">片段内容
+                <div class="var-editor-wrap">
+                    <div class="var-editor-toolbar">
+                        <div class="var-chip-bar" data-var-target="replySnippetContent"></div>
+                        <button type="button" class="button small var-preview-btn" data-var-preview-target="replySnippetContent">以专家预览</button>
+                    </div>
+                    <div class="var-validation-hint" id="varHint-replySnippetContent" hidden></div>
+                    <textarea id="replySnippetContent" name="content" rows="6" placeholder="英文回复片段正文" required></textarea>
+                </div>
+            </label>
             <label class="checkbox-row" id="replySnippetDefaultRow"><input name="isDefault" type="checkbox"> 设为该类型默认片段</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该片段</label>
             <div class="form-actions modal-actions">
@@ -1535,6 +1553,25 @@
         </div>
         <div class="modal-body ai-analysis-modal-body" id="aiAnalysisModalBody"></div>
         <div class="modal-actions ai-analysis-modal-footer" id="aiAnalysisModalFooter"></div>
+    </section>
+</div>
+
+<!-- Modal: Variable Render Preview -->
+<div class="modal-shell" id="varPreviewModal" hidden>
+    <button class="modal-backdrop" id="varPreviewModalBackdrop" type="button" aria-label="关闭变量预览"></button>
+    <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="varPreviewModalTitle">
+        <div class="panel-head modal-head">
+            <h2 id="varPreviewModalTitle">专家变量渲染预览</h2>
+            <button class="button secondary" id="varPreviewModalCloseBtn" type="button">×</button>
+        </div>
+        <div class="var-preview-orcid-row">
+            <label>专家 ORCID（无绑定联系人时可填）
+                <input id="varPreviewOrcidInput" type="text" placeholder="0000-0001-2345-6789">
+            </label>
+            <button type="button" class="button small" id="varPreviewRefreshBtn">刷新预览</button>
+        </div>
+        <div id="varPreviewBody" class="var-preview-body pre"></div>
+        <div id="varPreviewFallbacks" class="var-fallback-hints"></div>
     </section>
 </div>
 

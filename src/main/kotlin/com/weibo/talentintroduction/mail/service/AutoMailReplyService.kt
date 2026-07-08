@@ -59,7 +59,8 @@ class AutoMailReplyService(
     private val mailContentService: MailContentService,
     private val mailInboxCursorService: MailInboxCursorService,
     private val autoReplySettingService: AutoReplySettingService,
-    private val inboundMailTagService: InboundMailTagService
+    private val inboundMailTagService: InboundMailTagService,
+    private val mailVariableService: MailVariableService
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
@@ -589,7 +590,7 @@ class AutoMailReplyService(
             )
         }
 
-        val plainBody = match.replyBody
+        val plainBody = mailVariableService.renderForContact(match.replyBody, account, contact)
         val reply = ComposedMail(
             to = received.from,
             subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),

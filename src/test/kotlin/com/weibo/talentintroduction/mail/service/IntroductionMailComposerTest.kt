@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
@@ -15,7 +16,9 @@ import org.mockito.Mockito
 class IntroductionMailComposerTest {
     private val accountService = Mockito.mock(MailSenderAccountService::class.java)
     private val templateService = Mockito.mock(MailComposeTemplateService::class.java)
-    private val composer = IntroductionMailComposer(accountService, templateService)
+    private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
+    private val mailVariableService = MailVariableService(expertSearchService, templateService)
+    private val composer = IntroductionMailComposer(accountService, templateService, mailVariableService)
 
     private fun senderVariables(
         senderEmail: String = "chenjj@qftechtalent.com",

@@ -37,7 +37,8 @@ class PendingMailOperationService(
     private val qaMatchService: QaMatchService,
     private val mailBodyCleaner: MailBodyCleaner,
     private val mailContentService: MailContentService,
-    private val replySnippetService: ReplySnippetService
+    private val replySnippetService: ReplySnippetService,
+    private val mailVariableService: MailVariableService
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -99,7 +100,7 @@ class PendingMailOperationService(
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
-        val plainBody = rule.replyBody
+        val plainBody = mailVariableService.renderForContact(rule.replyBody, account, contact)
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = rule.replySubject ?: "Re: ${record.subject.orEmpty()}".trim(),
@@ -350,12 +351,13 @@ class PendingMailOperationService(
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
+        val renderedBody = mailVariableService.renderForContact(finalBody, account, contact)
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = subject,
-            body = mailContentService.plainTextToHtml(finalBody),
+            body = mailContentService.plainTextToHtml(renderedBody),
             html = true,
-            text = finalBody
+            text = renderedBody
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()
@@ -371,7 +373,7 @@ class PendingMailOperationService(
                 messageId = delivered.messageId,
                 inReplyTo = record.messageId,
                 subject = mail.subject,
-                body = finalBody,
+                body = renderedBody,
                 matchedQaRuleId = primaryRuleId,
                 sendStatus = delivered.status,
                 receivedAt = null,

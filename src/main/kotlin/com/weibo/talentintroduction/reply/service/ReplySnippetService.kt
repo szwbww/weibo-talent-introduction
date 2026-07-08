@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.reply.service
 
+import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import org.springframework.stereotype.Service
@@ -8,7 +9,8 @@ import java.time.LocalDateTime
 
 @Service
 class ReplySnippetService(
-    private val repository: ReplySnippetRepository
+    private val repository: ReplySnippetRepository,
+    private val mailVariableService: MailVariableService
 ) {
     fun listAll(): List<ReplySnippet> =
         repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()
@@ -47,6 +49,7 @@ class ReplySnippetService(
         validateSnippetType(snippetType)
         require(command.content.isNotBlank()) { "content is required" }
         require(command.displayOrder > 0) { "displayOrder must be positive" }
+        mailVariableService.requireValidPlaceholders(command.content)
         if (command.isDefault) {
             require(snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
         }
@@ -74,6 +77,7 @@ class ReplySnippetService(
         val existing = findById(id)
         require(command.content.isNotBlank()) { "content is required" }
         require(command.displayOrder > 0) { "displayOrder must be positive" }
+        mailVariableService.requireValidPlaceholders(command.content)
         if (command.isDefault) {
             require(existing.snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
         }

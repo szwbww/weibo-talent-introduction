@@ -374,6 +374,8 @@ class MailComposeTemplateService(
         val previewBlocks: List<ComposeTemplatePreviewBlock>
     )
 
+    fun renderWithVariables(text: String, variables: Map<String, String>): String = renderText(text, variables)
+
     private fun renderText(text: String, variables: Map<String, String>): String {
         val withFallback = FALLBACK_PLACEHOLDER_REGEX.replace(text) { match ->
             val key = match.groupValues[1]

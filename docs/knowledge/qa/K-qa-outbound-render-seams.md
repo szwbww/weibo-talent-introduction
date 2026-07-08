@@ -3,7 +3,7 @@ id: K-qa-outbound-render-seams
 domain: qa
 created: 2026-07-08
 last_used: 2026-07-08
-hit_count: 0
+hit_count: 1
 source: create-p:qa-reply-personalization-backend
 ---
 经验：QA 回复的外发 seam 有且仅有三个，任何"对 QA 外发正文统一加能力"（变量渲染、脱敏、签名等）的需求必须三点全覆盖，漏一个即该路径行为漂移：

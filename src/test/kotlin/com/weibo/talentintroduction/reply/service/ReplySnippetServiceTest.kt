@@ -1,10 +1,18 @@
 package com.weibo.talentintroduction.reply.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -13,7 +21,17 @@ import java.util.Optional
 
 class ReplySnippetServiceTest {
     private val repository = Mockito.mock(ReplySnippetRepository::class.java)
-    private val service = ReplySnippetService(repository)
+    private val mailVariableService = MailVariableService(
+        Mockito.mock(ExpertSearchService::class.java),
+        MailComposeTemplateService(
+            Mockito.mock(MailComposeTemplateRepository::class.java),
+            Mockito.mock(MailComposeTemplateBlockRepository::class.java),
+            Mockito.mock(QaRuleRepository::class.java),
+            Mockito.mock(ReplySnippetRepository::class.java),
+            ObjectMapper()
+        )
+    )
+    private val service = ReplySnippetService(repository, mailVariableService)
 
     @Test
     fun `create assigns timestamps before saving`() {
@@ -96,6 +114,62 @@ class ReplySnippetServiceTest {
         Mockito.`when`(repository.findById(7L)).thenReturn(Optional.of(ack))
 
         assertEquals("Thank you for sharing your CV.", service.resolveAck(7L))
+    }
+
+    @Test
+    fun `create rejects unknown placeholder in content`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.create(
+                ReplySnippetCreateCommand(
+                    snippetType = SnippetType.SALUTATION.name,
+                    content = "Dear \${bogus},"
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("\${bogus}"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `create rejects nullable placeholder without fallback`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.create(
+                ReplySnippetCreateCommand(
+                    snippetType = SnippetType.SALUTATION.name,
+                    content = "Dear Dr. \${expertFamilyName},"
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("\${expertFamilyName}"))
+    }
+
+    @Test
+    fun `create rejects nullable placeholder with whitespace-only fallback`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.create(
+                ReplySnippetCreateCommand(
+                    snippetType = SnippetType.SALUTATION.name,
+                    content = "Dear Dr. \${expertFamilyName|   },"
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("\${expertFamilyName|   }"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `create accepts nullable placeholder with fallback`() {
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ReplySnippet }
+
+        val created = service.create(
+            ReplySnippetCreateCommand(
+                snippetType = SnippetType.SALUTATION.name,
+                content = "Dear Dr. \${expertFamilyName|Professor},"
+            )
+        )
+
+        assertEquals("Dear Dr. \${expertFamilyName|Professor},", created.content)
     }
 
     private fun snippet(

@@ -103,11 +103,20 @@ const state = {
         selectedSimulateMailContactId: null,
         selectedSimulateMail: null,
         simulateResult: null
+    },
+    variableMeta: null,
+    variableMetaLoaded: false,
+    varPreviewContext: {
+        targetId: null,
+        contactId: null,
+        orcidId: null
     }
 };
 
 const composedReplyState = {
     recordId: null,
+    contactId: null,
+    contactOrcid: null,
     suggest: null,
     selectedRuleIds: [],
     freeText: "",
@@ -1674,12 +1683,224 @@ function renderQaRulesTable() {
             </td>
         </tr>
     `;
-    }).join("") || `<tr><td colspan="8" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>`;
+    }).join("") || `<tr><td colspan="8" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>    `;
+}
+
+async function ensureVariableMeta() {
+    if (state.variableMetaLoaded) {
+        return state.variableMeta || [];
+    }
+    state.variableMeta = await api("/api/qa/template-variables-meta");
+    state.variableMetaLoaded = true;
+    return state.variableMeta;
+}
+
+function resolveVarTextarea(targetId) {
+    return document.getElementById(targetId)
+        || document.querySelector(`textarea[name="${targetId}"]`);
+}
+
+function parsePlaceholderToken(inner) {
+    const pipeIndex = inner.indexOf("|");
+    if (pipeIndex >= 0) {
+        return {
+            key: inner.slice(0, pipeIndex),
+            fallback: inner.slice(pipeIndex + 1)
+        };
+    }
+    return { key: inner, fallback: null };
+}
+
+function validatePlaceholderText(text) {
+    if (!text) {
+        return { valid: true, violations: [] };
+    }
+    const metaByKey = Object.fromEntries((state.variableMeta || []).map((meta) => [meta.key, meta]));
+    const violations = [];
+    const regex = /\$\{([^}]*)\}/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        const parsed = parsePlaceholderToken(match[1]);
+        const meta = metaByKey[parsed.key];
+        if (!meta) {
+            violations.push(match[0]);
+            continue;
+        }
+        if (meta.nullable && (!parsed.fallback || !parsed.fallback.trim().length)) {
+            violations.push(match[0]);
+        }
+    }
+    return { valid: violations.length === 0, violations };
+}
+
+function renderVarChipBarContent(targetId) {
+    return (state.variableMeta || []).map((meta) => `
+        <button type="button" class="var-chip"
+            data-var-target="${escapeHtml(targetId)}"
+            data-var-key="${escapeHtml(meta.key)}"
+            data-var-nullable="${meta.nullable ? "true" : "false"}"
+            title="${escapeHtml(meta.key)}${meta.example ? ` — ${escapeHtml(meta.example)}` : ""}">
+            ${escapeHtml(meta.label)}
+        </button>`).join("");
+}
+
+function insertVarAtCursor(textarea, insertText, cursorOffset) {
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const before = textarea.value.slice(0, start);
+    const after = textarea.value.slice(end);
+    textarea.value = before + insertText + after;
+    const pos = start + insertText.length - cursorOffset;
+    textarea.selectionStart = pos;
+    textarea.selectionEnd = pos;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.focus();
+}
+
+function updateVarValidationForTarget(targetId, textarea) {
+    const hint = document.getElementById(`varHint-${targetId}`);
+    const form = textarea?.closest("form");
+    const submitBtn = form?.querySelector('button[type="submit"]');
+    const { valid, violations } = validatePlaceholderText(textarea?.value || "");
+    if (hint) {
+        if (!valid) {
+            hint.hidden = false;
+            hint.className = "var-validation-hint invalid";
+            hint.textContent = `非法占位符：${violations.join(", ")}`;
+        } else {
+            hint.hidden = true;
+            hint.className = "var-validation-hint";
+            hint.textContent = "";
+        }
+    }
+    if (submitBtn) {
+        submitBtn.disabled = !valid;
+    }
+    return valid;
+}
+
+function bindVarChipBar(container) {
+    if (!container) return;
+    container.querySelectorAll(".var-chip").forEach((chip) => {
+        if (chip.dataset.bound === "1") return;
+        chip.dataset.bound = "1";
+        chip.addEventListener("click", () => {
+            const targetId = chip.dataset.varTarget;
+            const textarea = resolveVarTextarea(targetId);
+            if (!textarea) return;
+            const key = chip.dataset.varKey;
+            const nullable = chip.dataset.varNullable === "true";
+            const insertText = nullable ? `\${${key}|}` : `\${${key}}`;
+            const cursorOffset = nullable ? 1 : 0;
+            insertVarAtCursor(textarea, insertText, cursorOffset);
+            updateVarValidationForTarget(targetId, textarea);
+        });
+    });
+}
+
+function initVarEditorForTextarea(textarea) {
+    if (!textarea || textarea.dataset.varEditorBound === "1") return;
+    textarea.dataset.varEditorBound = "1";
+    const targetId = textarea.id || textarea.name;
+    textarea.addEventListener("blur", () => updateVarValidationForTarget(targetId, textarea));
+    textarea.addEventListener("input", () => updateVarValidationForTarget(targetId, textarea));
+}
+
+async function refreshVariableEditors() {
+    await ensureVariableMeta();
+    document.querySelectorAll(".var-chip-bar").forEach((bar) => {
+        const targetId = bar.dataset.varTarget;
+        if (!targetId) return;
+        bar.innerHTML = renderVarChipBarContent(targetId);
+        bindVarChipBar(bar);
+        const textarea = resolveVarTextarea(targetId);
+        initVarEditorForTextarea(textarea);
+        if (textarea) {
+            updateVarValidationForTarget(targetId, textarea);
+        }
+    });
+}
+
+function resolveVarPreviewContact(previewBtn) {
+    const targetId = previewBtn?.dataset?.varPreviewTarget;
+    if (targetId === "composedFreeText") {
+        return {
+            contactId: composedReplyState.contactId || null,
+            orcidId: composedReplyState.contactOrcid || null
+        };
+    }
+    return {
+        contactId: composedReplyState.contactId || null,
+        orcidId: composedReplyState.contactOrcid || state.selectedExpertOrcid || null
+    };
+}
+
+function hideVariablePreviewModal() {
+    $("#varPreviewModal").hidden = true;
+    document.body.classList.remove("modal-open");
+}
+
+function renderVariablePreviewResult(result) {
+    const body = $("#varPreviewBody");
+    const fallbacks = $("#varPreviewFallbacks");
+    if (body) {
+        body.textContent = result.rendered || "";
+    }
+    if (fallbacks) {
+        const keys = result.fallbackKeys || [];
+        fallbacks.innerHTML = keys.map((key) => {
+            const meta = (state.variableMeta || []).find((item) => item.key === key);
+            const label = meta?.label || key;
+            return `<span class="var-fallback-hint">「${escapeHtml(label)}」该专家此字段为空，将使用兜底文案</span>`;
+        }).join("");
+    }
+}
+
+async function showVariablePreview(previewBtn) {
+    const targetId = previewBtn?.dataset?.varPreviewTarget;
+    const textarea = resolveVarTextarea(targetId);
+    const text = textarea?.value || "";
+    if (!text.trim()) {
+        showStatus("请先输入正文再预览", "error");
+        return;
+    }
+    const contact = resolveVarPreviewContact(previewBtn);
+    state.varPreviewContext = { targetId, ...contact };
+    const orcidInput = $("#varPreviewOrcidInput");
+    if (orcidInput) {
+        orcidInput.value = contact.orcidId || "";
+    }
+    $("#varPreviewModal").hidden = false;
+    document.body.classList.add("modal-open");
+    await refreshVariablePreviewFromContext();
+}
+
+async function refreshVariablePreviewFromContext() {
+    const textarea = resolveVarTextarea(state.varPreviewContext.targetId);
+    const text = textarea?.value || "";
+    const orcidInput = $("#varPreviewOrcidInput");
+    const orcidId = orcidInput?.value?.trim() || state.varPreviewContext.orcidId || "";
+    const payload = { text };
+    if (state.varPreviewContext.contactId) {
+        payload.contactId = state.varPreviewContext.contactId;
+    } else if (orcidId) {
+        payload.orcidId = orcidId;
+        payload.level = "CANDIDATE";
+    } else {
+        showStatus("请绑定专家或填写 ORCID 后再预览", "error");
+        return;
+    }
+    const result = await api("/api/qa/render-preview", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    renderVariablePreviewResult(result);
 }
 
 function showQaRuleEditor() {
     $("#qaRuleModal").hidden = false;
     document.body.classList.add("modal-open");
+    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
 }
 
 function hideQaRuleEditor() {
@@ -1708,11 +1929,20 @@ function fillQaRuleForm(rule) {
     form.autoReplyEnabled.checked = rule?.autoReplyEnabled ?? true;
     form.handoffRequired.checked = rule?.handoffRequired ?? false;
     form.enabled.checked = rule?.enabled ?? true;
+    const replyBodyEl = $("#qaRuleReplyBody");
+    if (replyBodyEl) {
+        updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl);
+    }
 }
 
 async function saveQaRule(event) {
     event.preventDefault();
     const form = event.currentTarget;
+    const replyBodyEl = $("#qaRuleReplyBody");
+    if (replyBodyEl && !updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl)) {
+        showStatus("请先修正非法占位符", "error");
+        return;
+    }
     const values = formValues(form);
     const payload = {
         categoryId: numberValue(values.categoryId),
@@ -2225,6 +2455,7 @@ function renderReplySnippetsPanels() {
 function showReplySnippetEditor() {
     $("#replySnippetModal").hidden = false;
     document.body.classList.add("modal-open");
+    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
 }
 
 function hideReplySnippetEditor() {
@@ -2260,11 +2491,20 @@ function fillReplySnippetForm(snippet, presetType) {
     form.enabled.checked = snippet?.enabled ?? true;
     form.isDefault.checked = snippet?.isDefault ?? false;
     updateReplySnippetDefaultFieldVisibility();
+    const contentEl = $("#replySnippetContent");
+    if (contentEl) {
+        updateVarValidationForTarget("replySnippetContent", contentEl);
+    }
 }
 
 async function saveReplySnippet(event) {
     event.preventDefault();
     const form = event.currentTarget;
+    const contentEl = $("#replySnippetContent");
+    if (contentEl && !updateVarValidationForTarget("replySnippetContent", contentEl)) {
+        showStatus("请先修正非法占位符", "error");
+        return;
+    }
     const values = formValues(form);
     const payload = {
         content: values.content,
@@ -7109,6 +7349,51 @@ function refreshComposedPreviewFromRules() {
     renderComposedPreviewSegments();
     renderComposedGapList();
     renderComposedSelectedList();
+    refreshComposedRenderedPreview().catch((error) => showStatus(error.message, "error"));
+}
+
+async function refreshComposedRenderedPreview() {
+    const container = $("#composedRenderedPreview");
+    const hints = $("#composedFallbackHints");
+    if (!container) return;
+    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
+    const plain = buildDeterministicComposedPreview(
+        composedReplyState.selectedRuleIds,
+        composedReplyState.suggest,
+        composedReplyState.freeText,
+        ackContent
+    );
+    if (!plain.includes("${")) {
+        container.textContent = plain;
+        if (hints) hints.innerHTML = "";
+        return;
+    }
+    const payload = { text: plain };
+    if (composedReplyState.contactId) {
+        payload.contactId = composedReplyState.contactId;
+    } else if (composedReplyState.contactOrcid) {
+        payload.orcidId = composedReplyState.contactOrcid;
+        payload.level = "CANDIDATE";
+    } else {
+        container.textContent = plain;
+        if (hints) {
+            hints.innerHTML = `<span class="var-fallback-hint">未绑定专家，仅显示未渲染的拼接文本</span>`;
+        }
+        return;
+    }
+    const result = await api("/api/qa/render-preview", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    container.textContent = result.rendered || "";
+    if (hints) {
+        const keys = result.fallbackKeys || [];
+        hints.innerHTML = keys.map((key) => {
+            const meta = (state.variableMeta || []).find((item) => item.key === key);
+            const label = meta?.label || key;
+            return `<span class="var-fallback-hint">「${escapeHtml(label)}」该专家此字段为空，将使用兜底文案</span>`;
+        }).join("");
+    }
 }
 
 let composedGapDismissHandlerBound = false;
@@ -7176,6 +7461,7 @@ function initComposedReplyWorkbench(recordId, suggest) {
         refreshComposedPreviewFromRules();
     });
 
+    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
     refreshComposedPreviewFromRules();
 }
 
@@ -7299,9 +7585,19 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                             ${ackChipsHtml}
                         </div>
                     </div>
+                    <div class="var-editor-wrap" style="margin-bottom:8px;">
+                        <div class="var-editor-toolbar">
+                            <div class="var-chip-bar" data-var-target="composedFreeText"></div>
+                            <button type="button" class="button small var-preview-btn" data-var-preview-target="composedFreeText">以专家预览</button>
+                        </div>
+                        <div class="var-validation-hint" id="varHint-composedFreeText" hidden></div>
+                    </div>
                     <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
                     <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览（只读分段）</p>
                     <div id="composedPreviewSegments" class="compose-preview-segments"></div>
+                    <p class="text-muted" style="font-size:11px;margin:8px 0 6px;">变量渲染预览（只读）</p>
+                    <div id="composedRenderedPreview" class="compose-rendered-preview pre"></div>
+                    <div id="composedFallbackHints" class="var-fallback-hints"></div>
                     <div class="compose-draft-actions">
                         <button type="button" class="button primary" data-action="copy-to-manual-rich-reply" data-record-id="${recordId}">拷贝到人工富文本回复</button>
                     </div>
@@ -7611,6 +7907,8 @@ async function showUnmatchedDetail(id) {
 
     if (suggest) {
         composedReplyState.recordId = id;
+        composedReplyState.contactId = record.expertContactId || null;
+        composedReplyState.contactOrcid = contact?.orcidId || null;
         initComposedReplyWorkbench(id, suggest);
         if (suggest.llmEnabled) {
             initAiReplyWorkbench(id);
@@ -8570,6 +8868,23 @@ function bindEvents() {
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
+    document.addEventListener("click", (event) => {
+        const previewBtn = event.target.closest(".var-preview-btn");
+        if (previewBtn) {
+            event.preventDefault();
+            showVariablePreview(previewBtn).catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#varPreviewModalCloseBtn")?.addEventListener("click", hideVariablePreviewModal);
+    $("#varPreviewModalBackdrop")?.addEventListener("click", hideVariablePreviewModal);
+    $("#varPreviewRefreshBtn")?.addEventListener("click", () => {
+        refreshVariablePreviewFromContext().catch((error) => showStatus(error.message, "error"));
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("#varPreviewModal").hidden) {
+            hideVariablePreviewModal();
+        }
+    });
     $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
     $("#clearQaRuleBtn").addEventListener("click", hideQaRuleEditor);
     $("#qaRuleModalCloseBtn").addEventListener("click", hideQaRuleEditor);
@@ -9519,6 +9834,16 @@ function startAuthenticatedApp(username) {
     }
     if (!appStarted) {
         appStarted = true;
+        if (typeof ensureVariableMeta === "function") {
+            ensureVariableMeta()
+                .then(() => {
+                    if (typeof refreshVariableEditors === "function") {
+                        return refreshVariableEditors();
+                    }
+                    return undefined;
+                })
+                .catch((error) => showStatus(error.message, "error"));
+        }
         updateUnmatchedBadge();
         resumeProgressPollingIfNeeded().catch(() => {});
         initBatchSendBanner();

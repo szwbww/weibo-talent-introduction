@@ -3,7 +3,7 @@ id: K-manual-frame-three-consumers
 domain: qa
 created: 2026-06-28
 last_used: 2026-07-08
-hit_count: 5
+hit_count: 6
 source: create-p:reply-snippet-backend
 severity: P1
 ---

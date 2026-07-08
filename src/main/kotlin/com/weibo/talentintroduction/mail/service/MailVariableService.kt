@@ -1,0 +1,230 @@
+package com.weibo.talentintroduction.mail.service
+
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+
+@Service
+class MailVariableService(
+    private val expertSearchService: ExpertSearchService,
+    private val mailComposeTemplateService: MailComposeTemplateService
+) {
+    private val log = LoggerFactory.getLogger(MailVariableService::class.java)
+
+    fun buildVariables(account: MailSenderAccount?, expert: ExpertProfile?): Map<String, String> {
+        val senderVars = mapOf(
+            "senderEmail" to (account?.senderEmail).orEmpty(),
+            "senderName" to (account?.senderName).orEmpty(),
+            "senderTitle" to account?.senderTitle.orEmpty(),
+            "teamName" to account?.teamName.orEmpty(),
+            "countryName" to account?.countryName.orEmpty()
+        )
+        val expertVars = if (expert != null) {
+            mapOf(
+                "expertName" to expert.displayName,
+                "expertFamilyName" to expert.familyNames.orEmpty(),
+                "researchFields" to expert.researchFields.orEmpty(),
+                "institution" to expert.institution.orEmpty(),
+                "keyword" to expert.keyword.orEmpty(),
+                "expertCountry" to expert.country.orEmpty(),
+                "employment" to expert.employment.orEmpty(),
+                "hIndex" to (expert.hIndex?.toString()).orEmpty(),
+                "worksCount" to (expert.worksCount?.toString()).orEmpty(),
+                "lastPublicationYear" to (expert.lastPublicationYear?.toString()).orEmpty(),
+                "degree" to expert.degree.orEmpty(),
+                "recentWorkTitle" to (expert.recentWorkTitles?.firstOrNull()).orEmpty(),
+                "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty()
+            )
+        } else {
+            EXPERT_KEYS.associateWith { "" }
+        }
+        return senderVars + expertVars
+    }
+
+    fun variableMetadata(): List<VariableMeta> =
+        VARIABLE_LABELS.map { (key, label) ->
+            VariableMeta(
+                key = key,
+                label = label,
+                nullable = key in EXPERT_KEYS,
+                example = VARIABLE_EXAMPLES[key].orEmpty()
+            )
+        }
+
+    fun toTemplateVariableItems(variables: Map<String, String>): List<TemplateVariableItem> =
+        variables.map { (key, value) ->
+            TemplateVariableItem(
+                key = key,
+                label = VARIABLE_LABELS[key] ?: key,
+                value = value,
+                filled = value.isNotBlank()
+            )
+        }
+
+    fun renderForContact(text: String, account: MailSenderAccount?, contact: ExpertContact): String =
+        renderPreview(text, account, contact).rendered
+
+    fun renderPreview(text: String, account: MailSenderAccount?, contact: ExpertContact): RenderPreviewResult {
+        val expert = resolveExpertProfile(contact)
+        val variables = buildVariables(account, expert)
+        val rendered = mailComposeTemplateService.renderWithVariables(text, variables)
+        val fallbackKeys = detectFallbackKeys(text, variables)
+        return RenderPreviewResult(rendered = rendered, fallbackKeys = fallbackKeys)
+    }
+
+    fun validatePlaceholders(text: String): List<String> {
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val metaByKey = variableMetadata().associateBy { it.key }
+        val violations = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val token = match.value
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            val meta = metaByKey[parsed.key]
+            when {
+                meta == null -> violations.add(token)
+                meta.nullable && parsed.fallback?.trim().isNullOrEmpty() -> violations.add(token)
+            }
+        }
+        return violations.toList()
+    }
+
+    fun requireValidPlaceholders(text: String) {
+        val violations = validatePlaceholders(text)
+        require(violations.isEmpty()) {
+            "Invalid placeholders: ${violations.joinToString(", ")}"
+        }
+    }
+
+    private fun detectFallbackKeys(text: String, variables: Map<String, String>): List<String> {
+        val metaByKey = variableMetadata().associateBy { it.key }
+        val keys = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            if (parsed.fallback == null) {
+                return@forEach
+            }
+            val meta = metaByKey[parsed.key] ?: return@forEach
+            if (meta.nullable && variables[parsed.key].orEmpty().isEmpty()) {
+                keys.add(parsed.key)
+            }
+        }
+        return keys.toList()
+    }
+
+    private fun parsePlaceholderToken(inner: String): ParsedPlaceholder {
+        val pipeIndex = inner.indexOf('|')
+        return if (pipeIndex >= 0) {
+            ParsedPlaceholder(key = inner.substring(0, pipeIndex), fallback = inner.substring(pipeIndex + 1))
+        } else {
+            ParsedPlaceholder(key = inner, fallback = null)
+        }
+    }
+
+    private fun resolveExpertProfile(contact: ExpertContact): ExpertProfile? {
+        val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            val level = parseIndexLevel(contact.currentIndexLevel)
+            val profile = expertSearchService.findByOrcidId(orcidId, level)
+            if (profile != null) {
+                return profile
+            }
+            if (level == ExpertIndexLevel.APPLICATION) {
+                expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to resolve expert profile for orcidId={}: {}", orcidId, e.message)
+            null
+        }
+    }
+
+    private fun parseIndexLevel(level: String): ExpertIndexLevel =
+        runCatching { ExpertIndexLevel.valueOf(level) }.getOrDefault(ExpertIndexLevel.CANDIDATE)
+
+    companion object {
+        private val PLACEHOLDER_REGEX = Regex("""\$\{([^}]*)\}""")
+
+        val EXPERT_KEYS: Set<String> = setOf(
+            "expertName",
+            "expertFamilyName",
+            "researchFields",
+            "institution",
+            "keyword",
+            "expertCountry",
+            "employment",
+            "hIndex",
+            "worksCount",
+            "lastPublicationYear",
+            "degree",
+            "recentWorkTitle",
+            "patentTitle"
+        )
+
+        val VARIABLE_LABELS: Map<String, String> = mapOf(
+            "senderEmail" to "发件邮箱",
+            "senderName" to "发件人姓名",
+            "senderTitle" to "发件人职位",
+            "teamName" to "团队名称",
+            "countryName" to "发件人国家",
+            "expertName" to "专家姓名",
+            "expertFamilyName" to "专家姓氏",
+            "researchFields" to "研究方向",
+            "institution" to "所属机构",
+            "keyword" to "关键词",
+            "expertCountry" to "专家国家",
+            "employment" to "职位",
+            "hIndex" to "H-Index",
+            "worksCount" to "论文数",
+            "lastPublicationYear" to "最近发表年份",
+            "degree" to "学历",
+            "recentWorkTitle" to "近期论文标题",
+            "patentTitle" to "专利标题"
+        )
+
+        private val VARIABLE_EXAMPLES: Map<String, String> = mapOf(
+            "senderEmail" to "chenjj@qftechtalent.com",
+            "senderName" to "Chen",
+            "senderTitle" to "Customer Care Officer",
+            "teamName" to "Qingfei Tech Talent Team",
+            "countryName" to "China",
+            "expertName" to "Ada Lovelace",
+            "expertFamilyName" to "Lovelace",
+            "researchFields" to "Machine Learning",
+            "institution" to "MIT",
+            "keyword" to "AI",
+            "expertCountry" to "United Kingdom",
+            "employment" to "Professor",
+            "hIndex" to "42",
+            "worksCount" to "120",
+            "lastPublicationYear" to "2025",
+            "degree" to "PhD",
+            "recentWorkTitle" to "A Study on Neural Networks",
+            "patentTitle" to "Method for Data Processing"
+        )
+    }
+}
+
+data class VariableMeta(
+    val key: String,
+    val label: String,
+    val nullable: Boolean,
+    val example: String
+)
+
+data class RenderPreviewResult(
+    val rendered: String,
+    val fallbackKeys: List<String>
+)
+
+private data class ParsedPlaceholder(
+    val key: String,
+    val fallback: String?
+)

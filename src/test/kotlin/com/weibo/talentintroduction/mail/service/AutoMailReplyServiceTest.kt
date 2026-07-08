@@ -19,10 +19,18 @@ import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
-import com.weibo.talentintroduction.qa.service.QaMatchResult
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
+import com.weibo.talentintroduction.qa.service.QaMatchResult
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -79,6 +87,15 @@ class AutoMailReplyServiceTest {
     private val mailContentService = MailContentService()
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
     private val inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
+    private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
+    private val renderTemplateService = MailComposeTemplateService(
+        Mockito.mock(MailComposeTemplateRepository::class.java),
+        Mockito.mock(MailComposeTemplateBlockRepository::class.java),
+        Mockito.mock(QaRuleRepository::class.java),
+        Mockito.mock(ReplySnippetRepository::class.java),
+        ObjectMapper()
+    )
+    private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val service = AutoMailReplyService(
         accountService,
         receiveService,
@@ -110,7 +127,8 @@ class AutoMailReplyServiceTest {
         mailContentService,
         cursorService,
         autoReplySettingService,
-        inboundMailTagService
+        inboundMailTagService,
+        mailVariableService
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -978,6 +996,82 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `QA auto reply renders expert placeholders in outbound body`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        stubExpertProfile(contact.orcidId, familyNames = "Lovelace")
+        val templateBody = "Dear \${expertFamilyName}, here is the answer."
+        val renderedBody = "Dear Lovelace, here is the answer."
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = templateBody,
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail(messageId = "msg-201", status = "SUCCESS")
+        }
+
+        service.receiveAndAutoReply("sender", 5)
+
+        val sentMail = sentMails.single()
+        assertEquals(renderedBody, sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml(renderedBody), sentMail.body)
+        assertFalse(sentMail.text!!.contains("\${"))
+        val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository, Mockito.atLeastOnce()).save(mailRecordCaptor.capture())
+        val outboundRecord = mailRecordCaptor.allValues.last { it.direction == "OUTBOUND" && it.mailType == "QA_REPLY" }
+        assertEquals(renderedBody, outboundRecord.body)
+    }
+
+    @Test
+    fun `QA auto reply still sends when expert profile lookup fails`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(expertSearchService.findByOrcidId(contact.orcidId, ExpertIndexLevel.CANDIDATE))
+            .thenThrow(RuntimeException("ES down"))
+        val templateBody = "Dear \${expertFamilyName|there}, thanks."
+        val renderedBody = "Dear there, thanks."
+        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = templateBody,
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-202", status = "SUCCESS"))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.replied)
+        val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository, Mockito.atLeastOnce()).save(mailRecordCaptor.capture())
+        val outboundRecord = mailRecordCaptor.allValues.last { it.direction == "OUTBOUND" && it.mailType == "QA_REPLY" }
+        assertEquals(renderedBody, outboundRecord.body)
+    }
+
+    @Test
     fun `disabled account ingests inbound but blocks QA auto reply`() {
         val account = account("sender").copy(enabled = false)
         val contact = introSentContact()
@@ -1485,6 +1579,26 @@ class AutoMailReplyServiceTest {
 
         assertEquals(1, results.size)
         assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, results[0].outcome)
+    }
+
+    private fun stubExpertProfile(
+        orcidId: String,
+        familyNames: String? = "Lovelace",
+        institution: String? = "Oxford"
+    ) {
+        val profile = ExpertProfile(
+            orcidId = orcidId,
+            email = "expert@example.com",
+            givenNames = "Ada",
+            familyNames = familyNames,
+            country = "UK",
+            keyword = null,
+            employment = null,
+            researchFields = null,
+            institution = institution
+        )
+        Mockito.`when`(expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
     }
 
     private fun introSentContact(): ExpertContact {

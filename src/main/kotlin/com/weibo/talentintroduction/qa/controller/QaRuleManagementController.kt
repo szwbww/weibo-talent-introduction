@@ -1,5 +1,9 @@
 package com.weibo.talentintroduction.qa.controller
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.VariableMeta
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.service.QaCategoryCreateCommand
@@ -20,8 +24,24 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/qa")
 class QaRuleManagementController(
     private val service: QaRuleManagementService,
-    private val qaRuleAuditService: com.weibo.talentintroduction.qa.service.QaRuleAuditService
+    private val qaRuleAuditService: com.weibo.talentintroduction.qa.service.QaRuleAuditService,
+    private val mailVariableService: MailVariableService,
+    private val expertContactRepository: ExpertContactRepository
 ) {
+    @GetMapping("/template-variables-meta")
+    fun templateVariablesMeta(): List<VariableMeta> =
+        mailVariableService.variableMetadata()
+
+    @PostMapping("/render-preview")
+    fun renderPreview(@RequestBody request: QaRenderPreviewRequest): QaRenderPreviewResponse {
+        val contact = resolvePreviewContact(request)
+        val result = mailVariableService.renderPreview(request.text, account = null, contact)
+        return QaRenderPreviewResponse(
+            rendered = result.rendered,
+            fallbackKeys = result.fallbackKeys
+        )
+    }
+
     @GetMapping("/categories")
     fun listCategories(): List<QaCategoryResponse> =
         service.listCategories().map { it.toResponse() }
@@ -70,7 +90,35 @@ class QaRuleManagementController(
             from = java.time.LocalDateTime.parse(from),
             to = java.time.LocalDateTime.parse(to)
         )
+
+    private fun resolvePreviewContact(request: QaRenderPreviewRequest): ExpertContact {
+        request.contactId?.let { contactId ->
+            return expertContactRepository.findById(contactId)
+                .orElseThrow { IllegalArgumentException("Expert contact not found: $contactId") }
+        }
+        val orcidId = request.orcidId?.trim().orEmpty()
+        require(orcidId.isNotBlank()) { "contactId or orcidId is required" }
+        return ExpertContact(
+            campaignId = 0,
+            orcidId = orcidId,
+            expertEmail = "preview@local",
+            expertName = "Preview",
+            currentIndexLevel = request.level?.trim()?.takeIf { it.isNotEmpty() } ?: "CANDIDATE"
+        )
+    }
 }
+
+data class QaRenderPreviewRequest(
+    val text: String,
+    val contactId: Long? = null,
+    val orcidId: String? = null,
+    val level: String? = null
+)
+
+data class QaRenderPreviewResponse(
+    val rendered: String,
+    val fallbackKeys: List<String>
+)
 
 data class QaCategoryCreateRequest(
     val categoryCode: String,

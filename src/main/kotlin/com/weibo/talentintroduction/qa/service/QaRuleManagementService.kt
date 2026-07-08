@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.qa.service
 
+import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
@@ -9,7 +10,8 @@ import org.springframework.stereotype.Service
 @Service
 class QaRuleManagementService(
     private val categoryRepository: QaCategoryRepository,
-    private val ruleRepository: QaRuleRepository
+    private val ruleRepository: QaRuleRepository,
+    private val mailVariableService: MailVariableService
 ) {
     fun listCategories(): List<QaCategory> =
         categoryRepository.findAllByOrderByCategoryCodeAsc()
@@ -97,6 +99,7 @@ class QaRuleManagementService(
         require(matchMode.uppercase() in setOf("ANY", "ALL")) { "matchMode must be ANY or ALL" }
         require(priority > 0) { "priority must be positive" }
         require(replyBody.isNotBlank()) { "replyBody is required" }
+        mailVariableService.requireValidPlaceholders(replyBody)
     }
 }
 

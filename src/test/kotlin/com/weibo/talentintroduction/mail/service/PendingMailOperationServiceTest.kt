@@ -13,6 +13,10 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
@@ -22,6 +26,10 @@ import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.reply.service.AckOption
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -48,6 +56,15 @@ class PendingMailOperationServiceTest {
     private val mailBodyCleaner = Mockito.mock(MailBodyCleaner::class.java)
     private val mailContentService = MailContentService()
     private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+    private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
+    private val renderTemplateService = MailComposeTemplateService(
+        Mockito.mock(MailComposeTemplateRepository::class.java),
+        Mockito.mock(MailComposeTemplateBlockRepository::class.java),
+        Mockito.mock(QaRuleRepository::class.java),
+        Mockito.mock(ReplySnippetRepository::class.java),
+        ObjectMapper()
+    )
+    private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -62,7 +79,8 @@ class PendingMailOperationServiceTest {
         qaMatchService,
         mailBodyCleaner,
         mailContentService,
-        replySnippetService
+        replySnippetService,
+        mailVariableService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -238,6 +256,48 @@ class PendingMailOperationServiceTest {
         assertEquals("SUCCESS", after["sendStatus"])
         assertEquals("QA Subject", after["subject"])
         assertEquals("QA Body", after["bodyPreviewText"])
+    }
+
+    @Test
+    fun `send qa reply renders expert placeholders in outbound body`() {
+        val record = inbound(1)
+        val rule = QaRule(
+            id = 10,
+            categoryId = 1,
+            keywords = "test",
+            replySubject = "QA Subject",
+            replyBody = "Dear \${expertFamilyName}, answer here.",
+            displayName = "Test QA Rule",
+            enabled = true
+        )
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-render", status = "SUCCESS")
+        val renderedBody = "Dear Lovelace, answer here."
+
+        stubExpertProfile(contact.orcidId, familyNames = "Lovelace")
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 204) }
+
+        service.sendQaReply(1, 10, null, "op")
+
+        val sentMail = sentMails.single()
+        assertEquals(renderedBody, sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml(renderedBody), sentMail.body)
+        assertFalse(sentMail.text!!.contains("\${"))
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals(renderedBody, recordCaptor.value.body)
     }
 
     @Test
@@ -489,6 +549,26 @@ class PendingMailOperationServiceTest {
         assertEquals("op", captor.value.resolvedBy)
     }
 
+    private fun stubExpertProfile(
+        orcidId: String,
+        familyNames: String? = "Lovelace",
+        institution: String? = "Oxford"
+    ) {
+        val profile = ExpertProfile(
+            orcidId = orcidId,
+            email = "expert@test.com",
+            givenNames = "Ada",
+            familyNames = familyNames,
+            country = "UK",
+            keyword = null,
+            employment = null,
+            researchFields = null,
+            institution = institution
+        )
+        Mockito.`when`(expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
+    }
+
     private fun qaRule(
         id: Long,
         categoryId: Long,
@@ -617,6 +697,48 @@ class PendingMailOperationServiceTest {
         val after = afterCaptor.value!!
         assertEquals(listOf(10L, 11L), after["qaRuleIds"])
         assertEquals(false, after["edited"])
+    }
+
+    @Test
+    fun `send manual composed reply renders expert placeholders in outbound body`() {
+        val record = inbound(1)
+        val rule = qaRule(10, 1, "At \${institution}, here is the detail.")
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-render-composed", status = "SUCCESS")
+        val renderedBody = "At Oxford, here is the detail."
+
+        stubExpertProfile(contact.orcidId, institution = "Oxford")
+        stubDefaultFrame()
+        stubResolveAck()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 301) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { invocation ->
+                val arg = invocation.getArgument<MailRecordQaRule>(0)
+                arg.copy(id = 1L)
+            }
+
+        service.sendManualComposedReply(1, listOf(10), null, null, null, null, "op")
+
+        val sentMail = sentMails.single()
+        assertTrue(sentMail.text!!.contains("Oxford"))
+        assertFalse(sentMail.text!!.contains("\${institution"))
+        val mailCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(mailCaptor.capture())
+        assertTrue(mailCaptor.value.body!!.contains("Oxford"))
+        assertFalse(mailCaptor.value.body!!.contains("\${"))
     }
 
     @Test

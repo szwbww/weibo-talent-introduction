@@ -64,6 +64,14 @@ class MailComposeTemplateServiceTest {
     }
 
     @Test
+    fun `renderWithVariables delegates to renderText`() {
+        assertEquals(
+            "Hello Chen",
+            service.renderWithVariables("Hello \${senderName}", mapOf("senderName" to "Chen"))
+        )
+    }
+
+    @Test
     fun `renderText replaces placeholder when variable has value`() {
         assertEquals("Hello Chen", renderSubject("Hello ${'$'}{senderName}", mapOf("senderName" to "Chen")))
     }
