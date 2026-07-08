@@ -14,5 +14,8 @@ interface ReplySnippetRepository : CrudRepository<ReplySnippet, Long> {
 
     fun findBySnippetTypeAndIsDefaultTrue(snippetType: String): List<ReplySnippet>
 
-    fun findByVariantGroupAndEnabledTrueOrderByDisplayOrderAsc(variantGroup: String): List<ReplySnippet>
+    fun findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(
+        variantGroup: String,
+        snippetType: String
+    ): List<ReplySnippet>
 }

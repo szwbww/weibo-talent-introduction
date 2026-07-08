@@ -15,7 +15,8 @@ class MeetingInvitationMailComposer(
             templateCode = "MEETING_INVITATION",
             variables = mapOf(
                 "senderDisplayName" to account.senderDisplayName.orEmpty()
-            )
+            ),
+            variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
         )
 
         return ComposedMail(

@@ -1408,7 +1408,8 @@
             </label>
             <label>片段 ID<input name="id" disabled placeholder="系统自动生成"></label>
             <label>显示排序<input name="displayOrder" type="number" value="100" required></label>
-            <label>变体组<input name="variantGroup" type="text" placeholder="如 greeting（留空则不参与变体选择）"></label>
+            <label>变体组<input name="variantGroup" type="text" list="variantGroupOptions" placeholder="选择已有组或输入新组名（留空不参与轮换）"></label>
+            <datalist id="variantGroupOptions"></datalist>
             <label class="span-2">片段内容
                 <div class="var-editor-wrap">
                     <div class="var-editor-toolbar">
@@ -1455,10 +1456,10 @@
                             <label>模板名称<input name="templateName" required maxlength="100"></label>
                             <label>邮件主题<input name="subject" required maxlength="255"></label>
                             <div class="full-width">
-                                <span class="field-label">主题变体</span>
+                                <span class="field-label">主题变体 <span class="badge primary" id="subjectVariantsCountBadge" hidden></span></span>
                                 <div id="subjectVariantsContainer"></div>
                                 <button type="button" class="button small" id="addSubjectVariantBtn">+ 添加变体</button>
-                                <p class="compose-template-variable-hint">留空则使用上方默认主题</p>
+                                <p class="compose-template-variable-hint">主主题与全部变体共同轮换，每位专家固定命中其中一个</p>
                             </div>
                             <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
                         </div>
@@ -1496,6 +1497,11 @@
                         <div class="compose-template-blocks-head">
                             <div>
                                 <h3>邮件预览</h3>
+                                <div class="variant-switcher" id="composeTemplateVariantSwitcher" hidden>
+                                    <button type="button" class="button small" id="variantSwitcherPrev" aria-label="上一个主题变体">‹</button>
+                                    <span class="badge primary variant-switcher-label" id="variantSwitcherLabel">主题 1/1</span>
+                                    <button type="button" class="button small" id="variantSwitcherNext" aria-label="下一个主题变体">›</button>
+                                </div>
                                 <span id="composeTemplatePreviewStatus">服务端预览</span>
                             </div>
                             <button type="button" class="button small" id="randomComposeTemplatePreviewBtn">随机抽取</button>

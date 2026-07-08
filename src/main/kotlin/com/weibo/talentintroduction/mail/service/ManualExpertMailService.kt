@@ -161,7 +161,8 @@ class ManualExpertMailService(
         require(template.enabled) { "Compose template is disabled: $templateId" }
         val rendered = mailComposeTemplateService.render(
             templateId,
-            mailTemplateVariables(account)
+            mailTemplateVariables(account),
+            MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         )
         require(rendered.body.isNotBlank()) {
             "邮件模板正文为空：所有内容块均不可用，请检查模板配置"

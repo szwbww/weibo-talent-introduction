@@ -29,6 +29,7 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import com.weibo.talentintroduction.qa.service.QaMatchResult
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -1103,6 +1104,54 @@ class AutoMailReplyServiceTest {
         Mockito.verify(inboundMailProcessingRepository).save(inboundCaptor.capture())
         assertEquals("MANUAL_REVIEW", inboundCaptor.value.processStatus)
         assertEquals("ACCOUNT_AUTO_SEND_DISABLED", inboundCaptor.value.processReason)
+    }
+
+    @Test
+    fun `interested reply sends meeting invitation with variant seed from contact`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(body = "I am interested in this opportunity")
+        stubAutoReplyPipeline(account, contact, received)
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+        ).thenReturn(false)
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            expertOperatorStatusService.updateAutomatically(
+                anyValue(contact),
+                anyValue(OperatorStatus.INVITED),
+                eqValue("MEETING_INVITATION_SENT")
+            )
+        ).thenAnswer { it.getArgument<ExpertContact>(0) }
+        Mockito.`when`(
+            mailComposeTemplateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap<String, String>()),
+                eqValue(expectedSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Meeting invite",
+                body = "<p>Please join us</p>",
+                mailType = "MEETING_INVITATION"
+            )
+        )
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-meeting", status = "SUCCESS"))
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.MEETING_INVITED, result.outcome)
+        Mockito.verify(mailComposeTemplateService).renderByCode(
+            eqValue("MEETING_INVITATION"),
+            anyValue(emptyMap<String, String>()),
+            eqValue(expectedSeed)
+        )
     }
 
     @Test

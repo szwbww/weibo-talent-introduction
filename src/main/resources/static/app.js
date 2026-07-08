@@ -14,6 +14,7 @@ const state = {
     composeTemplatePreviewExperts: [],
     composeTemplatePreviewAccounts: [],
     composeTemplatePreviewOptionsLoaded: false,
+    composeTemplateVariantIndex: 0,
     suppressions: [],
     suppressionsPage: 0,
     suppressionsTotal: 0,
@@ -2650,7 +2651,7 @@ async function loadAiTraining() {
     ]);
 }
 
-function renderReplySnippetRow(snippet, showDefault) {
+function renderReplySnippetRow(snippet, showDefault, variantGroupCount) {
     const defaultCell = showDefault
         ? `<td>${snippet.isDefault ? badge("默认", "ok") : ""}</td>`
         : "";
@@ -2658,7 +2659,7 @@ function renderReplySnippetRow(snippet, showDefault) {
         ? `<button class="button" data-action="reply-snippet-default" data-id="${snippet.id}">设默认</button>`
         : "";
     const variantGroupCell = snippet.variantGroup
-        ? `<td>${badge(snippet.variantGroup, "info")}</td>`
+        ? `<td>${badge(`${snippet.variantGroup} · ${variantGroupCount}个`, "info")}</td>`
         : "<td></td>";
     return `
         <tr>
@@ -2678,11 +2679,27 @@ function renderReplySnippetRow(snippet, showDefault) {
         </tr>`;
 }
 
+function buildVariantGroupCounts(snippets) {
+    const counts = {};
+    (snippets || []).forEach((snippet) => {
+        const group = snippet.variantGroup?.trim();
+        if (group) {
+            counts[group] = (counts[group] || 0) + 1;
+        }
+    });
+    return counts;
+}
+
 function renderReplySnippetTypePanel(type, snippets) {
     const showDefault = type !== "ACK";
     const defaultHeader = showDefault ? "<th>默认</th>" : "";
+    const groupCounts = buildVariantGroupCounts(snippets);
     const rows = snippets
-        .map((snippet) => renderReplySnippetRow(snippet, showDefault))
+        .map((snippet) => renderReplySnippetRow(
+            snippet,
+            showDefault,
+            snippet.variantGroup ? groupCounts[snippet.variantGroup] || 0 : 0
+        ))
         .join("") || `<tr><td colspan="${showDefault ? 6 : 5}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
     return `
         <section class="panel" style="margin-bottom:16px;">
@@ -2744,6 +2761,19 @@ function updateReplySnippetDefaultFieldVisibility() {
     }
 }
 
+function rebuildVariantGroupDatalist(snippetType) {
+    const datalist = $("#variantGroupOptions");
+    if (!datalist) return;
+    const groups = new Set();
+    (state.replySnippets || [])
+        .filter((snippet) => snippet.snippetType === snippetType && snippet.variantGroup?.trim())
+        .forEach((snippet) => groups.add(snippet.variantGroup.trim()));
+    datalist.innerHTML = Array.from(groups)
+        .sort()
+        .map((group) => `<option value="${escapeHtml(group)}"></option>`)
+        .join("");
+}
+
 function fillReplySnippetForm(snippet, presetType) {
     const form = $("#replySnippetForm");
     showReplySnippetEditor();
@@ -2760,6 +2790,7 @@ function fillReplySnippetForm(snippet, presetType) {
     form.enabled.checked = snippet?.enabled ?? true;
     form.isDefault.checked = snippet?.isDefault ?? false;
     updateReplySnippetDefaultFieldVisibility();
+    rebuildVariantGroupDatalist(form.snippetType.value);
     const contentEl = $("#replySnippetContent");
     if (contentEl) {
         updateVarValidationForTarget("replySnippetContent", contentEl);
@@ -6477,6 +6508,12 @@ function renderComposeTemplatesTable() {
     const table = $("#composeTemplatesTable");
     if (!table) return;
     table.innerHTML = state.composeTemplates.map((template) => {
+        const variantCount = parseSubjectVariantsJson(template.subjectVariants)
+            .map((item) => String(item).trim())
+            .filter(Boolean).length;
+        const variantBadge = variantCount > 0
+            ? `<span class="badge primary">轮换 · ${variantCount + 1} 个主题</span>`
+            : "";
         const blockPills = (template.blocks || []).map((block) => {
             const label = block.refDisplayName
                 || (block.blockType === "CUSTOM_TEXT" ? "自定义文本" : composeBlockTypeLabels[block.blockType] || block.blockType);
@@ -6485,7 +6522,7 @@ function renderComposeTemplatesTable() {
         return `
         <tr>
             <td><strong>${escapeHtml(template.templateName)}</strong></td>
-            <td>${escapeHtml(template.subject)}</td>
+            <td>${escapeHtml(template.subject)} ${variantBadge}</td>
             <td>${blockPills || '<span class="muted">无内容块</span>'}</td>
             <td>${badge(template.enabled ? "启用" : "禁用", template.enabled ? "ok" : "warn")}</td>
             <td style="text-align: right; white-space: nowrap;">
@@ -6513,12 +6550,124 @@ function parseSubjectVariantsJson(raw) {
 function renderSubjectVariantRows(variants) {
     const container = $("#subjectVariantsContainer");
     if (!container) return;
-    const rows = (variants || []).map((value, index) => `
-        <div class="subject-variant-row" data-variant-index="${index}" style="display:flex;gap:8px;margin-bottom:8px;">
-            <input type="text" class="subject-variant-input" value="${escapeHtml(value || "")}" maxlength="255" placeholder="变体主题" style="flex:1;">
+    const values = variants || [];
+    if (!values.length) {
+        container.innerHTML = '<p class="subject-variants-empty">未添加变体，仅使用主主题发送</p>';
+        updateSubjectVariantsCountBadge();
+        updateComposeTemplateVariantSwitcher();
+        return;
+    }
+    const rows = values.map((value, index) => `
+        <div class="subject-variant-row" data-variant-index="${index}">
+            <span class="subject-variant-index">${index + 1}</span>
+            <input type="text" class="subject-variant-input" value="${escapeHtml(value || "")}" maxlength="255" placeholder="变体主题">
             <button type="button" class="button small danger" data-action="remove-subject-variant" data-index="${index}">×</button>
         </div>`).join("");
     container.innerHTML = rows;
+    updateSubjectVariantsCountBadge();
+    updateComposeTemplateVariantSwitcher();
+}
+
+function updateSubjectVariantsCountBadge() {
+    const badge = $("#subjectVariantsCountBadge");
+    if (!badge) return;
+    const variantCount = collectComposeTemplatePreviewSubjectVariants().length;
+    if (variantCount > 0) {
+        badge.hidden = false;
+        badge.textContent = `与主主题共 ${variantCount + 1} 个轮换`;
+    } else {
+        badge.hidden = true;
+        badge.textContent = "";
+    }
+}
+
+function getSubjectVariantPoolSize() {
+    return 1 + collectComposeTemplatePreviewSubjectVariants().length;
+}
+
+function updateComposeTemplateVariantSwitcher() {
+    const switcher = $("#composeTemplateVariantSwitcher");
+    const label = $("#variantSwitcherLabel");
+    if (!switcher || !label) return;
+    const poolSize = getSubjectVariantPoolSize();
+    if (poolSize <= 1) {
+        switcher.hidden = true;
+        state.composeTemplateVariantIndex = 0;
+        return;
+    }
+    if (state.composeTemplateVariantIndex >= poolSize) {
+        state.composeTemplateVariantIndex = 0;
+    }
+    switcher.hidden = false;
+    const index = state.composeTemplateVariantIndex;
+    label.textContent = `主题 ${index + 1}/${poolSize}${index === 0 ? "（主）" : ""}`;
+}
+
+function stepComposeTemplateVariantIndex(delta) {
+    const poolSize = getSubjectVariantPoolSize();
+    if (poolSize <= 1) return;
+    let next = state.composeTemplateVariantIndex + delta;
+    if (next < 0) next = poolSize - 1;
+    if (next >= poolSize) next = 0;
+    state.composeTemplateVariantIndex = next;
+    updateComposeTemplateVariantSwitcher();
+    renderServerComposeTemplatePreview().catch(() => {});
+}
+
+function clearSubjectVariantValidationMarks() {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return;
+    container.querySelectorAll(".subject-variant-duplicate-hint").forEach((element) => element.remove());
+    container.querySelectorAll(".subject-variant-input.duplicate").forEach((input) => {
+        input.classList.remove("duplicate");
+    });
+}
+
+function validateSubjectVariantInputs() {
+    const container = $("#subjectVariantsContainer");
+    const form = $("#composeTemplateForm");
+    if (!container || !form) return true;
+    clearSubjectVariantValidationMarks();
+    const mainSubject = form.subject.value.trim();
+    const inputs = Array.from(container.querySelectorAll(".subject-variant-input"));
+    if (!inputs.length) return true;
+    const trimmedValues = inputs.map((input) => input.value.trim());
+    let valid = true;
+    const seen = new Map();
+
+    trimmedValues.forEach((value, index) => {
+        const row = inputs[index].closest(".subject-variant-row");
+        const insertHint = (message) => {
+            const hint = document.createElement("p");
+            hint.className = "subject-variant-duplicate-hint";
+            hint.textContent = message;
+            row?.insertAdjacentElement("afterend", hint);
+        };
+        if (!value) {
+            inputs[index].classList.add("duplicate");
+            insertHint("变体不能为空");
+            valid = false;
+            return;
+        }
+        if (value === mainSubject) {
+            inputs[index].classList.add("duplicate");
+            insertHint("与主主题 内容重复");
+            valid = false;
+            return;
+        }
+        if (seen.has(value)) {
+            inputs[index].classList.add("duplicate");
+            insertHint(`与变体 ${seen.get(value)} 内容重复`);
+            valid = false;
+            return;
+        }
+        seen.set(value, index + 1);
+    });
+
+    if (!valid) {
+        showStatus("请修正主题变体中的重复或空值", "error");
+    }
+    return valid;
 }
 
 function addSubjectVariantRow() {
@@ -6526,9 +6675,11 @@ function addSubjectVariantRow() {
     if (!container) return;
     const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
     variants.push("");
+    state.composeTemplateVariantIndex = 0;
     renderSubjectVariantRows(variants);
     const lastInput = container.querySelector(".subject-variant-input:last-child");
     lastInput?.focus();
+    renderServerComposeTemplatePreview().catch(() => {});
 }
 
 function removeSubjectVariantRow(index) {
@@ -6536,7 +6687,9 @@ function removeSubjectVariantRow(index) {
     if (!container) return;
     const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
     variants.splice(index, 1);
+    state.composeTemplateVariantIndex = 0;
     renderSubjectVariantRows(variants);
+    renderServerComposeTemplatePreview().catch(() => {});
 }
 
 function collectSubjectVariants() {
@@ -6550,6 +6703,7 @@ function collectSubjectVariants() {
 
 function openComposeTemplateEditor(template) {
     state.selectedComposeTemplateId = template?.id ?? null;
+    state.composeTemplateVariantIndex = 0;
     const form = $("#composeTemplateForm");
     form.templateName.value = template?.templateName || "";
     form.subject.value = template?.subject || "";
@@ -6694,7 +6848,8 @@ async function renderServerComposeTemplatePreview() {
         strictPlaceholders,
         contactId: context.contactId,
         orcidId: context.orcidId,
-        senderAccountCode: context.senderAccountCode
+        senderAccountCode: context.senderAccountCode,
+        variantIndex: state.composeTemplateVariantIndex
     };
     try {
         const result = await api("/api/compose-templates/preview-draft", {
@@ -6770,6 +6925,9 @@ function updateComposeTemplatePreviewMeta(blockCount) {
 async function saveComposeTemplate(event) {
     event.preventDefault();
     const form = $("#composeTemplateForm");
+    if (!validateSubjectVariantInputs()) {
+        return;
+    }
     const blocks = collectComposeTemplateBlocksFromForm();
     if (!blocks.length) {
         showStatus("请至少添加一个内容块", "error");
@@ -9196,7 +9354,10 @@ function bindEvents() {
     $("#clearReplySnippetBtn")?.addEventListener("click", hideReplySnippetEditor);
     $("#replySnippetModalCloseBtn")?.addEventListener("click", hideReplySnippetEditor);
     $("#replySnippetModalBackdrop")?.addEventListener("click", hideReplySnippetEditor);
-    $("#replySnippetForm")?.snippetType?.addEventListener("change", updateReplySnippetDefaultFieldVisibility);
+    $("#replySnippetForm")?.snippetType?.addEventListener("change", () => {
+        updateReplySnippetDefaultFieldVisibility();
+        rebuildVariantGroupDatalist($("#replySnippetForm")?.snippetType?.value || "");
+    });
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("#replySnippetModal")?.hidden) {
             hideReplySnippetEditor();
@@ -9231,6 +9392,16 @@ function bindEvents() {
         if (!button) return;
         removeSubjectVariantRow(Number(button.dataset.index));
     });
+    $("#subjectVariantsContainer")?.addEventListener("input", () => {
+        updateSubjectVariantsCountBadge();
+        if (state.composeTemplateVariantIndex >= getSubjectVariantPoolSize()) {
+            state.composeTemplateVariantIndex = 0;
+        }
+        updateComposeTemplateVariantSwitcher();
+        renderServerComposeTemplatePreview().catch(() => {});
+    });
+    $("#variantSwitcherPrev")?.addEventListener("click", () => stepComposeTemplateVariantIndex(-1));
+    $("#variantSwitcherNext")?.addEventListener("click", () => stepComposeTemplateVariantIndex(1));
     $("#randomComposeTemplatePreviewBtn")?.addEventListener("click", () => {
         randomComposeTemplatePreviewExpert().catch((error) => showStatus(error.message, "error"));
     });

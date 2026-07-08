@@ -19,6 +19,7 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepos
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -263,8 +264,38 @@ class MailComposeTemplateServiceTest {
         val seed = "0000-0001".hashCode()
         val rendered = service.renderByCode("INTRO", variantSeed = seed)
 
-        assertTrue(rendered.subject in listOf("A", "B", "C"))
+        assertTrue(rendered.subject in listOf("Default subject", "A", "B", "C"))
         assertEquals(rendered.subject, service.renderByCode("INTRO", variantSeed = seed).subject)
+    }
+
+    @Test
+    fun `renderByCode includes main subject in variant pool`() {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "S",
+                    subjectVariants = """["A","B"]""",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Body"
+                    )
+                )
+            )
+
+        assertEquals("S", service.renderByCode("INTRO", variantSeed = 0).subject)
+        assertEquals("A", service.renderByCode("INTRO", variantSeed = 1).subject)
+        assertEquals("B", service.renderByCode("INTRO", variantSeed = 2).subject)
     }
 
     @Test
@@ -337,7 +368,7 @@ class MailComposeTemplateServiceTest {
         )
         Mockito.`when`(replySnippetRepository.findById(5))
             .thenReturn(Optional.of(groupSnippets[0]))
-        Mockito.`when`(replySnippetRepository.findByVariantGroupAndEnabledTrueOrderByDisplayOrderAsc("greeting"))
+        Mockito.`when`(replySnippetRepository.findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc("greeting", "greeting"))
             .thenReturn(groupSnippets)
 
         val seed = "0000-0002".hashCode()
@@ -345,6 +376,86 @@ class MailComposeTemplateServiceTest {
 
         assertTrue(rendered.body in listOf("Hello A", "Hello B", "Hello C"))
         assertEquals(rendered.body, service.renderByCode("INTRO", variantSeed = seed).body)
+    }
+
+    @Test
+    fun `renderByCode does not cross snippet types in variant group`() {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "Subject",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.REPLY_SNIPPET,
+                        refId = 5
+                    )
+                )
+            )
+        val greetingSnippet = ReplySnippet(id = 5, snippetType = "greeting", content = "Hello original", variantGroup = "shared")
+        Mockito.`when`(replySnippetRepository.findById(5))
+            .thenReturn(Optional.of(greetingSnippet))
+        Mockito.`when`(
+            replySnippetRepository.findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc("shared", "greeting")
+        ).thenReturn(emptyList())
+
+        val rendered = service.renderByCode("INTRO")
+
+        assertEquals("Hello original", rendered.body)
+    }
+
+    @Test
+    fun `renderByCode decouples subject and snippet variant indices`() {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "S",
+                    subjectVariants = """["A","B"]""",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.REPLY_SNIPPET,
+                        refId = 5
+                    )
+                )
+            )
+        val groupSnippets = listOf(
+            ReplySnippet(id = 5, snippetType = "greeting", content = "Hello A", variantGroup = "greeting", displayOrder = 1),
+            ReplySnippet(id = 6, snippetType = "greeting", content = "Hello B", variantGroup = "greeting", displayOrder = 2),
+            ReplySnippet(id = 7, snippetType = "greeting", content = "Hello C", variantGroup = "greeting", displayOrder = 3)
+        )
+        Mockito.`when`(replySnippetRepository.findById(5))
+            .thenReturn(Optional.of(groupSnippets[0]))
+        Mockito.`when`(
+            replySnippetRepository.findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc("greeting", "greeting")
+        ).thenReturn(groupSnippets)
+
+        val seed = 0
+        val subjectIndex = Math.floorMod(seed, 3)
+        val snippetIndex = Math.floorMod(seed + "greeting".hashCode(), 3)
+        assertTrue(subjectIndex != snippetIndex)
+
+        val rendered = service.renderByCode("INTRO", variantSeed = seed)
+        assertEquals(listOf("S", "A", "B")[subjectIndex], rendered.subject)
+        assertEquals(listOf("Hello A", "Hello B", "Hello C")[snippetIndex], rendered.body)
     }
 
     @Test
@@ -380,17 +491,244 @@ class MailComposeTemplateServiceTest {
         )
         Mockito.`when`(replySnippetRepository.findById(5))
             .thenReturn(Optional.of(groupSnippets[0]))
-        Mockito.`when`(replySnippetRepository.findByVariantGroupAndEnabledTrueOrderByDisplayOrderAsc("greeting"))
+        Mockito.`when`(replySnippetRepository.findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc("greeting", "greeting"))
             .thenReturn(groupSnippets)
 
         val first = service.renderByCode("INTRO", variantSeed = seed)
         val second = service.renderByCode("INTRO", variantSeed = seed)
 
-        assertTrue(first.subject in listOf("A", "B", "C"))
+        assertTrue(first.subject in listOf("Default subject", "A", "B", "C"))
         assertTrue(first.body in listOf("Hello A", "Hello B", "Hello C"))
         assertEquals(first.subject, second.subject)
         assertEquals(first.body, second.body)
     }
+
+    @Test
+    fun `renderByCode tolerates invalid subjectVariants json on read path`() {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "Default subject",
+                    subjectVariants = "not-json",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Body"
+                    )
+                )
+            )
+
+        val rendered = service.renderByCode("INTRO", variantSeed = 99)
+
+        assertEquals("Default subject", rendered.subject)
+    }
+
+    @Test
+    fun `variantSeedFor prefers orcid over email`() {
+        val orcidSeed = MailComposeTemplateService.variantSeedFor("0000-0001", "a@b.c")
+        assertEquals("0000-0001".hashCode(), orcidSeed)
+    }
+
+    @Test
+    fun `variantSeedFor normalizes email when orcid is blank`() {
+        val emailSeed = MailComposeTemplateService.variantSeedFor(null, " A@B.C ")
+        assertEquals("a@b.c".hashCode(), emailSeed)
+    }
+
+    @Test
+    fun `variantSeedFor returns zero when both identifiers are blank`() {
+        assertEquals(0, MailComposeTemplateService.variantSeedFor(null, null))
+        assertEquals(0, MailComposeTemplateService.variantSeedFor("  ", " "))
+    }
+
+    @Test
+    fun `variantSeedFor is deterministic`() {
+        val first = MailComposeTemplateService.variantSeedFor("0000-0002", null)
+        val second = MailComposeTemplateService.variantSeedFor("0000-0002", null)
+        assertEquals(first, second)
+    }
+
+    @Test
+    fun `create rejects invalid subjectVariants`() {
+        val base = validTemplateCommand()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subjectVariants = "not-json"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subjectVariants = """[1,true]"""))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subjectVariants = """[" "]"""))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subjectVariants = """["A","A"]"""))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subject = "Main", subjectVariants = """["Main"]"""))
+        }
+        Mockito.`when`(mailVariableService.validatePlaceholders("""Hello ${'$'}{unknown}"""))
+            .thenReturn(listOf("""${'$'}{unknown}"""))
+        assertThrows(IllegalArgumentException::class.java) {
+            service.create(base.copy(subjectVariants = """["Hello ${'$'}{unknown}"]"""))
+        }
+
+        Mockito.verify(templateRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `update rejects invalid subjectVariants`() {
+        Mockito.`when`(templateRepository.findById(10))
+            .thenReturn(
+                Optional.of(
+                    MailComposeTemplate(
+                        id = 10,
+                        templateCode = "INTRODUCTION",
+                        templateName = "Intro",
+                        subject = "Old",
+                        mailType = "INTRODUCTION"
+                    )
+                )
+            )
+        val base = validTemplateCommand()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.update(10, base.copy(subjectVariants = "not-json"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.update(10, base.copy(subjectVariants = """[1,true]"""))
+        }
+
+        Mockito.verify(templateRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `create accepts valid subjectVariants`() {
+        Mockito.`when`(templateRepository.save(Mockito.any(MailComposeTemplate::class.java)))
+            .thenAnswer { invocation ->
+                invocation.getArgument<MailComposeTemplate>(0).copy(id = 11)
+            }
+        Mockito.`when`(templateRepository.findById(11))
+            .thenReturn(
+                Optional.of(
+                    MailComposeTemplate(
+                        id = 11,
+                        templateName = "Intro",
+                        subject = "Main",
+                        subjectVariants = """["Alt A","Alt B"]""",
+                        mailType = "INTRODUCTION"
+                    )
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(11))
+            .thenReturn(emptyList())
+
+        service.create(
+            validTemplateCommand().copy(
+                subject = "Main",
+                subjectVariants = """["Alt A","Alt B"]"""
+            )
+        )
+
+        Mockito.verify(templateRepository).save(Mockito.any())
+    }
+
+    @Test
+    fun `previewDraft variantIndex selects subject pool members`() {
+        val resultDefault = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "S",
+                subjectVariants = listOf("A", "B")
+            )
+        )
+        assertEquals("S", resultDefault.subject)
+
+        val resultFirstVariant = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "S",
+                subjectVariants = listOf("A", "B"),
+                variantIndex = 1
+            )
+        )
+        assertEquals("A", resultFirstVariant.subject)
+
+        val resultWrapped = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "S",
+                subjectVariants = listOf("A", "B"),
+                variantIndex = 5
+            )
+        )
+        assertEquals("B", resultWrapped.subject)
+    }
+
+    @Test
+    fun `renderByCode end to end uses variantSeedFor for subject pool and same-type snippet group`() {
+        val seed = MailComposeTemplateService.variantSeedFor("0000-0003", "ignored@example.com")
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "S",
+                    subjectVariants = """["A","B"]""",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.REPLY_SNIPPET,
+                        refId = 5
+                    )
+                )
+            )
+        val groupSnippets = listOf(
+            ReplySnippet(id = 5, snippetType = "greeting", content = "Hello A", variantGroup = "greeting", displayOrder = 1),
+            ReplySnippet(id = 6, snippetType = "greeting", content = "Hello B", variantGroup = "greeting", displayOrder = 2),
+            ReplySnippet(id = 7, snippetType = "greeting", content = "Hello C", variantGroup = "greeting", displayOrder = 3)
+        )
+        Mockito.`when`(replySnippetRepository.findById(5))
+            .thenReturn(Optional.of(groupSnippets[0]))
+        Mockito.`when`(
+            replySnippetRepository.findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc("greeting", "greeting")
+        ).thenReturn(groupSnippets)
+
+        val rendered = service.renderByCode("INTRO", variantSeed = seed)
+
+        assertEquals(listOf("S", "A", "B")[Math.floorMod(seed, 3)], rendered.subject)
+        assertEquals(
+            listOf("Hello A", "Hello B", "Hello C")[Math.floorMod(seed + "greeting".hashCode(), 3)],
+            rendered.body
+        )
+    }
+
+    private fun validTemplateCommand(): MailComposeTemplateCommand =
+        MailComposeTemplateCommand(
+            templateName = "Intro",
+            subject = "Main",
+            blocks = listOf(
+                MailComposeTemplateBlockCommand(
+                    blockOrder = 0,
+                    blockType = ComposeBlockType.CUSTOM_TEXT,
+                    customText = "Body"
+                )
+            )
+        )
 
     @Test
     fun `preview returns parsed blocks without variable rendering`() {

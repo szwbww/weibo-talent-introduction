@@ -118,7 +118,8 @@ class MeetingScheduleService(
                 "teamName" to account.teamName.orEmpty(),
                 "countryName" to account.countryName.orEmpty(),
                 "senderDisplayName" to account.senderDisplayName.orEmpty()
-            )
+            ),
+            variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         )
 
         val composed = ComposedMail(

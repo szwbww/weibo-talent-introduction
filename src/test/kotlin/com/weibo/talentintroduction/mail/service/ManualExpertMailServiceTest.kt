@@ -101,6 +101,7 @@ class ManualExpertMailServiceTest {
 
     private fun stubTemplateSend(account: MailSenderAccount) {
         val delivered = DeliveredMail(messageId = "msg-1", status = "SUCCESS")
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
 
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
@@ -123,7 +124,7 @@ class ManualExpertMailServiceTest {
             mailComposeTemplateService.render(
                 eqValue(10L),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(expectedSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
@@ -188,11 +189,12 @@ class ManualExpertMailServiceTest {
     fun `sendManualMail sends compose template as html with plain text fallback`() {
         val account = stubAccount()
         stubTemplateSend(account)
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         Mockito.`when`(
             mailComposeTemplateService.render(
                 eqValue(10L),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(expectedSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
@@ -311,6 +313,46 @@ class ManualExpertMailServiceTest {
             anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
         )
         Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+    }
+
+    @Test
+    fun `sendManualMail passes variant seed derived from expert contact`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        Mockito.verify(mailComposeTemplateService).render(
+            eqValue(10L),
+            anyValue(emptyMap<String, String>()),
+            eqValue(expectedSeed)
+        )
+    }
+
+    @Test
+    fun `sendManualMail uses deterministic variant seed for same expert`() {
+        val account = stubAccount()
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        stubTemplateSend(account)
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        Mockito.verify(mailComposeTemplateService, Mockito.times(2)).render(
+            eqValue(10L),
+            anyValue(emptyMap<String, String>()),
+            eqValue(expectedSeed)
+        )
     }
 
     @Test

@@ -3,7 +3,7 @@ id: K-positive-hash-index
 domain: template
 created: 2026-07-06
 last_used: 2026-07-08
-hit_count: 3
+hit_count: 4
 source: fix-v:mail-personalization-anti-spam:fix-1
 severity: P1
 ---

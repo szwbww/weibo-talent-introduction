@@ -467,7 +467,7 @@ class AutoMailReplyService(
                     )
                 }
 
-                val meetingRecord = sendMeetingInvitation(account, contactId, received, inboundMailRecordId)
+                val meetingRecord = sendMeetingInvitation(account, effectiveContact, contactId, received, inboundMailRecordId)
                 val meetingContact = conversationStateService.transition(
                     contact = effectiveContact,
                     toStatus = ConversationStatus.MEETING_SCHEDULING,
@@ -971,13 +971,16 @@ class AutoMailReplyService(
 
     private fun sendMeetingInvitation(
         account: MailSenderAccount,
+        contact: ExpertContact,
         contactId: Long,
         received: ReceivedMail,
         sourceInboundId: Long
     ): MailRecord {
+        val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_INVITATION",
-            variables = mailTemplateVariables(account)
+            variables = mailTemplateVariables(account),
+            variantSeed = variantSeed
         )
         val mail = ComposedMail(
             to = received.from,

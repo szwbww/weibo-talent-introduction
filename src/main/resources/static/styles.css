@@ -5774,6 +5774,59 @@ tr td {
     font-size: 12px;
 }
 
+.subject-variant-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.subject-variant-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: var(--primary-light);
+    color: var(--primary-hover);
+    font-size: 11px;
+}
+
+.subject-variant-row .subject-variant-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.subject-variant-input.duplicate {
+    border-color: var(--error);
+    background: var(--error-bg);
+}
+
+.subject-variant-duplicate-hint {
+    margin: -4px 0 8px 34px;
+    color: var(--error);
+    font-size: 11px;
+}
+
+.subject-variants-empty {
+    margin: 0 0 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.variant-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.variant-switcher .variant-switcher-label {
+    min-width: 72px;
+    justify-content: center;
+}
+
 .compose-template-block-row {
     display: grid;
     grid-template-columns: 22px 48px 170px minmax(0, 1fr) auto;

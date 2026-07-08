@@ -115,6 +115,7 @@ class MeetingScheduleServiceTest {
             imapPassword = "pwd"
         )
 
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(contact))
         Mockito.`when`(meetingScheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule))
         Mockito.`when`(meetingScheduleRepository.save(Mockito.any(MeetingSchedule::class.java)))
@@ -124,7 +125,7 @@ class MeetingScheduleServiceTest {
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_CONFIRMATION"),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(expectedSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
@@ -160,6 +161,12 @@ class MeetingScheduleServiceTest {
         assertEquals("Teams", confirmed.meetingTool)
         assertEquals("https://teams.microsoft.com/123", confirmed.meetingLink)
         assertEquals("Test notes", confirmed.note)
+
+        Mockito.verify(mailComposeTemplateService).renderByCode(
+            eqValue("MEETING_CONFIRMATION"),
+            anyValue(emptyMap<String, String>()),
+            eqValue(expectedSeed)
+        )
 
         val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
         Mockito.verify(mailRecordRepository).save(mailRecordCaptor.capture())

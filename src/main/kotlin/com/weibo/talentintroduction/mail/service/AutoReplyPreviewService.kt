@@ -83,9 +83,17 @@ class AutoReplyPreviewService(
 
             AutoIntentAction.SEND_MEETING_INVITATION -> {
                 val account = mailSenderAccountService.getManualSendAccount(record.senderAccountCode)
+                // contactId null: no matching outbound send exists for this preview case.
+                val contactForSeed = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+                val variantSeed = if (contactForSeed != null) {
+                    MailComposeTemplateService.variantSeedFor(contactForSeed.orcidId, contactForSeed.expertEmail)
+                } else {
+                    0
+                }
                 val rendered = mailComposeTemplateService.renderByCode(
                     templateCode = "MEETING_INVITATION",
-                    variables = mailTemplateVariables(account)
+                    variables = mailTemplateVariables(account),
+                    variantSeed = variantSeed
                 )
                 val meetingAlreadySent = contactId != null && hasMeetingInvitation(contactId)
                 base.copy(

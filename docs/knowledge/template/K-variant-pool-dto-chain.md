@@ -1,13 +1,15 @@
 ---
 id: K-variant-pool-dto-chain
 domain: template
-created: 2026-07-06
+created: 2026-07-08
 last_used: 2026-07-08
-hit_count: 2
+hit_count: 4
 source: create-p:variant-pool-frontend-ui
 ---
 
-经验：`MailComposeTemplate.subjectVariants` 和 `ReplySnippet.variantGroup` 字段在 DB domain 类和渲染引擎中已存在，但 CRUD DTO 链路（Controller Request → Service Command → Service Detail/Response）完全未贯通。Spring Data JDBC 的 `copy()` 不传的字段会保留旧值（不丢失），但 `MailComposeTemplate(...)` 构造器不传的 nullable 字段会默认 null（create 路径丢失）。
+（2026-07-08 复核修正：原文所述"CRUD DTO 链路完全未贯通"已过期——`subjectVariants`/`variantGroup` 现已贯通 Request→Command→create/update→Detail 全链，且 previewDraft 已携带 subjectVariants。检查清单仍然有效，保留如下。）
+
+经验：Spring Data JDBC 的 `copy()` 不传的字段会保留旧值（不丢失），但 `MailComposeTemplate(...)` 构造器不传的 nullable 字段会默认 null（create 路径丢失）。
 
 DTO 贯通检查清单（每次新增 domain 字段后必须逐层检查）：
 1. Controller Request DTO — 接收前端值
@@ -18,4 +20,4 @@ DTO 贯通检查清单（每次新增 domain 字段后必须逐层检查）：
 6. Service.toDetail() / toResponse() — 映射到 API 响应 DTO
 7. Detail/Response DTO — 包含字段供前端读取
 
-关联：[[K-template-feature-coverage]]（模板功能验证必须逐层检查）
+关联：[[K-template-feature-coverage]]（模板功能验证必须逐层检查）、[[K-variant-seed-call-sites]]

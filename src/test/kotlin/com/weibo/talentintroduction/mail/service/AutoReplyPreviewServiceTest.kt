@@ -50,6 +50,19 @@ class AutoReplyPreviewServiceTest {
 
     private val contactId = 42L
     private val processingId = 100L
+    private val previewContact = ExpertContact(
+        id = contactId,
+        campaignId = 1,
+        orcidId = "orcid-1",
+        expertEmail = "expert@test.com",
+        expertName = "Expert",
+        currentStatus = ConversationStatus.WAITING_REPLY.name,
+        operatorStatus = "CONTACTED",
+        currentIndexLevel = "CANDIDATE",
+        autoReplyEnabled = true
+    )
+    private val meetingInvitationSeed =
+        MailComposeTemplateService.variantSeedFor(previewContact.orcidId, previewContact.expertEmail)
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
@@ -150,7 +163,7 @@ class AutoReplyPreviewServiceTest {
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(meetingInvitationSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
@@ -173,7 +186,7 @@ class AutoReplyPreviewServiceTest {
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(meetingInvitationSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
@@ -183,6 +196,68 @@ class AutoReplyPreviewServiceTest {
 
         assertEquals(AutoReplyPreviewKind.MEETING_ALREADY_SENT, result.previewKind)
         assertEquals("<p>Please join us</p>", result.replyBody)
+    }
+
+    @Test
+    fun `INTERESTED preview passes same variant seed as auto send pipeline`() {
+        stubRecord(body = "I am interested in this opportunity")
+        stubSenderAccount()
+        Mockito.`when`(
+            mailComposeTemplateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap<String, String>()),
+                eqValue(meetingInvitationSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
+        )
+
+        service.preview(processingId)
+
+        Mockito.verify(mailComposeTemplateService).renderByCode(
+            eqValue("MEETING_INVITATION"),
+            anyValue(emptyMap<String, String>()),
+            eqValue(meetingInvitationSeed)
+        )
+    }
+
+    @Test
+    fun `INTERESTED without contact id uses zero variant seed`() {
+        val record = InboundMailProcessing(
+            id = processingId,
+            senderAccountCode = "sender-1",
+            imapUid = 1L,
+            messageId = "msg-1",
+            fromEmail = "expert@test.com",
+            subject = "Test subject",
+            body = "I am interested in this opportunity",
+            cleanedBody = null,
+            receivedAt = LocalDateTime.now(),
+            processStatus = "MANUAL_REVIEW",
+            processReason = "QA_NO_MATCH",
+            expertContactId = null
+        )
+        Mockito.`when`(inboundMailProcessingRepository.findById(processingId))
+            .thenReturn(Optional.of(record))
+        stubSenderAccount()
+        Mockito.`when`(
+            mailComposeTemplateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap<String, String>()),
+                eqValue(0)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
+        )
+
+        service.preview(processingId)
+
+        Mockito.verify(mailComposeTemplateService).renderByCode(
+            eqValue("MEETING_INVITATION"),
+            anyValue(emptyMap<String, String>()),
+            eqValue(0)
+        )
+        Mockito.verify(expertContactRepository, Mockito.never()).findById(Mockito.anyLong())
     }
 
     @Test
@@ -276,7 +351,7 @@ class AutoReplyPreviewServiceTest {
             mailComposeTemplateService.renderByCode(
                 eqValue("MEETING_INVITATION"),
                 anyValue(emptyMap<String, String>()),
-                Mockito.anyInt()
+                eqValue(meetingInvitationSeed)
             )
         ).thenReturn(
             ComposeTemplateRenderResult(subject = "Meeting invite", body = "<p>Please join us</p>")
@@ -342,16 +417,9 @@ class AutoReplyPreviewServiceTest {
     }
 
     private fun stubContact(autoReplyEnabled: Boolean, currentStatus: String) {
-        val contact = ExpertContact(
-            id = contactId,
-            campaignId = 1,
-            orcidId = "orcid-1",
-            expertEmail = "expert@test.com",
-            expertName = "Expert",
-            currentStatus = currentStatus,
-            operatorStatus = "CONTACTED",
-            currentIndexLevel = "CANDIDATE",
-            autoReplyEnabled = autoReplyEnabled
+        val contact = previewContact.copy(
+            autoReplyEnabled = autoReplyEnabled,
+            currentStatus = currentStatus
         )
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(contact))
     }

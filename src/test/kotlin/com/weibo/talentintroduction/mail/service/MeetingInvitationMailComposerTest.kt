@@ -15,6 +15,16 @@ class MeetingInvitationMailComposerTest {
 
     @Test
     fun `composes meeting invitation mail from account and template`() {
+        val expert = ExpertProfile(
+            orcidId = "0000-0001",
+            email = "expert@example.com",
+            givenNames = "Ada",
+            familyNames = "Lovelace",
+            country = null,
+            keyword = null,
+            employment = null
+        )
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
         Mockito.`when`(accountService.getEnabledAccount("chenjj"))
             .thenReturn(
                 MailSenderAccount(
@@ -38,7 +48,8 @@ class MeetingInvitationMailComposerTest {
         Mockito.`when`(
             templateService.renderByCode(
                 templateCode = "MEETING_INVITATION",
-                variables = mapOf("senderDisplayName" to "Chen")
+                variables = mapOf("senderDisplayName" to "Chen"),
+                variantSeed = expectedSeed
             )
         ).thenReturn(
             ComposeTemplateRenderResult(
@@ -50,19 +61,16 @@ class MeetingInvitationMailComposerTest {
 
         val mail = composer.compose(
             "chenjj",
-            ExpertProfile(
-                orcidId = "0000-0001",
-                email = "expert@example.com",
-                givenNames = "Ada",
-                familyNames = "Lovelace",
-                country = null,
-                keyword = null,
-                employment = null
-            )
+            expert
         )
 
         assertEquals("expert@example.com", mail.to)
         assertEquals("Follow-up on the Talent Program", mail.subject)
         assertEquals("Meeting invitation body", mail.body)
+        Mockito.verify(templateService).renderByCode(
+            templateCode = "MEETING_INVITATION",
+            variables = mapOf("senderDisplayName" to "Chen"),
+            variantSeed = expectedSeed
+        )
     }
 }

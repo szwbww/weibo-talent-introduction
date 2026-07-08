@@ -154,6 +154,7 @@ class MailComposeTemplateService(
     }
 
     fun previewDraft(request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult {
+        val variantSeed = request.variantIndex ?: 0
         val draftBlocks = request.blocks.map { block ->
             ComposeDraftBlock(
                 blockOrder = block.blockOrder,
@@ -162,8 +163,8 @@ class MailComposeTemplateService(
                 customText = block.customText
             )
         }
-        val baseResolved = resolveBlocks(draftBlocks, renderVariables = false)
-        val subjectTemplate = selectDraftSubject(request.subject, request.subjectVariants)
+        val baseResolved = resolveBlocks(draftBlocks, variantSeed = variantSeed, renderVariables = false)
+        val subjectTemplate = selectDraftSubject(request.subject, request.subjectVariants, request.variantIndex)
         val contact = resolvePreviewContact(request.contactId, request.orcidId)
         val account = resolvePreviewAccount(request.senderAccountCode)
 
@@ -249,11 +250,9 @@ class MailComposeTemplateService(
         return runCatching { mailSenderAccountService.getAccount(code) }.getOrNull()
     }
 
-    private fun selectDraftSubject(subject: String, variants: List<String>?): String {
-        if (variants.isNullOrEmpty()) {
-            return subject
-        }
-        return variants[0]
+    private fun selectDraftSubject(subject: String, variants: List<String>?, variantIndex: Int? = null): String {
+        val pool = buildSubjectPool(subject, variants)
+        return pool[Math.floorMod(variantIndex ?: 0, pool.size)]
     }
 
     private fun placeholdersSatisfied(result: RenderPreviewResult): Boolean {
@@ -356,8 +355,46 @@ class MailComposeTemplateService(
         require(command.templateName.isNotBlank()) { "templateName is required" }
         require(command.subject.isNotBlank()) { "subject is required" }
         require(command.blocks.isNotEmpty()) { "At least one content block is required" }
+        validateSubjectVariants(command.subject, command.subjectVariants)
         command.blocks.forEach { block ->
             validateBlockCommand(block)
+        }
+    }
+
+    private fun validateSubjectVariants(subject: String, subjectVariantsJson: String?) {
+        if (subjectVariantsJson == null) return
+        val root = try {
+            objectMapper.readTree(subjectVariantsJson)
+        } catch (_: Exception) {
+            throw IllegalArgumentException("主题变体不是合法的 JSON 数组")
+        }
+        if (!root.isArray) {
+            throw IllegalArgumentException("主题变体不是合法的 JSON 字符串数组")
+        }
+        val variants = mutableListOf<String>()
+        for (node in root) {
+            if (!node.isTextual) {
+                throw IllegalArgumentException("主题变体不是合法的 JSON 字符串数组")
+            }
+            variants.add(node.asText())
+        }
+        val trimmedSubject = subject.trim()
+        val seen = mutableSetOf<String>()
+        variants.forEachIndexed { index, raw ->
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) {
+                throw IllegalArgumentException("主题变体第 ${index + 1} 项不能为空")
+            }
+            if (trimmed == trimmedSubject) {
+                throw IllegalArgumentException("主题变体不能与主主题重复")
+            }
+            if (!seen.add(trimmed)) {
+                throw IllegalArgumentException("主题变体不能重复")
+            }
+            val violations = mailVariableService.validatePlaceholders(trimmed)
+            if (violations.isNotEmpty()) {
+                throw IllegalArgumentException("主题变体包含非法占位符: ${violations.joinToString(", ")}")
+            }
         }
     }
 
@@ -492,15 +529,20 @@ class MailComposeTemplateService(
 
     private fun resolveSnippetVariant(snippet: ReplySnippet, variantSeed: Int): ReplySnippet {
         val variantGroup = snippet.variantGroup?.trim()?.takeIf { it.isNotBlank() } ?: return snippet
-        val groupSnippets = replySnippetRepository.findByVariantGroupAndEnabledTrueOrderByDisplayOrderAsc(variantGroup)
+        val groupSnippets = replySnippetRepository
+            .findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(variantGroup, snippet.snippetType)
         if (groupSnippets.isEmpty()) return snippet
-        return groupSnippets[Math.floorMod(variantSeed, groupSnippets.size)]
+        return groupSnippets[Math.floorMod(variantSeed + variantGroup.hashCode(), groupSnippets.size)]
     }
 
     private fun selectSubjectVariant(template: MailComposeTemplate, seed: Int): String {
-        val variants = parseSubjectVariants(template.subjectVariants)
-        if (variants.isNullOrEmpty()) return template.subject
-        return variants[Math.floorMod(seed, variants.size)]
+        val pool = buildSubjectPool(template.subject, parseSubjectVariants(template.subjectVariants))
+        return pool[Math.floorMod(seed, pool.size)]
+    }
+
+    private fun buildSubjectPool(subject: String, variants: List<String>?): List<String> {
+        if (variants.isNullOrEmpty()) return listOf(subject)
+        return listOf(subject) + variants
     }
 
     private fun parseSubjectVariants(json: String?): List<String>? {
@@ -550,6 +592,14 @@ class MailComposeTemplateService(
 
     companion object {
         private val FALLBACK_PLACEHOLDER_REGEX = Regex("""\$\{(\w+)\|([^}]*)\}""")
+
+        fun variantSeedFor(orcidId: String?, email: String?): Int {
+            val trimmedOrcid = orcidId?.trim()?.takeIf { it.isNotBlank() }
+            if (trimmedOrcid != null) return trimmedOrcid.hashCode()
+            val trimmedEmail = email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+            if (trimmedEmail != null) return trimmedEmail.hashCode()
+            return 0
+        }
     }
 }
 
@@ -628,6 +678,7 @@ data class ComposeTemplatePreviewDraftRequest(
     val subject: String,
     val subjectVariants: List<String> = emptyList(),
     val blocks: List<ComposeDraftBlock> = emptyList(),
+    val variantIndex: Int? = null,
     val orcidId: String? = null,
     val contactId: Long? = null,
     val senderAccountCode: String? = null,
