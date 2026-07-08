@@ -1,5 +1,13 @@
 package com.weibo.talentintroduction.template.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.PreviewVariableItem
+import com.weibo.talentintroduction.mail.service.RenderPreviewResult
+import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
@@ -10,6 +18,7 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -20,13 +29,19 @@ class MailComposeTemplateServiceTest {
     private val blockRepository = Mockito.mock(MailComposeTemplateBlockRepository::class.java)
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
     private val replySnippetRepository = Mockito.mock(ReplySnippetRepository::class.java)
+    private val mailVariableService = Mockito.mock(MailVariableService::class.java)
+    private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val objectMapper = ObjectMapper()
     private val service = MailComposeTemplateService(
         templateRepository,
         blockRepository,
         qaRuleRepository,
         replySnippetRepository,
-        objectMapper
+        objectMapper,
+        mailVariableService,
+        expertContactRepository,
+        mailSenderAccountService
     )
 
     @Test
@@ -375,5 +390,224 @@ class MailComposeTemplateServiceTest {
         assertTrue(first.body in listOf("Hello A", "Hello B", "Hello C"))
         assertEquals(first.subject, second.subject)
         assertEquals(first.body, second.body)
+    }
+
+    @Test
+    fun `preview returns parsed blocks without variable rendering`() {
+        Mockito.`when`(templateRepository.findById(20))
+            .thenReturn(
+                Optional.of(
+                    MailComposeTemplate(
+                        id = 20,
+                        templateName = "Intro",
+                        subject = "Hello \${senderName}"
+                    )
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(20))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 20,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Dear \${expertName}"
+                    )
+                )
+            )
+
+        val preview = service.preview(20)
+
+        assertEquals("Hello \${senderName}", preview.subject)
+        assertEquals("Dear \${expertName}", preview.body)
+        assertEquals(1, preview.blocks.size)
+        assertTrue(preview.blocks[0].included)
+    }
+
+    @Test
+    fun `previewDraft without expert context returns raw text and placeholder keys`() {
+        Mockito.doReturn(listOf("expertName", "senderName"))
+            .`when`(mailVariableService)
+            .placeholderKeysIn("Hello \${senderName}", "Dear \${expertName}")
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Hello \${senderName}",
+                blocks = listOf(
+                    ComposeDraftBlock(
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Dear \${expertName}"
+                    )
+                )
+            )
+        )
+
+        assertEquals("Hello \${senderName}", result.subject)
+        assertEquals("Dear \${expertName}", result.body)
+        assertEquals(listOf("expertName", "senderName"), result.fallbackKeys)
+        assertEquals(null, result.toEmail)
+        Mockito.verifyNoInteractions(expertContactRepository)
+    }
+
+    @Test
+    fun `previewDraft renders variables and skips blocks under strict placeholders`() {
+        val contact = ExpertContact(
+            id = 7,
+            campaignId = 1,
+            orcidId = "0000-0001",
+            expertEmail = "ada@mit.edu",
+            expertName = "Ada"
+        )
+        val account = MailSenderAccount(
+            accountCode = "ops",
+            senderEmail = "ops@example.com",
+            senderName = "Ops",
+            senderTitle = "Director",
+            senderDisplayName = "Ops",
+            teamName = "Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "ops@example.com",
+            smtpPassword = "secret",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "ops@example.com",
+            imapPassword = "secret"
+        )
+        Mockito.`when`(expertContactRepository.findById(7)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getAccount("ops")).thenReturn(account)
+        Mockito.`when`(qaRuleRepository.findById(11))
+            .thenReturn(
+                Optional.of(
+                    QaRule(
+                        id = 11,
+                        categoryId = 1,
+                        keywords = "kw",
+                        replySubject = "Subj",
+                        replyBody = "Visible \${senderName}",
+                        enabled = true
+                    )
+                )
+            )
+        Mockito.`when`(mailVariableService.renderPreview("Hello \${senderName}", account, contact))
+            .thenReturn(
+                RenderPreviewResult(
+                    rendered = "Hello Ops",
+                    fallbackKeys = emptyList(),
+                    variables = listOf(
+                        PreviewVariableItem("senderName", "发件人姓名", "Ops", true, false)
+                    )
+                )
+            )
+        Mockito.`when`(mailVariableService.renderPreview("Visible \${senderName}", account, contact))
+            .thenReturn(
+                RenderPreviewResult(
+                    rendered = "Visible Ops",
+                    fallbackKeys = emptyList(),
+                    variables = listOf(
+                        PreviewVariableItem("senderName", "发件人姓名", "Ops", true, false)
+                    )
+                )
+            )
+        Mockito.`when`(mailVariableService.renderPreview("Hidden \${researchFields}", account, contact))
+            .thenReturn(
+                RenderPreviewResult(
+                    rendered = "Hidden ",
+                    fallbackKeys = listOf("researchFields"),
+                    variables = listOf(
+                        PreviewVariableItem("researchFields", "研究方向", "", false, true)
+                    )
+                )
+            )
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Hello \${senderName}",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = 11),
+                    ComposeDraftBlock(1, ComposeBlockType.CUSTOM_TEXT, customText = "Hidden \${researchFields}")
+                ),
+                contactId = 7,
+                senderAccountCode = "ops",
+                strictPlaceholders = true
+            )
+        )
+
+        assertEquals("Hello Ops", result.subject)
+        assertEquals("Visible Ops", result.body)
+        assertEquals("ada@mit.edu", result.toEmail)
+        assertTrue(result.fallbackKeys.contains("researchFields"))
+        assertEquals(2, result.blocks.size)
+        assertTrue(result.blocks[0].included)
+        assertFalse(result.blocks[1].included)
+        assertEquals("存在未满足占位符", result.blocks[1].skipReason)
+    }
+
+    @Test
+    fun `previewDraft passes raw fallback placeholder tokens to renderPreview`() {
+        val contact = ExpertContact(
+            id = 7,
+            campaignId = 1,
+            orcidId = "0000-0001",
+            expertEmail = "ada@mit.edu",
+            expertName = "Ada"
+        )
+        val account = MailSenderAccount(
+            accountCode = "ops",
+            senderEmail = "ops@example.com",
+            senderName = "Ops",
+            senderTitle = "Director",
+            senderDisplayName = "Ops",
+            teamName = "Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "ops@example.com",
+            smtpPassword = "secret",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "ops@example.com",
+            imapPassword = "secret"
+        )
+        val rawFallbackBody = "Topic: \${researchFields|Science}"
+        Mockito.`when`(expertContactRepository.findById(7)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getAccount("ops")).thenReturn(account)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Subject",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Subject", account, contact)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Topic: Science",
+                fallbackKeys = listOf("researchFields"),
+                variables = listOf(
+                    PreviewVariableItem("researchFields", "研究方向", "", false, true)
+                )
+            )
+        ).`when`(mailVariableService).renderPreview(rawFallbackBody, account, contact)
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Subject",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = rawFallbackBody)
+                ),
+                contactId = 7,
+                senderAccountCode = "ops",
+                strictPlaceholders = true
+            )
+        )
+
+        assertEquals("", result.body)
+        assertEquals(1, result.blocks.size)
+        assertFalse(result.blocks[0].included)
+        assertEquals("存在未满足占位符", result.blocks[0].skipReason)
+        assertTrue(result.fallbackKeys.contains("researchFields"))
+        Mockito.verify(mailVariableService).renderPreview(rawFallbackBody, account, contact)
     }
 }

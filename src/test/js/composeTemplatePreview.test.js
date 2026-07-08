@@ -25,7 +25,8 @@ function createStore() {
                 value: "",
                 checked: false,
                 elements: {},
-                querySelector: () => null
+                querySelector: () => null,
+                querySelectorAll: () => []
             });
         }
         return store.get(id);
@@ -46,32 +47,44 @@ function createSandbox(blocks) {
             composeTemplatePreviewAccounts: [],
             selectedComposeTemplateId: null
         },
-        composeTemplatePreviewVariables: {
-            senderName: "Chen Jingjing",
-            expertFamilyName: "",
-            researchFields: ""
-        },
+        composeTemplatePreviewRequestId: 0,
         $: (sel) => store.el(sel.replace(/^#/, "")),
         $$: (sel) => sel === "#composeTemplateBlocksList .compose-template-block-row" ? blocks : [],
         escapeHtml: (v) => String(v == null ? "" : v)
             .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;").replaceAll("'", "&#39;")
+            .replaceAll('"', "&quot;").replaceAll("'", "&#39;"),
+        composeBlockTypeLabels: {
+            QA_RULE: "QA 规则",
+            REPLY_SNIPPET: "回复片段",
+            CUSTOM_TEXT: "自定义文本"
+        },
+        api: async () => ({
+            subject: "Professor Professor - Your Field",
+            body: "Dear Professor, from Chen Jingjing",
+            blocks: [{ blockOrder: 0, blockType: "CUSTOM_TEXT", included: true }],
+            fallbackKeys: [],
+            toEmail: "ada@mit.edu",
+            variables: [
+                { key: "senderName", label: "发件人姓名", value: "Chen Jingjing", filled: true, usedFallback: false }
+            ]
+        })
     };
     vm.createContext(sandbox);
     [
         "placeholderDefaultFallback",
-        "renderComposeTemplateText",
-        "extractComposeTemplatePlaceholders",
-        "composeTemplateTextHasAllPlaceholders",
         "composeTemplatePreviewExpertLabel",
         "composeTemplatePreviewAccountLabel",
         "findComposeTemplatePreviewOption",
-        "expertFamilyNameFromName",
         "collectComposeTemplateBlocksFromForm",
-        "selectedComposeTemplatePreviewVariables",
+        "collectComposeTemplatePreviewContext",
+        "collectComposeTemplatePreviewSubjectVariants",
+        "collectComposeTemplatePreviewSampleText",
         "refreshComposeTemplatePreview",
         "renderComposeTemplatePreviewHtml",
-        "renderLocalComposeTemplatePreview",
+        "renderComposeTemplatePreviewVariableRows",
+        "renderServerComposeTemplatePreviewPanel",
+        "renderServerComposeTemplatePreview",
+        "randomComposeTemplatePreviewExpert",
         "updateComposeTemplatePreviewMeta"
     ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
     sandbox.__store = store;
@@ -89,59 +102,44 @@ function customTextRow(text) {
     };
 }
 
-describe("compose template local preview", () => {
-    it("renders subject fallback placeholders before save", () => {
-        const sb = createSandbox([customTextRow("Body")]);
-        sb.renderLocalComposeTemplatePreview();
-
-        const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
-        assert.ok(html.includes("Professor Professor - Your Field"));
-        assert.ok(!html.includes("${expertFamilyName|Professor}"));
-    });
-
-    it("renders custom text placeholders before save", () => {
+describe("compose template server preview", () => {
+    it("renders server preview response in panel", () => {
         const sb = createSandbox([customTextRow("Dear ${expertFamilyName|Professor}, from ${senderName}")]);
-        sb.renderLocalComposeTemplatePreview();
+        sb.renderServerComposeTemplatePreviewPanel({
+            subject: "Professor Professor - Your Field",
+            body: "Dear Professor, from Chen Jingjing",
+            blocks: [{ blockOrder: 0, blockType: "CUSTOM_TEXT", included: true }],
+            fallbackKeys: [],
+            toEmail: "ada@mit.edu",
+            variables: []
+        });
+        sb.__store.el("composeTemplatePreviewStatus").innerHTML = '<span class="preview-source-badge">服务端预览</span>';
 
         const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
+        const status = sb.__store.get("composeTemplatePreviewStatus").innerHTML;
+        assert.ok(html.includes("Professor Professor - Your Field"));
         assert.ok(html.includes("Dear Professor, from Chen Jingjing"));
+        assert.ok(html.includes("ada@mit.edu"));
+        assert.ok(status.includes("preview-source-badge"));
+        assert.ok(status.includes("服务端预览"));
     });
 
-    it("provides default fallback copy for nullable expert placeholders", () => {
-        const sb = createSandbox([]);
-
-        assert.equal(sb.placeholderDefaultFallback("degree"), "your academic background");
-        assert.equal(sb.placeholderDefaultFallback("recentWorkTitle"), "your recent research");
-        assert.equal(sb.placeholderDefaultFallback("lastPublicationYear"), "recent years");
-        assert.equal(sb.placeholderDefaultFallback("unsubscribeUrl"), "");
-    });
-
-    it("uses selected expert and sender account variables", () => {
-        const sb = createSandbox([customTextRow("From ${senderEmail} to ${expertName}")]);
-        sb.state.composeTemplatePreviewExperts = [
-            { id: 7, expertName: "Ada Smith", expertEmail: "ada@mit.edu" }
-        ];
-        sb.state.composeTemplatePreviewAccounts = [
-            { accountCode: "ops", senderEmail: "ops@example.com", senderName: "Ops Team" }
-        ];
-        sb.__store.el("composeTemplatePreviewExpertInput").value = "Ada Smith <ada@mit.edu>";
-        sb.__store.el("composeTemplatePreviewAccountInput").value = "ops <ops@example.com>";
-
-        sb.renderLocalComposeTemplatePreview();
-
-        const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
-        assert.ok(html.includes("To</span><strong>ada@mit.edu"));
-        assert.ok(html.includes("From ops@example.com to Ada Smith"));
-    });
-
-    it("strict placeholder mode skips text with missing variables", () => {
+    it("strict placeholder mode shows skipped blocks from server", () => {
         const sb = createSandbox([
             customTextRow("Visible ${senderName}"),
             customTextRow("Hidden ${researchFields}")
         ]);
-        sb.__store.el("composeTemplatePreviewStrictPlaceholders").checked = true;
-
-        sb.renderLocalComposeTemplatePreview();
+        sb.renderServerComposeTemplatePreviewPanel({
+            subject: "Subject",
+            body: "Visible Chen Jingjing",
+            blocks: [
+                { blockOrder: 0, blockType: "CUSTOM_TEXT", included: true },
+                { blockOrder: 1, blockType: "CUSTOM_TEXT", included: false, skipReason: "存在未满足占位符" }
+            ],
+            fallbackKeys: ["researchFields"],
+            toEmail: "expert@example.com",
+            variables: []
+        });
 
         const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
         assert.ok(html.includes("Visible Chen Jingjing"));
@@ -149,21 +147,66 @@ describe("compose template local preview", () => {
         assert.ok(html.includes("已跳过 1 段"));
     });
 
-    it("refresh uses local selected variables for existing templates", async () => {
+    it("refresh calls preview-draft endpoint", async () => {
         const sb = createSandbox([customTextRow("To ${expertName}")]);
-        sb.state.selectedComposeTemplateId = 99;
-        sb.state.composeTemplatePreviewExperts = [
-            { id: 7, expertName: "Ada Smith", expertEmail: "ada@mit.edu" }
-        ];
-        sb.__store.el("composeTemplatePreviewExpertInput").value = "Ada Smith <ada@mit.edu>";
-        sb.api = async () => {
-            throw new Error("server preview should not be called");
+        let called = false;
+        sb.api = async (url) => {
+            if (url === "/api/compose-templates/preview-draft") {
+                called = true;
+                return {
+                    subject: "Subject",
+                    body: "To Ada Smith",
+                    blocks: [],
+                    fallbackKeys: [],
+                    toEmail: "ada@mit.edu",
+                    variables: []
+                };
+            }
+            throw new Error("unexpected url: " + url);
         };
 
         await sb.refreshComposeTemplatePreview();
 
+        assert.equal(called, true);
         const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
         assert.ok(html.includes("Ada Smith"));
-        assert.ok(!html.includes("${expertName}"));
+    });
+
+    it("random sample uses preview random-expert endpoint", async () => {
+        const sb = createSandbox([customTextRow("Dear ${expertName}")]);
+        const calls = [];
+        sb.api = async (url, options) => {
+            calls.push(url);
+            if (url === "/api/qa/preview/random-expert") {
+                return {
+                    expert: {
+                        orcidId: "0000-0001",
+                        displayName: "Ada Smith",
+                        email: "ada@mit.edu",
+                        indexLevel: "CANDIDATE"
+                    },
+                    matchCount: 1,
+                    totalCount: 10,
+                    error: null
+                };
+            }
+            if (url === "/api/compose-templates/preview-draft") {
+                return {
+                    subject: "Subject",
+                    body: "Dear Ada Smith",
+                    blocks: [],
+                    fallbackKeys: [],
+                    toEmail: "ada@mit.edu",
+                    variables: []
+                };
+            }
+            throw new Error("unexpected url: " + url);
+        };
+        sb.showStatus = () => {};
+
+        await sb.randomComposeTemplatePreviewExpert();
+
+        assert.ok(calls.includes("/api/qa/preview/random-expert"));
+        assert.equal(sb.__store.get("composeTemplatePreviewExpertInput").value, "Ada Smith <ada@mit.edu>");
     });
 });

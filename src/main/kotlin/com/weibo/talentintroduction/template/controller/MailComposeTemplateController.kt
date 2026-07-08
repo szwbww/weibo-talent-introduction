@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.template.controller
 
+import com.weibo.talentintroduction.template.service.ComposeTemplatePreviewDraftRequest
+import com.weibo.talentintroduction.template.service.ComposeTemplatePreviewDraftResult
 import com.weibo.talentintroduction.template.service.ComposeTemplatePreviewResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateBlockCommand
 import com.weibo.talentintroduction.template.service.MailComposeTemplateCommand
@@ -49,6 +51,10 @@ class MailComposeTemplateController(
     @GetMapping("/{id}/preview")
     fun preview(@PathVariable id: Long): ComposeTemplatePreviewResult =
         service.preview(id)
+
+    @PostMapping("/preview-draft")
+    fun previewDraft(@RequestBody request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult =
+        service.previewDraft(request)
 }
 
 data class MailComposeTemplateRequest(

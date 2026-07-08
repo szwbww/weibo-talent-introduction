@@ -2500,17 +2500,39 @@ function renderAiTrainingMailDetail(mail) {
     if (!detail) return;
     if (!mail) {
         detail.classList.add("muted");
-        detail.innerHTML = "选择左侧邮件查看完整正文。";
+        detail.innerHTML = `
+            <div class="ai-training-detail-empty">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <p>选择左侧邮件查看完整正文</p>
+            </div>`;
         return;
     }
     detail.classList.remove("muted");
+    const name = mail.expertName || mail.expertEmail || "专家";
+    const initial = String(name).trim().charAt(0).toUpperCase() || "?";
+    const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "";
+    const expertTags = (mail.expertTags || []).map((tag) =>
+        `<span class="ai-training-tag-chip small">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
+    ).join("");
+    const inboundTags = (mail.inboundTags || []).map((tag) =>
+        `<span class="ai-training-tag-chip small inbound">${escapeHtml(tag.label)}</span>`
+    ).join("");
     detail.innerHTML = `
         <div class="ai-training-mail-detail-head">
-            <div><strong>${escapeHtml(mail.expertName || mail.expertEmail || "专家")}</strong></div>
-            <div class="muted">${escapeHtml(mail.expertEmail || "")}</div>
-            <div class="muted">${escapeHtml(mail.subject || "无主题")}</div>
+            <div class="ai-training-detail-avatar">${escapeHtml(initial)}</div>
+            <div class="ai-training-detail-titles">
+                <div class="ai-training-detail-name-row">
+                    <strong>${escapeHtml(name)}</strong>
+                    ${timeStr ? `<span class="ai-training-detail-time">${escapeHtml(timeStr)}</span>` : ""}
+                </div>
+                <div class="ai-training-detail-email">${escapeHtml(mail.expertEmail || "")}</div>
+            </div>
         </div>
-        <pre class="pre">${escapeHtml(mail.body || "")}</pre>
+        <div class="ai-training-detail-subject">${escapeHtml(mail.subject || "无主题")}</div>
+        ${(expertTags || inboundTags) ? `<div class="ai-training-mail-item-tags">${expertTags}${inboundTags}</div>` : ""}
+        <div class="ai-training-detail-body">
+            ${translatableBody(mail.body || "", { emptyLabel: "无正文" })}
+        </div>
     `;
 }
 
@@ -2562,15 +2584,27 @@ function renderAiTrainingSimulateResult(result) {
     }
     if (messages) {
         messages.innerHTML = `
-            <div class="ai-chat-bubble ai-chat-assistant">
-                <div class="ai-chat-label">AI 模拟草稿（只读，不外发）</div>
-                <div class="pre">${escapeHtml(result.draftText || "(空草稿)")}</div>
+            <div class="ai-chat-bubble ai-chat-assistant ai-draft-bubble">
+                <div class="ai-draft-head">
+                    <span class="ai-draft-title">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg>
+                        AI 模拟草稿
+                    </span>
+                    <span class="ai-draft-badge">只读 · 不外发</span>
+                    <button type="button" class="ai-draft-copy" data-action="copy-ai-draft" title="复制草稿">复制</button>
+                </div>
+                ${translatableBody(result.draftText || "(空草稿)")}
             </div>`;
+        messages.scrollTop = 0;
     }
     if (meta) {
-        const baseText = `模式 ${result.mode || "-"} · LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`;
+        const chips = [
+            `模式 ${result.mode || "-"}`,
+            `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`
+        ];
         const refBadges = (result.injectedDialogRefs || []).map((ref) => badge(`注入范例 ${ref}`, "info")).join(" ");
-        meta.innerHTML = escapeHtml(baseText) + (refBadges ? ` ${refBadges}` : "");
+        meta.innerHTML = chips.map((chip) => `<span class="ai-meta-chip">${escapeHtml(chip)}</span>`).join("")
+            + (refBadges ? ` ${refBadges}` : "");
     }
 }
 
@@ -6334,57 +6368,7 @@ const composeBlockTypeLabels = {
     CUSTOM_TEXT: "自定义文本"
 };
 
-const composeTemplatePreviewVariables = {
-    senderName: "Chen Jingjing",
-    senderTitle: "Talent Director",
-    teamName: "QF Tech Talent Team",
-    countryName: "China",
-    senderEmail: "sender@example.com",
-    senderDisplayName: "QF Tech Talent Team",
-    expertName: "Alex Morgan",
-    expertFamilyName: "",
-    researchFields: "",
-    institution: "Example University",
-    keyword: "AI",
-    expertCountry: "United States",
-    employment: "Professor",
-    hIndex: "42",
-    worksCount: "120",
-    lastPublicationYear: "2025",
-    degree: "PhD",
-    recentWorkTitle: "A Study on Neural Networks",
-    patentTitle: "Method for Data Processing",
-    unsubscribeUrl: "https://example.com/u/unsubscribe?token=preview"
-};
-
-function renderComposeTemplateText(text, variables = composeTemplatePreviewVariables) {
-    const raw = String(text ?? "");
-    return raw
-        .replace(/\$\{(\w+)\|([^}]*)\}/g, (_match, key, fallback) => {
-            const value = variables[key];
-            return value ? value : fallback;
-        })
-        .replace(/\$\{(\w+)\}/g, (match, key) => {
-            const value = variables[key];
-            return value == null ? match : value;
-        });
-}
-
-function extractComposeTemplatePlaceholders(text) {
-    const keys = [];
-    String(text ?? "").replace(/\$\{(\w+)(?:\|[^}]*)?\}/g, (_match, key) => {
-        keys.push(key);
-        return "";
-    });
-    return [...new Set(keys)];
-}
-
-function composeTemplateTextHasAllPlaceholders(text, variables) {
-    return extractComposeTemplatePlaceholders(text).every((key) => {
-        const value = variables[key];
-        return value != null && String(value).trim() !== "";
-    });
-}
+let composeTemplatePreviewRequestId = 0;
 
 function composeTemplatePreviewExpertLabel(expert) {
     const name = expert.expertName || expert.displayName || expert.name || "未命名专家";
@@ -6406,12 +6390,7 @@ function findComposeTemplatePreviewOption(items, inputValue, labelFn) {
         || null;
 }
 
-function expertFamilyNameFromName(name) {
-    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-    return parts.length ? parts[parts.length - 1] : "";
-}
-
-function selectedComposeTemplatePreviewVariables() {
+function collectComposeTemplatePreviewContext() {
     const expertInput = $("#composeTemplatePreviewExpertInput")?.value;
     const accountInput = $("#composeTemplatePreviewAccountInput")?.value;
     const expert = findComposeTemplatePreviewOption(
@@ -6424,38 +6403,40 @@ function selectedComposeTemplatePreviewVariables() {
         accountInput,
         composeTemplatePreviewAccountLabel
     );
-    const expertName = expert?.expertName || expert?.displayName || "";
-    const accountVars = account ? {
-        accountCode: account.accountCode || "",
-        senderName: account.senderName || "",
-        senderTitle: account.senderTitle || "",
-        teamName: account.teamName || "",
-        countryName: account.countryName || "",
-        senderEmail: account.senderEmail || "",
-        senderDisplayName: account.senderDisplayName || account.senderName || ""
-    } : {};
-    const expertVars = expert ? {
-        expertName,
-        expertFamilyName: expert.expertFamilyName || expertFamilyNameFromName(expertName),
-        researchFields: expert.researchFields || "",
-        institution: expert.institution || "",
-        keyword: expert.keyword || "",
-        expertCountry: expert.expertCountry || expert.country || "",
-        employment: expert.employment || "",
-        hIndex: expert.hIndex == null ? "" : String(expert.hIndex),
-        worksCount: expert.worksCount == null ? "" : String(expert.worksCount),
-        lastPublicationYear: expert.lastPublicationYear == null ? "" : String(expert.lastPublicationYear),
-        degree: expert.degree || "",
-        recentWorkTitle: Array.isArray(expert.recentWorkTitles) ? (expert.recentWorkTitles[0] || "") : (expert.recentWorkTitle || ""),
-        patentTitle: Array.isArray(expert.patentTitles) ? (expert.patentTitles[0] || "") : (expert.patentTitle || ""),
-        expertEmail: expert.expertEmail || expert.email || "",
-        unsubscribeUrl: composeTemplatePreviewVariables.unsubscribeUrl
-    } : {};
     return {
-        ...composeTemplatePreviewVariables,
-        ...accountVars,
-        ...expertVars
+        contactId: expert?.contactId ?? expert?.id ?? null,
+        orcidId: expert?.orcidId || null,
+        senderAccountCode: account?.accountCode || null
     };
+}
+
+function collectComposeTemplatePreviewSampleText() {
+    const form = $("#composeTemplateForm");
+    const parts = [form?.subject?.value || ""];
+    collectComposeTemplateBlocksFromForm().forEach((block) => {
+        if (block.blockType === "CUSTOM_TEXT") {
+            parts.push(block.customText || "");
+            return;
+        }
+        if (block.blockType === "QA_RULE") {
+            const rule = state.qaRules.find((item) => Number(item.id) === Number(block.refId));
+            if (rule?.replyBody) parts.push(rule.replyBody);
+            return;
+        }
+        if (block.blockType === "REPLY_SNIPPET") {
+            const snippet = (state.replySnippets || []).find((item) => Number(item.id) === Number(block.refId));
+            if (snippet?.content) parts.push(snippet.content);
+        }
+    });
+    return parts.filter((text) => String(text).trim()).join("\n");
+}
+
+function collectComposeTemplatePreviewSubjectVariants() {
+    const container = $("#subjectVariantsContainer");
+    if (!container) return [];
+    return Array.from(container.querySelectorAll(".subject-variant-input"))
+        .map((input) => input.value.trim())
+        .filter(Boolean);
 }
 
 function populateComposeTemplatePreviewDatalists() {
@@ -6577,9 +6558,9 @@ function openComposeTemplateEditor(template) {
     renderSubjectVariantRows(parseSubjectVariantsJson(template?.subjectVariants));
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
-    renderLocalComposeTemplatePreview();
+    renderServerComposeTemplatePreview();
     loadComposeTemplatePreviewOptions()
-        .then(() => renderLocalComposeTemplatePreview())
+        .then(() => renderServerComposeTemplatePreview())
         .catch((error) => showStatus(error.message, "error"));
     $("#composeTemplateModal").hidden = false;
 }
@@ -6649,9 +6630,116 @@ function collectComposeTemplateBlocksFromForm() {
 }
 
 async function refreshComposeTemplatePreview() {
+    await renderServerComposeTemplatePreview();
+}
+
+function renderComposeTemplatePreviewVariableRows(variables) {
+    return (variables || []).map((item) => {
+        const dotClass = item.usedFallback ? "fallback" : item.filled ? "filled" : "fallback";
+        return `<div class="preview-var-row">
+            <span class="preview-var-dot ${dotClass}"></span>
+            <span class="preview-var-key">${escapeHtml(item.key)}</span>
+            <span class="preview-var-label">${escapeHtml(item.label)}</span>
+            <span class="preview-var-value" title="${escapeHtml(item.value || "")}">${escapeHtml(item.value || "—")}</span>
+        </div>`;
+    }).join("");
+}
+
+function renderServerComposeTemplatePreviewPanel(preview) {
     const panel = $("#composeTemplatePreviewPanel");
     if (!panel) return;
-    renderLocalComposeTemplatePreview();
+    const blockNotes = (preview.blocks || []).map((block) => {
+        const label = block.refDisplayName || composeBlockTypeLabels[block.blockType] || block.blockType;
+        if (!block.included) {
+            return `<div class="compose-block-pill skipped">#${block.blockOrder + 1} ${escapeHtml(label)} — 已跳过${block.skipReason ? `（${escapeHtml(block.skipReason)}）` : ""}</div>`;
+        }
+        return `<div class="compose-block-pill">#${block.blockOrder + 1} ${escapeHtml(label)}</div>`;
+    }).join("");
+    const strictSkippedCount = (preview.blocks || []).filter(
+        (block) => !block.included && block.skipReason === "存在未满足占位符"
+    ).length;
+    const skippedHtml = strictSkippedCount > 0
+        ? `<div class="compose-preview-skipped">已跳过 ${strictSkippedCount} 段：存在未满足占位符</div>`
+        : "";
+    const toEmail = preview.toEmail || "—";
+    const variableRows = renderComposeTemplatePreviewVariableRows(preview.variables);
+    const variableSection = variableRows
+        ? `<div class="preview-var-section">${variableRows}</div>`
+        : "";
+    panel.innerHTML = `
+        <div class="compose-preview-mail-head">
+            <div><span>To</span><strong>${escapeHtml(toEmail)}</strong></div>
+            <div><span>Subject</span><strong>${escapeHtml(preview.subject || "")}</strong></div>
+        </div>
+        <div class="compose-preview-block-notes">${blockNotes}</div>
+        ${skippedHtml}
+        <div class="compose-preview-mail-body">${escapeHtml(preview.body || "添加内容块后显示预览。")}</div>
+        ${variableSection}`;
+    updateComposeTemplatePreviewMeta((preview.blocks || []).length);
+}
+
+async function renderServerComposeTemplatePreview() {
+    const form = $("#composeTemplateForm");
+    const panel = $("#composeTemplatePreviewPanel");
+    const statusEl = $("#composeTemplatePreviewStatus");
+    if (!form || !panel) return;
+    const requestId = ++composeTemplatePreviewRequestId;
+    const blocks = collectComposeTemplateBlocksFromForm();
+    const context = collectComposeTemplatePreviewContext();
+    const strictPlaceholders = $("#composeTemplatePreviewStrictPlaceholders")?.checked === true;
+    const payload = {
+        subject: form.subject.value || "",
+        subjectVariants: collectComposeTemplatePreviewSubjectVariants(),
+        blocks,
+        strictPlaceholders,
+        contactId: context.contactId,
+        orcidId: context.orcidId,
+        senderAccountCode: context.senderAccountCode
+    };
+    try {
+        const result = await api("/api/compose-templates/preview-draft", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        if (requestId !== composeTemplatePreviewRequestId) return;
+        renderServerComposeTemplatePreviewPanel(result);
+        if (statusEl) {
+            statusEl.innerHTML = '<span class="preview-source-badge">服务端预览</span>';
+        }
+    } catch (_error) {
+        if (requestId !== composeTemplatePreviewRequestId) return;
+        if (statusEl) {
+            statusEl.textContent = "预览失败，请重试";
+        }
+    }
+}
+
+async function randomComposeTemplatePreviewExpert() {
+    const text = collectComposeTemplatePreviewSampleText();
+    if (!text.trim()) {
+        showStatus("请先输入主题或内容块再随机抽取", "error");
+        return;
+    }
+    const result = await api("/api/qa/preview/random-expert", {
+        method: "POST",
+        body: JSON.stringify({ text, level: "CANDIDATE", mode: "SATISFY_ALL" })
+    });
+    if (result.error) {
+        showStatus(`随机抽样暂不可用：${result.error}`, "error");
+        return;
+    }
+    if (!result.expert) {
+        showStatus("没有满足条件的专家", "error");
+        return;
+    }
+    const label = result.expert.displayName && result.expert.email
+        ? `${result.expert.displayName} <${result.expert.email}>`
+        : (result.expert.displayName || result.expert.orcidId || "");
+    const expertInput = $("#composeTemplatePreviewExpertInput");
+    if (expertInput) {
+        expertInput.value = label;
+    }
+    await renderServerComposeTemplatePreview();
 }
 
 function renderComposeTemplatePreviewHtml(preview) {
@@ -6668,62 +6756,6 @@ function renderComposeTemplatePreviewHtml(preview) {
         </div>
         <div class="compose-preview-block-notes">${blockNotes}</div>
         <div class="compose-preview-mail-body">${escapeHtml(preview.body || "")}</div>`;
-}
-
-function renderLocalComposeTemplatePreview() {
-    const form = $("#composeTemplateForm");
-    const panel = $("#composeTemplatePreviewPanel");
-    if (!form || !panel) return;
-    const blocks = collectComposeTemplateBlocksFromForm();
-    const variables = selectedComposeTemplatePreviewVariables();
-    const strictPlaceholders = $("#composeTemplatePreviewStrictPlaceholders")?.checked === true;
-    let skippedCount = 0;
-    const body = blocks.map((block) => {
-        if (block.blockType === "CUSTOM_TEXT") {
-            const text = block.customText || "";
-            if (strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
-                skippedCount += 1;
-                return "";
-            }
-            return renderComposeTemplateText(text, variables);
-        }
-        if (block.blockType === "QA_RULE") {
-            const rule = state.qaRules.find((item) => Number(item.id) === Number(block.refId));
-            const text = rule?.replyBody || "";
-            if (text && strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
-                skippedCount += 1;
-                return "";
-            }
-            return text ? renderComposeTemplateText(text, variables) : "[QA 规则内容将在服务端预览时渲染]";
-        }
-        if (block.blockType === "REPLY_SNIPPET") {
-            const snippet = (state.replySnippets || []).find((item) => Number(item.id) === Number(block.refId));
-            const text = snippet?.content || "";
-            if (text && strictPlaceholders && !composeTemplateTextHasAllPlaceholders(text, variables)) {
-                skippedCount += 1;
-                return "";
-            }
-            return text ? renderComposeTemplateText(text, variables) : "[回复片段内容将在服务端预览时渲染]";
-        }
-        return "";
-    }).filter((text) => text.trim()).join("\n\n");
-    const subjectText = form.subject.value || "邮件主题";
-    const renderedSubject = strictPlaceholders && !composeTemplateTextHasAllPlaceholders(subjectText, variables)
-        ? "占位符未满足，无法预览"
-        : renderComposeTemplateText(subjectText, variables);
-    const toEmail = variables.expertEmail || "expert@example.com";
-    const skippedHtml = skippedCount > 0
-        ? `<div class="compose-preview-skipped">已跳过 ${skippedCount} 段：存在未满足占位符</div>`
-        : "";
-    panel.innerHTML = `
-        <div class="compose-preview-mail-head">
-            <div><span>To</span><strong>${escapeHtml(toEmail)}</strong></div>
-            <div><span>Subject</span><strong>${escapeHtml(renderedSubject)}</strong></div>
-        </div>
-        ${skippedHtml}
-        <div class="compose-preview-mail-body">${escapeHtml(body || "添加内容块后显示预览。")}</div>`;
-    $("#composeTemplatePreviewStatus").textContent = "本地预览";
-    updateComposeTemplatePreviewMeta(blocks.length);
 }
 
 function updateComposeTemplatePreviewMeta(blockCount) {
@@ -6801,26 +6833,26 @@ function handleComposeTemplateBlocksListClick(event) {
     if (action === "remove-compose-block") {
         blocks.splice(index, 1);
         renderComposeTemplateBlockRows(blocks);
-        renderLocalComposeTemplatePreview();
+        renderServerComposeTemplatePreview();
         return;
     }
     if (action === "move-compose-block-up" && index > 0) {
         [blocks[index - 1], blocks[index]] = [blocks[index], blocks[index - 1]];
         renderComposeTemplateBlockRows(blocks);
-        renderLocalComposeTemplatePreview();
+        renderServerComposeTemplatePreview();
         return;
     }
     if (action === "move-compose-block-down" && index < blocks.length - 1) {
         [blocks[index + 1], blocks[index]] = [blocks[index], blocks[index + 1]];
         renderComposeTemplateBlockRows(blocks);
-        renderLocalComposeTemplatePreview();
+        renderServerComposeTemplatePreview();
     }
 }
 
 function handleComposeTemplateBlockTypeChange(event) {
     const select = event.target.closest(".block-type-select");
     if (!select) {
-        renderLocalComposeTemplatePreview();
+        renderServerComposeTemplatePreview();
         return;
     }
     const row = select.closest(".compose-template-block-row");
@@ -6834,7 +6866,7 @@ function handleComposeTemplateBlockTypeChange(event) {
         customText: ""
     };
     renderComposeTemplateBlockRows(blocks);
-    renderLocalComposeTemplatePreview();
+    renderServerComposeTemplatePreview();
 }
 
 async function handleContactAction(element) {
@@ -9191,7 +9223,7 @@ function bindEvents() {
         const blocks = collectComposeTemplateBlocksFromForm();
         blocks.push({ blockOrder: blocks.length, blockType: "CUSTOM_TEXT", refId: null, customText: "" });
         renderComposeTemplateBlockRows(blocks);
-        renderLocalComposeTemplatePreview();
+        renderServerComposeTemplatePreview();
     });
     $("#addSubjectVariantBtn")?.addEventListener("click", addSubjectVariantRow);
     $("#subjectVariantsContainer")?.addEventListener("click", (event) => {
@@ -9199,17 +9231,30 @@ function bindEvents() {
         if (!button) return;
         removeSubjectVariantRow(Number(button.dataset.index));
     });
+    $("#randomComposeTemplatePreviewBtn")?.addEventListener("click", () => {
+        randomComposeTemplatePreviewExpert().catch((error) => showStatus(error.message, "error"));
+    });
     $("#refreshComposeTemplatePreviewBtn")?.addEventListener("click", () => {
         refreshComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
     });
     $("#composeTemplateBlocksList")?.addEventListener("click", handleComposeTemplateBlocksListClick);
     $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
-    $("#composeTemplateBlocksList")?.addEventListener("input", renderLocalComposeTemplatePreview);
-    $("#composeTemplateForm")?.subject?.addEventListener("input", renderLocalComposeTemplatePreview);
-    $("#composeTemplatePreviewExpertInput")?.addEventListener("input", renderLocalComposeTemplatePreview);
-    $("#composeTemplatePreviewAccountInput")?.addEventListener("input", renderLocalComposeTemplatePreview);
+    $("#composeTemplateBlocksList")?.addEventListener("input", () => {
+        renderServerComposeTemplatePreview().catch(() => {});
+    });
+    $("#composeTemplateForm")?.subject?.addEventListener("input", () => {
+        renderServerComposeTemplatePreview().catch(() => {});
+    });
+    $("#composeTemplatePreviewExpertInput")?.addEventListener("input", () => {
+        renderServerComposeTemplatePreview().catch(() => {});
+    });
+    $("#composeTemplatePreviewAccountInput")?.addEventListener("input", () => {
+        renderServerComposeTemplatePreview().catch(() => {});
+    });
     document.querySelectorAll('input[name="composeTemplatePreviewPlaceholderMode"]').forEach((input) => {
-        input.addEventListener("change", renderLocalComposeTemplatePreview);
+        input.addEventListener("change", () => {
+            renderServerComposeTemplatePreview().catch(() => {});
+        });
     });
     $("#composeTemplatesTable")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
@@ -9468,6 +9513,17 @@ function bindEvents() {
     });
     $("#aiTrainingSimulateBtn")?.addEventListener("click", () => {
         runAiTrainingSimulate().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingSimulateMessages")?.addEventListener("click", async (event) => {
+        const btn = event.target.closest("[data-action='copy-ai-draft']");
+        if (!btn) return;
+        const text = state.aiTraining.simulateResult?.draftText || "";
+        try {
+            await navigator.clipboard.writeText(text);
+            showStatus("草稿已复制到剪贴板", "ok");
+        } catch {
+            showStatus("复制失败，请手动选择文本复制", "error");
+        }
     });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
     document.addEventListener("submit", (event) => {
@@ -10781,7 +10837,7 @@ function renderInboundThread(threadData) {
                     ${currentBadge}
                 </div>
                 <div class="inbound-thread-bubble-meta">${escapeHtml(directionLabel)} · ${escapeHtml(timeStr)}</div>
-                <div class="inbound-thread-bubble-body pre">${escapeHtml(msg.body || "")}</div>
+                <div class="inbound-thread-bubble-body">${translatableBody(msg.body || "", { emptyLabel: "(无正文)" })}</div>
                 ${renderInboundThreadBubbleTags(msg)}
             </div>
         `;

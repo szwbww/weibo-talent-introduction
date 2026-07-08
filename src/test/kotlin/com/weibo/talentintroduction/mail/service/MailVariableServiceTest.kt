@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
@@ -26,7 +27,10 @@ class MailVariableServiceTest {
         Mockito.mock(MailComposeTemplateBlockRepository::class.java),
         Mockito.mock(QaRuleRepository::class.java),
         Mockito.mock(ReplySnippetRepository::class.java),
-        ObjectMapper()
+        ObjectMapper(),
+        Mockito.mock(MailVariableService::class.java),
+        Mockito.mock(ExpertContactRepository::class.java),
+        Mockito.mock(MailSenderAccountService::class.java)
     )
     private val service = MailVariableService(expertSearchService, mailComposeTemplateService)
     private val serviceWithUnsubscribe = MailVariableService(

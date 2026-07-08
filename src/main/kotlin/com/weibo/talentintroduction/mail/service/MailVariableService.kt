@@ -61,6 +61,16 @@ class MailVariableService(
             )
         }
 
+    fun placeholderKeysIn(vararg texts: String): List<String> {
+        val keys = linkedSetOf<String>()
+        texts.forEach { text ->
+            PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+                keys.add(parsePlaceholderToken(match.groupValues[1]).key)
+            }
+        }
+        return keys.toList()
+    }
+
     fun filterableEsFields(text: String): List<String> {
         if (text.isEmpty()) {
             return emptyList()

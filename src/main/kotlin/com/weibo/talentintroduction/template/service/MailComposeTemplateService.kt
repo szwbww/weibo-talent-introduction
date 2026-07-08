@@ -1,14 +1,22 @@
 package com.weibo.talentintroduction.template.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.PreviewVariableItem
+import com.weibo.talentintroduction.mail.service.RenderPreviewResult
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.domain.ComposeBlockType
 import com.weibo.talentintroduction.template.domain.MailComposeTemplate
 import com.weibo.talentintroduction.template.domain.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.weibo.talentintroduction.reply.domain.ReplySnippet
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -19,7 +27,10 @@ class MailComposeTemplateService(
     private val blockRepository: MailComposeTemplateBlockRepository,
     private val qaRuleRepository: QaRuleRepository,
     private val replySnippetRepository: ReplySnippetRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Lazy private val mailVariableService: MailVariableService,
+    private val expertContactRepository: ExpertContactRepository,
+    private val mailSenderAccountService: MailSenderAccountService
 ) {
     fun listAll(): List<MailComposeTemplateDetail> =
         templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
@@ -121,7 +132,7 @@ class MailComposeTemplateService(
         variantSeed: Int = 0
     ): ComposeTemplateRenderResult {
         val subjectText = selectSubjectVariant(template, variantSeed)
-        val resolved = resolveBlocks(blocks, variables, variantSeed)
+        val resolved = resolveBlocks(blocks.map { it.toDraftBlock() }, variables, variantSeed)
         return ComposeTemplateRenderResult(
             subject = renderText(subjectText, variables),
             body = resolved.includedTexts.joinToString("\n\n"),
@@ -133,6 +144,7 @@ class MailComposeTemplateService(
     fun preview(id: Long): ComposeTemplatePreviewResult {
         val template = findTemplate(id)
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
+            .map { it.toDraftBlock() }
         val resolved = resolveBlocks(blocks)
         return ComposeTemplatePreviewResult(
             subject = template.subject,
@@ -140,6 +152,136 @@ class MailComposeTemplateService(
             blocks = resolved.previewBlocks
         )
     }
+
+    fun previewDraft(request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult {
+        val draftBlocks = request.blocks.map { block ->
+            ComposeDraftBlock(
+                blockOrder = block.blockOrder,
+                blockType = block.blockType.uppercase(),
+                refId = block.refId,
+                customText = block.customText
+            )
+        }
+        val baseResolved = resolveBlocks(draftBlocks, renderVariables = false)
+        val subjectTemplate = selectDraftSubject(request.subject, request.subjectVariants)
+        val contact = resolvePreviewContact(request.contactId, request.orcidId)
+        val account = resolvePreviewAccount(request.senderAccountCode)
+
+        if (contact == null) {
+            val texts = listOf(subjectTemplate) + baseResolved.rawTextsByOrder.values
+            return ComposeTemplatePreviewDraftResult(
+                subject = subjectTemplate,
+                body = baseResolved.includedTexts.joinToString("\n\n"),
+                blocks = baseResolved.previewBlocks,
+                fallbackKeys = mailVariableService.placeholderKeysIn(*texts.toTypedArray()),
+                toEmail = null,
+                variables = emptyList()
+            )
+        }
+
+        val subjectResult = mailVariableService.renderPreview(subjectTemplate, account, contact)
+        val allFallbackKeys = subjectResult.fallbackKeys.toMutableList()
+        val allVariables = subjectResult.variables.toMutableList()
+        val bodyParts = mutableListOf<String>()
+        val finalBlocks = mutableListOf<ComposeTemplatePreviewBlock>()
+
+        baseResolved.previewBlocks.forEach { block ->
+            if (!block.included) {
+                finalBlocks += block
+                return@forEach
+            }
+            val rawText = baseResolved.rawTextsByOrder[block.blockOrder].orEmpty()
+            val rendered = mailVariableService.renderPreview(rawText, account, contact)
+            allFallbackKeys += rendered.fallbackKeys
+            mergePreviewVariables(allVariables, rendered.variables)
+            if (request.strictPlaceholders && !placeholdersSatisfied(rendered)) {
+                finalBlocks += block.copy(
+                    included = false,
+                    skipReason = "存在未满足占位符",
+                    textPreview = null
+                )
+            } else {
+                bodyParts += rendered.rendered
+                finalBlocks += block.copy(
+                    textPreview = rendered.rendered.take(200).ifBlank { null }
+                )
+            }
+        }
+
+        val finalSubject = if (request.strictPlaceholders && !placeholdersSatisfied(subjectResult)) {
+            "占位符未满足，无法预览"
+        } else {
+            subjectResult.rendered
+        }
+
+        return ComposeTemplatePreviewDraftResult(
+            subject = finalSubject,
+            body = bodyParts.joinToString("\n\n"),
+            blocks = finalBlocks,
+            fallbackKeys = allFallbackKeys.distinct(),
+            toEmail = contact.expertEmail,
+            variables = allVariables
+        )
+    }
+
+    private fun resolvePreviewContact(contactId: Long?, orcidId: String?): ExpertContact? {
+        contactId?.let { id ->
+            return expertContactRepository.findById(id).orElse(null)
+        }
+        val trimmedOrcid = orcidId?.trim().orEmpty()
+        if (trimmedOrcid.isBlank()) {
+            return null
+        }
+        return ExpertContact(
+            campaignId = 0,
+            orcidId = trimmedOrcid,
+            expertEmail = "preview@local",
+            expertName = "Preview",
+            currentIndexLevel = "CANDIDATE"
+        )
+    }
+
+    private fun resolvePreviewAccount(senderAccountCode: String?): MailSenderAccount? {
+        val code = senderAccountCode?.trim().orEmpty()
+        if (code.isBlank()) {
+            return null
+        }
+        return runCatching { mailSenderAccountService.getAccount(code) }.getOrNull()
+    }
+
+    private fun selectDraftSubject(subject: String, variants: List<String>?): String {
+        if (variants.isNullOrEmpty()) {
+            return subject
+        }
+        return variants[0]
+    }
+
+    private fun placeholdersSatisfied(result: RenderPreviewResult): Boolean {
+        if (result.fallbackKeys.isNotEmpty() || result.invalidTokens.isNotEmpty()) {
+            return false
+        }
+        return result.variables.all { it.filled && !it.usedFallback }
+    }
+
+    private fun mergePreviewVariables(
+        target: MutableList<PreviewVariableItem>,
+        incoming: List<PreviewVariableItem>
+    ) {
+        val existingKeys = target.map { it.key }.toMutableSet()
+        incoming.forEach { item ->
+            if (existingKeys.add(item.key)) {
+                target += item
+            }
+        }
+    }
+
+    private fun MailComposeTemplateBlock.toDraftBlock(): ComposeDraftBlock =
+        ComposeDraftBlock(
+            blockOrder = blockOrder,
+            blockType = blockType,
+            refId = refId,
+            customText = customText
+        )
 
     private fun findTemplate(id: Long): MailComposeTemplate =
         templateRepository.findById(id).orElseThrow { error("Compose template not found: $id") }
@@ -230,13 +372,15 @@ class MailComposeTemplateService(
     }
 
     private fun resolveBlocks(
-        blocks: List<MailComposeTemplateBlock>,
+        blocks: List<ComposeDraftBlock>,
         variables: Map<String, String> = emptyMap(),
-        variantSeed: Int = 0
+        variantSeed: Int = 0,
+        renderVariables: Boolean = true
     ): ResolvedBlocks {
         val includedTexts = mutableListOf<String>()
         val qaRuleIds = mutableListOf<Long>()
         val previewBlocks = mutableListOf<ComposeTemplatePreviewBlock>()
+        val rawTextsByOrder = mutableMapOf<Int, String>()
 
         blocks.sortedBy { it.blockOrder }.forEach { block ->
             when (block.blockType) {
@@ -258,7 +402,12 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val text = renderText(rule.replyBody, variables).trim()
+                    val text = if (renderVariables) {
+                        renderText(rule.replyBody, variables).trim()
+                    } else {
+                        rule.replyBody.trim()
+                    }
+                    rawTextsByOrder[block.blockOrder] = text
                     if (text.isNotBlank()) {
                         includedTexts += text
                         qaRuleIds += refId
@@ -290,7 +439,12 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val text = renderText(resolvedSnippet.content, variables).trim()
+                    val text = if (renderVariables) {
+                        renderText(resolvedSnippet.content, variables).trim()
+                    } else {
+                        resolvedSnippet.content.trim()
+                    }
+                    rawTextsByOrder[block.blockOrder] = text
                     if (text.isNotBlank()) {
                         includedTexts += text
                     }
@@ -305,7 +459,12 @@ class MailComposeTemplateService(
                     )
                 }
                 ComposeBlockType.CUSTOM_TEXT -> {
-                    val text = block.customText?.let { renderText(it, variables) }?.trim().orEmpty()
+                    val text = if (renderVariables) {
+                        block.customText?.let { renderText(it, variables) }?.trim().orEmpty()
+                    } else {
+                        block.customText?.trim().orEmpty()
+                    }
+                    rawTextsByOrder[block.blockOrder] = text
                     if (text.isNotBlank()) {
                         includedTexts += text
                     }
@@ -326,7 +485,8 @@ class MailComposeTemplateService(
         return ResolvedBlocks(
             includedTexts = includedTexts,
             qaRuleIds = qaRuleIds,
-            previewBlocks = previewBlocks
+            previewBlocks = previewBlocks,
+            rawTextsByOrder = rawTextsByOrder
         )
     }
 
@@ -353,7 +513,7 @@ class MailComposeTemplateService(
     }
 
     private fun skippedPreviewBlock(
-        block: MailComposeTemplateBlock,
+        block: ComposeDraftBlock,
         reason: String,
         refId: Long? = block.refId,
         refDisplayName: String? = resolveRefDisplayName(block.blockType, block.refId)
@@ -371,7 +531,8 @@ class MailComposeTemplateService(
     private data class ResolvedBlocks(
         val includedTexts: List<String>,
         val qaRuleIds: List<Long>,
-        val previewBlocks: List<ComposeTemplatePreviewBlock>
+        val previewBlocks: List<ComposeTemplatePreviewBlock>,
+        val rawTextsByOrder: Map<Int, String> = emptyMap()
     )
 
     fun renderWithVariables(text: String, variables: Map<String, String>): String = renderText(text, variables)
@@ -454,4 +615,30 @@ data class ComposeTemplatePreviewBlock(
     val included: Boolean,
     val skipReason: String?,
     val textPreview: String?
+)
+
+data class ComposeDraftBlock(
+    val blockOrder: Int,
+    val blockType: String,
+    val refId: Long? = null,
+    val customText: String? = null
+)
+
+data class ComposeTemplatePreviewDraftRequest(
+    val subject: String,
+    val subjectVariants: List<String> = emptyList(),
+    val blocks: List<ComposeDraftBlock> = emptyList(),
+    val orcidId: String? = null,
+    val contactId: Long? = null,
+    val senderAccountCode: String? = null,
+    val strictPlaceholders: Boolean = false
+)
+
+data class ComposeTemplatePreviewDraftResult(
+    val subject: String,
+    val body: String,
+    val blocks: List<ComposeTemplatePreviewBlock>,
+    val fallbackKeys: List<String>,
+    val toEmail: String? = null,
+    val variables: List<PreviewVariableItem> = emptyList()
 )

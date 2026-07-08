@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.reply.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
@@ -28,7 +30,10 @@ class ReplySnippetServiceTest {
             Mockito.mock(MailComposeTemplateBlockRepository::class.java),
             Mockito.mock(QaRuleRepository::class.java),
             Mockito.mock(ReplySnippetRepository::class.java),
-            ObjectMapper()
+            ObjectMapper(),
+            Mockito.mock(MailVariableService::class.java),
+            Mockito.mock(ExpertContactRepository::class.java),
+            Mockito.mock(MailSenderAccountService::class.java)
         )
     )
     private val service = ReplySnippetService(repository, mailVariableService)

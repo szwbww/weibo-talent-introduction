@@ -93,7 +93,10 @@ class AutoMailReplyServiceTest {
         Mockito.mock(MailComposeTemplateBlockRepository::class.java),
         Mockito.mock(QaRuleRepository::class.java),
         Mockito.mock(ReplySnippetRepository::class.java),
-        ObjectMapper()
+        ObjectMapper(),
+        Mockito.mock(MailVariableService::class.java),
+        contactRepository,
+        accountService
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val service = AutoMailReplyService(
