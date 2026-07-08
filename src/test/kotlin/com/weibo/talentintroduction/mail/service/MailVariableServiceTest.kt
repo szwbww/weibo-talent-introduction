@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -27,6 +28,11 @@ class MailVariableServiceTest {
         ObjectMapper()
     )
     private val service = MailVariableService(expertSearchService, mailComposeTemplateService)
+    private val serviceWithUnsubscribe = MailVariableService(
+        expertSearchService,
+        mailComposeTemplateService,
+        UnsubscribeTokenService(UnsubscribeProperties(baseUrl = "https://example.com", secret = "secret"))
+    )
 
     private val account = MailSenderAccount(
         accountCode = "chenjj",
@@ -92,6 +98,21 @@ class MailVariableServiceTest {
 
         assertEquals("Dear Lovelace, welcome from Chen", rendered)
         assertFalse(rendered.contains("\${"))
+    }
+
+    @Test
+    fun `renderForContact replaces unsubscribe url with signed link`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val rendered = serviceWithUnsubscribe.renderForContact(
+            "Unsubscribe: \${unsubscribeUrl}",
+            account,
+            contact
+        )
+
+        assertTrue(rendered.startsWith("Unsubscribe: https://example.com/u/unsubscribe?token="))
+        assertFalse(rendered.contains("\${unsubscribeUrl}"))
     }
 
     @Test
@@ -176,6 +197,13 @@ class MailVariableServiceTest {
     }
 
     @Test
+    fun `validatePlaceholders accepts unsubscribe url without fallback`() {
+        val violations = service.validatePlaceholders("Stop: \${unsubscribeUrl}")
+
+        assertEquals(emptyList<String>(), violations)
+    }
+
+    @Test
     fun `renderPreview matches renderForContact output`() {
         val sparseExpert = expert.copy(familyNames = null)
         Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
@@ -195,5 +223,6 @@ class MailVariableServiceTest {
 
         assertEquals(MailVariableService.VARIABLE_LABELS.size, metadata.size)
         assertTrue(metadata.any { it.key == "expertFamilyName" && it.label == "专家姓氏" })
+        assertTrue(metadata.any { it.key == "unsubscribeUrl" && it.label == "退订链接" && !it.nullable })
     }
 }

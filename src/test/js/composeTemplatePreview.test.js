@@ -59,6 +59,7 @@ function createSandbox(blocks) {
     };
     vm.createContext(sandbox);
     [
+        "placeholderDefaultFallback",
         "renderComposeTemplateText",
         "extractComposeTemplatePlaceholders",
         "composeTemplateTextHasAllPlaceholders",
@@ -104,6 +105,15 @@ describe("compose template local preview", () => {
 
         const html = sb.__store.get("composeTemplatePreviewPanel").innerHTML;
         assert.ok(html.includes("Dear Professor, from Chen Jingjing"));
+    });
+
+    it("provides default fallback copy for nullable expert placeholders", () => {
+        const sb = createSandbox([]);
+
+        assert.equal(sb.placeholderDefaultFallback("degree"), "your academic background");
+        assert.equal(sb.placeholderDefaultFallback("recentWorkTitle"), "your recent research");
+        assert.equal(sb.placeholderDefaultFallback("lastPublicationYear"), "recent years");
+        assert.equal(sb.placeholderDefaultFallback("unsubscribeUrl"), "");
     });
 
     it("uses selected expert and sender account variables", () => {

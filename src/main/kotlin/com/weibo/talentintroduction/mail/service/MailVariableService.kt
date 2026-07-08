@@ -12,7 +12,8 @@ import org.springframework.stereotype.Service
 @Service
 class MailVariableService(
     private val expertSearchService: ExpertSearchService,
-    private val mailComposeTemplateService: MailComposeTemplateService
+    private val mailComposeTemplateService: MailComposeTemplateService,
+    private val unsubscribeTokenService: UnsubscribeTokenService? = null
 ) {
     private val log = LoggerFactory.getLogger(MailVariableService::class.java)
 
@@ -43,7 +44,10 @@ class MailVariableService(
         } else {
             EXPERT_KEYS.associateWith { "" }
         }
-        return senderVars + expertVars
+        val unsubscribeVars = mapOf(
+            "unsubscribeUrl" to unsubscribeUrl(expert?.email)
+        )
+        return senderVars + expertVars + unsubscribeVars
     }
 
     fun variableMetadata(): List<VariableMeta> =
@@ -127,6 +131,17 @@ class MailVariableService(
         }
     }
 
+    private fun unsubscribeUrl(email: String?): String {
+        if (email.isNullOrBlank()) {
+            return ""
+        }
+        val service = unsubscribeTokenService ?: return ""
+        if (!service.enabled()) {
+            return ""
+        }
+        return service.unsubscribeUrl(email)
+    }
+
     private fun resolveExpertProfile(contact: ExpertContact): ExpertProfile? {
         val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
         return try {
@@ -186,7 +201,8 @@ class MailVariableService(
             "lastPublicationYear" to "最近发表年份",
             "degree" to "学历",
             "recentWorkTitle" to "近期论文标题",
-            "patentTitle" to "专利标题"
+            "patentTitle" to "专利标题",
+            "unsubscribeUrl" to "退订链接"
         )
 
         private val VARIABLE_EXAMPLES: Map<String, String> = mapOf(
@@ -207,7 +223,8 @@ class MailVariableService(
             "lastPublicationYear" to "2025",
             "degree" to "PhD",
             "recentWorkTitle" to "A Study on Neural Networks",
-            "patentTitle" to "Method for Data Processing"
+            "patentTitle" to "Method for Data Processing",
+            "unsubscribeUrl" to "https://example.com/u/unsubscribe?token=preview"
         )
     }
 }

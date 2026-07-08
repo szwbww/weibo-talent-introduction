@@ -49,7 +49,8 @@ class IntroductionMailComposerTest {
         "lastPublicationYear" to (expert.lastPublicationYear?.toString()).orEmpty(),
         "degree" to expert.degree.orEmpty(),
         "recentWorkTitle" to (expert.recentWorkTitles?.firstOrNull()).orEmpty(),
-        "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty()
+        "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty(),
+        "unsubscribeUrl" to ""
     )
 
     private fun introductionVariables(

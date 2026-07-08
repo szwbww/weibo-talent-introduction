@@ -1733,12 +1733,31 @@ function validatePlaceholderText(text) {
     return { valid: violations.length === 0, violations };
 }
 
+function placeholderDefaultFallback(key) {
+    return {
+        expertName: "Professor",
+        expertFamilyName: "Professor",
+        researchFields: "your research field",
+        institution: "your institution",
+        keyword: "your area of expertise",
+        expertCountry: "your country",
+        employment: "your current role",
+        hIndex: "your academic impact",
+        worksCount: "your publications",
+        lastPublicationYear: "recent years",
+        degree: "your academic background",
+        recentWorkTitle: "your recent research",
+        patentTitle: "your innovation work"
+    }[key] || "";
+}
+
 function renderVarChipBarContent(targetId) {
     return (state.variableMeta || []).map((meta) => `
         <button type="button" class="var-chip"
             data-var-target="${escapeHtml(targetId)}"
             data-var-key="${escapeHtml(meta.key)}"
             data-var-nullable="${meta.nullable ? "true" : "false"}"
+            data-var-fallback="${escapeHtml(placeholderDefaultFallback(meta.key))}"
             title="${escapeHtml(meta.key)}${meta.example ? ` — ${escapeHtml(meta.example)}` : ""}">
             ${escapeHtml(meta.label)}
         </button>`).join("");
@@ -1790,8 +1809,9 @@ function bindVarChipBar(container) {
             if (!textarea) return;
             const key = chip.dataset.varKey;
             const nullable = chip.dataset.varNullable === "true";
-            const insertText = nullable ? `\${${key}|}` : `\${${key}}`;
-            const cursorOffset = nullable ? 1 : 0;
+            const fallback = chip.dataset.varFallback || "";
+            const insertText = nullable ? `\${${key}|${fallback}}` : `\${${key}}`;
+            const cursorOffset = nullable && !fallback ? 1 : 0;
             insertVarAtCursor(textarea, insertText, cursorOffset);
             updateVarValidationForTarget(targetId, textarea);
         });
@@ -6111,7 +6131,15 @@ const composeTemplatePreviewVariables = {
     researchFields: "",
     institution: "Example University",
     keyword: "AI",
-    expertCountry: "United States"
+    expertCountry: "United States",
+    employment: "Professor",
+    hIndex: "42",
+    worksCount: "120",
+    lastPublicationYear: "2025",
+    degree: "PhD",
+    recentWorkTitle: "A Study on Neural Networks",
+    patentTitle: "Method for Data Processing",
+    unsubscribeUrl: "https://example.com/u/unsubscribe?token=preview"
 };
 
 function renderComposeTemplateText(text, variables = composeTemplatePreviewVariables) {
@@ -6198,7 +6226,15 @@ function selectedComposeTemplatePreviewVariables() {
         institution: expert.institution || "",
         keyword: expert.keyword || "",
         expertCountry: expert.expertCountry || expert.country || "",
-        expertEmail: expert.expertEmail || expert.email || ""
+        employment: expert.employment || "",
+        hIndex: expert.hIndex == null ? "" : String(expert.hIndex),
+        worksCount: expert.worksCount == null ? "" : String(expert.worksCount),
+        lastPublicationYear: expert.lastPublicationYear == null ? "" : String(expert.lastPublicationYear),
+        degree: expert.degree || "",
+        recentWorkTitle: Array.isArray(expert.recentWorkTitles) ? (expert.recentWorkTitles[0] || "") : (expert.recentWorkTitle || ""),
+        patentTitle: Array.isArray(expert.patentTitles) ? (expert.patentTitles[0] || "") : (expert.patentTitle || ""),
+        expertEmail: expert.expertEmail || expert.email || "",
+        unsubscribeUrl: composeTemplatePreviewVariables.unsubscribeUrl
     } : {};
     return {
         ...composeTemplatePreviewVariables,
