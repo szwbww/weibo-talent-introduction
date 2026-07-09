@@ -6756,6 +6756,16 @@ body.preview-available:not(.preview-docked) .modal-shell {
     padding-right: 24px;
 }
 
+body.preview-docked .modal-backdrop {
+    display: none;
+}
+
+@media (max-width: 1199px) {
+    body.preview-docked .modal-backdrop {
+        display: block;
+    }
+}
+
 .preview-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .preview-drawer-title-group { display: flex; align-items: center; gap: 8px; }
 .preview-drawer-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-main); }
