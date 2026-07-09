@@ -1858,11 +1858,19 @@ function renderVarInsertMenuContent(targetId) {
     const metas = state.variableMeta || [];
     const senderMetas = metas.filter((meta) => SENDER_VAR_KEY_SET.has(meta.key));
     const expertMetas = metas.filter((meta) => EXPERT_VAR_KEY_SET.has(meta.key));
+    const otherMetas = metas.filter(
+        (meta) => !SENDER_VAR_KEY_SET.has(meta.key) && !EXPERT_VAR_KEY_SET.has(meta.key)
+    );
+    const otherGroup = otherMetas.length
+        ? `<p class="var-insert-group-label">其他</p>
+        <div class="var-insert-group">${renderVarChipButtons(targetId, otherMetas)}</div>`
+        : "";
     return `
         <p class="var-insert-group-label">发送方</p>
         <div class="var-insert-group">${renderVarChipButtons(targetId, senderMetas)}</div>
         <p class="var-insert-group-label">专家</p>
-        <div class="var-insert-group">${renderVarChipButtons(targetId, expertMetas)}</div>`;
+        <div class="var-insert-group">${renderVarChipButtons(targetId, expertMetas)}</div>
+        ${otherGroup}`;
 }
 
 function renderVarInsertMenu(wrap, targetId) {
@@ -2128,6 +2136,28 @@ function previewRailLabelForTarget(targetId) {
     return targetId === "qaRuleReplyBody" ? "命中预览" : "邮件预览";
 }
 
+function shouldDockPreviewInComposeTemplate(targetId, composeModalHidden) {
+    return targetId === "composeTemplate" && composeModalHidden === false;
+}
+
+function syncPreviewDrawerHost() {
+    const shell = $("#previewDrawer");
+    if (!shell) return;
+    const composeModal = $("#composeTemplateModal");
+    const composeSlot = $("#composeTemplatePreviewSlot");
+    const dockInCompose = shouldDockPreviewInComposeTemplate(
+        state.previewDrawer?.targetId,
+        composeModal?.hidden !== false
+    );
+    if (dockInCompose && composeSlot && shell.parentElement !== composeSlot) {
+        composeSlot.appendChild(shell);
+    } else if (!dockInCompose && shell.parentElement !== document.body) {
+        const rail = $("#previewRail");
+        document.body.insertBefore(shell, rail || null);
+    }
+    document.body.classList.toggle("preview-compose-docked", dockInCompose && !shell.hidden);
+}
+
 function mountPreviewRail({ targetId, contactId, orcidId }) {
     const level = $("#previewScopeSel")?.value || "CANDIDATE";
     const mode = $("#previewModeSel")?.value || "SATISFY_ALL";
@@ -2164,6 +2194,7 @@ function mountPreviewRail({ targetId, contactId, orcidId }) {
         railLabel.textContent = previewRailLabelForTarget(targetId);
     }
     document.body.classList.add("preview-available");
+    syncPreviewDrawerHost();
     const shell = $("#previewDrawer");
     if (!shell || shell.hidden) {
         document.body.classList.remove("preview-docked");
@@ -2185,8 +2216,10 @@ function expandPreviewDrawer() {
         previewDrawerCollapseTimer = null;
     }
     document.body.classList.add("preview-available");
+    syncPreviewDrawerHost();
     shell.hidden = false;
     document.body.classList.add("preview-docked");
+    syncPreviewDrawerHost();
     requestAnimationFrame(() => shell.classList.add("open"));
     syncBodyScrollLock();
     refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
@@ -2202,8 +2235,9 @@ function collapsePreviewDrawer() {
         previewDrawerCollapseTimer = null;
     }
     shell.classList.remove("open");
-    document.body.classList.remove("preview-docked");
+    document.body.classList.remove("preview-docked", "preview-compose-docked");
     shell.hidden = true;
+    syncPreviewDrawerHost();
     syncBodyScrollLock();
 }
 
@@ -2213,7 +2247,7 @@ function closePreviewDrawer() {
         previewDrawerCollapseTimer = null;
     }
     const shell = $("#previewDrawer");
-    document.body.classList.remove("preview-available", "preview-docked");
+    document.body.classList.remove("preview-available", "preview-docked", "preview-compose-docked");
     if (shell) {
         shell.classList.remove("open");
         shell.hidden = true;
@@ -2221,6 +2255,7 @@ function closePreviewDrawer() {
     if (state.previewDrawer) {
         state.previewDrawer.targetId = null;
     }
+    syncPreviewDrawerHost();
     syncBodyScrollLock();
 }
 
@@ -6648,7 +6683,8 @@ function collectComposeTemplatePreviewContext() {
     );
     return {
         contactId: expert?.contactId ?? expert?.id ?? null,
-        orcidId: expert?.orcidId || null,
+        orcidId: expert?.orcidId || state.previewDrawer.orcidId || null,
+        expertEmail: expert?.expertEmail || expert?.email || state.previewDrawer.expertEmail || null,
         senderAccountCode: account?.accountCode || null
     };
 }
@@ -7128,6 +7164,7 @@ async function renderServerComposeTemplatePreview() {
         strictPlaceholders,
         contactId: context.contactId,
         orcidId: context.orcidId,
+        expertEmail: context.expertEmail,
         senderAccountCode: context.senderAccountCode,
         variantIndex: state.previewDrawer.variantIndex
     };
@@ -7174,6 +7211,9 @@ async function randomComposeTemplatePreviewExpert() {
     if (expertInput) {
         expertInput.value = label;
     }
+    state.previewDrawer.orcidId = result.expert.orcidId || null;
+    state.previewDrawer.contactId = null;
+    state.previewDrawer.expertEmail = result.expert.email || null;
     if (isPreviewDrawerOpen() && isComposeTemplatePreviewTarget()) {
         await renderServerComposeTemplatePreview();
     }
@@ -9639,6 +9679,15 @@ function bindEvents() {
     });
     $("#previewVariantPrev")?.addEventListener("click", () => stepPreviewVariantIndex(-1));
     $("#previewVariantNext")?.addEventListener("click", () => stepPreviewVariantIndex(1));
+    $("#previewDrawer")?.addEventListener("keydown", (event) => {
+        if (
+            event.key === "Enter"
+            && event.target?.matches?.("#previewComposeExpertInput, #previewComposeAccountInput")
+        ) {
+            event.preventDefault();
+            refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+        }
+    });
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("#previewDrawer").hidden) {
             collapsePreviewDrawer();

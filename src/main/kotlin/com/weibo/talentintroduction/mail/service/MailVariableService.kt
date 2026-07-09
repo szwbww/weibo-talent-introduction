@@ -18,7 +18,12 @@ class MailVariableService(
 ) {
     private val log = LoggerFactory.getLogger(MailVariableService::class.java)
 
-    fun buildVariables(account: MailSenderAccount?, expert: ExpertProfile?): Map<String, String> {
+    fun buildVariables(
+        account: MailSenderAccount?,
+        expert: ExpertProfile?,
+        unsubscribeEmail: String? = expert?.email,
+        previewFallbacks: Boolean = false
+    ): Map<String, String> {
         val senderVars = mapOf(
             "senderEmail" to (account?.senderEmail).orEmpty(),
             "senderName" to (account?.senderName).orEmpty(),
@@ -46,7 +51,7 @@ class MailVariableService(
             EXPERT_KEYS.associateWith { "" }
         }
         val unsubscribeVars = mapOf(
-            "unsubscribeUrl" to unsubscribeUrl(expert?.email)
+            "unsubscribeUrl" to unsubscribeUrl(unsubscribeEmail, previewFallbacks)
         )
         return senderVars + expertVars + unsubscribeVars
     }
@@ -73,11 +78,19 @@ class MailVariableService(
         }
 
     fun renderForContact(text: String, account: MailSenderAccount?, contact: ExpertContact): String =
-        renderPreview(text, account, contact).rendered
+        renderContact(text, account, contact, previewFallbacks = false).rendered
 
-    fun renderPreview(text: String, account: MailSenderAccount?, contact: ExpertContact): RenderPreviewResult {
+    fun renderPreview(text: String, account: MailSenderAccount?, contact: ExpertContact): RenderPreviewResult =
+        renderContact(text, account, contact, previewFallbacks = true)
+
+    private fun renderContact(
+        text: String,
+        account: MailSenderAccount?,
+        contact: ExpertContact,
+        previewFallbacks: Boolean
+    ): RenderPreviewResult {
         val expert = resolveExpertProfile(contact)
-        val variables = buildVariables(account, expert)
+        val variables = buildVariables(account, expert, contact.expertEmail, previewFallbacks)
         val rendered = mailComposeTemplateService.renderWithVariables(text, variables)
         val fallbackKeys = detectFallbackKeys(text, variables)
         return RenderPreviewResult(
@@ -126,16 +139,19 @@ class MailVariableService(
         return mailPlaceholderService.detectFallbackKeys(text, variables)
     }
 
-    private fun unsubscribeUrl(email: String?): String {
+    private fun unsubscribeUrl(email: String?, previewFallbacks: Boolean): String {
         if (email.isNullOrBlank()) {
             return ""
         }
-        val service = unsubscribeTokenService ?: return ""
+        val service = unsubscribeTokenService ?: return previewUnsubscribeUrl(previewFallbacks)
         if (!service.enabled()) {
-            return ""
+            return previewUnsubscribeUrl(previewFallbacks)
         }
         return service.unsubscribeUrl(email)
     }
+
+    private fun previewUnsubscribeUrl(previewFallbacks: Boolean): String =
+        if (previewFallbacks) PREVIEW_UNSUBSCRIBE_URL else ""
 
     private fun resolveExpertProfile(contact: ExpertContact): ExpertProfile? {
         val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
@@ -163,6 +179,7 @@ class MailVariableService(
         val EXPERT_KEYS: Set<String> = MailPlaceholderService.EXPERT_KEYS
         val VARIABLE_LABELS: Map<String, String> = MailPlaceholderService.VARIABLE_LABELS
         val ES_FIELD_BY_KEY: Map<String, String?> = MailPlaceholderService.ES_FIELD_BY_KEY
+        private const val PREVIEW_UNSUBSCRIBE_URL = "https://example.com/u/unsubscribe?token=preview"
     }
 }
 

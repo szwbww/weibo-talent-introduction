@@ -853,6 +853,49 @@ class MailComposeTemplateServiceTest {
         Mockito.verify(mailVariableService).renderPreview(rawFallbackBody, account, contact)
     }
 
+    @Test
+    fun `previewDraft uses request expert email for orcid preview contact`() {
+        val syntheticContact = ExpertContact(
+            campaignId = 0,
+            orcidId = "0000-0001",
+            expertEmail = "ada@mit.edu",
+            expertName = "Preview",
+            currentIndexLevel = "CANDIDATE"
+        )
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Subject",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Subject", null, syntheticContact)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "https://example.com/u/unsubscribe?token=abc",
+                fallbackKeys = emptyList(),
+                variables = listOf(
+                    PreviewVariableItem("unsubscribeUrl", "退订链接", "https://example.com/u/unsubscribe?token=abc", true, false)
+                )
+            )
+        ).`when`(mailVariableService).renderPreview("\${unsubscribeUrl}", null, syntheticContact)
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Subject",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = "\${unsubscribeUrl}")
+                ),
+                orcidId = "0000-0001",
+                expertEmail = "ada@mit.edu",
+                strictPlaceholders = true
+            )
+        )
+
+        assertEquals("ada@mit.edu", result.toEmail)
+        assertEquals("https://example.com/u/unsubscribe?token=abc", result.body)
+        Mockito.verify(mailVariableService).renderPreview("\${unsubscribeUrl}", null, syntheticContact)
+    }
+
     private fun stubIntroSnippetTemplate(refId: Long) {
         Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
             .thenReturn(

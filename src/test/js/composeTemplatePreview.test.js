@@ -95,7 +95,8 @@ function createSandbox(blocks) {
         "renderComposeTemplatePreviewInDrawer",
         "renderServerComposeTemplatePreview",
         "randomComposeTemplatePreviewExpert",
-        "updatePreviewVariantSwitcher"
+        "updatePreviewVariantSwitcher",
+        "shouldDockPreviewInComposeTemplate"
     ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
     sandbox.__store = store;
     return sandbox;
@@ -113,6 +114,14 @@ function customTextRow(text) {
 }
 
 describe("compose template server preview", () => {
+    it("docks compose template preview inside the editor", () => {
+        const sb = createSandbox([]);
+
+        assert.equal(sb.shouldDockPreviewInComposeTemplate("composeTemplate", false), true);
+        assert.equal(sb.shouldDockPreviewInComposeTemplate("qaRuleReplyBody", false), false);
+        assert.equal(sb.shouldDockPreviewInComposeTemplate("composeTemplate", true), false);
+    });
+
     it("renders server preview response in drawer", () => {
         const sb = createSandbox([customTextRow("Dear ${expertFamilyName|Professor}, from ${senderName}")]);
         sb.renderComposeTemplatePreviewInDrawer({
@@ -180,7 +189,8 @@ describe("compose template server preview", () => {
     it("random sample uses preview random-expert endpoint", async () => {
         const sb = createSandbox([customTextRow("Dear ${expertName}")]);
         const calls = [];
-        sb.api = async (url) => {
+        let previewPayload = null;
+        sb.api = async (url, options) => {
             calls.push(url);
             if (url === "/api/qa/preview/random-expert") {
                 return {
@@ -196,6 +206,7 @@ describe("compose template server preview", () => {
                 };
             }
             if (url === "/api/compose-templates/preview-draft") {
+                previewPayload = JSON.parse(options.body);
                 return {
                     subject: "Subject",
                     body: "Dear Ada Smith",
@@ -214,5 +225,7 @@ describe("compose template server preview", () => {
 
         assert.ok(calls.includes("/api/qa/preview/random-expert"));
         assert.equal(sb.__store.get("previewComposeExpertInput").value, "Ada Smith <ada@mit.edu>");
+        assert.equal(previewPayload.orcidId, "0000-0001");
+        assert.equal(previewPayload.expertEmail, "ada@mit.edu");
     });
 });

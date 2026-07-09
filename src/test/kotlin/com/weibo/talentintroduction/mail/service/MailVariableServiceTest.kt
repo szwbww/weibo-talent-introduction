@@ -124,6 +124,44 @@ class MailVariableServiceTest {
     }
 
     @Test
+    fun `renderForContact uses contact email for unsubscribe url when profile email is empty`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert.copy(email = null))
+
+        val rendered = serviceWithUnsubscribe.renderForContact(
+            "Unsubscribe: \${unsubscribeUrl}",
+            account,
+            contact
+        )
+
+        assertTrue(rendered.startsWith("Unsubscribe: https://example.com/u/unsubscribe?token="))
+        assertFalse(rendered.contains("\${unsubscribeUrl}"))
+    }
+
+    @Test
+    fun `renderPreview shows preview unsubscribe url when token service is not configured`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val result = service.renderPreview(
+            "Unsubscribe: \${unsubscribeUrl}",
+            account,
+            contact
+        )
+
+        assertEquals("Unsubscribe: https://example.com/u/unsubscribe?token=preview", result.rendered)
+        assertTrue(
+            result.variables.any {
+                it.key == "unsubscribeUrl" &&
+                    it.value == "https://example.com/u/unsubscribe?token=preview" &&
+                    it.filled &&
+                    !it.usedFallback
+            }
+        )
+        assertFalse(result.fallbackKeys.contains("unsubscribeUrl"))
+    }
+
+    @Test
     fun `renderForContact uses fallback when expert field is empty`() {
         val sparseExpert = expert.copy(familyNames = null)
         Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))

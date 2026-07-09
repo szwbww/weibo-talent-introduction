@@ -28,10 +28,31 @@ function createTextarea(value) {
 function createSandbox(activeElement) {
     const sandbox = {
         document: { activeElement },
-        Event: function Event() {}
+        Event: function Event() {},
+        state: {
+            variableMeta: []
+        },
+        escapeHtml: (v) => String(v == null ? "" : v)
+            .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;").replaceAll("'", "&#39;"),
+        EXPERT_VAR_KEY_SET: new Set([
+            "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
+            "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
+            "degree", "recentWorkTitle", "patentTitle"
+        ]),
+        SENDER_VAR_KEY_SET: new Set([
+            "senderEmail", "senderName", "senderTitle", "teamName", "countryName", "senderDisplayName"
+        ])
     };
     vm.createContext(sandbox);
-    ["rememberVarSelection", "resolveVarInsertRange", "insertVarAtCursor"].forEach((name) => {
+    [
+        "rememberVarSelection",
+        "resolveVarInsertRange",
+        "insertVarAtCursor",
+        "placeholderDefaultFallback",
+        "renderVarChipButtons",
+        "renderVarInsertMenuContent"
+    ].forEach((name) => {
         vm.runInContext(extractFn(name), sandbox);
     });
     return sandbox;
@@ -68,5 +89,19 @@ describe("insertVarAtCursor unfocused append (I-2)", () => {
         textarea.selectionEnd = 0;
         sandbox.insertVarAtCursor(textarea, "${name}", 0);
         assert.strictEqual(textarea.value, "hel${name}lo");
+    });
+
+    it("renders metadata keys outside sender and expert groups", () => {
+        const sandbox = createSandbox(null);
+        sandbox.state.variableMeta = [
+            { key: "senderName", label: "发件人姓名", nullable: false },
+            { key: "expertName", label: "专家姓名", nullable: false },
+            { key: "unsubscribeUrl", label: "退订链接", nullable: false }
+        ];
+
+        const html = sandbox.renderVarInsertMenuContent("body");
+
+        assert.match(html, /data-var-key="unsubscribeUrl"/);
+        assert.match(html, /退订链接/);
     });
 });

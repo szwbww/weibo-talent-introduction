@@ -166,7 +166,7 @@ class MailComposeTemplateService(
         }
         val baseResolved = resolveBlocks(draftBlocks, variantSeed = variantSeed, renderVariables = false)
         val subjectTemplate = request.subject
-        val contact = resolvePreviewContact(request.contactId, request.orcidId)
+        val contact = resolvePreviewContact(request.contactId, request.orcidId, request.expertEmail)
         val account = resolvePreviewAccount(request.senderAccountCode)
 
         if (contact == null) {
@@ -228,7 +228,7 @@ class MailComposeTemplateService(
         )
     }
 
-    private fun resolvePreviewContact(contactId: Long?, orcidId: String?): ExpertContact? {
+    private fun resolvePreviewContact(contactId: Long?, orcidId: String?, expertEmail: String?): ExpertContact? {
         contactId?.let { id ->
             return expertContactRepository.findById(id).orElse(null)
         }
@@ -236,10 +236,11 @@ class MailComposeTemplateService(
         if (trimmedOrcid.isBlank()) {
             return null
         }
+        val resolvedEmail = expertEmail?.trim().takeUnless { it.isNullOrBlank() } ?: "preview@local"
         return ExpertContact(
             campaignId = 0,
             orcidId = trimmedOrcid,
-            expertEmail = "preview@local",
+            expertEmail = resolvedEmail,
             expertName = "Preview",
             currentIndexLevel = "CANDIDATE"
         )
@@ -635,6 +636,7 @@ data class ComposeTemplatePreviewDraftRequest(
     val blocks: List<ComposeDraftBlock> = emptyList(),
     val variantIndex: Int? = null,
     val orcidId: String? = null,
+    val expertEmail: String? = null,
     val contactId: Long? = null,
     val senderAccountCode: String? = null,
     val strictPlaceholders: Boolean = false
