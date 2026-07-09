@@ -3,13 +3,16 @@ package com.weibo.talentintroduction.qa.service
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.springframework.stereotype.Service
 import java.util.Locale
 
 @Service
 class QaMatchService(
     private val qaRuleRepository: QaRuleRepository,
-    private val qaCategoryRepository: QaCategoryRepository
+    private val qaCategoryRepository: QaCategoryRepository,
+    private val contentVariantService: ContentVariantService
 ) {
     fun suggestComposition(messageBody: String): CompositionSuggestResult {
         val normalizedBody = normalize(messageBody)
@@ -50,7 +53,7 @@ class QaMatchService(
             .distinct()
     }
 
-    fun match(messageBody: String): QaMatchResult? {
+    fun match(messageBody: String, variantSeed: Int = 0): QaMatchResult? {
         val normalizedBody = normalize(messageBody)
         val rawMatches = qaRuleRepository.findAllEnabledOrdered()
             .mapNotNull { rule -> matchRule(rule, normalizedBody) }
@@ -59,7 +62,7 @@ class QaMatchService(
             return null
         }
 
-        val matches = applySupersede(rawMatches)
+        val matches = applySupersede(rawMatches).map { resolveMatchVariant(it, variantSeed) }
         val categoryComposeOrder = qaCategoryRepository.findAll()
             .associate { requireNotNull(it.id) to it.composeOrder }
 
@@ -76,6 +79,18 @@ class QaMatchService(
             matchedRuleIds = matches.mapNotNull { it.rule.id },
             gapDetected = gapDetected
         )
+    }
+
+    private fun resolveMatchVariant(match: QaRuleMatch, variantSeed: Int): QaRuleMatch {
+        val ruleId = match.rule.id ?: return match
+        val resolvedBody = contentVariantService.resolveBody(
+            ownerType = ContentVariantOwnerType.QA_RULE,
+            ownerId = ruleId,
+            mainBody = match.rule.replyBody,
+            seed = variantSeed,
+            useVariants = true
+        )
+        return match.copy(rule = match.rule.copy(replyBody = resolvedBody))
     }
 
     private fun applySupersede(matches: List<QaRuleMatch>): List<QaRuleMatch> {

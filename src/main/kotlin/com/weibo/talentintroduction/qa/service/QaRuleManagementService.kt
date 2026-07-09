@@ -5,13 +5,17 @@ import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class QaRuleManagementService(
     private val categoryRepository: QaCategoryRepository,
     private val ruleRepository: QaRuleRepository,
-    private val mailVariableService: MailVariableService
+    private val mailVariableService: MailVariableService,
+    private val contentVariantService: ContentVariantService
 ) {
     fun listCategories(): List<QaCategory> =
         categoryRepository.findAllByOrderByCategoryCodeAsc()
@@ -49,26 +53,40 @@ class QaRuleManagementService(
         }
 
         return rules.map { rule ->
+            val ruleId = rule.id ?: error("QA rule id is required")
             QaRuleWithCategory(
                 rule = rule,
-                category = categories[rule.categoryId]
+                category = categories[rule.categoryId],
+                variants = loadVariantTexts(ruleId)
             )
         }
     }
 
-    fun createRule(command: QaRuleCreateCommand): QaRule {
+    @Transactional
+    fun createRule(command: QaRuleCreateCommand): QaRuleDetail {
         requireCategoryExists(command.categoryId)
         validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
-        return ruleRepository.save(command.toDomain())
+        contentVariantService.validateVariantTexts(command.replyBody, command.variants)
+        val saved = ruleRepository.save(command.toDomain())
+        val ruleId = saved.id ?: error("QA rule id is required")
+        contentVariantService.replaceForOwner(
+            ContentVariantOwnerType.QA_RULE,
+            ruleId,
+            saved.replyBody,
+            command.variants
+        )
+        return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
-    fun updateRule(ruleId: Long, command: QaRuleUpdateCommand): QaRule {
+    @Transactional
+    fun updateRule(ruleId: Long, command: QaRuleUpdateCommand): QaRuleDetail {
         val existing = ruleRepository.findById(ruleId)
             .orElseThrow { error("QA rule not found: $ruleId") }
         requireCategoryExists(command.categoryId)
         validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
+        contentVariantService.validateVariantTexts(command.replyBody, command.variants)
 
-        return ruleRepository.save(
+        val saved = ruleRepository.save(
             existing.copy(
                 categoryId = command.categoryId,
                 keywords = command.keywords,
@@ -82,13 +100,31 @@ class QaRuleManagementService(
                 enabled = command.enabled
             )
         )
+        contentVariantService.replaceForOwner(
+            ContentVariantOwnerType.QA_RULE,
+            ruleId,
+            saved.replyBody,
+            command.variants
+        )
+        return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
-    fun setRuleEnabled(ruleId: Long, enabled: Boolean): QaRule {
+    @Transactional
+    fun deleteRule(ruleId: Long) {
+        ruleRepository.findById(ruleId).orElseThrow { error("QA rule not found: $ruleId") }
+        contentVariantService.deleteForOwner(ContentVariantOwnerType.QA_RULE, ruleId)
+        ruleRepository.deleteById(ruleId)
+    }
+
+    fun setRuleEnabled(ruleId: Long, enabled: Boolean): QaRuleDetail {
         val existing = ruleRepository.findById(ruleId)
             .orElseThrow { error("QA rule not found: $ruleId") }
-        return ruleRepository.save(existing.copy(enabled = enabled))
+        val saved = ruleRepository.save(existing.copy(enabled = enabled))
+        return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
+
+    private fun loadVariantTexts(ruleId: Long): List<String> =
+        contentVariantService.listByOwner(ContentVariantOwnerType.QA_RULE, ruleId).map { it.content }
 
     private fun requireCategoryExists(categoryId: Long) {
         require(categoryRepository.existsById(categoryId)) { "QA category not found: $categoryId" }
@@ -105,7 +141,13 @@ class QaRuleManagementService(
 
 data class QaRuleWithCategory(
     val rule: QaRule,
-    val category: QaCategory?
+    val category: QaCategory?,
+    val variants: List<String> = emptyList()
+)
+
+data class QaRuleDetail(
+    val rule: QaRule,
+    val variants: List<String> = emptyList()
 )
 
 data class QaCategoryCreateCommand(
@@ -125,7 +167,8 @@ data class QaRuleCreateCommand(
     val displayName: String? = null,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val variants: List<String> = emptyList()
 ) {
     fun toDomain(): QaRule =
         QaRule(
@@ -152,5 +195,6 @@ data class QaRuleUpdateCommand(
     val displayName: String? = null,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val variants: List<String> = emptyList()
 )

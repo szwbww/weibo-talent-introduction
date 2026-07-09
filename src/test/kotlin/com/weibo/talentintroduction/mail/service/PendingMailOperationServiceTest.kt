@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -23,13 +24,21 @@ import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
+import com.weibo.talentintroduction.qa.service.SuggestQaRule
+import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.service.AckOption
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
+import com.weibo.talentintroduction.reply.service.ReplySnippetDetail
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.SnippetType
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.variant.domain.ContentVariant
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -42,6 +51,8 @@ import java.time.LocalDateTime
 import java.util.Optional
 
 class PendingMailOperationServiceTest {
+    private val jsonMapper = ObjectMapper().registerKotlinModule()
+
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
@@ -65,9 +76,15 @@ class PendingMailOperationServiceTest {
         ObjectMapper(),
         Mockito.mock(MailVariableService::class.java),
         expertContactRepository,
-        mailSenderAccountService
+        mailSenderAccountService,
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
+    private val contentVariantRepository = Mockito.mock(ContentVariantRepository::class.java)
+    private val contentVariantService = ContentVariantService(
+        contentVariantRepository,
+        mailVariableService
+    )
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -83,7 +100,8 @@ class PendingMailOperationServiceTest {
         mailBodyCleaner,
         mailContentService,
         replySnippetService,
-        mailVariableService
+        mailVariableService,
+        contentVariantService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -631,6 +649,304 @@ class PendingMailOperationServiceTest {
     private fun stubResolveAck() {
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
         Mockito.`when`(replySnippetService.resolveAck(Mockito.anyLong())).thenReturn(null)
+    }
+
+    private fun stubQaRuleVariant(ruleId: Long, variantContent: String) {
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                ruleId
+            )
+        ).thenReturn(
+            listOf(
+                ContentVariant(
+                    id = 900L + ruleId,
+                    ownerType = ContentVariantOwnerType.QA_RULE,
+                    ownerId = ruleId,
+                    variantOrder = 10,
+                    content = variantContent
+                )
+            )
+        )
+    }
+
+    private fun resolvedQaRuleBody(ruleId: Long, mainBody: String): String {
+        val seed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        return contentVariantService.resolveBody(
+            ContentVariantOwnerType.QA_RULE,
+            ruleId,
+            mainBody,
+            seed,
+            useVariants = true
+        )
+    }
+
+    private fun stubDefaultSnippetByType(type: String, snippetId: Long, mainContent: String) {
+        val snippet = ReplySnippet(
+            id = snippetId,
+            snippetType = type,
+            content = mainContent,
+            isDefault = true,
+            enabled = true
+        )
+        Mockito.`when`(replySnippetService.listByType(type)).thenReturn(
+            listOf(ReplySnippetDetail(snippet = snippet, variants = emptyList()))
+        )
+    }
+
+    private fun stubReplySnippetVariant(snippetId: Long, variantContent: String) {
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.REPLY_SNIPPET,
+                snippetId
+            )
+        ).thenReturn(
+            listOf(
+                ContentVariant(
+                    id = 800L + snippetId,
+                    ownerType = ContentVariantOwnerType.REPLY_SNIPPET,
+                    ownerId = snippetId,
+                    variantOrder = 10,
+                    content = variantContent
+                )
+            )
+        )
+    }
+
+    private fun stubFrameSnippetVariants(
+        salutationMain: String = "MAIN salutation",
+        greetingMain: String = "MAIN greeting",
+        closingMain: String = "MAIN closing",
+        ackMain: String = "MAIN ack",
+        salutationVariant: String = "VARIANT salutation",
+        greetingVariant: String = "VARIANT greeting",
+        closingVariant: String = "VARIANT closing",
+        ackVariant: String = "VARIANT ack",
+        ackId: Long = 100L,
+        salutationId: Long = 200L,
+        greetingId: Long = 202L,
+        closingId: Long = 204L
+    ) {
+        stubDefaultFrame(
+            salutation = salutationMain,
+            greeting = greetingMain,
+            closing = closingMain,
+            ackOptions = listOf(AckOption(id = ackId, content = ackMain))
+        )
+        stubDefaultSnippetByType(SnippetType.SALUTATION.name, salutationId, salutationMain)
+        stubDefaultSnippetByType(SnippetType.GREETING.name, greetingId, greetingMain)
+        stubDefaultSnippetByType(SnippetType.CLOSING.name, closingId, closingMain)
+        Mockito.`when`(replySnippetService.resolveAck(ackId)).thenReturn(ackMain)
+        stubReplySnippetVariant(salutationId, salutationVariant)
+        stubReplySnippetVariant(greetingId, greetingVariant)
+        stubReplySnippetVariant(closingId, closingVariant)
+        stubReplySnippetVariant(ackId, ackVariant)
+    }
+
+    @Test
+    fun `request DTOs default useVariants to false when field is omitted in JSON`() {
+        val qaReply = jsonMapper.readValue(
+            """{"qaRuleId":1,"senderAccountCode":null,"operatorName":"op"}""",
+            PendingQaReplyRequest::class.java
+        )
+        assertFalse(qaReply.useVariants)
+
+        val richReply = jsonMapper.readValue(
+            """{"senderAccountCode":"s","subject":"Sub","htmlBody":"<p>x</p>","textBody":"x","operatorName":"op"}""",
+            PendingManualRichReplyRequest::class.java
+        )
+        assertFalse(richReply.useVariants)
+
+        val composed = jsonMapper.readValue(
+            """{"qaRuleIds":[1,2],"overrideTextBody":null,"senderAccountCode":"s","operatorName":"op"}""",
+            ComposedReplyRequest::class.java
+        )
+        assertFalse(composed.useVariants)
+    }
+
+    @Test
+    fun `resolveManualFrameForInbound returns snippet main bodies when useVariants is false`() {
+        stubFrameSnippetVariants()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(inbound(1)))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+
+        val frame = service.resolveManualFrameForInbound(1, useVariants = false)
+
+        assertEquals("MAIN salutation", frame.salutation)
+        assertEquals("MAIN greeting", frame.greeting)
+        assertEquals("MAIN closing", frame.closing)
+        assertEquals("MAIN ack", frame.ackOptions.single().content)
+    }
+
+    @Test
+    fun `resolveManualFrameForInbound returns snippet variant bodies when useVariants is true`() {
+        stubFrameSnippetVariants()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(inbound(1)))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+
+        val frame = service.resolveManualFrameForInbound(1, useVariants = true)
+
+        assertEquals("VARIANT salutation", frame.salutation)
+        assertEquals("VARIANT greeting", frame.greeting)
+        assertEquals("VARIANT closing", frame.closing)
+        assertEquals("VARIANT ack", frame.ackOptions.single().content)
+    }
+
+    @Test
+    fun `sendManualComposedReply includes snippet variants in skeleton order when useVariants is true`() {
+        val record = inbound(1)
+        val rule = qaRule(10, 1, "RULE body")
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-frame-variant", status = "SUCCESS")
+        val ackId = 100L
+
+        stubFrameSnippetVariants(ackId = ackId)
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 213) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { it.getArgument<MailRecordQaRule>(0).copy(id = 1) }
+
+        service.sendManualComposedReply(1, listOf(10), null, null, ackId, null, "op", useVariants = true)
+
+        val text = sentMails.single().text!!
+
+        assertTrue(text.contains("VARIANT salutation"))
+        assertTrue(text.contains("VARIANT ack"))
+        assertTrue(text.contains("VARIANT greeting"))
+        assertTrue(text.contains("RULE body"))
+        assertTrue(text.contains("VARIANT closing"))
+        assertTrue(text.indexOf("VARIANT salutation") < text.indexOf("VARIANT ack"))
+        assertTrue(text.indexOf("VARIANT ack") < text.indexOf("VARIANT greeting"))
+        assertTrue(text.indexOf("VARIANT greeting") < text.indexOf("RULE body"))
+        assertTrue(text.indexOf("RULE body") < text.indexOf("VARIANT closing"))
+    }
+
+    @Test
+    fun `send qa reply uses main body when useVariants is false`() {
+        val record = inbound(1)
+        val rule = qaRule(10, 1, "MAIN body")
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-main", status = "SUCCESS")
+
+        stubQaRuleVariant(10, "VARIANT body")
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 210) }
+
+        service.sendQaReply(1, 10, null, "op", useVariants = false)
+
+        assertEquals("MAIN body", sentMails.single().text)
+    }
+
+    @Test
+    fun `suggest and send manual composed reply use same variant text when useVariants is true`() {
+        val record = inbound(1).copy(cleanedBody = "question")
+        val rule = qaRule(10, 1, "MAIN body")
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-variant", status = "SUCCESS")
+        val suggestRule = SuggestQaRule(
+            id = 10,
+            categoryId = 1,
+            displayName = "Rule 10",
+            sectionTitle = "Section 10",
+            replySubject = "Subject 10",
+            replyBody = "MAIN body",
+            keywords = "kw10"
+        )
+
+        stubQaRuleVariant(10, "VARIANT body")
+        stubDefaultFrame(salutation = null, greeting = null, closing = null, ackOptions = emptyList())
+        stubResolveAck()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaMatchService.suggestComposition("question")).thenReturn(
+            stubSuggest(listOf(10)).copy(suggestedRules = listOf(suggestRule))
+        )
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 211) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { it.getArgument<MailRecordQaRule>(0).copy(id = 1) }
+
+        val suggest = service.suggestComposedReply(1, useVariants = true)
+        val expectedBody = resolvedQaRuleBody(10, "MAIN body")
+
+        assertEquals(expectedBody, suggest.suggestedRules.single().replyBody)
+
+        service.sendManualComposedReply(1, listOf(10), null, null, null, null, "op", useVariants = true)
+
+        assertEquals(expectedBody, sentMails.single().text)
+    }
+
+    @Test
+    fun `send manual composed reply keeps override text body over variant resolution`() {
+        val record = inbound(1)
+        val rule = qaRule(10, 1, "MAIN body")
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-override", status = "SUCCESS")
+
+        stubQaRuleVariant(10, "VARIANT body")
+        stubDefaultFrame(salutation = null, greeting = null, closing = null, ackOptions = emptyList())
+        stubResolveAck()
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaMatchService.suggestComposition("body")).thenReturn(stubSuggest(listOf(10)))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 212) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { it.getArgument<MailRecordQaRule>(0).copy(id = 1) }
+
+        service.sendManualComposedReply(
+            1,
+            listOf(10),
+            overrideTextBody = "Operator edited body",
+            freeTextBody = null,
+            ackSnippetId = null,
+            senderAccountCode = null,
+            operatorName = "op",
+            useVariants = true
+        )
+
+        assertEquals("Operator edited body", sentMails.single().text)
     }
 
     @Test

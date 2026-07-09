@@ -2,8 +2,8 @@
 id: K-manual-send-options-sources
 domain: mail
 created: 2026-07-04
-last_used: 2026-07-04
-hit_count: 3
+last_used: 2026-07-09
+hit_count: 4
 source: create-p:mail-compose-template
 ---
 经验：手动发送邮件选项（`ManualExpertMailService.listSendOptions()`）的数据来源有三类，混在一个扁平列表中返回，前端用 `optionType` 字段区分但未向运营显示分组：

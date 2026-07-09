@@ -503,7 +503,8 @@ class AutoMailReplyService(
             AutoIntentAction.QA -> Unit
         }
 
-        val match = qaMatchService.match(cleanedBody)
+        val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        val match = qaMatchService.match(cleanedBody, variantSeed)
         if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
             markManualReview(
                 contact = effectiveContact,

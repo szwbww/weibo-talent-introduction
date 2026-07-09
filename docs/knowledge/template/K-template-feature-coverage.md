@@ -2,8 +2,8 @@
 id: K-template-feature-coverage
 domain: template
 created: 2026-07-06
-last_used: 2026-07-08
-hit_count: 5
+last_used: 2026-07-09
+hit_count: 8
 source: fix-v:template-expert-variables-and-fallback:fix-1
 severity: P1
 ---

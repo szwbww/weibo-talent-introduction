@@ -191,7 +191,8 @@ class UnmatchedInboundMailController(
             inboundProcessingId = id,
             qaRuleId = request.qaRuleId,
             senderAccountCode = request.senderAccountCode,
-            operatorName = request.operatorName
+            operatorName = request.operatorName,
+            useVariants = request.useVariants
         )
 
     @PostMapping("/unmatched-inbound/{id}/manual-rich-reply")
@@ -210,7 +211,8 @@ class UnmatchedInboundMailController(
             suggestedRuleIds = request.suggestedRuleIds,
             ackSnippetId = request.ackSnippetId,
             edited = request.edited,
-            freeTextPreview = request.freeTextPreview
+            freeTextPreview = request.freeTextPreview,
+            useVariants = request.useVariants
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
@@ -218,14 +220,17 @@ class UnmatchedInboundMailController(
         autoReplyPreviewService.preview(id).toResponse()
 
     @GetMapping("/unmatched-inbound/{id}/composed-reply/suggest")
-    fun suggestComposedReply(@PathVariable id: Long): ComposedReplySuggestResponse {
+    fun suggestComposedReply(
+        @PathVariable id: Long,
+        @RequestParam(defaultValue = "false") useVariants: Boolean
+    ): ComposedReplySuggestResponse {
         val detail = unmatchedInboundMailService.getDetail(id)
-        val suggest = pendingMailOperationService.suggestComposedReply(id)
+        val suggest = pendingMailOperationService.suggestComposedReply(id, useVariants)
         val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
         return suggest.toResponse(
             llmEnabled = llmStitchService.isEnabled(),
             inboundText = inboundText,
-            frame = replySnippetService.resolveManualFrame()
+            frame = pendingMailOperationService.resolveManualFrameForInbound(id, useVariants)
         )
     }
 
@@ -261,7 +266,8 @@ class UnmatchedInboundMailController(
             freeTextBody = request.freeTextBody,
             ackSnippetId = request.ackSnippetId,
             senderAccountCode = request.senderAccountCode,
-            operatorName = request.operatorName
+            operatorName = request.operatorName,
+            useVariants = request.useVariants
         )
 
     @PostMapping("/unmatched-inbound/{id}/ai-reply/turn")

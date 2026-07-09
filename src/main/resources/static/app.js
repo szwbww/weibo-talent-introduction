@@ -14,7 +14,6 @@ const state = {
     composeTemplatePreviewExperts: [],
     composeTemplatePreviewAccounts: [],
     composeTemplatePreviewOptionsLoaded: false,
-    composeTemplateVariantIndex: 0,
     suppressions: [],
     suppressionsPage: 0,
     suppressionsTotal: 0,
@@ -116,7 +115,9 @@ const state = {
         mode: "SATISFY_ALL",
         expertEmail: null,
         matchCount: null,
-        totalCount: null
+        totalCount: null,
+        variantIndex: 0,
+        variantPoolSize: 1
     }
 };
 
@@ -1673,12 +1674,15 @@ function renderQaRulesTable() {
         const nameCell = displayName
             ? `<strong>${escapeHtml(displayName)}</strong>`
             : `<span class="muted">（未设置中文名）</span>`;
+        const variantBadge = (rule.variants || []).length > 0
+            ? ` ${badge(`${rule.variants.length} 变体`, "primary")}`
+            : "";
         return `
         <tr>
             <td>${rule.id}</td>
             <td>${nameCell}</td>
             <td>${escapeHtml(rule.categoryName || rule.categoryCode || rule.categoryId)}</td>
-            <td>${escapeHtml(rule.replySubject || "")}</td>
+            <td>${escapeHtml(rule.replySubject || "")}${variantBadge}</td>
             <td class="muted-cell">${escapeHtml(rule.keywords)}</td>
             <td>${rule.priority}</td>
             <td>${badge(rule.enabled ? "启用" : "禁用", rule.enabled ? "ok" : "error")}</td>
@@ -1704,7 +1708,82 @@ async function ensureVariableMeta() {
 
 function resolveVarTextarea(targetId) {
     return document.getElementById(targetId)
-        || document.querySelector(`textarea[name="${targetId}"]`);
+        || document.querySelector(`textarea[name="${targetId}"]`)
+        || document.querySelector(`input[name="${targetId}"]`);
+}
+
+const EXPERT_VAR_KEY_SET = new Set([
+    "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
+    "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
+    "degree", "recentWorkTitle", "patentTitle"
+]);
+const SENDER_VAR_KEY_SET = new Set([
+    "senderEmail", "senderName", "senderTitle", "teamName", "countryName", "senderDisplayName"
+]);
+
+let previewDrawerDebounceTimer = null;
+
+function isPreviewDrawerOpen() {
+    const shell = $("#previewDrawer");
+    return Boolean(shell && !shell.hidden);
+}
+
+function isComposeTemplatePreviewTarget() {
+    return state.previewDrawer.targetId === "composeTemplate";
+}
+
+function schedulePreviewDrawerRefresh() {
+    if (!isPreviewDrawerOpen()) return;
+    window.clearTimeout(previewDrawerDebounceTimer);
+    previewDrawerDebounceTimer = window.setTimeout(() => {
+        refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    }, 600);
+}
+
+function updatePreviewContextPanels() {
+    const fieldCtx = $("#previewFieldContext");
+    const composeCtx = $("#previewComposeContext");
+    const isCompose = isComposeTemplatePreviewTarget();
+    if (fieldCtx) fieldCtx.hidden = isCompose;
+    if (composeCtx) composeCtx.hidden = !isCompose;
+}
+
+function updatePreviewVariantSwitcher(poolSize) {
+    const switcher = $("#previewVariantSwitcher");
+    const label = $("#previewVariantLabel");
+    if (!switcher || !label) return;
+    const size = poolSize ?? state.previewDrawer.variantPoolSize ?? 1;
+    state.previewDrawer.variantPoolSize = size;
+    if (size <= 1) {
+        switcher.hidden = true;
+        state.previewDrawer.variantIndex = 0;
+        label.textContent = "组合 1/1";
+        return;
+    }
+    if (state.previewDrawer.variantIndex >= size) {
+        state.previewDrawer.variantIndex = 0;
+    }
+    switcher.hidden = false;
+    label.textContent = `组合 ${state.previewDrawer.variantIndex + 1}/${size}`;
+}
+
+function stepPreviewVariantIndex(delta) {
+    const size = state.previewDrawer.variantPoolSize || 1;
+    if (size <= 1) return;
+    let next = state.previewDrawer.variantIndex + delta;
+    if (next < 0) next = size - 1;
+    if (next >= size) next = 0;
+    state.previewDrawer.variantIndex = next;
+    updatePreviewVariantSwitcher(size);
+    refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+}
+
+function closeOpenVarInsertMenus(exceptWrap) {
+    document.querySelectorAll(".var-insert-wrap").forEach((wrap) => {
+        if (exceptWrap && wrap === exceptWrap) return;
+        const menu = wrap.querySelector(".var-insert-menu");
+        if (menu) menu.hidden = true;
+    });
 }
 
 function parsePlaceholderToken(inner) {
@@ -1758,8 +1837,8 @@ function placeholderDefaultFallback(key) {
     }[key] || "";
 }
 
-function renderVarChipBarContent(targetId) {
-    return (state.variableMeta || []).map((meta) => `
+function renderVarChipButtons(targetId, metas) {
+    return (metas || []).map((meta) => `
         <button type="button" class="var-chip"
             data-var-target="${escapeHtml(targetId)}"
             data-var-key="${escapeHtml(meta.key)}"
@@ -1770,15 +1849,68 @@ function renderVarChipBarContent(targetId) {
         </button>`).join("");
 }
 
+function renderVarChipBarContent(targetId) {
+    return renderVarChipButtons(targetId, state.variableMeta || []);
+}
+
+function renderVarInsertMenuContent(targetId) {
+    const metas = state.variableMeta || [];
+    const senderMetas = metas.filter((meta) => SENDER_VAR_KEY_SET.has(meta.key));
+    const expertMetas = metas.filter((meta) => EXPERT_VAR_KEY_SET.has(meta.key));
+    return `
+        <p class="var-insert-group-label">发送方</p>
+        <div class="var-insert-group">${renderVarChipButtons(targetId, senderMetas)}</div>
+        <p class="var-insert-group-label">专家</p>
+        <div class="var-insert-group">${renderVarChipButtons(targetId, expertMetas)}</div>`;
+}
+
+function renderVarInsertMenu(wrap, targetId) {
+    const menu = wrap?.querySelector(".var-insert-menu");
+    if (!menu) return;
+    menu.innerHTML = renderVarInsertMenuContent(targetId);
+    bindVarChipBar(menu);
+}
+
+function rememberVarSelection(textarea) {
+    if (!textarea) return;
+    try {
+        textarea.dataset.varSelStart = String(textarea.selectionStart ?? "");
+        textarea.dataset.varSelEnd = String(textarea.selectionEnd ?? "");
+    } catch (_) {
+        // ignore selection access errors on unsupported fields
+    }
+}
+
+function resolveVarInsertRange(textarea) {
+    if (document.activeElement === textarea) {
+        return { start: textarea.selectionStart, end: textarea.selectionEnd };
+    }
+    const startRaw = textarea.dataset?.varSelStart;
+    const endRaw = textarea.dataset?.varSelEnd;
+    if (startRaw !== undefined && startRaw !== "" && endRaw !== undefined && endRaw !== "") {
+        const start = Number(startRaw);
+        const end = Number(endRaw);
+        if (Number.isFinite(start) && Number.isFinite(end)) {
+            const len = (textarea.value || "").length;
+            return {
+                start: Math.max(0, Math.min(start, len)),
+                end: Math.max(0, Math.min(end, len))
+            };
+        }
+    }
+    const len = (textarea.value || "").length;
+    return { start: len, end: len };
+}
+
 function insertVarAtCursor(textarea, insertText, cursorOffset) {
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
+    const { start, end } = resolveVarInsertRange(textarea);
     const before = textarea.value.slice(0, start);
     const after = textarea.value.slice(end);
     textarea.value = before + insertText + after;
     const pos = start + insertText.length - cursorOffset;
     textarea.selectionStart = pos;
     textarea.selectionEnd = pos;
+    rememberVarSelection(textarea);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     textarea.focus();
 }
@@ -1829,37 +1961,38 @@ function initVarEditorForTextarea(textarea) {
     if (!textarea || textarea.dataset.varEditorBound === "1") return;
     textarea.dataset.varEditorBound = "1";
     const targetId = textarea.id || textarea.name;
+    const remember = () => rememberVarSelection(textarea);
+    textarea.addEventListener("focus", remember);
+    textarea.addEventListener("keyup", remember);
+    textarea.addEventListener("mouseup", remember);
+    textarea.addEventListener("select", remember);
     textarea.addEventListener("blur", () => updateVarValidationForTarget(targetId, textarea));
-    textarea.addEventListener("input", () => updateVarValidationForTarget(targetId, textarea));
+    textarea.addEventListener("input", () => {
+        rememberVarSelection(textarea);
+        updateVarValidationForTarget(targetId, textarea);
+        if (isPreviewDrawerOpen() && state.previewDrawer.targetId === targetId) {
+            schedulePreviewDrawerRefresh();
+        }
+    });
 }
 
 async function refreshVariableEditors() {
     await ensureVariableMeta();
-    document.querySelectorAll(".var-chip-bar").forEach((bar) => {
-        const targetId = bar.dataset.varTarget;
+    document.querySelectorAll(".var-insert-wrap").forEach((wrap) => {
+        const targetId = wrap.querySelector(".var-insert-btn")?.dataset.varInsertTarget;
         if (!targetId) return;
-        bar.innerHTML = renderVarChipBarContent(targetId);
-        bindVarChipBar(bar);
+        renderVarInsertMenu(wrap, targetId);
         const textarea = resolveVarTextarea(targetId);
         initVarEditorForTextarea(textarea);
         if (textarea) {
             updateVarValidationForTarget(targetId, textarea);
         }
     });
-}
-
-function resolveVarPreviewContact(previewBtn) {
-    const targetId = previewBtn?.dataset?.varPreviewTarget;
-    if (targetId === "composedFreeText") {
-        return {
-            contactId: composedReplyState.contactId || null,
-            orcidId: composedReplyState.contactOrcid || null
-        };
-    }
-    return {
-        contactId: composedReplyState.contactId || null,
-        orcidId: composedReplyState.contactOrcid || state.selectedExpertOrcid || null
-    };
+    document.querySelectorAll(".var-editor-wrap textarea, .var-editor-wrap input[type='text']").forEach((field) => {
+        if (!field.closest(".var-insert-wrap")) {
+            initVarEditorForTextarea(field);
+        }
+    });
 }
 
 function resolvePreviewDrawerContact() {
@@ -1995,6 +2128,7 @@ function closePreviewDrawer() {
     if (!shell || shell.hidden) {
         return;
     }
+    document.body.classList.remove("preview-docked");
     shell.classList.remove("open");
     window.setTimeout(() => {
         shell.hidden = true;
@@ -2002,12 +2136,14 @@ function closePreviewDrawer() {
     }, 240);
 }
 
-function openPreviewDrawer({ targetId, contactId, orcidId }) {
-    const textarea = resolveVarTextarea(targetId);
-    const text = textarea?.value || "";
-    if (!text.trim()) {
-        showStatus("请先输入正文再预览", "error");
-        return;
+function openPreviewDrawer({ targetId, contactId, orcidId, skipContentCheck = false }) {
+    if (targetId !== "composeTemplate") {
+        const textarea = resolveVarTextarea(targetId);
+        const text = textarea?.value || "";
+        if (!skipContentCheck && !text.trim()) {
+            showStatus("请先输入正文再预览", "error");
+            return;
+        }
     }
     const level = $("#previewScopeSel")?.value || "CANDIDATE";
     const mode = $("#previewModeSel")?.value || "SATISFY_ALL";
@@ -2019,8 +2155,11 @@ function openPreviewDrawer({ targetId, contactId, orcidId }) {
         mode,
         expertEmail: null,
         matchCount: null,
-        totalCount: null
+        totalCount: null,
+        variantIndex: 0,
+        variantPoolSize: 1
     };
+    updatePreviewContextPanels();
     const orcidInput = $("#previewOrcidInput");
     if (orcidInput) {
         orcidInput.value = orcidId || "";
@@ -2031,14 +2170,29 @@ function openPreviewDrawer({ targetId, contactId, orcidId }) {
     if ($("#previewModeSel")) {
         $("#previewModeSel").value = mode;
     }
+    const badge = $("#previewSourceBadge");
+    if (badge) {
+        badge.textContent = targetId === "composeTemplate" ? "服务端预览" : "变量渲染";
+    }
+    updatePreviewVariantSwitcher(1);
     const shell = $("#previewDrawer");
     shell.hidden = false;
+    document.body.classList.add("preview-docked");
     requestAnimationFrame(() => shell.classList.add("open"));
     syncBodyScrollLock();
     refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
 }
 
+async function openComposeTemplatePreview() {
+    await loadComposeTemplatePreviewOptions();
+    openPreviewDrawer({ targetId: "composeTemplate", skipContentCheck: true });
+}
+
 async function refreshPreviewDrawer() {
+    if (isComposeTemplatePreviewTarget()) {
+        await renderServerComposeTemplatePreview();
+        return;
+    }
     const textarea = resolveVarTextarea(state.previewDrawer.targetId);
     const text = textarea?.value || "";
     const orcidInput = $("#previewOrcidInput");
@@ -2046,6 +2200,7 @@ async function refreshPreviewDrawer() {
     const level = $("#previewScopeSel")?.value || state.previewDrawer.level || "CANDIDATE";
     state.previewDrawer.level = level;
     state.previewDrawer.mode = $("#previewModeSel")?.value || state.previewDrawer.mode || "SATISFY_ALL";
+    updatePreviewVariantSwitcher(1);
     const payload = { text };
     if (state.previewDrawer.contactId) {
         payload.contactId = state.previewDrawer.contactId;
@@ -2061,6 +2216,16 @@ async function refreshPreviewDrawer() {
         body: JSON.stringify(payload)
     });
     renderPreviewDrawerResult(result);
+    const blockNotes = $("#previewComposeBlockNotes");
+    const skipped = $("#previewComposeSkipped");
+    if (blockNotes) {
+        blockNotes.hidden = true;
+        blockNotes.innerHTML = "";
+    }
+    if (skipped) {
+        skipped.hidden = true;
+        skipped.textContent = "";
+    }
 }
 
 async function randomPreviewExpert() {
@@ -2119,9 +2284,13 @@ function showQaRuleEditor() {
 function hideQaRuleEditor() {
     const form = $("#qaRuleForm");
     form.reset();
+    renderContentVariantRows($("#qaRuleVariantsContainer"), []);
     $("#qaRuleModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedRuleId = null;
+    if (state.previewDrawer.targetId === "qaRuleReplyBody") {
+        closePreviewDrawer();
+    }
 }
 
 function fillQaRuleForm(rule) {
@@ -2142,10 +2311,12 @@ function fillQaRuleForm(rule) {
     form.autoReplyEnabled.checked = rule?.autoReplyEnabled ?? true;
     form.handoffRequired.checked = rule?.handoffRequired ?? false;
     form.enabled.checked = rule?.enabled ?? true;
+    renderContentVariantRows($("#qaRuleVariantsContainer"), rule?.variants || []);
     const replyBodyEl = $("#qaRuleReplyBody");
     if (replyBodyEl) {
         updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl);
     }
+    openPreviewDrawer({ targetId: "qaRuleReplyBody", skipContentCheck: true });
 }
 
 async function saveQaRule(event) {
@@ -2154,6 +2325,11 @@ async function saveQaRule(event) {
     const replyBodyEl = $("#qaRuleReplyBody");
     if (replyBodyEl && !updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl)) {
         showStatus("请先修正非法占位符", "error");
+        return;
+    }
+    const variantsContainer = $("#qaRuleVariantsContainer");
+    const mainText = replyBodyEl?.value || "";
+    if (!validateContentVariantInputs(variantsContainer, mainText)) {
         return;
     }
     const values = formValues(form);
@@ -2167,7 +2343,8 @@ async function saveQaRule(event) {
         displayName: values.displayName?.trim() || null,
         autoReplyEnabled: form.autoReplyEnabled.checked,
         handoffRequired: form.handoffRequired.checked,
-        enabled: form.enabled.checked
+        enabled: form.enabled.checked,
+        variants: collectContentVariants(variantsContainer)
     };
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -2194,10 +2371,11 @@ const replySnippetTypeLabels = {
     SALUTATION: "尊语",
     ACK: "致谢语",
     GREETING: "开场白",
-    CLOSING: "结束语"
+    CLOSING: "结束语",
+    CUSTOM: "自定义内容"
 };
 
-const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING"];
+const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING", "CUSTOM"];
 
 async function loadReplySnippets() {
     state.replySnippets = await api("/api/reply-snippets");
@@ -2651,21 +2829,22 @@ async function loadAiTraining() {
     ]);
 }
 
-function renderReplySnippetRow(snippet, showDefault, variantGroupCount) {
+function renderReplySnippetRow(snippet, showDefault) {
     const defaultCell = showDefault
         ? `<td>${snippet.isDefault ? badge("默认", "ok") : ""}</td>`
         : "";
     const defaultAction = showDefault && !snippet.isDefault
         ? `<button class="button" data-action="reply-snippet-default" data-id="${snippet.id}">设默认</button>`
         : "";
-    const variantGroupCell = snippet.variantGroup
-        ? `<td>${badge(`${snippet.variantGroup} · ${variantGroupCount}个`, "info")}</td>`
+    const variantCount = (snippet.variants || []).length;
+    const variantCell = variantCount > 0
+        ? `<td>${badge(`${variantCount} 变体`, "primary")}</td>`
         : "<td></td>";
     return `
         <tr>
             <td class="muted-cell">${escapeHtml((snippet.content || "").slice(0, 120))}</td>
             <td>${snippet.displayOrder}</td>
-            ${variantGroupCell}
+            ${variantCell}
             ${defaultCell}
             <td>${badge(snippet.enabled ? "启用" : "禁用", snippet.enabled ? "ok" : "error")}</td>
             <td class="actions">
@@ -2679,27 +2858,11 @@ function renderReplySnippetRow(snippet, showDefault, variantGroupCount) {
         </tr>`;
 }
 
-function buildVariantGroupCounts(snippets) {
-    const counts = {};
-    (snippets || []).forEach((snippet) => {
-        const group = snippet.variantGroup?.trim();
-        if (group) {
-            counts[group] = (counts[group] || 0) + 1;
-        }
-    });
-    return counts;
-}
-
 function renderReplySnippetTypePanel(type, snippets) {
-    const showDefault = type !== "ACK";
+    const showDefault = type !== "ACK" && type !== "CUSTOM";
     const defaultHeader = showDefault ? "<th>默认</th>" : "";
-    const groupCounts = buildVariantGroupCounts(snippets);
     const rows = snippets
-        .map((snippet) => renderReplySnippetRow(
-            snippet,
-            showDefault,
-            snippet.variantGroup ? groupCounts[snippet.variantGroup] || 0 : 0
-        ))
+        .map((snippet) => renderReplySnippetRow(snippet, showDefault))
         .join("") || `<tr><td colspan="${showDefault ? 6 : 5}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
     return `
         <section class="panel" style="margin-bottom:16px;">
@@ -2712,7 +2875,7 @@ function renderReplySnippetTypePanel(type, snippets) {
                         <tr>
                             <th>内容</th>
                             <th>排序</th>
-                            <th>变体组</th>
+                            <th>变体</th>
                             ${defaultHeader}
                             <th>状态</th>
                             <th style="text-align: right;">操作</th>
@@ -2747,31 +2910,22 @@ function showReplySnippetEditor() {
 function hideReplySnippetEditor() {
     const form = $("#replySnippetForm");
     form.reset();
+    renderContentVariantRows($("#replySnippetVariantsContainer"), []);
     $("#replySnippetModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedReplySnippetId = null;
     updateReplySnippetDefaultFieldVisibility();
+    if (state.previewDrawer.targetId === "replySnippetContent") {
+        closePreviewDrawer();
+    }
 }
 
 function updateReplySnippetDefaultFieldVisibility() {
     const type = $("#replySnippetForm")?.snippetType?.value || "";
     const defaultRow = $("#replySnippetDefaultRow");
     if (defaultRow) {
-        defaultRow.hidden = type === "ACK";
+        defaultRow.hidden = type === "ACK" || type === "CUSTOM";
     }
-}
-
-function rebuildVariantGroupDatalist(snippetType) {
-    const datalist = $("#variantGroupOptions");
-    if (!datalist) return;
-    const groups = new Set();
-    (state.replySnippets || [])
-        .filter((snippet) => snippet.snippetType === snippetType && snippet.variantGroup?.trim())
-        .forEach((snippet) => groups.add(snippet.variantGroup.trim()));
-    datalist.innerHTML = Array.from(groups)
-        .sort()
-        .map((group) => `<option value="${escapeHtml(group)}"></option>`)
-        .join("");
 }
 
 function fillReplySnippetForm(snippet, presetType) {
@@ -2786,15 +2940,15 @@ function fillReplySnippetForm(snippet, presetType) {
     form.snippetType.disabled = Boolean(snippet?.id);
     form.content.value = snippet?.content || "";
     form.displayOrder.value = snippet?.displayOrder ?? 100;
-    form.variantGroup.value = snippet?.variantGroup || "";
     form.enabled.checked = snippet?.enabled ?? true;
     form.isDefault.checked = snippet?.isDefault ?? false;
+    renderContentVariantRows($("#replySnippetVariantsContainer"), snippet?.variants || []);
     updateReplySnippetDefaultFieldVisibility();
-    rebuildVariantGroupDatalist(form.snippetType.value);
     const contentEl = $("#replySnippetContent");
     if (contentEl) {
         updateVarValidationForTarget("replySnippetContent", contentEl);
     }
+    openPreviewDrawer({ targetId: "replySnippetContent", skipContentCheck: true });
 }
 
 async function saveReplySnippet(event) {
@@ -2805,13 +2959,18 @@ async function saveReplySnippet(event) {
         showStatus("请先修正非法占位符", "error");
         return;
     }
+    const variantsContainer = $("#replySnippetVariantsContainer");
+    const mainText = contentEl?.value || "";
+    if (!validateContentVariantInputs(variantsContainer, mainText)) {
+        return;
+    }
     const values = formValues(form);
     const payload = {
         content: values.content,
         displayOrder: numberValue(values.displayOrder, 100),
-        variantGroup: values.variantGroup?.trim() || null,
         isDefault: form.isDefault.checked,
-        enabled: form.enabled.checked
+        enabled: form.enabled.checked,
+        variants: collectContentVariants(variantsContainer)
     };
     if (state.selectedReplySnippetId) {
         await api(`/api/reply-snippets/${state.selectedReplySnippetId}`, {
@@ -6422,8 +6581,8 @@ function findComposeTemplatePreviewOption(items, inputValue, labelFn) {
 }
 
 function collectComposeTemplatePreviewContext() {
-    const expertInput = $("#composeTemplatePreviewExpertInput")?.value;
-    const accountInput = $("#composeTemplatePreviewAccountInput")?.value;
+    const expertInput = $("#previewComposeExpertInput")?.value;
+    const accountInput = $("#previewComposeAccountInput")?.value;
     const expert = findComposeTemplatePreviewOption(
         state.composeTemplatePreviewExperts || [],
         expertInput,
@@ -6462,22 +6621,141 @@ function collectComposeTemplatePreviewSampleText() {
     return parts.filter((text) => String(text).trim()).join("\n");
 }
 
-function collectComposeTemplatePreviewSubjectVariants() {
-    const container = $("#subjectVariantsContainer");
+function renderContentVariantRows(container, variants) {
+    if (!container) return;
+    const values = variants || [];
+    if (!values.length) {
+        container.innerHTML = '<p class="content-variants-empty">未添加变体，仅使用主体发送</p>';
+        updateContentVariantsCountBadge(container);
+        return;
+    }
+    const rows = values.map((value, index) => `
+        <div class="content-variant-row" data-variant-index="${index}">
+            <span class="content-variant-index">${index + 1}</span>
+            <textarea class="content-variant-input" rows="2" maxlength="2000" placeholder="变体正文">${escapeHtml(value || "")}</textarea>
+            <button type="button" class="button small danger" data-action="remove-content-variant" data-index="${index}">×</button>
+        </div>`).join("");
+    container.innerHTML = rows;
+    updateContentVariantsCountBadge(container);
+}
+
+function updateContentVariantsCountBadge(container) {
+    if (!container) return;
+    const badge = container.closest(".content-variants-block")?.querySelector(".content-variants-count");
+    if (!badge) return;
+    const variantCount = collectContentVariants(container).length;
+    if (variantCount > 0) {
+        badge.hidden = false;
+        badge.textContent = `${variantCount} 变体`;
+    } else {
+        badge.hidden = true;
+        badge.textContent = "";
+    }
+}
+
+function collectContentVariants(container) {
     if (!container) return [];
-    return Array.from(container.querySelectorAll(".subject-variant-input"))
+    return Array.from(container.querySelectorAll(".content-variant-input"))
         .map((input) => input.value.trim())
         .filter(Boolean);
 }
 
+function clearContentVariantValidationMarks(container) {
+    if (!container) return;
+    container.querySelectorAll(".content-variant-duplicate-hint").forEach((element) => element.remove());
+    container.querySelectorAll(".content-variant-input.duplicate").forEach((input) => {
+        input.classList.remove("duplicate");
+    });
+}
+
+function validateContentVariantInputs(container, mainText) {
+    if (!container) return true;
+    clearContentVariantValidationMarks(container);
+    const trimmedMain = (mainText || "").trim();
+    const inputs = Array.from(container.querySelectorAll(".content-variant-input"));
+    if (!inputs.length) return true;
+    const trimmedValues = inputs.map((input) => input.value.trim());
+    let valid = true;
+    const seen = new Map();
+
+    trimmedValues.forEach((value, index) => {
+        const row = inputs[index].closest(".content-variant-row");
+        const insertHint = (message) => {
+            const hint = document.createElement("p");
+            hint.className = "content-variant-duplicate-hint";
+            hint.textContent = message;
+            row?.insertAdjacentElement("afterend", hint);
+        };
+        if (!value) {
+            inputs[index].classList.add("duplicate");
+            insertHint("变体不能为空");
+            valid = false;
+            return;
+        }
+        if (value === trimmedMain) {
+            inputs[index].classList.add("duplicate");
+            insertHint("与主体 内容重复");
+            valid = false;
+            return;
+        }
+        if (seen.has(value)) {
+            inputs[index].classList.add("duplicate");
+            insertHint(`与变体 ${seen.get(value)} 内容重复`);
+            valid = false;
+            return;
+        }
+        seen.set(value, index + 1);
+    });
+
+    if (!valid) {
+        showStatus("请修正内容变体中的重复或空值", "error");
+    }
+    return valid;
+}
+
+function addContentVariantRow(container) {
+    if (!container) return;
+    const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
+    variants.push("");
+    renderContentVariantRows(container, variants);
+    container.querySelector(".content-variant-input:last-child")?.focus();
+}
+
+function removeContentVariantRow(container, index) {
+    if (!container) return;
+    const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
+    variants.splice(index, 1);
+    renderContentVariantRows(container, variants);
+}
+
+function handleContentVariantEditorClick(event, form) {
+    const addBtn = event.target.closest('[data-action="add-content-variant"]');
+    if (addBtn && form.contains(addBtn)) {
+        const container = addBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
+        if (container) addContentVariantRow(container);
+        return;
+    }
+    const removeBtn = event.target.closest('[data-action="remove-content-variant"]');
+    if (removeBtn && form.contains(removeBtn)) {
+        const container = removeBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
+        if (container) removeContentVariantRow(container, Number(removeBtn.dataset.index));
+    }
+}
+
+function handleContentVariantEditorInput(event) {
+    if (!event.target.classList.contains("content-variant-input")) return;
+    const container = event.target.closest(".content-variants-container");
+    if (container) updateContentVariantsCountBadge(container);
+}
+
 function populateComposeTemplatePreviewDatalists() {
-    const expertList = $("#composeTemplatePreviewExpertOptions");
+    const expertList = $("#previewComposeExpertOptions");
     if (expertList) {
         expertList.innerHTML = (state.composeTemplatePreviewExperts || [])
             .map((expert) => `<option value="${escapeHtml(composeTemplatePreviewExpertLabel(expert))}"></option>`)
             .join("");
     }
-    const accountList = $("#composeTemplatePreviewAccountOptions");
+    const accountList = $("#previewComposeAccountOptions");
     if (accountList) {
         accountList.innerHTML = (state.composeTemplatePreviewAccounts || [])
             .map((account) => `<option value="${escapeHtml(composeTemplatePreviewAccountLabel(account))}"></option>`)
@@ -6508,12 +6786,6 @@ function renderComposeTemplatesTable() {
     const table = $("#composeTemplatesTable");
     if (!table) return;
     table.innerHTML = state.composeTemplates.map((template) => {
-        const variantCount = parseSubjectVariantsJson(template.subjectVariants)
-            .map((item) => String(item).trim())
-            .filter(Boolean).length;
-        const variantBadge = variantCount > 0
-            ? `<span class="badge primary">轮换 · ${variantCount + 1} 个主题</span>`
-            : "";
         const blockPills = (template.blocks || []).map((block) => {
             const label = block.refDisplayName
                 || (block.blockType === "CUSTOM_TEXT" ? "自定义文本" : composeBlockTypeLabels[block.blockType] || block.blockType);
@@ -6522,7 +6794,7 @@ function renderComposeTemplatesTable() {
         return `
         <tr>
             <td><strong>${escapeHtml(template.templateName)}</strong></td>
-            <td>${escapeHtml(template.subject)} ${variantBadge}</td>
+            <td>${escapeHtml(template.subject)}</td>
             <td>${blockPills || '<span class="muted">无内容块</span>'}</td>
             <td>${badge(template.enabled ? "启用" : "禁用", template.enabled ? "ok" : "warn")}</td>
             <td style="text-align: right; white-space: nowrap;">
@@ -6535,193 +6807,26 @@ function renderComposeTemplatesTable() {
     }).join("") || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无邮件模板</td></tr>`;
 }
 
-function parseSubjectVariantsJson(raw) {
-    if (!raw || !String(raw).trim()) {
-        return [];
-    }
-    try {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed.map((item) => String(item ?? "")) : [];
-    } catch {
-        return [];
-    }
-}
-
-function renderSubjectVariantRows(variants) {
-    const container = $("#subjectVariantsContainer");
-    if (!container) return;
-    const values = variants || [];
-    if (!values.length) {
-        container.innerHTML = '<p class="subject-variants-empty">未添加变体，仅使用主主题发送</p>';
-        updateSubjectVariantsCountBadge();
-        updateComposeTemplateVariantSwitcher();
-        return;
-    }
-    const rows = values.map((value, index) => `
-        <div class="subject-variant-row" data-variant-index="${index}">
-            <span class="subject-variant-index">${index + 1}</span>
-            <input type="text" class="subject-variant-input" value="${escapeHtml(value || "")}" maxlength="255" placeholder="变体主题">
-            <button type="button" class="button small danger" data-action="remove-subject-variant" data-index="${index}">×</button>
-        </div>`).join("");
-    container.innerHTML = rows;
-    updateSubjectVariantsCountBadge();
-    updateComposeTemplateVariantSwitcher();
-}
-
-function updateSubjectVariantsCountBadge() {
-    const badge = $("#subjectVariantsCountBadge");
-    if (!badge) return;
-    const variantCount = collectComposeTemplatePreviewSubjectVariants().length;
-    if (variantCount > 0) {
-        badge.hidden = false;
-        badge.textContent = `与主主题共 ${variantCount + 1} 个轮换`;
-    } else {
-        badge.hidden = true;
-        badge.textContent = "";
-    }
-}
-
-function getSubjectVariantPoolSize() {
-    return 1 + collectComposeTemplatePreviewSubjectVariants().length;
-}
-
-function updateComposeTemplateVariantSwitcher() {
-    const switcher = $("#composeTemplateVariantSwitcher");
-    const label = $("#variantSwitcherLabel");
-    if (!switcher || !label) return;
-    const poolSize = getSubjectVariantPoolSize();
-    if (poolSize <= 1) {
-        switcher.hidden = true;
-        state.composeTemplateVariantIndex = 0;
-        return;
-    }
-    if (state.composeTemplateVariantIndex >= poolSize) {
-        state.composeTemplateVariantIndex = 0;
-    }
-    switcher.hidden = false;
-    const index = state.composeTemplateVariantIndex;
-    label.textContent = `主题 ${index + 1}/${poolSize}${index === 0 ? "（主）" : ""}`;
-}
-
-function stepComposeTemplateVariantIndex(delta) {
-    const poolSize = getSubjectVariantPoolSize();
-    if (poolSize <= 1) return;
-    let next = state.composeTemplateVariantIndex + delta;
-    if (next < 0) next = poolSize - 1;
-    if (next >= poolSize) next = 0;
-    state.composeTemplateVariantIndex = next;
-    updateComposeTemplateVariantSwitcher();
-    renderServerComposeTemplatePreview().catch(() => {});
-}
-
-function clearSubjectVariantValidationMarks() {
-    const container = $("#subjectVariantsContainer");
-    if (!container) return;
-    container.querySelectorAll(".subject-variant-duplicate-hint").forEach((element) => element.remove());
-    container.querySelectorAll(".subject-variant-input.duplicate").forEach((input) => {
-        input.classList.remove("duplicate");
-    });
-}
-
-function validateSubjectVariantInputs() {
-    const container = $("#subjectVariantsContainer");
-    const form = $("#composeTemplateForm");
-    if (!container || !form) return true;
-    clearSubjectVariantValidationMarks();
-    const mainSubject = form.subject.value.trim();
-    const inputs = Array.from(container.querySelectorAll(".subject-variant-input"));
-    if (!inputs.length) return true;
-    const trimmedValues = inputs.map((input) => input.value.trim());
-    let valid = true;
-    const seen = new Map();
-
-    trimmedValues.forEach((value, index) => {
-        const row = inputs[index].closest(".subject-variant-row");
-        const insertHint = (message) => {
-            const hint = document.createElement("p");
-            hint.className = "subject-variant-duplicate-hint";
-            hint.textContent = message;
-            row?.insertAdjacentElement("afterend", hint);
-        };
-        if (!value) {
-            inputs[index].classList.add("duplicate");
-            insertHint("变体不能为空");
-            valid = false;
-            return;
-        }
-        if (value === mainSubject) {
-            inputs[index].classList.add("duplicate");
-            insertHint("与主主题 内容重复");
-            valid = false;
-            return;
-        }
-        if (seen.has(value)) {
-            inputs[index].classList.add("duplicate");
-            insertHint(`与变体 ${seen.get(value)} 内容重复`);
-            valid = false;
-            return;
-        }
-        seen.set(value, index + 1);
-    });
-
-    if (!valid) {
-        showStatus("请修正主题变体中的重复或空值", "error");
-    }
-    return valid;
-}
-
-function addSubjectVariantRow() {
-    const container = $("#subjectVariantsContainer");
-    if (!container) return;
-    const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
-    variants.push("");
-    state.composeTemplateVariantIndex = 0;
-    renderSubjectVariantRows(variants);
-    const lastInput = container.querySelector(".subject-variant-input:last-child");
-    lastInput?.focus();
-    renderServerComposeTemplatePreview().catch(() => {});
-}
-
-function removeSubjectVariantRow(index) {
-    const container = $("#subjectVariantsContainer");
-    if (!container) return;
-    const variants = Array.from(container.querySelectorAll(".subject-variant-input")).map((input) => input.value);
-    variants.splice(index, 1);
-    state.composeTemplateVariantIndex = 0;
-    renderSubjectVariantRows(variants);
-    renderServerComposeTemplatePreview().catch(() => {});
-}
-
-function collectSubjectVariants() {
-    const container = $("#subjectVariantsContainer");
-    if (!container) return null;
-    const variants = Array.from(container.querySelectorAll(".subject-variant-input"))
-        .map((input) => input.value.trim())
-        .filter(Boolean);
-    return variants.length ? JSON.stringify(variants) : null;
-}
-
 function openComposeTemplateEditor(template) {
     state.selectedComposeTemplateId = template?.id ?? null;
-    state.composeTemplateVariantIndex = 0;
     const form = $("#composeTemplateForm");
     form.templateName.value = template?.templateName || "";
     form.subject.value = template?.subject || "";
     form.description.value = template?.description || "";
     form.enabled.checked = template?.enabled !== false;
-    renderSubjectVariantRows(parseSubjectVariantsJson(template?.subjectVariants));
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
-    renderServerComposeTemplatePreview();
-    loadComposeTemplatePreviewOptions()
-        .then(() => renderServerComposeTemplatePreview())
-        .catch((error) => showStatus(error.message, "error"));
+    loadComposeTemplatePreviewOptions().catch((error) => showStatus(error.message, "error"));
     $("#composeTemplateModal").hidden = false;
+    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
 }
 
 function hideComposeTemplateEditor() {
     $("#composeTemplateModal").hidden = true;
     state.selectedComposeTemplateId = null;
+    if (isComposeTemplatePreviewTarget()) {
+        closePreviewDrawer();
+    }
 }
 
 function renderComposeTemplateBlockRows(blocks) {
@@ -6731,7 +6836,7 @@ function renderComposeTemplateBlockRows(blocks) {
         composeTemplateBlockRowHtml(index, block)
     );
     container.innerHTML = rows.join("");
-    updateComposeTemplatePreviewMeta();
+    refreshVariableEditors().catch(() => {});
 }
 
 function composeTemplateBlockRowHtml(index, block) {
@@ -6758,7 +6863,7 @@ function composeTemplateBlockRowHtml(index, block) {
         <div class="block-ref">
             ${blockType === "QA_RULE" ? `<select data-field="refId"><option value="">请选择 QA 规则</option>${qaOptions}</select>` : ""}
             ${blockType === "REPLY_SNIPPET" ? `<select data-field="refId"><option value="">请选择回复片段</option>${snippetOptions}</select>` : ""}
-            ${blockType === "CUSTOM_TEXT" ? `<textarea data-field="customText" rows="4" placeholder="输入自定义文本">${escapeHtml(block.customText || "")}</textarea>` : ""}
+            ${blockType === "CUSTOM_TEXT" ? `<div class="var-editor-wrap"><div class="var-editor-toolbar"><div class="var-insert-wrap"><button type="button" class="var-insert-btn" data-var-insert-target="composeBlockCustomText-${index}">+ 插入变量 ▾</button><div class="var-insert-menu" hidden></div></div></div><textarea id="composeBlockCustomText-${index}" data-field="customText" rows="4" placeholder="输入自定义文本">${escapeHtml(block.customText || "")}</textarea></div>` : ""}
         </div>
         <div class="block-actions">
             <button type="button" class="button small" data-action="move-compose-block-up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
@@ -6799,9 +6904,22 @@ function renderComposeTemplatePreviewVariableRows(variables) {
     }).join("");
 }
 
-function renderServerComposeTemplatePreviewPanel(preview) {
-    const panel = $("#composeTemplatePreviewPanel");
-    if (!panel) return;
+function renderComposeTemplatePreviewInDrawer(preview) {
+    const errorEl = $("#previewDrawerError");
+    if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = "";
+    }
+    const toEl = $("#previewMailTo");
+    const subjectEl = $("#previewMailSubject");
+    const bodyEl = $("#previewMailBody");
+    const rowsEl = $("#previewVarRows");
+    const statEl = $("#previewVarStat");
+    const blockNotesEl = $("#previewComposeBlockNotes");
+    const skippedEl = $("#previewComposeSkipped");
+    const toEmail = preview.toEmail || "—";
+    if (toEl) toEl.textContent = toEmail;
+    if (subjectEl) subjectEl.textContent = preview.subject || "—";
     const blockNotes = (preview.blocks || []).map((block) => {
         const label = block.refDisplayName || composeBlockTypeLabels[block.blockType] || block.blockType;
         if (!block.included) {
@@ -6809,47 +6927,63 @@ function renderServerComposeTemplatePreviewPanel(preview) {
         }
         return `<div class="compose-block-pill">#${block.blockOrder + 1} ${escapeHtml(label)}</div>`;
     }).join("");
+    if (blockNotesEl) {
+        if (blockNotes) {
+            blockNotesEl.hidden = false;
+            blockNotesEl.innerHTML = blockNotes;
+        } else {
+            blockNotesEl.hidden = true;
+            blockNotesEl.innerHTML = "";
+        }
+    }
     const strictSkippedCount = (preview.blocks || []).filter(
         (block) => !block.included && block.skipReason === "存在未满足占位符"
     ).length;
-    const skippedHtml = strictSkippedCount > 0
-        ? `<div class="compose-preview-skipped">已跳过 ${strictSkippedCount} 段：存在未满足占位符</div>`
-        : "";
-    const toEmail = preview.toEmail || "—";
-    const variableRows = renderComposeTemplatePreviewVariableRows(preview.variables);
-    const variableSection = variableRows
-        ? `<div class="preview-var-section">${variableRows}</div>`
-        : "";
-    panel.innerHTML = `
-        <div class="compose-preview-mail-head">
-            <div><span>To</span><strong>${escapeHtml(toEmail)}</strong></div>
-            <div><span>Subject</span><strong>${escapeHtml(preview.subject || "")}</strong></div>
-        </div>
-        <div class="compose-preview-block-notes">${blockNotes}</div>
-        ${skippedHtml}
-        <div class="compose-preview-mail-body">${escapeHtml(preview.body || "添加内容块后显示预览。")}</div>
-        ${variableSection}`;
-    updateComposeTemplatePreviewMeta((preview.blocks || []).length);
+    if (skippedEl) {
+        if (strictSkippedCount > 0) {
+            skippedEl.hidden = false;
+            skippedEl.textContent = `已跳过 ${strictSkippedCount} 段：存在未满足占位符`;
+        } else {
+            skippedEl.hidden = true;
+            skippedEl.textContent = "";
+        }
+    }
+    if (bodyEl) {
+        bodyEl.textContent = preview.body || "添加内容块后显示预览。";
+    }
+    const variables = preview.variables || [];
+    let filledCount = 0;
+    let fallbackCount = 0;
+    variables.forEach((item) => {
+        if (item.usedFallback) fallbackCount += 1;
+        else if (item.filled) filledCount += 1;
+        else fallbackCount += 1;
+    });
+    if (statEl) {
+        statEl.textContent = `${filledCount} 有值 · ${fallbackCount} 兜底 · 0 非法`;
+    }
+    if (rowsEl) {
+        rowsEl.innerHTML = renderComposeTemplatePreviewVariableRows(variables);
+    }
+    updatePreviewCoverage(null, null);
+    updatePreviewVariantSwitcher(preview.variantPoolSize ?? 1);
 }
 
 async function renderServerComposeTemplatePreview() {
     const form = $("#composeTemplateForm");
-    const panel = $("#composeTemplatePreviewPanel");
-    const statusEl = $("#composeTemplatePreviewStatus");
-    if (!form || !panel) return;
+    if (!form) return;
     const requestId = ++composeTemplatePreviewRequestId;
     const blocks = collectComposeTemplateBlocksFromForm();
     const context = collectComposeTemplatePreviewContext();
-    const strictPlaceholders = $("#composeTemplatePreviewStrictPlaceholders")?.checked === true;
+    const strictPlaceholders = $("#previewComposeStrictPlaceholders")?.checked === true;
     const payload = {
         subject: form.subject.value || "",
-        subjectVariants: collectComposeTemplatePreviewSubjectVariants(),
         blocks,
         strictPlaceholders,
         contactId: context.contactId,
         orcidId: context.orcidId,
         senderAccountCode: context.senderAccountCode,
-        variantIndex: state.composeTemplateVariantIndex
+        variantIndex: state.previewDrawer.variantIndex
     };
     try {
         const result = await api("/api/compose-templates/preview-draft", {
@@ -6857,14 +6991,14 @@ async function renderServerComposeTemplatePreview() {
             body: JSON.stringify(payload)
         });
         if (requestId !== composeTemplatePreviewRequestId) return;
-        renderServerComposeTemplatePreviewPanel(result);
-        if (statusEl) {
-            statusEl.innerHTML = '<span class="preview-source-badge">服务端预览</span>';
-        }
+        if (!isPreviewDrawerOpen() || !isComposeTemplatePreviewTarget()) return;
+        renderComposeTemplatePreviewInDrawer(result);
     } catch (_error) {
         if (requestId !== composeTemplatePreviewRequestId) return;
-        if (statusEl) {
-            statusEl.textContent = "预览失败，请重试";
+        const errorEl = $("#previewDrawerError");
+        if (errorEl) {
+            errorEl.hidden = false;
+            errorEl.textContent = "预览失败，请重试";
         }
     }
 }
@@ -6890,11 +7024,13 @@ async function randomComposeTemplatePreviewExpert() {
     const label = result.expert.displayName && result.expert.email
         ? `${result.expert.displayName} <${result.expert.email}>`
         : (result.expert.displayName || result.expert.orcidId || "");
-    const expertInput = $("#composeTemplatePreviewExpertInput");
+    const expertInput = $("#previewComposeExpertInput");
     if (expertInput) {
         expertInput.value = label;
     }
-    await renderServerComposeTemplatePreview();
+    if (isPreviewDrawerOpen() && isComposeTemplatePreviewTarget()) {
+        await renderServerComposeTemplatePreview();
+    }
 }
 
 function renderComposeTemplatePreviewHtml(preview) {
@@ -6913,21 +7049,9 @@ function renderComposeTemplatePreviewHtml(preview) {
         <div class="compose-preview-mail-body">${escapeHtml(preview.body || "")}</div>`;
 }
 
-function updateComposeTemplatePreviewMeta(blockCount) {
-    const count = blockCount ?? $$("#composeTemplateBlocksList .compose-template-block-row").length;
-    const countEl = $("#composeTemplatePreviewBlockCount");
-    if (countEl) countEl.textContent = `${count} 个`;
-    const selected = state.composeTemplates.find((item) => Number(item.id) === Number(state.selectedComposeTemplateId));
-    const mailTypeEl = $("#composeTemplatePreviewMailType");
-    if (mailTypeEl) mailTypeEl.textContent = selected?.mailType || selected?.templateCode || "COMPOSE_TEMPLATE";
-}
-
 async function saveComposeTemplate(event) {
     event.preventDefault();
     const form = $("#composeTemplateForm");
-    if (!validateSubjectVariantInputs()) {
-        return;
-    }
     const blocks = collectComposeTemplateBlocksFromForm();
     if (!blocks.length) {
         showStatus("请至少添加一个内容块", "error");
@@ -6937,7 +7061,6 @@ async function saveComposeTemplate(event) {
         templateName: form.templateName.value.trim(),
         subject: form.subject.value.trim(),
         description: form.description.value.trim() || null,
-        subjectVariants: collectSubjectVariants(),
         enabled: form.enabled.checked,
         blocks
     };
@@ -6967,6 +7090,7 @@ async function handleComposeTemplateAction(button) {
     }
     if (action === "preview-compose-template") {
         openComposeTemplateEditor(template);
+        openComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
     }
     if (action === "toggle-compose-template") {
         const enabled = button.dataset.enabled === "true";
@@ -6991,26 +7115,26 @@ function handleComposeTemplateBlocksListClick(event) {
     if (action === "remove-compose-block") {
         blocks.splice(index, 1);
         renderComposeTemplateBlockRows(blocks);
-        renderServerComposeTemplatePreview();
+        schedulePreviewDrawerRefresh();
         return;
     }
     if (action === "move-compose-block-up" && index > 0) {
         [blocks[index - 1], blocks[index]] = [blocks[index], blocks[index - 1]];
         renderComposeTemplateBlockRows(blocks);
-        renderServerComposeTemplatePreview();
+        schedulePreviewDrawerRefresh();
         return;
     }
     if (action === "move-compose-block-down" && index < blocks.length - 1) {
         [blocks[index + 1], blocks[index]] = [blocks[index], blocks[index + 1]];
         renderComposeTemplateBlockRows(blocks);
-        renderServerComposeTemplatePreview();
+        schedulePreviewDrawerRefresh();
     }
 }
 
 function handleComposeTemplateBlockTypeChange(event) {
     const select = event.target.closest(".block-type-select");
     if (!select) {
-        renderServerComposeTemplatePreview();
+        schedulePreviewDrawerRefresh();
         return;
     }
     const row = select.closest(".compose-template-block-row");
@@ -7024,7 +7148,7 @@ function handleComposeTemplateBlockTypeChange(event) {
         customText: ""
     };
     renderComposeTemplateBlockRows(blocks);
-    renderServerComposeTemplatePreview();
+    schedulePreviewDrawerRefresh();
 }
 
 async function handleContactAction(element) {
@@ -7902,7 +8026,29 @@ function initComposedReplyWorkbench(recordId, suggest) {
         refreshComposedPreviewFromRules();
     });
 
+    const useVariantsCheckbox = $("#manualReplyUseVariants");
+    if (useVariantsCheckbox) {
+        useVariantsCheckbox.checked = false;
+        useVariantsCheckbox.addEventListener("change", () => {
+            reloadComposedReplySuggest().catch((error) => showStatus(error.message, "error"));
+        });
+    }
+
     refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
+    refreshComposedPreviewFromRules();
+}
+
+async function reloadComposedReplySuggest() {
+    if (!composedReplyState.recordId) return;
+    const useVariants = $("#manualReplyUseVariants")?.checked === true;
+    const suggest = await api(
+        `/api/mail/unmatched-inbound/${composedReplyState.recordId}/composed-reply/suggest?useVariants=${useVariants}`
+    );
+    composedReplyState.suggest = suggest;
+    composedReplyState.selectedRuleIds = [...(suggest.suggestedRuleIds || [])];
+    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
+        checkbox.checked = composedReplyState.selectedRuleIds.includes(Number(checkbox.dataset.ruleId));
+    });
     refreshComposedPreviewFromRules();
 }
 
@@ -8028,12 +8174,15 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     </div>
                     <div class="var-editor-wrap" style="margin-bottom:8px;">
                         <div class="var-editor-toolbar">
-                            <div class="var-chip-bar" data-var-target="composedFreeText"></div>
-                            <button type="button" class="button small var-preview-btn" data-var-preview-target="composedFreeText">以专家预览</button>
+                            <div class="var-insert-wrap">
+                                <button type="button" class="var-insert-btn" data-var-insert-target="composedFreeText">+ 插入变量 ▾</button>
+                                <div class="var-insert-menu" hidden></div>
+                            </div>
                         </div>
                         <div class="var-validation-hint" id="varHint-composedFreeText" hidden></div>
                     </div>
                     <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
+                    <label class="checkbox-row"><input type="checkbox" id="manualReplyUseVariants"> 使用内容变体（按专家轮换）</label>
                     <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览（只读分段）</p>
                     <div id="composedPreviewSegments" class="compose-preview-segments"></div>
                     <p class="text-muted" style="font-size:11px;margin:8px 0 6px;">变量渲染预览（只读）</p>
@@ -8164,7 +8313,7 @@ async function showUnmatchedDetail(id) {
     const inboundTags = threadData.tags || [];
     const record = data.record;
     const suggest = record.expertContactId
-        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
+        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest?useVariants=false`).catch(() => null)
         : null;
     const history = record.expertContactId
         ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
@@ -8688,6 +8837,7 @@ async function handleUnmatchedAction(element) {
             requestBody.freeTextPreview = freePreview || null;
             requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
         }
+        requestBody.useVariants = $("#manualReplyUseVariants")?.checked === true;
         try {
             await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
                 method: "POST",
@@ -9310,12 +9460,20 @@ function bindEvents() {
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
     document.addEventListener("click", (event) => {
-        const previewBtn = event.target.closest(".var-preview-btn");
-        if (previewBtn) {
+        const insertBtn = event.target.closest(".var-insert-btn");
+        if (insertBtn) {
             event.preventDefault();
-            const targetId = previewBtn?.dataset?.varPreviewTarget;
-            const contact = resolveVarPreviewContact(previewBtn);
-            openPreviewDrawer({ targetId, ...contact });
+            event.stopPropagation();
+            const wrap = insertBtn.closest(".var-insert-wrap");
+            const menu = wrap?.querySelector(".var-insert-menu");
+            if (!menu) return;
+            const willOpen = menu.hidden;
+            closeOpenVarInsertMenus(wrap);
+            menu.hidden = !willOpen;
+            return;
+        }
+        if (!event.target.closest(".var-insert-wrap")) {
+            closeOpenVarInsertMenus();
         }
     });
     $("#previewDrawerCloseBtn")?.addEventListener("click", closePreviewDrawer);
@@ -9326,6 +9484,14 @@ function bindEvents() {
     $("#previewDiceBtn")?.addEventListener("click", () => {
         randomPreviewExpert().catch((error) => showStatus(error.message, "error"));
     });
+    $("#previewComposeRefreshBtn")?.addEventListener("click", () => {
+        refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#previewComposeDiceBtn")?.addEventListener("click", () => {
+        randomComposeTemplatePreviewExpert().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#previewVariantPrev")?.addEventListener("click", () => stepPreviewVariantIndex(-1));
+    $("#previewVariantNext")?.addEventListener("click", () => stepPreviewVariantIndex(1));
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("#previewDrawer").hidden) {
             closePreviewDrawer();
@@ -9356,8 +9522,15 @@ function bindEvents() {
     $("#replySnippetModalBackdrop")?.addEventListener("click", hideReplySnippetEditor);
     $("#replySnippetForm")?.snippetType?.addEventListener("change", () => {
         updateReplySnippetDefaultFieldVisibility();
-        rebuildVariantGroupDatalist($("#replySnippetForm")?.snippetType?.value || "");
     });
+    $("#qaRuleForm")?.addEventListener("click", (event) => {
+        handleContentVariantEditorClick(event, $("#qaRuleForm"));
+    });
+    $("#qaRuleForm")?.addEventListener("input", handleContentVariantEditorInput);
+    $("#replySnippetForm")?.addEventListener("click", (event) => {
+        handleContentVariantEditorClick(event, $("#replySnippetForm"));
+    });
+    $("#replySnippetForm")?.addEventListener("input", handleContentVariantEditorInput);
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("#replySnippetModal")?.hidden) {
             hideReplySnippetEditor();
@@ -9380,52 +9553,23 @@ function bindEvents() {
     $("#composeTemplateCancelBtn")?.addEventListener("click", hideComposeTemplateEditor);
     $("#composeTemplateModalCloseBtn")?.addEventListener("click", hideComposeTemplateEditor);
     $("#composeTemplateModalBackdrop")?.addEventListener("click", hideComposeTemplateEditor);
+    $("#openComposeTemplatePreviewBtn")?.addEventListener("click", () => {
+        openComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
+    });
     $("#addComposeTemplateBlockBtn")?.addEventListener("click", () => {
         const blocks = collectComposeTemplateBlocksFromForm();
         blocks.push({ blockOrder: blocks.length, blockType: "CUSTOM_TEXT", refId: null, customText: "" });
         renderComposeTemplateBlockRows(blocks);
-        renderServerComposeTemplatePreview();
-    });
-    $("#addSubjectVariantBtn")?.addEventListener("click", addSubjectVariantRow);
-    $("#subjectVariantsContainer")?.addEventListener("click", (event) => {
-        const button = event.target.closest('[data-action="remove-subject-variant"]');
-        if (!button) return;
-        removeSubjectVariantRow(Number(button.dataset.index));
-    });
-    $("#subjectVariantsContainer")?.addEventListener("input", () => {
-        updateSubjectVariantsCountBadge();
-        if (state.composeTemplateVariantIndex >= getSubjectVariantPoolSize()) {
-            state.composeTemplateVariantIndex = 0;
-        }
-        updateComposeTemplateVariantSwitcher();
-        renderServerComposeTemplatePreview().catch(() => {});
-    });
-    $("#variantSwitcherPrev")?.addEventListener("click", () => stepComposeTemplateVariantIndex(-1));
-    $("#variantSwitcherNext")?.addEventListener("click", () => stepComposeTemplateVariantIndex(1));
-    $("#randomComposeTemplatePreviewBtn")?.addEventListener("click", () => {
-        randomComposeTemplatePreviewExpert().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#refreshComposeTemplatePreviewBtn")?.addEventListener("click", () => {
-        refreshComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
+        schedulePreviewDrawerRefresh();
     });
     $("#composeTemplateBlocksList")?.addEventListener("click", handleComposeTemplateBlocksListClick);
     $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
-    $("#composeTemplateBlocksList")?.addEventListener("input", () => {
-        renderServerComposeTemplatePreview().catch(() => {});
-    });
-    $("#composeTemplateForm")?.subject?.addEventListener("input", () => {
-        renderServerComposeTemplatePreview().catch(() => {});
-    });
-    $("#composeTemplatePreviewExpertInput")?.addEventListener("input", () => {
-        renderServerComposeTemplatePreview().catch(() => {});
-    });
-    $("#composeTemplatePreviewAccountInput")?.addEventListener("input", () => {
-        renderServerComposeTemplatePreview().catch(() => {});
-    });
-    document.querySelectorAll('input[name="composeTemplatePreviewPlaceholderMode"]').forEach((input) => {
-        input.addEventListener("change", () => {
-            renderServerComposeTemplatePreview().catch(() => {});
-        });
+    $("#composeTemplateBlocksList")?.addEventListener("input", schedulePreviewDrawerRefresh);
+    $("#composeTemplateSubject")?.addEventListener("input", schedulePreviewDrawerRefresh);
+    $("#previewComposeExpertInput")?.addEventListener("input", schedulePreviewDrawerRefresh);
+    $("#previewComposeAccountInput")?.addEventListener("input", schedulePreviewDrawerRefresh);
+    document.querySelectorAll('input[name="previewComposePlaceholderMode"]').forEach((input) => {
+        input.addEventListener("change", schedulePreviewDrawerRefresh);
     });
     $("#composeTemplatesTable")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");

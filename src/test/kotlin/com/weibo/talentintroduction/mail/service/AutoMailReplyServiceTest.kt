@@ -30,6 +30,8 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepos
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import com.weibo.talentintroduction.qa.service.QaMatchResult
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -97,7 +99,8 @@ class AutoMailReplyServiceTest {
         ObjectMapper(),
         Mockito.mock(MailVariableService::class.java),
         contactRepository,
-        accountService
+        accountService,
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val service = AutoMailReplyService(
@@ -378,7 +381,7 @@ class AutoMailReplyServiceTest {
             mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
         ).thenReturn(emptyList())
         defaultPromotionStubs(contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(null)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(null)
         Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
             invocation.getArgument<ExpertContact>(0)
         }
@@ -451,7 +454,7 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(
             mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
         ).thenReturn(emptyList())
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 7,
                 replySubject = "Program details",
@@ -921,7 +924,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -959,7 +962,7 @@ class AutoMailReplyServiceTest {
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
         val plainBody = "Auto reply body"
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1000,6 +1003,34 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `QA auto reply passes variant seed from contact to qa match`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), eqValue(expectedSeed))).thenReturn(
+            QaMatchResult(
+                ruleId = 1,
+                replySubject = "Re: Program",
+                replyBody = "Auto reply body",
+                handoffRequired = false,
+                autoReplyEnabled = true
+            )
+        )
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-200", status = "SUCCESS"))
+
+        service.receiveAndAutoReply("sender", 5)
+
+        Mockito.verify(qaMatchService).match(Mockito.anyString(), eqValue(expectedSeed))
+    }
+
+    @Test
     fun `QA auto reply renders expert placeholders in outbound body`() {
         val account = account("sender")
         val contact = introSentContact()
@@ -1007,7 +1038,7 @@ class AutoMailReplyServiceTest {
         stubExpertProfile(contact.orcidId, familyNames = "Lovelace")
         val templateBody = "Dear \${expertFamilyName}, here is the answer."
         val renderedBody = "Dear Lovelace, here is the answer."
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1049,7 +1080,7 @@ class AutoMailReplyServiceTest {
             .thenThrow(RuntimeException("ES down"))
         val templateBody = "Dear \${expertFamilyName|there}, thanks."
         val renderedBody = "Dear there, thanks."
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1080,7 +1111,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender").copy(enabled = false)
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1189,7 +1220,7 @@ class AutoMailReplyServiceTest {
         val contact = introSentContact()
         val received = reply(body = "Could you share the program details?")
         stubAutoReplyPipeline(account, contact, received)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1245,7 +1276,7 @@ class AutoMailReplyServiceTest {
         listOf(first, second, third).forEach { mail ->
             Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(contact)
         }
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1313,7 +1344,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1347,7 +1378,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 10,
                 replySubject = "Re: Program",
@@ -1384,7 +1415,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",
@@ -1416,7 +1447,7 @@ class AutoMailReplyServiceTest {
         val account = account("sender")
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 100,
                 replySubject = "Program overview",
@@ -1515,7 +1546,7 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(
             mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
         ).thenReturn(emptyList())
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 1,
                 replySubject = "Re: Program",

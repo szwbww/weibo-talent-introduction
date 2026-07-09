@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.service.QaCategoryCreateCommand
 import com.weibo.talentintroduction.qa.service.QaRuleCreateCommand
+import com.weibo.talentintroduction.qa.service.QaRuleDetail
 import com.weibo.talentintroduction.qa.service.QaRuleManagementService
 import com.weibo.talentintroduction.qa.service.QaRuleUpdateCommand
 import com.weibo.talentintroduction.qa.service.QaRuleWithCategory
@@ -240,7 +241,8 @@ data class QaRuleCreateRequest(
     val displayName: String?,
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val variants: List<String> = emptyList()
 ) {
     fun toCommand(): QaRuleCreateCommand =
         QaRuleCreateCommand(
@@ -253,7 +255,8 @@ data class QaRuleCreateRequest(
             displayName = displayName,
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
-            enabled = enabled
+            enabled = enabled,
+            variants = variants
         )
 }
 
@@ -267,7 +270,8 @@ data class QaRuleUpdateRequest(
     val displayName: String?,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val variants: List<String> = emptyList()
 ) {
     fun toCommand(): QaRuleUpdateCommand =
         QaRuleUpdateCommand(
@@ -280,7 +284,8 @@ data class QaRuleUpdateRequest(
             displayName = displayName,
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
-            enabled = enabled
+            enabled = enabled,
+            variants = variants
         )
 }
 
@@ -305,7 +310,8 @@ data class QaRuleResponse(
     val displayName: String?,
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val variants: List<String> = emptyList()
 )
 
 private fun QaCategory.toResponse(): QaCategoryResponse =
@@ -318,9 +324,12 @@ private fun QaCategory.toResponse(): QaCategoryResponse =
     )
 
 private fun QaRuleWithCategory.toResponse(): QaRuleResponse =
-    rule.toResponse(category)
+    rule.toResponse(category, variants)
 
-private fun QaRule.toResponse(category: QaCategory?): QaRuleResponse =
+private fun QaRuleDetail.toResponse(category: QaCategory?): QaRuleResponse =
+    rule.toResponse(category, variants)
+
+private fun QaRule.toResponse(category: QaCategory?, variants: List<String> = emptyList()): QaRuleResponse =
     QaRuleResponse(
         id = id,
         categoryId = categoryId,
@@ -334,5 +343,6 @@ private fun QaRule.toResponse(category: QaCategory?): QaRuleResponse =
         displayName = displayName,
         autoReplyEnabled = autoReplyEnabled,
         handoffRequired = handoffRequired,
-        enabled = enabled
+        enabled = enabled,
+        variants = variants
     )

@@ -108,7 +108,14 @@ class AutoReplyPreviewService(
             }
 
             AutoIntentAction.QA -> {
-                val match = qaMatchService.match(cleanedBody)
+                val contactForSeed = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+                // contactId null: no matching outbound send exists for this preview case; seed=0 may differ from send.
+                val variantSeed = if (contactForSeed != null) {
+                    MailComposeTemplateService.variantSeedFor(contactForSeed.orcidId, contactForSeed.expertEmail)
+                } else {
+                    0
+                }
+                val match = qaMatchService.match(cleanedBody, variantSeed)
                 when {
                     match == null || !match.autoReplyEnabled || match.handoffRequired -> base.copy(
                         previewKind = AutoReplyPreviewKind.QA_NO_MATCH,

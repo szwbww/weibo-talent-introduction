@@ -9,13 +9,14 @@ import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.mail.service.PreviewVariableItem
 import com.weibo.talentintroduction.mail.service.RenderPreviewResult
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
-import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.domain.ComposeBlockType
 import com.weibo.talentintroduction.template.domain.MailComposeTemplate
 import com.weibo.talentintroduction.template.domain.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -30,7 +31,8 @@ class MailComposeTemplateService(
     private val objectMapper: ObjectMapper,
     @Lazy private val mailVariableService: MailVariableService,
     private val expertContactRepository: ExpertContactRepository,
-    private val mailSenderAccountService: MailSenderAccountService
+    private val mailSenderAccountService: MailSenderAccountService,
+    private val contentVariantService: ContentVariantService
 ) {
     fun listAll(): List<MailComposeTemplateDetail> =
         templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
@@ -54,7 +56,7 @@ class MailComposeTemplateService(
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() },
-                subjectVariants = command.subjectVariants,
+                subjectVariants = null,
                 enabled = command.enabled,
                 createdAt = now,
                 updatedAt = now
@@ -77,7 +79,7 @@ class MailComposeTemplateService(
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: existing.mailType,
-                subjectVariants = command.subjectVariants,
+                subjectVariants = null,
                 enabled = command.enabled,
                 updatedAt = now
             )
@@ -131,10 +133,9 @@ class MailComposeTemplateService(
         variables: Map<String, String>,
         variantSeed: Int = 0
     ): ComposeTemplateRenderResult {
-        val subjectText = selectSubjectVariant(template, variantSeed)
         val resolved = resolveBlocks(blocks.map { it.toDraftBlock() }, variables, variantSeed)
         return ComposeTemplateRenderResult(
-            subject = renderText(subjectText, variables),
+            subject = renderText(template.subject, variables),
             body = resolved.includedTexts.joinToString("\n\n"),
             qaRuleIds = resolved.qaRuleIds,
             mailType = template.mailType
@@ -164,7 +165,7 @@ class MailComposeTemplateService(
             )
         }
         val baseResolved = resolveBlocks(draftBlocks, variantSeed = variantSeed, renderVariables = false)
-        val subjectTemplate = selectDraftSubject(request.subject, request.subjectVariants, request.variantIndex)
+        val subjectTemplate = request.subject
         val contact = resolvePreviewContact(request.contactId, request.orcidId)
         val account = resolvePreviewAccount(request.senderAccountCode)
 
@@ -176,7 +177,8 @@ class MailComposeTemplateService(
                 blocks = baseResolved.previewBlocks,
                 fallbackKeys = mailVariableService.placeholderKeysIn(*texts.toTypedArray()),
                 toEmail = null,
-                variables = emptyList()
+                variables = emptyList(),
+                variantPoolSize = baseResolved.variantPoolSize
             )
         }
 
@@ -221,7 +223,8 @@ class MailComposeTemplateService(
             blocks = finalBlocks,
             fallbackKeys = allFallbackKeys.distinct(),
             toEmail = contact.expertEmail,
-            variables = allVariables
+            variables = allVariables,
+            variantPoolSize = baseResolved.variantPoolSize
         )
     }
 
@@ -248,11 +251,6 @@ class MailComposeTemplateService(
             return null
         }
         return runCatching { mailSenderAccountService.getAccount(code) }.getOrNull()
-    }
-
-    private fun selectDraftSubject(subject: String, variants: List<String>?, variantIndex: Int? = null): String {
-        val pool = buildSubjectPool(subject, variants)
-        return pool[Math.floorMod(variantIndex ?: 0, pool.size)]
     }
 
     private fun placeholdersSatisfied(result: RenderPreviewResult): Boolean {
@@ -355,46 +353,8 @@ class MailComposeTemplateService(
         require(command.templateName.isNotBlank()) { "templateName is required" }
         require(command.subject.isNotBlank()) { "subject is required" }
         require(command.blocks.isNotEmpty()) { "At least one content block is required" }
-        validateSubjectVariants(command.subject, command.subjectVariants)
         command.blocks.forEach { block ->
             validateBlockCommand(block)
-        }
-    }
-
-    private fun validateSubjectVariants(subject: String, subjectVariantsJson: String?) {
-        if (subjectVariantsJson == null) return
-        val root = try {
-            objectMapper.readTree(subjectVariantsJson)
-        } catch (_: Exception) {
-            throw IllegalArgumentException("主题变体不是合法的 JSON 数组")
-        }
-        if (!root.isArray) {
-            throw IllegalArgumentException("主题变体不是合法的 JSON 字符串数组")
-        }
-        val variants = mutableListOf<String>()
-        for (node in root) {
-            if (!node.isTextual) {
-                throw IllegalArgumentException("主题变体不是合法的 JSON 字符串数组")
-            }
-            variants.add(node.asText())
-        }
-        val trimmedSubject = subject.trim()
-        val seen = mutableSetOf<String>()
-        variants.forEachIndexed { index, raw ->
-            val trimmed = raw.trim()
-            if (trimmed.isEmpty()) {
-                throw IllegalArgumentException("主题变体第 ${index + 1} 项不能为空")
-            }
-            if (trimmed == trimmedSubject) {
-                throw IllegalArgumentException("主题变体不能与主主题重复")
-            }
-            if (!seen.add(trimmed)) {
-                throw IllegalArgumentException("主题变体不能重复")
-            }
-            val violations = mailVariableService.validatePlaceholders(trimmed)
-            if (violations.isNotEmpty()) {
-                throw IllegalArgumentException("主题变体包含非法占位符: ${violations.joinToString(", ")}")
-            }
         }
     }
 
@@ -418,6 +378,7 @@ class MailComposeTemplateService(
         val qaRuleIds = mutableListOf<Long>()
         val previewBlocks = mutableListOf<ComposeTemplatePreviewBlock>()
         val rawTextsByOrder = mutableMapOf<Int, String>()
+        var variantPoolSize = 1
 
         blocks.sortedBy { it.blockOrder }.forEach { block ->
             when (block.blockType) {
@@ -439,10 +400,20 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
+                    val resolvedBody = contentVariantService.resolveBody(
+                        ContentVariantOwnerType.QA_RULE,
+                        refId,
+                        rule.replyBody,
+                        variantSeed
+                    )
+                    variantPoolSize = maxOf(
+                        variantPoolSize,
+                        contentVariantService.poolSize(ContentVariantOwnerType.QA_RULE, refId, rule.replyBody)
+                    )
                     val text = if (renderVariables) {
-                        renderText(rule.replyBody, variables).trim()
+                        renderText(resolvedBody, variables).trim()
                     } else {
-                        rule.replyBody.trim()
+                        resolvedBody.trim()
                     }
                     rawTextsByOrder[block.blockOrder] = text
                     if (text.isNotBlank()) {
@@ -470,16 +441,25 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "回复片段不存在", refId, null)
                         return@forEach
                     }
-                    val resolvedSnippet = resolveSnippetVariant(snippet, variantSeed)
-                    val displayName = "${resolvedSnippet.snippetType} #${resolvedSnippet.id}"
-                    if (!resolvedSnippet.enabled) {
+                    val displayName = "${snippet.snippetType} #${snippet.id}"
+                    if (!snippet.enabled) {
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
+                    val resolvedContent = contentVariantService.resolveBody(
+                        ContentVariantOwnerType.REPLY_SNIPPET,
+                        refId,
+                        snippet.content,
+                        variantSeed
+                    )
+                    variantPoolSize = maxOf(
+                        variantPoolSize,
+                        contentVariantService.poolSize(ContentVariantOwnerType.REPLY_SNIPPET, refId, snippet.content)
+                    )
                     val text = if (renderVariables) {
-                        renderText(resolvedSnippet.content, variables).trim()
+                        renderText(resolvedContent, variables).trim()
                     } else {
-                        resolvedSnippet.content.trim()
+                        resolvedContent.trim()
                     }
                     rawTextsByOrder[block.blockOrder] = text
                     if (text.isNotBlank()) {
@@ -523,35 +503,9 @@ class MailComposeTemplateService(
             includedTexts = includedTexts,
             qaRuleIds = qaRuleIds,
             previewBlocks = previewBlocks,
-            rawTextsByOrder = rawTextsByOrder
+            rawTextsByOrder = rawTextsByOrder,
+            variantPoolSize = variantPoolSize
         )
-    }
-
-    private fun resolveSnippetVariant(snippet: ReplySnippet, variantSeed: Int): ReplySnippet {
-        val variantGroup = snippet.variantGroup?.trim()?.takeIf { it.isNotBlank() } ?: return snippet
-        val groupSnippets = replySnippetRepository
-            .findByVariantGroupAndSnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(variantGroup, snippet.snippetType)
-        if (groupSnippets.isEmpty()) return snippet
-        return groupSnippets[Math.floorMod(variantSeed + variantGroup.hashCode(), groupSnippets.size)]
-    }
-
-    private fun selectSubjectVariant(template: MailComposeTemplate, seed: Int): String {
-        val pool = buildSubjectPool(template.subject, parseSubjectVariants(template.subjectVariants))
-        return pool[Math.floorMod(seed, pool.size)]
-    }
-
-    private fun buildSubjectPool(subject: String, variants: List<String>?): List<String> {
-        if (variants.isNullOrEmpty()) return listOf(subject)
-        return listOf(subject) + variants
-    }
-
-    private fun parseSubjectVariants(json: String?): List<String>? {
-        if (json.isNullOrBlank()) return null
-        return try {
-            objectMapper.readValue(json, Array<String>::class.java).toList()
-        } catch (_: Exception) {
-            null
-        }
     }
 
     private fun skippedPreviewBlock(
@@ -574,7 +528,8 @@ class MailComposeTemplateService(
         val includedTexts: List<String>,
         val qaRuleIds: List<Long>,
         val previewBlocks: List<ComposeTemplatePreviewBlock>,
-        val rawTextsByOrder: Map<Int, String> = emptyMap()
+        val rawTextsByOrder: Map<Int, String> = emptyMap(),
+        val variantPoolSize: Int = 1
     )
 
     fun renderWithVariables(text: String, variables: Map<String, String>): String = renderText(text, variables)
@@ -691,5 +646,6 @@ data class ComposeTemplatePreviewDraftResult(
     val blocks: List<ComposeTemplatePreviewBlock>,
     val fallbackKeys: List<String>,
     val toEmail: String? = null,
-    val variables: List<PreviewVariableItem> = emptyList()
+    val variables: List<PreviewVariableItem> = emptyList(),
+    val variantPoolSize: Int = 1
 )

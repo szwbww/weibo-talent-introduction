@@ -13,6 +13,8 @@ import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -30,7 +32,8 @@ class MailVariableServiceTest {
         ObjectMapper(),
         Mockito.mock(MailVariableService::class.java),
         Mockito.mock(ExpertContactRepository::class.java),
-        Mockito.mock(MailSenderAccountService::class.java)
+        Mockito.mock(MailSenderAccountService::class.java),
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
     )
     private val service = MailVariableService(expertSearchService, mailComposeTemplateService)
     private val serviceWithUnsubscribe = MailVariableService(

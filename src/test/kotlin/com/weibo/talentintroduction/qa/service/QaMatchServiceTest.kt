@@ -4,6 +4,10 @@ import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.variant.domain.ContentVariant
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -15,7 +19,31 @@ import org.mockito.Mockito
 class QaMatchServiceTest {
     private val repository = Mockito.mock(QaRuleRepository::class.java)
     private val categoryRepository = Mockito.mock(QaCategoryRepository::class.java)
-    private val service = QaMatchService(repository, categoryRepository)
+    private val contentVariantRepository = Mockito.mock(ContentVariantRepository::class.java)
+    private val contentVariantService = ContentVariantService(
+        contentVariantRepository,
+        Mockito.mock(com.weibo.talentintroduction.mail.service.MailVariableService::class.java)
+    )
+    private val service = QaMatchService(repository, categoryRepository, contentVariantService)
+
+    private fun stubVariant(mainBody: String, variantContent: String) {
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                1L
+            )
+        ).thenReturn(
+            listOf(
+                ContentVariant(
+                    id = 100L,
+                    ownerType = ContentVariantOwnerType.QA_RULE,
+                    ownerId = 1L,
+                    variantOrder = 10,
+                    content = variantContent
+                )
+            )
+        )
+    }
 
     @BeforeEach
     fun setUp() {
@@ -523,5 +551,30 @@ class QaMatchServiceTest {
         assertEquals("Overview answer", result?.replyBody)
         assertEquals(listOf(100L), result?.matchedRuleIds)
         assertFalse(result!!.gapDetected)
+    }
+
+    @Test
+    fun `match resolves reply body using variant seed`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,subsidy",
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+        stubVariant("Funding answer", "Variant funding answer")
+
+        val seed = com.weibo.talentintroduction.template.service.MailComposeTemplateService
+            .variantSeedFor("orcid-test", "expert@test.com")
+        val expectedIndex = Math.floorMod(seed + 1L, 2)
+        val expectedBody = if (expectedIndex == 0) "Funding answer" else "Variant funding answer"
+
+        val result = service.match("Could you explain the salary support?", variantSeed = seed)
+
+        assertEquals(expectedBody, result?.replyBody)
     }
 }

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.reply.controller
 
 import com.weibo.talentintroduction.reply.domain.ReplySnippet
 import com.weibo.talentintroduction.reply.service.ReplySnippetCreateCommand
+import com.weibo.talentintroduction.reply.service.ReplySnippetDetail
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ReplySnippetUpdateCommand
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -62,7 +63,8 @@ data class ReplySnippetCreateRequest(
     val displayOrder: Int = 100,
     val variantGroup: String? = null,
     val isDefault: Boolean = false,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val variants: List<String> = emptyList()
 ) {
     fun toCommand(): ReplySnippetCreateCommand =
         ReplySnippetCreateCommand(
@@ -71,7 +73,8 @@ data class ReplySnippetCreateRequest(
             displayOrder = displayOrder,
             variantGroup = variantGroup,
             isDefault = isDefault,
-            enabled = enabled
+            enabled = enabled,
+            variants = variants
         )
 }
 
@@ -80,7 +83,8 @@ data class ReplySnippetUpdateRequest(
     val displayOrder: Int,
     val variantGroup: String? = null,
     val isDefault: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val variants: List<String> = emptyList()
 ) {
     fun toCommand(): ReplySnippetUpdateCommand =
         ReplySnippetUpdateCommand(
@@ -88,7 +92,8 @@ data class ReplySnippetUpdateRequest(
             displayOrder = displayOrder,
             variantGroup = variantGroup,
             isDefault = isDefault,
-            enabled = enabled
+            enabled = enabled,
+            variants = variants
         )
 }
 
@@ -99,10 +104,14 @@ data class ReplySnippetResponse(
     val displayOrder: Int,
     val variantGroup: String?,
     val isDefault: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val variants: List<String> = emptyList()
 )
 
-private fun ReplySnippet.toResponse(): ReplySnippetResponse =
+private fun ReplySnippetDetail.toResponse(): ReplySnippetResponse =
+    snippet.toResponse(variants)
+
+private fun ReplySnippet.toResponse(variants: List<String> = emptyList()): ReplySnippetResponse =
     ReplySnippetResponse(
         id = id,
         snippetType = snippetType,
@@ -110,5 +119,6 @@ private fun ReplySnippet.toResponse(): ReplySnippetResponse =
         displayOrder = displayOrder,
         variantGroup = variantGroup,
         isDefault = isDefault,
-        enabled = enabled
+        enabled = enabled,
+        variants = variants
     )

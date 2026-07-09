@@ -83,7 +83,7 @@ class AutoReplyPreviewServiceTest {
     @Test
     fun `QA match returns QA_AUTO_REPLIED with reply from match`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             QaMatchResult(
                 ruleId = 7L,
                 replySubject = "Re: Remote work",
@@ -106,9 +106,30 @@ class AutoReplyPreviewServiceTest {
     }
 
     @Test
+    fun `QA preview passes same variant seed as auto reply would use`() {
+        stubRecord(body = "Can I work remotely part time?")
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(previewContact.orcidId, previewContact.expertEmail)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), eqValue(expectedSeed))).thenReturn(
+            QaMatchResult(
+                ruleId = 7L,
+                replySubject = "Re: Remote work",
+                replyBody = "Yes, remote is possible.",
+                handoffRequired = false,
+                autoReplyEnabled = true,
+                matchedRuleIds = listOf(7L),
+                gapDetected = false
+            )
+        )
+
+        service.preview(processingId)
+
+        Mockito.verify(qaMatchService).match(Mockito.anyString(), eqValue(expectedSeed))
+    }
+
+    @Test
     fun `QA null match returns QA_NO_MATCH`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(null)
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(null)
 
         val result = service.preview(processingId)
 
@@ -120,7 +141,7 @@ class AutoReplyPreviewServiceTest {
     @Test
     fun `QA handoffRequired returns QA_NO_MATCH`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             qaMatch(handoffRequired = true)
         )
 
@@ -133,7 +154,7 @@ class AutoReplyPreviewServiceTest {
     @Test
     fun `QA autoReplyEnabled false returns QA_NO_MATCH`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             qaMatch(autoReplyEnabled = false)
         )
 
@@ -145,7 +166,7 @@ class AutoReplyPreviewServiceTest {
     @Test
     fun `QA gapDetected returns QA_GAP`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
             qaMatch(gapDetected = true)
         )
 
@@ -296,7 +317,7 @@ class AutoReplyPreviewServiceTest {
     fun `autoReply disabled still shows QA body and marks wouldBeBlockedBy`() {
         stubContact(autoReplyEnabled = false, currentStatus = ConversationStatus.WAITING_REPLY.name)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 
@@ -309,7 +330,7 @@ class AutoReplyPreviewServiceTest {
     fun `MANUAL_HANDOFF status still shows QA body and marks wouldBeBlockedBy`() {
         stubContact(autoReplyEnabled = true, currentStatus = ConversationStatus.MANUAL_HANDOFF.name)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 
@@ -321,7 +342,7 @@ class AutoReplyPreviewServiceTest {
     fun `missing introduction marks INTRODUCTION_NOT_SENT without hiding body`() {
         stubIntroductionSent(introSent = false)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 
@@ -333,7 +354,7 @@ class AutoReplyPreviewServiceTest {
     fun `suppressed recipient still shows QA body and marks RECIPIENT_UNSUBSCRIBED`() {
         stubRecord(body = "Can I work remotely part time?")
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@test.com")).thenReturn(true)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 
@@ -369,7 +390,7 @@ class AutoReplyPreviewServiceTest {
         stubContact(autoReplyEnabled = true, currentStatus = ConversationStatus.WAITING_REPLY.name)
         stubRecord(body = "Can I work remotely part time?")
         stubSenderAccount(enabled = false)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 
@@ -383,7 +404,7 @@ class AutoReplyPreviewServiceTest {
         stubRecord(body = "Hello there, just checking in")
         Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(processingId))
             .thenReturn(listOf(sampleAttachment()))
-        Mockito.`when`(qaMatchService.match(Mockito.anyString())).thenReturn(qaMatch())
+        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
 
         val result = service.preview(processingId)
 

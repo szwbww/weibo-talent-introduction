@@ -2,8 +2,8 @@
 id: K-variant-seed-call-sites
 domain: template
 created: 2026-07-08
-last_used: 2026-07-08
-hit_count: 2
+last_used: 2026-07-09
+hit_count: 7
 source: create-p:variant-pool-2-seed-rollout
 ---
 

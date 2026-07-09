@@ -1,0 +1,11 @@
+CREATE TABLE content_variant (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    owner_type VARCHAR(32) NOT NULL COMMENT 'QA_RULE | REPLY_SNIPPET',
+    owner_id BIGINT NOT NULL,
+    variant_order INT NOT NULL DEFAULT 100,
+    content TEXT NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_owner (owner_type, owner_id)
+);

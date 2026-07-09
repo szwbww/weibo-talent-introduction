@@ -12,12 +12,19 @@ import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.qa.service.QaRuleMatch
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.SnippetType
+import com.weibo.talentintroduction.reply.service.AckOption
+import com.weibo.talentintroduction.reply.service.ManualReplyFrame
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -38,7 +45,8 @@ class PendingMailOperationService(
     private val mailBodyCleaner: MailBodyCleaner,
     private val mailContentService: MailContentService,
     private val replySnippetService: ReplySnippetService,
-    private val mailVariableService: MailVariableService
+    private val mailVariableService: MailVariableService,
+    private val contentVariantService: ContentVariantService
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -85,7 +93,8 @@ class PendingMailOperationService(
         inboundProcessingId: Long,
         qaRuleId: Long,
         senderAccountCode: String?,
-        operatorName: String?
+        operatorName: String?,
+        useVariants: Boolean = false
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -99,8 +108,10 @@ class PendingMailOperationService(
         require(rule.enabled) { "QA rule is disabled: $qaRuleId" }
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
+        val seed = variantSeedFor(contact)
+        val replyBody = resolveRuleBody(rule, seed, useVariants)
 
-        val plainBody = mailVariableService.renderForContact(rule.replyBody, account, contact)
+        val plainBody = mailVariableService.renderForContact(replyBody, account, contact)
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = rule.replySubject ?: "Re: ${record.subject.orEmpty()}".trim(),
@@ -172,7 +183,8 @@ class PendingMailOperationService(
         suggestedRuleIds: List<Long>? = null,
         ackSnippetId: Long? = null,
         edited: Boolean? = null,
-        freeTextPreview: String? = null
+        freeTextPreview: String? = null,
+        useVariants: Boolean = false
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -293,11 +305,40 @@ class PendingMailOperationService(
         )
     }
 
-    fun suggestComposedReply(inboundProcessingId: Long): CompositionSuggestResult {
+    fun suggestComposedReply(inboundProcessingId: Long, useVariants: Boolean = false): CompositionSuggestResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
         val messageBody = record.cleanedBody?.takeIf { it.isNotBlank() } ?: record.body.orEmpty()
-        return qaMatchService.suggestComposition(messageBody)
+        val base = qaMatchService.suggestComposition(messageBody)
+        if (!useVariants) {
+            return base
+        }
+        val contact = record.expertContactId?.let { contactId ->
+            expertContactRepository.findById(contactId).orElse(null)
+        } ?: return base
+        val seed = variantSeedFor(contact)
+        return base.copy(
+            suggestedRules = base.suggestedRules.map { rule ->
+                rule.copy(replyBody = resolveSuggestRuleBody(rule.id, rule.replyBody, seed, useVariants = true))
+            },
+            rulesByCategory = base.rulesByCategory.map { group ->
+                group.copy(
+                    rules = group.rules.map { rule ->
+                        rule.copy(replyBody = resolveSuggestRuleBody(rule.id, rule.replyBody, seed, useVariants = true))
+                    }
+                )
+            }
+        )
+    }
+
+    fun resolveManualFrameForInbound(inboundProcessingId: Long, useVariants: Boolean = false): ManualReplyFrame {
+        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+            .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
+        val contact = record.expertContactId?.let { contactId ->
+            expertContactRepository.findById(contactId).orElse(null)
+        }
+        val seed = contact?.let { variantSeedFor(it) } ?: 0
+        return resolveManualFrame(seed, useVariants)
     }
 
     @Transactional
@@ -308,7 +349,8 @@ class PendingMailOperationService(
         freeTextBody: String?,
         ackSnippetId: Long?,
         senderAccountCode: String?,
-        operatorName: String?
+        operatorName: String?,
+        useVariants: Boolean = false
     ): PendingMailSendResult {
         require(qaRuleIds.isNotEmpty()) { "At least one QA rule is required" }
 
@@ -330,9 +372,11 @@ class PendingMailOperationService(
             rule
         }
 
-        val matches = rules.map { QaRuleMatch(rule = it, matchedKeywordCount = 1) }
-        val frame = replySnippetService.resolveManualFrame()
-        val ack = replySnippetService.resolveAck(ackSnippetId)
+        val seed = variantSeedFor(contact)
+        val resolvedRules = resolveRules(rules, seed, useVariants)
+        val matches = resolvedRules.map { QaRuleMatch(rule = it, matchedKeywordCount = 1) }
+        val frame = resolveManualFrame(seed, useVariants)
+        val ack = resolveAckContent(ackSnippetId, seed, useVariants)
         val composed = QaReplyComposer.composeInOperatorOrder(
             matches = matches,
             salutation = frame.salutation,
@@ -443,6 +487,88 @@ class PendingMailOperationService(
         return if (composedBody.isBlank()) free else "$composedBody\n\n$free"
     }
 
+    private fun variantSeedFor(contact: ExpertContact): Int =
+        MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+
+    private fun resolveRuleBody(rule: QaRule, seed: Int, useVariants: Boolean): String {
+        val ruleId = rule.id ?: return rule.replyBody
+        return contentVariantService.resolveBody(
+            ownerType = ContentVariantOwnerType.QA_RULE,
+            ownerId = ruleId,
+            mainBody = rule.replyBody,
+            seed = seed,
+            useVariants = useVariants
+        )
+    }
+
+    private fun resolveSuggestRuleBody(ruleId: Long, replyBody: String, seed: Int, useVariants: Boolean): String =
+        contentVariantService.resolveBody(
+            ownerType = ContentVariantOwnerType.QA_RULE,
+            ownerId = ruleId,
+            mainBody = replyBody,
+            seed = seed,
+            useVariants = useVariants
+        )
+
+    private fun resolveRules(rules: List<QaRule>, seed: Int, useVariants: Boolean): List<QaRule> =
+        rules.map { rule -> rule.copy(replyBody = resolveRuleBody(rule, seed, useVariants)) }
+
+    private fun resolveManualFrame(seed: Int, useVariants: Boolean): ManualReplyFrame {
+        val frame = replySnippetService.resolveManualFrame()
+        if (!useVariants) {
+            return frame
+        }
+        return ManualReplyFrame(
+            salutation = resolveDefaultSnippetText(SnippetType.SALUTATION, frame.salutation, seed),
+            greeting = resolveDefaultSnippetText(SnippetType.GREETING, frame.greeting, seed),
+            closing = resolveDefaultSnippetText(SnippetType.CLOSING, frame.closing, seed),
+            ackOptions = frame.ackOptions.map { ack ->
+                AckOption(
+                    id = ack.id,
+                    content = contentVariantService.resolveBody(
+                        ownerType = ContentVariantOwnerType.REPLY_SNIPPET,
+                        ownerId = ack.id,
+                        mainBody = ack.content,
+                        seed = seed,
+                        useVariants = true
+                    )
+                )
+            }
+        )
+    }
+
+    private fun resolveDefaultSnippetText(type: SnippetType, current: String?, seed: Int): String? {
+        if (current.isNullOrBlank()) {
+            return current
+        }
+        val defaultSnippet = replySnippetService.listByType(type.name)
+            .firstOrNull { it.snippet.isDefault && it.snippet.enabled }
+            ?.snippet
+            ?: return current
+        val snippetId = defaultSnippet.id ?: return current
+        return contentVariantService.resolveBody(
+            ownerType = ContentVariantOwnerType.REPLY_SNIPPET,
+            ownerId = snippetId,
+            mainBody = defaultSnippet.content,
+            seed = seed,
+            useVariants = true
+        )
+    }
+
+    private fun resolveAckContent(ackSnippetId: Long?, seed: Int, useVariants: Boolean): String? {
+        val ack = replySnippetService.resolveAck(ackSnippetId) ?: return null
+        if (!useVariants || ackSnippetId == null) {
+            return ack
+        }
+        return contentVariantService.resolveBody(
+            ownerType = ContentVariantOwnerType.REPLY_SNIPPET,
+            ownerId = ackSnippetId,
+            mainBody = ack,
+            seed = seed,
+            useVariants = true
+        )
+    }
+
     @Transactional
     fun markResolved(
         inboundProcessingId: Long,
@@ -515,7 +641,8 @@ data class PendingMailSendResult(
 data class PendingQaReplyRequest(
     val qaRuleId: Long,
     val senderAccountCode: String?,
-    val operatorName: String?
+    val operatorName: String?,
+    val useVariants: Boolean = false
 )
 
 data class PendingManualRichReplyRequest(
@@ -528,7 +655,8 @@ data class PendingManualRichReplyRequest(
     val suggestedRuleIds: List<Long>? = null,
     val ackSnippetId: Long? = null,
     val edited: Boolean? = null,
-    val freeTextPreview: String? = null
+    val freeTextPreview: String? = null,
+    val useVariants: Boolean = false
 )
 
 data class ComposedReplyRequest(
@@ -537,5 +665,6 @@ data class ComposedReplyRequest(
     val freeTextBody: String? = null,
     val ackSnippetId: Long? = null,
     val senderAccountCode: String?,
-    val operatorName: String?
+    val operatorName: String?,
+    val useVariants: Boolean = false
 )

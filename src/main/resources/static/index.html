@@ -1351,13 +1351,21 @@
             <label class="span-2">自动回复邮件英文正文
                 <div class="var-editor-wrap">
                     <div class="var-editor-toolbar">
-                        <div class="var-chip-bar" data-var-target="qaRuleReplyBody"></div>
-                        <button type="button" class="button small var-preview-btn" data-var-preview-target="qaRuleReplyBody">以专家预览</button>
+                        <div class="var-insert-wrap">
+                            <button type="button" class="var-insert-btn" data-var-insert-target="qaRuleReplyBody">+ 插入变量 ▾</button>
+                            <div class="var-insert-menu" hidden></div>
+                        </div>
                     </div>
                     <div class="var-validation-hint" id="varHint-qaRuleReplyBody" hidden></div>
                     <textarea id="qaRuleReplyBody" name="replyBody" rows="8" placeholder="使用 HTML 或纯文本编写自动回复的正文内容" required></textarea>
                 </div>
             </label>
+            <div class="full-width content-variants-block">
+                <span class="field-label">内容变体 <span class="badge primary content-variants-count" hidden></span></span>
+                <div class="content-variants-container" id="qaRuleVariantsContainer"></div>
+                <button type="button" class="button small" data-action="add-content-variant">+ 添加变体</button>
+                <p class="compose-template-variable-hint">主体与全部变体共同轮换，每位专家固定命中其中一个；变体输入 textarea 支持多行</p>
+            </div>
             <label class="checkbox-row"><input name="autoReplyEnabled" type="checkbox" checked> 允许系统匹配到该规则后自动回复邮件</label>
             <label class="checkbox-row"><input name="handoffRequired" type="checkbox"> 命中该分类后同时将状态标记为人工跟进 (Handoff)</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该规则判定</label>
@@ -1404,22 +1412,29 @@
                     <option value="ACK">致谢语</option>
                     <option value="GREETING">开场白</option>
                     <option value="CLOSING">结束语</option>
+                    <option value="CUSTOM">自定义内容</option>
                 </select>
             </label>
             <label>片段 ID<input name="id" disabled placeholder="系统自动生成"></label>
             <label>显示排序<input name="displayOrder" type="number" value="100" required></label>
-            <label>变体组<input name="variantGroup" type="text" list="variantGroupOptions" placeholder="选择已有组或输入新组名（留空不参与轮换）"></label>
-            <datalist id="variantGroupOptions"></datalist>
             <label class="span-2">片段内容
                 <div class="var-editor-wrap">
                     <div class="var-editor-toolbar">
-                        <div class="var-chip-bar" data-var-target="replySnippetContent"></div>
-                        <button type="button" class="button small var-preview-btn" data-var-preview-target="replySnippetContent">以专家预览</button>
+                        <div class="var-insert-wrap">
+                            <button type="button" class="var-insert-btn" data-var-insert-target="replySnippetContent">+ 插入变量 ▾</button>
+                            <div class="var-insert-menu" hidden></div>
+                        </div>
                     </div>
                     <div class="var-validation-hint" id="varHint-replySnippetContent" hidden></div>
                     <textarea id="replySnippetContent" name="content" rows="6" placeholder="英文回复片段正文" required></textarea>
                 </div>
             </label>
+            <div class="full-width content-variants-block">
+                <span class="field-label">内容变体 <span class="badge primary content-variants-count" hidden></span></span>
+                <div class="content-variants-container" id="replySnippetVariantsContainer"></div>
+                <button type="button" class="button small" data-action="add-content-variant">+ 添加变体</button>
+                <p class="compose-template-variable-hint">主体与全部变体共同轮换，每位专家固定命中其中一个；变体输入 textarea 支持多行</p>
+            </div>
             <label class="checkbox-row" id="replySnippetDefaultRow"><input name="isDefault" type="checkbox"> 设为该类型默认片段</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该片段</label>
             <div class="form-actions modal-actions">
@@ -1443,6 +1458,7 @@
                 </div>
             </div>
             <button class="modal-close-btn" id="composeTemplateModalCloseBtn" type="button">×</button>
+            <button type="button" class="button small" id="openComposeTemplatePreviewBtn">预览</button>
         </div>
         <form id="composeTemplateForm" class="compose-template-form">
             <div class="compose-template-body">
@@ -1454,13 +1470,17 @@
                         </div>
                         <div class="compose-template-fields">
                             <label>模板名称<input name="templateName" required maxlength="100"></label>
-                            <label>邮件主题<input name="subject" required maxlength="255"></label>
-                            <div class="full-width">
-                                <span class="field-label">主题变体 <span class="badge primary" id="subjectVariantsCountBadge" hidden></span></span>
-                                <div id="subjectVariantsContainer"></div>
-                                <button type="button" class="button small" id="addSubjectVariantBtn">+ 添加变体</button>
-                                <p class="compose-template-variable-hint">主主题与全部变体共同轮换，每位专家固定命中其中一个</p>
-                            </div>
+                            <label>邮件主题
+                                <div class="var-editor-wrap var-editor-inline">
+                                    <div class="var-editor-toolbar">
+                                        <div class="var-insert-wrap">
+                                            <button type="button" class="var-insert-btn" data-var-insert-target="composeTemplateSubject">+ 插入变量 ▾</button>
+                                            <div class="var-insert-menu" hidden></div>
+                                        </div>
+                                    </div>
+                                    <input id="composeTemplateSubject" name="subject" required maxlength="255">
+                                </div>
+                            </label>
                             <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
                         </div>
                     </section>
@@ -1472,63 +1492,10 @@
                             </div>
                             <button type="button" class="button small" id="addComposeTemplateBlockBtn">+ 添加内容块</button>
                         </div>
-                        <div class="compose-template-variable-row" aria-label="发送方变量">
-                            <span>${senderName}</span>
-                            <span>${senderTitle}</span>
-                            <span>${teamName}</span>
-                            <span>${countryName}</span>
-                            <span>${senderEmail}</span>
-                            <span>${senderDisplayName}</span>
-                        </div>
-                        <div class="compose-template-variable-row" aria-label="专家变量（仅项目介绍邮件可用）">
-                            <span>${expertName}</span>
-                            <span>${expertFamilyName}</span>
-                            <span>${researchFields}</span>
-                            <span>${institution}</span>
-                            <span>${keyword}</span>
-                            <span>${expertCountry}</span>
-                        </div>
-                        <p class="compose-template-variable-hint">提示: 支持默认值语法 ${变量名|默认值}，变量为空时使用默认值</p>
+                        <p class="compose-template-variable-hint">提示: 支持默认值语法 ${变量名|默认值}，变量为空时使用默认值；内容块自定义文本同样支持插入变量</p>
                         <div id="composeTemplateBlocksList"></div>
                     </section>
                 </div>
-                <aside class="compose-template-side">
-                    <section class="compose-template-card compose-template-preview-section">
-                        <div class="compose-template-blocks-head">
-                            <div>
-                                <h3>邮件预览</h3>
-                                <div class="variant-switcher" id="composeTemplateVariantSwitcher" hidden>
-                                    <button type="button" class="button small" id="variantSwitcherPrev" aria-label="上一个主题变体">‹</button>
-                                    <span class="badge primary variant-switcher-label" id="variantSwitcherLabel">主题 1/1</span>
-                                    <button type="button" class="button small" id="variantSwitcherNext" aria-label="下一个主题变体">›</button>
-                                </div>
-                                <span id="composeTemplatePreviewStatus">服务端预览</span>
-                            </div>
-                            <button type="button" class="button small" id="randomComposeTemplatePreviewBtn">随机抽取</button>
-                            <button type="button" class="button small" id="refreshComposeTemplatePreviewBtn">刷新预览</button>
-                        </div>
-                        <div class="compose-template-preview-controls">
-                            <label class="compose-template-preview-field"><span>预览专家</span>
-                                <input id="composeTemplatePreviewExpertInput" list="composeTemplatePreviewExpertOptions" placeholder="输入姓名或邮箱筛选">
-                                <datalist id="composeTemplatePreviewExpertOptions"></datalist>
-                            </label>
-                            <label class="compose-template-preview-field"><span>发件邮箱</span>
-                                <input id="composeTemplatePreviewAccountInput" list="composeTemplatePreviewAccountOptions" placeholder="输入账号或邮箱筛选">
-                                <datalist id="composeTemplatePreviewAccountOptions"></datalist>
-                            </label>
-                            <div class="compose-template-preview-mode" role="radiogroup" aria-label="占位符过滤">
-                                <label><input type="radio" name="composeTemplatePreviewPlaceholderMode" id="composeTemplatePreviewAllowFallback" value="fallback" checked><span>允许默认值</span></label>
-                                <label><input type="radio" name="composeTemplatePreviewPlaceholderMode" id="composeTemplatePreviewStrictPlaceholders" value="strict"><span>必须满足全部占位符</span></label>
-                            </div>
-                        </div>
-                        <div id="composeTemplatePreviewPanel" class="compose-template-preview"></div>
-                        <div class="compose-template-preview-meta">
-                            <div><span>发送类型</span><strong id="composeTemplatePreviewMailType">COMPOSE_TEMPLATE</strong></div>
-                            <div><span>变量</span><strong>12 个</strong></div>
-                            <div><span>内容块</span><strong id="composeTemplatePreviewBlockCount">0 个</strong></div>
-                        </div>
-                    </section>
-                </aside>
             </div>
             <div class="compose-template-footer">
                 <label class="checkbox-row compose-template-enabled-row"><input name="enabled" type="checkbox" checked> 启用模板</label>
@@ -1592,10 +1559,16 @@
       <div class="preview-drawer-title-group">
         <h2 id="previewDrawerTitle">邮件预览</h2>
         <span class="preview-source-badge" id="previewSourceBadge">变量渲染</span>
+        <div class="variant-switcher" id="previewVariantSwitcher" hidden>
+            <button type="button" class="button small" id="previewVariantPrev" aria-label="上一个变体组合">‹</button>
+            <span class="badge primary variant-switcher-label" id="previewVariantLabel">组合 1/1</span>
+            <button type="button" class="button small" id="previewVariantNext" aria-label="下一个变体组合">›</button>
+        </div>
       </div>
       <button class="button secondary preview-drawer-close" id="previewDrawerCloseBtn" type="button" aria-label="关闭">×</button>
     </header>
     <div class="preview-drawer-context">
+      <div id="previewFieldContext">
       <div class="preview-ctx-grid">
         <label class="preview-ctx-field">以专家渲染
           <input type="text" id="previewOrcidInput" placeholder="ORCID，如 0000-0001-2345-6789" />
@@ -1617,6 +1590,27 @@
         <button class="button secondary preview-dice-btn" id="previewDiceBtn" type="button">随机抽取</button>
         <button class="button secondary" id="previewRefreshBtn" type="button">刷新预览</button>
       </div>
+      </div>
+      <div id="previewComposeContext" hidden>
+        <div class="preview-ctx-grid">
+            <label class="preview-ctx-field">预览专家
+                <input id="previewComposeExpertInput" list="previewComposeExpertOptions" placeholder="输入姓名或邮箱筛选">
+                <datalist id="previewComposeExpertOptions"></datalist>
+            </label>
+            <label class="preview-ctx-field">发件邮箱
+                <input id="previewComposeAccountInput" list="previewComposeAccountOptions" placeholder="输入账号或邮箱筛选">
+                <datalist id="previewComposeAccountOptions"></datalist>
+            </label>
+        </div>
+        <div class="preview-ctx-row">
+            <div class="compose-template-preview-mode" role="radiogroup" aria-label="占位符过滤">
+                <label><input type="radio" name="previewComposePlaceholderMode" id="previewComposeAllowFallback" value="fallback" checked><span>允许默认值</span></label>
+                <label><input type="radio" name="previewComposePlaceholderMode" id="previewComposeStrictPlaceholders" value="strict"><span>必须满足全部占位符</span></label>
+            </div>
+            <button class="button secondary preview-dice-btn" id="previewComposeDiceBtn" type="button">随机抽取</button>
+            <button class="button secondary" id="previewComposeRefreshBtn" type="button">刷新预览</button>
+        </div>
+      </div>
       <p class="preview-coverage" id="previewCoverage" hidden></p>
     </div>
     <div class="preview-drawer-body">
@@ -1625,6 +1619,8 @@
           <tr><td>To</td><td id="previewMailTo">—</td></tr>
           <tr><td>Subject</td><td id="previewMailSubject">—</td></tr>
         </table>
+        <div id="previewComposeBlockNotes" class="compose-preview-block-notes" hidden></div>
+        <div id="previewComposeSkipped" class="compose-preview-skipped" hidden></div>
         <div class="preview-mail-divider"></div>
         <div class="preview-mail-body pre" id="previewMailBody"></div>
       </div>

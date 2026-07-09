@@ -2,8 +2,8 @@
 id: K-pending-qa-reply-rule-source
 domain: mail
 created: 2026-07-04
-last_used: 2026-07-08
-hit_count: 2
+last_used: 2026-07-09
+hit_count: 4
 source: fix-v:mail-compose-template:fix-2
 severity: P1
 ---
