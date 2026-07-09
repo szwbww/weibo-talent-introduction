@@ -2123,28 +2123,11 @@ function syncBodyScrollLock() {
     }
 }
 
-function closePreviewDrawer() {
-    const shell = $("#previewDrawer");
-    if (!shell || shell.hidden) {
-        return;
-    }
-    document.body.classList.remove("preview-docked");
-    shell.classList.remove("open");
-    window.setTimeout(() => {
-        shell.hidden = true;
-        syncBodyScrollLock();
-    }, 240);
+function previewRailLabelForTarget(targetId) {
+    return targetId === "qaRuleReplyBody" ? "命中预览" : "邮件预览";
 }
 
-function openPreviewDrawer({ targetId, contactId, orcidId, skipContentCheck = false }) {
-    if (targetId !== "composeTemplate") {
-        const textarea = resolveVarTextarea(targetId);
-        const text = textarea?.value || "";
-        if (!skipContentCheck && !text.trim()) {
-            showStatus("请先输入正文再预览", "error");
-            return;
-        }
-    }
+function mountPreviewRail({ targetId, contactId, orcidId }) {
     const level = $("#previewScopeSel")?.value || "CANDIDATE";
     const mode = $("#previewModeSel")?.value || "SATISFY_ALL";
     state.previewDrawer = {
@@ -2175,12 +2158,68 @@ function openPreviewDrawer({ targetId, contactId, orcidId, skipContentCheck = fa
         badge.textContent = targetId === "composeTemplate" ? "服务端预览" : "变量渲染";
     }
     updatePreviewVariantSwitcher(1);
+    const railLabel = $("#previewRailLabel");
+    if (railLabel) {
+        railLabel.textContent = previewRailLabelForTarget(targetId);
+    }
+    document.body.classList.add("preview-available");
+    document.body.classList.remove("preview-docked");
+}
+
+function expandPreviewDrawer() {
+    if (!state.previewDrawer?.targetId) {
+        showStatus("预览未挂载", "error");
+        return;
+    }
     const shell = $("#previewDrawer");
+    if (!shell) {
+        return;
+    }
+    document.body.classList.add("preview-available");
     shell.hidden = false;
     document.body.classList.add("preview-docked");
     requestAnimationFrame(() => shell.classList.add("open"));
     syncBodyScrollLock();
     refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+}
+
+function collapsePreviewDrawer() {
+    const shell = $("#previewDrawer");
+    if (!shell) {
+        return;
+    }
+    shell.classList.remove("open");
+    document.body.classList.remove("preview-docked");
+    window.setTimeout(() => {
+        shell.hidden = true;
+        syncBodyScrollLock();
+    }, 240);
+}
+
+function closePreviewDrawer() {
+    const shell = $("#previewDrawer");
+    document.body.classList.remove("preview-available", "preview-docked");
+    if (shell) {
+        shell.classList.remove("open");
+        shell.hidden = true;
+    }
+    if (state.previewDrawer) {
+        state.previewDrawer.targetId = null;
+    }
+    syncBodyScrollLock();
+}
+
+function openPreviewDrawer({ targetId, contactId, orcidId, skipContentCheck = false }) {
+    if (targetId !== "composeTemplate") {
+        const textarea = resolveVarTextarea(targetId);
+        const text = textarea?.value || "";
+        if (!skipContentCheck && !text.trim()) {
+            showStatus("请先输入正文再预览", "error");
+            return;
+        }
+    }
+    mountPreviewRail({ targetId, contactId, orcidId });
+    expandPreviewDrawer();
 }
 
 async function openComposeTemplatePreview() {
@@ -9570,8 +9609,9 @@ function bindEvents() {
             closeOpenVarInsertMenus();
         }
     });
-    $("#previewDrawerCloseBtn")?.addEventListener("click", closePreviewDrawer);
-    $("#previewDrawerBackdrop")?.addEventListener("click", closePreviewDrawer);
+    $("#previewRail")?.addEventListener("click", expandPreviewDrawer);
+    $("#previewDrawerCloseBtn")?.addEventListener("click", collapsePreviewDrawer);
+    $("#previewDrawerBackdrop")?.addEventListener("click", collapsePreviewDrawer);
     $("#previewRefreshBtn")?.addEventListener("click", () => {
         refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
     });
@@ -9588,7 +9628,7 @@ function bindEvents() {
     $("#previewVariantNext")?.addEventListener("click", () => stepPreviewVariantIndex(1));
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("#previewDrawer").hidden) {
-            closePreviewDrawer();
+            collapsePreviewDrawer();
         }
     });
     $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
