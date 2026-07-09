@@ -10,3 +10,4 @@ cache/
 config/application-local.yml
 .od-skills/
 .worktrees/
+exports/
