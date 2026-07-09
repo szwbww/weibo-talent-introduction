@@ -33,7 +33,7 @@ class MailVariableServiceTest {
         Mockito.mock(MailVariableService::class.java),
         Mockito.mock(ExpertContactRepository::class.java),
         Mockito.mock(MailSenderAccountService::class.java),
-        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), MailPlaceholderService())
     )
     private val service = MailVariableService(expertSearchService, mailComposeTemplateService)
     private val serviceWithUnsubscribe = MailVariableService(

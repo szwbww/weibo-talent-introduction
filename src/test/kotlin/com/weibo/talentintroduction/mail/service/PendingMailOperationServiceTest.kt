@@ -77,13 +77,13 @@ class PendingMailOperationServiceTest {
         Mockito.mock(MailVariableService::class.java),
         expertContactRepository,
         mailSenderAccountService,
-        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), MailPlaceholderService())
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val contentVariantRepository = Mockito.mock(ContentVariantRepository::class.java)
     private val contentVariantService = ContentVariantService(
         contentVariantRepository,
-        mailVariableService
+        MailPlaceholderService()
     )
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,

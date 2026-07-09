@@ -1,6 +1,6 @@
 package com.weibo.talentintroduction.variant.service
 
-import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.variant.domain.ContentVariant
 import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 @Service
 class ContentVariantService(
     private val contentVariantRepository: ContentVariantRepository,
-    private val mailVariableService: MailVariableService
+    private val mailPlaceholderService: MailPlaceholderService
 ) {
     fun resolveBody(
         ownerType: String,
@@ -83,7 +83,7 @@ class ContentVariantService(
             if (!seen.add(trimmed)) {
                 throw IllegalArgumentException("变体不能重复")
             }
-            mailVariableService.requireValidPlaceholders(trimmed)
+            mailPlaceholderService.requireValidPlaceholders(trimmed)
         }
     }
 

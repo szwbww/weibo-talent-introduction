@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.qa.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.qa.domain.QaRule
@@ -41,10 +42,10 @@ class QaRuleManagementServiceTest {
             Mockito.mock(MailVariableService::class.java),
             Mockito.mock(ExpertContactRepository::class.java),
             Mockito.mock(MailSenderAccountService::class.java),
-            ContentVariantService(contentVariantRepository, Mockito.mock(MailVariableService::class.java))
+            ContentVariantService(contentVariantRepository, MailPlaceholderService())
         )
     )
-    private val contentVariantService = ContentVariantService(contentVariantRepository, mailVariableService)
+    private val contentVariantService = ContentVariantService(contentVariantRepository, MailPlaceholderService())
     private val service = QaRuleManagementService(
         categoryRepository,
         ruleRepository,

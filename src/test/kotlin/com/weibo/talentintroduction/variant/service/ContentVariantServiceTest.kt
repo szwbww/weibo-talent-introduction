@@ -1,6 +1,6 @@
 package com.weibo.talentintroduction.variant.service
 
-import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.variant.domain.ContentVariant
 import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
@@ -12,8 +12,7 @@ import org.mockito.Mockito
 
 class ContentVariantServiceTest {
     private val repository = Mockito.mock(ContentVariantRepository::class.java)
-    private val mailVariableService = Mockito.mock(MailVariableService::class.java)
-    private val service = ContentVariantService(repository, mailVariableService)
+    private val service = ContentVariantService(repository, MailPlaceholderService())
 
     @Test
     fun `resolveBody selects from pool by variant_order asc id asc`() {
@@ -162,8 +161,6 @@ class ContentVariantServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             service.replaceForOwner(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", listOf("A", "A"))
         }
-        Mockito.doThrow(IllegalArgumentException("Invalid placeholders: \${bogus}"))
-            .`when`(mailVariableService).requireValidPlaceholders("Bad \${bogus}")
         assertThrows(IllegalArgumentException::class.java) {
             service.replaceForOwner(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", listOf("Bad \${bogus}"))
         }

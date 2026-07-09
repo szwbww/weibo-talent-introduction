@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.template.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.mail.service.PreviewVariableItem
@@ -38,7 +39,7 @@ class MailComposeTemplateServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val contentVariantRepository = Mockito.mock(ContentVariantRepository::class.java)
-    private val contentVariantService = ContentVariantService(contentVariantRepository, mailVariableService)
+    private val contentVariantService = ContentVariantService(contentVariantRepository, MailPlaceholderService())
     private val objectMapper = ObjectMapper()
     private val service = MailComposeTemplateService(
         templateRepository,

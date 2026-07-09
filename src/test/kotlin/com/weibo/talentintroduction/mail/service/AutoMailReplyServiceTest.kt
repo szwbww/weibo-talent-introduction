@@ -100,7 +100,7 @@ class AutoMailReplyServiceTest {
         Mockito.mock(MailVariableService::class.java),
         contactRepository,
         accountService,
-        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), Mockito.mock(MailVariableService::class.java))
+        ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), MailPlaceholderService())
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val service = AutoMailReplyService(

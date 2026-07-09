@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,7 +23,7 @@ class QaMatchServiceRestructureTest {
     private val categoryRepository = Mockito.mock(QaCategoryRepository::class.java)
     private val contentVariantService = ContentVariantService(
         Mockito.mock(ContentVariantRepository::class.java),
-        Mockito.mock(com.weibo.talentintroduction.mail.service.MailVariableService::class.java)
+        MailPlaceholderService()
     )
     private val service = QaMatchService(repository, categoryRepository, contentVariantService)
 

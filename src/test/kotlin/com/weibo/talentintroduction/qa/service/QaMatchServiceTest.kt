@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.variant.domain.ContentVariant
 import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
@@ -22,7 +23,7 @@ class QaMatchServiceTest {
     private val contentVariantRepository = Mockito.mock(ContentVariantRepository::class.java)
     private val contentVariantService = ContentVariantService(
         contentVariantRepository,
-        Mockito.mock(com.weibo.talentintroduction.mail.service.MailVariableService::class.java)
+        MailPlaceholderService()
     )
     private val service = QaMatchService(repository, categoryRepository, contentVariantService)
 
