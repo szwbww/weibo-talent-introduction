@@ -6690,6 +6690,14 @@ function setActiveVariant(container, index) {
         } else {
             row.setAttribute("hidden", "");
         }
+        const hint = row.nextElementSibling;
+        if (hint?.classList.contains("content-variant-duplicate-hint")) {
+            if (isActive) {
+                hint.removeAttribute("hidden");
+            } else {
+                hint.setAttribute("hidden", "");
+            }
+        }
     });
     const counter = container.querySelector(".content-variant-nav-counter");
     if (counter) counter.textContent = `${active + 1} / ${n}`;
