@@ -2203,11 +2203,8 @@ function collapsePreviewDrawer() {
     }
     shell.classList.remove("open");
     document.body.classList.remove("preview-docked");
-    previewDrawerCollapseTimer = window.setTimeout(() => {
-        previewDrawerCollapseTimer = null;
-        shell.hidden = true;
-        syncBodyScrollLock();
-    }, 240);
+    shell.hidden = true;
+    syncBodyScrollLock();
 }
 
 function closePreviewDrawer() {
