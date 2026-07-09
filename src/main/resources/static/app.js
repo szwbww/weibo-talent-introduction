@@ -1722,6 +1722,7 @@ const SENDER_VAR_KEY_SET = new Set([
 ]);
 
 let previewDrawerDebounceTimer = null;
+let previewDrawerCollapseTimer = null;
 
 function isPreviewDrawerOpen() {
     const shell = $("#previewDrawer");
@@ -2163,7 +2164,11 @@ function mountPreviewRail({ targetId, contactId, orcidId }) {
         railLabel.textContent = previewRailLabelForTarget(targetId);
     }
     document.body.classList.add("preview-available");
-    document.body.classList.remove("preview-docked");
+    const shell = $("#previewDrawer");
+    if (!shell || shell.hidden) {
+        document.body.classList.remove("preview-docked");
+        shell?.classList.remove("open");
+    }
 }
 
 function expandPreviewDrawer() {
@@ -2174,6 +2179,10 @@ function expandPreviewDrawer() {
     const shell = $("#previewDrawer");
     if (!shell) {
         return;
+    }
+    if (previewDrawerCollapseTimer != null) {
+        window.clearTimeout(previewDrawerCollapseTimer);
+        previewDrawerCollapseTimer = null;
     }
     document.body.classList.add("preview-available");
     shell.hidden = false;
@@ -2188,15 +2197,24 @@ function collapsePreviewDrawer() {
     if (!shell) {
         return;
     }
+    if (previewDrawerCollapseTimer != null) {
+        window.clearTimeout(previewDrawerCollapseTimer);
+        previewDrawerCollapseTimer = null;
+    }
     shell.classList.remove("open");
     document.body.classList.remove("preview-docked");
-    window.setTimeout(() => {
+    previewDrawerCollapseTimer = window.setTimeout(() => {
+        previewDrawerCollapseTimer = null;
         shell.hidden = true;
         syncBodyScrollLock();
     }, 240);
 }
 
 function closePreviewDrawer() {
+    if (previewDrawerCollapseTimer != null) {
+        window.clearTimeout(previewDrawerCollapseTimer);
+        previewDrawerCollapseTimer = null;
+    }
     const shell = $("#previewDrawer");
     document.body.classList.remove("preview-available", "preview-docked");
     if (shell) {
