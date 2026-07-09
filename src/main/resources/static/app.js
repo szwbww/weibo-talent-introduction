@@ -2242,7 +2242,10 @@ function openPreviewDrawer({ targetId, contactId, orcidId, skipContentCheck = fa
 
 async function openComposeTemplatePreview() {
     await loadComposeTemplatePreviewOptions();
-    openPreviewDrawer({ targetId: "composeTemplate", skipContentCheck: true });
+    if (state.previewDrawer.targetId !== "composeTemplate") {
+        mountPreviewRail({ targetId: "composeTemplate" });
+    }
+    expandPreviewDrawer();
 }
 
 async function refreshPreviewDrawer() {
@@ -2345,9 +2348,7 @@ function hideQaRuleEditor() {
     $("#qaRuleModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedRuleId = null;
-    if (state.previewDrawer.targetId === "qaRuleReplyBody") {
-        closePreviewDrawer();
-    }
+    closePreviewDrawer();
 }
 
 function fillQaRuleForm(rule) {
@@ -2373,7 +2374,7 @@ function fillQaRuleForm(rule) {
     if (replyBodyEl) {
         updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl);
     }
-    openPreviewDrawer({ targetId: "qaRuleReplyBody", skipContentCheck: true });
+    mountPreviewRail({ targetId: "qaRuleReplyBody" });
 }
 
 async function saveQaRule(event) {
@@ -2972,9 +2973,7 @@ function hideReplySnippetEditor() {
     document.body.classList.remove("modal-open");
     state.selectedReplySnippetId = null;
     updateReplySnippetDefaultFieldVisibility();
-    if (state.previewDrawer.targetId === "replySnippetContent") {
-        closePreviewDrawer();
-    }
+    closePreviewDrawer();
 }
 
 function updateReplySnippetDefaultFieldVisibility() {
@@ -3005,7 +3004,7 @@ function fillReplySnippetForm(snippet, presetType) {
     if (contentEl) {
         updateVarValidationForTarget("replySnippetContent", contentEl);
     }
-    openPreviewDrawer({ targetId: "replySnippetContent", skipContentCheck: true });
+    mountPreviewRail({ targetId: "replySnippetContent" });
 }
 
 async function saveReplySnippet(event) {
@@ -6970,14 +6969,13 @@ function openComposeTemplateEditor(template) {
     loadComposeTemplatePreviewOptions().catch((error) => showStatus(error.message, "error"));
     $("#composeTemplateModal").hidden = false;
     refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
+    mountPreviewRail({ targetId: "composeTemplate" });
 }
 
 function hideComposeTemplateEditor() {
     $("#composeTemplateModal").hidden = true;
     state.selectedComposeTemplateId = null;
-    if (isComposeTemplatePreviewTarget()) {
-        closePreviewDrawer();
-    }
+    closePreviewDrawer();
 }
 
 function renderComposeTemplateBlockRows(blocks) {
