@@ -5838,6 +5838,53 @@ tr td {
     font-size: 12px;
 }
 
+.content-variant-carousel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.content-variant-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.content-variant-nav-counter {
+    min-width: 46px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.content-variant-nav-spacer {
+    flex: 1;
+}
+
+.content-variant-rows .content-variant-row[hidden] {
+    display: none;
+}
+
+.content-variant-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+}
+
+.content-variant-dot {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--border);
+    cursor: pointer;
+}
+
+.content-variant-dot.active {
+    background: var(--primary);
+}
+
 .variant-switcher {
     display: inline-flex;
     align-items: center;

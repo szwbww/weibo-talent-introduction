@@ -6625,18 +6625,77 @@ function renderContentVariantRows(container, variants) {
     if (!container) return;
     const values = variants || [];
     if (!values.length) {
-        container.innerHTML = '<p class="content-variants-empty">未添加变体，仅使用主体发送</p>';
+        container.dataset.activeIndex = "0";
+        container.innerHTML = `
+            <div class="content-variant-carousel">
+                <p class="content-variants-empty">未添加变体，仅使用主体发送</p>
+                <div class="content-variant-nav">
+                    <span class="content-variant-nav-spacer"></span>
+                    <button type="button" class="button small" data-action="add-content-variant">+ 新增</button>
+                </div>
+            </div>`;
         updateContentVariantsCountBadge(container);
         return;
     }
-    const rows = values.map((value, index) => `
-        <div class="content-variant-row" data-variant-index="${index}">
+    const n = values.length;
+    let active = Number(container.dataset.activeIndex);
+    if (!Number.isFinite(active)) active = 0;
+    active = Math.max(0, Math.min(active, n - 1));
+    container.dataset.activeIndex = String(active);
+    const rows = values.map((value, index) => {
+        const isActive = index === active;
+        return `
+        <div class="content-variant-row${isActive ? " active" : ""}" data-variant-index="${index}"${isActive ? "" : " hidden"}>
             <span class="content-variant-index">${index + 1}</span>
-            <textarea class="content-variant-input" rows="2" maxlength="2000" placeholder="变体正文">${escapeHtml(value || "")}</textarea>
+            <textarea class="content-variant-input" rows="3" maxlength="2000" placeholder="变体正文">${escapeHtml(value || "")}</textarea>
             <button type="button" class="button small danger" data-action="remove-content-variant" data-index="${index}">×</button>
-        </div>`).join("");
-    container.innerHTML = rows;
+        </div>`;
+    }).join("");
+    const dots = values.map((_, index) =>
+        `<span class="content-variant-dot${index === active ? " active" : ""}" data-index="${index}"></span>`
+    ).join("");
+    container.innerHTML = `
+        <div class="content-variant-carousel">
+            <div class="content-variant-nav">
+                <button type="button" class="button small" data-action="variant-prev" aria-label="上一个变体">‹</button>
+                <span class="content-variant-nav-counter">${active + 1} / ${n}</span>
+                <button type="button" class="button small" data-action="variant-next" aria-label="下一个变体">›</button>
+                <span class="content-variant-nav-spacer"></span>
+                <button type="button" class="button small" data-action="add-content-variant">+ 新增</button>
+            </div>
+            <div class="content-variant-rows">
+                ${rows}
+            </div>
+            <div class="content-variant-dots">
+                ${dots}
+            </div>
+        </div>`;
     updateContentVariantsCountBadge(container);
+}
+
+function setActiveVariant(container, index) {
+    if (!container) return;
+    const rows = Array.from(container.querySelectorAll(".content-variant-row"));
+    const n = rows.length;
+    if (!n) return;
+    let active = Number(index);
+    if (!Number.isFinite(active)) active = 0;
+    active = Math.max(0, Math.min(active, n - 1));
+    container.dataset.activeIndex = String(active);
+    rows.forEach((row, i) => {
+        const isActive = i === active;
+        row.classList.toggle("active", isActive);
+        if (isActive) {
+            row.removeAttribute("hidden");
+        } else {
+            row.setAttribute("hidden", "");
+        }
+    });
+    const counter = container.querySelector(".content-variant-nav-counter");
+    if (counter) counter.textContent = `${active + 1} / ${n}`;
+    container.querySelectorAll(".content-variant-dot").forEach((dot) => {
+        dot.classList.toggle("active", Number(dot.dataset.index) === active);
+    });
 }
 
 function updateContentVariantsCountBadge(container) {
@@ -6709,6 +6768,12 @@ function validateContentVariantInputs(container, mainText) {
 
     if (!valid) {
         showStatus("请修正内容变体中的重复或空值", "error");
+        const firstDuplicate = container.querySelector(".content-variant-input.duplicate");
+        const row = firstDuplicate?.closest(".content-variant-row");
+        if (row) {
+            const invalidIndex = Number(row.dataset.variantIndex);
+            if (Number.isFinite(invalidIndex)) setActiveVariant(container, invalidIndex);
+        }
     }
     return valid;
 }
@@ -6717,14 +6782,17 @@ function addContentVariantRow(container) {
     if (!container) return;
     const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
     variants.push("");
+    container.dataset.activeIndex = String(variants.length - 1);
     renderContentVariantRows(container, variants);
-    container.querySelector(".content-variant-input:last-child")?.focus();
+    container.querySelector(".content-variant-row.active .content-variant-input")?.focus();
 }
 
 function removeContentVariantRow(container, index) {
     if (!container) return;
     const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
     variants.splice(index, 1);
+    const n = variants.length;
+    container.dataset.activeIndex = n === 0 ? "0" : String(Math.min(index, n - 1));
     renderContentVariantRows(container, variants);
 }
 
@@ -6739,6 +6807,24 @@ function handleContentVariantEditorClick(event, form) {
     if (removeBtn && form.contains(removeBtn)) {
         const container = removeBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
         if (container) removeContentVariantRow(container, Number(removeBtn.dataset.index));
+        return;
+    }
+    const prevBtn = event.target.closest('[data-action="variant-prev"]');
+    if (prevBtn && form.contains(prevBtn)) {
+        const container = prevBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
+        if (container) setActiveVariant(container, Number(container.dataset.activeIndex || 0) - 1);
+        return;
+    }
+    const nextBtn = event.target.closest('[data-action="variant-next"]');
+    if (nextBtn && form.contains(nextBtn)) {
+        const container = nextBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
+        if (container) setActiveVariant(container, Number(container.dataset.activeIndex || 0) + 1);
+        return;
+    }
+    const dot = event.target.closest(".content-variant-dot[data-index]");
+    if (dot && form.contains(dot)) {
+        const container = dot.closest(".content-variants-block")?.querySelector(".content-variants-container");
+        if (container) setActiveVariant(container, Number(dot.dataset.index));
     }
 }
 
