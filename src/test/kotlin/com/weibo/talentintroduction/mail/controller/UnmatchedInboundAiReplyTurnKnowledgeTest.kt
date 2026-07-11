@@ -203,6 +203,58 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
     }
 
     @Test
+    fun `aiReplyTurn maps all shared AiReplyDraftResult fields to response identically`() {
+        val detail = InboundMailProcessing(
+            id = 5L,
+            senderAccountCode = "a1",
+            imapUid = 5L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "Multi-question",
+            body = "Multiple questions",
+            cleanedBody = "Multiple questions",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(5L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
+        Mockito.`when`(
+            aiReplyContextService.build(contact, emptyList(), "Multiple questions", "")
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+
+        val sourceResult = AiReplyDraftResult(
+            draftText = "Grounded reply body",
+            usedLlm = true,
+            qaRuleIds = listOf(1L, 3L),
+            mode = AiReplyMode.QA_GROUNDED,
+            requestCount = 2,
+            groundedRequestCount = 1,
+            unsupportedRequests = listOf("research scope question"),
+            contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
+            fewShotDialogRefs = listOf("DIALOG_42")
+        )
+        Mockito.doReturn(sourceResult).`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList()
+        )
+
+        val response = controller.aiReplyTurn(5L, AiReplyTurnRequest())
+
+        assertEquals(sourceResult.mode.name, response.mode)
+        assertEquals(sourceResult.qaRuleIds, response.qaRuleIds)
+        assertEquals(sourceResult.requestCount, response.requestCount)
+        assertEquals(sourceResult.groundedRequestCount, response.groundedRequestCount)
+        assertEquals(sourceResult.unsupportedRequests, response.unsupportedRequests)
+        assertEquals(sourceResult.contextWarnings, response.contextWarnings)
+        assertEquals(sourceResult.fewShotDialogRefs, response.injectedDialogRefs)
+    }
+
+    @Test
     fun `aiReplyTurn throws when expertContactId is null`() {
         val detail = InboundMailProcessing(
             id = 3L,

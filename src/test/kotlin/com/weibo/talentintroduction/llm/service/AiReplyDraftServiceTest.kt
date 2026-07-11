@@ -1013,6 +1013,31 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `same generate args produce equal LLM messages for both simulated entry points`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("What is salary?")).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule()))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val allMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                allMessages += messages
+                return "Draft"
+            }
+        }
+        val draftService = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client)
+
+        // Simulate the same call from two different entry points (simulate + aiReplyTurn)
+        draftService.generate(inboundText = "What is salary?", operatorTurns = emptyList(), qaRuleIds = listOf(1))
+        draftService.generate(inboundText = "What is salary?", operatorTurns = emptyList(), qaRuleIds = listOf(1))
+
+        assertEquals(2, allMessages.size)
+        assertEquals(allMessages[0], allMessages[1])
+    }
+
+    @Test
     fun `QA_GROUNDED uses freeFormTemperature`() {
         stubEmptyFrame()
         val inbound = "- What is salary?\n- What is visa?"
