@@ -62,6 +62,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 前端邮件正文展示点分散在 app.js 多处（专家详情、收发件箱、未匹配详情、自动回复预览等），统一类名 `.pre`；任何要在「所有正文位置」统一加能力的需求须按全集逐点改，改前先 grep `class="pre"` 复核行号。(K-mail-body-display-sites)
 - QA 复合覆盖规则与缺口检测共存时，缺口检测必须用覆盖前命中集计算覆盖度，或把 `supersedesChildren=true` 复合规则视为覆盖总览型多主题意图；否则概览型多问来信会被误转人工。(K-overview-gap-supersede)
 - 新增前端侧栏 Tab/视图须四处同步注册：① `index.html` 侧栏 `.nav-tab[data-view]`；② `index.html` `<section class="view" id="view-<name>">`；③ `app.js` `viewMeta`；④ `app.js` `refreshCurrentView()`。缺一即切换报错。(K-view-registration-triad)
+- AI 草稿链路里"给 LLM 的 QA 知识范围（promptRuleIds，可回退全集）"与"发送审计子集（sendQaRuleIds，只能是真实匹配/显式勾选）"是两个语义，进 `mail_record_qa_rule` 的只能是后者；模拟路径产物永不落审计。(K-ai-reply-prompt-vs-send-rule-ids)
 
 ---
 

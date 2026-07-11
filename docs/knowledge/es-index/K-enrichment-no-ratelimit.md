@@ -2,8 +2,8 @@
 id: K-enrichment-no-ratelimit
 domain: discovery
 created: 2026-07-07
-last_used: 2026-07-08
-hit_count: 4
+last_used: 2026-07-11
+hit_count: 5
 source: create-p:enrichment-cross-day-resilient-run
 ---
 
