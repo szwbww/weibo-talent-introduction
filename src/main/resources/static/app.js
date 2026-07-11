@@ -2884,15 +2884,24 @@ async function runAiTrainingSimulate() {
         return;
     }
     const promptOverride = $("#aiTrainingPromptOverride").value.trim();
-    const result = await api("/api/ai-training/simulate", {
-        method: "POST",
-        body: JSON.stringify({
-            expertContactId: contactId,
-            promptOverride: promptOverride || null
-        })
-    });
-    renderAiTrainingSimulateResult(result);
-    showStatus("模拟回复已生成（未外发）", "ok");
+    const btn = $("#aiTrainingSimulateBtn");
+    const messages = $("#aiTrainingSimulateMessages");
+    btn.disabled = true;
+    setTagEditorLoading(messages, true, "AI 生成中...");
+    try {
+        const result = await api("/api/ai-training/simulate", {
+            method: "POST",
+            body: JSON.stringify({
+                expertContactId: contactId,
+                promptOverride: promptOverride || null
+            })
+        });
+        renderAiTrainingSimulateResult(result);
+        showStatus("模拟回复已生成（未外发）", "ok");
+    } finally {
+        setTagEditorLoading(messages, false);
+        btn.disabled = false;
+    }
 }
 
 async function saveAiTrainingPromptConfig(event) {

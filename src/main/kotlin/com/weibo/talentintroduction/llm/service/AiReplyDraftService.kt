@@ -55,11 +55,7 @@ class AiReplyDraftService(
         mailHistory: String? = null,
         simulateOnly: Boolean = false
     ): AiReplyDraftResult {
-        val resolved = if (simulateOnly) {
-            ResolvedQaRules(sendQaRuleIds = emptyList(), promptRuleIds = emptyList())
-        } else {
-            resolveQaRules(inboundText, qaRuleIds)
-        }
+        val resolved = resolveQaRules(inboundText, qaRuleIds)
         val mode = if (resolved.sendQaRuleIds.isNotEmpty()) AiReplyMode.QA_MATCHED else AiReplyMode.FREE_FORM
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
 
@@ -94,7 +90,8 @@ class AiReplyDraftService(
                     operatorTurns = operatorTurns,
                     operatorInstruction = operatorInstruction,
                     expertProfile = expertProfile,
-                    mailHistory = mailHistory
+                    mailHistory = mailHistory,
+                    promptRuleIds = resolved.promptRuleIds
                 )
                 fewShotDialogRefs = buildResult.fewShotDialogRefs
                 buildResult.messages
@@ -168,7 +165,8 @@ class AiReplyDraftService(
         operatorTurns: List<AiReplyTurn>,
         operatorInstruction: String? = null,
         expertProfile: String? = null,
-        mailHistory: String? = null
+        mailHistory: String? = null,
+        promptRuleIds: List<Long> = emptyList()
     ): FreeFormBuildResult {
         val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText)
         val messages = mutableListOf<LlmChatMessage>()
@@ -183,7 +181,7 @@ class AiReplyDraftService(
         }
         messages += LlmChatMessage(
             role = "user",
-            content = buildFreeFormUserContent(inboundText, expertProfile, mailHistory)
+            content = buildFreeFormUserContent(inboundText, expertProfile, mailHistory, promptRuleIds)
         )
         appendFirstTurnInstruction(messages, operatorInstruction)
         appendOperatorTurns(messages, operatorTurns)
@@ -247,11 +245,25 @@ class AiReplyDraftService(
         appendLine(inboundText.take(4000))
     }
 
-    private fun buildFreeFormUserContent(
+    internal fun buildFreeFormUserContent(
         inboundText: String,
         expertProfile: String?,
-        mailHistory: String?
+        mailHistory: String?,
+        promptRuleIds: List<Long> = emptyList()
     ): String = buildString {
+        if (promptRuleIds.isNotEmpty()) {
+            val knowledge = promptRuleIds.mapNotNull { ruleId ->
+                qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                    "${rule.replySubject.orEmpty()}\n${rule.replyBody}"
+                }
+            }.joinToString("\n\n").take(12000)
+            appendLine("QA rule knowledge (authoritative facts):")
+            appendLine(knowledge)
+            appendLine(
+                "Facts (figures, names, links, commitments) must come from the QA rule knowledge or training knowledge base above; do not invent specifics."
+            )
+            appendLine()
+        }
         expertProfile?.takeIf { it.isNotBlank() }?.let {
             appendLine("Expert profile:")
             appendLine(it)

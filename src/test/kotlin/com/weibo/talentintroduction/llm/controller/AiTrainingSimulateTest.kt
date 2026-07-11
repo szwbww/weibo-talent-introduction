@@ -124,6 +124,17 @@ class AiTrainingSimulateTest {
         )
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
             .thenReturn("Topic: Funding\nAnswer: Up to 12M RMB")
+        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
             post("/api/ai-training/simulate")
@@ -138,9 +149,51 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.mode").value("FREE_FORM"))
             .andExpect(jsonPath("$.injectedDialogRefs").isArray)
             .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
+            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
-        Mockito.verifyNoInteractions(qaMatchService)
+    }
+
+    @Test
+    fun `simulate with matched rules returns QA_MATCHED without qaRuleIds in response`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound(body = "what is the application process?")
+        stubSimulateReadPath(contact, inbound)
+        Mockito.`when`(
+            aiReplyContextBuilder.appendKnowledgeToProfile("Name: Dr. Test", "")
+        ).thenReturn("Name: Dr. Test")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(qaMatchService.suggestComposition("what is the application process?")).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = listOf(9L),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        val rule = com.weibo.talentintroduction.qa.domain.QaRule(
+            id = 9L,
+            categoryId = 1,
+            keywords = "application process",
+            replySubject = "Application process",
+            replyBody = "First, you submit the required materials.",
+            enabled = true
+        )
+        Mockito.`when`(qaRuleRepository.findById(9L)).thenReturn(Optional.of(rule))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("QA_MATCHED"))
+            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("First, you submit the required materials.")))
+            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
+
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test
@@ -155,6 +208,17 @@ class AiTrainingSimulateTest {
         )
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
             .thenReturn("Topic: Agency trust\nAnswer: Standard reply")
+        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
             post("/api/ai-training/simulate")
@@ -167,6 +231,7 @@ class AiTrainingSimulateTest {
                 org.hamcrest.Matchers.containsString("transparent disbursement")
             )))
             .andExpect(jsonPath("$.usedLlm").value(false))
+            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
 
         Mockito.verifyNoInteractions(aiTrainingDialogueService)
     }

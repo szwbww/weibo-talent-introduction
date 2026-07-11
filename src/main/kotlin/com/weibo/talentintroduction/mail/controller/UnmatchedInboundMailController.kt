@@ -44,6 +44,7 @@ class UnmatchedInboundMailController(
     private val replySnippetService: ReplySnippetService,
     private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService,
     private val aiReplyContextBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder,
+    private val aiTrainingQaService: com.weibo.talentintroduction.llm.service.AiTrainingQaService,
     private val mailRecordRepository: MailRecordRepository
 ) {
     @GetMapping("/unmatched-inbound")
@@ -283,9 +284,13 @@ class UnmatchedInboundMailController(
                 operatorInstruction = it.operatorInstruction
             )
         }
-        val expertProfile = detail.expertContactId?.let { contactId ->
+        val baseProfile = detail.expertContactId?.let { contactId ->
             expertContactRepository.findById(contactId).orElse(null)?.let(aiReplyContextBuilder::buildExpertProfile)
         }
+        val expertProfile = aiReplyContextBuilder.appendKnowledgeToProfile(
+            baseProfile ?: "",
+            aiTrainingQaService.buildKnowledgeContext()
+        )
         val mailHistory = detail.expertContactId?.let { contactId ->
             aiReplyContextBuilder.buildMailHistory(
                 mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)

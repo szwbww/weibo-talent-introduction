@@ -578,4 +578,125 @@ class QaMatchServiceTest {
 
         assertEquals(expectedBody, result?.replyBody)
     }
+
+    /** V68 post-migration keyword set for gap-fix regression fixtures. */
+    private fun stubV68KeywordRules() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 24,
+                    categoryId = 2,
+                    keywords = "learn more,more information,name and background,objectives and scope,before sharing,understand the program,additional information,about the initiative,participating institution,participating organization,why was i selected,why did you choose me,why did you contact me,official website,program objectives,tell me more,more details,more detail,know more details,want to know more details,further information,purpose and structure,structure of the program,more about the program,know more about",
+                    priority = 5,
+                    replySubject = "Program overview",
+                    replyBody = "Two tracks:",
+                    supersedesChildren = true
+                ),
+                QaRule(
+                    id = 18,
+                    categoryId = 3,
+                    keywords = "accredited,official agency,prove government,cooperation with government,authorized,how can i trust,trust you,can i trust,commercial,not academic,is this legitimate,legitimate,is this a scam,scam,verify,company website,company site,who are you,real company,are you real,registered location,registered address,company registration,name of your company,your company name,full name and registered,where is your company,where are you based",
+                    priority = 100,
+                    replySubject = "Agency credentials",
+                    replyBody = "Credentials answer"
+                ),
+                QaRule(
+                    id = 5,
+                    categoryId = 1,
+                    keywords = "duty,my rights,responsibility,responsibilities,benefit,benefits,what will i get,what do i get,deliverables,my duties,expected responsibilities",
+                    priority = 100,
+                    replySubject = "Responsibilities and benefits",
+                    replyBody = "Responsibilities answer"
+                ),
+                QaRule(
+                    id = 23,
+                    categoryId = 1,
+                    keywords = "which company,partner company,company profile,is it a good match,within the scope,selected and matched,how do you match,matching process,enterprise projects",
+                    priority = 100,
+                    replySubject = "Partner company information",
+                    replyBody = "Partner answer"
+                ),
+                QaRule(
+                    id = 9,
+                    categoryId = 1,
+                    keywords = "application process,the process,procedure,timeline,next stages,next steps,what happens next,stages of the application,selection process,how are researchers selected",
+                    priority = 100,
+                    replySubject = "Application process",
+                    replyBody = "Process answer"
+                ),
+                QaRule(
+                    id = 33,
+                    categoryId = 2,
+                    keywords = "what documents,materials needed,cv,what to send,what do you need,send my documents,what should i send,provide my cv,what should i provide",
+                    priority = 35,
+                    replySubject = "Getting started materials",
+                    replyBody = "Materials answer"
+                ),
+                QaRule(
+                    id = 40,
+                    categoryId = 1,
+                    keywords = "intellectual property,ip rights,ip arrangements,contractual,contract terms,patent ownership,who owns the",
+                    priority = 120,
+                    replySubject = "Contract and IP arrangements",
+                    replyBody = "After selection, you will sign a labor contract directly with the matched enterprise"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `v68 overview multi question mail hits id24 supersede without gap or id33`() {
+        stubV68KeywordRules()
+
+        val overviewMail = """
+            Dear team,
+
+            Could you provide further information regarding the purpose and structure of the program?
+
+            Specifically:
+            - What is the registered location of your company?
+            - What are the expected responsibilities and deliverables?
+            - How are researchers selected and matched within the scope of enterprise projects?
+            - What are the intellectual property arrangements?
+            - What are the next stages of the application?
+            - What materials should I send?
+
+            Best regards
+        """.trimIndent()
+
+        val suggest = service.suggestComposition(overviewMail)
+        assertTrue(suggest.suggestedRuleIds.contains(24L))
+        assertFalse(suggest.gapDetected)
+
+        val rawIds = service.matchAllRuleIds(overviewMail)
+        assertTrue(rawIds.contains(24L))
+        assertFalse(rawIds.contains(33L))
+    }
+
+    @Test
+    fun `v68 single sentence fixtures hit contract process credentials and responsibilities`() {
+        stubV68KeywordRules()
+
+        assertEquals(listOf(40L), service.matchAllRuleIds("what are the intellectual property arrangements?"))
+        assertEquals(listOf(9L), service.matchAllRuleIds("the next stages of the application"))
+        assertEquals(listOf(18L), service.matchAllRuleIds("registered location of your company"))
+        assertEquals(listOf(5L), service.matchAllRuleIds("expected responsibilities and deliverables"))
+    }
+
+    @Test
+    fun `v68 regression materials and application process still match`() {
+        stubV68KeywordRules()
+
+        assertEquals(listOf(33L), service.matchAllRuleIds("what should i send you?"))
+        assertEquals(listOf(9L), service.matchAllRuleIds("what is the application process?"))
+    }
+
+    @Test
+    fun `v68 provide further information hits overview not materials`() {
+        stubV68KeywordRules()
+
+        val rawIds = service.matchAllRuleIds("Could you provide further information about the program?")
+        assertTrue(rawIds.contains(24L))
+        assertFalse(rawIds.contains(33L))
+    }
 }
