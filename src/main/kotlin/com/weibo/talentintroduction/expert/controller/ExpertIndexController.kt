@@ -58,11 +58,12 @@ class ExpertIndexController(
         @RequestParam(required = false) hIndexMin: Int? = null,
         @RequestParam(required = false) citationCountMin: Int? = null,
         @RequestParam(required = false) recentYears: Int? = null,
-        @RequestParam(required = false) hasField: List<String>? = null
+        @RequestParam(required = false) hasField: List<String>? = null,
+        @RequestParam(required = false) discipline: String? = null
     ): ExpertListResponse {
         val result = expertSearchService.searchExperts(
             size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
-            hIndexMin, citationCountMin, recentYears, hasField
+            hIndexMin, citationCountMin, recentYears, hasField, discipline
         )
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
@@ -371,6 +372,7 @@ data class ExpertIndexResponse(
     val citationCount: Int? = null,
     val lastPublicationYear: Int? = null,
     val researchFields: String? = null,
+    val disciplineCategory: String? = null,
     val institution: String? = null,
     val worksCount: Int? = null,
     val enrichedAt: String? = null
@@ -412,6 +414,7 @@ data class ExpertIndexResponse(
                 citationCount = expert.citationCount,
                 lastPublicationYear = expert.lastPublicationYear,
                 researchFields = expert.researchFields,
+                disciplineCategory = expert.disciplineCategory,
                 institution = expert.institution,
                 worksCount = expert.worksCount,
                 enrichedAt = expert.enrichedAt

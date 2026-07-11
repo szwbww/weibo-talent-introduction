@@ -37,6 +37,7 @@ class BatchSendSettingServiceTest {
         assertEquals(60000L, cfg.perRoundIntervalMs)
         assertEquals(30, cfg.selfCheckTtlMinutes)
         assertEquals("", cfg.emailDomain)
+        assertEquals("", cfg.discipline)
     }
 
     @Test
@@ -49,7 +50,8 @@ class BatchSendSettingServiceTest {
             row("batchSend.perMailIntervalMs", "2000"),
             row("batchSend.perRoundIntervalMs", "120000"),
             row("batchSend.selfCheckTtlMinutes", "60"),
-            row("batchSend.emailDomain", "gmail.com")
+            row("batchSend.emailDomain", "gmail.com"),
+            row("batchSend.discipline", "STEM")
         ))
         val cfg = service().getConfig()
         assertEquals(true, cfg.autoEnabled)
@@ -60,6 +62,7 @@ class BatchSendSettingServiceTest {
         assertEquals(120000L, cfg.perRoundIntervalMs)
         assertEquals(60, cfg.selfCheckTtlMinutes)
         assertEquals("gmail.com", cfg.emailDomain)
+        assertEquals("STEM", cfg.discipline)
     }
 
     @Test
@@ -104,7 +107,7 @@ class BatchSendSettingServiceTest {
             autoEnabled = true, cron = "0 15 3 * * ?",
             dailyCap = 200, roundSize = 20,
             perMailIntervalMs = 500, perRoundIntervalMs = 30000,
-            selfCheckTtlMinutes = 15, emailDomain = "gmail.com", templateId = 42L
+            selfCheckTtlMinutes = 15, emailDomain = "gmail.com", discipline = "HUMANITIES", templateId = 42L
         )
         `when`(repository.save(any())).thenAnswer { it.arguments[0] }
         `when`(repository.findAll()).thenReturn(listOf(
@@ -116,6 +119,7 @@ class BatchSendSettingServiceTest {
             row("batchSend.perRoundIntervalMs", "30000"),
             row("batchSend.selfCheckTtlMinutes", "15"),
             row("batchSend.emailDomain", "gmail.com"),
+            row("batchSend.discipline", "HUMANITIES"),
             row("batchSend.templateId", "42")
         ))
 
@@ -129,10 +133,11 @@ class BatchSendSettingServiceTest {
         assertEquals(30000L, result.perRoundIntervalMs)
         assertEquals(15, result.selfCheckTtlMinutes)
         assertEquals("gmail.com", result.emailDomain)
+        assertEquals("HUMANITIES", result.discipline)
         assertEquals(42L, result.templateId)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(9)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(10)).save(captor.capture())
         captor.allValues.forEach { saved ->
             assertTrue(saved.settingKey.startsWith("batchSend."))
         }
@@ -153,7 +158,7 @@ class BatchSendSettingServiceTest {
         service().updateConfig(cmd)
 
         val captor = ArgumentCaptor.forClass(BatchSendSetting::class.java)
-        verify(repository, org.mockito.Mockito.times(9)).save(captor.capture())
+        verify(repository, org.mockito.Mockito.times(10)).save(captor.capture())
         val autoEnabledSave = captor.allValues.first { it.settingKey == "batchSend.autoEnabled" }
         assertEquals(7L, autoEnabledSave.id)
         assertEquals("true", autoEnabledSave.settingValue)
@@ -357,6 +362,33 @@ class BatchSendSettingServiceTest {
             dailyCap = 100, roundSize = 10,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
             selfCheckTtlMinutes = 30, templateId = 0L
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            service().updateConfig(cmd)
+        }
+    }
+
+    @Test
+    fun `getConfig returns empty discipline when key missing`() {
+        `when`(repository.findAll()).thenReturn(emptyList())
+        assertEquals("", service().getConfig().discipline)
+    }
+
+    @Test
+    fun `getConfig falls back to empty discipline on illegal DB value`() {
+        `when`(repository.findAll()).thenReturn(listOf(
+            row("batchSend.discipline", "UNCLASSIFIED")
+        ))
+        assertEquals("", service().getConfig().discipline)
+    }
+
+    @Test
+    fun `updateConfig rejects illegal discipline`() {
+        val cmd = BatchSendConfigUpdateRequest(
+            autoEnabled = true, cron = "0 0 0 * * ?",
+            dailyCap = 100, roundSize = 10,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000,
+            selfCheckTtlMinutes = 30, discipline = "UNCLASSIFIED"
         )
         assertThrows(IllegalArgumentException::class.java) {
             service().updateConfig(cmd)

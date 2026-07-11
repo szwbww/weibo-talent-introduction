@@ -1267,4 +1267,73 @@ class ExpertSearchServiceTest {
 
         assertNull(expert)
     }
+
+    @Test
+    fun `notContactedWithEmailFilters appends term for STEM discipline`() {
+        val filters = ExpertSearchService.notContactedWithEmailFilters(discipline = "STEM")
+        assertEquals(3, filters.size)
+        val term = filters[2]["term"] as Map<*, *>
+        assertEquals("STEM", term["disciplineCategory"])
+    }
+
+    @Test
+    fun `notContactedWithEmailFilters appends must_not exists for UNCLASSIFIED`() {
+        val filters = ExpertSearchService.notContactedWithEmailFilters(discipline = "UNCLASSIFIED")
+        assertEquals(3, filters.size)
+        val bool = filters[2]["bool"] as Map<*, *>
+        val mustNot = bool["must_not"] as List<*>
+        val exists = (mustNot[0] as Map<*, *>)["exists"] as Map<*, *>
+        assertEquals("disciplineCategory", exists["field"])
+    }
+
+    @Test
+    fun `notContactedWithEmailFilters rejects illegal discipline`() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            ExpertSearchService.notContactedWithEmailFilters(discipline = "UNKNOWN")
+        }
+    }
+
+    @Test
+    fun `searchExperts passes discipline term filter to ES`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@x.com", "disciplineCategory": "HUMANITIES"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(size = 10, level = ExpertIndexLevel.CANDIDATE, discipline = "HUMANITIES")
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val request = entityCaptor.value.body as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val query = request["query"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val bool = query["bool"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val filter = bool["filter"] as List<Map<String, Any>>
+        val termFilter = filter.first { it.containsKey("term") && (it["term"] as Map<*, *>).containsKey("disciplineCategory") }
+        assertEquals("HUMANITIES", (termFilter["term"] as Map<*, *>)["disciplineCategory"])
+    }
 }

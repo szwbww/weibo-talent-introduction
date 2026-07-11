@@ -275,11 +275,12 @@ class OpenAlexDataSource(
     }
 
     private fun parseAuthorEnrichmentFromNode(node: JsonNode, fetchWorksAndPatents: Boolean): AuthorEnrichment {
-        val topics = node.path("topics")
-            .takeIf { it.isArray }
+        val topicsNode = node.path("topics").takeIf { it.isArray }
+        val topics = topicsNode
             ?.sortedByDescending { it.path("count").asInt(0) }
             ?.take(5)
             ?.mapNotNull { it.path("display_name").asText(null) }
+        val disciplineCategory = resolveDisciplineCategory(topicsNode)
         val worksUrl = node.path("works_api_url").asText(null)
         val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
         val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
@@ -289,8 +290,23 @@ class OpenAlexDataSource(
             worksCount = node.path("works_count").let { if (it.isInt) it.asInt() else null },
             topics = topics,
             recentWorkTitles = recentWorkTitles,
-            patentTitles = patentTitles
+            patentTitles = patentTitles,
+            disciplineCategory = disciplineCategory
         )
+    }
+
+    private fun resolveDisciplineCategory(topicsNode: JsonNode?): String? {
+        if (topicsNode == null) return null
+        var stem = 0
+        var humanities = 0
+        for (topic in topicsNode) {
+            when (topic.path("domain").path("display_name").asText(null)) {
+                "Physical Sciences", "Life Sciences", "Health Sciences" -> stem += topic.path("count").asInt(0)
+                "Social Sciences" -> humanities += topic.path("count").asInt(0)
+            }
+        }
+        if (stem == 0 && humanities == 0) return null
+        return if (stem >= humanities) "STEM" else "HUMANITIES"
     }
 }
 
@@ -307,5 +323,6 @@ data class AuthorEnrichment(
     val worksCount: Int?,
     val topics: List<String>? = null,
     val recentWorkTitles: List<String>? = null,
-    val patentTitles: List<String>? = null
+    val patentTitles: List<String>? = null,
+    val disciplineCategory: String? = null
 )

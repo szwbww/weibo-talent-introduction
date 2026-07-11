@@ -3,7 +3,7 @@ id: K-bulk-actions-must-cover-full-filter-set
 domain: frontend
 created: 2026-07-02
 last_used: 2026-07-11
-hit_count: 3
+hit_count: 5
 source: fix-v:expert-tag-crud-reminder-batch:fix-1
 severity: P1
 ---

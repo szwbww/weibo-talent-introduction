@@ -3,7 +3,7 @@ id: K-es-dynamic-false
 domain: es-index
 created: 2026-07-07
 last_used: 2026-07-11
-hit_count: 5
+hit_count: 6
 source: create-p:expert-enrichment-backend
 ---
 

@@ -24,6 +24,7 @@ import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRe
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -32,6 +33,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpMethod
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestTemplate
 import java.time.LocalDate
@@ -998,6 +1001,120 @@ class ExpertDiscoveryServiceTest {
         assertEquals(0, result.enriched)
         assertEquals(0, result.failed)
         Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList())
+    }
+
+    @Test
+    fun `enrichExistingExperts writes disciplineCategory STEM to ES update doc`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-STEM", email = "stem@example.com",
+            givenNames = "Test", familyNames = "Stem",
+            country = "US", keyword = null, employment = null
+        )
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = "STEM"
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-STEM" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertEquals("STEM", doc["disciplineCategory"])
+    }
+
+    @Test
+    fun `enrichExistingExperts omits disciplineCategory key when null`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-NULL", email = "null@example.com",
+            givenNames = "Test", familyNames = "Null",
+            country = "US", keyword = null, employment = null
+        )
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = null
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-NULL" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertFalse(doc.containsKey("disciplineCategory"))
+    }
+
+    @Test
+    fun `getEnrichmentStats filter should includes disciplineCategory backfill clause`() {
+        val svc = createService()
+        ScrollExpertsMockHelper.stubEnrichmentStatsCounts(expertSearchService, 10L, 3L, 6L)
+
+        val stats = svc.getEnrichmentStats()
+
+        assertEquals(6L, stats.enrichedLast30d)
+
+        val filters = ScrollExpertsMockHelper.captureNonEmptyCountExpertsFilters(expertSearchService)
+        @Suppress("UNCHECKED_CAST")
+        val should = (filters[0]["bool"] as Map<String, Any>)["should"] as List<*>
+        assertEquals(3, should.size)
+        @Suppress("UNCHECKED_CAST")
+        val backfillBool = (should[2] as Map<String, Any>)["bool"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val must = backfillBool["must"] as List<Map<String, Any>>
+        @Suppress("UNCHECKED_CAST")
+        val mustNot = backfillBool["must_not"] as List<Map<String, Any>>
+        fun existsField(clause: Map<String, Any>): String? =
+            (clause["exists"] as? Map<*, *>)?.get("field") as? String
+        assertTrue(must.any { existsField(it) == "enrichedAt" }, "must must include exists enrichedAt")
+        assertTrue(must.any { existsField(it) == "researchFields" }, "must must include exists researchFields")
+        assertTrue(mustNot.any { existsField(it) == "disciplineCategory" }, "must_not must include exists disciplineCategory")
     }
 
     @Test

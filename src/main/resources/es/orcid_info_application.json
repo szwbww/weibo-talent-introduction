@@ -34,6 +34,7 @@
       "citationCount": { "type": "integer" },
       "lastPublicationYear": { "type": "integer" },
       "researchFields": { "type": "keyword" },
+      "disciplineCategory": { "type": "keyword" },
       "institution": { "type": "text" },
       "emailSource": { "type": "keyword" },
       "emailVerifiedLevel": { "type": "integer" },

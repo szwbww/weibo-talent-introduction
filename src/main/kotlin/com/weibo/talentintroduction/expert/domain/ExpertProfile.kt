@@ -16,6 +16,7 @@ data class ExpertProfile(
     val citationCount: Int? = null,
     val lastPublicationYear: Int? = null,
     val researchFields: String? = null,
+    val disciplineCategory: String? = null,
     val institution: String? = null,
     val emailSource: String? = null,
     val emailVerifiedLevel: Int? = null,

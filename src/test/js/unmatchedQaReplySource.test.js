@@ -1,85 +1,60 @@
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 const assert = require("assert");
 const { describe, it } = require("node:test");
 
 const appJsPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 
-function extractFn(name) {
-    const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
-    const match = appJsSource.match(regex);
-    if (!match) throw new Error("Could not find " + name + " in app.js");
-    return match[0];
-}
-
-function createSandbox() {
-    const sandbox = {
-        escapeHtml: (value) => String(value == null ? "" : value)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-    };
-    vm.createContext(sandbox);
-    ["formatQaRuleOptionName", "buildUnmatchedQaReplyHtml"].forEach((name) => {
-        vm.runInContext(extractFn(name), sandbox);
-    });
-    return sandbox;
-}
-
-describe("unmatched QA reply source (from app.js)", () => {
-    const mailSendOptionsWithoutQa = [
-        { optionType: "TEMPLATE", optionValue: "INTRODUCTION", optionName: "项目介绍邮件" },
-        { optionType: "COMPOSE_TEMPLATE", optionValue: "5", optionName: "Funding FAQ Pack" }
-    ];
-
-    const enabledQaRules = [
-        {
-            id: 10,
-            displayName: "Funding overview",
-            replySubject: "Re: Funding",
-            enabled: true
-        },
-        {
-            id: 11,
-            displayName: "Disabled rule",
-            replySubject: "Re: Hidden",
-            enabled: false
-        }
-    ];
-
-    it("renders single-rule QA reply UI from enabled QA rules, not mail-send-options", () => {
-        const sb = createSandbox();
-        assert.strictEqual(mailSendOptionsWithoutQa.some((option) => option.optionType === "QA"), false);
-
-        const html = sb.buildUnmatchedQaReplyHtml(enabledQaRules, 42);
-
-        assert.ok(html.includes("QA 邮件回复（单规则）"));
-        assert.ok(html.includes('id="unmatchedQaOption"'));
-        assert.ok(html.includes('data-action="send-pending-qa-reply"'));
-        assert.ok(html.includes('data-record-id="42"'));
-        assert.ok(html.includes('value="10"'));
-        assert.ok(html.includes("Funding overview"));
-        assert.ok(!html.includes("Disabled rule"));
+describe("mail processing reply workflow source", () => {
+    it("renders history and all supported reply modes as collapsed workflow details", () => {
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-history-detail"'));
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail compose-workbench-section"'));
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail ai-reply-section"'));
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail manual-rich-reply-section"'));
+        assert.ok((appJsSource.match(/<details class="detail-section reply-workflow-detail/g) || []).length >= 4);
     });
 
-    it("returns empty html when no enabled QA rules exist", () => {
-        const sb = createSandbox();
-        const html = sb.buildUnmatchedQaReplyHtml(
-            [{ id: 99, displayName: "Off", enabled: false }],
-            42
-        );
-        assert.strictEqual(html, "");
+    it("does not render the unsupported single-rule QA reply", () => {
+        assert.ok(!appJsSource.includes("function buildUnmatchedQaReplyHtml"));
+        assert.ok(!appJsSource.includes("QA 邮件回复（单规则）"));
+        assert.ok(!appJsSource.includes('data-action="send-pending-qa-reply"'));
     });
 
-    it("falls back to Rule #id label when displayName and replySubject are blank", () => {
-        const sb = createSandbox();
-        const html = sb.buildUnmatchedQaReplyHtml(
-            [{ id: 77, displayName: "", replySubject: "", enabled: true }],
-            1
-        );
-        assert.ok(html.includes("Rule #77"));
+    it("collapses original body and opens cleaned body by default", () => {
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-body-section original-mail-body-section"'));
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-body-section cleaned-mail-body-section" open'));
+    });
+
+    it("auto-loads the folded auto-reply preview and exposes summary metadata", () => {
+        assert.ok(appJsSource.includes("async function loadAutoReplyPreview(recordId)"));
+        assert.ok(appJsSource.includes('id="autoReplyPreviewStatus"'));
+        assert.ok(appJsSource.includes('id="autoReplyPreviewMeta"'));
+        assert.ok(appJsSource.includes("loadAutoReplyPreview(id).catch"));
+    });
+
+    it("adds visible page groups and folds operation logs", () => {
+        ["基本信息", "邮件正文", "处理与回复", "操作记录"].forEach((title) => {
+            assert.ok(appJsSource.includes(`<span>${title}</span>`));
+        });
+        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail operator-log-section"'));
+    });
+
+    it("integrates mail, tags, expert, and controls into one compact overview", () => {
+        assert.ok(appJsSource.includes('class="mail-expert-overview"'));
+        assert.ok(appJsSource.includes('class="mail-overview-head"'));
+        assert.ok(appJsSource.includes('class="mail-expert-overview-expert"'));
+        assert.ok(appJsSource.includes('class="mail-technical-detail"'));
+        assert.ok(appJsSource.includes('data-action="save-expert-changes"'));
+        assert.ok(!appJsSource.includes('data-action="change-operator-status"'));
+        assert.ok(!appJsSource.includes('data-action="change-index-level"'));
+    });
+
+    it("saves changed expert status and level through their existing endpoints", () => {
+        assert.ok(appJsSource.includes('if (action === "save-expert-changes")'));
+        assert.ok(appJsSource.includes("const statusChanged = newStatus && newStatus !== currentStatus"));
+        assert.ok(appJsSource.includes("const levelChanged = newLevel && newLevel !== currentLevel"));
+        assert.ok(appJsSource.includes("body: JSON.stringify({ operatorStatus: newStatus, operatorName })"));
+        assert.ok(appJsSource.includes("body: JSON.stringify({ targetLevel: newLevel, operatorName })"));
     });
 });

@@ -101,6 +101,22 @@ public class ScrollExpertsMockHelper {
         );
     }
 
+    public static void stubEnrichmentStatsCounts(
+        com.weibo.talentintroduction.expert.service.ExpertSearchService mock,
+        long total,
+        long pending,
+        long enrichedLast30d
+    ) {
+        Mockito.doAnswer(invocation -> {
+            var filters = (java.util.List<?>) invocation.getArgument(1);
+            if (filters.isEmpty()) return total;
+            return filters.toString().contains("gte") ? enrichedLast30d : pending;
+        }).when(mock).countExperts(
+            Mockito.eq(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
+            Mockito.anyList()
+        );
+    }
+
     public static void verifyCountExpertsFilterContains(
         ExpertSearchService mock,
         String substring
@@ -114,6 +130,22 @@ public class ScrollExpertsMockHelper {
             captor.getValue().toString().contains(substring),
             "Expected filter to contain: " + substring
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    public static java.util.List<java.util.Map<String, Object>> captureNonEmptyCountExpertsFilters(
+        ExpertSearchService mock
+    ) {
+        var captor = org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        Mockito.verify(mock, Mockito.atLeastOnce()).countExperts(
+            Mockito.eq(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
+            captor.capture()
+        );
+        return captor.getAllValues().stream()
+            .filter(list -> list != null && !list.isEmpty())
+            .map(list -> (java.util.List<java.util.Map<String, Object>>) list)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Expected non-empty countExperts filters"));
     }
 
     public static void stubEnrichmentCancelOnBackoffMessage(TaskProgressStore mock) {

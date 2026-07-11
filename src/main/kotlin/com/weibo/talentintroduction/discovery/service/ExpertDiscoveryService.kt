@@ -790,7 +790,10 @@ class ExpertDiscoveryService(
         val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
         val total = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE)
         val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters(cutoff))
-        val enrichedRecently = total - pending
+        val enrichedRecently = expertSearchService.countExperts(
+            ExpertIndexLevel.CANDIDATE,
+            listOf(mapOf("range" to mapOf("enrichedAt" to mapOf("gte" to cutoff))))
+        )
         return EnrichmentStats(pending, enrichedRecently, total)
     }
 
@@ -800,7 +803,18 @@ class ExpertDiscoveryService(
                 "bool" to mapOf(
                     "should" to listOf(
                         mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))))),
-                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to cutoff)))
+                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to cutoff))),
+                        mapOf(
+                            "bool" to mapOf(
+                                "must" to listOf(
+                                    mapOf("exists" to mapOf("field" to "enrichedAt")),
+                                    mapOf("exists" to mapOf("field" to "researchFields"))
+                                ),
+                                "must_not" to listOf(
+                                    mapOf("exists" to mapOf("field" to "disciplineCategory"))
+                                )
+                            )
+                        )
                     ),
                     "minimum_should_match" to 1,
                     "must_not" to listOf(
@@ -1079,6 +1093,7 @@ class ExpertDiscoveryService(
         enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
+        enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             if (!documentExistsInIndex(level, orcidId)) continue

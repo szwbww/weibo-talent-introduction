@@ -110,7 +110,7 @@ class ExpertIndexService(
 
     private val phase5NewFields = setOf(
         "hIndex", "citationCount", "lastPublicationYear",
-        "researchFields", "institution", "emailSource", "emailVerifiedLevel",
+        "researchFields", "disciplineCategory", "institution", "emailSource", "emailVerifiedLevel",
         "dataSource", "externalIds", "discoveredAt", "filterResult", "filterRejectReason",
         "updatedAt", "worksCount",
         "tags", "operatorStatus"

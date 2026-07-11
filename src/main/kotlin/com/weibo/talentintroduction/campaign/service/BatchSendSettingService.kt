@@ -27,6 +27,7 @@ class BatchSendSettingService(
             perRoundIntervalMs = longValue(values, KEY_PER_ROUND_INTERVAL_MS, DEFAULT_PER_ROUND_INTERVAL_MS),
             selfCheckTtlMinutes = intValue(values, KEY_SELF_CHECK_TTL_MINUTES, DEFAULT_SELF_CHECK_TTL_MINUTES),
             emailDomain = strValue(values, KEY_EMAIL_DOMAIN, DEFAULT_EMAIL_DOMAIN),
+            discipline = disciplineValue(values, KEY_DISCIPLINE, DEFAULT_DISCIPLINE),
             templateId = nullableLongValue(values, KEY_TEMPLATE_ID)
         )
     }
@@ -42,6 +43,7 @@ class BatchSendSettingService(
         upsert(KEY_PER_ROUND_INTERVAL_MS, cmd.perRoundIntervalMs.toString())
         upsert(KEY_SELF_CHECK_TTL_MINUTES, cmd.selfCheckTtlMinutes.toString())
         upsert(KEY_EMAIL_DOMAIN, cmd.emailDomain)
+        upsert(KEY_DISCIPLINE, cmd.discipline)
         upsert(KEY_TEMPLATE_ID, cmd.templateId?.toString() ?: "")
         if (cmd.cron != oldCron) {
             eventPublisher.publishEvent(BatchSendCronChangedEvent(oldCron, cmd.cron))
@@ -77,6 +79,7 @@ class BatchSendSettingService(
         require(cmd.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
         require(cmd.cron.isNotBlank()) { "cron must not be blank" }
         CronExpression.parse(cmd.cron)
+        require(cmd.discipline in ALLOWED_DISCIPLINES) { "discipline must be one of $ALLOWED_DISCIPLINES" }
         cmd.templateId?.let { require(it > 0) { "templateId must be > 0" } }
     }
 
@@ -111,6 +114,11 @@ class BatchSendSettingService(
     private fun strValue(values: Map<String, String>, key: String, default: String): String =
         values[key] ?: default
 
+    private fun disciplineValue(values: Map<String, String>, key: String, default: String): String {
+        val value = values[key] ?: return default
+        return if (value in ALLOWED_DISCIPLINES) value else default
+    }
+
     private fun nullableLongValue(values: Map<String, String>, key: String): Long? {
         val value = values[key] ?: return null
         if (value.isBlank()) return null
@@ -139,6 +147,7 @@ class BatchSendSettingService(
         const val KEY_RUNTIME_MODE = "batchSend.runtimeMode"
         const val KEY_PAUSE_REASON = "batchSend.pauseReason"
         const val KEY_EMAIL_DOMAIN = "batchSend.emailDomain"
+        const val KEY_DISCIPLINE = "batchSend.discipline"
         const val KEY_TEMPLATE_ID = "batchSend.templateId"
 
         const val DEFAULT_AUTO_ENABLED = false
@@ -152,6 +161,8 @@ class BatchSendSettingService(
         const val DEFAULT_RUNTIME_MODE = "NONE"
         const val DEFAULT_PAUSE_REASON = ""
         const val DEFAULT_EMAIL_DOMAIN = ""
+        const val DEFAULT_DISCIPLINE = ""
+        val ALLOWED_DISCIPLINES = setOf("", "STEM", "HUMANITIES")
     }
 }
 
@@ -164,6 +175,7 @@ data class BatchSendConfig(
     val perRoundIntervalMs: Long,
     val selfCheckTtlMinutes: Int,
     val emailDomain: String = "",
+    val discipline: String = "",
     val templateId: Long? = null
 )
 
@@ -176,6 +188,7 @@ data class BatchSendConfigUpdateRequest(
     val perRoundIntervalMs: Long,
     val selfCheckTtlMinutes: Int,
     val emailDomain: String = "",
+    val discipline: String = "",
     val templateId: Long? = null
 )
 

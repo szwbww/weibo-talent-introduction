@@ -166,6 +166,7 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(listOf(contact))
         // No SENT mail record exists
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0003"))).thenReturn(listOf(expert("0003", "e@f.com")))
         stubScrolledExperts(emptyList())
 
         val summary = service.countPending()
@@ -982,6 +983,116 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, result.total)
         
         Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `countPending reads discipline from configuration`() {
+        val configWithDiscipline = fastConfig().copy(discipline = "STEM")
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(configWithDiscipline)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
+
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(3L)
+
+        val summary = service.countPending()
+        assertEquals(3, summary.pending)
+        assertEquals(3, summary.totalSendable)
+    }
+
+    @Test
+    fun `runScheduledBatch passes configured discipline to ES filter`() {
+        val configWithDiscipline = fastConfig().copy(emailDomain = "gmail.com", discipline = "HUMANITIES")
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(configWithDiscipline)
+
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com", "HUMANITIES")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+        assertEquals(0, result.total)
+
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `countPending excludes non-STEM retryable when discipline is STEM`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "STEM"))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val stemContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "STEM1", expertEmail = "s@x.com", expertName = "S", currentStatus = "NEW")
+        val humContact = ExpertContact(id = 2L, campaignId = 10L, orcidId = "HUM1", expertEmail = "h@x.com", expertName = "H", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(stemContact, humContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("STEM1", "HUM1"))).thenReturn(
+            listOf(
+                expert("STEM1", "s@x.com").copy(disciplineCategory = "STEM"),
+                expert("HUM1", "h@x.com").copy(disciplineCategory = "HUMANITIES")
+            )
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val summary = service.countPending()
+        assertEquals(0, summary.pending)
+        assertEquals(1, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+    }
+
+    @Test
+    fun `countPending keeps all retryable when discipline is blank`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = ""))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val humContact = ExpertContact(id = 2L, campaignId = 10L, orcidId = "HUM1", expertEmail = "h@x.com", expertName = "H", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(humContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("HUM1"))).thenReturn(
+            listOf(expert("HUM1", "h@x.com").copy(disciplineCategory = "HUMANITIES"))
+        )
+        stubScrolledExperts(emptyList())
+
+        val summary = service.countPending()
+        assertEquals(1, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+    }
+
+    @Test
+    fun `runScheduledBatch excludes non-STEM retryable when discipline is STEM`() {
+        val account = account("chen")
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "STEM"))
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+
+        val humContact = ExpertContact(id = 2L, campaignId = 10L, orcidId = "HUM1", expertEmail = "h@x.com", expertName = "H", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(humContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("HUM1"))).thenReturn(
+            listOf(expert("HUM1", "h@x.com").copy(disciplineCategory = "HUMANITIES"))
+        )
+
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+        stubPagedExperts(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+        assertEquals(0, result.total)
+        assertEquals(0, result.sent)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
     @Test

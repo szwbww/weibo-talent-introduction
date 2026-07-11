@@ -71,31 +71,27 @@ class ManualInitialOutreachService(
      * Count experts pending outreach: new candidates from ES + retryable contacts (NEW status without SENT mail record).
      */
     fun countPending(): PendingOutreachSummary {
+        val config = batchSendSettingService.getConfig()
         var retryable = 0
 
-        // 1. Count retryable: NEW contacts in MANUAL_OUTREACH campaign without a SENT introduction
+        // 1. Retryable: NEW contacts without SENT introduction (same path as runScheduledBatch)
         val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
         if (campaign != null) {
             val campaignId = campaign.id ?: error("Campaign ID is null")
-            val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
-            val seenRetryableOrcids = mutableSetOf<String>()
-            for (contact in newContacts) {
-                val normOrcid = normalizeOrcid(contact.orcidId)
-                if (seenRetryableOrcids.add(normOrcid)) {
-                    // Only retryable if no SENT introduction exists
-                    val hasSentIntro = hasSentIntroduction(contact.id!!)
-                    if (!hasSentIntro && contact.operatorStatus != "EMAIL_INVALID") {
-                        retryable++
-                    }
-                }
-            }
+            val (retryableTargets, _) = buildRetryableTargets(
+                campaignId,
+                config.discipline.ifBlank { null }
+            )
+            retryable = retryableTargets.size
         }
 
-        val emailDomain = batchSendSettingService.getConfig().emailDomain
         // 2. Pending: ES count query, operatorStatus does not exist + has email
         val pending = expertSearchService.countExperts(
             level = ExpertIndexLevel.CANDIDATE,
-            filters = ExpertSearchService.notContactedWithEmailFilters(emailDomain.ifBlank { null })
+            filters = ExpertSearchService.notContactedWithEmailFilters(
+                config.emailDomain.ifBlank { null },
+                config.discipline.ifBlank { null }
+            )
         )
 
         return PendingOutreachSummary(pending = pending.toInt(), retryable = retryable, totalSendable = pending.toInt() + retryable)
@@ -133,8 +129,14 @@ class ManualInitialOutreachService(
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = batchSendSettingService.getConfig()
 
-        val esFilters = ExpertSearchService.notContactedWithEmailFilters(config.emailDomain.ifBlank { null })
-        val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId)
+        val esFilters = ExpertSearchService.notContactedWithEmailFilters(
+            config.emailDomain.ifBlank { null },
+            config.discipline.ifBlank { null }
+        )
+        val (retryableTargets, seenOrcids) = buildRetryableTargets(
+            campaignId,
+            config.discipline.ifBlank { null }
+        )
         val esEstimate = expertSearchService.countExperts(
             level = ExpertIndexLevel.CANDIDATE,
             filters = esFilters
@@ -568,7 +570,10 @@ class ManualInitialOutreachService(
         return mailSenderAccountService.listSendableAccounts(ignoreWarmup)
     }
 
-    private fun buildRetryableTargets(campaignId: Long): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
+    private fun buildRetryableTargets(
+        campaignId: Long,
+        discipline: String? = null
+    ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
 
@@ -583,8 +588,11 @@ class ManualInitialOutreachService(
             val profileMap = profiles.associateBy { normalizeOrcid(it.orcidId) }
             for (contact in retryableContacts) {
                 val normOrcid = normalizeOrcid(contact.orcidId)
-                val profile = profileMap[normOrcid]
-                if (profile != null && seenOrcids.add(normOrcid)) {
+                val profile = profileMap[normOrcid] ?: continue
+                if (!discipline.isNullOrBlank() && profile.disciplineCategory != discipline) {
+                    continue
+                }
+                if (seenOrcids.add(normOrcid)) {
                     targets.add(Pair(contact, profile))
                 }
             }

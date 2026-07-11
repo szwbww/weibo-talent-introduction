@@ -3508,6 +3508,11 @@ function buildContactFilterSummary() {
     if (emailDomain) parts.push(`邮箱: @${emailDomain}`);
     const region = $("#expertRegionFilter")?.value || "";
     if (region) parts.push(`地区: ${region}`);
+    const discipline = $("#expertDisciplineFilter")?.value || "";
+    if (discipline) {
+        const disciplineLabels = { STEM: "理工科", HUMANITIES: "文社科", UNCLASSIFIED: "未分类" };
+        parts.push(`学科: ${disciplineLabels[discipline] || discipline}`);
+    }
     return parts.join(" · ") || "无额外筛选";
 }
 
@@ -3520,6 +3525,7 @@ async function collectBatchMailContactIds() {
     const tag = $("#expertTagFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
+    const discipline = $("#expertDisciplineFilter")?.value || "";
     const totalHits = state.contactsTotalHits || 0;
     if (totalHits <= 0) return [];
     if (totalHits > ES_MAX_RESULT_WINDOW) {
@@ -3541,6 +3547,7 @@ async function collectBatchMailContactIds() {
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (emailDomain) params.set("emailDomain", emailDomain);
         if (region) params.set("region", region);
+        if (discipline) params.set("discipline", discipline);
         let data;
         try {
             data = await api(`/api/experts?${params}`);
@@ -3658,12 +3665,14 @@ async function loadContacts() {
     const replyMode = $("#contactReplyModeFilter")?.value || "";
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
+    const discipline = $("#expertDisciplineFilter")?.value || "";
     let tag = $("#expertTagFilter")?.value || "";
     const useDbContactPath = needsAttention || replyMode;
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
     const regionFilterEl = $("#expertRegionFilter");
+    const disciplineFilterEl = $("#expertDisciplineFilter");
     const academicFilterIds = ["expertHIndexMinFilter", "expertCitationMinFilter", "expertRecentYearsFilter", "expertHasFieldFilter"];
     if (useDbContactPath) {
         tag = "";
@@ -3678,6 +3687,12 @@ async function loadContacts() {
             regionFilterEl.disabled = true;
             regionFilterEl.parentElement.style.opacity = "0.5";
             regionFilterEl.parentElement.title = "地区筛选仅在 ES 查询模式下可用";
+        }
+        if (disciplineFilterEl) {
+            disciplineFilterEl.value = "";
+            disciplineFilterEl.disabled = true;
+            disciplineFilterEl.parentElement.style.opacity = "0.5";
+            disciplineFilterEl.parentElement.title = "学科筛选仅在 ES 查询模式下可用";
         }
         academicFilterIds.forEach((id) => {
             const el = $(`#${id}`);
@@ -3702,6 +3717,11 @@ async function loadContacts() {
             regionFilterEl.disabled = false;
             regionFilterEl.parentElement.style.opacity = "1";
             regionFilterEl.parentElement.title = "";
+        }
+        if (disciplineFilterEl) {
+            disciplineFilterEl.disabled = false;
+            disciplineFilterEl.parentElement.style.opacity = "1";
+            disciplineFilterEl.parentElement.title = "";
         }
         academicFilterIds.forEach((id) => {
             const el = $(`#${id}`);
@@ -3793,6 +3813,7 @@ async function loadContacts() {
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (emailDomain) params.set("emailDomain", emailDomain);
         if (region) params.set("region", region);
+        if (discipline) params.set("discipline", discipline);
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
@@ -4982,6 +5003,7 @@ function fillBatchSendConfigForm(config) {
     setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
     setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
     setVal("batchSendEmailDomain", config.emailDomain ?? "");
+    setVal("batchSendDiscipline", config.discipline ?? "");
     fillBatchSendTemplateSelector(batchSendComposeTemplates, config.templateId ?? null);
 }
 
@@ -5062,6 +5084,7 @@ function readBatchSendConfigForm() {
         perRoundIntervalMs: Math.round(num("batchSendPerRoundIntervalSec") * 1000),
         selfCheckTtlMinutes: Math.round(num("batchSendSelfCheckTtlMin")),
         emailDomain: val("batchSendEmailDomain") || "",
+        discipline: val("batchSendDiscipline") || "",
         templateId: (() => {
             const raw = val("batchSendTemplateId");
             if (!raw) return null;
@@ -8314,6 +8337,46 @@ function renderAutoReplyPreviewHtml(preview) {
         </div>`;
 }
 
+function renderAutoReplyPreviewSummary(preview) {
+    const kindMeta = autoReplyPreviewKindLabels[preview.previewKind] || {
+        text: preview.previewKind || "预览完成",
+        badge: ""
+    };
+    const blockedCount = preview.wouldBeBlockedBy?.length || 0;
+    const ruleCount = preview.matchedRuleIds?.length || 0;
+    return {
+        status: blockedCount > 0 ? `有 ${blockedCount} 项阻断` : kindMeta.text,
+        meta: [
+            preview.intentCode ? `意图：${preview.intentCode}` : "",
+            preview.confidence != null ? `置信度 ${preview.confidence}` : "",
+            ruleCount > 0 ? `命中 ${ruleCount} 条规则` : "未命中规则"
+        ].filter(Boolean).join(" · ")
+    };
+}
+
+async function loadAutoReplyPreview(recordId) {
+    const resultEl = $("#autoReplyPreviewResult");
+    const statusEl = $("#autoReplyPreviewStatus");
+    const metaEl = $("#autoReplyPreviewMeta");
+    if (resultEl) resultEl.innerHTML = `<p class="text-muted">加载预览中…</p>`;
+    if (statusEl) statusEl.textContent = "生成中…";
+    if (metaEl) metaEl.textContent = "正在分析来信意图与回复规则";
+    try {
+        const preview = await api(`/api/mail/unmatched-inbound/${recordId}/auto-reply-preview`);
+        if (String(state.mailbox.detailContext?.id) !== String(recordId)) return null;
+        const summary = renderAutoReplyPreviewSummary(preview);
+        if (resultEl) resultEl.innerHTML = renderAutoReplyPreviewHtml(preview);
+        if (statusEl) statusEl.textContent = summary.status;
+        if (metaEl) metaEl.textContent = summary.meta;
+        return preview;
+    } catch (error) {
+        if (resultEl) resultEl.innerHTML = `<p class="text-muted">${escapeHtml(error.message || "预览失败")}</p>`;
+        if (statusEl) statusEl.textContent = "预览失败";
+        if (metaEl) metaEl.textContent = error.message || "请稍后重试";
+        throw error;
+    }
+}
+
 function renderComposedReplyWorkbenchHtml(suggest, recordId) {
     const suggestedSet = new Set(suggest.suggestedRuleIds || []);
     const categoriesHtml = (suggest.rulesByCategory || []).map((category) => `
@@ -8346,8 +8409,14 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
     `;
 
     return `
-        <div class="detail-section compose-workbench-section">
-            <h3>组装台回复</h3>
+        <details class="detail-section reply-workflow-detail compose-workbench-section">
+            <summary class="reply-workflow-summary">
+                <span class="reply-workflow-icon" aria-hidden="true">⌘</span>
+                <span class="reply-workflow-title"><strong>组装台回复</strong><small>按 QA 规则组合，可补充自由文本</small></span>
+                <span class="reply-workflow-status">已匹配 ${suggest.suggestedRuleIds?.length || 0} 条</span>
+                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="reply-workflow-content">
             <div class="compose-workbench">
                 <div class="compose-panel compose-fragments">
                     <h4>片段面板</h4>
@@ -8392,14 +8461,21 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     <ul id="composedGapList" class="compose-gap-list"></ul>
                 </div>
             </div>
-        </div>
+            </div>
+        </details>
         ${suggest.llmEnabled ? renderAiReplyPanelHtml(recordId) : ""}`;
 }
 
 function renderAiReplyPanelHtml(recordId) {
     return `
-        <div class="detail-section ai-reply-section">
-            <h3>AI 生成回复</h3>
+        <details class="detail-section reply-workflow-detail ai-reply-section">
+            <summary class="reply-workflow-summary">
+                <span class="reply-workflow-icon" aria-hidden="true">✦</span>
+                <span class="reply-workflow-title"><strong>AI 生成回复</strong><small>依据专家画像、历史邮件和命中规则生成</small></span>
+                <span class="reply-workflow-status">可用</span>
+                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="reply-workflow-content">
             <p class="text-muted" style="font-size:12px;margin:0 0 8px;">命中 QA 规则则按规则拼接；未命中则依据专家画像与历史邮件自由生成。首轮可填补充要求。</p>
             <div class="ai-chat-panel">
                 <div id="aiChatMessages" class="ai-chat-messages"></div>
@@ -8408,7 +8484,8 @@ function renderAiReplyPanelHtml(recordId) {
                     <button type="button" class="button primary" data-action="ai-reply-turn" data-record-id="${recordId}">生成 / 继续修改</button>
                 </div>
             </div>
-        </div>`;
+            </div>
+        </details>`;
 }
 
 function resetAiReplyState(recordId) {
@@ -8455,42 +8532,6 @@ function initAiReplyWorkbench(recordId) {
     if (container) container.innerHTML = "";
 }
 
-async function loadEnabledQaRulesForPendingReply() {
-    const rules = state.qaRules?.length
-        ? state.qaRules
-        : await api("/api/qa/rules");
-    if (!state.qaRules?.length) {
-        state.qaRules = rules;
-    }
-    return rules.filter((rule) => rule.enabled);
-}
-
-function formatQaRuleOptionName(rule) {
-    return rule.displayName?.trim()
-        || rule.replySubject?.trim()
-        || `Rule #${rule.id}`;
-}
-
-function buildUnmatchedQaReplyHtml(qaRules, recordId) {
-    const enabledRules = (qaRules || []).filter((rule) => rule.enabled);
-    if (!enabledRules.length) {
-        return "";
-    }
-    return `
-        <div class="detail-section" style="margin-top:12px;">
-            <h3>QA 邮件回复（单规则）</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <select id="unmatchedQaOption" style="flex:1;">
-                    ${enabledRules.map((rule) => `
-                        <option value="${escapeHtml(String(rule.id))}">${escapeHtml(formatQaRuleOptionName(rule))}${rule.replySubject ? ` - ${escapeHtml(rule.replySubject)}` : ""}</option>
-                    `).join("")}
-                </select>
-                <button class="button primary" data-action="send-pending-qa-reply" data-record-id="${recordId}">发送 QA 邮件</button>
-            </div>
-        </div>
-    `;
-}
-
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
     state.mailbox.detailContext = {
@@ -8499,9 +8540,8 @@ async function showUnmatchedDetail(id) {
         inboundProcessingId: Number(id)
     };
     const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
-    const [data, qaRules, logs, threadData] = await Promise.all([
+    const [data, logs, threadData] = await Promise.all([
         detailPromise,
-        loadEnabledQaRulesForPendingReply(),
         api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
         api(`/api/inbound-summary/mails/${id}/thread`).catch(() => ({ tags: [] }))
     ]);
@@ -8527,9 +8567,8 @@ async function showUnmatchedDetail(id) {
     panel.hidden = false;
 
     const linkedExpertHtml = record.expertContactId && contact ? `
-        <div class="detail-section">
-            <h3>关联专家</h3>
-            <div class="linked-expert-card">
+        <div class="mail-expert-overview-expert">
+            <div class="mail-expert-identity">
                 <div class="candidate-info">
                     <strong>${escapeHtml(contact.expertName || record.expertName || "?")}</strong>
                     <span>${escapeHtml(contact.expertEmail || "-")}</span>
@@ -8541,24 +8580,22 @@ async function showUnmatchedDetail(id) {
                     <button class="button" data-action="open-contact-from-unmatched" data-id="${record.expertContactId}">查看专家详情</button>
                 </div>
             </div>
-            <div class="detail-section" style="margin-top:12px;">
-                <h3>变更专家状态</h3>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="unmatchedOperatorStatusSelect" data-record-id="${id}" style="flex:1;">
+            <div class="mail-expert-controls">
+                <label>
+                    <span>专家状态</span>
+                    <select id="unmatchedOperatorStatusSelect" data-record-id="${id}" data-current-value="${escapeHtml(contact.operatorStatus || "")}">
                         ${optionsFromArray(operatorStatusOptions, false, "请选择", contact.operatorStatus || "")}
                     </select>
-                    <button class="button" data-action="change-operator-status" data-record-id="${id}">确认变更</button>
-                </div>
-            </div>
-            <div class="detail-section" style="margin-top:12px;">
-                <h3>变更专家层级</h3>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="unmatchedIndexLevelSelect" data-record-id="${id}" style="flex:1;">
+                </label>
+                <label>
+                    <span>专家层级</span>
+                    <select id="unmatchedIndexLevelSelect" data-record-id="${id}" data-current-value="${escapeHtml(contact.currentIndexLevel || "")}">
                         ${optionsFromArray(indexLevelOptions, false, "请选择", contact.currentIndexLevel || "")}
                     </select>
-                    <button class="button" data-action="change-index-level" data-record-id="${id}">确认变更</button>
-                </div>
+                </label>
+                <button class="button primary" data-action="save-expert-changes" data-record-id="${id}">保存变更</button>
             </div>
+            ${processingExpertTagHtml}
         </div>
     ` : `
         <div class="detail-section">
@@ -8593,15 +8630,20 @@ async function showUnmatchedDetail(id) {
         </div>
     `;
 
-    const qaReplyHtml = buildUnmatchedQaReplyHtml(qaRules, id);
-
     const composeWorkbenchHtml = suggest ? renderComposedReplyWorkbenchHtml(suggest, id) : "";
 
     const historyMails = (history && history.mails) || [];
+    const historyTimes = historyMails.map(formatMailTime).filter(Boolean).sort();
+    const latestHistoryTime = historyTimes.length ? historyTimes[historyTimes.length - 1] : "";
     const historyHtml = record.expertContactId && historyMails.length ? `
-        <details class="detail-section mail-history-detail">
-            <summary>与该专家的历史信件记录（${historyMails.length} 封）</summary>
-            <div class="mail-timeline">
+        <details class="detail-section reply-workflow-detail mail-history-detail">
+            <summary class="reply-workflow-summary">
+                <span class="reply-workflow-icon" aria-hidden="true">↺</span>
+                <span class="reply-workflow-title"><strong>与该专家的历史信件记录</strong><small>${latestHistoryTime ? `最近联系：${escapeHtml(latestHistoryTime)}` : "查看完整往来"}</small></span>
+                <span class="reply-workflow-status">${historyMails.length} 封</span>
+                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="reply-workflow-content mail-timeline">
                 ${historyMails.slice().reverse().map(renderMailItem).join("")}
             </div>
         </details>
@@ -8613,65 +8655,82 @@ async function showUnmatchedDetail(id) {
             <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
         </div>
         <div class="unmatched-detail-body">
-            <div class="metadata-grid">
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>发件邮箱</span></div>
-                    <div class="metadata-card-value">${escapeHtml(record.fromEmail)}</div>
+            <div class="mail-detail-group-label"><span>基本信息</span></div>
+            <div class="mail-expert-overview">
+                <div class="mail-overview-head">
+                    <div class="mail-overview-subject">
+                        <h3>${escapeHtml(record.subject || "（无主题）")}</h3>
+                        <p>来自 ${escapeHtml(record.fromEmail)}</p>
+                    </div>
+                    <div class="mail-overview-meta">
+                        <span>${escapeHtml(record.receivedAt || "-")}</span>
+                        <span>账号：${escapeHtml(record.senderAccountCode || "-")}</span>
+                    </div>
                 </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>主题</span></div>
-                    <div class="metadata-card-value">${escapeHtml(record.subject || "-")}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>Message-ID</span></div>
-                    <div class="metadata-card-value" style="font-size: 11px; word-break: break-all;">${escapeHtml(record.messageId || "-")}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>In-Reply-To</span></div>
-                    <div class="metadata-card-value" style="font-size: 11px; word-break: break-all;">${escapeHtml(record.inReplyTo || "-")}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>收信时间</span></div>
-                    <div class="metadata-card-value">${escapeHtml(record.receivedAt || "")}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>邮箱账号</span></div>
-                    <div class="metadata-card-value">${escapeHtml(record.senderAccountCode)}</div>
-                </div>
+                ${renderMailboxInboundTagEditor(inboundTags, Number(id))}
+                ${linkedExpertHtml}
+                <details class="mail-technical-detail">
+                    <summary>邮件技术信息 · Message-ID / In-Reply-To</summary>
+                    <div class="mail-technical-grid">
+                        <div><span>Message-ID</span><code>${escapeHtml(record.messageId || "-")}</code></div>
+                        <div><span>In-Reply-To</span><code>${escapeHtml(record.inReplyTo || "-")}</code></div>
+                    </div>
+                </details>
             </div>
 
-            ${renderMailboxInboundTagEditor(inboundTags, Number(id))}
-            ${processingExpertTagHtml}
-
             ${record.body ? `
-            <div class="detail-section">
-                <h3>原始正文</h3>
+            <div class="mail-detail-group-label"><span>邮件正文</span></div>
+            <details class="detail-section reply-workflow-detail mail-body-section original-mail-body-section">
+                <summary class="reply-workflow-summary">
+                    <span class="reply-workflow-icon" aria-hidden="true">原</span>
+                    <span class="reply-workflow-title"><strong>原始正文</strong><small>包含原始引用、签名及未清洗内容</small></span>
+                    <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="reply-workflow-content mail-body-content">
                 ${translatableBody(record.body)}
-            </div>` : ""}
+                </div>
+            </details>` : ""}
 
             ${record.cleanedBody ? `
-            <div class="detail-section">
-                <h3>清洗后正文</h3>
+            <details class="detail-section reply-workflow-detail mail-body-section cleaned-mail-body-section" open>
+                <summary class="reply-workflow-summary">
+                    <span class="reply-workflow-icon" aria-hidden="true">净</span>
+                    <span class="reply-workflow-title"><strong>清洗后正文</strong><small>已移除引用历史与签名，默认显示</small></span>
+                    <span class="reply-workflow-status">默认显示</span>
+                    <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="reply-workflow-content mail-body-content">
                 ${translatableBody(record.cleanedBody)}
-            </div>` : ""}
+                </div>
+            </details>` : ""}
 
-            ${linkedExpertHtml}
-
+            <div class="mail-detail-group-label"><span>处理与回复</span></div>
             ${historyHtml}
 
-            ${qaReplyHtml}
+            <details class="detail-section reply-workflow-detail auto-reply-preview-section" data-record-id="${id}">
+                <summary class="reply-workflow-summary">
+                    <span class="reply-workflow-icon" aria-hidden="true">自</span>
+                    <span class="reply-workflow-title"><strong>自动回复预览</strong><small id="autoReplyPreviewMeta">正在分析来信意图与回复规则</small></span>
+                    <span class="reply-workflow-status" id="autoReplyPreviewStatus">生成中…</span>
+                    <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="reply-workflow-content">
+                    <p class="text-muted" style="font-size:12px;margin:0 0 8px;">模拟「若此刻开启自动回复」系统会回什么（不发送、不写库）</p>
+                    <button type="button" class="button" data-action="preview-auto-reply" data-record-id="${id}">重新预览</button>
+                    <div id="autoReplyPreviewResult" style="margin-top:12px;"><p class="text-muted">加载预览中…</p></div>
+                </div>
+            </details>
 
             ${composeWorkbenchHtml}
 
-            <div class="detail-section auto-reply-preview-section">
-                <h3>自动回复预览</h3>
-                <p class="text-muted" style="font-size:12px;margin:0 0 8px;">模拟「若此刻开启自动回复」系统会回什么（不发送、不写库）</p>
-                <button type="button" class="button" data-action="preview-auto-reply" data-record-id="${id}">预览自动回复</button>
-                <div id="autoReplyPreviewResult" style="margin-top:12px;"></div>
-            </div>
-
-            <div class="detail-section" style="margin-top:12px;">
-                <h3>人工富文本回复</h3>
+            <details class="detail-section reply-workflow-detail manual-rich-reply-section">
+                <summary class="reply-workflow-summary">
+                    <span class="reply-workflow-icon" aria-hidden="true">✎</span>
+                    <span class="reply-workflow-title"><strong>人工富文本回复</strong><small>手动编辑主题和正文后发送</small></span>
+                    <span class="reply-workflow-status">未填写</span>
+                    <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="reply-workflow-content">
                 <input id="manualReplySubject" placeholder="邮件主题" style="margin-bottom:8px;">
                 <div class="rich-toolbar">
                     <button type="button" data-action="rich-command" data-command="bold"><strong>B</strong></button>
@@ -8681,12 +8740,20 @@ async function showUnmatchedDetail(id) {
                 </div>
                 <div id="manualRichReplyEditor" contenteditable="true" class="rich-editor"></div>
                 <button class="button primary" data-action="send-manual-rich-reply" data-record-id="${id}" style="margin-top:8px;">发送人工回复</button>
-            </div>
+                </div>
+            </details>
 
-            <div class="detail-section" style="margin-top:12px;">
-                <h3>操作日志</h3>
+            <div class="mail-detail-group-label"><span>操作记录</span></div>
+            <details class="detail-section reply-workflow-detail operator-log-section">
+                <summary class="reply-workflow-summary">
+                    <span class="reply-workflow-icon" aria-hidden="true">记</span>
+                    <span class="reply-workflow-title"><strong>操作日志</strong><small>查看处理、回复与状态变更记录</small></span>
+                    <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="reply-workflow-content">
                 ${renderOperatorLogs(logs)}
-            </div>
+                </div>
+            </details>
         </div>
     `;
 
@@ -8699,6 +8766,8 @@ async function showUnmatchedDetail(id) {
             initAiReplyWorkbench(id);
         }
     }
+
+    loadAutoReplyPreview(id).catch(() => {});
 
     panel.scrollIntoView({ behavior: "smooth" });
 }
@@ -8717,20 +8786,10 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "preview-auto-reply") {
-        const resultEl = $("#autoReplyPreviewResult");
-        if (resultEl) {
-            resultEl.innerHTML = `<p class="text-muted">加载预览中…</p>`;
-        }
         try {
-            const preview = await api(`/api/mail/unmatched-inbound/${id}/auto-reply-preview`);
-            if (resultEl) {
-                resultEl.innerHTML = renderAutoReplyPreviewHtml(preview);
-            }
+            await loadAutoReplyPreview(id);
         } catch (error) {
-            if (resultEl) {
-                resultEl.innerHTML = `<p class="text-muted">${escapeHtml(error.message || "预览失败")}</p>`;
-            }
-            throw error;
+            showStatus(error.message || "预览失败", "error");
         }
         return;
     }
@@ -8803,6 +8862,42 @@ async function handleUnmatchedAction(element) {
         await refreshMailboxAfterPendingAction();
         return;
     }
+    if (action === "save-expert-changes") {
+        const statusSelect = $("#unmatchedOperatorStatusSelect");
+        const levelSelect = $("#unmatchedIndexLevelSelect");
+        const newStatus = statusSelect?.value;
+        const newLevel = levelSelect?.value;
+        const currentStatus = statusSelect?.dataset.currentValue || "";
+        const currentLevel = levelSelect?.dataset.currentValue || "";
+        const statusChanged = newStatus && newStatus !== currentStatus;
+        const levelChanged = newLevel && newLevel !== currentLevel;
+        if (!statusChanged && !levelChanged) {
+            showStatus("专家状态和层级均未变化");
+            return;
+        }
+        const operatorName = window.localStorage.getItem("operatorName") || "console";
+        element.disabled = true;
+        try {
+            if (statusChanged) {
+                await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
+                    method: "POST",
+                    body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+                });
+            }
+            if (levelChanged) {
+                await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
+                    method: "POST",
+                    body: JSON.stringify({ targetLevel: newLevel, operatorName })
+                });
+            }
+            showStatus("专家信息已更新", "ok");
+            await showUnmatchedDetail(id);
+        } catch (e) {
+            showStatus(`专家信息更新失败：${e.message}`, "error");
+            element.disabled = false;
+        }
+        return;
+    }
     if (action === "change-operator-status") {
         const newStatus = $("#unmatchedOperatorStatusSelect")?.value;
         if (!newStatus) {
@@ -8841,27 +8936,6 @@ async function handleUnmatchedAction(element) {
             return;
         }
         await showUnmatchedDetail(id);
-        return;
-    }
-    if (action === "send-pending-qa-reply") {
-        const optionValue = $("#unmatchedQaOption")?.value;
-        if (!optionValue) {
-            showStatus("请选择 QA 回复选项", "error");
-            return;
-        }
-        const operatorName = window.localStorage.getItem("operatorName") || "console";
-        try {
-            await api(`/api/mail/unmatched-inbound/${id}/qa-reply`, {
-                method: "POST",
-                body: JSON.stringify({ qaRuleId: Number(optionValue), operatorName })
-            });
-            alert("QA 邮件发送成功");
-        } catch (e) {
-            alert("QA 邮件发送失败: " + e.message);
-            return;
-        }
-        await showUnmatchedDetail(id);
-        await refreshMailboxAfterPendingAction();
         return;
     }
     if (action === "mailbox-auto-tags") {
@@ -10078,6 +10152,7 @@ function bindEvents() {
             $("#expertTagFilter").value !== "",
             $("#expertEmailDomainFilter")?.value !== "",
             $("#expertRegionFilter")?.value !== "",
+            $("#expertDisciplineFilter")?.value !== "",
             ($("#expertHIndexMinFilter")?.value || "") !== "",
             ($("#expertCitationMinFilter")?.value || "") !== "",
             ($("#expertRecentYearsFilter")?.value || "") !== "",
@@ -10094,7 +10169,7 @@ function bindEvents() {
     };
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
-        "expertRegionFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
+        "expertRegionFilter", "expertDisciplineFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
         "expertRecentYearsFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });

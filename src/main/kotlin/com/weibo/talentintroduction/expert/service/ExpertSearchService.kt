@@ -23,8 +23,25 @@ class ExpertSearchService(
     companion object {
         val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles")
 
-        fun notContactedWithEmailFilters(emailDomain: String? = null): List<Map<String, Any>> {
-            val filters = mutableListOf(
+        private val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")
+
+        private fun disciplineFilter(discipline: String): Map<String, Any> {
+            require(discipline in ALLOWED_DISCIPLINES) { "Invalid discipline: $discipline" }
+            return when (discipline) {
+                "UNCLASSIFIED" -> mapOf(
+                    "bool" to mapOf(
+                        "must_not" to listOf(mapOf("exists" to mapOf("field" to "disciplineCategory")))
+                    )
+                )
+                else -> mapOf("term" to mapOf("disciplineCategory" to discipline))
+            }
+        }
+
+        fun notContactedWithEmailFilters(
+            emailDomain: String? = null,
+            discipline: String? = null
+        ): List<Map<String, Any>> {
+            val filters = mutableListOf<Map<String, Any>>(
                 mapOf("exists" to mapOf("field" to "email")),
                 mapOf("bool" to mapOf(
                     "must_not" to listOf(
@@ -35,6 +52,9 @@ class ExpertSearchService(
             )
             if (!emailDomain.isNullOrBlank()) {
                 filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$emailDomain"))))
+            }
+            if (!discipline.isNullOrBlank()) {
+                filters.add(disciplineFilter(discipline))
             }
             return filters
         }
@@ -52,13 +72,14 @@ class ExpertSearchService(
         hIndexMin: Int? = null,
         citationCountMin: Int? = null,
         recentYears: Int? = null,
-        hasField: List<String>? = null
+        hasField: List<String>? = null,
+        discipline: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
         val filters = buildExpertFilters(
-            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField
+            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField, discipline
         )
 
         val query = if (filters.isEmpty()) {
@@ -221,6 +242,7 @@ class ExpertSearchService(
             citationCount = source.path("citationCount").let { if (it.isInt) it.asInt() else null },
             lastPublicationYear = source.path("lastPublicationYear").let { if (it.isInt) it.asInt() else null },
             researchFields = source.nullableText("researchFields"),
+            disciplineCategory = source.nullableText("disciplineCategory"),
             institution = source.nullableText("institution"),
             emailSource = source.nullableText("emailSource"),
             emailVerifiedLevel = source.path("emailVerifiedLevel").let { if (it.isInt) it.asInt() else null },
@@ -253,7 +275,7 @@ class ExpertSearchService(
             "country", "keyword", "employment",
             "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear",
-            "researchFields", "institution",
+            "researchFields", "disciplineCategory", "institution",
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount",
             "tags",
@@ -713,7 +735,8 @@ class ExpertSearchService(
         hIndexMin: Int? = null,
         citationCountMin: Int? = null,
         recentYears: Int? = null,
-        hasField: List<String>? = null
+        hasField: List<String>? = null,
+        discipline: String? = null
     ): MutableList<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>()
 
@@ -749,6 +772,10 @@ class ExpertSearchService(
         hasField?.forEach { field ->
             require(field in ALLOWED_HAS_FIELDS) { "Invalid hasField: $field" }
             filters.add(mapOf("exists" to mapOf("field" to field)))
+        }
+
+        if (!discipline.isNullOrBlank()) {
+            filters.add(disciplineFilter(discipline))
         }
 
         return filters

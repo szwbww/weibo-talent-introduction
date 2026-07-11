@@ -63,6 +63,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - QA 复合覆盖规则与缺口检测共存时，缺口检测必须用覆盖前命中集计算覆盖度，或把 `supersedesChildren=true` 复合规则视为覆盖总览型多主题意图；否则概览型多问来信会被误转人工。(K-overview-gap-supersede)
 - 新增前端侧栏 Tab/视图须四处同步注册：① `index.html` 侧栏 `.nav-tab[data-view]`；② `index.html` `<section class="view" id="view-<name>">`；③ `app.js` `viewMeta`；④ `app.js` `refreshCurrentView()`。缺一即切换报错。(K-view-registration-triad)
 - AI 草稿链路里"给 LLM 的 QA 知识范围（promptRuleIds，可回退全集）"与"发送审计子集（sendQaRuleIds，只能是真实匹配/显式勾选）"是两个语义，进 `mail_record_qa_rule` 的只能是后者；模拟路径产物永不落审计。(K-ai-reply-prompt-vs-send-rule-ids)
+- 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
 
 ---
 

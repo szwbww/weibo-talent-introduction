@@ -304,6 +304,102 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
+    fun `enrichAuthor disciplineCategory null when no topics`() {
+        stubAuthorEnrichment("""{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[]}""")
+        assertNull(dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory null when all domains unknown`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"X","count":5,"domain":{"display_name":"Arts"}},
+              {"display_name":"Y","count":9,"domain":{"display_name":"Unknown Domain"}}
+            ]}"""
+        )
+        assertNull(dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory HUMANITIES when Social outweighs Physical`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"Physics","count":10,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"Sociology","count":15,"domain":{"display_name":"Social Sciences"}}
+            ]}"""
+        )
+        assertEquals("HUMANITIES", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory STEM when Physical plus Health outweigh Social`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"Physics","count":10,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"Medicine","count":6,"domain":{"display_name":"Health Sciences"}},
+              {"display_name":"Sociology","count":15,"domain":{"display_name":"Social Sciences"}}
+            ]}"""
+        )
+        assertEquals("STEM", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory STEM on tie`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"Physics","count":10,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"Sociology","count":10,"domain":{"display_name":"Social Sciences"}}
+            ]}"""
+        )
+        assertEquals("STEM", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory ignores unknown domains in sum`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"Physics","count":5,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"Art","count":100,"domain":{"display_name":"Arts"}},
+              {"display_name":"Sociology","count":8,"domain":{"display_name":"Social Sciences"}}
+            ]}"""
+        )
+        assertEquals("HUMANITIES", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory uses all topics not top5`() {
+        // 4 Physical (sum=15) first + 2 Social (1+49=50). Full-sum → HUMANITIES.
+        // Wrong take(5) on array order keeps Physical+tiny Social → STEM.
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"P1","count":4,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"P2","count":4,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"P3","count":4,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"P4","count":3,"domain":{"display_name":"Physical Sciences"}},
+              {"display_name":"S1","count":1,"domain":{"display_name":"Social Sciences"}},
+              {"display_name":"S2","count":49,"domain":{"display_name":"Social Sciences"}}
+            ]}"""
+        )
+        assertEquals("HUMANITIES", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    @Test
+    fun `enrichAuthor disciplineCategory STEM for Life Sciences`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[
+              {"display_name":"Biology","count":12,"domain":{"display_name":"Life Sciences"}}
+            ]}"""
+        )
+        assertEquals("STEM", dataSource.enrichAuthor("A1")!!.disciplineCategory)
+    }
+
+    private fun stubAuthorEnrichment(json: String) {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(json))
+    }
+
+    @Test
     fun `batchEnrichByOrcids keeps base Success when works fetch is rate limited`() {
         val worksEnabledSource = OpenAlexDataSource(
             restTemplate,
