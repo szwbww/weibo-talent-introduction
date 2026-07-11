@@ -45,7 +45,8 @@ class UnmatchedInboundMailController(
     private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService,
     private val aiReplyContextBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder,
     private val aiTrainingQaService: com.weibo.talentintroduction.llm.service.AiTrainingQaService,
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val aiReplyContextService: com.weibo.talentintroduction.llm.service.AiReplyContextService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -284,32 +285,34 @@ class UnmatchedInboundMailController(
                 operatorInstruction = it.operatorInstruction
             )
         }
-        val baseProfile = detail.expertContactId?.let { contactId ->
-            expertContactRepository.findById(contactId).orElse(null)?.let(aiReplyContextBuilder::buildExpertProfile)
-        }
-        val expertProfile = aiReplyContextBuilder.appendKnowledgeToProfile(
-            baseProfile ?: "",
-            aiTrainingQaService.buildKnowledgeContext()
-        )
-        val mailHistory = detail.expertContactId?.let { contactId ->
-            aiReplyContextBuilder.buildMailHistory(
-                mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
-            )
-        }
+        val contactId = detail.expertContactId
+            ?: throw IllegalArgumentException("Inbound processing $id has no expertContactId")
+        val contact = expertContactRepository.findById(contactId).orElse(null)
+            ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        val knowledge = aiTrainingQaService.buildKnowledgeContext()
+        val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
+
         val result = aiReplyDraftService.generate(
             inboundText = inboundText,
             operatorTurns = turns,
             qaRuleIds = request.qaRuleIds,
             operatorInstruction = request.operatorInstruction,
-            expertProfile = expertProfile,
-            mailHistory = mailHistory
+            expertProfile = context.profileText,
+            mailHistory = context.mailHistory,
+            contextWarnings = context.contextWarnings
         )
         return AiReplyTurnResponse(
             draftText = result.draftText,
             usedLlm = result.usedLlm,
             llmEnabled = llmStitchService.isEnabled(),
             qaRuleIds = result.qaRuleIds,
-            mode = result.mode.name
+            mode = result.mode.name,
+            requestCount = result.requestCount,
+            groundedRequestCount = result.groundedRequestCount,
+            unsupportedRequests = result.unsupportedRequests,
+            contextWarnings = result.contextWarnings,
+            injectedDialogRefs = result.fewShotDialogRefs
         )
     }
 }
@@ -524,7 +527,12 @@ data class AiReplyTurnResponse(
     val usedLlm: Boolean,
     val llmEnabled: Boolean,
     val qaRuleIds: List<Long>,
-    val mode: String
+    val mode: String,
+    val requestCount: Int = 0,
+    val groundedRequestCount: Int = 0,
+    val unsupportedRequests: List<String> = emptyList(),
+    val contextWarnings: List<String> = emptyList(),
+    val injectedDialogRefs: List<String> = emptyList()
 )
 
 private fun InboundMailProcessing.toResponse(

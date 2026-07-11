@@ -4,7 +4,9 @@ import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.llm.service.AiReplyContext
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
+import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyMode
@@ -16,6 +18,7 @@ import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -35,6 +38,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
     private val aiReplyContextBuilder = AiReplyContextBuilder()
     private val aiTrainingQaService = Mockito.mock(AiTrainingQaService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val aiReplyContextService = Mockito.mock(AiReplyContextService::class.java)
 
     private val controller = UnmatchedInboundMailController(
         unmatchedInboundMailService,
@@ -48,11 +52,21 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         aiReplyDraftService,
         aiReplyContextBuilder,
         aiTrainingQaService,
-        mailRecordRepository
+        mailRecordRepository,
+        aiReplyContextService
+    )
+
+    private val contact = ExpertContact(
+        id = 10L,
+        campaignId = 1L,
+        orcidId = "0000-0000-0000-0001",
+        expertName = "Dr. Test",
+        expertEmail = "expert@test.com",
+        currentStatus = "WAITING_REPLY"
     )
 
     @Test
-    fun `aiReplyTurn injects training knowledge into expert profile`() {
+    fun `aiReplyTurn injects training knowledge into expert profile via context service`() {
         val detail = InboundMailProcessing(
             id = 1L,
             senderAccountCode = "a1",
@@ -67,14 +81,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             processReason = "UNMATCHED",
             expertContactId = 10L
         )
-        val contact = ExpertContact(
-            id = 10L,
-            campaignId = 1L,
-            orcidId = "0000-0000-0000-0001",
-            expertName = "Dr. Test",
-            expertEmail = "expert@test.com",
-            currentStatus = "WAITING_REPLY"
-        )
         Mockito.`when`(unmatchedInboundMailService.getDetail(1L)).thenReturn(detail)
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
@@ -83,30 +89,139 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             .thenReturn("Topic: office mascot\nAnswer: QINGFEI-PANDA")
         Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
 
-        var capturedProfile: String? = null
+        val expectedProfile = "Name: Dr. Test\nTraining knowledge base:\nTopic: office mascot\nAnswer: QINGFEI-PANDA"
+        val expectedContext = AiReplyContext(
+            profileText = expectedProfile,
+            mailHistory = "",
+            contextWarnings = emptyList()
+        )
+        // Use exact values (not matchers) to avoid Kotlin non-null parameter check issues
         Mockito.`when`(
-            aiReplyDraftService.generate(
-                Mockito.anyString(),
-                Mockito.anyList(),
-                Mockito.any(),
-                Mockito.any(),
-                Mockito.any(),
-                Mockito.any(),
-                Mockito.anyBoolean()
+            aiReplyContextService.build(
+                contact,
+                emptyList(),
+                "Hello",
+                "Topic: office mascot\nAnswer: QINGFEI-PANDA"
             )
-        ).thenAnswer { invocation ->
+        ).thenReturn(expectedContext)
+
+        var capturedProfile: String? = null
+        var capturedWarnings: List<String>? = null
+        Mockito.doAnswer { invocation ->
             capturedProfile = invocation.getArgument(4)
+            capturedWarnings = invocation.getArgument(7)
             AiReplyDraftResult(
                 draftText = "draft",
                 usedLlm = false,
                 qaRuleIds = emptyList(),
                 mode = AiReplyMode.FREE_FORM
             )
-        }
+        }.`when`(aiReplyDraftService).generate(
+            Mockito.anyString(),
+            Mockito.anyList(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.anyBoolean(),
+            Mockito.anyList()
+        )
 
         controller.aiReplyTurn(1L, AiReplyTurnRequest())
 
         assertTrue(capturedProfile!!.contains("Training knowledge base:"))
         assertTrue(capturedProfile!!.contains("QINGFEI-PANDA"))
+        assertEquals(emptyList<String>(), capturedWarnings)
+    }
+
+    @Test
+    fun `aiReplyTurn response includes new coverage fields`() {
+        val detail = InboundMailProcessing(
+            id = 2L,
+            senderAccountCode = "a1",
+            imapUid = 2L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "Query",
+            body = "Question text",
+            cleanedBody = "Question text",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(2L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
+
+        // Use exact values (not matchers) to avoid Kotlin non-null parameter check issues
+        Mockito.`when`(
+            aiReplyContextService.build(contact, emptyList(), "Question text", "")
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Dr. Test",
+                mailHistory = "",
+                contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+            )
+        )
+
+        Mockito.doReturn(
+            AiReplyDraftResult(
+                draftText = "reply draft",
+                usedLlm = false,
+                qaRuleIds = listOf(5L),
+                mode = AiReplyMode.QA_MATCHED,
+                requestCount = 1,
+                groundedRequestCount = 0,
+                unsupportedRequests = listOf("research scope"),
+                contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
+                fewShotDialogRefs = listOf("DIALOG_1")
+            )
+        ).`when`(aiReplyDraftService).generate(
+            Mockito.anyString(),
+            Mockito.anyList(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.anyBoolean(),
+            Mockito.anyList()
+        )
+
+        val response = controller.aiReplyTurn(2L, AiReplyTurnRequest())
+
+        assertEquals(listOf(5L), response.qaRuleIds)
+        assertEquals("QA_MATCHED", response.mode)
+        assertEquals(1, response.requestCount)
+        assertEquals(0, response.groundedRequestCount)
+        assertEquals(listOf("research scope"), response.unsupportedRequests)
+        assertEquals(listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"), response.contextWarnings)
+        assertEquals(listOf("DIALOG_1"), response.injectedDialogRefs)
+    }
+
+    @Test
+    fun `aiReplyTurn throws when expertContactId is null`() {
+        val detail = InboundMailProcessing(
+            id = 3L,
+            senderAccountCode = "a1",
+            imapUid = 3L,
+            messageId = null,
+            fromEmail = "unknown@test.com",
+            subject = "?",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = null
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(3L)).thenReturn(detail)
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurn(3L, AiReplyTurnRequest())
+        }
     }
 }

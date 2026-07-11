@@ -7,7 +7,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.llm.service.AiPromptConfigDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
-import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
+import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
@@ -34,7 +34,7 @@ class AiTrainingController(
     private val aiTrainingQaService: AiTrainingQaService,
     private val aiPromptConfigService: AiPromptConfigService,
     private val aiReplyDraftService: AiReplyDraftService,
-    private val aiReplyContextBuilder: AiReplyContextBuilder,
+    private val aiReplyContextService: AiReplyContextService,
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
     private val expertSearchService: ExpertSearchService,
@@ -130,6 +130,7 @@ class AiTrainingController(
             val contact = contactsById[contactId] ?: return@mapNotNull null
             val body = mail.cleanedBody?.takeIf { it.isNotBlank() } ?: mail.body.orEmpty()
             AiTrainingSimulateMailItem(
+                mailRecordId = requireNotNull(mail.id),
                 expertContactId = contactId,
                 expertName = contact.expertName,
                 expertEmail = contact.expertEmail,
@@ -175,25 +176,39 @@ class AiTrainingController(
 
     @PostMapping("/simulate")
     fun simulate(@RequestBody request: AiTrainingSimulateRequest): AiTrainingSimulateResponse {
-        val contact = expertContactRepository.findById(request.expertContactId).orElse(null)
-            ?: throw IllegalArgumentException("Expert contact not found: ${request.expertContactId}")
-        val latestInbound = mailRecordRepository.findLatestInboundByExpertContactId(request.expertContactId)
-            ?: throw IllegalArgumentException("No inbound mail found for contact: ${request.expertContactId}")
-        val inboundText = latestInbound.cleanedBody?.takeIf { it.isNotBlank() } ?: latestInbound.body.orEmpty()
-        val mailHistory = aiReplyContextBuilder.buildMailHistory(
-            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(request.expertContactId)
-        )
-        val profile = aiReplyContextBuilder.appendKnowledgeToProfile(
-            aiReplyContextBuilder.buildExpertProfile(contact),
-            aiTrainingQaService.buildKnowledgeContext()
-        )
+        val (contact, inboundMail) = if (request.mailRecordId != null) {
+            val mail = mailRecordRepository.findById(request.mailRecordId).orElse(null)
+                ?: throw IllegalArgumentException("Mail record not found: ${request.mailRecordId}")
+            if (mail.direction != "INBOUND")
+                throw IllegalArgumentException("Mail ${request.mailRecordId} is not INBOUND")
+            val contactId = mail.expertContactId
+                ?: throw IllegalArgumentException("Mail ${request.mailRecordId} has no expertContactId")
+            val c = expertContactRepository.findById(contactId).orElse(null)
+                ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+            c to mail
+        } else {
+            val contactId = request.expertContactId
+                ?: throw IllegalArgumentException("Either mailRecordId or expertContactId must be provided")
+            val c = expertContactRepository.findById(contactId).orElse(null)
+                ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+            val latest = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+                ?: throw IllegalArgumentException("No inbound mail found for contact: $contactId")
+            c to latest
+        }
+
+        val contactId = requireNotNull(contact.id)
+        val inboundText = inboundMail.cleanedBody?.takeIf { it.isNotBlank() } ?: inboundMail.body.orEmpty()
+        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        val knowledge = aiTrainingQaService.buildKnowledgeContext()
+        val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
+
         val result = aiReplyDraftService.generate(
             inboundText = inboundText,
             operatorTurns = emptyList(),
             operatorInstruction = request.promptOverride,
-            expertProfile = profile,
-            mailHistory = mailHistory,
-            simulateOnly = true
+            expertProfile = context.profileText,
+            mailHistory = context.mailHistory,
+            contextWarnings = context.contextWarnings
         )
         return AiTrainingSimulateResponse(
             draftText = result.draftText,
@@ -201,9 +216,14 @@ class AiTrainingController(
             llmEnabled = llmProperties.enabled,
             mode = result.mode.name,
             inboundText = inboundText,
-            inboundSubject = latestInbound.subject,
+            inboundSubject = inboundMail.subject,
             expertName = contact.expertName,
             expertEmail = contact.expertEmail,
+            qaRuleIds = result.qaRuleIds,
+            requestCount = result.requestCount,
+            groundedRequestCount = result.groundedRequestCount,
+            unsupportedRequests = result.unsupportedRequests,
+            contextWarnings = result.contextWarnings,
             injectedDialogRefs = result.fewShotDialogRefs
         )
     }
@@ -307,6 +327,7 @@ data class AiTrainingSimulateMailPage(
 )
 
 data class AiTrainingSimulateMailItem(
+    val mailRecordId: Long,
     val expertContactId: Long,
     val expertName: String?,
     val expertEmail: String,
@@ -331,7 +352,8 @@ data class AiTrainingSimulateExpertResponse(
 )
 
 data class AiTrainingSimulateRequest(
-    val expertContactId: Long,
+    val mailRecordId: Long? = null,
+    val expertContactId: Long? = null,
     val promptOverride: String? = null
 )
 
@@ -351,5 +373,10 @@ data class AiTrainingSimulateResponse(
     val inboundSubject: String?,
     val expertName: String?,
     val expertEmail: String?,
+    val qaRuleIds: List<Long> = emptyList(),
+    val requestCount: Int = 0,
+    val groundedRequestCount: Int = 0,
+    val unsupportedRequests: List<String> = emptyList(),
+    val contextWarnings: List<String> = emptyList(),
     val injectedDialogRefs: List<String> = emptyList()
 )

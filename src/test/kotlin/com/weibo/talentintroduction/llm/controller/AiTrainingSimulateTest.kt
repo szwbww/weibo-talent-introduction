@@ -9,6 +9,8 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchResult
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
+import com.weibo.talentintroduction.llm.service.AiReplyContext
+import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
@@ -28,6 +30,8 @@ import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyList
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
@@ -63,6 +67,9 @@ class AiTrainingSimulateTest {
 
     @MockBean
     private lateinit var aiReplyContextBuilder: AiReplyContextBuilder
+
+    @MockBean
+    private lateinit var aiReplyContextService: AiReplyContextService
 
     @MockBean
     private lateinit var expertContactRepository: ExpertContactRepository
@@ -117,13 +124,22 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound()
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(
-            aiReplyContextBuilder.appendKnowledgeToProfile("Name: Dr. Test", "Topic: Funding\nAnswer: Up to 12M RMB")
-        ).thenReturn(
-            "Name: Dr. Test\nTraining knowledge base:\nTopic: Funding\nAnswer: Up to 12M RMB"
-        )
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
             .thenReturn("Topic: Funding\nAnswer: Up to 12M RMB")
+        Mockito.`when`(
+            aiReplyContextService.build(
+                contact,
+                listOf(inbound),
+                "What is the funding?",
+                "Topic: Funding\nAnswer: Up to 12M RMB"
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Dr. Test\nTraining knowledge base:\nTopic: Funding\nAnswer: Up to 12M RMB",
+                mailHistory = "[INBOUND] Question",
+                contextWarnings = emptyList()
+            )
+        )
         Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
             com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
                 suggestedRuleIds = emptyList(),
@@ -149,20 +165,28 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.mode").value("FREE_FORM"))
             .andExpect(jsonPath("$.injectedDialogRefs").isArray)
             .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
-            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
+            .andExpect(jsonPath("$.qaRuleIds").isArray)
+            .andExpect(jsonPath("$.qaRuleIds").isEmpty)
+            .andExpect(jsonPath("$.requestCount").value(0))
+            .andExpect(jsonPath("$.contextWarnings").isArray)
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test
-    fun `simulate with matched rules returns QA_MATCHED without qaRuleIds in response`() {
+    fun `simulate with matched rules returns QA_MATCHED with qaRuleIds in response`() {
         val contact = sampleContact()
         val inbound = sampleInbound(body = "what is the application process?")
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(
-            aiReplyContextBuilder.appendKnowledgeToProfile("Name: Dr. Test", "")
-        ).thenReturn("Name: Dr. Test")
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(
+            aiReplyContextService.build(
+                contact,
+                listOf(inbound),
+                "what is the application process?",
+                ""
+            )
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
         Mockito.`when`(qaMatchService.suggestComposition("what is the application process?")).thenReturn(
             com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
                 suggestedRuleIds = listOf(9L),
@@ -191,7 +215,8 @@ class AiTrainingSimulateTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.mode").value("QA_MATCHED"))
             .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("First, you submit the required materials.")))
-            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
+            .andExpect(jsonPath("$.qaRuleIds").isArray)
+            .andExpect(jsonPath("$.qaRuleIds[0]").value(9))
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
@@ -201,13 +226,22 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound(body = "Are you accredited through another agency?")
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(
-            aiReplyContextBuilder.appendKnowledgeToProfile("Name: Dr. Test", "Topic: Agency trust\nAnswer: Standard reply")
-        ).thenReturn(
-            "Name: Dr. Test\nTraining knowledge base:\nTopic: Agency trust\nAnswer: Standard reply"
-        )
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
             .thenReturn("Topic: Agency trust\nAnswer: Standard reply")
+        Mockito.`when`(
+            aiReplyContextService.build(
+                contact,
+                listOf(inbound),
+                "Are you accredited through another agency?",
+                "Topic: Agency trust\nAnswer: Standard reply"
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Dr. Test\nTraining knowledge base:\nTopic: Agency trust\nAnswer: Standard reply",
+                mailHistory = "[INBOUND] Question",
+                contextWarnings = emptyList()
+            )
+        )
         Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
             com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
                 suggestedRuleIds = emptyList(),
@@ -231,9 +265,135 @@ class AiTrainingSimulateTest {
                 org.hamcrest.Matchers.containsString("transparent disbursement")
             )))
             .andExpect(jsonPath("$.usedLlm").value(false))
-            .andExpect(jsonPath("$.qaRuleIds").doesNotExist())
+            .andExpect(jsonPath("$.qaRuleIds").isArray)
+            .andExpect(jsonPath("$.qaRuleIds").isEmpty)
 
         Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    @Test
+    fun `simulate with mailRecordId selects exact mail and never calls findLatestInbound`() {
+        val contact = sampleContact()
+        val exactMail = sampleInbound(id = 77L, body = "Exact mail body for funding?")
+        Mockito.`when`(mailRecordRepository.findById(77L)).thenReturn(Optional.of(exactMail))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(listOf(exactMail))
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(
+            aiReplyContextService.build(contact, listOf(exactMail), "Exact mail body for funding?", "")
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":77}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("FREE_FORM"))
+            .andExpect(jsonPath("$.qaRuleIds").isArray)
+            .andExpect(jsonPath("$.requestCount").isNumber)
+            .andExpect(jsonPath("$.contextWarnings").isArray)
+            .andExpect(jsonPath("$.injectedDialogRefs").isArray)
+
+        Mockito.verify(mailRecordRepository, Mockito.never()).findLatestInboundByExpertContactId(Mockito.anyLong())
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `simulate with mailRecordId returns 400 when mail not found`() {
+        Mockito.`when`(mailRecordRepository.findById(999L)).thenReturn(Optional.empty())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":999}""")
+        )
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `simulate with mailRecordId returns 400 when mail is OUTBOUND`() {
+        val outbound = MailRecord(
+            id = 55L,
+            expertContactId = 10L,
+            direction = "OUTBOUND",
+            mailType = "INTRODUCTION",
+            subject = "Hi",
+            body = "Dear expert",
+            cleanedBody = null,
+            messageId = null,
+            inReplyTo = null,
+            matchedQaRuleId = null,
+            sendStatus = null,
+            receivedAt = null,
+            sentAt = null
+        )
+        Mockito.`when`(mailRecordRepository.findById(55L)).thenReturn(Optional.of(outbound))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":55}""")
+        )
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `simulate with mailRecordId returns 400 when contact missing`() {
+        val mail = sampleInbound(id = 66L)
+        Mockito.`when`(mailRecordRepository.findById(66L)).thenReturn(Optional.of(mail))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.empty())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":66}""")
+        )
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `simulate with expertContactId fallback calls findLatestInbound once`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound()
+        stubSimulateReadPath(contact, inbound)
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(
+            aiReplyContextService.build(contact, listOf(inbound), "What is the funding?", "")
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10}""")
+        )
+            .andExpect(status().isOk)
+
+        Mockito.verify(mailRecordRepository, Mockito.times(1)).findLatestInboundByExpertContactId(10L)
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test
@@ -277,6 +437,7 @@ class AiTrainingSimulateTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.total").value(1))
             .andExpect(jsonPath("$.items[0].expertContactId").value(10))
+            .andExpect(jsonPath("$.items[0].mailRecordId").value(99))
             .andExpect(jsonPath("$.items[0].body").value("What is the funding?"))
 
         Mockito.verify(mailRecordRepository).findInboundMailsForSimulation(true, listOf(-1L), null, null, 20, 0)
@@ -529,8 +690,6 @@ class AiTrainingSimulateTest {
         Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(10L)).thenReturn(inbound)
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
             .thenReturn(listOf(inbound))
-        Mockito.`when`(aiReplyContextBuilder.buildExpertProfile(contact)).thenReturn("Name: Dr. Test")
-        Mockito.`when`(aiReplyContextBuilder.buildMailHistory(listOf(inbound))).thenReturn("[INBOUND] Question")
     }
 
     private fun sampleExpertProfile(tag: String) = ExpertProfile(
@@ -558,11 +717,12 @@ class AiTrainingSimulateTest {
     )
 
     private fun sampleInbound(
+        id: Long = 99L,
         contactId: Long = 10L,
         subject: String = "Question",
         body: String = "What is the funding?"
     ) = MailRecord(
-        id = 99L,
+        id = id,
         expertContactId = contactId,
         direction = "INBOUND",
         mailType = "REPLY",
