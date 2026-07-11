@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
+import com.weibo.talentintroduction.qa.service.GapItem
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
@@ -23,6 +24,7 @@ class AiReplyDraftServiceTest {
     private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
     private val aiPromptConfigService = Mockito.mock(AiPromptConfigService::class.java)
     private val aiTrainingDialogueService = Mockito.mock(AiTrainingDialogueService::class.java)
+    private val aiReplyContextService = Mockito.mock(AiReplyContextService::class.java)
 
     init {
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
@@ -60,6 +62,15 @@ class AiReplyDraftServiceTest {
         )
     }
 
+    private fun emptyComposition(suggestedRuleIds: List<Long> = emptyList()) = CompositionSuggestResult(
+        suggestedRuleIds = suggestedRuleIds,
+        suggestedRules = emptyList(),
+        rulesByCategory = emptyList(),
+        gapItems = emptyList(),
+        gapDetected = false,
+        matchedCategoryIds = emptyList()
+    )
+
     private fun stitchService(): LlmStitchService =
         LlmStitchService(
             LlmProperties(enabled = true),
@@ -81,7 +92,8 @@ class AiReplyDraftServiceTest {
             stitch,
             replySnippetService,
             aiPromptConfigService,
-            aiTrainingDialogueService
+            aiTrainingDialogueService,
+            aiReplyContextService
         )
 
     private fun sampleRule(id: Long = 1L) = QaRule(
@@ -98,14 +110,7 @@ class AiReplyDraftServiceTest {
         val rule = sampleRule()
         stubDefaultFrame()
         Mockito.`when`(qaMatchService.suggestComposition("What is salary?")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = listOf(1),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
+            emptyComposition(suggestedRuleIds = listOf(1))
         )
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
@@ -126,14 +131,7 @@ class AiReplyDraftServiceTest {
         val rule = sampleRule(2).copy(keywords = "visa", replyBody = "Visa info")
         stubDefaultFrame()
         Mockito.`when`(qaMatchService.suggestComposition("Visa?")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = listOf(2),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
+            emptyComposition(suggestedRuleIds = listOf(2))
         )
         Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule))
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
@@ -159,14 +157,7 @@ class AiReplyDraftServiceTest {
     fun `uses suggestComposition subset when qaRuleIds null`() {
         stubDefaultFrame()
         Mockito.`when`(qaMatchService.suggestComposition("Funding?")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = listOf(5),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
+            emptyComposition(suggestedRuleIds = listOf(5))
         )
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val capturedTemperatures = mutableListOf<Double?>()
@@ -203,16 +194,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `free form mode when suggestComposition empty`() {
         stubEmptyFrame()
-        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
         val allRules = listOf(sampleRule(10), sampleRule(11).copy(id = 11, replyBody = "Rule 11"))
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(allRules)
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(allRules[0]))
@@ -264,16 +246,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `first turn fallback with no match returns empty send qaRuleIds`() {
         stubDefaultFrame()
-        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
         val allRules = listOf(sampleRule(10), sampleRule(11).copy(id = 11, replyBody = "Rule 11"))
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(allRules)
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(allRules[0]))
@@ -294,6 +267,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `continuation falls back to previous draft when llm unavailable`() {
         stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Question")).thenReturn(emptyComposition(suggestedRuleIds = listOf(1)))
         val previousDraft = "Previous assistant draft"
         val turns = listOf(AiReplyTurn(assistantDraft = previousDraft, operatorInstruction = "more formal"))
 
@@ -312,6 +286,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `includes frame elements in matched user content when configured`() {
         stubDefaultFrame(salutation = "Dear Dr.", greeting = "Hope you are well.")
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition(suggestedRuleIds = listOf(1)))
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -337,6 +312,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `skips frame elements in matched user content when frame empty`() {
         stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition(suggestedRuleIds = listOf(1)))
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -370,16 +346,7 @@ class AiReplyDraftServiceTest {
                 return "Draft with instruction"
             }
         }
-        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
@@ -396,6 +363,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `explicit qaRuleIds yields QA_MATCHED mode`() {
         stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Unrelated text")).thenReturn(emptyComposition())
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -415,7 +383,6 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.QA_MATCHED, result.mode)
         assertEquals(listOf(3L), result.qaRuleIds)
-        Mockito.verifyNoInteractions(qaMatchService)
         assertTrue(capturedMessages.single().first { it.role == "system" }.content.contains("Preserve each SEGMENT"))
     }
 
@@ -433,16 +400,7 @@ class AiReplyDraftServiceTest {
                 return "Configured draft"
             }
         }
-        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
@@ -457,6 +415,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `continuation locks mode and qaRuleIds via explicit qaRuleIds`() {
         stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Question")).thenReturn(emptyComposition(suggestedRuleIds = listOf(7)))
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -477,7 +436,6 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.QA_MATCHED, result.mode)
         assertEquals(listOf(7L), result.qaRuleIds)
-        Mockito.verifyNoInteractions(qaMatchService)
         val userContent = capturedMessages.single().first { it.role == "user" }.content
         assertTrue(userContent.contains("SEGMENT 1=Rule 7 body"))
     }
@@ -486,16 +444,7 @@ class AiReplyDraftServiceTest {
     fun `simulateOnly returns deterministic draft when llm disabled`() {
         stubDefaultFrame()
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
-        Mockito.`when`(qaMatchService.suggestComposition("What is the funding?")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("What is the funding?")).thenReturn(emptyComposition())
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         val result = service(LlmProperties(enabled = false), null).generate(
@@ -515,16 +464,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `simulateOnly falls back to generic draft without training knowledge`() {
         stubEmptyFrame()
-        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         val result = service(LlmProperties(enabled = false), null).generate(
@@ -543,14 +483,7 @@ class AiReplyDraftServiceTest {
         stubEmptyFrame()
         val rule = sampleRule(9).copy(replyBody = "First, you submit the required materials.")
         Mockito.`when`(qaMatchService.suggestComposition("what is the application process?")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = listOf(9),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
+            emptyComposition(suggestedRuleIds = listOf(9))
         )
         Mockito.`when`(qaRuleRepository.findById(9L)).thenReturn(Optional.of(rule))
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
@@ -579,16 +512,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `simulateOnly without match injects full rule set into FREE_FORM knowledge`() {
         stubEmptyFrame()
-        Mockito.`when`(qaMatchService.suggestComposition("casual hello")).thenReturn(
-            CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
+        Mockito.`when`(qaMatchService.suggestComposition("casual hello")).thenReturn(emptyComposition())
         val allRules = listOf(
             sampleRule(10).copy(replySubject = "Funding", replyBody = "Funding body"),
             sampleRule(11).copy(id = 11, replySubject = "Process", replyBody = "Process body")
@@ -679,16 +603,7 @@ class AiReplyDraftServiceTest {
     fun `free form injects few-shot without affecting qaRuleIds`() {
         stubEmptyFrame()
         Mockito.`when`(qaMatchService.suggestComposition("Are you accredited and official?"))
-            .thenReturn(
-                CompositionSuggestResult(
-                    suggestedRuleIds = emptyList(),
-                    suggestedRules = emptyList(),
-                    rulesByCategory = emptyList(),
-                    gapItems = emptyList(),
-                    gapDetected = false,
-                    matchedCategoryIds = emptyList()
-                )
-            )
+            .thenReturn(emptyComposition())
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
         Mockito.`when`(
             aiTrainingDialogueService.selectRelevantDialogues(
@@ -732,6 +647,7 @@ class AiReplyDraftServiceTest {
     @Test
     fun `qa matched mode keeps fewShotDialogRefs empty`() {
         stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Unrelated")).thenReturn(emptyComposition(suggestedRuleIds = listOf(3)))
         Mockito.`when`(qaRuleRepository.findById(3L)).thenReturn(Optional.of(sampleRule(3)))
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
 
@@ -790,16 +706,7 @@ class AiReplyDraftServiceTest {
     fun `fallback draft excludes dialogue seed fragments when llm disabled`() {
         stubEmptyFrame()
         Mockito.`when`(qaMatchService.suggestComposition("Are you accredited through another agency?"))
-            .thenReturn(
-                CompositionSuggestResult(
-                    suggestedRuleIds = emptyList(),
-                    suggestedRules = emptyList(),
-                    rulesByCategory = emptyList(),
-                    gapItems = emptyList(),
-                    gapDetected = false,
-                    matchedCategoryIds = emptyList()
-                )
-            )
+            .thenReturn(emptyComposition())
         val allRules = listOf(sampleRule(10))
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(allRules)
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(allRules[0]))
@@ -813,5 +720,336 @@ class AiReplyDraftServiceTest {
         assertFalse(result.draftText.contains("government cooperation is documented"))
         assertEquals(emptyList<String>(), result.fewShotDialogRefs)
         Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    // ── New tests for T2 ──────────────────────────────────────────────────────
+
+    @Test
+    fun `single normal question with matching rule yields QA_MATCHED`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1)
+        Mockito.`when`(qaMatchService.suggestComposition("What is salary?")).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(GapItem("What is salary?", listOf(1L))),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext("What is salary?")).thenReturn(false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "Matched draft"
+            }
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "What is salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.QA_MATCHED, result.mode)
+        assertEquals(listOf(1L), result.qaRuleIds)
+        assertEquals(1, result.requestCount)
+        assertEquals(1, result.groundedRequestCount)
+        assertTrue(result.unsupportedRequests.isEmpty())
+        val systemPrompt = capturedMessages.single().first { it.role == "system" }.content
+        assertTrue(systemPrompt.contains("Preserve each SEGMENT wording"))
+    }
+
+    @Test
+    fun `single research question with matching rule yields QA_GROUNDED`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(replyBody = "Research areas: AI, NLP")
+        val inbound = "Does your research profile match our focus?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(GapItem(inbound, listOf(1L))),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(inbound)).thenReturn(true)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "Grounded draft"
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
+        assertEquals(listOf(1L), result.qaRuleIds)
+        assertEquals(1, result.requestCount)
+        assertEquals(1, result.groundedRequestCount)
+        assertTrue(result.unsupportedRequests.isEmpty())
+    }
+
+    @Test
+    fun `multi-request inbound with rules yields QA_GROUNDED`() {
+        stubEmptyFrame()
+        val inbound = "- What is salary?\n- What is the visa process?"
+        val rule1 = sampleRule(1)
+        val rule2 = sampleRule(2).copy(replyBody = "Visa info", keywords = "visa")
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1, 2),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- What is salary?", listOf(1L)),
+                    GapItem("- What is the visa process?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule1))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule2))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "Grounded multi draft"
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
+        assertEquals(listOf(1L, 2L), result.qaRuleIds)
+        assertEquals(2, result.requestCount)
+        assertEquals(2, result.groundedRequestCount)
+        assertTrue(result.unsupportedRequests.isEmpty())
+    }
+
+    @Test
+    fun `explicit qaRuleIds with multi-request inbound stays QA_GROUNDED`() {
+        stubEmptyFrame()
+        val inbound = "- Question about funding?\n- Question about visa process?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- Question about funding?", listOf(1L)),
+                    GapItem("- Question about visa process?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule(1)))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(sampleRule(2).copy(replyBody = "Visa info")))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "Continuation grounded"
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList(),
+            qaRuleIds = listOf(1, 2)
+        )
+
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
+        assertEquals(listOf(1L, 2L), result.qaRuleIds)
+        assertEquals(2, result.requestCount)
+    }
+
+    @Test
+    fun `QA_GROUNDED prompt contains requests facts and warnings without external URL claims`() {
+        stubDefaultFrame()
+        val inbound = "- What is salary?\n- Does your research profile match?"
+        val rule = sampleRule(1)
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- What is salary?", listOf(1L)),
+                    GapItem("- Does your research profile match?", listOf(1L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext("- What is salary?")).thenReturn(false)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext("- Does your research profile match?")).thenReturn(true)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "Grounded reply"
+            }
+        }
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList(),
+            contextWarnings = listOf("EXPERT_PROFILE_PARTIAL"),
+            expertProfile = "Expert in ML"
+        )
+
+        val messages = capturedMessages.single()
+        val systemPrompt = messages.first { it.role == "system" }.content
+        val userContent = messages.first { it.role == "user" }.content
+        assertTrue(systemPrompt.contains("factual boundary"))
+        assertFalse(systemPrompt.contains("SEGMENT"))
+        // System prompt prohibits claiming external URL access; user content must not assert "I visited"
+        assertTrue(systemPrompt.lowercase().contains("do not claim"))
+        assertTrue(systemPrompt.lowercase().contains("google scholar"))
+
+        assertTrue(userContent.contains("Request checklist"))
+        assertTrue(userContent.contains("What is salary?"))
+        assertTrue(userContent.contains("research profile"))
+        assertTrue(userContent.contains("Salary info"))
+        assertTrue(userContent.contains("EXPERT_PROFILE_PARTIAL"))
+        assertTrue(userContent.contains("Expert in ML"))
+
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    @Test
+    fun `simulateOnly flag does not affect FREE_FORM fallback text`() {
+        stubDefaultFrame()
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        val inbound = "What is the funding?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val profile = "Name: Dr. Test\nTraining knowledge base:\nTopic: Funding\nAnswer: Up to 12M RMB"
+        val resultWithSimulate = service(LlmProperties(enabled = false), null).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList(),
+            expertProfile = profile,
+            simulateOnly = true
+        )
+        val resultWithout = service(LlmProperties(enabled = false), null).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList(),
+            expertProfile = profile,
+            simulateOnly = false
+        )
+
+        assertEquals(resultWithSimulate.draftText, resultWithout.draftText)
+        assertTrue(resultWithSimulate.draftText.isNotEmpty())
+    }
+
+    @Test
+    fun `FREE_FORM fallback is non-empty even without simulateOnly`() {
+        stubDefaultFrame()
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            simulateOnly = false
+        )
+
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertTrue(result.qaRuleIds.isEmpty())
+        assertTrue(result.draftText.isNotEmpty())
+    }
+
+    @Test
+    fun `research request with insufficient warning goes to unsupportedRequests`() {
+        stubEmptyFrame()
+        val inbound = "Does your research profile match our focus area?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(GapItem(inbound, listOf(1L))),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(inbound)).thenReturn(true)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule(1)))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "Draft"
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList(),
+            contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+        )
+
+        assertEquals(1, result.requestCount)
+        assertEquals(0, result.groundedRequestCount)
+        assertEquals(listOf(inbound), result.unsupportedRequests)
+        assertTrue(result.contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"))
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
+    }
+
+    @Test
+    fun `QA_GROUNDED uses freeFormTemperature`() {
+        stubEmptyFrame()
+        val inbound = "- What is salary?\n- What is visa?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1, 2),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- What is salary?", listOf(1L)),
+                    GapItem("- What is visa?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule(1)))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(sampleRule(2).copy(replyBody = "Visa info")))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val capturedTemperatures = mutableListOf<Double?>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedTemperatures += temperature
+                return "Grounded draft"
+            }
+        }
+        service(
+            LlmProperties(enabled = true, apiUrl = "http://llm", temperature = 0.3, freeFormTemperature = 0.7),
+            client
+        ).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(0.7, capturedTemperatures.single())
     }
 }

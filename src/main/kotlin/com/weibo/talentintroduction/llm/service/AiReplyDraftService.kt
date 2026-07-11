@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service
 
 enum class AiReplyMode {
     QA_MATCHED,
+    QA_GROUNDED,
     FREE_FORM
 }
 
@@ -22,7 +23,11 @@ data class AiReplyDraftResult(
     val usedLlm: Boolean,
     val qaRuleIds: List<Long>,
     val mode: AiReplyMode,
-    val fewShotDialogRefs: List<String> = emptyList()
+    val fewShotDialogRefs: List<String> = emptyList(),
+    val requestCount: Int = 0,
+    val groundedRequestCount: Int = 0,
+    val unsupportedRequests: List<String> = emptyList(),
+    val contextWarnings: List<String> = emptyList()
 )
 
 internal data class FreeFormBuildResult(
@@ -32,7 +37,11 @@ internal data class FreeFormBuildResult(
 
 internal data class ResolvedQaRules(
     val sendQaRuleIds: List<Long>,
-    val promptRuleIds: List<Long>
+    val promptRuleIds: List<Long>,
+    val requestItems: List<String> = emptyList(),
+    val unsupportedRequests: List<String> = emptyList(),
+    val requestCount: Int = 0,
+    val groundedRequestCount: Int = 0
 )
 
 @Service
@@ -44,7 +53,8 @@ class AiReplyDraftService(
     private val llmStitchService: LlmStitchService,
     private val replySnippetService: ReplySnippetService,
     private val aiPromptConfigService: AiPromptConfigService,
-    private val aiTrainingDialogueService: AiTrainingDialogueService
+    private val aiTrainingDialogueService: AiTrainingDialogueService,
+    private val aiReplyContextService: AiReplyContextService
 ) {
     fun generate(
         inboundText: String,
@@ -53,10 +63,18 @@ class AiReplyDraftService(
         operatorInstruction: String? = null,
         expertProfile: String? = null,
         mailHistory: String? = null,
-        simulateOnly: Boolean = false
+        simulateOnly: Boolean = false, // deprecated: has no effect; do not read
+        contextWarnings: List<String> = emptyList()
     ): AiReplyDraftResult {
-        val resolved = resolveQaRules(inboundText, qaRuleIds)
-        val mode = if (resolved.sendQaRuleIds.isNotEmpty()) AiReplyMode.QA_MATCHED else AiReplyMode.FREE_FORM
+        val resolved = resolveQaRules(inboundText, qaRuleIds, contextWarnings)
+        val mode = when {
+            resolved.sendQaRuleIds.isEmpty() -> AiReplyMode.FREE_FORM
+            resolved.requestCount <= 1 &&
+                resolved.unsupportedRequests.isEmpty() &&
+                resolved.requestItems.none { aiReplyContextService.requiresResearchContext(it) } ->
+                AiReplyMode.QA_MATCHED
+            else -> AiReplyMode.QA_GROUNDED
+        }
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
 
         if (!properties.enabled) {
@@ -65,11 +83,11 @@ class AiReplyDraftService(
                 operatorTurns = operatorTurns,
                 lastDraft = lastDraft,
                 mode = mode,
-                simulateOnly = simulateOnly,
                 inboundText = inboundText,
                 expertProfile = expertProfile,
                 mailHistory = mailHistory,
-                operatorInstruction = operatorInstruction
+                operatorInstruction = operatorInstruction,
+                contextWarnings = contextWarnings
             )
         }
 
@@ -81,6 +99,19 @@ class AiReplyDraftService(
                     inboundText = inboundText,
                     operatorTurns = operatorTurns,
                     promptRuleIds = resolved.promptRuleIds,
+                    operatorInstruction = operatorInstruction
+                )
+            }
+            AiReplyMode.QA_GROUNDED -> {
+                fewShotDialogRefs = emptyList()
+                buildGroundedMessages(
+                    inboundText = inboundText,
+                    operatorTurns = operatorTurns,
+                    promptRuleIds = resolved.promptRuleIds,
+                    requestItems = resolved.requestItems,
+                    expertProfile = expertProfile,
+                    mailHistory = mailHistory,
+                    contextWarnings = contextWarnings,
                     operatorInstruction = operatorInstruction
                 )
             }
@@ -99,7 +130,7 @@ class AiReplyDraftService(
         }
         val temperature = when (mode) {
             AiReplyMode.QA_MATCHED -> properties.temperature
-            AiReplyMode.FREE_FORM -> properties.freeFormTemperature
+            AiReplyMode.QA_GROUNDED, AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val llmText = try {
             llmDraftClientProvider.getIfAvailable()
@@ -115,7 +146,11 @@ class AiReplyDraftService(
                 usedLlm = true,
                 qaRuleIds = resolved.sendQaRuleIds,
                 mode = mode,
-                fewShotDialogRefs = fewShotDialogRefs
+                fewShotDialogRefs = fewShotDialogRefs,
+                requestCount = resolved.requestCount,
+                groundedRequestCount = resolved.groundedRequestCount,
+                unsupportedRequests = resolved.unsupportedRequests,
+                contextWarnings = contextWarnings
             )
         } else {
             fallback(
@@ -123,27 +158,64 @@ class AiReplyDraftService(
                 operatorTurns = operatorTurns,
                 lastDraft = lastDraft,
                 mode = mode,
-                simulateOnly = simulateOnly,
                 inboundText = inboundText,
                 expertProfile = expertProfile,
                 mailHistory = mailHistory,
                 operatorInstruction = operatorInstruction,
-                fewShotDialogRefs = fewShotDialogRefs
+                fewShotDialogRefs = fewShotDialogRefs,
+                contextWarnings = contextWarnings
             )
         }
     }
 
-    internal fun resolveQaRules(inboundText: String, qaRuleIds: List<Long>?): ResolvedQaRules {
+    internal fun resolveQaRules(
+        inboundText: String,
+        qaRuleIds: List<Long>?,
+        contextWarnings: List<String> = emptyList()
+    ): ResolvedQaRules {
+        val composition = qaMatchService.suggestComposition(inboundText)
+        val gapItems = composition.gapItems
+        val requestItems = gapItems.map { it.text }
+
+        val sendQaRuleIds: List<Long>
+        val promptRuleIds: List<Long>
         if (qaRuleIds != null) {
-            return ResolvedQaRules(sendQaRuleIds = qaRuleIds, promptRuleIds = qaRuleIds)
-        }
-        val matched = qaMatchService.suggestComposition(inboundText).suggestedRuleIds
-        val promptRuleIds = if (matched.isNotEmpty()) {
-            matched
+            sendQaRuleIds = qaRuleIds
+            promptRuleIds = qaRuleIds
         } else {
-            qaRuleRepository.findAllEnabledOrdered().mapNotNull { it.id }
+            val matched = composition.suggestedRuleIds
+            sendQaRuleIds = matched
+            promptRuleIds = if (matched.isNotEmpty()) matched else qaRuleRepository.findAllEnabledOrdered().mapNotNull { it.id }
         }
-        return ResolvedQaRules(sendQaRuleIds = matched, promptRuleIds = promptRuleIds)
+
+        val insufficient = contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+        val unsupportedRequests = mutableListOf<String>()
+        var groundedCount = 0
+        for (item in gapItems) {
+            val isResearch = aiReplyContextService.requiresResearchContext(item.text)
+            if (isResearch) {
+                if (insufficient) {
+                    unsupportedRequests += item.text
+                } else {
+                    groundedCount++
+                }
+            } else {
+                if (item.candidateRuleIds.isNotEmpty()) {
+                    groundedCount++
+                } else {
+                    unsupportedRequests += item.text
+                }
+            }
+        }
+
+        return ResolvedQaRules(
+            sendQaRuleIds = sendQaRuleIds,
+            promptRuleIds = promptRuleIds,
+            requestItems = requestItems,
+            unsupportedRequests = unsupportedRequests,
+            requestCount = gapItems.size,
+            groundedRequestCount = groundedCount
+        )
     }
 
     internal fun buildMatchedMessages(
@@ -155,6 +227,27 @@ class AiReplyDraftService(
         val messages = mutableListOf<LlmChatMessage>()
         messages += LlmChatMessage(role = "system", content = buildMatchedSystemPrompt())
         messages += LlmChatMessage(role = "user", content = buildMatchedUserContent(inboundText, promptRuleIds))
+        appendFirstTurnInstruction(messages, operatorInstruction)
+        appendOperatorTurns(messages, operatorTurns)
+        return messages
+    }
+
+    internal fun buildGroundedMessages(
+        inboundText: String,
+        operatorTurns: List<AiReplyTurn>,
+        promptRuleIds: List<Long>,
+        requestItems: List<String>,
+        expertProfile: String?,
+        mailHistory: String?,
+        contextWarnings: List<String>,
+        operatorInstruction: String? = null
+    ): List<LlmChatMessage> {
+        val messages = mutableListOf<LlmChatMessage>()
+        messages += LlmChatMessage(role = "system", content = buildGroundedSystemPrompt())
+        messages += LlmChatMessage(
+            role = "user",
+            content = buildGroundedUserContent(inboundText, promptRuleIds, requestItems, expertProfile, mailHistory, contextWarnings)
+        )
         appendFirstTurnInstruction(messages, operatorInstruction)
         appendOperatorTurns(messages, operatorTurns)
         return messages
@@ -226,6 +319,21 @@ class AiReplyDraftService(
         appendLine("Do not rewrite, paraphrase, or add promises beyond what the segments state.")
     }
 
+    private fun buildGroundedSystemPrompt(): String = buildString {
+        append(buildBaseSystemPrompt())
+        appendLine()
+        appendLine("The following QA answers, expert training data, and expert profile are the factual boundary for your reply.")
+        appendLine("Answer each stated request in order, based only on the provided facts.")
+        appendLine(
+            "If the information needed for a specific request is insufficient, explicitly state that you will " +
+                "follow up later (pending) — do not speculate or invent facts."
+        )
+        appendLine(
+            "Do NOT claim to have visited or accessed any external URLs, websites, Google Scholar, Scopus, " +
+                "or any online resource."
+        )
+    }
+
     private fun buildFreeFormSystemPrompt(): String =
         aiPromptConfigService.getEffectiveFreeFormSystemPrompt(FreeFormPromptDefaults.defaultFreeFormSystemPrompt())
 
@@ -240,6 +348,62 @@ class AiReplyDraftService(
             }
         }
         frame.closing?.takeIf { it.isNotBlank() }?.let { appendLine("CLOSING=$it") }
+        appendLine()
+        appendLine("Inbound email:")
+        appendLine(inboundText.take(4000))
+    }
+
+    private fun buildGroundedUserContent(
+        inboundText: String,
+        promptRuleIds: List<Long>,
+        requestItems: List<String>,
+        expertProfile: String?,
+        mailHistory: String?,
+        contextWarnings: List<String>
+    ): String = buildString {
+        val frame = replySnippetService.resolveManualFrame()
+        frame.salutation?.takeIf { it.isNotBlank() }?.let { appendLine("SALUTATION=$it") }
+        frame.greeting?.takeIf { it.isNotBlank() }?.let { appendLine("GREETING=$it") }
+        replySnippetService.resolveAck(null)?.takeIf { it.isNotBlank() }?.let { appendLine("ACK=$it") }
+
+        if (promptRuleIds.isNotEmpty()) {
+            val facts = promptRuleIds.mapNotNull { ruleId ->
+                qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                    "${rule.replySubject.orEmpty()}\n${rule.replyBody}"
+                }
+            }.joinToString("\n\n").take(12000)
+            appendLine()
+            appendLine("Matched QA answers (authoritative facts):")
+            appendLine(facts)
+        }
+
+        expertProfile?.takeIf { it.isNotBlank() }?.let {
+            appendLine()
+            appendLine("Expert profile:")
+            appendLine(it)
+        }
+
+        if (contextWarnings.isNotEmpty()) {
+            appendLine()
+            appendLine("Context warnings: ${contextWarnings.joinToString(", ")}")
+        }
+
+        mailHistory?.takeIf { it.isNotBlank() }?.let {
+            appendLine()
+            appendLine("Mail history:")
+            appendLine(it)
+        }
+
+        if (requestItems.isNotEmpty()) {
+            appendLine()
+            appendLine("Request checklist (answer each in order):")
+            requestItems.forEachIndexed { idx, item ->
+                appendLine("${idx + 1}. $item")
+            }
+        }
+
+        frame.closing?.takeIf { it.isNotBlank() }?.let { appendLine("CLOSING=$it") }
+
         appendLine()
         appendLine("Inbound email:")
         appendLine(inboundText.take(4000))
@@ -295,25 +459,24 @@ class AiReplyDraftService(
         operatorTurns: List<AiReplyTurn>,
         lastDraft: String?,
         mode: AiReplyMode,
-        simulateOnly: Boolean = false,
         inboundText: String = "",
         expertProfile: String? = null,
         mailHistory: String? = null,
         operatorInstruction: String? = null,
-        fewShotDialogRefs: List<String> = emptyList()
+        fewShotDialogRefs: List<String> = emptyList(),
+        contextWarnings: List<String> = emptyList()
     ): AiReplyDraftResult {
         val draftText = if (operatorTurns.isEmpty()) {
             when {
                 resolved.promptRuleIds.isNotEmpty() ->
                     llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
-                simulateOnly ->
-                    composeSimulateDeterministicDraft(
+                else ->
+                    composeFreeFormDeterministicDraft(
                         inboundText = inboundText,
                         expertProfile = expertProfile,
                         mailHistory = mailHistory,
                         operatorInstruction = operatorInstruction
                     )
-                else -> ""
             }
         } else {
             lastDraft.orEmpty()
@@ -323,11 +486,15 @@ class AiReplyDraftService(
             usedLlm = false,
             qaRuleIds = resolved.sendQaRuleIds,
             mode = mode,
-            fewShotDialogRefs = fewShotDialogRefs
+            fewShotDialogRefs = fewShotDialogRefs,
+            requestCount = resolved.requestCount,
+            groundedRequestCount = resolved.groundedRequestCount,
+            unsupportedRequests = resolved.unsupportedRequests,
+            contextWarnings = contextWarnings
         )
     }
 
-    internal fun composeSimulateDeterministicDraft(
+    internal fun composeFreeFormDeterministicDraft(
         inboundText: String,
         expertProfile: String?,
         mailHistory: String?,
