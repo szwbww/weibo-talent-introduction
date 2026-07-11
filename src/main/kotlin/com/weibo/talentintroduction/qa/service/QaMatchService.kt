@@ -19,8 +19,20 @@ class QaMatchService(
         val enabledRules = qaRuleRepository.findAllEnabledOrdered()
         val rawMatches = enabledRules
             .mapNotNull { rule -> matchRule(rule, normalizedBody) }
-        val matches = if (rawMatches.isEmpty()) emptyList() else applySupersede(rawMatches)
-        val gapItems = extractGapItems(messageBody, enabledRules)
+
+        val requestItems = extractRequestItems(messageBody)
+        val gapItems = requestItems.map { item ->
+            val normalizedItem = normalize(item)
+            val candidateRuleIds = enabledRules
+                .filter { rule -> matchRuleAgainstText(rule, normalizedItem) }
+                .mapNotNull { it.id }
+            GapItem(text = item, candidateRuleIds = candidateRuleIds)
+        }
+
+        // Multi-request: return all raw matches so the operator sees every candidate.
+        // Single/zero request: apply supersede (same as auto-reply path).
+        val matches = if (requestItems.size <= 1) applySupersede(rawMatches) else rawMatches
+
         val matchedCategoryIds = rawMatches.map { it.rule.categoryId }.distinct()
         val categories = qaCategoryRepository.findAll().filter { it.enabled }
         val rulesByCategory = categories.map { category ->
@@ -41,7 +53,7 @@ class QaMatchService(
             suggestedRules = matches.map { it.rule.toSuggestRule() },
             rulesByCategory = rulesByCategory,
             gapItems = gapItems,
-            gapDetected = detectGap(messageBody, rawMatches, matches),
+            gapDetected = gapItems.any { it.candidateRuleIds.isEmpty() },
             matchedCategoryIds = matchedCategoryIds
         )
     }
@@ -130,14 +142,35 @@ class QaMatchService(
         return if (questions.size >= bullets.size) questions else bullets
     }
 
-    private fun extractGapItems(messageBody: String, enabledRules: List<QaRule>): List<GapItem> =
-        extractGapTexts(messageBody).map { text ->
-            val normalizedGapText = normalize(text)
-            val candidateRuleIds = enabledRules
-                .filter { rule -> matchRuleAgainstText(rule, normalizedGapText) }
-                .mapNotNull { it.id }
-            GapItem(text = text, candidateRuleIds = candidateRuleIds)
+    /**
+     * Extracts request units from a mail body for the suggestion path:
+     * 1. All bullet lines (-, *, •, or digit-dot/paren)
+     * 2. Question-mark sentences not already covered by a bullet (normalized dedup)
+     * If neither exists, returns the whole non-empty body as one unit.
+     * Order: bullets first (email order), then uncovered questions (email order).
+     */
+    private fun extractRequestItems(messageBody: String): List<String> {
+        val bullets = messageBody.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && BULLET_LINE_PATTERN.containsMatchIn(it) }
+            .toList()
+
+        val normalizedBulletSet = bullets.map { normalize(it) }.toSet()
+
+        val uncoveredQuestions = QUESTION_SENTENCE_PATTERN.findAll(messageBody)
+            .map { it.value.trim() }
+            .filter { it.isNotBlank() }
+            .filter { normalize(it) !in normalizedBulletSet }
+            .toList()
+
+        val combined = bullets + uncoveredQuestions
+        if (combined.isEmpty()) {
+            return if (messageBody.isBlank()) emptyList() else listOf(messageBody.trim())
         }
+
+        val seen = mutableSetOf<String>()
+        return combined.filter { seen.add(normalize(it)) }
+    }
 
     private fun matchRule(rule: QaRule, normalizedBody: String): QaRuleMatch? {
         val keywords = parseKeywords(rule)

@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -645,7 +646,7 @@ class QaMatchServiceTest {
     }
 
     @Test
-    fun `v68 overview multi question mail hits id24 supersede without gap or id33`() {
+    fun `v68 multi-request mail returns detailed rule ids not overview-only`() {
         stubV68KeywordRules()
 
         val overviewMail = """
@@ -664,13 +665,104 @@ class QaMatchServiceTest {
             Best regards
         """.trimIndent()
 
+        // Multi-request mail: suggestComposition must return raw matches (no supersede),
+        // so all matched rules are present — not just overview id24.
         val suggest = service.suggestComposition(overviewMail)
-        assertTrue(suggest.suggestedRuleIds.contains(24L))
-        assertFalse(suggest.gapDetected)
+        assertTrue(suggest.suggestedRuleIds.contains(24L), "should contain id24 (overview)")
+        assertTrue(suggest.suggestedRuleIds.contains(18L), "should contain id18 (registered location)")
+        assertTrue(suggest.suggestedRuleIds.contains(5L), "should contain id5 (responsibilities/deliverables)")
+        assertTrue(suggest.suggestedRuleIds.contains(23L), "should contain id23 (partner/within scope)")
+        assertTrue(suggest.suggestedRuleIds.contains(9L), "should contain id9 (process/selection)")
+        assertTrue(suggest.suggestedRuleIds.contains(40L), "should contain id40 (IP/contract)")
+        // id33 does NOT match: bullet "What materials should I send?" has no keyword substring match
+        assertFalse(suggest.suggestedRuleIds.contains(33L), "id33 should not match bullet text")
 
-        val rawIds = service.matchAllRuleIds(overviewMail)
-        assertTrue(rawIds.contains(24L))
-        assertFalse(rawIds.contains(33L))
+        // gapItems should contain an entry for each request unit (bullets + uncovered question)
+        assertTrue(suggest.gapItems.isNotEmpty(), "gapItems should be non-empty")
+        val researchItem = suggest.gapItems.find {
+            it.text.contains("researchers selected", ignoreCase = true) ||
+                it.text.contains("within the scope", ignoreCase = true)
+        }
+        assertNotNull(researchItem, "research-matching bullet should appear in gapItems")
+        // research bullet matches id9/id23 → not a gap
+        assertTrue(researchItem!!.candidateRuleIds.isNotEmpty(), "research bullet has candidate rules")
+
+        // Materials bullet "What materials should I send?" has no keyword substring match for any rule
+        // → candidateRuleIds empty → gapDetected true
+        val materialItem = suggest.gapItems.find { it.text.contains("materials", ignoreCase = true) }
+        assertNotNull(materialItem, "materials bullet should appear in gapItems")
+        assertTrue(materialItem!!.candidateRuleIds.isEmpty(), "materials bullet has no matching rule")
+        assertTrue(suggest.gapDetected, "gapDetected when any request unit has no candidate rules")
+
+        // match() still applies supersede: only id24 returned
+        val matchResult = service.match(overviewMail)
+        assertEquals(listOf(24L), matchResult?.matchedRuleIds)
+        assertFalse(matchResult!!.gapDetected, "match() gap should be false when supersede rule active")
+    }
+
+    @Test
+    fun `suggestComposition merges bullets first then uncovered question sentences`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(id = 1, categoryId = 1, keywords = "salary,funding", replySubject = "Funding", replyBody = "Funding answer"),
+                QaRule(id = 2, categoryId = 2, keywords = "deadline", replySubject = "Deadline", replyBody = "Deadline answer")
+            )
+        )
+
+        // Bullet covers "funding" question; extra question "deadline" is uncovered
+        val body = """
+            What is the timeline?
+            - salary and funding bullet
+        """.trimIndent()
+
+        val result = service.suggestComposition(body)
+        // Both bullet (funding) and uncovered question (timeline/deadline context) are request items
+        // Multi-request: raw matches returned (no supersede)
+        // gapItems should have entry for each item
+        assertTrue(result.gapItems.any { it.text.contains("salary", ignoreCase = true) || it.text.contains("funding", ignoreCase = true) },
+            "bullet item should be in gapItems")
+        assertTrue(result.gapItems.size >= 1, "gapItems has multiple items for multi-unit mail")
+    }
+
+    @Test
+    fun `suggestComposition single request applies supersede`() {
+        val overviewRule = QaRule(
+            id = 100,
+            categoryId = 2,
+            keywords = "more information,understand the program",
+            priority = 5,
+            replySubject = "Program overview",
+            replyBody = "Overview answer",
+            supersedesChildren = true
+        )
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                overviewRule,
+                QaRule(id = 1, categoryId = 1, keywords = "salary,funding", replySubject = "Funding", replyBody = "Funding answer")
+            )
+        )
+
+        // Single sentence: only one request unit → supersede applied
+        val result = service.suggestComposition(
+            "I would like more information about the program and funding."
+        )
+        assertEquals(listOf(100L), result.suggestedRuleIds)
+    }
+
+    @Test
+    fun `suggestComposition no question no bullet uses whole body as one unit`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(id = 1, categoryId = 1, keywords = "interested", replySubject = "Interest", replyBody = "Interest answer")
+            )
+        )
+
+        val body = "Thank you for reaching out. I am interested in this opportunity."
+        val result = service.suggestComposition(body)
+
+        // No bullets, no question marks → whole body = 1 request unit → 1 gapItem
+        assertEquals(1, result.gapItems.size)
+        assertTrue(result.gapItems[0].candidateRuleIds.contains(1L))
     }
 
     @Test
