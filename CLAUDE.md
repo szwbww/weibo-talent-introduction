@@ -65,6 +65,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - AI 草稿链路里"给 LLM 的 QA 知识范围（promptRuleIds，可回退全集）"与"发送审计子集（sendQaRuleIds，只能是真实匹配/显式勾选）"是两个语义，进 `mail_record_qa_rule` 的只能是后者；模拟路径产物永不落审计。(K-ai-reply-prompt-vs-send-rule-ids)
 - 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
 - 人工回复 frame（问候、致谢、结束语）存在外发、确定性润色 fallback、前端预览三个消费者；修改时必须同源同序，且不得波及自动回复使用的 `QaReplyComposer.compose`。(K-manual-frame-three-consumers)
+- AI 草稿生成只有训练模拟与收发件箱两个调用方，跨入口 prompt/约束/模型能力应收口在 `AiReplyDraftService.generate()`；QA_MATCHED verbatim 与 deterministic fallback 仍是独立边界。(K-ai-generate-single-freeform-seam)
 
 ---
 

@@ -3,7 +3,7 @@ id: K-draft-supersede-separate-auto
 domain: qa
 created: 2026-07-12
 last_used: 2026-07-12
-hit_count: 2
+hit_count: 3
 source: create-p:ai-reply-grounded-parity-backend
 severity: P1
 ---
