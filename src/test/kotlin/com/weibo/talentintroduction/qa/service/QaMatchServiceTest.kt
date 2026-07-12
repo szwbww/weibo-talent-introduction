@@ -791,4 +791,71 @@ class QaMatchServiceTest {
         assertTrue(rawIds.contains(24L))
         assertFalse(rawIds.contains(33L))
     }
+
+    @Test
+    fun `suggestComposition ignores Scholar and Scopus URL query question marks`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val researchQuestion =
+            "Could you please confirm whether my research background fits the enterprise projects you manage?"
+        val body = """
+            Thank you for your message. Here are my research profiles:
+            https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en
+            https://www.scopus.com/authid/detail.uri?authorId=57201234567
+
+            $researchQuestion
+
+            Specifically:
+            - What is the registered location of your company?
+            - What are the expected responsibilities and deliverables?
+            - How are researchers selected and matched within the scope of enterprise projects?
+            - What are the intellectual property arrangements?
+            - What are the next stages of the application?
+            - What materials should I send?
+
+            Best regards
+        """.trimIndent()
+
+        val result = service.suggestComposition(body)
+        val texts = result.gapItems.map { it.text }
+
+        assertTrue(texts.none { it.contains("com/citations?", ignoreCase = true) }, "no Scholar URL fragment: $texts")
+        assertTrue(texts.none { it.contains("detail.uri?", ignoreCase = true) }, "no Scopus URL fragment: $texts")
+        assertTrue(texts.none { it.contains("authorId", ignoreCase = true) }, "no authorId fragment: $texts")
+        assertTrue(
+            texts.none {
+                it.trim().startsWith("http://", ignoreCase = true) ||
+                    it.trim().startsWith("https://", ignoreCase = true)
+            },
+            "URL-only lines must not become request items: $texts"
+        )
+        val researchItem = texts.find { it.contains("research background", ignoreCase = true) }
+        assertNotNull(researchItem, "research match question must remain")
+        assertEquals(researchQuestion, researchItem!!.trim())
+        assertEquals(7, result.gapItems.size, "6 bullets + 1 research question")
+        assertTrue(texts[0].contains("registered location", ignoreCase = true))
+        assertTrue(texts[5].contains("materials", ignoreCase = true))
+        assertEquals(researchQuestion, texts[6].trim())
+    }
+
+    @Test
+    fun `suggestComposition keeps ordinary multi-question count and bullet with URL once`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val multi = service.suggestComposition(
+            "What funding is available? Can we arrange a meeting?"
+        )
+        assertEquals(2, multi.gapItems.size)
+        assertTrue(multi.gapItems[0].text.contains("funding", ignoreCase = true))
+        assertTrue(multi.gapItems[1].text.contains("meeting", ignoreCase = true))
+
+        val bulletWithUrl = service.suggestComposition(
+            """
+            - Please review https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en for my publications
+            """.trimIndent()
+        )
+        assertEquals(1, bulletWithUrl.gapItems.size)
+        assertTrue(bulletWithUrl.gapItems[0].text.contains("Please review", ignoreCase = true))
+        assertTrue(bulletWithUrl.gapItems[0].text.contains("scholar.google.com", ignoreCase = true))
+    }
 }

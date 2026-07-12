@@ -131,10 +131,7 @@ class QaMatchService(
         extractGapTexts(messageBody).size
 
     private fun extractGapTexts(messageBody: String): List<String> {
-        val questions = QUESTION_SENTENCE_PATTERN.findAll(messageBody)
-            .map { it.value.trim() }
-            .filter { it.isNotBlank() }
-            .toList()
+        val questions = extractQuestionSentences(messageBody)
         val bullets = messageBody.lineSequence()
             .map { it.trim() }
             .filter { BULLET_LINE_PATTERN.containsMatchIn(it) }
@@ -157,11 +154,8 @@ class QaMatchService(
 
         val normalizedBulletSet = bullets.map { normalize(it) }.toSet()
 
-        val uncoveredQuestions = QUESTION_SENTENCE_PATTERN.findAll(messageBody)
-            .map { it.value.trim() }
-            .filter { it.isNotBlank() }
+        val uncoveredQuestions = extractQuestionSentences(messageBody)
             .filter { normalize(it) !in normalizedBulletSet }
-            .toList()
 
         val combined = bullets + uncoveredQuestions
         if (combined.isEmpty()) {
@@ -170,6 +164,32 @@ class QaMatchService(
 
         val seen = mutableSetOf<String>()
         return combined.filter { seen.add(normalize(it)) }
+    }
+
+    /**
+     * URL-safe question tokenizer shared by gap counting and suggestion request items.
+     * Masks http(s) URLs before locating `?` sentences, then restores spans from the original body.
+     */
+    private fun extractQuestionSentences(messageBody: String): List<String> {
+        if (messageBody.isBlank()) {
+            return emptyList()
+        }
+        val masked = StringBuilder(messageBody)
+        for (match in URL_PATTERN.findAll(messageBody)) {
+            for (i in match.range) {
+                masked[i] = ' '
+            }
+        }
+        return QUESTION_SENTENCE_PATTERN.findAll(masked)
+            .map { match -> messageBody.substring(match.range).trim() }
+            .filter { it.isNotBlank() }
+            .filterNot { isUrlOnlyRequestFragment(it) }
+            .toList()
+    }
+
+    private fun isUrlOnlyRequestFragment(text: String): Boolean {
+        val withoutUrls = URL_PATTERN.replace(text, " ")
+        return withoutUrls.none { it.isLetterOrDigit() }
     }
 
     private fun matchRule(rule: QaRule, normalizedBody: String): QaRuleMatch? {
@@ -224,6 +244,7 @@ class QaMatchService(
 
     companion object {
         private val QUESTION_SENTENCE_PATTERN = Regex("[^?.!\n]*\\?")
+        private val URL_PATTERN = Regex("https?://[^\\s<>]+", RegexOption.IGNORE_CASE)
         private val BULLET_LINE_PATTERN = Regex("^(?:[-*•]|\\d+[.)]\\s)")
     }
 }
