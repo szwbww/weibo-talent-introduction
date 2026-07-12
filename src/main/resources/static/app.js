@@ -102,7 +102,9 @@ const state = {
         simulateMailsPage: 0,
         simulateMailsSize: 20,
         selectedSimulateMailContactId: null,
+        selectedSimulateMailRecordId: null,
         selectedSimulateMail: null,
+        simulateRequestSeq: 0,
         simulateResult: null
     },
     variableMeta: null,
@@ -142,12 +144,14 @@ const aiReplyState = {
     lastDraft: "",
     /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
     lastQaRuleIds: [],
-    /** Locked after first turn: QA_MATCHED | FREE_FORM */
+    /** Locked after first turn: QA_MATCHED | FREE_FORM | QA_GROUNDED */
     mode: null,
     /** Whether first turn has completed (locks mode and qaRuleIds for continuation). */
     firstTurnDone: false,
     drafts: {},
-    nextDraftId: 0
+    nextDraftId: 0,
+    requestSeq: 0,
+    inFlight: false
 };
 
 const contextPath = (() => {
@@ -2807,12 +2811,17 @@ function renderAiTrainingMailDetail(mail) {
 
 function selectSimulateMail(mail) {
     state.aiTraining.selectedSimulateMailContactId = mail.expertContactId;
+    state.aiTraining.selectedSimulateMailRecordId = mail.mailRecordId ?? null;
     state.aiTraining.selectedSimulateMail = mail;
     state.aiTraining.simulateResult = null;
+    state.aiTraining.simulateRequestSeq += 1;
+    const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
+    setAiReplyLoading(panel, false);
     renderAiTrainingMailList();
     renderAiTrainingMailDetail(mail);
     $("#aiTrainingSimulateMessages").innerHTML = "";
     $("#aiTrainingSimulateMeta").innerHTML = "";
+    renderAiReplyFeedback($("#aiTrainingSimulateFeedback"), null);
 }
 
 async function loadAiTrainingSimulateMails() {
@@ -2833,11 +2842,16 @@ async function loadAiTrainingSimulateMails() {
         && state.aiTraining.simulateMails.some((mail) => mail.expertContactId === selectedId);
     if (!stillSelected) {
         state.aiTraining.selectedSimulateMailContactId = null;
+        state.aiTraining.selectedSimulateMailRecordId = null;
         state.aiTraining.selectedSimulateMail = null;
         state.aiTraining.simulateResult = null;
+        state.aiTraining.simulateRequestSeq += 1;
+        const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
+        setAiReplyLoading(panel, false);
         renderAiTrainingMailDetail(null);
         $("#aiTrainingSimulateMessages").innerHTML = "";
         $("#aiTrainingSimulateMeta").innerHTML = "";
+        renderAiReplyFeedback($("#aiTrainingSimulateFeedback"), null);
     }
     renderAiTrainingMailList();
 }
@@ -2846,11 +2860,14 @@ function renderAiTrainingSimulateResult(result) {
     state.aiTraining.simulateResult = result;
     const messages = $("#aiTrainingSimulateMessages");
     const meta = $("#aiTrainingSimulateMeta");
+    const feedback = $("#aiTrainingSimulateFeedback");
     if (!result) {
         if (messages) messages.innerHTML = "";
         if (meta) meta.innerHTML = "";
+        renderAiReplyFeedback(feedback, null);
         return;
     }
+    renderAiReplyFeedback(feedback, result);
     if (messages) {
         messages.innerHTML = `
             <div class="ai-chat-bubble ai-chat-assistant ai-draft-bubble">
@@ -2871,6 +2888,10 @@ function renderAiTrainingSimulateResult(result) {
             `模式 ${result.mode || "-"}`,
             `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`
         ];
+        const requestCount = Number(result.requestCount) || 0;
+        if (requestCount > 0) {
+            chips.push(`事实覆盖 ${Number(result.groundedRequestCount) || 0}/${requestCount}`);
+        }
         const refBadges = (result.injectedDialogRefs || []).map((ref) => badge(`注入范例 ${ref}`, "info")).join(" ");
         meta.innerHTML = chips.map((chip) => `<span class="ai-meta-chip">${escapeHtml(chip)}</span>`).join("")
             + (refBadges ? ` ${refBadges}` : "");
@@ -2883,24 +2904,51 @@ async function runAiTrainingSimulate() {
         showStatus("请先选择邮件", "warn");
         return;
     }
+    const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
+    if (!panel || panel.getAttribute("aria-busy") === "true") {
+        return;
+    }
     const promptOverride = $("#aiTrainingPromptOverride").value.trim();
-    const btn = $("#aiTrainingSimulateBtn");
-    const messages = $("#aiTrainingSimulateMessages");
-    btn.disabled = true;
-    setTagEditorLoading(messages, true, "AI 生成中...");
+    const mailRecordId = state.aiTraining.selectedSimulateMailRecordId;
+    const requestSeq = state.aiTraining.simulateRequestSeq;
+    const feedback = $("#aiTrainingSimulateFeedback");
+    renderAiReplyFeedback(feedback, null);
+    setAiReplyLoading(panel, true);
     try {
+        const body = {
+            expertContactId: contactId,
+            promptOverride: promptOverride || null
+        };
+        if (mailRecordId != null) {
+            body.mailRecordId = mailRecordId;
+        }
         const result = await api("/api/ai-training/simulate", {
             method: "POST",
-            body: JSON.stringify({
-                expertContactId: contactId,
-                promptOverride: promptOverride || null
-            })
+            body: JSON.stringify(body)
         });
+        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
+            && contactId === state.aiTraining.selectedSimulateMailContactId
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+        if (!stillCurrent) {
+            return;
+        }
         renderAiTrainingSimulateResult(result);
         showStatus("模拟回复已生成（未外发）", "ok");
+    } catch (error) {
+        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
+            && contactId === state.aiTraining.selectedSimulateMailContactId
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+        if (stillCurrent) {
+            renderAiReplyFeedback(feedback, null, error.message || "未知错误");
+        }
+        throw error;
     } finally {
-        setTagEditorLoading(messages, false);
-        btn.disabled = false;
+        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
+            && contactId === state.aiTraining.selectedSimulateMailContactId
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+        if (stillCurrent) {
+            setAiReplyLoading(panel, false);
+        }
     }
 }
 
@@ -3487,6 +3535,96 @@ function setTagEditorLoading(editor, loading, message = "处理中...") {
     } else if (overlay) {
         overlay.remove();
     }
+}
+
+const AI_REPLY_WARNING_LABELS = {
+    EXPERT_PROFILE_NOT_FOUND: "未找到现有专家画像，本次回复未引用研究资料。",
+    EXPERT_RESEARCH_CONTEXT_INSUFFICIENT: "现有专家研究资料不足，匹配度问题需要人工确认或先使用已有资料补充功能。"
+};
+
+function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…") {
+    if (!panel) return;
+    panel.setAttribute("aria-busy", loading ? "true" : "false");
+    panel.querySelectorAll("button, textarea").forEach((el) => {
+        if (loading) {
+            if (!el.hasAttribute("data-ai-reply-was-disabled")) {
+                el.setAttribute("data-ai-reply-was-disabled", el.disabled ? "true" : "false");
+            }
+            el.disabled = true;
+        } else if (el.hasAttribute("data-ai-reply-was-disabled")) {
+            el.disabled = el.getAttribute("data-ai-reply-was-disabled") === "true";
+            el.removeAttribute("data-ai-reply-was-disabled");
+        }
+    });
+    let overlay = panel.querySelector(":scope > .ai-reply-loading-overlay");
+    if (loading) {
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "ai-reply-loading-overlay";
+            overlay.setAttribute("role", "status");
+            overlay.setAttribute("aria-live", "polite");
+            overlay.innerHTML =
+                `<span class="ai-reply-loading-spinner" aria-hidden="true"></span>` +
+                `<span class="ai-reply-loading-text"></span>`;
+            panel.appendChild(overlay);
+        }
+        const textEl = overlay.querySelector(".ai-reply-loading-text");
+        if (textEl) textEl.textContent = message;
+    } else if (overlay) {
+        overlay.remove();
+    }
+}
+
+function formatUnsupportedRequests(unsupportedRequests) {
+    const items = (unsupportedRequests || []).filter((item) => String(item || "").trim());
+    if (items.length === 0) return "";
+    const shown = items.slice(0, 3).map((item) => String(item).trim());
+    const rest = items.length - shown.length;
+    let text = `以下请求缺少已审核依据：${shown.join("；")}`;
+    if (rest > 0) {
+        text += `；另 ${rest} 项`;
+    }
+    return text;
+}
+
+function renderAiReplyFeedback(container, result, error = null) {
+    if (!container) return;
+    if (error) {
+        container.hidden = false;
+        container.innerHTML = `<div class="ai-reply-error">${escapeHtml(String(error))}</div>`;
+        return;
+    }
+    if (!result) {
+        container.hidden = true;
+        container.innerHTML = "";
+        return;
+    }
+    const requestCount = Number(result.requestCount) || 0;
+    const groundedRequestCount = Number(result.groundedRequestCount) || 0;
+    const warnings = Array.isArray(result.contextWarnings) ? result.contextWarnings : [];
+    const unsupported = Array.isArray(result.unsupportedRequests) ? result.unsupportedRequests : [];
+    const parts = [];
+    if (requestCount > 0) {
+        parts.push(
+            `<div class="ai-reply-coverage">事实覆盖 ${escapeHtml(String(groundedRequestCount))}/${escapeHtml(String(requestCount))} 项</div>`
+        );
+    }
+    warnings.forEach((code) => {
+        const label = AI_REPLY_WARNING_LABELS[code] || String(code || "");
+        if (!label) return;
+        parts.push(`<div class="ai-reply-warning">${escapeHtml(label)}</div>`);
+    });
+    const unsupportedText = formatUnsupportedRequests(unsupported);
+    if (unsupportedText) {
+        parts.push(`<div class="ai-reply-warning">${escapeHtml(unsupportedText)}</div>`);
+    }
+    if (parts.length === 0) {
+        container.hidden = true;
+        container.innerHTML = "";
+        return;
+    }
+    container.hidden = false;
+    container.innerHTML = parts.join("");
 }
 
 function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor") {
@@ -8478,6 +8616,7 @@ function renderAiReplyPanelHtml(recordId) {
             <div class="reply-workflow-content">
             <p class="text-muted" style="font-size:12px;margin:0 0 8px;">命中 QA 规则则按规则拼接；未命中则依据专家画像与历史邮件自由生成。首轮可填补充要求。</p>
             <div class="ai-chat-panel">
+                <div id="aiReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
                 <div id="aiChatMessages" class="ai-chat-messages"></div>
                 <div class="ai-chat-input-row">
                     <textarea id="aiChatInput" class="ai-chat-input" rows="2" placeholder="首轮可填补充要求或直接生成；续轮输入修改要求，如「语气更正式」"></textarea>
@@ -8489,6 +8628,7 @@ function renderAiReplyPanelHtml(recordId) {
 }
 
 function resetAiReplyState(recordId) {
+    aiReplyState.requestSeq += 1;
     aiReplyState.recordId = recordId;
     aiReplyState.turns = [];
     aiReplyState.lastDraft = "";
@@ -8497,6 +8637,7 @@ function resetAiReplyState(recordId) {
     aiReplyState.firstTurnDone = false;
     aiReplyState.drafts = {};
     aiReplyState.nextDraftId = 0;
+    aiReplyState.inFlight = false;
 }
 
 function appendAiChatOperatorBubble(instruction) {
@@ -9001,6 +9142,9 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "ai-reply-turn") {
+        if (aiReplyState.inFlight) {
+            return;
+        }
         const input = $("#aiChatInput");
         const instruction = input?.value?.trim() || "";
         const isFirstTurn = !aiReplyState.firstTurnDone;
@@ -9022,11 +9166,25 @@ async function handleUnmatchedAction(element) {
         if (isFirstTurn && instruction) {
             body.operatorInstruction = instruction;
         }
+        const panel = $("#aiChatMessages")?.closest(".ai-chat-panel");
+        const feedback = $("#aiReplyFeedback");
+        const requestSeq = aiReplyState.requestSeq;
+        const expectedRecordId = aiReplyState.recordId;
+        const detailId = Number(id);
+        aiReplyState.inFlight = true;
+        renderAiReplyFeedback(feedback, null);
+        setAiReplyLoading(panel, true);
         try {
             const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
                 method: "POST",
                 body: JSON.stringify(body)
             });
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === aiReplyState.recordId
+                && detailId === Number(state.mailbox.detailContext?.id);
+            if (!stillCurrent) {
+                return;
+            }
             if (!isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
                 aiReplyState.turns.push({
@@ -9043,13 +9201,30 @@ async function handleUnmatchedAction(element) {
                 aiReplyState.mode = result.mode || null;
                 aiReplyState.firstTurnDone = true;
             }
+            renderAiReplyFeedback(feedback, result);
             if (input) input.value = "";
+            const qaCount = (result.qaRuleIds || []).length;
             const modeHint = result.mode === "QA_MATCHED"
-                ? `已匹配 QA 规则（${(result.qaRuleIds || []).length} 条），按规则拼接`
-                : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
+                ? `已匹配 QA 规则（${qaCount} 条），按规则拼接`
+                : result.mode === "QA_GROUNDED"
+                    ? `已基于 ${qaCount} 条 QA 事实综合多项请求`
+                    : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
             showStatus(result.usedLlm ? `AI 生成完成 — ${modeHint}` : `DeepSeek 不可用，已用确定性草稿 — ${modeHint}`);
         } catch (e) {
-            alert("AI 生成失败: " + e.message);
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === aiReplyState.recordId
+                && detailId === Number(state.mailbox.detailContext?.id);
+            if (stillCurrent) {
+                renderAiReplyFeedback(feedback, null, e.message || "未知错误");
+            }
+            showStatus(`AI 生成失败：${e.message || "未知错误"}`, "error");
+        } finally {
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === aiReplyState.recordId;
+            if (stillCurrent) {
+                setAiReplyLoading(panel, false);
+                aiReplyState.inFlight = false;
+            }
         }
         return;
     }
