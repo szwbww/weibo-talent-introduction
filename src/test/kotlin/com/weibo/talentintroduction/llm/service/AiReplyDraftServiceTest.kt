@@ -1269,4 +1269,160 @@ class AiReplyDraftServiceTest {
         assertEquals(emptyList<String>(), result.fewShotDialogRefs)
         assertFalse(result.draftText.contains("BLANK_FALLBACK_STYLE_SNIPPET"))
     }
+
+    private val expertDiligenceMail = """
+        Thank you for your message. Here are my research profiles:
+        https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en
+        https://www.scopus.com/authid/detail.uri?authorId=57201234567
+
+        Could you please confirm whether my research background fits the enterprise projects you manage?
+
+        Specifically:
+        - What is the registered location of your company?
+        - What are the expected responsibilities and deliverables?
+        - How are researchers selected and matched within the scope of enterprise projects?
+        - What are the intellectual property arrangements?
+        - What are the next stages of the application?
+        - What materials should I send?
+
+        Best regards
+    """.trimIndent()
+
+    @Test
+    fun `retries once then accepts cleaned draft without warning`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition(expertDiligenceMail)).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+
+        var chatCount = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chatCount++
+                return if (chatCount == 1) {
+                    "Thank you for writing. Please send your CV when convenient."
+                } else {
+                    "Thank you for writing. I will answer your programme questions from approved information."
+                }
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = expertDiligenceMail,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chatCount)
+        assertTrue(result.usedLlm)
+        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertFalse(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+    }
+
+    @Test
+    fun `two violating drafts sanitize and keep metadata with warning`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition(expertDiligenceMail)).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot(
+                        sourceRef = "STYLE_MULTI_DUE_DILIGENCE",
+                        messages = listOf(
+                            LlmChatMessage("user", "example expert"),
+                            LlmChatMessage("assistant", "example agent")
+                        )
+                    )
+                )
+            )
+
+        var chatCount = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chatCount++
+                return "Thank you. Please send your CV. Let us schedule a meeting next week. Applicants submit materials for review after matching."
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = expertDiligenceMail,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chatCount)
+        assertTrue(result.usedLlm)
+        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertFalse(result.draftText.contains("Let us schedule a meeting", ignoreCase = true))
+        assertTrue(result.draftText.contains("Applicants submit materials for review after matching"))
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(listOf("STYLE_MULTI_DUE_DILIGENCE"), result.fewShotDialogRefs)
+        assertEquals(0, result.requestCount)
+        assertEquals(0, result.groundedRequestCount)
+        assertEquals(emptyList<String>(), result.unsupportedRequests)
+        Mockito.verify(aiTrainingDialogueService, Mockito.times(1))
+            .selectRelevantDialogues(expertDiligenceMail, 2)
+    }
+
+    @Test
+    fun `disabled fallback strips unauthorized CTA without calling client`() {
+        stubDefaultFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(
+            emptyComposition(suggestedRuleIds = listOf(1))
+        )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(sampleRule().copy(replyBody = "Please send your CV for matching. Applicants submit materials for review."))
+        )
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? =
+                error("should not call")
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? =
+                error("should not call")
+        }
+
+        val result = service(LlmProperties(enabled = false), client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.usedLlm)
+        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertTrue(result.draftText.contains("Applicants submit materials for review"))
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+    }
+
+    @Test
+    fun `explicit meeting request allows meeting action without retry`() {
+        stubEmptyFrame()
+        val inbound = "Can we arrange a meeting next week?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        var chatCount = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chatCount++
+                return "Happy to arrange a meeting. Please share a convenient time."
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(1, chatCount)
+        assertTrue(result.usedLlm)
+        assertTrue(result.draftText.contains("convenient time"))
+        assertFalse(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+    }
 }

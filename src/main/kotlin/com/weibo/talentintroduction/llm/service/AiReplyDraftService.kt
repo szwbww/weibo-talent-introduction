@@ -76,32 +76,55 @@ class AiReplyDraftService(
             else -> AiReplyMode.QA_GROUNDED
         }
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(
+            inboundText = inboundText,
+            operatorInstruction = operatorInstruction,
+            operatorTurns = operatorTurns
+        )
 
         if (!properties.enabled) {
-            return fallback(
+            return enforceActionPolicy(
+                draftText = fallbackDraftText(
+                    resolved = resolved,
+                    operatorTurns = operatorTurns,
+                    lastDraft = lastDraft,
+                    inboundText = inboundText,
+                    expertProfile = expertProfile,
+                    mailHistory = mailHistory,
+                    operatorInstruction = operatorInstruction
+                ),
+                usedLlm = false,
+                allowedActions = allowedActions,
+                messages = null,
+                client = null,
+                temperature = null,
                 resolved = resolved,
-                operatorTurns = operatorTurns,
-                lastDraft = lastDraft,
                 mode = mode,
-                inboundText = inboundText,
-                expertProfile = expertProfile,
-                mailHistory = mailHistory,
-                operatorInstruction = operatorInstruction,
+                fewShotDialogRefs = emptyList(),
                 contextWarnings = contextWarnings
             )
         }
 
         val client = llmDraftClientProvider.getIfAvailable()
         if (client == null) {
-            return fallback(
+            return enforceActionPolicy(
+                draftText = fallbackDraftText(
+                    resolved = resolved,
+                    operatorTurns = operatorTurns,
+                    lastDraft = lastDraft,
+                    inboundText = inboundText,
+                    expertProfile = expertProfile,
+                    mailHistory = mailHistory,
+                    operatorInstruction = operatorInstruction
+                ),
+                usedLlm = false,
+                allowedActions = allowedActions,
+                messages = null,
+                client = null,
+                temperature = null,
                 resolved = resolved,
-                operatorTurns = operatorTurns,
-                lastDraft = lastDraft,
                 mode = mode,
-                inboundText = inboundText,
-                expertProfile = expertProfile,
-                mailHistory = mailHistory,
-                operatorInstruction = operatorInstruction,
+                fewShotDialogRefs = emptyList(),
                 contextWarnings = contextWarnings
             )
         }
@@ -144,40 +167,176 @@ class AiReplyDraftService(
                 buildResult.messages
             }
         }
+        val boundedMessages = withActionBoundary(messages, allowedActions)
         val temperature = when (mode) {
             AiReplyMode.QA_MATCHED -> properties.temperature
             AiReplyMode.QA_GROUNDED, AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val llmText = try {
-            client.chat(messages, temperature)?.takeIf { it.isNotBlank() }
+            client.chat(boundedMessages, temperature)?.takeIf { it.isNotBlank() }
         } catch (ex: Exception) {
             null
         }
 
         return if (llmText != null) {
-            AiReplyDraftResult(
+            enforceActionPolicy(
                 draftText = llmText,
                 usedLlm = true,
-                qaRuleIds = resolved.sendQaRuleIds,
+                allowedActions = allowedActions,
+                messages = boundedMessages,
+                client = client,
+                temperature = temperature,
+                resolved = resolved,
                 mode = mode,
                 fewShotDialogRefs = fewShotDialogRefs,
-                requestCount = resolved.requestCount,
-                groundedRequestCount = resolved.groundedRequestCount,
-                unsupportedRequests = resolved.unsupportedRequests,
                 contextWarnings = contextWarnings
             )
         } else {
-            fallback(
+            enforceActionPolicy(
+                draftText = fallbackDraftText(
+                    resolved = resolved,
+                    operatorTurns = operatorTurns,
+                    lastDraft = lastDraft,
+                    inboundText = inboundText,
+                    expertProfile = expertProfile,
+                    mailHistory = mailHistory,
+                    operatorInstruction = operatorInstruction
+                ),
+                usedLlm = false,
+                allowedActions = allowedActions,
+                messages = null,
+                client = null,
+                temperature = null,
                 resolved = resolved,
-                operatorTurns = operatorTurns,
-                lastDraft = lastDraft,
                 mode = mode,
-                inboundText = inboundText,
-                expertProfile = expertProfile,
-                mailHistory = mailHistory,
-                operatorInstruction = operatorInstruction,
+                fewShotDialogRefs = emptyList(),
                 contextWarnings = contextWarnings
             )
+        }
+    }
+
+    private fun withActionBoundary(
+        messages: List<LlmChatMessage>,
+        allowedActions: Set<AiReplyAction>
+    ): List<LlmChatMessage> {
+        val idx = messages.indexOfFirst { it.role == "system" }
+        if (idx < 0) {
+            return messages
+        }
+        val updated = messages.toMutableList()
+        updated[idx] = updated[idx].copy(
+            content = buildString {
+                append(updated[idx].content.trimEnd())
+                appendLine()
+                appendLine()
+                appendLine("Allowed outbound actions for this draft: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
+                appendLine("Do not request materials or propose a meeting/call unless that action is listed above.")
+            }
+        )
+        return updated
+    }
+
+    private fun enforceActionPolicy(
+        draftText: String,
+        usedLlm: Boolean,
+        allowedActions: Set<AiReplyAction>,
+        messages: List<LlmChatMessage>?,
+        client: LlmDraftClient?,
+        temperature: Double?,
+        resolved: ResolvedQaRules,
+        mode: AiReplyMode,
+        fewShotDialogRefs: List<String>,
+        contextWarnings: List<String>
+    ): AiReplyDraftResult {
+        var text = draftText
+        var used = usedLlm
+        val warnings = contextWarnings.toMutableList()
+
+        var violations = AiReplyActionPolicy.findViolations(text, allowedActions)
+        if (violations.isNotEmpty() && client != null && messages != null) {
+            val correction = buildActionCorrectionMessage(violations, allowedActions)
+            val retryMessages = messages + LlmChatMessage(role = "user", content = correction)
+            val retryText = try {
+                client.chat(retryMessages, temperature)?.takeIf { it.isNotBlank() }
+            } catch (_: Exception) {
+                null
+            }
+            if (retryText != null) {
+                text = retryText
+                used = true
+                violations = AiReplyActionPolicy.findViolations(text, allowedActions)
+            }
+        }
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, allowedActions)
+        text = sanitized
+        if (removed) {
+            if (UNAUTHORIZED_ACTION_REMOVED !in warnings) {
+                warnings += UNAUTHORIZED_ACTION_REMOVED
+            }
+        }
+        if (text.isBlank()) {
+            text = INSUFFICIENT_SAFE_REPLY
+            if (UNAUTHORIZED_ACTION_REMOVED !in warnings && removed) {
+                warnings += UNAUTHORIZED_ACTION_REMOVED
+            }
+        }
+        // Final hard gate: never return unauthorized CTAs.
+        val (finalText, finalRemoved) = AiReplyActionPolicy.sanitize(text, allowedActions)
+        text = finalText.ifBlank { INSUFFICIENT_SAFE_REPLY }
+        if (finalRemoved && UNAUTHORIZED_ACTION_REMOVED !in warnings) {
+            warnings += UNAUTHORIZED_ACTION_REMOVED
+        }
+
+        return AiReplyDraftResult(
+            draftText = text,
+            usedLlm = used,
+            qaRuleIds = resolved.sendQaRuleIds,
+            mode = mode,
+            fewShotDialogRefs = fewShotDialogRefs,
+            requestCount = resolved.requestCount,
+            groundedRequestCount = resolved.groundedRequestCount,
+            unsupportedRequests = resolved.unsupportedRequests,
+            contextWarnings = warnings
+        )
+    }
+
+    private fun buildActionCorrectionMessage(
+        violations: List<ActionViolation>,
+        allowedActions: Set<AiReplyAction>
+    ): String = buildString {
+        appendLine("Your previous draft violated the outbound action policy.")
+        appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
+        appendLine("Remove these unauthorized direct requests and rewrite the email body only:")
+        violations.forEach { violation ->
+            appendLine("- [${violation.action}] ${violation.sentence}")
+        }
+        appendLine("Do not add materials requests or meeting proposals unless they are in the allowed set.")
+    }
+
+    private fun fallbackDraftText(
+        resolved: ResolvedQaRules,
+        operatorTurns: List<AiReplyTurn>,
+        lastDraft: String?,
+        inboundText: String,
+        expertProfile: String?,
+        mailHistory: String?,
+        operatorInstruction: String?
+    ): String {
+        return if (operatorTurns.isEmpty()) {
+            when {
+                resolved.promptRuleIds.isNotEmpty() ->
+                    llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
+                else ->
+                    composeFreeFormDeterministicDraft(
+                        inboundText = inboundText,
+                        expertProfile = expertProfile,
+                        mailHistory = mailHistory,
+                        operatorInstruction = operatorInstruction
+                    )
+            }
+        } else {
+            lastDraft.orEmpty()
         }
     }
 
@@ -481,45 +640,6 @@ class AiReplyDraftService(
         return parts.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
 
-    private fun fallback(
-        resolved: ResolvedQaRules,
-        operatorTurns: List<AiReplyTurn>,
-        lastDraft: String?,
-        mode: AiReplyMode,
-        inboundText: String = "",
-        expertProfile: String? = null,
-        mailHistory: String? = null,
-        operatorInstruction: String? = null,
-        contextWarnings: List<String> = emptyList()
-    ): AiReplyDraftResult {
-        val draftText = if (operatorTurns.isEmpty()) {
-            when {
-                resolved.promptRuleIds.isNotEmpty() ->
-                    llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
-                else ->
-                    composeFreeFormDeterministicDraft(
-                        inboundText = inboundText,
-                        expertProfile = expertProfile,
-                        mailHistory = mailHistory,
-                        operatorInstruction = operatorInstruction
-                    )
-            }
-        } else {
-            lastDraft.orEmpty()
-        }
-        return AiReplyDraftResult(
-            draftText = draftText,
-            usedLlm = false,
-            qaRuleIds = resolved.sendQaRuleIds,
-            mode = mode,
-            fewShotDialogRefs = emptyList(),
-            requestCount = resolved.requestCount,
-            groundedRequestCount = resolved.groundedRequestCount,
-            unsupportedRequests = resolved.unsupportedRequests,
-            contextWarnings = contextWarnings
-        )
-    }
-
     internal fun composeFreeFormDeterministicDraft(
         inboundText: String,
         expertProfile: String?,
@@ -572,5 +692,11 @@ class AiReplyDraftService(
             ?.removePrefix("Answer:")
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+    }
+
+    companion object {
+        const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
+        const val INSUFFICIENT_SAFE_REPLY =
+            "The available approved information is not sufficient for a reliable reply, so this item should be confirmed manually."
     }
 }
