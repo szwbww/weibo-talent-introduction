@@ -858,4 +858,69 @@ class QaMatchServiceTest {
         assertTrue(bulletWithUrl.gapItems[0].text.contains("Please review", ignoreCase = true))
         assertTrue(bulletWithUrl.gapItems[0].text.contains("scholar.google.com", ignoreCase = true))
     }
+
+    @Test
+    fun `suggestComposition drops URL-only body and URL-only bullet`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val urlOnlyBody = service.suggestComposition(
+            "https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en"
+        )
+        assertTrue(urlOnlyBody.gapItems.isEmpty(), "URL-only body must yield no request items")
+
+        val urlOnlyBullet = service.suggestComposition(
+            "- https://www.scopus.com/authid/detail.uri?authorId=57201234567"
+        )
+        assertTrue(urlOnlyBullet.gapItems.isEmpty(), "URL-only bullet must yield no request items")
+
+        val plainFallback = service.suggestComposition(
+            "Thank you for reaching out. I am interested in this opportunity."
+        )
+        assertEquals(1, plainFallback.gapItems.size)
+        assertEquals(
+            "Thank you for reaching out. I am interested in this opportunity.",
+            plainFallback.gapItems[0].text
+        )
+    }
+
+    @Test
+    fun `match ignores URL-only bullets when detecting gap`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary,funding",
+                    priority = 80,
+                    replySubject = "Funding support",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+
+        val withUrlOnlyBullets = service.match(
+            """
+            What funding is available?
+            - https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en
+            - https://www.scopus.com/authid/detail.uri?authorId=57201234567
+            """.trimIndent()
+        )
+        assertNotNull(withUrlOnlyBullets)
+        assertFalse(
+            withUrlOnlyBullets!!.gapDetected,
+            "URL-only bullets must not inflate automatic question unit count"
+        )
+
+        val withTextUrlBullet = service.match(
+            """
+            - salary and funding overview https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en
+            - deadline for the offer https://www.scopus.com/authid/detail.uri?authorId=57201234567
+            """.trimIndent()
+        )
+        assertNotNull(withTextUrlBullet)
+        assertTrue(
+            withTextUrlBullet!!.gapDetected,
+            "text+URL bullets still count toward automatic gap detection"
+        )
+    }
 }

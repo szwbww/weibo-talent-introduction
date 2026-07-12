@@ -135,6 +135,7 @@ class QaMatchService(
         val bullets = messageBody.lineSequence()
             .map { it.trim() }
             .filter { BULLET_LINE_PATTERN.containsMatchIn(it) }
+            .filterNot { isUrlOnlyRequestFragment(it) }
             .toList()
         return if (questions.size >= bullets.size) questions else bullets
     }
@@ -150,6 +151,7 @@ class QaMatchService(
         val bullets = messageBody.lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() && BULLET_LINE_PATTERN.containsMatchIn(it) }
+            .filterNot { isUrlOnlyRequestFragment(it) }
             .toList()
 
         val normalizedBulletSet = bullets.map { normalize(it) }.toSet()
@@ -159,7 +161,12 @@ class QaMatchService(
 
         val combined = bullets + uncoveredQuestions
         if (combined.isEmpty()) {
-            return if (messageBody.isBlank()) emptyList() else listOf(messageBody.trim())
+            val trimmed = messageBody.trim()
+            return when {
+                trimmed.isBlank() -> emptyList()
+                isUrlOnlyRequestFragment(trimmed) -> emptyList()
+                else -> listOf(trimmed)
+            }
         }
 
         val seen = mutableSetOf<String>()
