@@ -3,7 +3,7 @@ id: K-ai-reply-prompt-vs-send-rule-ids
 domain: qa
 created: 2026-06-29
 last_used: 2026-07-12
-hit_count: 17
+hit_count: 18
 source: fix-v:ai-deepseek-manual-reply:fix-1
 severity: P1
 ---
