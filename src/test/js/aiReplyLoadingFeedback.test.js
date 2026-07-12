@@ -117,3 +117,73 @@ describe("simulate payload mailRecordId (I-6)", () => {
         );
     });
 });
+
+describe("ai reply model picker (I-1..I-5/S-1)", () => {
+    const flashOption = '<option value="DEEPSEEK_V4_FLASH" selected>DeepSeek V4 Flash</option>';
+    const proOption = '<option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>';
+    const mailboxFlash = '<option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>';
+    const mailboxPro = '<option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>';
+
+    it("exposes identical Flash/Pro options on both entrances", () => {
+        assert.ok(indexSource.includes('id="aiTrainingReplyModel"'));
+        assert.ok(indexSource.includes(flashOption));
+        assert.ok(indexSource.includes(proOption));
+        assert.ok(appSource.includes('id="aiMailboxReplyModel"'));
+        assert.ok(appSource.includes(mailboxFlash));
+        assert.ok(appSource.includes(mailboxPro));
+        assert.ok(appSource.includes('simulateModel: "DEEPSEEK_V4_FLASH"'));
+        assert.ok(appSource.includes('selectedModel: "DEEPSEEK_V4_FLASH"'));
+        assert.equal((indexSource.match(/DEEPSEEK_V4_/g) || []).length, 2);
+        assert.ok(!appSource.includes("DEEPSEEK_V4_REASONER"));
+        assert.ok(!indexSource.includes("DEEPSEEK_V4_REASONER"));
+    });
+
+    it("sends model snapshots and rejects mismatched selectedModel", () => {
+        const simulateFn = appSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
+        assert.ok(simulateFn.includes("model: expectedModel"));
+        assert.ok(simulateFn.includes('result.selectedModel !== expectedModel'));
+        assert.ok(simulateFn.includes("模型响应与当前选择不一致，请重新生成"));
+        assert.ok(simulateFn.includes("expectedModel === currentModel"));
+        assert.ok(/action === "ai-reply-turn"[\s\S]*model: expectedModel/.test(appSource));
+        assert.ok(/action === "ai-reply-turn"[\s\S]*result\.selectedModel !== expectedModel/.test(appSource));
+        assert.ok(/action === "ai-reply-turn"[\s\S]*模型响应与当前选择不一致，请重新生成/.test(appSource));
+    });
+
+    it("disables select during loading and restores was-disabled", () => {
+        assert.ok(appSource.includes('panel.querySelectorAll("button, textarea, select")'));
+        assert.ok(appSource.includes("data-ai-reply-was-disabled"));
+    });
+
+    it("keeps model badge out of draft/turns/adopt paths", () => {
+        assert.ok(appSource.includes("appendAiChatDraftBubble(result.draftText || \"\")"));
+        assert.ok(!/appendAiChatDraftBubble\([^)]*selectedModel/.test(appSource));
+        assert.ok(!/appendAiChatDraftBubble\([^)]*模型：/.test(appSource));
+        assert.ok(appSource.includes("editor.innerText = draft"));
+        assert.ok(!/innerText\s*=\s*[^\n]*模型：/.test(appSource));
+        assert.ok(appSource.includes("AI_REPLY_MODEL_LABELS"));
+        assert.ok(appSource.includes("`模型：${aiReplyModelLabel(result.selectedModel)}`")
+            || appSource.includes("模型：${escapeHtml(aiReplyModelLabel(result.selectedModel))}"));
+    });
+
+    it("includes S-1 CSS verbatim and no third option", () => {
+        assert.ok(stylesSource.includes(".ai-reply-model-row {"));
+        assert.ok(stylesSource.includes("justify-content: flex-end;"));
+        assert.ok(stylesSource.includes(".ai-reply-model-select {"));
+        assert.ok(stylesSource.includes("min-width: 190px;"));
+        assert.ok(stylesSource.includes(".ai-reply-model-select:focus {"));
+        assert.ok(stylesSource.includes(".ai-reply-model-select:disabled {"));
+        assert.ok(stylesSource.includes("background: #f8fafc;"));
+        assert.ok(!/id="aiTrainingReplyModel"[^>]*style=/.test(indexSource));
+        assert.ok(!/id="aiMailboxReplyModel"[^>]*style=/.test(appSource));
+        assert.equal((appSource.match(/option value="DEEPSEEK_V4_/g) || []).length, 2);
+        assert.equal((indexSource.match(/option value="DEEPSEEK_V4_/g) || []).length, 2);
+    });
+
+    it("does not reset mailbox model when switching mails", () => {
+        const resetFn = appSource.match(/function resetAiReplyState\(recordId\) \{[\s\S]*?\n\}/)?.[0] || "";
+        assert.ok(resetFn.includes("aiReplyState.inFlight = false"));
+        assert.ok(!resetFn.includes("selectedModel"));
+        const initFn = appSource.match(/function initAiReplyWorkbench\(recordId\) \{[\s\S]*?\n\}/)?.[0] || "";
+        assert.ok(initFn.includes("modelSelect.value = aiReplyState.selectedModel"));
+    });
+});

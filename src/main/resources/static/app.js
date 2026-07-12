@@ -105,7 +105,8 @@ const state = {
         selectedSimulateMailRecordId: null,
         selectedSimulateMail: null,
         simulateRequestSeq: 0,
-        simulateResult: null
+        simulateResult: null,
+        simulateModel: "DEEPSEEK_V4_FLASH"
     },
     variableMeta: null,
     variableMetaLoaded: false,
@@ -151,8 +152,24 @@ const aiReplyState = {
     drafts: {},
     nextDraftId: 0,
     requestSeq: 0,
-    inFlight: false
+    inFlight: false,
+    selectedModel: "DEEPSEEK_V4_FLASH"
 };
+
+const AI_REPLY_MODEL_LABELS = {
+    DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
+    DEEPSEEK_V4_PRO: "DeepSeek V4 Pro"
+};
+
+function aiReplyModelLabel(model) {
+    return AI_REPLY_MODEL_LABELS[model] || AI_REPLY_MODEL_LABELS.DEEPSEEK_V4_FLASH;
+}
+
+function readAiReplyModelSelection(selectId, fallback) {
+    const select = $(selectId);
+    const value = select?.value || fallback || "DEEPSEEK_V4_FLASH";
+    return AI_REPLY_MODEL_LABELS[value] ? value : "DEEPSEEK_V4_FLASH";
+}
 
 const contextPath = (() => {
     const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -2886,7 +2903,8 @@ function renderAiTrainingSimulateResult(result) {
     if (meta) {
         const chips = [
             `模式 ${result.mode || "-"}`,
-            `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`
+            `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`,
+            `模型：${aiReplyModelLabel(result.selectedModel)}`
         ];
         const requestCount = Number(result.requestCount) || 0;
         if (requestCount > 0) {
@@ -2911,13 +2929,16 @@ async function runAiTrainingSimulate() {
     const promptOverride = $("#aiTrainingPromptOverride").value.trim();
     const mailRecordId = state.aiTraining.selectedSimulateMailRecordId;
     const requestSeq = state.aiTraining.simulateRequestSeq;
+    const expectedModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
+    state.aiTraining.simulateModel = expectedModel;
     const feedback = $("#aiTrainingSimulateFeedback");
     renderAiReplyFeedback(feedback, null);
     setAiReplyLoading(panel, true);
     try {
         const body = {
             expertContactId: contactId,
-            promptOverride: promptOverride || null
+            promptOverride: promptOverride || null,
+            model: expectedModel
         };
         if (mailRecordId != null) {
             body.mailRecordId = mailRecordId;
@@ -2926,26 +2947,36 @@ async function runAiTrainingSimulate() {
             method: "POST",
             body: JSON.stringify(body)
         });
+        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
         const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
             && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
+            && expectedModel === currentModel;
         if (!stillCurrent) {
+            return;
+        }
+        if (result.selectedModel !== expectedModel) {
+            renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
             return;
         }
         renderAiTrainingSimulateResult(result);
         showStatus("模拟回复已生成（未外发）", "ok");
     } catch (error) {
+        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
         const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
             && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
+            && expectedModel === currentModel;
         if (stillCurrent) {
             renderAiReplyFeedback(feedback, null, error.message || "未知错误");
         }
         throw error;
     } finally {
+        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
         const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
             && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId;
+            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
+            && expectedModel === currentModel;
         if (stillCurrent) {
             setAiReplyLoading(panel, false);
         }
@@ -3545,7 +3576,7 @@ const AI_REPLY_WARNING_LABELS = {
 function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…") {
     if (!panel) return;
     panel.setAttribute("aria-busy", loading ? "true" : "false");
-    panel.querySelectorAll("button, textarea").forEach((el) => {
+    panel.querySelectorAll("button, textarea, select").forEach((el) => {
         if (loading) {
             if (!el.hasAttribute("data-ai-reply-was-disabled")) {
                 el.setAttribute("data-ai-reply-was-disabled", el.disabled ? "true" : "false");
@@ -3617,6 +3648,9 @@ function renderAiReplyFeedback(container, result, error = null) {
     const unsupportedText = formatUnsupportedRequests(unsupported);
     if (unsupportedText) {
         parts.push(`<div class="ai-reply-warning">${escapeHtml(unsupportedText)}</div>`);
+    }
+    if (result.selectedModel) {
+        parts.push(`<div class="ai-reply-coverage">模型：${escapeHtml(aiReplyModelLabel(result.selectedModel))}</div>`);
     }
     if (parts.length === 0) {
         container.hidden = true;
@@ -8616,6 +8650,14 @@ function renderAiReplyPanelHtml(recordId) {
             <div class="reply-workflow-content">
             <p class="text-muted" style="font-size:12px;margin:0 0 8px;">命中 QA 规则则按规则拼接；未命中则依据专家画像与历史邮件自由生成。首轮可填补充要求。</p>
             <div class="ai-chat-panel">
+                <div class="ai-reply-model-row">
+                    <label>生成模型
+                        <select id="aiMailboxReplyModel" class="ai-reply-model-select">
+                            <option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>
+                            <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
+                        </select>
+                    </label>
+                </div>
                 <div id="aiReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
                 <div id="aiChatMessages" class="ai-chat-messages"></div>
                 <div class="ai-chat-input-row">
@@ -8671,6 +8713,10 @@ function initAiReplyWorkbench(recordId) {
     resetAiReplyState(recordId);
     const container = $("#aiChatMessages");
     if (container) container.innerHTML = "";
+    const modelSelect = $("#aiMailboxReplyModel");
+    if (modelSelect) {
+        modelSelect.value = aiReplyState.selectedModel || "DEEPSEEK_V4_FLASH";
+    }
 }
 
 async function showUnmatchedDetail(id) {
@@ -9159,9 +9205,12 @@ async function handleUnmatchedAction(element) {
                 operatorInstruction: instruction
             });
         }
+        const expectedModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
+        aiReplyState.selectedModel = expectedModel;
         const body = {
             turns: turnsToSend,
-            qaRuleIds: isFirstTurn ? null : aiReplyState.lastQaRuleIds
+            qaRuleIds: isFirstTurn ? null : aiReplyState.lastQaRuleIds,
+            model: expectedModel
         };
         if (isFirstTurn && instruction) {
             body.operatorInstruction = instruction;
@@ -9179,10 +9228,16 @@ async function handleUnmatchedAction(element) {
                 method: "POST",
                 body: JSON.stringify(body)
             });
+            const currentModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
                 && expectedRecordId === aiReplyState.recordId
-                && detailId === Number(state.mailbox.detailContext?.id);
+                && detailId === Number(state.mailbox.detailContext?.id)
+                && expectedModel === currentModel;
             if (!stillCurrent) {
+                return;
+            }
+            if (result.selectedModel !== expectedModel) {
+                renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
                 return;
             }
             if (!isFirstTurn && instruction) {
@@ -9211,16 +9266,20 @@ async function handleUnmatchedAction(element) {
                     : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
             showStatus(result.usedLlm ? `AI 生成完成 — ${modeHint}` : `DeepSeek 不可用，已用确定性草稿 — ${modeHint}`);
         } catch (e) {
+            const currentModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
                 && expectedRecordId === aiReplyState.recordId
-                && detailId === Number(state.mailbox.detailContext?.id);
+                && detailId === Number(state.mailbox.detailContext?.id)
+                && expectedModel === currentModel;
             if (stillCurrent) {
                 renderAiReplyFeedback(feedback, null, e.message || "未知错误");
             }
             showStatus(`AI 生成失败：${e.message || "未知错误"}`, "error");
         } finally {
+            const currentModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
-                && expectedRecordId === aiReplyState.recordId;
+                && expectedRecordId === aiReplyState.recordId
+                && expectedModel === currentModel;
             if (stillCurrent) {
                 setAiReplyLoading(panel, false);
                 aiReplyState.inFlight = false;
@@ -10282,6 +10341,14 @@ function bindEvents() {
     });
     $("#aiTrainingSimulateBtn")?.addEventListener("click", () => {
         runAiTrainingSimulate().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#aiTrainingReplyModel")?.addEventListener("change", (event) => {
+        state.aiTraining.simulateModel = readAiReplyModelSelection("#aiTrainingReplyModel", event.target.value);
+    });
+    document.addEventListener("change", (event) => {
+        if (event.target?.id === "aiMailboxReplyModel") {
+            aiReplyState.selectedModel = readAiReplyModelSelection("#aiMailboxReplyModel", event.target.value);
+        }
     });
     $("#aiTrainingSimulateMessages")?.addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-action='copy-ai-draft']");
