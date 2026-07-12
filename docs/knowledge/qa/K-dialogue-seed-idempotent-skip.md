@@ -3,7 +3,7 @@ id: K-dialogue-seed-idempotent-skip
 domain: qa
 created: 2026-07-12
 last_used: 2026-07-12
-hit_count: 4
+hit_count: 5
 source: create-p:ai-training-dialogue-style-curation
 ---
 经验：`AiTrainingDialogueSeeder` 对已存在 `sourceRef` 的 `ai_training_dialogue` 行执行存在即跳过；只修改 `ai-training/dialogue-seed.json` 仅影响全新数据库，存量环境会继续使用旧 turns/keywords/enabled。
