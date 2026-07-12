@@ -1,463 +1,91 @@
 [
   {
-    "title": "1095 — Rune Brincker (structural health monitoring)",
-    "sourceRef": "DIALOG_1095",
-    "keywords": "funding,success rate,confidential,vcr,video,passport,commitment",
+    "title": "Style - multi-question due diligence",
+    "sourceRef": "STYLE_MULTI_DUE_DILIGENCE",
+    "keywords": "further information,registered location,responsibilities,deliverables,intellectual property,next stages",
     "turns": [
       {
         "role": "EXPERT",
-        "text": "I am interested in the Entrepreneurship Talent Program. Could you tell me more about what it involves?"
+        "text": "Before proceeding, could you explain your company registration, programme purpose, selection and matching process, responsibilities, contract and IP arrangements, and next steps?"
       },
       {
         "role": "AGENT",
-        "text": "There are two tracks: Innovation Talent (PhD plus 3+ years at a well-known institution, serving China for 2-3 years without relocation, multiple visits per year with costs covered) and Entrepreneur Talent (business plan to start in China, remote control allowed, 1-2 visits per year)."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What kind of project is this, and what is the success rate?"
-      },
-      {
-        "role": "AGENT",
-        "text": "This is a national-level program with a success rate of roughly 10%. We match you with enterprises based on your research direction, and formal system submission typically follows about one month later."
-      },
-      {
-        "role": "EXPERT",
-        "text": "How much funding can I receive if selected?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Selected candidates may receive government research funding in the range of 3-12 million RMB, with the enterprise providing personal salary separately."
-      },
-      {
-        "role": "AGENT",
-        "text": "For the initial stage we will need: doctoral degree certificate, passport or ID, CV (papers, patents, projects, awards), patent and award proofs, and postdoctoral or current employment verification (official documents, experience letters, or appointment letters)."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Will my materials be kept confidential? Will you ask me to transfer any money?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Your materials are strictly confidential and used only for the application. We never charge any fees at any stage. Sensitive technical details you prefer not to disclose can be redacted or summarized."
-      },
-      {
-        "role": "EXPERT",
-        "text": "How does the application process work?"
-      },
-      {
-        "role": "AGENT",
-        "text": "After you submit materials, our PhD team prepares the application forms, submits for review, and results are announced. If selected, you have two years to decide whether to participate; declining has no negative impact."
-      },
-      {
-        "role": "AGENT",
-        "text": "Could you provide proof of your last three years of employment, your visiting professor contract, and journal reviewer or editor credentials?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "I can share my visiting professor contract and an updated CV for the last three years. Should I attach 2-3 reviewer records as well?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Do you use WhatsApp, LinkedIn, or other social media for quick communication?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "I do not use social media. I only use email plus Google Meet or Skype. My LinkedIn was created by a colleague and I never open it."
-      },
-      {
-        "role": "AGENT",
-        "text": "Understood — we will continue by email. Each project can only be applied once per year through one channel. Can you confirm you will apply exclusively through Jiangsu Qingfei for the 2025 cycle?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "I confirm I will apply only through Jiangsu Qingfei for the 2025 project and will not submit through any other channel."
-      },
-      {
-        "role": "AGENT",
-        "text": "Your passport is expiring soon. Will you renew it?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "Yes, I will renew it for ten years and send a copy afterward."
-      },
-      {
-        "role": "AGENT",
-        "text": "We also need a confirmation video (VCR): hold your passport, read the commitment statement, and give a roughly seven-minute project introduction based on your slides."
-      },
-      {
-        "role": "EXPERT",
-        "text": "The timeline is tight, but I can cooperate. A PDF slide deck plus a short video should work."
-      },
-      {
-        "role": "AGENT",
-        "text": "We will share a 1,500-word three-year work plan template (R&D goals, commercialization, team, feasibility) and a video commitment script. You may adapt the format if needed."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I will prepare according to the template."
+        "text": "Thank you for setting out the questions clearly. I will address them in the same order and distinguish confirmed information from points that depend on a future enterprise match or written agreement. If the approved information does not support a requested detail, I will mark it for confirmation instead of making an assumption or replacing the answer with a request for your CV."
       }
     ]
   },
   {
-    "title": "2061 — Niklas Jarvstrat (thermomechanical modeling)",
-    "sourceRef": "DIALOG_2061",
-    "keywords": "only apply,duplicate,one company,timeline,when results,partner company",
+    "title": "Style - insufficient research context",
+    "sourceRef": "STYLE_PROFILE_CONTEXT_GAP",
+    "keywords": "research profile,research background,areas of expertise,google scholar,scopus,within the scope",
     "turns": [
       {
-        "role": "AGENT",
-        "text": "For 2026 we have matched you with Jiangsu Gongchang Roll Company. They are a leading roll manufacturer with strong industry credentials. Does this enterprise fit your direction?"
-      },
-      {
         "role": "EXPERT",
-        "text": "Yes, the company looks relevant. I am willing to apply exclusively through this company."
+        "text": "Please review my Google Scholar and Scopus profiles and confirm whether my research background fits the enterprise projects you manage."
       },
       {
         "role": "AGENT",
-        "text": "To keep the application complete and avoid duplicate submissions, please confirm you will apply only through this company this year."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I confirm I will apply exclusively through this company."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What is the application timeline?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Early stage (mid-2025 to December): enterprise matching, material submission, and our PhD team drafting the plan. Mid stage (Q1 2026): finalize the enterprise and submit formally. Late stage (October to year-end 2026): review and announcement. International programs of this scale typically run longer than a single semester."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What if this batch of enterprises does not participate?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Slots are limited and we may wait for a suitable enterprise to join. After selection you and the enterprise will agree on the research topic and sign a labor contract. Some enterprises arrange brief online meetings during the application period; many do not."
+        "text": "Thank you for sharing those links. At present, I can assess fit only from the research information already available in our records. That information is not sufficient to confirm a match, so I cannot give you a reliable assessment yet. I also do not want to imply that the external profiles have been reviewed when they have not."
       }
     ]
   },
   {
-    "title": "2077 — Ilya Turchin (biophotonics / tumor imaging)",
-    "sourceRef": "DIALOG_2077",
-    "keywords": "remote,visit,full time,who funds,research topic,timeline,video,passport,statement",
+    "title": "Style - verification before progression",
+    "sourceRef": "STYLE_TRUST_VERIFICATION",
+    "keywords": "legitimate,verify,company registration,registered location,official website,who are you",
     "turns": [
       {
         "role": "EXPERT",
-        "text": "What exactly is the cooperation format and what are the application steps?"
+        "text": "Before I proceed, how can I verify your company identity, registered location, and official channels?"
       },
       {
         "role": "AGENT",
-        "text": "The format is flexible. Most candidates choose remote guidance with one or two short visits to China per year. Full-time relocation is also possible with additional housing allowance and higher salary."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Who funds my participation?"
-      },
-      {
-        "role": "AGENT",
-        "text": "The government initiates the program and co-funds it with enterprises. Review focuses on fit and whether you can solve real problems for the partner company. Selected candidates receive project funding."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What should I submit now — a full research plan or just personal information?"
-      },
-      {
-        "role": "AGENT",
-        "text": "At this stage we only need your research topic direction, not a complete research plan. Required items: your CV (already received), enterprise business information, and a jointly drafted research direction."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What is the timeline?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Applications are usually submitted once or twice per year, often between March and May, with results announced in November or December. This year's system is not open yet, but we have prepared materials in advance. After selection we will arrange an online meeting with the enterprise."
-      },
-      {
-        "role": "AGENT",
-        "text": "New rules require a short self-introduction video of about three minutes: hold your passport and read the commitment statement. This is because some agencies have used AI-forged materials."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I can record and send it after compression."
+        "text": "That is a reasonable request. Before asking you to proceed, I will provide the legal identity, registered location, and verification channels that are present in our approved information. Any item not available there will be identified for confirmation rather than replaced with a request for documents or a meeting."
       }
     ]
   },
   {
-    "title": "2109 — Alexey Vasiliev (sensor systems)",
-    "sourceRef": "DIALOG_2109",
-    "keywords": "only apply,duplicate,one company,which company,partner company,video,passport,meeting,time zone",
+    "title": "Style - contract and IP boundaries",
+    "sourceRef": "STYLE_CONTRACT_BOUNDARY",
+    "keywords": "contractual,financial arrangements,intellectual property,compensation,ip rights",
     "turns": [
       {
-        "role": "AGENT",
-        "text": "Have any other agencies contacted you about a similar China talent project? Each project can only be submitted through one agency per year, otherwise the application is invalid."
-      },
-      {
         "role": "EXPERT",
-        "text": "I will not engage with other companies for this project. I do have a separate short visit arrangement with Shanghai Institute of Ceramics (SICCAS) under a different program."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Could you send details about the partner company — profile, website, and address?"
+        "text": "Could you explain the contractual, financial, compensation, and intellectual-property arrangements?"
       },
       {
         "role": "AGENT",
-        "text": "The partner is Kunshan Xingu Microelectronics Materials Co., Ltd., specializing in high-purity microelectronic chemicals and semiconductor materials. Address: Suzhou (near Shanghai). Website: kssigo.com."
-      },
-      {
-        "role": "AGENT",
-        "text": "The application requires a confirmation video: hold your passport and read the commitment statement."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Agreed. How should I record it?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Do you have a contract with Shanghai Institute of Ceramics that can demonstrate long-term cooperation with China?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "I can explain the cooperation arrangement we have with them."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What time works for a meeting?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Moscow time 9-10 a.m. corresponds to 14-15:00 China time. Would that work for you?"
+        "text": "Thank you for raising these points. I will separate the general arrangement that is already confirmed from compensation, ownership, and other terms that depend on a later written agreement. I will not infer specific rights or commitments that are not present in the approved information."
       }
     ]
   },
   {
-    "title": "G2009 — Igor Ovchinnikov (stochastic supersymmetry)",
-    "sourceRef": "DIALOG_G2009",
-    "keywords": "timeline,when submitted,when results,proof,certificate,employment verification",
+    "title": "Style - explicit next-step sequence",
+    "sourceRef": "STYLE_PROCESS_NEXT_STEPS",
+    "keywords": "next stages,next steps,selection process,application process,timeline",
     "turns": [
       {
         "role": "EXPERT",
-        "text": "What is the application timeline — when do we submit and when are results announced?"
+        "text": "What are the selection process, next steps, and expected timeline?"
       },
       {
         "role": "AGENT",
-        "text": "Mid-May: customize the application framework. Late May: match enterprises and align research direction. June: review agency refines and finalizes. June-August: submit for review. October-December: results announced."
-      },
-      {
-        "role": "AGENT",
-        "text": "Did you complete a combined bachelor's-master's program?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "Yes, I can confirm my degree path."
-      },
-      {
-        "role": "AGENT",
-        "text": "Can your employers (Russian Academy Spectroscopy Institute, HRL, Max Planck Institute, Vetsun, etc.) provide current employment certificates? Can you provide an official invitation for a short visit to the Garching center in Munich?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "Some institutions cannot provide employment letters, but I can provide official invitation letters. I am attaching my ThermoFisher employment certificate."
-      },
-      {
-        "role": "AGENT",
-        "text": "Do you have any additional awards or patents?"
-      },
-      {
-        "role": "EXPERT",
-        "text": "No patents. I originated the theory of stochastic dynamical supersymmetry."
+        "text": "I will set out the process as a short sequence: what happens now, what follows after review, and when any currently unavailable information will be provided. Where no confirmed date is available, I will describe the dependency instead of inventing a deadline."
       }
     ]
   },
   {
-    "title": "2285 — Alexandros Stavdas (optical networks / subsea cables)",
-    "sourceRef": "DIALOG_2285",
-    "keywords": "sensitive,linkedin,only email,which company,meeting,time zone,national project",
-    "turns": [
-      {
-        "role": "AGENT",
-        "text": "We would like to invite you to a 20-minute online meeting within a Greek-time-friendly window."
-      },
-      {
-        "role": "EXPERT",
-        "text": "National-level projects feel sensitive to me. I prefer email communication at the early stage."
-      },
-      {
-        "role": "AGENT",
-        "text": "We only need 15 minutes. We can also arrange a separate online meeting with our CTO to build trust step by step."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What is your Chinese name?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Chen Jingjing."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I have deactivated my LinkedIn account. Please contact me only by email."
-      },
-      {
-        "role": "AGENT",
-        "text": "Noted — we will use email only going forward."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Which enterprise is the partner, and is it a good match for my field?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Tianqin Hengrong Huafei Technology, a leading enterprise in next-generation multi-band optical networks and subsea cables. It aligns closely with your expertise."
-      }
-    ]
-  },
-  {
-    "title": "2094 — Nicolas Merveille (sustainability / circular economy)",
-    "sourceRef": "DIALOG_2094",
-    "keywords": "what documents,materials needed,cv,proof,meeting,zoom,teams,time zone",
-    "turns": [
-      {
-        "role": "AGENT",
-        "text": "Please prepare the following materials: doctoral, master's, and bachelor's degree certificates; passport; CV with papers, patents, projects, and awards; patent and award proofs; and postdoctoral or current employment verification."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What software will we use for the meeting, and what time works given the roughly 12-hour time difference?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Teams, Zoom, or Webex all work. We will schedule according to your time zone and send the link before the meeting."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I have two institutional affiliations (Risec founder and CIRGoM member). I have updated my CV accordingly."
-      },
-      {
-        "role": "AGENT",
-        "text": "Thank you. We will proceed based on this after our meeting."
-      }
-    ]
-  },
-  {
-    "title": "2143 — Sven Gohla (nanocarriers / cosmetic science)",
-    "sourceRef": "DIALOG_2143",
-    "keywords": "other agency,accredited,official,guarantee,rights,subsidy,trust,duplicate,one agency",
+    "title": "Style - staged material request",
+    "sourceRef": "STYLE_MATERIALS_BOUNDARY",
+    "keywords": "what should i provide,what materials,materials needed,cv,documents",
     "turns": [
       {
         "role": "EXPERT",
-        "text": "What restrictions apply to Chinese talent programs? Can I work with multiple agencies at once?"
+        "text": "What materials do you need from me at this stage, and why are they needed?"
       },
       {
         "role": "AGENT",
-        "text": "The same person cannot be submitted by different agencies. Duplicate applications lead to disqualification. You may work with only one agency."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Another agency already has all my materials, including my video. How can my rights be protected?"
-      },
-      {
-        "role": "AGENT",
-        "text": "If a duplicate application occurs, the authorities require the agency to provide a video authorization from you personally, which prevents others from misusing your materials."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Are you an officially accredited agency? Can you prove cooperation with the government?"
-      },
-      {
-        "role": "AGENT",
-        "text": "The program is confidential and has no public website, but our government cooperation is documented. We can show talent-office certificates and summit participation records from multiple regions."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Why should I trust you to do a good job? My previous agency service was very poor."
-      },
-      {
-        "role": "AGENT",
-        "text": "You now have a dedicated contact. Our services include complimentary expert visits to China (business class and five-star hotel), on-arrival assistance with SIM cards, bank accounts, and document submission. Some agencies withhold subsidies after selection; we guarantee transparent disbursement."
-      },
-      {
-        "role": "EXPERT",
-        "text": "What is the project timeline and next step?"
-      },
-      {
-        "role": "AGENT",
-        "text": "The 2026 cycle has started with about two months of preparation remaining. The earlier you confirm, the sooner we can begin materials."
-      },
-      {
-        "role": "AGENT",
-        "text": "Your most recent paper (2012) and project (2018) are somewhat dated. Could you supplement recent achievements? Please also share your passport for identity verification."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Since 2012 I have worked mainly as a consultant and client confidentiality limits what I can share. I can provide topics related to my own scientific work."
-      }
-    ]
-  },
-  {
-    "title": "JMS — Juan M. Stella (hydrology / water resources)",
-    "sourceRef": "DIALOG_JMS",
-    "keywords": "meeting,time zone,schedule a call,what documents,materials needed,passport",
-    "turns": [
-      {
-        "role": "AGENT",
-        "text": "We would like to arrange an online meeting to discuss cooperation further and coordinate across time zones."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Here are several Jeddah-time slots that should work with China time. I am happy to accommodate."
-      },
-      {
-        "role": "AGENT",
-        "text": "We suggest 9:00 Jeddah, which is 14:00 Beijing. We will send the meeting link after you confirm."
-      },
-      {
-        "role": "EXPERT",
-        "text": "That time works for me."
-      },
-      {
-        "role": "AGENT",
-        "text": "Please prepare: passport, doctoral degree certificate, employment verification letter, and any awards, certificates, or other credentials."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I have sent my passport, doctoral certificate, and contract. I will provide the remaining documents shortly."
-      },
-      {
-        "role": "AGENT",
-        "text": "Over the next two weeks we will connect with relevant enterprises and update you."
-      }
-    ]
-  },
-  {
-    "title": "2119 — Fotios Georgiades (dynamics)",
-    "sourceRef": "DIALOG_2119",
-    "keywords": "cv,full time,relocate,research plan,proposal",
-    "turns": [
-      {
-        "role": "EXPERT",
-        "text": "When should I update my CV?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Please update your CV by the end of March."
-      },
-      {
-        "role": "EXPERT",
-        "text": "I prefer to avoid relocating to China full time."
-      },
-      {
-        "role": "AGENT",
-        "text": "Understood. Most candidates choose remote guidance with short annual visits, which fits your preference."
-      },
-      {
-        "role": "EXPERT",
-        "text": "Do I need to update my research proposal now?"
-      },
-      {
-        "role": "AGENT",
-        "text": "Not at this stage. A research direction is sufficient for now; a full proposal can wait until later in the process."
+        "text": "Thank you. I will ask only for the minimum material needed at the current stage and explain its purpose. I will not expand the request to sensitive documents that are not required, and I will answer your programme questions before asking you to send anything."
       }
     ]
   }

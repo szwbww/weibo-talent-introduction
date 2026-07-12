@@ -22,7 +22,7 @@ class AiTrainingDialogueSeederTest {
                 AiTrainingDialogue(
                     id = 1,
                     title = "existing",
-                    sourceRef = "DIALOG_1095",
+                    sourceRef = "STYLE_MULTI_DUE_DILIGENCE",
                     turnsJson = "[]"
                 )
             )
@@ -33,13 +33,24 @@ class AiTrainingDialogueSeederTest {
     }
 
     @Test
-    fun `seeder inserts missing sourceRef rows`() {
+    fun `seeder inserts six STYLE refs when missing`() {
         Mockito.`when`(repository.findBySourceRef(Mockito.anyString())).thenReturn(null)
         val captor = ArgumentCaptor.forClass(AiTrainingDialogue::class.java)
 
         seeder.run(DefaultApplicationArguments())
 
-        Mockito.verify(repository, Mockito.atLeastOnce()).save(captor.capture())
-        assertEquals("DIALOG_1095", captor.allValues.first().sourceRef)
+        Mockito.verify(repository, Mockito.times(6)).save(captor.capture())
+        assertEquals("STYLE_MULTI_DUE_DILIGENCE", captor.allValues.first().sourceRef)
+        assertEquals(
+            listOf(
+                "STYLE_MULTI_DUE_DILIGENCE",
+                "STYLE_PROFILE_CONTEXT_GAP",
+                "STYLE_TRUST_VERIFICATION",
+                "STYLE_CONTRACT_BOUNDARY",
+                "STYLE_PROCESS_NEXT_STEPS",
+                "STYLE_MATERIALS_BOUNDARY"
+            ),
+            captor.allValues.map { it.sourceRef }
+        )
     }
 }

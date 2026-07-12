@@ -103,8 +103,7 @@ class AiReplyDraftService(
                 )
             }
             AiReplyMode.QA_GROUNDED -> {
-                fewShotDialogRefs = emptyList()
-                buildGroundedMessages(
+                val buildResult = buildGroundedMessages(
                     inboundText = inboundText,
                     operatorTurns = operatorTurns,
                     promptRuleIds = resolved.promptRuleIds,
@@ -114,6 +113,8 @@ class AiReplyDraftService(
                     contextWarnings = contextWarnings,
                     operatorInstruction = operatorInstruction
                 )
+                fewShotDialogRefs = buildResult.fewShotDialogRefs
+                buildResult.messages
             }
             AiReplyMode.FREE_FORM -> {
                 val buildResult = buildFreeFormMessages(
@@ -241,16 +242,28 @@ class AiReplyDraftService(
         mailHistory: String?,
         contextWarnings: List<String>,
         operatorInstruction: String? = null
-    ): List<LlmChatMessage> {
+    ): FreeFormBuildResult {
+        val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText, max = 1)
         val messages = mutableListOf<LlmChatMessage>()
-        messages += LlmChatMessage(role = "system", content = buildGroundedSystemPrompt())
+        val systemPrompt = if (fewShots.isEmpty()) {
+            buildGroundedSystemPrompt()
+        } else {
+            buildGroundedSystemPrompt() + buildFewShotBoundaryNote(fewShots.size)
+        }
+        messages += LlmChatMessage(role = "system", content = systemPrompt)
+        fewShots.forEach { dialogue ->
+            messages += dialogue.messages
+        }
         messages += LlmChatMessage(
             role = "user",
             content = buildGroundedUserContent(inboundText, promptRuleIds, requestItems, expertProfile, mailHistory, contextWarnings)
         )
         appendFirstTurnInstruction(messages, operatorInstruction)
         appendOperatorTurns(messages, operatorTurns)
-        return messages
+        return FreeFormBuildResult(
+            messages = messages,
+            fewShotDialogRefs = fewShots.map { it.sourceRef }
+        )
     }
 
     internal fun buildFreeFormMessages(
@@ -261,7 +274,7 @@ class AiReplyDraftService(
         mailHistory: String? = null,
         promptRuleIds: List<Long> = emptyList()
     ): FreeFormBuildResult {
-        val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText)
+        val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText, max = 2)
         val messages = mutableListOf<LlmChatMessage>()
         val systemPrompt = if (fewShots.isEmpty()) {
             buildFreeFormSystemPrompt()
@@ -287,9 +300,11 @@ class AiReplyDraftService(
     private fun buildFewShotBoundaryNote(exampleCount: Int): String = buildString {
         appendLine()
         appendLine(
-            "The following $exampleCount user/assistant pairs are reference examples from past expert " +
-                "conversations; only the final user message is the real inbound email. Match their tone and " +
-                "negotiation style, never copy facts that conflict with the knowledge base."
+            "The following $exampleCount user/assistant pairs are style examples for structure, tone, and communication strategy; " +
+                "they must not be used as a factual source. Only the final user message is the real inbound email. " +
+                "All factual claims must come from the current QA rule knowledge, training knowledge, or existing expert profile; " +
+                "if those sources lack a needed detail, mark it as pending confirmation. " +
+                "Ignore any example facts that conflict with the approved context or are missing from it."
         )
     }
 

@@ -641,7 +641,9 @@ class AiReplyDraftServiceTest {
         assertEquals(listOf("DIALOG_2143"), result.fewShotDialogRefs)
         val messages = capturedMessages.single()
         assertTrue(messages[1].content.contains("officially accredited agency"))
-        assertTrue(messages.first { it.role == "system" }.content.contains("reference examples"))
+        val system = messages.first { it.role == "system" }.content
+        assertTrue(system.contains("structure, tone, and communication strategy"))
+        assertTrue(system.contains("must not be used as a factual source"))
     }
 
     @Test
@@ -930,7 +932,7 @@ class AiReplyDraftServiceTest {
         assertTrue(userContent.contains("EXPERT_PROFILE_PARTIAL"))
         assertTrue(userContent.contains("Expert in ML"))
 
-        Mockito.verifyNoInteractions(aiTrainingDialogueService)
+        Mockito.verify(aiTrainingDialogueService).selectRelevantDialogues(inbound, 1)
     }
 
     @Test
@@ -1076,5 +1078,105 @@ class AiReplyDraftServiceTest {
         )
 
         assertEquals(0.7, capturedTemperatures.single())
+    }
+
+    @Test
+    fun `QA_GROUNDED injects at most one style few-shot and returns its ref`() {
+        stubEmptyFrame()
+        val inbound = "- What is salary?\n- What is visa?"
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1, 2),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- What is salary?", listOf(1L)),
+                    GapItem("- What is visa?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(sampleRule(1)))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(sampleRule(2).copy(replyBody = "Visa info")))
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(inbound, 1)).thenReturn(
+            listOf(
+                SelectedDialogueFewShot(
+                    sourceRef = "STYLE_MULTI_DUE_DILIGENCE",
+                    messages = listOf(
+                        LlmChatMessage(role = "user", content = "style expert"),
+                        LlmChatMessage(role = "assistant", content = "style agent")
+                    )
+                )
+            )
+        )
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "Grounded with style"
+            }
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = inbound,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
+        assertEquals(listOf("STYLE_MULTI_DUE_DILIGENCE"), result.fewShotDialogRefs)
+        Mockito.verify(aiTrainingDialogueService).selectRelevantDialogues(inbound, 1)
+        val system = capturedMessages.single().first { it.role == "system" }.content
+        assertTrue(system.contains("structure, tone, and communication strategy"))
+        assertTrue(system.contains("must not be used as a factual source"))
+        assertTrue(capturedMessages.single().any { it.content == "style expert" })
+    }
+
+    @Test
+    fun `FREE_FORM requests max two style few-shots`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited and official?"))
+            .thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues("Are you accredited and official?", 2))
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot("STYLE_TRUST_VERIFICATION", listOf(LlmChatMessage("user", "a"), LlmChatMessage("assistant", "b"))),
+                    SelectedDialogueFewShot("STYLE_MATERIALS_BOUNDARY", listOf(LlmChatMessage("user", "c"), LlmChatMessage("assistant", "d")))
+                )
+            )
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "ok"
+        }).generate(
+            inboundText = "Are you accredited and official?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(listOf("STYLE_TRUST_VERIFICATION", "STYLE_MATERIALS_BOUNDARY"), result.fewShotDialogRefs)
+        Mockito.verify(aiTrainingDialogueService).selectRelevantDialogues("Are you accredited and official?", 2)
+    }
+
+    @Test
+    fun `fallback does not query dialogue service`() {
+        stubDefaultFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited?"))
+            .thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "Are you accredited?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
     }
 }
