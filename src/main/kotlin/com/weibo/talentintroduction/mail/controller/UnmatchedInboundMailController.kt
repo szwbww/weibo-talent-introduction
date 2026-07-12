@@ -290,7 +290,7 @@ class UnmatchedInboundMailController(
         val contact = expertContactRepository.findById(contactId).orElse(null)
             ?: throw IllegalArgumentException("Expert contact not found: $contactId")
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
-        val knowledge = aiTrainingQaService.buildKnowledgeContext()
+        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
         val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
 
         val result = aiReplyDraftService.generate(

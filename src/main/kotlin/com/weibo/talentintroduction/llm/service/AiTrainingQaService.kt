@@ -82,20 +82,62 @@ class AiTrainingQaService(
         repository.deleteById(id)
     }
 
-    fun buildKnowledgeContext(): String {
+    fun buildKnowledgeContext(inboundText: String): String {
+        val normalizedInbound = normalizeText(inboundText)
+        if (normalizedInbound.isEmpty()) {
+            return ""
+        }
         return repository.findAllByOrderByCreatedAtDesc()
             .asSequence()
             .filter { it.enabled }
-            .map { qa ->
-                buildString {
-                    append("Topic: ").append(qa.topic)
-                    qa.question?.takeIf { it.isNotBlank() }?.let { append("\nQuestion: ").append(it) }
-                    append("\nAnswer: ").append(qa.answer)
+            .mapNotNull { qa ->
+                val keywords = parseKeywords(qa.keywords)
+                if (keywords.isEmpty()) {
+                    return@mapNotNull null
+                }
+                val score = keywords.count { keyword -> normalizedInbound.contains(keyword) }
+                if (score <= 0) {
+                    null
+                } else {
+                    scoredQa(qa, score)
                 }
             }
+            .sortedWith(compareByDescending<ScoredQa> { it.score }.thenBy { it.id })
+            .take(MAX_KNOWLEDGE_ROWS)
+            .map { it.formatted }
             .joinToString("\n\n")
-            .take(12000)
+            .take(MAX_KNOWLEDGE_CHARS)
     }
+
+    private fun parseKeywords(raw: String?): List<String> =
+        raw.orEmpty()
+            .split(",")
+            .map { normalizeText(it) }
+            .filter { it.isNotEmpty() }
+
+    private fun normalizeText(value: String): String =
+        value.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+    private fun scoredQa(qa: AiTrainingQa, score: Int): ScoredQa {
+        val formatted = buildString {
+            append("Topic: ").append(qa.topic)
+            qa.question?.takeIf { it.isNotBlank() }?.let { append("\nQuestion: ").append(it) }
+            append("\nAnswer: ").append(qa.answer)
+        }
+        return ScoredQa(
+            id = qa.id ?: Long.MAX_VALUE,
+            score = score,
+            formatted = formatted
+        )
+    }
+
+    private data class ScoredQa(
+        val id: Long,
+        val score: Int,
+        val formatted: String
+    )
 
     private fun AiTrainingQa.toDto() = AiTrainingQaDto(
         id = id ?: 0,
@@ -109,4 +151,9 @@ class AiTrainingQaService(
         createdAt = createdAt?.toString(),
         updatedAt = updatedAt?.toString()
     )
+
+    companion object {
+        private const val MAX_KNOWLEDGE_ROWS = 6
+        private const val MAX_KNOWLEDGE_CHARS = 6000
+    }
 }

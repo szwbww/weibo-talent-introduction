@@ -85,7 +85,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
             .thenReturn(emptyList())
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello"))
             .thenReturn("Topic: office mascot\nAnswer: QINGFEI-PANDA")
         Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
 
@@ -132,6 +132,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertTrue(capturedProfile!!.contains("Training knowledge base:"))
         assertTrue(capturedProfile!!.contains("QINGFEI-PANDA"))
         assertEquals(emptyList<String>(), capturedWarnings)
+        Mockito.verify(aiTrainingQaService).buildKnowledgeContext("Hello")
     }
 
     @Test
@@ -154,7 +155,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
             .thenReturn(emptyList())
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Question text")).thenReturn("")
         Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
 
         // Use exact values (not matchers) to avoid Kotlin non-null parameter check issues
@@ -221,7 +222,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(unmatchedInboundMailService.getDetail(5L)).thenReturn(detail)
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Multiple questions")).thenReturn("")
         Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(
             aiReplyContextService.build(contact, emptyList(), "Multiple questions", "")

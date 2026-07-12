@@ -199,7 +199,7 @@ class AiTrainingController(
         val contactId = requireNotNull(contact.id)
         val inboundText = inboundMail.cleanedBody?.takeIf { it.isNotBlank() } ?: inboundMail.body.orEmpty()
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
-        val knowledge = aiTrainingQaService.buildKnowledgeContext()
+        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
         val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
 
         val result = aiReplyDraftService.generate(

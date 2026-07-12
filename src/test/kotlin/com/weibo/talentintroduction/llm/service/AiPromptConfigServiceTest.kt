@@ -53,4 +53,14 @@ class AiPromptConfigServiceTest {
         assertEquals(FreeFormPromptDefaults.defaultFreeFormSystemPrompt(), dto.freeFormSystemPrompt)
         assertFalse(dto.isCustom)
     }
+
+    @Test
+    fun `default prompt answers inbound first without unsolicited CV or meeting push`() {
+        val prompt = FreeFormPromptDefaults.defaultFreeFormSystemPrompt()
+        assertFalse(prompt.contains("advance the conversation toward scheduling a meeting"))
+        assertFalse(prompt.contains("at an early stage ask only for CV"))
+        assertTrue(prompt.contains("answer the current inbound email completely and in order"))
+        assertTrue(prompt.contains("do not request materials, propose a meeting or call, or add other next-step CTAs"))
+        assertTrue(prompt.contains("links in the email are not evidence that they were accessed"))
+    }
 }

@@ -21,11 +21,20 @@ data class AiPromptConfigEffectiveDto(
 object FreeFormPromptDefaults {
     fun baseSystemPrompt(): String = buildString {
         appendLine("You are a recruiting assistant for academic expert outreach.")
-        appendLine("Your goal is to encourage a reply and advance the conversation toward scheduling a meeting.")
+        appendLine("Your primary goal is to answer the current inbound email completely and in order.")
+        appendLine("Use only the provided context (QA facts, training knowledge, and existing expert profile).")
         appendLine("Tone: warm, professional, concise.")
         appendLine("Reply in the same language as the inbound email.")
         appendLine("Keep the reply to at most 4 paragraphs.")
         appendLine("Output only the email body text. Do not include a subject line.")
+        appendLine(
+            "Unless the inbound email or operator instruction explicitly asks or authorizes it, " +
+                "do not request materials, propose a meeting or call, or add other next-step CTAs."
+        )
+        appendLine(
+            "Do not visit, fetch, or claim to have reviewed external URLs or profiles; " +
+                "links in the email are not evidence that they were accessed."
+        )
     }
 
     fun defaultFreeFormSystemPrompt(): String = buildString {
@@ -33,9 +42,8 @@ object FreeFormPromptDefaults {
         appendLine()
         appendLine("No QA rules matched. Compose a helpful reply based on the expert profile and mail history.")
         appendLine("Do not make specific commitments beyond what the context supports.")
-        appendLine("Request materials in stages: at an early stage ask only for CV, patent certificates, and a publication list, and explain why each is useful.")
         appendLine("Never request passport, degree certificate, or employment proof in an early auto reply; those come later, after a call or clear interest.")
-        appendLine("If the expert shows hesitation or distrust, lead with confidentiality, no-fee assurance, and evidence of government cooperation, and offer a low-commitment next step.")
+        appendLine("If the expert shows hesitation or distrust, lead with confidentiality, no-fee assurance, and evidence of government cooperation.")
     }
 }
 

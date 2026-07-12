@@ -124,7 +124,7 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound()
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("What is the funding?"))
             .thenReturn("Topic: Funding\nAnswer: Up to 12M RMB")
         Mockito.`when`(
             aiReplyContextService.build(
@@ -170,6 +170,7 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.requestCount").value(0))
             .andExpect(jsonPath("$.contextWarnings").isArray)
 
+        Mockito.verify(aiTrainingQaService).buildKnowledgeContext("What is the funding?")
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 
@@ -178,7 +179,7 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound(body = "what is the application process?")
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("what is the application process?")).thenReturn("")
         Mockito.`when`(
             aiReplyContextService.build(
                 contact,
@@ -226,7 +227,7 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound(body = "Are you accredited through another agency?")
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Are you accredited through another agency?"))
             .thenReturn("Topic: Agency trust\nAnswer: Standard reply")
         Mockito.`when`(
             aiReplyContextService.build(
@@ -279,7 +280,7 @@ class AiTrainingSimulateTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
             .thenReturn(listOf(exactMail))
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Exact mail body for funding?")).thenReturn("")
         Mockito.`when`(
             aiReplyContextService.build(contact, listOf(exactMail), "Exact mail body for funding?", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
@@ -369,7 +370,7 @@ class AiTrainingSimulateTest {
         val contact = sampleContact()
         val inbound = sampleInbound()
         stubSimulateReadPath(contact, inbound)
-        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext()).thenReturn("")
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("What is the funding?")).thenReturn("")
         Mockito.`when`(
             aiReplyContextService.build(contact, listOf(inbound), "What is the funding?", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
