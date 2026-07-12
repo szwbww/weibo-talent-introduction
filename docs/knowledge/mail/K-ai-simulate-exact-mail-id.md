@@ -3,7 +3,7 @@ id: K-ai-simulate-exact-mail-id
 domain: mail
 created: 2026-07-12
 last_used: 2026-07-12
-hit_count: 5
+hit_count: 6
 source: create-p:ai-reply-grounded-parity-backend
 severity: P1
 ---

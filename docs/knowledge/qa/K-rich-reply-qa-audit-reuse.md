@@ -3,7 +3,7 @@ id: K-rich-reply-qa-audit-reuse
 domain: qa
 created: 2026-06-30
 last_used: 2026-07-12
-hit_count: 6
+hit_count: 7
 source: create-p:manual-compose-segmented-preview
 severity: P1
 ---

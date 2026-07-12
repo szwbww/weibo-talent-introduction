@@ -3,7 +3,7 @@ id: K-ai-reply-loading-panel
 domain: frontend
 created: 2026-07-12
 last_used: 2026-07-12
-hit_count: 4
+hit_count: 5
 source: create-p:ai-reply-loading-and-warnings-frontend
 ---
 经验：AI 回复 loading 不能复用 tag-editor overlay 并挂在可被 `:empty { display:none }` 隐藏、且会被结果 render 重写 innerHTML 的 messages 容器上。收发件 AI 与训练模拟也不能各写一套状态。

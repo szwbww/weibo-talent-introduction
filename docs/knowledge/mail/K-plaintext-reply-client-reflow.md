@@ -2,8 +2,8 @@
 id: K-plaintext-reply-client-reflow
 domain: mail
 created: 2026-06-27
-last_used: 2026-07-08
-hit_count: 8
+last_used: 2026-07-12
+hit_count: 9
 source: create-p:qa-reply-paragraph-formatting
 severity: P2
 ---
