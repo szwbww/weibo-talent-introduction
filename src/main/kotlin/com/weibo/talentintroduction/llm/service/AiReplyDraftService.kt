@@ -91,6 +91,21 @@ class AiReplyDraftService(
             )
         }
 
+        val client = llmDraftClientProvider.getIfAvailable()
+        if (client == null) {
+            return fallback(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                mode = mode,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
+                contextWarnings = contextWarnings
+            )
+        }
+
         val fewShotDialogRefs: List<String>
         val messages = when (mode) {
             AiReplyMode.QA_MATCHED -> {
@@ -134,9 +149,7 @@ class AiReplyDraftService(
             AiReplyMode.QA_GROUNDED, AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val llmText = try {
-            llmDraftClientProvider.getIfAvailable()
-                ?.chat(messages, temperature)
-                ?.takeIf { it.isNotBlank() }
+            client.chat(messages, temperature)?.takeIf { it.isNotBlank() }
         } catch (ex: Exception) {
             null
         }
@@ -163,7 +176,6 @@ class AiReplyDraftService(
                 expertProfile = expertProfile,
                 mailHistory = mailHistory,
                 operatorInstruction = operatorInstruction,
-                fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings
             )
         }
@@ -478,7 +490,6 @@ class AiReplyDraftService(
         expertProfile: String? = null,
         mailHistory: String? = null,
         operatorInstruction: String? = null,
-        fewShotDialogRefs: List<String> = emptyList(),
         contextWarnings: List<String> = emptyList()
     ): AiReplyDraftResult {
         val draftText = if (operatorTurns.isEmpty()) {
@@ -501,7 +512,7 @@ class AiReplyDraftService(
             usedLlm = false,
             qaRuleIds = resolved.sendQaRuleIds,
             mode = mode,
-            fewShotDialogRefs = fewShotDialogRefs,
+            fewShotDialogRefs = emptyList(),
             requestCount = resolved.requestCount,
             groundedRequestCount = resolved.groundedRequestCount,
             unsupportedRequests = resolved.unsupportedRequests,

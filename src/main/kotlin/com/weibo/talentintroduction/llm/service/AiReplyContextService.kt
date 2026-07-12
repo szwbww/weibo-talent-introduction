@@ -66,16 +66,23 @@ class AiReplyContextService(
     }
 
     private fun loadProfile(contact: ExpertContact, warnings: MutableList<String>): ExpertProfile? {
-        val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
+        val orcidId = contact.orcidId.takeIf { it.isNotBlank() }
+        if (orcidId == null) {
+            warnings.add("EXPERT_PROFILE_NOT_FOUND")
+            return null
+        }
         return try {
             val level = parseIndexLevel(contact.currentIndexLevel)
             val profile = expertSearchService.findByOrcidId(orcidId, level)
-            if (profile != null) return profile
-            if (level == ExpertIndexLevel.APPLICATION) {
-                expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
-            } else {
-                null
+                ?: if (level == ExpertIndexLevel.APPLICATION) {
+                    expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+                } else {
+                    null
+                }
+            if (profile == null) {
+                warnings.add("EXPERT_PROFILE_NOT_FOUND")
             }
+            profile
         } catch (e: Exception) {
             log.warn("Failed to load expert profile for orcidId={}: {}", orcidId, e.message)
             warnings.add("EXPERT_PROFILE_NOT_FOUND")

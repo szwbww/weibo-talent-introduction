@@ -1179,4 +1179,94 @@ class AiReplyDraftServiceTest {
         assertEquals(emptyList<String>(), result.fewShotDialogRefs)
         Mockito.verifyNoInteractions(aiTrainingDialogueService)
     }
+
+    @Test
+    fun `enabled with null client skips few-shot selection and returns empty refs`() {
+        stubDefaultFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited?"))
+            .thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null).generate(
+            inboundText = "Are you accredited?",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        Mockito.verifyNoInteractions(aiTrainingDialogueService)
+    }
+
+    @Test
+    fun `chat exception clears fewShotDialogRefs on fallback`() {
+        stubDefaultFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited?"))
+            .thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues("Are you accredited?", 2))
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot(
+                        sourceRef = "STYLE_TRUST_VERIFICATION",
+                        messages = listOf(
+                            LlmChatMessage(role = "user", content = "style expert verify"),
+                            LlmChatMessage(role = "assistant", content = "UNIQUE_STYLE_AGENT_SNIPPET_XYZ")
+                        )
+                    )
+                )
+            )
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                throw RuntimeException("LLM down")
+            }
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Are you accredited?",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.usedLlm)
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        assertFalse(result.draftText.contains("UNIQUE_STYLE_AGENT_SNIPPET_XYZ"))
+        Mockito.verify(aiTrainingDialogueService).selectRelevantDialogues("Are you accredited?", 2)
+    }
+
+    @Test
+    fun `blank chat response clears fewShotDialogRefs on fallback`() {
+        stubDefaultFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Are you accredited?"))
+            .thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues("Are you accredited?", 2))
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot(
+                        sourceRef = "STYLE_MATERIALS_BOUNDARY",
+                        messages = listOf(
+                            LlmChatMessage(role = "user", content = "style expert materials"),
+                            LlmChatMessage(role = "assistant", content = "BLANK_FALLBACK_STYLE_SNIPPET")
+                        )
+                    )
+                )
+            )
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "   "
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Are you accredited?",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.usedLlm)
+        assertEquals(emptyList<String>(), result.fewShotDialogRefs)
+        assertFalse(result.draftText.contains("BLANK_FALLBACK_STYLE_SNIPPET"))
+    }
 }

@@ -222,21 +222,37 @@ class AiReplyContextServiceTest {
         verify(expertSearchService, never()).findByOrcidId("0000-0001-test", ExpertIndexLevel.APPLICATION)
     }
 
-    // Test: profile not found (null, no exception) only adds warning if research context needed
     @Test
-    fun `profile not found without exception does not add EXPERT_PROFILE_NOT_FOUND`() {
+    fun `CANDIDATE query null yields EXPERT_PROFILE_NOT_FOUND`() {
         val c = contact(indexLevel = "CANDIDATE")
         Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE))
             .thenReturn(null)
 
         val result = service.build(c, emptyList(), "Hello", "")
 
-        assertFalse(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+        assertTrue(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+        verify(expertSearchService).findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE)
+        Mockito.verifyNoMoreInteractions(expertSearchService)
     }
 
-    // Test: null orcidId returns minimal profile, no ES call
     @Test
-    fun `contact without orcidId skips ES lookup`() {
+    fun `APPLICATION and CANDIDATE both null yields EXPERT_PROFILE_NOT_FOUND`() {
+        val c = contact(indexLevel = "APPLICATION")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.APPLICATION))
+            .thenReturn(null)
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(null)
+
+        val result = service.build(c, emptyList(), "Hello", "")
+
+        assertTrue(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+        verify(expertSearchService).findByOrcidId("0000-0001-test", ExpertIndexLevel.APPLICATION)
+        verify(expertSearchService).findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE)
+        Mockito.verifyNoMoreInteractions(expertSearchService)
+    }
+
+    @Test
+    fun `contact without orcidId yields EXPERT_PROFILE_NOT_FOUND and skips ES`() {
         val c = ExpertContact(
             campaignId = 1L,
             orcidId = "",
@@ -248,7 +264,21 @@ class AiReplyContextServiceTest {
         val result = service.build(c, emptyList(), "Hello", "")
 
         Mockito.verifyNoInteractions(expertSearchService)
-        assertTrue(result.contextWarnings.isEmpty())
+        assertTrue(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+    }
+
+    @Test
+    fun `missing profile with research request yields both profile and research warnings`() {
+        val c = contact(indexLevel = "CANDIDATE")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(null)
+
+        val result = service.build(c, emptyList(), "Does my expertise fall within your projects?", "")
+
+        assertTrue(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+        assertTrue(result.contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"))
+        verify(expertSearchService).findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE)
+        Mockito.verifyNoMoreInteractions(expertSearchService)
     }
 
     // Test: recentWorkTitles non-empty satisfies research sufficient condition

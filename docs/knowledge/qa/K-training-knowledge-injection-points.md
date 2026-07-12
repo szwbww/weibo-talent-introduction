@@ -2,8 +2,8 @@
 id: K-training-knowledge-injection-points
 domain: qa
 created: 2026-07-11
-last_used: 2026-07-11
-hit_count: 1
+last_used: 2026-07-12
+hit_count: 6
 source: create-p:ai-training-real-reply-integration
 ---
 经验：`ai_training_qa` 训练知识进入 LLM prompt 的通道只有一条——`AiTrainingQaService.buildKnowledgeContext()` → `AiReplyContextBuilder.appendKnowledgeToProfile()` 拼入 expertProfile，且 expertProfile 只被 FREE_FORM 模式的 `buildFreeFormUserContent` 消费；QA_MATCHED（verbatim 拼接）完全不读 expertProfile/mailHistory/few-shot。
