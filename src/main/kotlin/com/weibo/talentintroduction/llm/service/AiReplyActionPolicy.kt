@@ -30,9 +30,15 @@ object AiReplyActionPolicy {
     )
 
     private val MATERIAL_REQUEST = listOf(
-        Regex("""(?i)\bplease\s+(send|reply\s+with|share|provide)\b.{0,60}\b(cv|curriculum vitae|resume|documents?|materials?)\b"""),
-        Regex("""(?i)\b(send|share|provide)\s+(me\s+)?(your\s+)?(cv|curriculum vitae|resume|documents?|materials?)\b"""),
-        Regex("""(?i)\breply\s+with\s+(your\s+)?(cv|resume)\b"""),
+        Regex("""(?i)\bplease\s+(send|reply\s+with|share|provide|forward)\b.{0,60}\b(cv|curriculum vitae|r[eé]sum[eé]s?|resume|documents?|materials?)\b"""),
+        Regex("""(?i)\b(send|share|provide|forward)\s+(me\s+)?(your\s+)?(cv|curriculum vitae|r[eé]sum[eé]s?|resume|documents?|materials?)\b"""),
+        Regex("""(?i)\breply\s+with\s+(your\s+)?(cv|r[eé]sum[eé]|resume)\b"""),
+        Regex(
+            """(?i)\b(could|would|can)\s+you\s+(please\s+)?(share|send|provide|forward)\b.{0,60}\b(cv|curriculum vitae|r[eé]sum[eé]s?|resume|documents?|materials?)\b"""
+        ),
+        Regex(
+            """(?i)\bwould\s+you\s+mind\s+(please\s+)?(sharing|sending|providing|forwarding)\b.{0,60}\b(cv|curriculum vitae|r[eé]sum[eé]s?|resume|documents?|materials?)\b"""
+        ),
         Regex("""请(发送|提供|回复).{0,30}(简历|履历|CV|材料|文件)""")
     )
 

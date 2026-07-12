@@ -1525,4 +1525,51 @@ class AiReplyDraftServiceTest {
         assertEquals(AiReplyModel.DEEPSEEK_V4_PRO.name, fallback.selectedModel)
         assertEquals(2, capturedModels.size) // no additional client calls on disabled path
     }
+
+    @Test
+    fun `interrogative CV CTA is sanitized with metadata preserved`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition(expertDiligenceMail)).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
+            .thenReturn(
+                listOf(
+                    SelectedDialogueFewShot(
+                        sourceRef = "STYLE_MULTI_DUE_DILIGENCE",
+                        messages = listOf(
+                            LlmChatMessage("user", "example expert"),
+                            LlmChatMessage("assistant", "example agent")
+                        )
+                    )
+                )
+            )
+
+        var chatCount = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chatCount++
+                return "Thank you for writing. Could you share your CV? Would you mind forwarding your résumé? " +
+                    "Applicants submit materials for review after matching."
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = expertDiligenceMail,
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chatCount)
+        assertTrue(result.usedLlm)
+        assertFalse(result.draftText.contains("Could you share your CV", ignoreCase = true))
+        assertFalse(result.draftText.contains("résumé", ignoreCase = true))
+        assertTrue(result.draftText.contains("Applicants submit materials for review after matching"))
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertEquals(emptyList<Long>(), result.qaRuleIds)
+        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(listOf("STYLE_MULTI_DUE_DILIGENCE"), result.fewShotDialogRefs)
+        assertEquals(0, result.requestCount)
+        assertEquals(0, result.groundedRequestCount)
+        assertEquals(emptyList<String>(), result.unsupportedRequests)
+    }
 }

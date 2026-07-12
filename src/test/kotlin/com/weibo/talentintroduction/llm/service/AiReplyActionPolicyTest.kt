@@ -106,6 +106,20 @@ class AiReplyActionPolicyTest {
                 setOf(AiReplyAction.REQUEST_MATERIALS)
             ).isEmpty()
         )
+        assertEquals(
+            listOf(AiReplyAction.REQUEST_MATERIALS),
+            AiReplyActionPolicy.findViolations("Could you share your CV?", none).map { it.action }
+        )
+        assertEquals(
+            listOf(AiReplyAction.REQUEST_MATERIALS),
+            AiReplyActionPolicy.findViolations("Would you mind forwarding your résumé?", none).map { it.action }
+        )
+        assertTrue(
+            AiReplyActionPolicy.findViolations(
+                "Could you share your CV?",
+                setOf(AiReplyAction.REQUEST_MATERIALS)
+            ).isEmpty()
+        )
     }
 
     @Test
@@ -114,6 +128,8 @@ class AiReplyActionPolicyTest {
             Thank you for your questions.
             The process requires applicants to submit materials for review.
             Please send your CV when convenient.
+            Could you share your CV?
+            Would you mind forwarding your résumé?
             Meetings may be arranged after selection.
             Let us schedule a meeting next week.
         """.trimIndent()
@@ -124,6 +140,8 @@ class AiReplyActionPolicyTest {
         assertTrue(cleaned.contains("The process requires applicants to submit materials for review"))
         assertTrue(cleaned.contains("Meetings may be arranged after selection"))
         assertFalse(cleaned.contains("Please send your CV", ignoreCase = true))
+        assertFalse(cleaned.contains("Could you share your CV", ignoreCase = true))
+        assertFalse(cleaned.contains("résumé", ignoreCase = true))
         assertFalse(cleaned.contains("Let us schedule a meeting", ignoreCase = true))
     }
 }
