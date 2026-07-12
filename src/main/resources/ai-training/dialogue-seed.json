@@ -10,7 +10,7 @@
       },
       {
         "role": "AGENT",
-        "text": "Thank you for setting out the questions clearly. I will address them in the same order and distinguish confirmed information from points that depend on a future enterprise match or written agreement. If the approved information does not support a requested detail, I will mark it for confirmation instead of making an assumption or replacing the answer with a request for your CV."
+        "text": "Thank you for setting out the questions clearly. I will address them in the same order and distinguish confirmed information from points that depend on a future enterprise match or written agreement. If the approved information does not support a requested detail, I will mark it for confirmation instead of making an assumption or replacing the answer with requesting unrelated materials."
       }
     ]
   },
@@ -40,7 +40,7 @@
       },
       {
         "role": "AGENT",
-        "text": "That is a reasonable request. Before asking you to proceed, I will provide the legal identity, registered location, and verification channels that are present in our approved information. Any item not available there will be identified for confirmation rather than replaced with a request for documents or a meeting."
+        "text": "That is a reasonable request. Before asking you to proceed, I will provide the legal identity, registered location, and verification channels that are present in our approved information. Any item not available there will be identified for confirmation rather than replaced with a request for unrelated next action."
       }
     ]
   },
