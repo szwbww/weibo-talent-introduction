@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyModel
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
@@ -208,7 +209,8 @@ class AiTrainingController(
             operatorInstruction = request.promptOverride,
             expertProfile = context.profileText,
             mailHistory = context.mailHistory,
-            contextWarnings = context.contextWarnings
+            contextWarnings = context.contextWarnings,
+            replyModel = request.model
         )
         return AiTrainingSimulateResponse(
             draftText = result.draftText,
@@ -224,7 +226,8 @@ class AiTrainingController(
             groundedRequestCount = result.groundedRequestCount,
             unsupportedRequests = result.unsupportedRequests,
             contextWarnings = result.contextWarnings,
-            injectedDialogRefs = result.fewShotDialogRefs
+            injectedDialogRefs = result.fewShotDialogRefs,
+            selectedModel = result.selectedModel
         )
     }
 
@@ -354,7 +357,8 @@ data class AiTrainingSimulateExpertResponse(
 data class AiTrainingSimulateRequest(
     val mailRecordId: Long? = null,
     val expertContactId: Long? = null,
-    val promptOverride: String? = null
+    val promptOverride: String? = null,
+    val model: String? = null
 )
 
 data class AiTrainingQaUpsertRequest(
@@ -378,5 +382,6 @@ data class AiTrainingSimulateResponse(
     val groundedRequestCount: Int = 0,
     val unsupportedRequests: List<String> = emptyList(),
     val contextWarnings: List<String> = emptyList(),
-    val injectedDialogRefs: List<String> = emptyList()
+    val injectedDialogRefs: List<String> = emptyList(),
+    val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name
 )

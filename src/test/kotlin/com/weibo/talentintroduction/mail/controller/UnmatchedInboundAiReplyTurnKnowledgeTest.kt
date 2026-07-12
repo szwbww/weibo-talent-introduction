@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyMode
+import com.weibo.talentintroduction.llm.service.AiReplyModel
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -124,7 +125,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(),
             Mockito.any(),
             Mockito.anyBoolean(),
-            Mockito.anyList()
+            Mockito.anyList(),
+            Mockito.any()
         )
 
         controller.aiReplyTurn(1L, AiReplyTurnRequest())
@@ -189,7 +191,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(),
             Mockito.any(),
             Mockito.anyBoolean(),
-            Mockito.anyList()
+            Mockito.anyList(),
+            Mockito.any()
         )
 
         val response = controller.aiReplyTurn(2L, AiReplyTurnRequest())
@@ -201,6 +204,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertEquals(listOf("research scope"), response.unsupportedRequests)
         assertEquals(listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"), response.contextWarnings)
         assertEquals(listOf("DIALOG_1"), response.injectedDialogRefs)
+        assertEquals(AiReplyModel.DEEPSEEK_V4_FLASH.name, response.selectedModel)
     }
 
     @Test
@@ -237,11 +241,12 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             groundedRequestCount = 1,
             unsupportedRequests = listOf("research scope question"),
             contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
-            fewShotDialogRefs = listOf("DIALOG_42")
+            fewShotDialogRefs = listOf("DIALOG_42"),
+            selectedModel = AiReplyModel.DEEPSEEK_V4_PRO.name
         )
         Mockito.doReturn(sourceResult).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
         )
 
         val response = controller.aiReplyTurn(5L, AiReplyTurnRequest())
@@ -253,6 +258,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertEquals(sourceResult.unsupportedRequests, response.unsupportedRequests)
         assertEquals(sourceResult.contextWarnings, response.contextWarnings)
         assertEquals(sourceResult.fewShotDialogRefs, response.injectedDialogRefs)
+        assertEquals(sourceResult.selectedModel, response.selectedModel)
     }
 
     @Test
@@ -277,4 +283,62 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             controller.aiReplyTurn(3L, AiReplyTurnRequest())
         }
     }
+    @Test
+    fun `aiReplyTurn accepts model enum and rejects unknown`() {
+        val detail = InboundMailProcessing(
+            id = 9L,
+            senderAccountCode = "a1",
+            imapUid = 9L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "Model",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(9L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
+        Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
+            .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+
+        var capturedModel: String? = "unset"
+        Mockito.doAnswer { invocation ->
+            capturedModel = invocation.getArgument(8)
+            AiReplyDraftResult(
+                draftText = "draft",
+                usedLlm = false,
+                qaRuleIds = emptyList(),
+                mode = AiReplyMode.FREE_FORM,
+                selectedModel = AiReplyModel.DEEPSEEK_V4_PRO.name
+            )
+        }.`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+        )
+
+        val response = controller.aiReplyTurn(9L, AiReplyTurnRequest(model = "DEEPSEEK_V4_PRO"))
+        assertEquals("DEEPSEEK_V4_PRO", capturedModel)
+        assertEquals(AiReplyModel.DEEPSEEK_V4_PRO.name, response.selectedModel)
+
+        // unknown model is validated inside DraftService; controller passes through
+        capturedModel = "unset"
+        Mockito.doAnswer { invocation ->
+            capturedModel = invocation.getArgument(8)
+            throw IllegalArgumentException("Unknown AI reply model: DEEPSEEK_UNKNOWN")
+        }.`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+        )
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurn(9L, AiReplyTurnRequest(model = "DEEPSEEK_UNKNOWN"))
+        }
+        assertEquals("DEEPSEEK_UNKNOWN", capturedModel)
+    }
+
 }

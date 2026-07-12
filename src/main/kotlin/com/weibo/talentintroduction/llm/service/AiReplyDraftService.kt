@@ -27,7 +27,8 @@ data class AiReplyDraftResult(
     val requestCount: Int = 0,
     val groundedRequestCount: Int = 0,
     val unsupportedRequests: List<String> = emptyList(),
-    val contextWarnings: List<String> = emptyList()
+    val contextWarnings: List<String> = emptyList(),
+    val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name
 )
 
 internal data class FreeFormBuildResult(
@@ -64,8 +65,11 @@ class AiReplyDraftService(
         expertProfile: String? = null,
         mailHistory: String? = null,
         simulateOnly: Boolean = false, // deprecated: has no effect; do not read
-        contextWarnings: List<String> = emptyList()
+        contextWarnings: List<String> = emptyList(),
+        replyModel: String? = null
     ): AiReplyDraftResult {
+        val selectedModel = AiReplyModel.fromNullable(replyModel)
+        val providerModel = selectedModel.resolveProviderModel(properties)
         val resolved = resolveQaRules(inboundText, qaRuleIds, contextWarnings)
         val mode = when {
             resolved.sendQaRuleIds.isEmpty() -> AiReplyMode.FREE_FORM
@@ -98,6 +102,8 @@ class AiReplyDraftService(
                 messages = null,
                 client = null,
                 temperature = null,
+                providerModel = providerModel,
+                selectedModel = selectedModel.name,
                 resolved = resolved,
                 mode = mode,
                 fewShotDialogRefs = emptyList(),
@@ -122,6 +128,8 @@ class AiReplyDraftService(
                 messages = null,
                 client = null,
                 temperature = null,
+                providerModel = providerModel,
+                selectedModel = selectedModel.name,
                 resolved = resolved,
                 mode = mode,
                 fewShotDialogRefs = emptyList(),
@@ -173,7 +181,7 @@ class AiReplyDraftService(
             AiReplyMode.QA_GROUNDED, AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val llmText = try {
-            client.chat(boundedMessages, temperature)?.takeIf { it.isNotBlank() }
+            client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
         } catch (ex: Exception) {
             null
         }
@@ -186,6 +194,8 @@ class AiReplyDraftService(
                 messages = boundedMessages,
                 client = client,
                 temperature = temperature,
+                providerModel = providerModel,
+                selectedModel = selectedModel.name,
                 resolved = resolved,
                 mode = mode,
                 fewShotDialogRefs = fewShotDialogRefs,
@@ -207,6 +217,8 @@ class AiReplyDraftService(
                 messages = null,
                 client = null,
                 temperature = null,
+                providerModel = providerModel,
+                selectedModel = selectedModel.name,
                 resolved = resolved,
                 mode = mode,
                 fewShotDialogRefs = emptyList(),
@@ -243,6 +255,8 @@ class AiReplyDraftService(
         messages: List<LlmChatMessage>?,
         client: LlmDraftClient?,
         temperature: Double?,
+        providerModel: String,
+        selectedModel: String,
         resolved: ResolvedQaRules,
         mode: AiReplyMode,
         fewShotDialogRefs: List<String>,
@@ -257,7 +271,7 @@ class AiReplyDraftService(
             val correction = buildActionCorrectionMessage(violations, allowedActions)
             val retryMessages = messages + LlmChatMessage(role = "user", content = correction)
             val retryText = try {
-                client.chat(retryMessages, temperature)?.takeIf { it.isNotBlank() }
+                client.chatWithModel(retryMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
             } catch (_: Exception) {
                 null
             }
@@ -297,7 +311,8 @@ class AiReplyDraftService(
             requestCount = resolved.requestCount,
             groundedRequestCount = resolved.groundedRequestCount,
             unsupportedRequests = resolved.unsupportedRequests,
-            contextWarnings = warnings
+            contextWarnings = warnings,
+            selectedModel = selectedModel
         )
     }
 

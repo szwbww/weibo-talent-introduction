@@ -300,7 +300,8 @@ class UnmatchedInboundMailController(
             operatorInstruction = request.operatorInstruction,
             expertProfile = context.profileText,
             mailHistory = context.mailHistory,
-            contextWarnings = context.contextWarnings
+            contextWarnings = context.contextWarnings,
+            replyModel = request.model
         )
         return AiReplyTurnResponse(
             draftText = result.draftText,
@@ -312,7 +313,8 @@ class UnmatchedInboundMailController(
             groundedRequestCount = result.groundedRequestCount,
             unsupportedRequests = result.unsupportedRequests,
             contextWarnings = result.contextWarnings,
-            injectedDialogRefs = result.fewShotDialogRefs
+            injectedDialogRefs = result.fewShotDialogRefs,
+            selectedModel = result.selectedModel
         )
     }
 }
@@ -519,7 +521,8 @@ data class AiReplyTurnRequest(
     val turns: List<AiReplyTurnDto> = emptyList(),
     val qaRuleIds: List<Long>? = null,
     val sessionId: String? = null,
-    val operatorInstruction: String? = null
+    val operatorInstruction: String? = null,
+    val model: String? = null
 )
 
 data class AiReplyTurnResponse(
@@ -532,7 +535,8 @@ data class AiReplyTurnResponse(
     val groundedRequestCount: Int = 0,
     val unsupportedRequests: List<String> = emptyList(),
     val contextWarnings: List<String> = emptyList(),
-    val injectedDialogRefs: List<String> = emptyList()
+    val injectedDialogRefs: List<String> = emptyList(),
+    val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name
 )
 
 private fun InboundMailProcessing.toResponse(

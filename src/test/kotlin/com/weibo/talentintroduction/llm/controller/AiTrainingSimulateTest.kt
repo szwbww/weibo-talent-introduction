@@ -169,9 +169,55 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.qaRuleIds").isEmpty)
             .andExpect(jsonPath("$.requestCount").value(0))
             .andExpect(jsonPath("$.contextWarnings").isArray)
+            .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_FLASH"))
 
         Mockito.verify(aiTrainingQaService).buildKnowledgeContext("What is the funding?")
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `simulate echoes selectedModel for flash pro and rejects unknown`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound()
+        stubSimulateReadPath(contact, inbound)
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("What is the funding?")).thenReturn("")
+        Mockito.`when`(
+            aiReplyContextService.build(contact, listOf(inbound), "What is the funding?", "")
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = emptyList(),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = emptyList(),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10,"model":"DEEPSEEK_V4_FLASH"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_FLASH"))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10,"model":"DEEPSEEK_V4_PRO"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_PRO"))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10,"model":"DEEPSEEK_UNKNOWN"}""")
+        )
+            .andExpect(status().isBadRequest)
     }
 
     @Test

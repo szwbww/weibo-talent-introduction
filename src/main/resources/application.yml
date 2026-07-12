@@ -93,6 +93,8 @@ talent-introduction:
     api-url: ${LLM_API_URL:}
     api-key: ${LLM_API_KEY:}
     model: ${LLM_MODEL:gpt-4o-mini}
+    reply-flash-model: ${LLM_REPLY_MODEL_FLASH:deepseek-v4-flash}
+    reply-pro-model: ${LLM_REPLY_MODEL_PRO:deepseek-v4-pro}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
   translation:
     enabled: ${TRANSLATION_ENABLED:false}

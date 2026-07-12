@@ -1425,4 +1425,104 @@ class AiReplyDraftServiceTest {
         assertTrue(result.draftText.contains("convenient time"))
         assertFalse(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
     }
+
+    @Test
+    fun `replyModel null defaults to flash and pro maps provider id through chatWithModel`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val capturedModels = mutableListOf<String>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "unused"
+            override fun chatWithModel(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): String? {
+                capturedModels += providerModel
+                return "Draft for $providerModel"
+            }
+        }
+        val props = LlmProperties(
+            enabled = true,
+            apiUrl = "http://llm",
+            replyFlashModel = "flash-id",
+            replyProModel = "pro-id"
+        )
+
+        val flash = service(props, client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            replyModel = null
+        )
+        assertEquals(AiReplyModel.DEEPSEEK_V4_FLASH.name, flash.selectedModel)
+        assertEquals(listOf("flash-id"), capturedModels)
+
+        capturedModels.clear()
+        val pro = service(props, client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            replyModel = "DEEPSEEK_V4_PRO"
+        )
+        assertEquals(AiReplyModel.DEEPSEEK_V4_PRO.name, pro.selectedModel)
+        assertEquals(listOf("pro-id"), capturedModels)
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            service(props, client).generate(
+                inboundText = "Hello",
+                operatorTurns = emptyList(),
+                replyModel = "DEEPSEEK_UNKNOWN"
+            )
+        }
+    }
+
+    @Test
+    fun `action retry reuses the same provider model and fallback echoes selectedModel`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaMatchService.suggestComposition("Hello")).thenReturn(emptyComposition())
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val capturedModels = mutableListOf<String>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModel(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): String? {
+                capturedModels += providerModel
+                return if (capturedModels.size == 1) {
+                    "Please send your CV when convenient."
+                } else {
+                    "Thank you. I will follow up with approved information."
+                }
+            }
+        }
+        val props = LlmProperties(
+            enabled = true,
+            apiUrl = "http://llm",
+            replyFlashModel = "flash-id",
+            replyProModel = "pro-id"
+        )
+        val result = service(props, client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            replyModel = "DEEPSEEK_V4_PRO"
+        )
+        assertEquals(listOf("pro-id", "pro-id"), capturedModels)
+        assertEquals(AiReplyModel.DEEPSEEK_V4_PRO.name, result.selectedModel)
+        assertTrue(result.usedLlm)
+
+        val fallback = service(LlmProperties(enabled = false, replyProModel = "pro-id"), client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            replyModel = "DEEPSEEK_V4_PRO"
+        )
+        assertFalse(fallback.usedLlm)
+        assertEquals(AiReplyModel.DEEPSEEK_V4_PRO.name, fallback.selectedModel)
+        assertEquals(2, capturedModels.size) // no additional client calls on disabled path
+    }
 }

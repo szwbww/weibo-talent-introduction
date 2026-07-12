@@ -17,10 +17,39 @@ data class LlmChatMessage(
     val content: String
 )
 
+enum class AiReplyModel {
+    DEEPSEEK_V4_FLASH,
+    DEEPSEEK_V4_PRO;
+
+    fun resolveProviderModel(properties: LlmProperties): String = when (this) {
+        DEEPSEEK_V4_FLASH -> properties.replyFlashModel
+        DEEPSEEK_V4_PRO -> properties.replyProModel
+    }
+
+    companion object {
+        fun fromNullable(value: String?): AiReplyModel {
+            if (value.isNullOrBlank()) {
+                return DEEPSEEK_V4_FLASH
+            }
+            return try {
+                valueOf(value.trim())
+            } catch (_: IllegalArgumentException) {
+                throw IllegalArgumentException("Unknown AI reply model: $value")
+            }
+        }
+    }
+}
+
 interface LlmDraftClient {
     fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String?
 
     fun chat(messages: List<LlmChatMessage>, temperature: Double? = null): String?
+
+    fun chatWithModel(
+        messages: List<LlmChatMessage>,
+        temperature: Double? = null,
+        providerModel: String
+    ): String? = chat(messages, temperature)
 }
 
 @Component
@@ -52,7 +81,20 @@ class HttpLlmDraftClient(
         return chat(listOf(LlmChatMessage(role = "user", content = prompt)))
     }
 
-    override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+    override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? =
+        executeChat(messages, temperature, properties.model)
+
+    override fun chatWithModel(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String
+    ): String? = executeChat(messages, temperature, providerModel)
+
+    private fun executeChat(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        model: String
+    ): String? {
         if (properties.apiUrl.isBlank()) {
             return null
         }
@@ -63,7 +105,7 @@ class HttpLlmDraftClient(
             }
         }
         val body = mapOf(
-            "model" to properties.model,
+            "model" to model,
             "messages" to messages.map { mapOf("role" to it.role, "content" to it.content) },
             "temperature" to (temperature ?: properties.temperature)
         )
