@@ -685,6 +685,23 @@ describe("openBatchTagMailDialog preview (Task 3)", () => {
         assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 0);
     });
 
+    it("dialog cancel (Esc) while loading runs cleanup (I-7)", async () => {
+        const sb = createBatchMailDialogSandbox();
+        const p = sb.openBatchTagMailDialog("summary", 1, 1, sampleOptions());
+        await settle();
+        assert.strictEqual(sb.__submitBtn.disabled, true);
+        assert.strictEqual(sb.__dialog._listeners.get("cancel")?.size || 0, 1);
+        sb.__dialog.dispatchEvent("cancel");
+        assert.strictEqual(await p, null);
+        assert.strictEqual(sb.__submitBtn.disabled, false);
+        assert.strictEqual(sb.__dialog.open, false);
+        assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 0);
+        assert.strictEqual(sb.__cancelBtn._listeners.get("click")?.size || 0, 0);
+        assert.strictEqual(sb.__dialog._listeners.get("cancel")?.size || 0, 0);
+        const select = sb.__byId.get("batchMailOption");
+        assert.strictEqual(select._listeners.get("change")?.size || 0, 0);
+    });
+
     it("disabled submit ignores programmatic submit events", async () => {
         const sb = createBatchMailDialogSandbox();
         let settled = false;

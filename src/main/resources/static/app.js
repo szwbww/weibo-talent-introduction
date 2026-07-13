@@ -3959,6 +3959,7 @@ function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptio
             previewRequestSeq += 1;
             form.removeEventListener("submit", handleSubmit);
             selectEl.removeEventListener("change", handleChange);
+            dialog.removeEventListener("cancel", handleCancel);
             const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
             cancelBtn.removeEventListener("click", handleCancel);
             if (submitBtn) submitBtn.disabled = false;
@@ -3967,6 +3968,7 @@ function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptio
 
         const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
         cancelBtn.addEventListener("click", handleCancel);
+        dialog.addEventListener("cancel", handleCancel);
         form.addEventListener("submit", handleSubmit);
         selectEl.addEventListener("change", handleChange);
         dialog.showModal();
