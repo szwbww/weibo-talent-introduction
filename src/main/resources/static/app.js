@@ -3843,23 +3843,101 @@ function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptio
         const form = document.getElementById("actionDialogForm");
         const titleEl = document.getElementById("actionDialogTitle");
         const bodyEl = document.getElementById("actionDialogBody");
+        const submitBtn = form.querySelector("button[type=submit]");
         titleEl.textContent = "批量发送邮件";
         bodyEl.innerHTML = `
-            <div style="margin-bottom: 12px;">
-                <div><strong>筛选条件:</strong> ${escapeHtml(summary)}</div>
-                <div style="margin-top: 6px;">命中 ${totalHits} 位专家，其中 ${sendableCount} 位可发送（已建立联系）</div>
+            <div>
+                <div><strong>筛选条件：</strong><span id="batchMailFilterSummary"></span></div>
+                <div id="batchMailRecipientSummary"></div>
             </div>
-            <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-                <label style="font-weight: bold; margin-bottom: 4px;">邮件模板</label>
-                <select id="batchMailOption" class="input" style="width: 100%; box-sizing: border-box;" required>
-                    ${templateOptions.map(option => `
-                        <option value="${escapeHtml(option.optionType)}:${escapeHtml(option.optionValue)}">
-                            ${escapeHtml(option.optionName)}${option.subject ? ` - ${escapeHtml(option.subject)}` : ""}
-                        </option>
-                    `).join("")}
-                </select>
+            <div class="form-group">
+                <label for="batchMailOption">邮件模板</label>
+                <select id="batchMailOption" required></select>
             </div>
+            <details id="batchMailPreviewSection" open>
+                <summary>邮件内容预览</summary>
+                <div><strong>主题：</strong><span id="batchMailPreviewSubject"></span></div>
+                <div id="batchMailPreviewBody" class="pre"></div>
+                <p id="batchMailPreviewHint" class="text-muted"></p>
+                <p id="batchMailReminderNotice" class="text-muted" hidden></p>
+            </details>
         `;
+
+        const filterSummaryEl = document.getElementById("batchMailFilterSummary");
+        const recipientSummaryEl = document.getElementById("batchMailRecipientSummary");
+        const selectEl = document.getElementById("batchMailOption");
+        const subjectEl = document.getElementById("batchMailPreviewSubject");
+        const bodyPreviewEl = document.getElementById("batchMailPreviewBody");
+        const hintEl = document.getElementById("batchMailPreviewHint");
+        const noticeEl = document.getElementById("batchMailReminderNotice");
+
+        filterSummaryEl.textContent = summary || "";
+        recipientSummaryEl.textContent = `命中 ${totalHits} 位专家，其中 ${sendableCount} 位可发送（已建立联系）`;
+        hintEl.textContent = "预览保留模板变量；实际发送时按专家和发件账号替换。";
+        noticeEl.textContent = "发送完成后保留当前专家标签。";
+
+        (templateOptions || []).forEach((option) => {
+            const opt = document.createElement("option");
+            opt.value = `${option.optionType}:${option.optionValue}`;
+            opt.textContent = option.subject
+                ? `${option.optionName} - ${option.subject}`
+                : (option.optionName || "");
+            selectEl.appendChild(opt);
+        });
+
+        let previewRequestSeq = 0;
+        let cleanedUp = false;
+
+        const findSelectedOption = () => {
+            const value = selectEl.value || "";
+            return (templateOptions || []).find(
+                (option) => `${option.optionType}:${option.optionValue}` === value
+            ) || null;
+        };
+
+        const updateReminderNotice = () => {
+            const option = findSelectedOption();
+            noticeEl.hidden = !(option && option.mailType === "MATERIAL_REMINDER");
+        };
+
+        const setPreviewLoading = () => {
+            if (submitBtn) submitBtn.disabled = true;
+            subjectEl.textContent = "";
+            bodyPreviewEl.textContent = "正在加载邮件预览...";
+        };
+
+        const setPreviewError = (message) => {
+            if (submitBtn) submitBtn.disabled = true;
+            subjectEl.textContent = "";
+            bodyPreviewEl.textContent = `邮件预览加载失败：${message}`;
+        };
+
+        const setPreviewSuccess = (subject, body) => {
+            subjectEl.textContent = subject || "";
+            bodyPreviewEl.textContent = body || "";
+            if (submitBtn) submitBtn.disabled = false;
+        };
+
+        const loadPreview = async () => {
+            const seq = ++previewRequestSeq;
+            updateReminderNotice();
+            setPreviewLoading();
+            const option = findSelectedOption();
+            if (!option || option.optionType !== "COMPOSE_TEMPLATE" || !option.optionValue) {
+                if (seq === previewRequestSeq && !cleanedUp) {
+                    setPreviewError("不支持的邮件模板");
+                }
+                return;
+            }
+            try {
+                const preview = await api(`/api/compose-templates/${option.optionValue}/preview`);
+                if (seq !== previewRequestSeq || cleanedUp) return;
+                setPreviewSuccess(preview.subject, preview.body);
+            } catch (e) {
+                if (seq !== previewRequestSeq || cleanedUp) return;
+                setPreviewError(e.message || "请求出错");
+            }
+        };
 
         const handleCancel = () => {
             cleanup();
@@ -3867,20 +3945,32 @@ function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptio
         };
         const handleSubmit = (e) => {
             e.preventDefault();
-            const mailOption = document.getElementById("batchMailOption")?.value || "";
+            const mailOption = selectEl.value || "";
             cleanup();
             resolve(mailOption ? { mailOption } : null);
         };
+        const handleChange = () => {
+            loadPreview();
+        };
         const cleanup = () => {
+            if (cleanedUp) return;
+            cleanedUp = true;
+            previewRequestSeq += 1;
             form.removeEventListener("submit", handleSubmit);
+            selectEl.removeEventListener("change", handleChange);
             const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
             cancelBtn.removeEventListener("click", handleCancel);
+            if (submitBtn) submitBtn.disabled = false;
             dialog.close();
         };
+
         const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
         cancelBtn.addEventListener("click", handleCancel);
         form.addEventListener("submit", handleSubmit);
+        selectEl.addEventListener("change", handleChange);
         dialog.showModal();
+        updateReminderNotice();
+        loadPreview();
     });
 }
 
