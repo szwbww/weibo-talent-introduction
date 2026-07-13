@@ -222,10 +222,16 @@ class BatchSendControlService(
      * MATERIAL_REMINDER-type template.
      */
     private fun validateTemplateGate(sendType: BatchSendType, config: BatchSendConfig): ResponseEntity<Map<String, String>>? {
-        if (sendType == BatchSendType.INTRODUCTION) return null
         val templateId = config.templateId
-            ?: return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "MATERIAL_REMINDER 必须配置模板才能发送"))
+        // INTRODUCTION may use the hardcoded default composer when templateId is null (I-7).
+        if (templateId == null) {
+            return if (sendType == BatchSendType.MATERIAL_REMINDER) {
+                ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(mapOf("message" to "MATERIAL_REMINDER 必须配置模板才能发送"))
+            } else {
+                null
+            }
+        }
         return try {
             val template = mailComposeTemplateService.getById(templateId)
             when {

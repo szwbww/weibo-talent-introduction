@@ -393,6 +393,17 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
+        SELECT COUNT(*) FROM mail_record
+         WHERE direction = 'OUTBOUND'
+           AND mail_type = :mailType
+           AND send_status = 'SENT'
+           AND sent_at >= :since
+        """
+    )
+    fun countSentByMailTypeSince(mailType: String, since: LocalDateTime): Long
+
+    @Query(
+        """
         SELECT * FROM (
           SELECT CONVERT('MAIL_RECORD' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
                  mr.id AS id, mr.expert_contact_id,

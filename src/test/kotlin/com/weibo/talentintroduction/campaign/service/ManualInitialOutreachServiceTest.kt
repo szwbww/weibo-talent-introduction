@@ -142,6 +142,9 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")))).thenReturn(
             SelfCheckResult("chen", passed = true, message = null, fromCache = true)
         )
+        Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")), anyInt())).thenReturn(
+            SelfCheckResult("chen", passed = true, message = null, fromCache = true)
+        )
     }
 
     @Test
@@ -1229,6 +1232,12 @@ class ManualInitialOutreachServiceTest {
         fun setUpReminder() {
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(reminderConfig())
+            Mockito.`when`(
+                mailRecordRepository.countSentByMailTypeSince(
+                    Mockito.anyString(),
+                    anyValue(LocalDateTime.now())
+                )
+            ).thenReturn(0L)
         }
 
         @Test
@@ -1399,7 +1408,10 @@ class ManualInitialOutreachServiceTest {
 
             service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            Mockito.verify(manualExpertMailService).sendManualMail(eqValue(contactId), cmdCaptor.capture())
+            Mockito.verify(manualExpertMailService).sendManualMail(
+                eqValue(contactId),
+                captureValue(cmdCaptor, com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )
             assertEquals("COMPOSE_TEMPLATE", cmdCaptor.value.optionType)
             assertEquals("10", cmdCaptor.value.optionValue)  // configured templateId=10
         }
@@ -1494,6 +1506,196 @@ class ManualInitialOutreachServiceTest {
             // dailyCap=2 → at most 2 sent even though 5 targets available
             assertEquals(2, result.sent)
             assertEquals("COMPLETED", result.finalStatus)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch seeds dailyCap from persisted SENT count (R1)`() {
+            val targets = (1..5).map { i ->
+                val contactId = (200 + i).toLong()
+                val orcid = "D10$i"
+                val email = "d$i@test.com"
+                val contact = ExpertContact(
+                    id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                    expertName = "D$i", currentStatus = "WAITING_REPLY"
+                )
+                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                    .thenReturn(emptyList())
+                Pair(contact, expert(orcid, email))
+            }
+
+            val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 3, roundSize = 10)
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(capConfig)
+            // Already sent 2 today → remaining quota = 1
+            Mockito.`when`(
+                mailRecordRepository.countSentByMailTypeSince(
+                    Mockito.anyString(),
+                    anyValue(LocalDateTime.now())
+                )
+            ).thenReturn(2L)
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(5L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(targets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(targets.map { it.first })
+
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            assertEquals(1, result.sent)
+            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+            assertEquals("COMPLETED", result.finalStatus)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch does not count FAILED toward dailyCap seed (R1)`() {
+            val targets = (1..3).map { i ->
+                val contactId = (300 + i).toLong()
+                val orcid = "F10$i"
+                val email = "f$i@test.com"
+                val contact = ExpertContact(
+                    id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                    expertName = "F$i", currentStatus = "WAITING_REPLY"
+                )
+                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                    .thenReturn(emptyList())
+                Pair(contact, expert(orcid, email))
+            }
+
+            val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(capConfig)
+            // FAILED records must not reduce remaining quota — seed stays 0
+            Mockito.`when`(
+                mailRecordRepository.countSentByMailTypeSince(
+                    Mockito.anyString(),
+                    anyValue(LocalDateTime.now())
+                )
+            ).thenReturn(0L)
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(3L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(targets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(targets.map { it.first })
+
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            assertEquals(2, result.sent)
+            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch second invocation cannot exceed dailyCap (R1)`() {
+            fun stubTargets(prefix: String, baseId: Long, count: Int) =
+                (1..count).map { i ->
+                    val contactId = baseId + i
+                    val orcid = "$prefix$i"
+                    val email = "$prefix$i@test.com"
+                    val contact = ExpertContact(
+                        id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                        expertName = "$prefix$i", currentStatus = "WAITING_REPLY"
+                    )
+                    Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                        .thenReturn(emptyList())
+                    Pair(contact, expert(orcid, email))
+                }
+
+            val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(capConfig)
+
+            val firstTargets = stubTargets("A", 400, 3)
+            Mockito.`when`(
+                mailRecordRepository.countSentByMailTypeSince(
+                    Mockito.anyString(),
+                    anyValue(LocalDateTime.now())
+                )
+            ).thenReturn(0L)
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(3L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(firstTargets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(firstTargets.map { it.first })
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val first = service.runMaterialReminderBatch(1L, ExecutionMode.MANUAL, false)
+            assertEquals(2, first.sent)
+
+            // Second invocation sees 2 already SENT today → remaining 0
+            val secondTargets = stubTargets("B", 500, 3)
+            Mockito.`when`(
+                mailRecordRepository.countSentByMailTypeSince(
+                    Mockito.anyString(),
+                    anyValue(LocalDateTime.now())
+                )
+            ).thenReturn(2L)
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(3L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(secondTargets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(secondTargets.map { it.first })
+
+            val second = service.runMaterialReminderBatch(2L, ExecutionMode.MANUAL, false)
+
+            assertEquals(0, second.sent)
+            assertEquals("DAILY_CAP_REACHED", second.stopReason)
         }
     }
 
@@ -1639,7 +1841,15 @@ class ManualInitialOutreachServiceTest {
             Mockito.doReturn(Pair(true, -1L))
                 .`when`(ctrlProgressStore).tryStartWithToken(
                     Mockito.anyString(),
-                    Mockito.any(com.weibo.talentintroduction.task.service.TaskProgress::class.java)
+                    anyValue(
+                        com.weibo.talentintroduction.task.service.TaskProgress(
+                            taskType = "MANUAL_INITIAL_OUTREACH",
+                            status = "RUNNING",
+                            batchNumber = 0,
+                            processedCount = 0,
+                            totalCount = 0
+                        )
+                    )
                 )
             // Synchronous executor for determinism
             Mockito.doAnswer { it.getArgument<Runnable>(0).run() }
@@ -1709,7 +1919,11 @@ class ManualInitialOutreachServiceTest {
             )
             // Synchronous execution returns an outreach result
             Mockito.`when`(ctrlTaskExecService.runAndRecordWithResult<ManualOutreachResult>(
-                Mockito.anyString(), Mockito.anyString(), Mockito.any(), Mockito.any(), Mockito.any()
+                Mockito.anyString(),
+                Mockito.anyString(),
+                anyValue(""),
+                anyValue({ _: Long -> }),
+                anyValue({ ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED") })
             )).thenAnswer { invocation ->
                 val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
                 onStarted?.invoke(99L)
@@ -1730,6 +1944,56 @@ class ManualInitialOutreachServiceTest {
             val response = ctrl.startManual()
 
             assertEquals(org.springframework.http.HttpStatus.ACCEPTED, response.statusCode)
+        }
+
+        @Test
+        fun `INTRODUCTION start blocked when explicit template mailType does not match (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig()).thenReturn(
+                BatchSendConfig(
+                    autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 1000, roundSize = 50,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    templateId = 77L
+                )
+            )
+            Mockito.`when`(ctrlTemplateService.getById(77L)).thenReturn(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                    id = 77L, templateCode = "MATERIAL_REMINDER", templateName = "Reminder",
+                    subject = "S", description = null, mailType = "MATERIAL_REMINDER",
+                    subjectVariants = null, enabled = true, blocks = emptyList(),
+                    createdAt = null, updatedAt = null
+                )
+            )
+
+            val response = ctrl.startManual()
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("类型"))
+            Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
+        }
+
+        @Test
+        fun `INTRODUCTION start blocked when explicit template is disabled (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig()).thenReturn(
+                BatchSendConfig(
+                    autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 1000, roundSize = 50,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    templateId = 88L
+                )
+            )
+            Mockito.`when`(ctrlTemplateService.getById(88L)).thenReturn(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                    id = 88L, templateCode = "INTRODUCTION", templateName = "Intro",
+                    subject = "S", description = null, mailType = "INTRODUCTION",
+                    subjectVariants = null, enabled = false, blocks = emptyList(),
+                    createdAt = null, updatedAt = null
+                )
+            )
+
+            val response = ctrl.startManual()
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("禁用"))
+            Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
     }
 
@@ -1888,7 +2152,15 @@ class ManualInitialOutreachServiceTest {
             Mockito.doReturn(Pair(false, 0L))
                 .`when`(mutexProgressStore).tryStartWithToken(
                     Mockito.anyString(),
-                    Mockito.any(com.weibo.talentintroduction.task.service.TaskProgress::class.java)
+                    anyValue(
+                        com.weibo.talentintroduction.task.service.TaskProgress(
+                            taskType = "MANUAL_INITIAL_OUTREACH",
+                            status = "RUNNING",
+                            batchNumber = 0,
+                            processedCount = 0,
+                            totalCount = 0
+                        )
+                    )
                 )
 
             val response = mutexCtrl.startManual(BatchSendType.MATERIAL_REMINDER)

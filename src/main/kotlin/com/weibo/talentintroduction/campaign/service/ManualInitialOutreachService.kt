@@ -39,6 +39,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -155,7 +156,10 @@ class ManualInitialOutreachService(
         val errors = mutableListOf<String>()
         val assignments = mutableListOf<SenderExpertAssignment>()
         val runAccountStats = mutableMapOf<String, AccountRunStat>()
-        var dailySentTotal = 0
+        // R1 / I-9: dailyCap is natural-day SENT total across invocations — seed from mail_record.
+        val todayStart = LocalDate.now().atStartOfDay()
+        var dailySentTotal = mailRecordRepository.countSentByMailTypeSince("MATERIAL_REMINDER", todayStart).toInt()
+        log.info("Material reminder dailySentTotal seeded from DB: {} (since {})", dailySentTotal, todayStart)
         var roundNumber = 0
         var stopReason: String? = null
         var finalStatus: String? = null
