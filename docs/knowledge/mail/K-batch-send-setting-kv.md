@@ -2,8 +2,8 @@
 id: K-batch-send-setting-kv
 domain: mail
 created: 2026-07-05
-last_used: 2026-07-11
-hit_count: 5
+last_used: 2026-07-13
+hit_count: 6
 source: create-p:batch-send-template-selector
 ---
 

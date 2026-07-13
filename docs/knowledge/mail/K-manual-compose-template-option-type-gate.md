@@ -3,7 +3,7 @@ id: K-manual-compose-template-option-type-gate
 domain: mail
 created: 2026-07-04
 last_used: 2026-07-13
-hit_count: 3
+hit_count: 4
 source: fix-v:mail-compose-template:fix-1
 severity: P1
 ---

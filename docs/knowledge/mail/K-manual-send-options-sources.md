@@ -3,7 +3,7 @@ id: K-manual-send-options-sources
 domain: mail
 created: 2026-07-13
 last_used: 2026-07-13
-hit_count: 5
+hit_count: 6
 source: create-p:material-reminder-batch-send
 ---
 现状：手动/批量发送选项（`ManualExpertMailService.listSendOptions()`）只返回 enabled `COMPOSE_TEMPLATE`，数据源为 `mail_compose_template`；旧 `mail_template` 和裸 QA option 已退出该入口。实际正文由 `MailComposeTemplateService.render()` 解析 QA 规则、回复片段、自定义文本和内容变体。
