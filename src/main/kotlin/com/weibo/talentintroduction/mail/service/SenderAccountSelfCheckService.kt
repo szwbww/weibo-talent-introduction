@@ -38,21 +38,25 @@ class SenderAccountSelfCheckService(
     private val log = LoggerFactory.getLogger(SenderAccountSelfCheckService::class.java)
     private val cache = ConcurrentHashMap<String, SelfCheckCacheEntry>()
 
-    fun checkSendable(account: MailSenderAccount): SelfCheckResult {
+    /** Compat overload — reads TTL from INTRODUCTION config so existing callers are unaffected. */
+    fun checkSendable(account: MailSenderAccount): SelfCheckResult =
+        checkSendable(account, configService.getConfig().selfCheckTtlMinutes)
+
+    /** Explicit-TTL overload used by typed batch paths (e.g. MATERIAL_REMINDER round gate). */
+    fun checkSendable(account: MailSenderAccount, ttlMinutes: Int): SelfCheckResult {
         val code = account.accountCode
-        val ttlMinutes = configService.getConfig().selfCheckTtlMinutes
         val cached = cache[code]
         if (cached != null && !cached.isExpired(ttlMinutes, timeProvider())) {
             return SelfCheckResult(code, cached.passed, cached.message, fromCache = true)
         }
-        return runProbe(account, ttlMinutes)
+        return runProbe(account)
     }
 
     fun invalidate(accountCode: String) {
         cache.remove(accountCode)
     }
 
-    private fun runProbe(account: MailSenderAccount, ttlMinutes: Int): SelfCheckResult {
+    private fun runProbe(account: MailSenderAccount): SelfCheckResult {
         val code = account.accountCode
         return try {
             probeSender.sendProbe(account)

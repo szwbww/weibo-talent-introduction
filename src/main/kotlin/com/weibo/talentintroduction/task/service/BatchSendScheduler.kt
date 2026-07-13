@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.service
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendSettingService
+import com.weibo.talentintroduction.campaign.service.BatchSendType
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
@@ -25,13 +26,16 @@ import javax.annotation.PostConstruct
  * and uses fixed `@Scheduled` cron from application.yml), this bean is always present and reads
  * its cron from the DB-backed [BatchSendSettingService] on every trigger evaluation, so operators
  * can change the schedule at runtime without a restart. The `autoEnabled` flag is checked inside
- * the trigger body (not via a conditional bean) so the schedule itself stays registered.
+ * the trigger body so the schedule itself stays registered.
  *
- * Cron changes trigger an immediate reschedule via [BatchSendCronChangedEvent], cancelling any
- * pending fire computed from a superseded cron (I-1) without interrupting an in-flight send (I-2).
+ * Cron changes or autoEnabled toggling on any type trigger an immediate full reschedule via
+ * [BatchSendCronChangedEvent], cancelling pending fires computed from superseded config (I-1).
  *
- * Mutual exclusion (I-1) is delegated to [BatchSendControlService.startAuto] which uses
- * [TaskProgressStore.tryStartWithToken] + the single-thread manualOutreachExecutor.
+ * I-8: INTRODUCTION and MATERIAL_REMINDER have independent ScheduledFutures managed via
+ * [scheduledFutures]. INTRODUCTION is always scheduled; MATERIAL_REMINDER is only scheduled
+ * when its autoEnabled=true (cancelled when disabled). Both dispatch to the same
+ * [BatchSendControlService.startAuto] which enforces shared execution mutex via
+ * [TaskProgressStore.tryStartWithToken] — any running type returns 409 for the other (I-8).
  */
 @Component
 class BatchSendScheduler(
@@ -41,48 +45,71 @@ class BatchSendScheduler(
 ) {
     private val log = LoggerFactory.getLogger(BatchSendScheduler::class.java)
 
-    @Volatile
-    private var scheduledFuture: ScheduledFuture<*>? = null
+    private val scheduledFutures = mutableMapOf<BatchSendType, ScheduledFuture<*>>()
 
     @PostConstruct
     fun scheduleInitial() {
-        reschedule()
+        rescheduleAll()
     }
 
     @EventListener
     fun onCronChanged(event: BatchSendCronChangedEvent) {
-        log.info("Batch send cron changed from {} to {}, rescheduling", event.oldCron, event.newCron)
-        reschedule()
+        log.info("Batch send cron/enabled changed (oldCron={}, newCron={}), rescheduling all types", event.oldCron, event.newCron)
+        rescheduleAll()
     }
 
-    private fun reschedule() {
+    private fun rescheduleAll() {
         synchronized(this) {
-            scheduledFuture?.cancel(false)
-            scheduledFuture = taskScheduler.schedule(
-                Runnable { triggerBatchSend() },
-                DynamicCronTrigger(batchSendSettingService)
-            )
+            rescheduleOne(BatchSendType.INTRODUCTION)
+            rescheduleOne(BatchSendType.MATERIAL_REMINDER)
         }
     }
 
-    private fun triggerBatchSend() {
-        val config = try {
-            batchSendSettingService.getConfig()
+    private fun rescheduleOne(sendType: BatchSendType) {
+        scheduledFutures.remove(sendType)?.cancel(false)
+        try {
+            val config = if (sendType == BatchSendType.INTRODUCTION) {
+                batchSendSettingService.getConfig()
+            } else {
+                batchSendSettingService.getConfig(sendType)
+            }
+            if (sendType == BatchSendType.MATERIAL_REMINDER && !config.autoEnabled) {
+                log.debug("MATERIAL_REMINDER auto send disabled (autoEnabled=false), not scheduling")
+                return
+            }
+            scheduledFutures[sendType] = taskScheduler.schedule(
+                Runnable { triggerBatchSend(sendType) },
+                DynamicCronTrigger(batchSendSettingService, sendType)
+            )
+            log.debug("Scheduled {} batch send trigger, cron={}", sendType, config.cron)
         } catch (e: Exception) {
-            log.warn("Failed to read batch send config, skipping trigger: {}", e.message)
+            log.warn("Failed to reschedule {} batch send: {}", sendType, e.message)
+        }
+    }
+
+    private fun triggerBatchSend(sendType: BatchSendType) {
+        val config = try {
+            if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.getConfig()
+            else batchSendSettingService.getConfig(sendType)
+        } catch (e: Exception) {
+            log.warn("Failed to read batch send config for {}, skipping trigger: {}", sendType, e.message)
             return
         }
         if (!config.autoEnabled) {
-            log.debug("Auto batch send disabled (autoEnabled=false), skipping trigger")
+            log.debug("{} auto batch send disabled (autoEnabled=false), skipping trigger", sendType)
             return
         }
-        log.info("Scheduled batch send trigger firing; cron={}", config.cron)
-        val response = batchSendControlService.startAuto()
-        if (response.statusCode.is2xxSuccessful) {
-            log.info("Auto batch send started: {}", response.body?.get("message"))
+        log.info("Scheduled batch send trigger firing: sendType={}, cron={}", sendType, config.cron)
+        val response = if (sendType == BatchSendType.INTRODUCTION) {
+            batchSendControlService.startAuto()
         } else {
-            log.warn("Auto batch send start rejected: status={}, message={}",
-                response.statusCode, response.body?.get("message"))
+            batchSendControlService.startAuto(sendType)
+        }
+        if (response.statusCode.is2xxSuccessful) {
+            log.info("{} auto batch send started: {}", sendType, response.body?.get("message"))
+        } else {
+            log.warn("{} auto batch send start rejected: status={}, message={}",
+                sendType, response.statusCode, response.body?.get("message"))
         }
     }
 }
@@ -99,15 +126,17 @@ class BatchSendSchedulerConfiguration {
 }
 
 /**
- * Trigger that reads the cron expression from [BatchSendSettingService] on each
- * [nextExecution] call. If the cron is invalid, [BatchSendSettingService.getConfig] already
- * falls back to the default ("0 0 0 * * ?"), so this trigger always returns a valid next time.
+ * Trigger that reads the cron expression for [sendType] from [BatchSendSettingService] on each
+ * [nextExecution] call. Falls back to the service default if cron is invalid.
  * Returns null only if cron parsing fails, which pauses scheduling until the config is fixed.
  */
-private class DynamicCronTrigger(private val configService: BatchSendSettingService) : Trigger {
+private class DynamicCronTrigger(
+    private val configService: BatchSendSettingService,
+    private val sendType: BatchSendType
+) : Trigger {
     override fun nextExecutionTime(context: TriggerContext): Date? {
         val cron = try {
-            configService.getConfig().cron
+            configService.getConfig(sendType).cron
         } catch (e: Exception) {
             return null
         }

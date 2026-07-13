@@ -24,8 +24,14 @@ import javax.annotation.PostConstruct
  * - runManualOnce: IDLE/PAUSED → one round → previous resting state (manual button, I-9/L3-2)
  * - getStatus: merges persisted runtime state with latest TaskProgress (I-5 banner, I-8 stats)
  *
- * Mutual exclusion (I-1) is enforced by [TaskProgressStore.tryStartWithToken] plus the
- * single-thread [manualOutreachExecutor] (core=max=1, queue=0).
+ * Mutual exclusion (I-1/I-8) is enforced by [TaskProgressStore.tryStartWithToken] plus the
+ * single-thread [manualOutreachExecutor] (core=max=1, queue=0). INTRODUCTION and
+ * MATERIAL_REMINDER share the same executor and TASK_TYPE mutex key — any running type
+ * blocks the other (I-8 two-timer independent schedule, shared execution lock).
+ *
+ * Each [BatchSendType] gets its own persisted runtime state key namespace (I-8). The `sendType`
+ * parameter defaults to INTRODUCTION on every public method for backward compat with existing
+ * callers (controller, scheduler, tests).
  */
 @Service
 class BatchSendControlService(
@@ -45,11 +51,16 @@ class BatchSendControlService(
      * phantom RUNNING state with no active execution.
      */
     @PostConstruct
-    fun restartRecovery() {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun restartRecoveryOnStartup() {
+        restartRecovery()
+        restartRecovery(BatchSendType.MATERIAL_REMINDER)
+    }
+
+    fun restartRecovery(sendType: BatchSendType = BatchSendType.INTRODUCTION) {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status == "RUNNING") {
-            log.warn("Found RUNNING batch send state on startup with no active execution; normalizing to PAUSED+INTERRUPTED")
-            batchSendSettingService.setRuntimeStatus("PAUSED", state.mode, "INTERRUPTED")
+            log.warn("Found RUNNING batch send state on startup for {}, normalizing to PAUSED+INTERRUPTED", sendType)
+            setRuntimeStatusInternal("PAUSED", state.mode, "INTERRUPTED", sendType)
         }
     }
 
@@ -57,26 +68,26 @@ class BatchSendControlService(
      * AUTO run triggered by the scheduler (I-2: triggerType=SCHEDULED). Only allowed when
      * runtime status is IDLE and autoEnabled is true.
      */
-    fun startAuto(): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun startAuto(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status != "IDLE") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，无法开始自动运行（需 IDLE）"))
         }
-        val config = batchSendSettingService.getConfig()
+        val config = getConfigInternal(sendType)
         if (!config.autoEnabled) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "自动定时发送未启用"))
         }
-        return launchExecution(ExecutionMode.AUTO, "SCHEDULED", oneRoundOnly = false)
+        return launchExecution(ExecutionMode.AUTO, "SCHEDULED", oneRoundOnly = false, sendType = sendType)
     }
 
     /**
      * MANUAL full run triggered by the operator "开始执行" button (I-2: triggerType=MANUAL).
      * Only allowed when runtime status is IDLE.
      */
-    fun startManual(): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun startManual(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status != "IDLE") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，无法开始（需 IDLE）"))
@@ -85,56 +96,53 @@ class BatchSendControlService(
         if (capacityError != null) {
             return capacityError
         }
-        return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = false)
+        return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = false, sendType = sendType)
     }
 
     /**
      * Operator "暂停" button: RUNNING → PAUSED. Requests cancellation of the active execution
-     * (I-1) and persists PAUSED + reason. Also called internally by the orchestrator path for
-     * I-5 (no available account) — the orchestrator signals via result.stopReason instead, so
-     * this method is only for operator-initiated pauses.
+     * (I-1) and persists PAUSED + reason.
      */
-    fun pause(reason: String): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun pause(reason: String, sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status != "RUNNING") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，无法暂停（需 RUNNING）"))
         }
         progressStore.requestCancel(TASK_TYPE)
-        batchSendSettingService.setRuntimeStatus("PAUSED", state.mode, reason)
-        log.info("Batch send paused by operator: reason={}", reason)
+        setRuntimeStatusInternal("PAUSED", state.mode, reason, sendType)
+        log.info("Batch send paused by operator: sendType={}, reason={}", sendType, reason)
         return ResponseEntity.ok(mapOf("message" to "已暂停: $reason"))
     }
 
     /**
-     * Operator resume for scheduled sending. This only clears the persisted pause state so the
-     * dynamic cron scheduler can run the next due AUTO execution; it does not launch a send now.
+     * Operator resume for scheduled sending. Clears the persisted pause state so the
+     * dynamic cron scheduler can run the next due AUTO execution; does not launch a send now.
      */
-    fun resumeSchedule(): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun resumeSchedule(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status == "RUNNING") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 RUNNING，无法恢复定时（需非 RUNNING）"))
         }
-        batchSendSettingService.setAutoEnabled(true)
-        batchSendSettingService.setRuntimeStatus("IDLE", state.mode, "")
-        log.info("Batch send schedule resumed by operator from status={}, mode={}", state.status, state.mode)
+        setAutoEnabledInternal(true, sendType)
+        setRuntimeStatusInternal("IDLE", state.mode, "", sendType)
+        log.info("Batch send schedule resumed: sendType={}, from status={}, mode={}", sendType, state.status, state.mode)
         return ResponseEntity.ok(mapOf("message" to "已恢复定时发送"))
     }
 
     /**
-     * Pauses the cron-driven schedule when no execution is currently running. Active execution
-     * cancellation still goes through [pause].
+     * Pauses the cron-driven schedule when no execution is currently running.
      */
-    fun pauseSchedule(): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun pauseSchedule(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status == "RUNNING") {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 RUNNING，请使用执行暂停"))
         }
-        batchSendSettingService.setAutoEnabled(false)
-        batchSendSettingService.setRuntimeStatus("PAUSED", "AUTO", "OPERATOR")
-        log.info("Batch send schedule paused by operator from status={}, mode={}", state.status, state.mode)
+        setAutoEnabledInternal(false, sendType)
+        setRuntimeStatusInternal("PAUSED", "AUTO", "OPERATOR", sendType)
+        log.info("Batch send schedule paused: sendType={}, from status={}, mode={}", sendType, state.status, state.mode)
         return ResponseEntity.ok(mapOf("message" to "已暂停定时发送"))
     }
 
@@ -142,8 +150,8 @@ class BatchSendControlService(
      * Operator "手动" button (I-9): IDLE/PAUSED → one round. Normal IDLE starts return to
      * IDLE so scheduled sending remains armed; PAUSED starts return to PAUSED.
      */
-    fun runManualOnce(): ResponseEntity<Map<String, String>> {
-        val state = batchSendSettingService.getRuntimeStatus()
+    fun runManualOnce(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
         if (state.status !in setOf("IDLE", "PAUSED")) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "流程当前状态为 ${state.status}，手动执行仅在 IDLE 或 PAUSED 时可用"))
@@ -156,19 +164,25 @@ class BatchSendControlService(
             mode = ExecutionMode.MANUAL,
             triggerType = "MANUAL",
             oneRoundOnly = true,
-            returnToPausedAfterOneRound = state.status == "PAUSED"
+            returnToPausedAfterOneRound = state.status == "PAUSED",
+            sendType = sendType
         )
     }
 
     /**
      * Status query (I-5): returns the persisted runtime state (survives refresh) merged with
      * the latest TaskProgress details (I-8 per-account stats) if an execution is active or recent.
+     * Only merges progress whose sendType matches the requested type (I-8 independent state).
+     * Always returns activeSendType so the frontend can lock the type selector when one is running.
      */
-    fun getStatus(): BatchSendStatusView {
-        val state = batchSendSettingService.getRuntimeStatus()
-        val config = batchSendSettingService.getConfig()
+    fun getStatus(sendType: BatchSendType = BatchSendType.INTRODUCTION): BatchSendStatusView {
+        val state = getRuntimeStatusInternal(sendType)
+        val config = getConfigInternal(sendType)
         val progress = progressStore.get(TASK_TYPE)
-        val details = progress?.details
+        val activeSendTypeInProgress = progress?.details?.get("sendType") as? String
+        // Only merge progress data if it belongs to this sendType (null → compat, treat as INTRODUCTION)
+        val progressForType = if (activeSendTypeInProgress == null || activeSendTypeInProgress == sendType.name) progress else null
+        val details = progressForType?.details
         val mode = if (state.status == "IDLE" && config.autoEnabled) "AUTO" else state.mode
         val templateName = config.templateId?.let { templateId ->
             runCatching { mailComposeTemplateService.getById(templateId).templateName }.getOrNull()
@@ -184,12 +198,13 @@ class BatchSendControlService(
             sentTotal = details?.asInt("sentTotal") ?: 0,
             failedTotal = details?.asInt("failedTotal") ?: 0,
             accounts = extractAccountStats(details),
-            executionId = progress?.executionId,
-            message = progress?.message,
+            executionId = progressForType?.executionId,
+            message = progressForType?.message,
             warmupAccountCount = mailSenderAccountService.warmupActiveCount(),
             todayTotalCapacity = mailSenderAccountService.todayTotalCapacity(),
             todayRemainingCapacity = mailSenderAccountService.remainingDailyCapacity(),
-            templateName = templateName
+            templateName = templateName,
+            activeSendType = activeSendTypeInProgress
         )
     }
 
@@ -202,15 +217,47 @@ class BatchSendControlService(
     }
 
     /**
+     * I-7: re-validate template gate before launch to catch template disabled/type-changed after
+     * config was saved. INTRODUCTION: null templateId OK. MATERIAL_REMINDER: must have enabled
+     * MATERIAL_REMINDER-type template.
+     */
+    private fun validateTemplateGate(sendType: BatchSendType, config: BatchSendConfig): ResponseEntity<Map<String, String>>? {
+        if (sendType == BatchSendType.INTRODUCTION) return null
+        val templateId = config.templateId
+            ?: return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "MATERIAL_REMINDER 必须配置模板才能发送"))
+        return try {
+            val template = mailComposeTemplateService.getById(templateId)
+            when {
+                !template.enabled -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(mapOf("message" to "模板 $templateId 已禁用，无法发送"))
+                template.mailType != sendType.name -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(mapOf("message" to "模板 $templateId 类型为 ${template.mailType}，与 $sendType 不匹配"))
+                else -> null
+            }
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "模板校验失败: ${e.message}"))
+        }
+    }
+
+    /**
      * Launches an async execution on the single-thread executor (I-1 mutual exclusion).
      * Persists RUNNING + mode, then post-processes the result to transition runtime status.
+     * Dispatches INTRODUCTION to [ManualInitialOutreachService.runScheduledBatch] and
+     * MATERIAL_REMINDER to [ManualInitialOutreachService.runMaterialReminderBatch] (I-9).
      */
     private fun launchExecution(
         mode: ExecutionMode,
         triggerType: String,
         oneRoundOnly: Boolean,
-        returnToPausedAfterOneRound: Boolean = true
+        returnToPausedAfterOneRound: Boolean = true,
+        sendType: BatchSendType = BatchSendType.INTRODUCTION
     ): ResponseEntity<Map<String, String>> {
+        val config = getConfigInternal(sendType)
+        val templateError = validateTemplateGate(sendType, config)
+        if (templateError != null) return templateError
+
         val initialProgress = TaskProgress(
             taskType = TASK_TYPE,
             status = "RUNNING",
@@ -220,6 +267,7 @@ class BatchSendControlService(
             message = "正在初始化发送队列...",
             details = mapOf(
                 "executionMode" to mode.name,
+                "sendType" to sendType.name,
                 "sent" to 0,
                 "failed" to 0,
                 "accounts" to emptyList<AccountStatRow>()
@@ -231,25 +279,32 @@ class BatchSendControlService(
                 .body(mapOf("message" to "任务正在执行中"))
         }
 
-        batchSendSettingService.setRuntimeStatus("RUNNING", mode.name, "")
+        setRuntimeStatusInternal("RUNNING", mode.name, "", sendType)
+
+        val taskDescription = "batch-send-${sendType.name}-${mode.name}${if (oneRoundOnly) "-one-round" else ""}"
 
         try {
             manualOutreachExecutor.execute {
                 var executionId: Long? = null
                 try {
                     val (_, result) = taskExecutionService.runAndRecordWithResult<ManualOutreachResult>(
-                        TASK_TYPE, triggerType, "batch-send-${mode.name}${if (oneRoundOnly) "-one-round" else ""}",
+                        TASK_TYPE, triggerType, taskDescription,
                         onStarted = { id ->
                             executionId = id
                             progressStore.bindExecutionId(TASK_TYPE, pendingToken, id)
                         }
                     ) {
-                        manualInitialOutreachService.runScheduledBatch(executionId!!, mode, oneRoundOnly)
+                        when (sendType) {
+                            BatchSendType.INTRODUCTION ->
+                                manualInitialOutreachService.runScheduledBatch(executionId!!, mode, oneRoundOnly)
+                            BatchSendType.MATERIAL_REMINDER ->
+                                manualInitialOutreachService.runMaterialReminderBatch(executionId!!, mode, oneRoundOnly)
+                        }
                     }
-                    applyResultToRuntimeStatus(mode, result, returnToPausedAfterOneRound)
+                    applyResultToRuntimeStatus(mode, result, returnToPausedAfterOneRound, sendType)
                 } catch (ex: Exception) {
-                    log.error("Batch send execution failed", ex)
-                    batchSendSettingService.setRuntimeStatus("PAUSED", mode.name, "EXECUTION_ERROR:${ex.message?.take(200)}")
+                    log.error("Batch send execution failed for {}", sendType, ex)
+                    setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTION_ERROR:${ex.message?.take(200)}", sendType)
                     progressStore.update(TASK_TYPE, TaskProgress(
                         taskType = TASK_TYPE, status = "FAILED",
                         batchNumber = 0, processedCount = 0, totalCount = 0,
@@ -265,8 +320,8 @@ class BatchSendControlService(
                 }
             }
         } catch (reEx: RejectedExecutionException) {
-            log.warn("Batch send launch rejected: {}", reEx.message)
-            batchSendSettingService.setRuntimeStatus("PAUSED", mode.name, "EXECUTOR_REJECTED")
+            log.warn("Batch send launch rejected for {}: {}", sendType, reEx.message)
+            setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTOR_REJECTED", sendType)
             progressStore.update(TASK_TYPE, TaskProgress(
                 taskType = TASK_TYPE, status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
@@ -282,28 +337,23 @@ class BatchSendControlService(
 
     /**
      * Maps the orchestrator result to a runtime status transition (L3-3). Only transitions
-     * if the current status is still RUNNING — does not overwrite an operator-initiated PAUSED
-     * (which may have been set mid-run via [pause]).
-     *
-     * - PAUSED (NO_AVAILABLE_ACCOUNT / ONE_ROUND_DONE / DAILY_CAP_REACHED for oneRoundOnly) → PAUSED
-     * - CANCELLED (operator pause) → PAUSED (if not already)
-     * - FAILED → PAUSED + reason
-     * - COMPLETED (snapshot exhausted or dailyCap hit on full run, L3-2) → IDLE
+     * if the current status is still RUNNING — does not overwrite an operator-initiated PAUSED.
      */
     private fun applyResultToRuntimeStatus(
         mode: ExecutionMode,
         result: ManualOutreachResult,
-        returnToPausedAfterOneRound: Boolean
+        returnToPausedAfterOneRound: Boolean,
+        sendType: BatchSendType
     ) {
         val finalStatus = result.finalStatus ?: if (result.wasCancelled) "CANCELLED" else "COMPLETED"
-        val current = batchSendSettingService.getRuntimeStatus()
+        val current = getRuntimeStatusInternal(sendType)
         if (current.status != "RUNNING") {
-            log.info("Runtime status is {} (not RUNNING) after execution; skipping transition (finalStatus={})", current.status, finalStatus)
+            log.info("Runtime status is {} (not RUNNING) after execution for {}; skipping transition (finalStatus={})", current.status, sendType, finalStatus)
             return
         }
         if (!returnToPausedAfterOneRound && finalStatus == "PAUSED" && result.stopReason in idleSafeOneRoundStopReasons) {
-            batchSendSettingService.setRuntimeStatus("IDLE", mode.name, "")
-            log.info("Batch send transitioned to IDLE after one-round manual execution: reason={}", result.stopReason)
+            setRuntimeStatusInternal("IDLE", mode.name, "", sendType)
+            log.info("Batch send {} transitioned to IDLE after one-round manual execution: reason={}", sendType, result.stopReason)
             return
         }
         when (finalStatus) {
@@ -314,21 +364,44 @@ class BatchSendControlService(
                     "FAILED" -> result.stopReason ?: "FAILED"
                     else -> ""
                 }
-                batchSendSettingService.setRuntimeStatus("PAUSED", mode.name, reason)
-                log.info("Batch send transitioned to PAUSED after execution: reason={}", reason)
+                setRuntimeStatusInternal("PAUSED", mode.name, reason, sendType)
+                log.info("Batch send {} transitioned to PAUSED after execution: reason={}", sendType, reason)
             }
             else -> {
-                batchSendSettingService.setRuntimeStatus("IDLE", mode.name, "")
-                log.info("Batch send transitioned to IDLE after execution (finalStatus={})", finalStatus)
+                setRuntimeStatusInternal("IDLE", mode.name, "", sendType)
+                log.info("Batch send {} transitioned to IDLE after execution (finalStatus={})", sendType, finalStatus)
             }
         }
+    }
+
+    // ── Internal helpers — dispatch to compat (INTRODUCTION) or typed (MATERIAL_REMINDER) ─────
+
+    /**
+     * For INTRODUCTION, calls the no-arg compat overload so Mockito stubs in existing tests
+     * (which stub `getRuntimeStatus()`) are matched. For other types, calls the typed overload.
+     */
+    private fun getRuntimeStatusInternal(sendType: BatchSendType): BatchSendRuntimeState =
+        if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.getRuntimeStatus()
+        else batchSendSettingService.getRuntimeStatus(sendType)
+
+    private fun setRuntimeStatusInternal(status: String, mode: String, reason: String, sendType: BatchSendType) {
+        if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.setRuntimeStatus(status, mode, reason)
+        else batchSendSettingService.setRuntimeStatus(status, mode, reason, sendType)
+    }
+
+    private fun getConfigInternal(sendType: BatchSendType): BatchSendConfig =
+        if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.getConfig()
+        else batchSendSettingService.getConfig(sendType)
+
+    private fun setAutoEnabledInternal(enabled: Boolean, sendType: BatchSendType) {
+        if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.setAutoEnabled(enabled)
+        else batchSendSettingService.setAutoEnabled(enabled, sendType)
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun extractAccountStats(details: Map<String, Any>?): List<AccountStatRow> {
         if (details == null) return emptyList()
         val raw = details["accounts"] ?: return emptyList()
-        // In-memory: List<AccountStatRow>; after log restore: List<Map<String, Any>>
         return when (raw) {
             is List<*> -> raw.mapNotNull { item ->
                 when (item) {
@@ -390,5 +463,7 @@ data class BatchSendStatusView(
     val warmupAccountCount: Int = 0,
     val todayTotalCapacity: Int = 0,
     val todayRemainingCapacity: Int = 0,
-    val templateName: String? = null
+    val templateName: String? = null,
+    /** The sendType currently running, null when idle. Used by frontend to lock type selector. */
+    val activeSendType: String? = null
 )

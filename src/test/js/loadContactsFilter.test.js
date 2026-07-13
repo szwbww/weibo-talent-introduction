@@ -266,10 +266,10 @@ describe("loadContacts level change keeps batchSendEmailDomain full (I-5)", () =
         await sb.loadContacts();
 
         const providerUrls = urls.filter((u) => u.includes("/api/experts/email-providers"));
-        assert.strictEqual(providerUrls.length, 2);
-        const fullProviderUrl = providerUrls.find((u) => u.endsWith("/api/experts/email-providers?level=APPLICATION"));
-        assert.ok(fullProviderUrl, "batch config dropdown should use full providers");
-        const filteredProviderUrl = providerUrls.find((u) => u !== fullProviderUrl);
+        // After material-reminder unified batch-send, config dropdown providers are
+        // loaded per sendType in the modal — loadContacts no longer refreshes them.
+        assert.strictEqual(providerUrls.length, 1);
+        const filteredProviderUrl = providerUrls[0];
         assert.ok(filteredProviderUrl.includes("operatorStatus=NOT_CONTACTED"));
         assert.ok(filteredProviderUrl.includes("region=Europe"));
         assert.ok(!filteredProviderUrl.includes("emailDomain"));

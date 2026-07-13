@@ -352,7 +352,7 @@ const taskButtonMapping = {
     RAW_PROMOTION_SCAN: { label: "快速晋升（扫描 RAW）", btnId: "discoverBtn" },
     EXPERT_DISCOVERY: { label: "深度发现（外部数据源）", btnId: "discoverBtn" },
     EXPERT_ENRICHMENT: { label: "补充学术数据（OpenAlex）", btnId: "discoverBtn" },
-    MANUAL_INITIAL_OUTREACH: { label: "批量发送介绍邮件", btnId: "bulkOutreachBtn" },
+    MANUAL_INITIAL_OUTREACH: { label: "批量发送邮件", btnId: "bulkOutreachBtn" },
     CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
 };
 
@@ -3769,259 +3769,8 @@ function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpert
     return renderExpertTagEditor(tags, orcidId, level, editorId);
 }
 
-function buildContactFilterSummary() {
-    const parts = [];
-    const level = $("#expertIndexLevel").value;
-    parts.push(`层级: ${indexLevelLabels[level] || level}`);
-    const operatorStatus = $("#contactStatusFilter")?.value || "";
-    if (operatorStatus) parts.push(`状态: ${operatorStatusLabels[operatorStatus] || operatorStatus}`);
-    const tag = $("#expertTagFilter")?.value || "";
-    if (tag) parts.push(`标签: ${expertTagLabels[tag] || tag}`);
-    const emailDomain = $("#expertEmailDomainFilter")?.value || "";
-    if (emailDomain) parts.push(`邮箱: @${emailDomain}`);
-    const region = $("#expertRegionFilter")?.value || "";
-    if (region) parts.push(`地区: ${region}`);
-    const discipline = $("#expertDisciplineFilter")?.value || "";
-    if (discipline) {
-        const disciplineLabels = { STEM: "理工科", HUMANITIES: "文社科", UNCLASSIFIED: "未分类" };
-        parts.push(`学科: ${disciplineLabels[discipline] || discipline}`);
-    }
-    return parts.join(" · ") || "无额外筛选";
-}
-
 const ES_MAX_RESULT_WINDOW = 10000;
 const ES_PAGE_SIZE_MAX = 1000;
-
-async function collectBatchMailContactIds() {
-    const level = $("#expertIndexLevel").value;
-    const operatorStatus = $("#contactStatusFilter")?.value || "";
-    const tag = $("#expertTagFilter")?.value || "";
-    const emailDomain = $("#expertEmailDomainFilter")?.value || "";
-    const region = $("#expertRegionFilter")?.value || "";
-    const discipline = $("#expertDisciplineFilter")?.value || "";
-    const totalHits = state.contactsTotalHits || 0;
-    if (totalHits <= 0) return [];
-    if (totalHits > ES_MAX_RESULT_WINDOW) {
-        throw new Error(
-            `筛选结果 ${totalHits} 条超过 ES 深分页上限 ${ES_MAX_RESULT_WINDOW}，无法完整批量发送，请缩小筛选范围`
-        );
-    }
-
-    const contactIds = [];
-    let from = 0;
-    while (from < totalHits) {
-        const size = Math.min(ES_PAGE_SIZE_MAX, totalHits - from);
-        const params = new URLSearchParams({
-            level,
-            size: String(size),
-            from: String(from)
-        });
-        if (tag) params.set("tag", tag);
-        if (operatorStatus) params.set("operatorStatus", operatorStatus);
-        if (emailDomain) params.set("emailDomain", emailDomain);
-        if (region) params.set("region", region);
-        if (discipline) params.set("discipline", discipline);
-        let data;
-        try {
-            data = await api(`/api/experts?${params}`);
-        } catch (e) {
-            throw new Error(
-                `拉取筛选结果第 ${from + 1}-${from + size} 条失败，已中止批量发送：${e.message || "请求出错"}`
-            );
-        }
-        (data.experts || []).forEach((item) => {
-            if (item.contactId) contactIds.push(item.contactId);
-        });
-        from += size;
-    }
-    return contactIds;
-}
-
-function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptions) {
-    return new Promise((resolve) => {
-        const dialog = document.getElementById("actionDialog");
-        const form = document.getElementById("actionDialogForm");
-        const titleEl = document.getElementById("actionDialogTitle");
-        const bodyEl = document.getElementById("actionDialogBody");
-        const submitBtn = form.querySelector("button[type=submit]");
-        titleEl.textContent = "批量发送邮件";
-        bodyEl.innerHTML = `
-            <div>
-                <div><strong>筛选条件：</strong><span id="batchMailFilterSummary"></span></div>
-                <div id="batchMailRecipientSummary"></div>
-            </div>
-            <div class="form-group">
-                <label for="batchMailOption">邮件模板</label>
-                <select id="batchMailOption" required></select>
-            </div>
-            <details id="batchMailPreviewSection" open>
-                <summary>邮件内容预览</summary>
-                <div><strong>主题：</strong><span id="batchMailPreviewSubject"></span></div>
-                <div id="batchMailPreviewBody" class="pre"></div>
-                <p id="batchMailPreviewHint" class="text-muted"></p>
-                <p id="batchMailReminderNotice" class="text-muted" hidden></p>
-            </details>
-        `;
-
-        const filterSummaryEl = document.getElementById("batchMailFilterSummary");
-        const recipientSummaryEl = document.getElementById("batchMailRecipientSummary");
-        const selectEl = document.getElementById("batchMailOption");
-        const subjectEl = document.getElementById("batchMailPreviewSubject");
-        const bodyPreviewEl = document.getElementById("batchMailPreviewBody");
-        const hintEl = document.getElementById("batchMailPreviewHint");
-        const noticeEl = document.getElementById("batchMailReminderNotice");
-
-        filterSummaryEl.textContent = summary || "";
-        recipientSummaryEl.textContent = `命中 ${totalHits} 位专家，其中 ${sendableCount} 位可发送（已建立联系）`;
-        hintEl.textContent = "预览保留模板变量；实际发送时按专家和发件账号替换。";
-        noticeEl.textContent = "发送完成后保留当前专家标签。";
-
-        (templateOptions || []).forEach((option) => {
-            const opt = document.createElement("option");
-            opt.value = `${option.optionType}:${option.optionValue}`;
-            opt.textContent = option.subject
-                ? `${option.optionName} - ${option.subject}`
-                : (option.optionName || "");
-            selectEl.appendChild(opt);
-        });
-
-        let previewRequestSeq = 0;
-        let cleanedUp = false;
-
-        const findSelectedOption = () => {
-            const value = selectEl.value || "";
-            return (templateOptions || []).find(
-                (option) => `${option.optionType}:${option.optionValue}` === value
-            ) || null;
-        };
-
-        const updateReminderNotice = () => {
-            const option = findSelectedOption();
-            noticeEl.hidden = !(option && option.mailType === "MATERIAL_REMINDER");
-        };
-
-        const setPreviewLoading = () => {
-            if (submitBtn) submitBtn.disabled = true;
-            subjectEl.textContent = "";
-            bodyPreviewEl.textContent = "正在加载邮件预览...";
-        };
-
-        const setPreviewError = (message) => {
-            if (submitBtn) submitBtn.disabled = true;
-            subjectEl.textContent = "";
-            bodyPreviewEl.textContent = `邮件预览加载失败：${message}`;
-        };
-
-        const setPreviewSuccess = (subject, body) => {
-            subjectEl.textContent = subject || "";
-            bodyPreviewEl.textContent = body || "";
-            if (submitBtn) submitBtn.disabled = false;
-        };
-
-        const loadPreview = async () => {
-            const seq = ++previewRequestSeq;
-            updateReminderNotice();
-            setPreviewLoading();
-            const option = findSelectedOption();
-            if (!option || option.optionType !== "COMPOSE_TEMPLATE" || !option.optionValue) {
-                if (seq === previewRequestSeq && !cleanedUp) {
-                    setPreviewError("不支持的邮件模板");
-                }
-                return;
-            }
-            try {
-                const preview = await api(`/api/compose-templates/${option.optionValue}/preview`);
-                if (seq !== previewRequestSeq || cleanedUp) return;
-                setPreviewSuccess(preview.subject, preview.body);
-            } catch (e) {
-                if (seq !== previewRequestSeq || cleanedUp) return;
-                setPreviewError(e.message || "请求出错");
-            }
-        };
-
-        const handleCancel = () => {
-            cleanup();
-            resolve(null);
-        };
-        const handleSubmit = (e) => {
-            e.preventDefault();
-            if (submitBtn?.disabled) return;
-            const mailOption = selectEl.value || "";
-            cleanup();
-            resolve(mailOption ? { mailOption } : null);
-        };
-        const handleChange = () => {
-            loadPreview();
-        };
-        const cleanup = () => {
-            if (cleanedUp) return;
-            cleanedUp = true;
-            previewRequestSeq += 1;
-            form.removeEventListener("submit", handleSubmit);
-            selectEl.removeEventListener("change", handleChange);
-            dialog.removeEventListener("cancel", handleCancel);
-            const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
-            cancelBtn.removeEventListener("click", handleCancel);
-            if (submitBtn) submitBtn.disabled = false;
-            dialog.close();
-        };
-
-        const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
-        cancelBtn.addEventListener("click", handleCancel);
-        dialog.addEventListener("cancel", handleCancel);
-        form.addEventListener("submit", handleSubmit);
-        selectEl.addEventListener("change", handleChange);
-        dialog.showModal();
-        updateReminderNotice();
-        loadPreview();
-    });
-}
-
-async function handleBatchTagMail() {
-    const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
-    const replyMode = $("#contactReplyModeFilter")?.value || "";
-    const useDbContactPath = needsAttention || replyMode;
-    if (useDbContactPath) {
-        showStatus("批量发送邮件需在 ES 查询模式下使用（请清除人工关注/回复模式筛选）", "warn");
-        return;
-    }
-    let contactIds;
-    try {
-        contactIds = await collectBatchMailContactIds();
-    } catch (e) {
-        showStatus(e.message, "error");
-        return;
-    }
-    if (contactIds.length === 0) {
-        showStatus("当前筛选结果中没有可发送邮件的专家（需已建立联系）", "warn");
-        return;
-    }
-    const options = await loadMailSendOptions();
-    const templateOptions = options.filter(option => option.optionType === "COMPOSE_TEMPLATE");
-    if (templateOptions.length === 0) {
-        showStatus("没有可用的邮件模板", "error");
-        return;
-    }
-    const summary = buildContactFilterSummary();
-    const payload = await openBatchTagMailDialog(summary, state.contactsTotalHits || 0, contactIds.length, templateOptions);
-    if (!payload) return;
-    const [optionType, optionValue] = payload.mailOption.split(":");
-    const result = await api("/api/expert-contacts/batch-mail", {
-        method: "POST",
-        body: JSON.stringify({
-            contactIds,
-            optionType,
-            optionValue,
-            senderAccountCode: null
-        })
-    });
-    const level = result.failed > 0 ? "warn" : "ok";
-    showStatus(`批量发送完成：成功 ${result.success}，失败 ${result.failed}`, level);
-    if (result.failed > 0 && result.errors?.length) {
-        console.warn("Batch mail errors:", result.errors);
-    }
-    await loadContacts();
-}
 
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
@@ -4111,8 +3860,7 @@ async function loadContacts() {
             tag: aggregationTag,
             operatorStatus,
             region: aggregationRegion
-        },
-        refreshConfigDropdown: levelChanged
+        }
     });
     loadRegions(level, {
         filters: {
@@ -4629,33 +4377,32 @@ const taskLaunchConfigs = {
         run: executeEnrichExperts
     },
     MANUAL_INITIAL_OUTREACH: {
-        title: "批量发送介绍邮件",
+        title: "批量发送邮件",
         desc: "",
         btnId: "bulkOutreachBtn",
         showKeyword: false,
         showMaxPromotions: false,
         preload: async () => {
-            const countRes = await api("/api/mail/manual-outreach/pending-count");
-            const summary = summarizeManualOutreachPending(countRes);
-            let batchConfig = null;
-            let batchStatus = null;
-            let composeTemplates = [];
-            try {
-                batchConfig = await api("/api/mail/batch-send/config");
-            } catch (e) { /* config optional */ }
-            try {
-                batchStatus = await api("/api/mail/batch-send/status");
-            } catch (e) { /* status optional */ }
-            try {
-                composeTemplates = await api("/api/compose-templates");
-            } catch (e) { /* templates optional */ }
+            const defaultType = ($("#expertTagFilter")?.value === "承诺回复材料")
+                ? "MATERIAL_REMINDER" : "INTRODUCTION";
+            batchSendType = defaultType;
+            batchSendRequestToken = 0;
+            const [config, status, composeTemplates, providers, pendingCount] = await Promise.allSettled([
+                api(`/api/mail/batch-send/types/${defaultType}/config`),
+                api(`/api/mail/batch-send/types/${defaultType}/status`),
+                api("/api/compose-templates"),
+                loadBatchSendTypeProviders(defaultType),
+                api(`/api/mail/batch-send/types/${defaultType}/pending-count`)
+            ]);
             return {
-                desc: summary.confirmMessage,
-                canRun: summary.total > 0,
-                batchConfig,
-                batchStatus,
-                composeTemplates,
-                summary
+                desc: "",
+                canRun: true,
+                batchConfig: config.status === "fulfilled" ? config.value : null,
+                batchStatus: status.status === "fulfilled" ? status.value : null,
+                composeTemplates: composeTemplates.status === "fulfilled" ? composeTemplates.value : [],
+                providers: providers.status === "fulfilled" ? providers.value : [],
+                pendingCount: pendingCount.status === "fulfilled" ? pendingCount.value : null,
+                defaultType
             };
         },
         run: executeManualOutreach
@@ -4772,7 +4519,21 @@ async function openTaskLaunchModal(taskType) {
     // Batch send: fill config form + initialize control bar from preloaded status
     if (isBatchSend) {
         if (pre && pre.composeTemplates) batchSendComposeTemplates = pre.composeTemplates;
-        if (pre && pre.batchConfig) fillBatchSendConfigForm(pre.batchConfig);
+
+        // Set type selector to default type determined by preload
+        const typeSel = $("#batchSendType");
+        if (typeSel) {
+            typeSel.value = pre?.defaultType || "INTRODUCTION";
+            typeSel.removeEventListener("change", onBatchSendTypeChange);
+            typeSel.addEventListener("change", onBatchSendTypeChange);
+        }
+
+        // Fill provider dropdown and config form from preloaded data
+        fillBatchSendProviderSelect(batchSendType, pre?.providers || [], pre?.batchConfig?.emailDomain ?? null);
+        if (pre?.batchConfig) fillBatchSendConfigForm(pre.batchConfig);
+        fillBatchSendTemplateSelector(batchSendComposeTemplates, pre?.batchConfig?.templateId ?? null);
+        applyBatchSendRecipientSummary(batchSendType, pre?.pendingCount ?? null);
+
         const startBtn = $("#batchSendStartBtn");
         if (startBtn) startBtn.onclick = handleBatchSendToggle;
         const pauseBtn = $("#batchSendPauseBtn");
@@ -4786,7 +4547,15 @@ async function openTaskLaunchModal(taskType) {
             emailDomainSel.dataset.refreshBound = "1";
             emailDomainSel.addEventListener("change", async () => {
                 await saveBatchSendConfig();
-                await refreshOutreachPendingCount();
+                await refreshBatchSendPendingCountDisplay();
+            });
+        }
+        const disciplineSel = $("#batchSendDiscipline");
+        if (disciplineSel && !disciplineSel.dataset.refreshBound) {
+            disciplineSel.dataset.refreshBound = "1";
+            disciplineSel.addEventListener("change", async () => {
+                await saveBatchSendConfig();
+                await refreshBatchSendPendingCountDisplay();
             });
         }
         const freqSel = $("#batchSendFrequency");
@@ -4801,7 +4570,7 @@ async function openTaskLaunchModal(taskType) {
             });
         }
         // Initial controls state from preloaded status (or fresh fetch if missing)
-        if (pre && pre.batchStatus) {
+        if (pre?.batchStatus) {
             applyBatchSendControls(pre.batchStatus);
         } else {
             refreshBatchSendControls().catch(() => {});
@@ -5170,7 +4939,7 @@ async function handleBulkOutreach() {
     const taskType = "MANUAL_INITIAL_OUTREACH";
     const running = await isTaskRunning(taskType);
     if (running) {
-        openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
+        openTaskModal(taskType, "批量发送邮件", "bulkOutreachBtn", { knownActiveAtOpen: true });
         return;
     }
     openTaskLaunchModal(taskType);
@@ -5189,7 +4958,7 @@ async function launchBatchSendWithProgress(endpoint, options = {}) {
         return false;
     }
 
-    openTaskModal(taskType, "批量发送介绍邮件", "bulkOutreachBtn", { launchRequested: true });
+    openTaskModal(taskType, "批量发送邮件", "bulkOutreachBtn", { launchRequested: true });
     const capturedGeneration = currentTaskModal?.generation;
     try {
         const response = await api(endpoint, { method: "POST" });
@@ -5223,13 +4992,15 @@ async function launchBatchSendWithProgress(endpoint, options = {}) {
 }
 
 async function executeManualOutreach() {
-    await launchBatchSendWithProgress("/api/mail/manual-outreach/start");
+    await launchBatchSendWithProgress(`${batchSendTypeBase()}/start`);
 }
 
 // ----- Batch Send controls (phase 04: I-2 / I-5 / I-8 / I-9 / L4-1 / L4-2) -----
 let batchSendStatusTimer = null;
 let batchSendBannerTimer = null;
 let batchSendComposeTemplates = [];
+let batchSendType = "INTRODUCTION";       // current active send type in dialog
+let batchSendRequestToken = 0;            // I-11: increments on type switch; stale responses are ignored
 const BATCH_SEND_STATUS_POLL_MS = 10000;
 const BATCH_SEND_BANNER_POLL_MS = 30000;
 
@@ -5278,6 +5049,18 @@ function applyBatchSendControls(statusView) {
     const displayStatus = scheduleActive ? "SCHEDULED" : status;
     const states = batchSendButtonStates(status);
 
+    // If a shared execution is RUNNING/CANCELLING, force-display activeSendType and lock type dropdown.
+    const activeSendType = statusView.activeSendType || null;
+    const execLocked = activeSendType && (status === "RUNNING" || status === "CANCELLING");
+    const typeSel = $("#batchSendType");
+    if (typeSel) {
+        typeSel.disabled = !!execLocked;
+        if (execLocked && typeSel.value !== activeSendType) {
+            typeSel.value = activeSendType;
+            batchSendType = activeSendType;
+        }
+    }
+
     const startBtn = $("#batchSendStartBtn");
     const pauseBtn = $("#batchSendPauseBtn");
     const manualBtn = $("#batchSendManualBtn");
@@ -5319,19 +5102,20 @@ function applyBatchSendControls(statusView) {
         modeBadge.textContent = batchSendModeLabel(mode);
         modeBadge.className = "badge " + (mode === "AUTO" ? "primary" : mode === "MANUAL" ? "warn" : "");
     }
+    // Prepend send-type label to status badge (S-3)
+    const typeDisplayLabel = batchSendType === "MATERIAL_REMINDER" ? "材料提醒 " : "介绍 ";
     const statusBadge = $("#batchSendStatusBadge");
     if (statusBadge) {
-        statusBadge.textContent = batchSendStatusLabel(displayStatus);
+        statusBadge.textContent = typeDisplayLabel + batchSendStatusLabel(displayStatus);
         statusBadge.className = "badge " + batchSendStatusBadgeType(displayStatus);
     }
 
     renderBatchSendAccountTable(statusView);
-    applyBatchSendBanner(statusView);
 }
 
 async function refreshBatchSendControls() {
     try {
-        const statusView = await api("/api/mail/batch-send/status");
+        const statusView = await api(`${batchSendTypeBase()}/status`);
         applyBatchSendControls(statusView);
         return statusView;
     } catch (e) {
@@ -5368,32 +5152,36 @@ function fillBatchSendConfigForm(config) {
     setVal("batchSendPerMailIntervalSec", config.perMailIntervalMs != null ? Math.round(config.perMailIntervalMs / 1000) : "");
     setVal("batchSendPerRoundIntervalSec", config.perRoundIntervalMs != null ? Math.round(config.perRoundIntervalMs / 1000) : "");
     setVal("batchSendSelfCheckTtlMin", config.selfCheckTtlMinutes ?? "");
-    setVal("batchSendEmailDomain", config.emailDomain ?? "");
+    // emailDomain is set via fillBatchSendProviderSelect to preserve option integrity
     setVal("batchSendDiscipline", config.discipline ?? "");
-    fillBatchSendTemplateSelector(batchSendComposeTemplates, config.templateId ?? null);
 }
 
-function fillBatchSendTemplateSelector(templates, selectedId) {
+function fillBatchSendTemplateSelector(templates, selectedId, sendType) {
     const select = $("#batchSendTemplateId");
     if (!select) return;
+    const type = sendType || batchSendType;
     const list = Array.isArray(templates) ? templates : [];
-    const isIntroduction = (t) => t.mailType === "INTRODUCTION";
-    const enabledIntro = list.filter((t) => t.enabled && isIntroduction(t));
+    const matchesType = (t) => t.mailType === type;
+    const enabledTyped = list.filter((t) => t.enabled && matchesType(t));
     const selected = selectedId ? list.find((t) => t.id === selectedId) : null;
 
     let effectiveSelectedId = selectedId;
-    if (selected && !isIntroduction(selected)) {
+    if (selected && !matchesType(selected)) {
         effectiveSelectedId = null;
     }
 
-    let optionsHtml = enabledIntro
+    let optionsHtml = enabledTyped
         .map((t) => `<option value="${t.id}">${escapeHtml(t.templateName)}</option>`)
         .join("");
-    if (selected && isIntroduction(selected) && !selected.enabled) {
+    if (selected && matchesType(selected) && !selected.enabled) {
         optionsHtml = `<option value="${selected.id}">${escapeHtml(selected.templateName)} (已禁用)</option>${optionsHtml}`;
     }
 
-    select.innerHTML = `<option value="">默认 (INTRODUCTION)</option>${optionsHtml}`;
+    // INTRODUCTION keeps a default empty option; MATERIAL_REMINDER requires explicit selection
+    const defaultOption = type === "INTRODUCTION"
+        ? '<option value="">默认 (INTRODUCTION)</option>'
+        : "";
+    select.innerHTML = `${defaultOption}${optionsHtml}`;
     select.value = effectiveSelectedId ? String(effectiveSelectedId) : "";
     refreshBatchSendTemplatePreview(effectiveSelectedId || null);
 }
@@ -5453,11 +5241,20 @@ function readBatchSendConfigForm() {
         discipline: val("batchSendDiscipline") || "",
         templateId: (() => {
             const raw = val("batchSendTemplateId");
-            if (!raw) return null;
+            if (!raw) {
+                if (batchSendType === "MATERIAL_REMINDER") throw new Error("材料提醒必须选择模板");
+                return null;
+            }
             const n = Number(raw);
-            if (!Number.isFinite(n) || n <= 0) return null;
+            if (!Number.isFinite(n) || n <= 0) {
+                if (batchSendType === "MATERIAL_REMINDER") throw new Error("材料提醒必须选择模板");
+                return null;
+            }
             const tmpl = batchSendComposeTemplates.find((t) => t.id === n);
-            if (!tmpl || tmpl.mailType !== "INTRODUCTION") return null;
+            if (!tmpl || tmpl.mailType !== batchSendType) {
+                if (batchSendType === "MATERIAL_REMINDER") throw new Error("材料提醒模板类型不匹配");
+                return null;
+            }
             return n;
         })()
     };
@@ -5491,9 +5288,9 @@ async function saveBatchSendConfig() {
         return;
     }
     try {
-        const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
+        const saved = await api(`${batchSendTypeBase()}/config`, { method: "PUT", body: JSON.stringify(payload) });
         fillBatchSendConfigForm(saved);
-        await refreshOutreachPendingCount();
+        await refreshBatchSendPendingCountDisplay();
         showModalToast("配置已保存", "ok");
     } catch (e) {
         showModalToast("保存失败: " + e.message, "error");
@@ -5548,7 +5345,8 @@ function renderBatchSendAccountTable(statusView) {
         const templatePart = templateName
             ? ` · 当前模板 <strong>${escapeHtml(templateName)}</strong>`
             : "";
-        const summaryHtml = `轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>${templatePart}`;
+        const typeLabel = batchSendType === "MATERIAL_REMINDER" ? "材料提醒邮件" : "介绍邮件";
+        const summaryHtml = `[${typeLabel}] 轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>${templatePart}`;
         // 内容未变化时跳过重写，避免轮询导致汇总行闪烁。
         if (summary.__lastHtml !== summaryHtml) {
             summary.__lastHtml = summaryHtml;
@@ -5620,10 +5418,10 @@ async function enableBatchSendSchedule(status) {
         showModalToast("配置校验失败: " + e.message, "error");
         return false;
     }
-    const saved = await api("/api/mail/batch-send/config", { method: "PUT", body: JSON.stringify(payload) });
+    const saved = await api(`${batchSendTypeBase()}/config`, { method: "PUT", body: JSON.stringify(payload) });
     fillBatchSendConfigForm(saved);
     if (status === "PAUSED") {
-        await api("/api/mail/batch-send/resume-schedule", { method: "POST" });
+        await api(`${batchSendTypeBase()}/resume-schedule`, { method: "POST" });
     }
     showModalToast(status === "PAUSED" ? "已恢复定时发送" : "定时器已启动", "ok");
     showStatus(status === "PAUSED" ? "已恢复自动定时发送，将按配置时间执行" : "定时器已启动，将按配置时间执行", "ok");
@@ -5652,7 +5450,9 @@ async function handleBatchSendPause(statusViewOverride = null) {
     try {
         const statusView = statusViewOverride || await refreshBatchSendControls();
         const status = statusView?.status || "IDLE";
-        const endpoint = status === "RUNNING" ? "/api/mail/batch-send/pause" : "/api/mail/batch-send/pause-schedule";
+        const endpoint = status === "RUNNING"
+            ? `${batchSendTypeBase()}/pause`
+            : `${batchSendTypeBase()}/pause-schedule`;
         await api(endpoint, { method: "POST" });
         const message = status === "RUNNING" ? "已请求暂停批量发送" : "已暂停定时发送";
         showModalToast(message, "ok");
@@ -5669,7 +5469,7 @@ async function handleBatchSendManual() {
     const manualBtn = $("#batchSendManualBtn");
     if (manualBtn) manualBtn.disabled = true;
     try {
-        await launchBatchSendWithProgress("/api/mail/batch-send/manual", {
+        await launchBatchSendWithProgress(`${batchSendTypeBase()}/manual`, {
             successMessage: "已请求手动执行一轮发送",
             onError(e) {
                 const msg = e.message || "";
@@ -5702,37 +5502,175 @@ function stopBatchSendStatusPoll() {
     }
 }
 
-// I-5 / L4-2: banner source of truth is GET /batch-send/status (persisted, survives refresh).
-function applyBatchSendBanner(statusView) {
+// Returns the API base path for the current send type.
+function batchSendTypeBase(sendType) {
+    return `/api/mail/batch-send/types/${sendType || batchSendType}`;
+}
+
+// Loads provider list for the given send type.
+async function loadBatchSendTypeProviders(sendType) {
+    const params = sendType === "MATERIAL_REMINDER"
+        ? "level=APPLICATION&tag=%E6%89%BF%E8%AF%BA%E5%9B%9E%E5%A4%8D%E6%9D%90%E6%96%99"
+        : "level=CANDIDATE&operatorStatus=NOT_CONTACTED";
+    return api(`/api/experts/email-providers?${params}`);
+}
+
+// Fills #batchSendEmailDomain with providerList and restores savedValue.
+// If savedValue is not in new options, inserts a "当前配置（无匹配）" fallback.
+function fillBatchSendProviderSelect(sendType, providerList, savedValue) {
+    const select = $("#batchSendEmailDomain");
+    if (!select) return;
+    const domains = Array.isArray(providerList) ? providerList : [];
+    let html = '<option value="">全部</option>';
+    domains.forEach(d => {
+        const v = escapeHtml(d.domain || d);
+        const label = d.count != null ? `${v} (${d.count})` : v;
+        html += `<option value="${v}">${label}</option>`;
+    });
+    select.innerHTML = html;
+    if (savedValue) {
+        select.value = savedValue;
+        if (select.value !== savedValue) {
+            // Saved value not in new options — add fallback entry
+            const fb = document.createElement("option");
+            fb.value = savedValue;
+            fb.textContent = "当前配置（无匹配）";
+            select.insertBefore(fb, select.firstChild);
+            select.value = savedValue;
+        }
+    }
+}
+
+// Fixed range copy per send type.
+function batchSendRangeCopy(sendType) {
+    if (sendType === "MATERIAL_REMINDER") {
+        return '范围：APPLICATION 层"承诺回复材料"标签专家；发送成功后保留标签';
+    }
+    return "范围：CANDIDATE 未联系专家及失败待补发专家";
+}
+
+// Updates #batchSendRecipientSummary with fixed copy + pending count.
+function applyBatchSendRecipientSummary(sendType, pendingCountRes) {
+    const el = $("#batchSendRecipientSummary");
+    if (!el) return;
+    const rangeCopy = batchSendRangeCopy(sendType);
+    if (pendingCountRes == null) {
+        el.textContent = rangeCopy;
+        return;
+    }
+    const count = Number(pendingCountRes.pending ?? pendingCountRes.count ?? pendingCountRes ?? 0);
+    el.textContent = `${rangeCopy}。待发送：${count} 封`;
+}
+
+// Refreshes the pending count display for the current batchSendType (token-aware).
+async function refreshBatchSendPendingCountDisplay() {
+    const token = batchSendRequestToken;
+    const sendType = batchSendType;
+    try {
+        const res = await api(`${batchSendTypeBase(sendType)}/pending-count`);
+        if (token !== batchSendRequestToken || sendType !== batchSendType) return;
+        applyBatchSendRecipientSummary(sendType, res);
+    } catch (e) {
+        if (token !== batchSendRequestToken || sendType !== batchSendType) return;
+        const el = $("#batchSendRecipientSummary");
+        if (el) el.textContent = `${batchSendRangeCopy(sendType)}。（待发送数量加载失败）`;
+    }
+}
+
+// Disables save/start/manual buttons during type switch.
+function setBatchSendControlsEnabled(enabled) {
+    const ids = ["batchSendSaveConfigBtn", "batchSendStartBtn", "batchSendManualBtn"];
+    ids.forEach(id => {
+        const el = $("#" + id);
+        if (el) el.disabled = !enabled;
+    });
+}
+
+// Handler called when #batchSendType select changes (I-11).
+async function onBatchSendTypeChange() {
+    const typeSel = $("#batchSendType");
+    const newType = typeSel?.value || "INTRODUCTION";
+    batchSendType = newType;
+    const token = ++batchSendRequestToken;
+
+    setBatchSendControlsEnabled(false);
+
+    // Update template label text
+    const templateLabel = $("#batchSendTemplateLabel");
+    if (templateLabel) {
+        templateLabel.textContent = newType === "MATERIAL_REMINDER" ? "材料提醒邮件模板" : "介绍邮件模板";
+    }
+
+    let configResult = null, statusResult = null, providersResult = [], pendingResult = null;
+    try {
+        const [cfg, st, prov, pend] = await Promise.allSettled([
+            api(`${batchSendTypeBase(newType)}/config`),
+            api(`${batchSendTypeBase(newType)}/status`),
+            loadBatchSendTypeProviders(newType),
+            api(`${batchSendTypeBase(newType)}/pending-count`)
+        ]);
+        if (token !== batchSendRequestToken) return;
+        configResult = cfg.status === "fulfilled" ? cfg.value : null;
+        statusResult = st.status === "fulfilled" ? st.value : null;
+        providersResult = prov.status === "fulfilled" ? prov.value : [];
+        pendingResult = pend.status === "fulfilled" ? pend.value : null;
+    } catch (e) {
+        if (token !== batchSendRequestToken) return;
+        showModalToast("切换发送类型失败: " + e.message, "error");
+        setBatchSendControlsEnabled(true);
+        return;
+    }
+
+    fillBatchSendProviderSelect(newType, providersResult, configResult?.emailDomain ?? null);
+    if (configResult) fillBatchSendConfigForm(configResult);
+    fillBatchSendTemplateSelector(batchSendComposeTemplates, configResult?.templateId ?? null);
+    applyBatchSendRecipientSummary(newType, pendingResult);
+    if (statusResult) applyBatchSendControls(statusResult);
+    setBatchSendControlsEnabled(true);
+}
+
+// Returns banner text for a single type status, or null if no banner needed.
+function batchSendBannerTextForType(statusView, typeLabel) {
+    if (!statusView) return null;
+    const pauseReason = statusView.pauseReason || "";
+    const message = statusView.message || "";
+    const isNoAccount = statusView.status === "PAUSED" && pauseReason === "NO_AVAILABLE_ACCOUNT";
+    const isWarmupLimit = pauseReason === "WARMUP_LIMIT_REACHED" || message.includes("预热上限");
+    const isDailyLimit = pauseReason === "DAILY_LIMIT_REACHED"
+        || (message.includes("今日发送上限") && !isWarmupLimit);
+    if (!isNoAccount && !isWarmupLimit && !isDailyLimit) return null;
+    if (isNoAccount) return `${typeLabel}批量发送已暂停：无可用邮箱账号，请检查并恢复账号。`;
+    if (isWarmupLimit) return `${typeLabel}已达到预热上限，今日暂停发送`;
+    return `${typeLabel}已达到今日发送上限`;
+}
+
+// I-5 / L4-2: banner source of truth is GET /batch-send/types/{type}/status (both types queried).
+function applyBatchSendBanner(introStatus, materialStatus) {
     const banner = $("#batchSendPausedBanner");
     if (!banner) return;
     const textEl = $("#batchSendPausedBannerText");
-    const pauseReason = statusView?.pauseReason || "";
-    const message = statusView?.message || "";
-    const isNoAccount = statusView
-        && statusView.status === "PAUSED"
-        && pauseReason === "NO_AVAILABLE_ACCOUNT";
-    const isWarmupLimit = pauseReason === "WARMUP_LIMIT_REACHED"
-        || message.includes("预热上限");
-    const isDailyLimit = pauseReason === "DAILY_LIMIT_REACHED"
-        || (message.includes("今日发送上限") && !isWarmupLimit);
-    const showBanner = isNoAccount || isWarmupLimit || isDailyLimit;
+    // Support legacy single-arg call (introStatus only)
+    const introText = batchSendBannerTextForType(introStatus, "介绍邮件");
+    const materialText = materialStatus != null
+        ? batchSendBannerTextForType(materialStatus, "材料提醒邮件")
+        : null;
+    const messages = [introText, materialText].filter(Boolean);
+    const showBanner = messages.length > 0;
     banner.hidden = !showBanner;
     if (!showBanner || !textEl) return;
-    if (isNoAccount) {
-        textEl.textContent = "批量发送已暂停：无可用邮箱账号，请检查并恢复账号。";
-    } else if (isWarmupLimit) {
-        textEl.textContent = "已达到预热上限，今日暂停发送";
-    } else if (isDailyLimit) {
-        textEl.textContent = "已达到今日发送上限";
-    }
+    textEl.textContent = messages.join("；");
 }
 
 async function refreshBatchSendBanner() {
     try {
-        const statusView = await api("/api/mail/batch-send/status");
-        applyBatchSendBanner(statusView);
-        return statusView;
+        const [introRes, materialRes] = await Promise.allSettled([
+            api("/api/mail/batch-send/types/INTRODUCTION/status"),
+            api("/api/mail/batch-send/types/MATERIAL_REMINDER/status")
+        ]);
+        const introStatus = introRes.status === "fulfilled" ? introRes.value : null;
+        const materialStatus = materialRes.status === "fulfilled" ? materialRes.value : null;
+        applyBatchSendBanner(introStatus, materialStatus);
+        return introStatus;
     } catch (e) {
         return null;
     }

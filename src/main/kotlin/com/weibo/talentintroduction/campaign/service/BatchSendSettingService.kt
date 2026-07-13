@@ -9,6 +9,8 @@ import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
+enum class BatchSendType { INTRODUCTION, MATERIAL_REMINDER }
+
 @Service
 class BatchSendSettingService(
     private val repository: BatchSendSettingRepository,
@@ -16,62 +18,130 @@ class BatchSendSettingService(
 ) {
     private val log = LoggerFactory.getLogger(BatchSendSettingService::class.java)
 
-    fun getConfig(): BatchSendConfig {
+    // ── Key resolver ───────────────────────────────────────────────────────────
+
+    private fun keyPrefix(sendType: BatchSendType): String = when (sendType) {
+        BatchSendType.INTRODUCTION -> "batchSend"
+        BatchSendType.MATERIAL_REMINDER -> "batchSend.materialReminder"
+    }
+
+    private fun k(sendType: BatchSendType, suffix: String): String =
+        "${keyPrefix(sendType)}.$suffix"
+
+    // ── Defaults per type ──────────────────────────────────────────────────────
+
+    private fun defaultCron(sendType: BatchSendType) = when (sendType) {
+        BatchSendType.INTRODUCTION -> DEFAULT_INTRO_CRON
+        BatchSendType.MATERIAL_REMINDER -> DEFAULT_REMINDER_CRON
+    }
+
+    private fun defaultDailyCap(sendType: BatchSendType) = when (sendType) {
+        BatchSendType.INTRODUCTION -> DEFAULT_INTRO_DAILY_CAP
+        BatchSendType.MATERIAL_REMINDER -> DEFAULT_REMINDER_DAILY_CAP
+    }
+
+    private fun defaultRoundSize(sendType: BatchSendType) = when (sendType) {
+        BatchSendType.INTRODUCTION -> DEFAULT_INTRO_ROUND_SIZE
+        BatchSendType.MATERIAL_REMINDER -> DEFAULT_REMINDER_ROUND_SIZE
+    }
+
+    private fun defaultPerMailIntervalMs(sendType: BatchSendType) = when (sendType) {
+        BatchSendType.INTRODUCTION -> DEFAULT_INTRO_PER_MAIL_INTERVAL_MS
+        BatchSendType.MATERIAL_REMINDER -> DEFAULT_REMINDER_PER_MAIL_INTERVAL_MS
+    }
+
+    private fun defaultPerRoundIntervalMs(sendType: BatchSendType) = when (sendType) {
+        BatchSendType.INTRODUCTION -> DEFAULT_INTRO_PER_ROUND_INTERVAL_MS
+        BatchSendType.MATERIAL_REMINDER -> DEFAULT_REMINDER_PER_ROUND_INTERVAL_MS
+    }
+
+    // ── Public API ─────────────────────────────────────────────────────────────
+
+    /** INTRODUCTION compat entry — delegates to typed overload. */
+    fun getConfig(): BatchSendConfig = getConfig(BatchSendType.INTRODUCTION)
+
+    fun getConfig(sendType: BatchSendType): BatchSendConfig {
         val values = loadAll()
         return BatchSendConfig(
-            autoEnabled = boolValue(values, KEY_AUTO_ENABLED, DEFAULT_AUTO_ENABLED),
-            cron = cronValue(values, KEY_CRON, DEFAULT_CRON),
-            dailyCap = intValue(values, KEY_DAILY_CAP, DEFAULT_DAILY_CAP),
-            roundSize = intValue(values, KEY_ROUND_SIZE, DEFAULT_ROUND_SIZE),
-            perMailIntervalMs = longValue(values, KEY_PER_MAIL_INTERVAL_MS, DEFAULT_PER_MAIL_INTERVAL_MS),
-            perRoundIntervalMs = longValue(values, KEY_PER_ROUND_INTERVAL_MS, DEFAULT_PER_ROUND_INTERVAL_MS),
-            selfCheckTtlMinutes = intValue(values, KEY_SELF_CHECK_TTL_MINUTES, DEFAULT_SELF_CHECK_TTL_MINUTES),
-            emailDomain = strValue(values, KEY_EMAIL_DOMAIN, DEFAULT_EMAIL_DOMAIN),
-            discipline = disciplineValue(values, KEY_DISCIPLINE, DEFAULT_DISCIPLINE),
-            templateId = nullableLongValue(values, KEY_TEMPLATE_ID)
+            sendType = sendType,
+            autoEnabled = boolValue(values, k(sendType, "autoEnabled"), DEFAULT_AUTO_ENABLED),
+            cron = cronValue(values, k(sendType, "cron"), defaultCron(sendType)),
+            dailyCap = intValue(values, k(sendType, "dailyCap"), defaultDailyCap(sendType)),
+            roundSize = intValue(values, k(sendType, "roundSize"), defaultRoundSize(sendType)),
+            perMailIntervalMs = longValue(values, k(sendType, "perMailIntervalMs"), defaultPerMailIntervalMs(sendType)),
+            perRoundIntervalMs = longValue(values, k(sendType, "perRoundIntervalMs"), defaultPerRoundIntervalMs(sendType)),
+            selfCheckTtlMinutes = intValue(values, k(sendType, "selfCheckTtlMinutes"), DEFAULT_SELF_CHECK_TTL_MINUTES),
+            emailDomain = strValue(values, k(sendType, "emailDomain"), DEFAULT_EMAIL_DOMAIN),
+            discipline = disciplineValue(values, k(sendType, "discipline"), DEFAULT_DISCIPLINE),
+            templateId = nullableLongValue(values, k(sendType, "templateId"))
         )
     }
 
-    fun updateConfig(cmd: BatchSendConfigUpdateRequest): BatchSendConfig {
-        validate(cmd)
-        val oldCron = getConfig().cron
-        upsert(KEY_AUTO_ENABLED, cmd.autoEnabled.toString())
-        upsert(KEY_CRON, cmd.cron)
-        upsert(KEY_DAILY_CAP, cmd.dailyCap.toString())
-        upsert(KEY_ROUND_SIZE, cmd.roundSize.toString())
-        upsert(KEY_PER_MAIL_INTERVAL_MS, cmd.perMailIntervalMs.toString())
-        upsert(KEY_PER_ROUND_INTERVAL_MS, cmd.perRoundIntervalMs.toString())
-        upsert(KEY_SELF_CHECK_TTL_MINUTES, cmd.selfCheckTtlMinutes.toString())
-        upsert(KEY_EMAIL_DOMAIN, cmd.emailDomain)
-        upsert(KEY_DISCIPLINE, cmd.discipline)
-        upsert(KEY_TEMPLATE_ID, cmd.templateId?.toString() ?: "")
-        if (cmd.cron != oldCron) {
-            eventPublisher.publishEvent(BatchSendCronChangedEvent(oldCron, cmd.cron))
+    /** INTRODUCTION compat entry — delegates to typed overload. */
+    fun updateConfig(cmd: BatchSendConfigUpdateRequest): BatchSendConfig =
+        updateConfig(cmd, BatchSendType.INTRODUCTION)
+
+    fun updateConfig(cmd: BatchSendConfigUpdateRequest, sendType: BatchSendType): BatchSendConfig {
+        validate(cmd, sendType)
+        val old = getConfig(sendType)
+        val cronChanged = cmd.cron != old.cron
+        val enabledChanged = cmd.autoEnabled != old.autoEnabled
+        upsert(k(sendType, "autoEnabled"), cmd.autoEnabled.toString())
+        upsert(k(sendType, "cron"), cmd.cron)
+        upsert(k(sendType, "dailyCap"), cmd.dailyCap.toString())
+        upsert(k(sendType, "roundSize"), cmd.roundSize.toString())
+        upsert(k(sendType, "perMailIntervalMs"), cmd.perMailIntervalMs.toString())
+        upsert(k(sendType, "perRoundIntervalMs"), cmd.perRoundIntervalMs.toString())
+        upsert(k(sendType, "selfCheckTtlMinutes"), cmd.selfCheckTtlMinutes.toString())
+        upsert(k(sendType, "emailDomain"), cmd.emailDomain)
+        upsert(k(sendType, "discipline"), cmd.discipline)
+        upsert(k(sendType, "templateId"), cmd.templateId?.toString() ?: "")
+        if (cronChanged || enabledChanged) {
+            eventPublisher.publishEvent(BatchSendCronChangedEvent(old.cron, cmd.cron))
         }
-        return getConfig()
+        return getConfig(sendType)
     }
 
-    fun setAutoEnabled(enabled: Boolean): BatchSendConfig {
-        upsert(KEY_AUTO_ENABLED, enabled.toString())
-        return getConfig()
+    /** INTRODUCTION compat entry — delegates to typed overload. */
+    fun setAutoEnabled(enabled: Boolean): BatchSendConfig =
+        setAutoEnabled(enabled, BatchSendType.INTRODUCTION)
+
+    fun setAutoEnabled(enabled: Boolean, sendType: BatchSendType): BatchSendConfig {
+        val values = loadAll()
+        val oldEnabled = boolValue(values, k(sendType, "autoEnabled"), DEFAULT_AUTO_ENABLED)
+        upsert(k(sendType, "autoEnabled"), enabled.toString())
+        if (enabled != oldEnabled) {
+            val cron = cronValue(values, k(sendType, "cron"), defaultCron(sendType))
+            eventPublisher.publishEvent(BatchSendCronChangedEvent(cron, cron))
+        }
+        return getConfig(sendType)
     }
 
-    fun getRuntimeStatus(): BatchSendRuntimeState {
+    /** INTRODUCTION compat entry — delegates to typed overload. */
+    fun getRuntimeStatus(): BatchSendRuntimeState = getRuntimeStatus(BatchSendType.INTRODUCTION)
+
+    fun getRuntimeStatus(sendType: BatchSendType): BatchSendRuntimeState {
         val values = loadAll()
         return BatchSendRuntimeState(
-            status = strValue(values, KEY_RUNTIME_STATUS, DEFAULT_RUNTIME_STATUS),
-            mode = strValue(values, KEY_RUNTIME_MODE, DEFAULT_RUNTIME_MODE),
-            pauseReason = strValue(values, KEY_PAUSE_REASON, DEFAULT_PAUSE_REASON)
+            status = strValue(values, k(sendType, "runtimeStatus"), DEFAULT_RUNTIME_STATUS),
+            mode = strValue(values, k(sendType, "runtimeMode"), DEFAULT_RUNTIME_MODE),
+            pauseReason = strValue(values, k(sendType, "pauseReason"), DEFAULT_PAUSE_REASON)
         )
     }
 
-    fun setRuntimeStatus(status: String, mode: String, pauseReason: String) {
-        upsert(KEY_RUNTIME_STATUS, status)
-        upsert(KEY_RUNTIME_MODE, mode)
-        upsert(KEY_PAUSE_REASON, pauseReason)
+    /** INTRODUCTION compat entry — delegates to typed overload. */
+    fun setRuntimeStatus(status: String, mode: String, pauseReason: String) =
+        setRuntimeStatus(status, mode, pauseReason, BatchSendType.INTRODUCTION)
+
+    fun setRuntimeStatus(status: String, mode: String, pauseReason: String, sendType: BatchSendType) {
+        upsert(k(sendType, "runtimeStatus"), status)
+        upsert(k(sendType, "runtimeMode"), mode)
+        upsert(k(sendType, "pauseReason"), pauseReason)
     }
 
-    private fun validate(cmd: BatchSendConfigUpdateRequest) {
+    // ── Validation ─────────────────────────────────────────────────────────────
+
+    private fun validate(cmd: BatchSendConfigUpdateRequest, sendType: BatchSendType) {
         require(cmd.roundSize >= 1) { "roundSize must be >= 1" }
         require(cmd.dailyCap >= cmd.roundSize) { "dailyCap must be >= roundSize" }
         require(cmd.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
@@ -81,7 +151,12 @@ class BatchSendSettingService(
         CronExpression.parse(cmd.cron)
         require(cmd.discipline in ALLOWED_DISCIPLINES) { "discipline must be one of $ALLOWED_DISCIPLINES" }
         cmd.templateId?.let { require(it > 0) { "templateId must be > 0" } }
+        if (sendType == BatchSendType.MATERIAL_REMINDER) {
+            requireNotNull(cmd.templateId) { "MATERIAL_REMINDER config requires a templateId" }
+        }
     }
+
+    // ── Persistence helpers ────────────────────────────────────────────────────
 
     private fun upsert(key: String, value: String) {
         val existing = repository.findBySettingKey(key)
@@ -101,6 +176,8 @@ class BatchSendSettingService(
             log.warn("Failed to load batch_send_setting rows, using defaults", e)
             emptyMap()
         }
+
+    // ── Value extractors ───────────────────────────────────────────────────────
 
     private fun boolValue(values: Map<String, String>, key: String, default: Boolean): Boolean =
         values[key]?.toBooleanStrictOrNull() ?: default
@@ -136,26 +213,20 @@ class BatchSendSettingService(
     }
 
     private companion object {
-        const val KEY_AUTO_ENABLED = "batchSend.autoEnabled"
-        const val KEY_CRON = "batchSend.cron"
-        const val KEY_DAILY_CAP = "batchSend.dailyCap"
-        const val KEY_ROUND_SIZE = "batchSend.roundSize"
-        const val KEY_PER_MAIL_INTERVAL_MS = "batchSend.perMailIntervalMs"
-        const val KEY_PER_ROUND_INTERVAL_MS = "batchSend.perRoundIntervalMs"
-        const val KEY_SELF_CHECK_TTL_MINUTES = "batchSend.selfCheckTtlMinutes"
-        const val KEY_RUNTIME_STATUS = "batchSend.runtimeStatus"
-        const val KEY_RUNTIME_MODE = "batchSend.runtimeMode"
-        const val KEY_PAUSE_REASON = "batchSend.pauseReason"
-        const val KEY_EMAIL_DOMAIN = "batchSend.emailDomain"
-        const val KEY_DISCIPLINE = "batchSend.discipline"
-        const val KEY_TEMPLATE_ID = "batchSend.templateId"
-
         const val DEFAULT_AUTO_ENABLED = false
-        const val DEFAULT_CRON = "0 0 0 * * ?"
-        const val DEFAULT_DAILY_CAP = 1000
-        const val DEFAULT_ROUND_SIZE = 50
-        const val DEFAULT_PER_MAIL_INTERVAL_MS = 1000L
-        const val DEFAULT_PER_ROUND_INTERVAL_MS = 60000L
+
+        const val DEFAULT_INTRO_CRON = "0 0 0 * * ?"
+        const val DEFAULT_INTRO_DAILY_CAP = 1000
+        const val DEFAULT_INTRO_ROUND_SIZE = 50
+        const val DEFAULT_INTRO_PER_MAIL_INTERVAL_MS = 1000L
+        const val DEFAULT_INTRO_PER_ROUND_INTERVAL_MS = 60000L
+
+        const val DEFAULT_REMINDER_CRON = "0 0 8 * * ?"
+        const val DEFAULT_REMINDER_DAILY_CAP = 60
+        const val DEFAULT_REMINDER_ROUND_SIZE = 30
+        const val DEFAULT_REMINDER_PER_MAIL_INTERVAL_MS = 3000L
+        const val DEFAULT_REMINDER_PER_ROUND_INTERVAL_MS = 120000L
+
         const val DEFAULT_SELF_CHECK_TTL_MINUTES = 30
         const val DEFAULT_RUNTIME_STATUS = "IDLE"
         const val DEFAULT_RUNTIME_MODE = "NONE"
@@ -167,6 +238,7 @@ class BatchSendSettingService(
 }
 
 data class BatchSendConfig(
+    val sendType: BatchSendType = BatchSendType.INTRODUCTION,
     val autoEnabled: Boolean,
     val cron: String,
     val dailyCap: Int,

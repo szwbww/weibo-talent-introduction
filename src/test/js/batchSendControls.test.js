@@ -20,6 +20,7 @@ const BATCH_SEND_FNS = [
     "batchSendStatusLabel",
     "batchSendStatusBadgeType",
     "batchSendButtonStates",
+    "batchSendBannerTextForType",
     "applyBatchSendBanner",
     "batchSendLimitReasonLabel",
     "renderBatchSendAccountTable",
@@ -76,7 +77,12 @@ function createBatchSendSandbox() {
     };
     vm.createContext(sandbox);
     sandbox.batchSendComposeTemplates = [];
+    sandbox.batchSendType = "INTRODUCTION";
     sandbox.refreshBatchSendTemplatePreview = () => {};
+    vm.runInContext(
+        "function batchSendTypeBase(sendType) { return '/api/mail/batch-send/types/' + (sendType || batchSendType); }",
+        sandbox
+    );
     for (const name of BATCH_SEND_FNS) {
         vm.runInContext(extractFn(name), sandbox);
     }
@@ -203,8 +209,8 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(manual.hidden, false);
             assert.strictEqual(manual.disabled, false);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "—");
-            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "空闲");
-            assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, true);
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "介绍 空闲");
+            assert.strictEqual(sb.__store.get("batchSendPausedBanner")?.hidden ?? true, true);
         });
 
         it("RUNNING + AUTO: 切换按钮 labeled 暂停(action=pause) enabled; mode badge 自动定时; status badge 运行中", () => {
@@ -227,7 +233,7 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(sb.__store.get("batchSendManualBtn").disabled, true);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "自动定时");
             assert.strictEqual(sb.__store.get("batchSendModeBadge").className, "badge primary");
-            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "运行中");
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "介绍 运行中");
             // progress panel shown because RUNNING
             assert.strictEqual(sb.__store.get("batchSendProgressPanel").hidden, false);
             // summary row rendered with round/daily/sent/failed
@@ -244,10 +250,12 @@ describe("Batch Send Controls (phase 04)", () => {
 
         it("PAUSED + NO_AVAILABLE_ACCOUNT: 切换(继续)+手动 enabled/visible, 暂停按钮隐藏; banner shown", () => {
             const sb = createBatchSendSandbox();
-            sb.applyBatchSendControls({
+            const statusView = {
                 status: "PAUSED", mode: "MANUAL", pauseReason: "NO_AVAILABLE_ACCOUNT",
                 accounts: []
-            });
+            };
+            sb.applyBatchSendControls(statusView);
+            sb.applyBatchSendBanner(statusView);
             const start = sb.__store.get("batchSendStartBtn");
             assert.strictEqual(start.disabled, false);
             assert.strictEqual(start.textContent, "继续/恢复");
@@ -257,14 +265,16 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(sb.__store.get("batchSendPauseBtn").hidden, true);
             assert.strictEqual(sb.__store.get("batchSendModeBadge").textContent, "手动");
             assert.strictEqual(sb.__store.get("batchSendModeBadge").className, "badge warn");
-            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "已暂停");
-            // banner visible (I-5/L4-2)
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "介绍 已暂停");
+            // banner visible via applyBatchSendBanner (dual-type aware)
             assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, false);
         });
 
         it("PAUSED with empty accounts still shows progress panel (status-driven)", () => {
             const sb = createBatchSendSandbox();
-            sb.applyBatchSendControls({ status: "PAUSED", mode: "MANUAL", pauseReason: "OPERATOR", accounts: [] });
+            const statusView = { status: "PAUSED", mode: "MANUAL", pauseReason: "OPERATOR", accounts: [] };
+            sb.applyBatchSendControls(statusView);
+            sb.applyBatchSendBanner(statusView);
             assert.strictEqual(sb.__store.get("batchSendProgressPanel").hidden, false);
             // banner hidden because pauseReason != NO_AVAILABLE_ACCOUNT
             assert.strictEqual(sb.__store.get("batchSendPausedBanner").hidden, true);
@@ -290,7 +300,7 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(start.disabled, false);
             assert.strictEqual(start.textContent, "暂停");
             assert.strictEqual(start.dataset.action, "pause");
-            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "定时中");
+            assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "介绍 定时中");
             assert.strictEqual(sb.__store.get("batchSendStatusBadge").className, "badge primary");
         });
     });
@@ -455,11 +465,11 @@ describe("Batch Send Controls (phase 04)", () => {
 
             await sb.enableBatchSendSchedule("IDLE");
 
-            assert.deepStrictEqual(calls.map(c => c.url), ["/api/mail/batch-send/config"]);
+            assert.deepStrictEqual(calls.map(c => c.url), ["/api/mail/batch-send/types/INTRODUCTION/config"]);
             assert.strictEqual(JSON.parse(calls[0].body).autoEnabled, true);
             assert.strictEqual(JSON.parse(calls[0].body).cron, "0 30 9 * * ?");
             assert.ok(!calls.some(c => c.url === "/api/mail/manual-outreach/start"));
-            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/start-auto"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/types/INTRODUCTION/start-auto"));
             assert.strictEqual(toast.type, "ok");
             assert.strictEqual(status.type, "ok");
         });
@@ -489,11 +499,11 @@ describe("Batch Send Controls (phase 04)", () => {
             await sb.enableBatchSendSchedule("PAUSED");
 
             assert.deepStrictEqual(calls.map(c => c.url), [
-                "/api/mail/batch-send/config",
-                "/api/mail/batch-send/resume-schedule"
+                "/api/mail/batch-send/types/INTRODUCTION/config",
+                "/api/mail/batch-send/types/INTRODUCTION/resume-schedule"
             ]);
             assert.ok(!calls.some(c => c.url === "/api/mail/manual-outreach/start"));
-            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/start-auto"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/types/INTRODUCTION/start-auto"));
         });
 
         it("pause while timer is active disables schedule without pausing an execution", async () => {
@@ -501,7 +511,7 @@ describe("Batch Send Controls (phase 04)", () => {
             const calls = [];
             sb.api = async (url, options) => {
                 calls.push({ url, method: options?.method });
-                return url === "/api/mail/batch-send/status"
+                return url === "/api/mail/batch-send/types/INTRODUCTION/status"
                     ? { status: "IDLE", mode: "AUTO", autoEnabled: true, accounts: [] }
                     : {};
             };
@@ -512,11 +522,11 @@ describe("Batch Send Controls (phase 04)", () => {
             await sb.handleBatchSendPause();
 
             assert.deepStrictEqual(calls.map(c => c.url), [
-                "/api/mail/batch-send/status",
-                "/api/mail/batch-send/pause-schedule",
-                "/api/mail/batch-send/status"
+                "/api/mail/batch-send/types/INTRODUCTION/status",
+                "/api/mail/batch-send/types/INTRODUCTION/pause-schedule",
+                "/api/mail/batch-send/types/INTRODUCTION/status"
             ]);
-            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/pause"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/types/INTRODUCTION/pause"));
             assert.deepStrictEqual(modalToast, { message: "已暂停定时发送", type: "ok" });
         });
 
@@ -538,7 +548,7 @@ describe("Batch Send Controls (phase 04)", () => {
             const calls = [];
             sb.api = async (url, options) => {
                 calls.push({ url, method: options?.method, body: options?.body });
-                return url === "/api/mail/batch-send/status"
+                return url === "/api/mail/batch-send/types/INTRODUCTION/status"
                     ? { status: "IDLE", mode: "AUTO", autoEnabled: true, accounts: [] }
                     : {};
             };
@@ -549,8 +559,8 @@ describe("Batch Send Controls (phase 04)", () => {
 
             await sb.handleBatchSendToggle();
 
-            assert.ok(calls.some(c => c.url === "/api/mail/batch-send/pause-schedule"));
-            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/config"));
+            assert.ok(calls.some(c => c.url === "/api/mail/batch-send/types/INTRODUCTION/pause-schedule"));
+            assert.ok(!calls.some(c => c.url === "/api/mail/batch-send/types/INTRODUCTION/config"));
         });
     });
 });

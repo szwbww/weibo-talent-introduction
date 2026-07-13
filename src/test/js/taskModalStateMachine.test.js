@@ -1272,6 +1272,11 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             sandbox.showTaskErrorLog = () => {};
 
             vm.runInContext("const BATCH_SEND_TASK_TYPE = \"MANUAL_INITIAL_OUTREACH\";", sandbox);
+            vm.runInContext("var batchSendType = \"INTRODUCTION\";", sandbox);
+            vm.runInContext(
+                "function batchSendTypeBase(sendType) { return '/api/mail/batch-send/types/' + (sendType || batchSendType); }",
+                sandbox
+            );
             vm.runInContext(extractFn("launchBatchSendWithProgress"), sandbox);
             vm.runInContext(extractFn("executeManualOutreach"), sandbox);
             await sandbox.executeManualOutreach();

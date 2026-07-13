@@ -17,20 +17,23 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+import com.weibo.talentintroduction.mail.service.AccountDailyState
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
-import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.ManualExpertMailService
+import com.weibo.talentintroduction.mail.service.ManualMailOptionType
+import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException
+import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
-import com.weibo.talentintroduction.mail.service.AccountDailyState
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -63,7 +66,8 @@ class ManualInitialOutreachService(
     private val emailSuppressionService: EmailSuppressionService,
     private val providerResolver: ProviderResolver,
     private val senderWarmupService: SenderWarmupService,
-    private val autoReplySettingService: AutoReplySettingService
+    private val autoReplySettingService: AutoReplySettingService,
+    private val manualExpertMailService: ManualExpertMailService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -80,7 +84,8 @@ class ManualInitialOutreachService(
             val campaignId = campaign.id ?: error("Campaign ID is null")
             val (retryableTargets, _) = buildRetryableTargets(
                 campaignId,
-                config.discipline.ifBlank { null }
+                discipline = config.discipline.ifBlank { null },
+                emailDomain = config.emailDomain.ifBlank { null }
             )
             retryable = retryableTargets.size
         }
@@ -104,6 +109,257 @@ class ManualInitialOutreachService(
      */
     fun runBulkOutreach(executionId: Long): ManualOutreachResult =
         runScheduledBatch(executionId, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+    /**
+     * Material-reminder batch send loop.
+     *
+     * Targets: APPLICATION index + tag=`承诺回复材料` + has email + config emailDomain/discipline.
+     * Snapshot is built eagerly before the first send; totalHits > 10000 aborts with error.
+     * Sends via [ManualExpertMailService.sendManualMail] COMPOSE_TEMPLATE path.
+     * Reuses round gate / dailyCap / roundSize / intervals / rate-limiter from MATERIAL_REMINDER config.
+     * Does NOT create new contacts, call ManualOutreachTxHelper, or modify tags/index/handoff.
+     */
+    fun runMaterialReminderBatch(
+        executionId: Long,
+        mode: ExecutionMode,
+        oneRoundOnly: Boolean
+    ): ManualOutreachResult {
+        log.info("Starting material reminder batch: executionId={}, mode={}, oneRoundOnly={}", executionId, mode, oneRoundOnly)
+        val ignoreWarmup = mode == ExecutionMode.MANUAL
+        val config = batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)
+        val templateId = config.templateId ?: error("MATERIAL_REMINDER config requires a templateId")
+
+        // Build snapshot — throws if totalHits > 10000 (I-6: reject before first send)
+        val snapshot = buildMaterialReminderSnapshot(config)
+        val targets = snapshot.targets
+        val totalEstimate = targets.size
+        log.info("Material reminder snapshot: esHits={}, sendable={}, scope={}",
+            snapshot.totalEsHits, totalEstimate, snapshot.scopeDescription)
+
+        if (totalEstimate == 0) {
+            val emptyFinal = if (oneRoundOnly) "PAUSED" else "COMPLETED"
+            val emptyReason = if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
+            updateProgress(executionId, 0, 0, 0, 0, 0, 0,
+                emptyFinal, "没有需要发送材料提醒的专家", emptyList(), mode, 0, config, emptyMap(),
+                stopReason = emptyReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+            return ManualOutreachResult(
+                total = 0, sent = 0, failed = 0, skippedNoAccount = 0,
+                wasCancelled = false, finalStatus = emptyFinal, stopReason = emptyReason
+            )
+        }
+
+        var targetIndex = 0
+        var sentCount = 0
+        var failedCount = 0
+        var wasCancelled = false
+        val errors = mutableListOf<String>()
+        val assignments = mutableListOf<SenderExpertAssignment>()
+        val runAccountStats = mutableMapOf<String, AccountRunStat>()
+        var dailySentTotal = 0
+        var roundNumber = 0
+        var stopReason: String? = null
+        var finalStatus: String? = null
+        var processedTotal = 0
+
+        while (targetIndex < targets.size) {
+            // Cancellation check
+            if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                log.info("Material reminder batch cancelled after {} processed", processedTotal)
+                wasCancelled = true
+                stopReason = "CANCELLED"
+                break
+            }
+
+            // Round gate — explicit TTL from MATERIAL_REMINDER config (K-self-check-ttl-type-scope)
+            roundNumber++
+            val sendable = runRoundGate(ignoreWarmup, config.selfCheckTtlMinutes)
+            if (sendable.isEmpty()) {
+                val outcome = classifyNoSendableOutcome(ignoreWarmup)
+                log.warn("No sendable accounts at reminder round {}: stopReason={}", roundNumber, outcome.stopReason)
+                stopReason = outcome.stopReason
+                finalStatus = outcome.finalStatus
+                break
+            }
+
+            // Round quota
+            val dailyCapRemaining = config.dailyCap - dailySentTotal
+            val estimatedRemaining = maxOf(0, totalEstimate - targetIndex)
+            val remainingAccountCapacity = sendable.sumOf { senderWarmupService.remainingCapacity(it, ignoreWarmup = ignoreWarmup) }
+            val roundQuota = minOf(config.roundSize, dailyCapRemaining, estimatedRemaining, remainingAccountCapacity)
+            if (roundQuota <= 0) {
+                log.info("Reminder round quota exhausted (dailyCapRemaining={}, estimatedRemaining={}, accountCapacity={})",
+                    dailyCapRemaining, estimatedRemaining, remainingAccountCapacity)
+                when {
+                    dailyCapRemaining <= 0 -> {
+                        stopReason = "DAILY_CAP_REACHED"
+                        if (oneRoundOnly) finalStatus = "PAUSED"
+                    }
+                    remainingAccountCapacity <= 0 -> {
+                        val limitOutcome = classifyLimitReachedOutcome(sendable, ignoreWarmup)
+                        stopReason = limitOutcome.stopReason
+                        finalStatus = if (oneRoundOnly) "PAUSED" else "COMPLETED"
+                    }
+                }
+                break
+            }
+
+            // Send round
+            var roundSent = 0
+            var roundProcessed = 0
+            var roundPassed = 0
+            var roundRejected = 0
+            var midRoundStop = false
+
+            while (roundSent < roundQuota && targetIndex < targets.size) {
+                val (contact, expert) = targets[targetIndex]
+                targetIndex++
+
+                val contactId = contact.id!!
+                val email = contact.expertEmail
+                val normOrcid = normalizeOrcid(expert.orcidId)
+
+                if (email.isBlank() || emailSuppressionService.isSuppressed(email)) {
+                    processedTotal++; roundSent++; roundProcessed++; roundRejected++
+                    updateProgress(executionId, sentCount, failedCount, processedTotal,
+                        totalEstimate - processedTotal, totalEstimate, totalEstimate,
+                        "RUNNING", "已跳过抑制邮箱：$email", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected,
+                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                    continue
+                }
+
+                val account = try {
+                    senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup)
+                } catch (e: NoAvailableSenderAccountException) {
+                    log.warn("No available account mid-reminder-round after {} processed", processedTotal)
+                    stopReason = "NO_AVAILABLE_ACCOUNT"
+                    finalStatus = "PAUSED"
+                    midRoundStop = true
+                    break
+                } catch (e: Exception) {
+                    log.error("System error selecting account for reminder", e)
+                    stopReason = "SYSTEM_ERROR"
+                    finalStatus = "FAILED"
+                    errors.add("系统错误: ${e.message ?: "Unknown error"}")
+                    midRoundStop = true
+                    break
+                }
+
+                val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
+                val provider = providerResolver.resolve(email)
+
+                try {
+                    // I-6 double-check: skip if SENT MATERIAL_REMINDER already recorded
+                    if (hasSentMaterialReminder(contactId)) {
+                        log.info("SENT MATERIAL_REMINDER already exists for contact {}, skipping", contactId)
+                        roundSent++
+                        continue
+                    }
+
+                    val command = ManualMailSendCommand(
+                        optionType = ManualMailOptionType.COMPOSE_TEMPLATE.name,
+                        optionValue = templateId.toString(),
+                        senderAccountCode = account.accountCode
+                    )
+                    val result = manualExpertMailService.sendManualMail(contactId, command)
+
+                    if (result.sendStatus == "SENT") {
+                        accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
+                        // Increment account daily counter (I-9: reuse dailyCap logic)
+                        mailSenderAccountRepository.incrementTodaySentCount(account.accountCode, LocalDateTime.now())
+                        sentCount++
+                        dailySentTotal++
+                        stat.success++
+                        roundPassed++
+                    } else {
+                        failedCount++
+                        stat.failed++
+                        roundRejected++
+                        errors.add("发送失败 ($email): ${result.sendStatus}")
+                        if (errors.size > 20) errors.removeAt(0)
+                    }
+                } catch (e: Exception) {
+                    log.error("Failed to send material reminder to contact {}", contactId, e)
+                    failedCount++
+                    stat.failed++
+                    roundRejected++
+                    errors.add("发送异常 ($email): ${e.message ?: "Unknown error"}")
+                    if (errors.size > 20) errors.removeAt(0)
+                }
+
+                assignments.add(SenderExpertAssignment(
+                    accountCode = account.accountCode, expertId = normOrcid,
+                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+                ))
+
+                processedTotal++
+                roundSent++
+                roundProcessed++
+
+                updateProgress(executionId, sentCount, failedCount, processedTotal,
+                    totalEstimate - processedTotal, totalEstimate, totalEstimate,
+                    "RUNNING", "正在发送材料提醒：$email", errors, mode, roundNumber, config, runAccountStats,
+                    roundNumber, roundProcessed, roundPassed, roundRejected,
+                    sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+
+                val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
+                if (intervalMs > 0 && roundSent < roundQuota && targetIndex < targets.size) {
+                    try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                }
+            }
+
+            if (midRoundStop) break
+
+            updateProgress(executionId, sentCount, failedCount, processedTotal,
+                totalEstimate - processedTotal, totalEstimate, totalEstimate,
+                "RUNNING", "第${roundNumber}轮完成，已发送 $sentCount 封材料提醒", errors, mode, roundNumber, config, runAccountStats,
+                roundNumber, roundProcessed, roundPassed, roundRejected,
+                sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+
+            if (oneRoundOnly) {
+                log.info("oneRoundOnly=true, returning after reminder round {}", roundNumber)
+                stopReason = "ONE_ROUND_DONE"
+                finalStatus = "PAUSED"
+                break
+            }
+
+            if (config.perRoundIntervalMs > 0 && targetIndex < targets.size) {
+                try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+            }
+        }
+
+        val resolvedFinalStatus = when {
+            wasCancelled -> "CANCELLED"
+            finalStatus != null -> finalStatus
+            else -> "COMPLETED"
+        }
+        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup)
+        updateProgress(executionId, sentCount, failedCount, processedTotal,
+            totalEstimate - processedTotal, totalEstimate, totalEstimate,
+            resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
+            stopReason = stopReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+
+        val skipped = if (stopReason == "NO_AVAILABLE_ACCOUNT") totalEstimate - processedTotal else 0
+        return ManualOutreachResult(
+            total = totalEstimate, sent = sentCount, failed = failedCount,
+            skippedNoAccount = skipped, wasCancelled = wasCancelled,
+            finalStatus = resolvedFinalStatus, stopReason = stopReason,
+            remaining = totalEstimate - processedTotal
+        )
+    }
+
+    /**
+     * Count pending outreach for the given sendType.
+     * MATERIAL_REMINDER uses the shared snapshot builder; INTRODUCTION uses the existing ES+retry path.
+     */
+    fun countPending(sendType: BatchSendType): PendingOutreachSummary = when (sendType) {
+        BatchSendType.INTRODUCTION -> countPending()
+        BatchSendType.MATERIAL_REMINDER -> {
+            val config = batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)
+            val snapshot = buildMaterialReminderSnapshot(config)
+            PendingOutreachSummary(pending = snapshot.targets.size, retryable = 0, totalSendable = snapshot.targets.size)
+        }
+    }
 
     /**
      * Round-based scheduled batch outreach (I-1/I-2/I-3/I-4/I-5/I-6/I-7/I-8, L3-1/L3-2).
@@ -135,7 +391,8 @@ class ManualInitialOutreachService(
         )
         val (retryableTargets, seenOrcids) = buildRetryableTargets(
             campaignId,
-            config.discipline.ifBlank { null }
+            discipline = config.discipline.ifBlank { null },
+            emailDomain = config.emailDomain.ifBlank { null }
         )
         val esEstimate = expertSearchService.countExperts(
             level = ExpertIndexLevel.CANDIDATE,
@@ -558,8 +815,7 @@ class ManualInitialOutreachService(
     }
 
     /**
-     * Round gate (L3-1): list sendable accounts (I-3) → trigger self-check for each (I-4, cache-aware)
-     * → re-list sendable (self-check may have paused failed accounts).
+     * Round gate (L3-1) for INTRODUCTION: reads TTL from INTRODUCTION config (compat — existing tests mock checkSendable(account)).
      */
     private fun runRoundGate(ignoreWarmup: Boolean): List<MailSenderAccount> {
         val candidates = mailSenderAccountService.listSendableAccounts(ignoreWarmup)
@@ -570,9 +826,22 @@ class ManualInitialOutreachService(
         return mailSenderAccountService.listSendableAccounts(ignoreWarmup)
     }
 
+    /**
+     * Round gate with explicit TTL — used by MATERIAL_REMINDER to pass its own selfCheckTtlMinutes.
+     */
+    private fun runRoundGate(ignoreWarmup: Boolean, selfCheckTtlMinutes: Int): List<MailSenderAccount> {
+        val candidates = mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+        if (candidates.isEmpty()) return emptyList()
+        for (account in candidates) {
+            selfCheckService.checkSendable(account, selfCheckTtlMinutes)
+        }
+        return mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+    }
+
     private fun buildRetryableTargets(
         campaignId: Long,
-        discipline: String? = null
+        discipline: String? = null,
+        emailDomain: String? = null
     ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
@@ -591,6 +860,11 @@ class ManualInitialOutreachService(
                 val profile = profileMap[normOrcid] ?: continue
                 if (!discipline.isNullOrBlank() && profile.disciplineCategory != discipline) {
                     continue
+                }
+                // I-3: emailDomain filter parity with ES filter (K-batch-send-filter-retry-parity)
+                if (!emailDomain.isNullOrBlank()) {
+                    val email = profile.email
+                    if (email.isNullOrBlank() || !email.endsWith("@$emailDomain")) continue
                 }
                 if (seenOrcids.add(normOrcid)) {
                     targets.add(Pair(contact, profile))
@@ -658,10 +932,12 @@ class ManualInitialOutreachService(
         batchPassed: Int = 0,
         batchRejected: Int = 0,
         stopReason: String? = null,
+        sendType: BatchSendType = BatchSendType.INTRODUCTION,
         ignoreWarmup: Boolean = false
     ) {
         val details = mutableMapOf<String, Any>(
             "executionMode" to mode.name,
+            "sendType" to sendType.name,
             "status" to status,
             "roundNumber" to roundNumber,
             "dailyCap" to config.dailyCap,
@@ -688,6 +964,90 @@ class ManualInitialOutreachService(
             executionId = executionId
         ), executionId)
     }
+
+    private fun hasSentMaterialReminder(contactId: Long): Boolean {
+        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        return records.any { it.direction == "OUTBOUND" && it.mailType == "MATERIAL_REMINDER" && it.sendStatus == "SENT" }
+    }
+
+    private fun buildMaterialReminderEsFilters(config: BatchSendConfig): List<Map<String, Any>> {
+        val filters = mutableListOf<Map<String, Any>>(
+            mapOf("term" to mapOf("tags" to "承诺回复材料")),
+            mapOf("exists" to mapOf("field" to "email"))
+        )
+        if (config.emailDomain.isNotBlank()) {
+            filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@${config.emailDomain}"))))
+        }
+        if (config.discipline.isNotBlank()) {
+            filters.add(mapOf("term" to mapOf("disciplineCategory" to config.discipline)))
+        }
+        return filters
+    }
+
+    /**
+     * Builds the full send-target list for one material reminder batch run (I-3/I-6).
+     * Rejects outright if ES total exceeds 10000 (I-6 — no partial sends on oversized scope).
+     * Paginates ES in 1000-item pages, then joins to MySQL contacts and applies exclusion rules.
+     */
+    private fun buildMaterialReminderSnapshot(config: BatchSendConfig): MaterialReminderSnapshot {
+        val filters = buildMaterialReminderEsFilters(config)
+        val scopeDescription = "APPLICATION + tag=承诺回复材料 + email" +
+            (if (config.emailDomain.isNotBlank()) " + domain=${config.emailDomain}" else "") +
+            (if (config.discipline.isNotBlank()) " + discipline=${config.discipline}" else "")
+
+        // Step 1: count check — reject before any send if too broad
+        val totalHits = expertSearchService.countExperts(ExpertIndexLevel.APPLICATION, filters)
+        if (totalHits > 10000) {
+            throw IllegalStateException(
+                "材料提醒目标数 ($totalHits) 超过 10000 上限，请缩小过滤范围后再发送"
+            )
+        }
+
+        // Step 2: paginate all results (max 10000 due to check above)
+        val allExperts = mutableListOf<ExpertProfile>()
+        val pageSize = 1000
+        var offset = 0
+        while (offset < totalHits) {
+            val page = expertSearchService.searchExpertsFiltered(
+                level = ExpertIndexLevel.APPLICATION,
+                filters = filters,
+                from = offset,
+                size = pageSize
+            )
+            if (page.isEmpty()) break
+            allExperts.addAll(page)
+            offset += page.size
+        }
+
+        // Step 3: normalize ORCIDs and bulk-load contacts (K-es-tag-to-mail-cross-store-join)
+        val normalizedExperts = allExperts.map { normalizeOrcid(it.orcidId) to it }
+        val normOrcidList = normalizedExperts.map { it.first }.distinct()
+        val contacts = if (normOrcidList.isNotEmpty()) expertContactRepository.findByOrcidIdIn(normOrcidList) else emptyList()
+        val contactByNormOrcid = contacts.associateBy { normalizeOrcid(it.orcidId) }
+
+        // Step 4: apply exclusion rules, dedup by contactId
+        val seenContactIds = mutableSetOf<Long>()
+        val sendableTargets = mutableListOf<Pair<ExpertContact, ExpertProfile>>()
+
+        for ((normOrcid, expert) in normalizedExperts) {
+            val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
+            val contactId = contact.id ?: continue
+            if (!seenContactIds.add(contactId)) continue              // dedup by contactId
+            val email = contact.expertEmail
+            if (email.isBlank()) continue                             // exclude: empty email
+            if (emailSuppressionService.isSuppressed(email)) continue  // exclude: suppressed
+            if (hasSentMaterialReminder(contactId)) continue          // exclude: already SENT (I-6)
+            sendableTargets.add(Pair(contact, expert))
+        }
+
+        return MaterialReminderSnapshot(targets = sendableTargets, totalEsHits = totalHits, scopeDescription = scopeDescription)
+    }
+
+    private data class MaterialReminderSnapshot(
+        val targets: List<Pair<ExpertContact, ExpertProfile>>,
+        val totalEsHits: Long,
+        val scopeDescription: String
+    )
 }
 
 data class PendingOutreachSummary(

@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
@@ -67,6 +68,7 @@ class ManualInitialOutreachServiceTest {
     private val accountRateLimiter = AccountRateLimiter()
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
+    private val manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java)
     private val providerResolver = ProviderResolver()
     private val senderWarmupService = SenderWarmupService(
         WarmupProperties(
@@ -97,7 +99,8 @@ class ManualInitialOutreachServiceTest {
         emailSuppressionService = emailSuppressionService,
         providerResolver = providerResolver,
         senderWarmupService = senderWarmupService,
-        autoReplySettingService = autoReplySettingService
+        autoReplySettingService = autoReplySettingService,
+        manualExpertMailService = manualExpertMailService
     )
 
     private fun fastConfig(
@@ -1207,6 +1210,716 @@ class ManualInitialOutreachServiceTest {
         assertNotEquals("WARMUP_LIMIT_REACHED", result.stopReason)
         assertEquals("COMPLETED", result.finalStatus)
         assertEquals(0, result.sent)
+    }
+
+    // ──── Material Reminder Batch Tests ────
+
+    @org.junit.jupiter.api.Nested
+    inner class ReminderBatchTests {
+
+        private fun reminderConfig(templateId: Long = 10L) = BatchSendConfig(
+            sendType = BatchSendType.MATERIAL_REMINDER,
+            autoEnabled = false, cron = "0 0 8 * * ?",
+            dailyCap = 60, roundSize = 30,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30, templateId = templateId
+        )
+
+        @org.junit.jupiter.api.BeforeEach
+        fun setUpReminder() {
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig())
+        }
+
+        @Test
+        fun `runMaterialReminderBatch queries APPLICATION index not CANDIDATE (I-3)`() {
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(0L)
+
+            service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            Mockito.verify(expertSearchService).countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )
+            Mockito.verify(expertSearchService, Mockito.never()).countExperts(
+                eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+            )
+        }
+
+        @Test
+        fun `runMaterialReminderBatch excludes experts without existing MySQL contact (I-3)`() {
+            val ep = expert("R001", "r1@test.com")
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(1L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(listOf(ep))
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(emptyList())
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            assertEquals(0, result.sent)
+            Mockito.verifyNoInteractions(manualExpertMailService)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch skips contact with SENT MATERIAL_REMINDER (I-6)`() {
+            val contactId = 5L
+            val contact = ExpertContact(
+                id = contactId, campaignId = 10L, orcidId = "R002", expertEmail = "r2@test.com",
+                expertName = "R2", currentStatus = "WAITING_REPLY"
+            )
+            val ep = expert("R002", "r2@test.com")
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(1L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(listOf(ep))
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(listOf(contact))
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                .thenReturn(listOf(
+                    MailRecord(
+                        expertContactId = contactId, direction = "OUTBOUND",
+                        mailType = "MATERIAL_REMINDER", sendStatus = "SENT",
+                        messageId = "msg", inReplyTo = null, subject = "s", body = "b",
+                        matchedQaRuleId = null, receivedAt = null, sentAt = LocalDateTime.now()
+                    )
+                ))
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            assertEquals(0, result.sent)
+            Mockito.verifyNoInteractions(manualExpertMailService)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch throws IllegalState when count exceeds 10000 before any send (I-6)`() {
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(10001L)
+
+            val thrown = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+                service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+            }
+            assertTrue(thrown.message!!.contains("10001"))
+            assertTrue(thrown.message!!.contains("10000"))
+            Mockito.verifyNoInteractions(manualExpertMailService)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch does not modify tags or call txHelper after send (I-5)`() {
+            val contactId = 6L
+            val contact = ExpertContact(
+                id = contactId, campaignId = 10L, orcidId = "R003", expertEmail = "r3@test.com",
+                expertName = "R3", currentStatus = "WAITING_REPLY"
+            )
+            val ep = expert("R003", "r3@test.com")
+            val acc = account("chen")
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(1L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(listOf(ep))
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(listOf(contact))
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                .thenReturn(emptyList())
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                eqValue(contactId),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenReturn(
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = contactId, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg1"
+                )
+            )
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            assertEquals(1, result.sent)
+            // I-5: no tag/index modifications
+            Mockito.verify(expertIndexWriterService, Mockito.never())
+                .syncCandidateOperatorStatus(Mockito.anyString(), Mockito.anyString())
+            // Does not use txHelper (no contact creation/status change for reminder)
+            Mockito.verify(txHelper, Mockito.never()).recordSuccess(
+                anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong()
+            )
+        }
+
+        @Test
+        fun `runMaterialReminderBatch sends via COMPOSE_TEMPLATE with configured templateId (I-10)`() {
+            val contactId = 7L
+            val contact = ExpertContact(
+                id = contactId, campaignId = 10L, orcidId = "R004", expertEmail = "r4@test.com",
+                expertName = "R4", currentStatus = "WAITING_REPLY"
+            )
+            val ep = expert("R004", "r4@test.com")
+            val acc = account("chen")
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(1L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(listOf(ep))
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(listOf(contact))
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                .thenReturn(emptyList())
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+
+            val cmdCaptor = org.mockito.ArgumentCaptor.forClass(
+                com.weibo.talentintroduction.mail.service.ManualMailSendCommand::class.java
+            )
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                eqValue(contactId),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenReturn(
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = contactId, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg1"
+                )
+            )
+
+            service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            Mockito.verify(manualExpertMailService).sendManualMail(eqValue(contactId), cmdCaptor.capture())
+            assertEquals("COMPOSE_TEMPLATE", cmdCaptor.value.optionType)
+            assertEquals("10", cmdCaptor.value.optionValue)  // configured templateId=10
+        }
+
+        @Test
+        fun `runMaterialReminderBatch with oneRoundOnly returns PAUSED and ONE_ROUND_DONE (I-9)`() {
+            val contactId = 8L
+            val contact = ExpertContact(
+                id = contactId, campaignId = 10L, orcidId = "R005", expertEmail = "r5@test.com",
+                expertName = "R5", currentStatus = "WAITING_REPLY"
+            )
+            val ep = expert("R005", "r5@test.com")
+            val acc = account("chen")
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(1L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(listOf(ep))
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(listOf(contact))
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                .thenReturn(emptyList())
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                eqValue(contactId),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenReturn(
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = contactId, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-one"
+                )
+            )
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+            assertEquals(1, result.sent)
+            assertEquals("PAUSED", result.finalStatus)
+            assertEquals("ONE_ROUND_DONE", result.stopReason)
+        }
+
+        @Test
+        fun `runMaterialReminderBatch respects dailyCap from REMINDER config (I-9)`() {
+            val targets = (1..5).map { i ->
+                val contactId = (100 + i).toLong()
+                val orcid = "R10$i"
+                val email = "r$i@test.com"
+                val contact = ExpertContact(
+                    id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                    expertName = "R$i", currentStatus = "WAITING_REPLY"
+                )
+                val ep = expert(orcid, email)
+                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                    .thenReturn(emptyList())
+                Pair(contact, ep)
+            }
+
+            val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(capConfig)
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(5L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(targets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(targets.map { it.first })
+
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+            )).thenReturn(acc)
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+            // dailyCap=2 → at most 2 sent even though 5 targets available
+            assertEquals(2, result.sent)
+            assertEquals("COMPLETED", result.finalStatus)
+        }
+    }
+
+    // ──── KV Isolation Tests (I-2) ────
+
+    @org.junit.jupiter.api.Nested
+    inner class KvIsolationTests {
+        private val kvRepo = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository::class.java)
+        private val kvPub = Mockito.mock(org.springframework.context.ApplicationEventPublisher::class.java)
+        private val kvService = BatchSendSettingService(kvRepo, kvPub)
+
+        private fun row(key: String, value: String) =
+            com.weibo.talentintroduction.campaign.domain.BatchSendSetting(
+                id = null, settingKey = key, settingValue = value, updatedAt = LocalDateTime.now()
+            )
+
+        @Test
+        fun `INTRODUCTION uses batchSend dot prefix and REMINDER uses batchSend dot materialReminder dot prefix (I-2)`() {
+            Mockito.`when`(kvRepo.findAll()).thenReturn(listOf(
+                row("batchSend.dailyCap", "111"),
+                row("batchSend.materialReminder.dailyCap", "222")
+            ))
+
+            val introCfg = kvService.getConfig(BatchSendType.INTRODUCTION)
+            val reminderCfg = kvService.getConfig(BatchSendType.MATERIAL_REMINDER)
+
+            assertEquals(111, introCfg.dailyCap)
+            assertEquals(222, reminderCfg.dailyCap)
+        }
+
+        @Test
+        fun `no-arg getConfig() returns same as getConfig(INTRODUCTION) for compat (I-2)`() {
+            Mockito.`when`(kvRepo.findAll()).thenReturn(listOf(
+                row("batchSend.dailyCap", "777")
+            ))
+
+            val compat = kvService.getConfig()
+            val typed = kvService.getConfig(BatchSendType.INTRODUCTION)
+
+            assertEquals(compat.dailyCap, typed.dailyCap)
+            assertEquals(777, compat.dailyCap)
+            assertEquals(BatchSendType.INTRODUCTION, typed.sendType)
+        }
+
+        @Test
+        fun `REMINDER defaults differ from INTRODUCTION defaults (I-2)`() {
+            Mockito.`when`(kvRepo.findAll()).thenReturn(emptyList())
+
+            val intro = kvService.getConfig(BatchSendType.INTRODUCTION)
+            val reminder = kvService.getConfig(BatchSendType.MATERIAL_REMINDER)
+
+            assertNotEquals(intro.dailyCap, reminder.dailyCap)
+            assertNotEquals(intro.cron, reminder.cron)
+            assertEquals(1000, intro.dailyCap)
+            assertEquals(60, reminder.dailyCap)
+        }
+
+        @Test
+        fun `updating INTRODUCTION config does not affect REMINDER config (I-2 isolation)`() {
+            // DB has both configs set
+            Mockito.`when`(kvRepo.findAll()).thenReturn(listOf(
+                row("batchSend.dailyCap", "500"),
+                row("batchSend.materialReminder.dailyCap", "40")
+            ))
+            Mockito.`when`(kvRepo.save(Mockito.any())).thenAnswer { it.arguments[0] }
+
+            kvService.updateConfig(
+                BatchSendConfigUpdateRequest(
+                    autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 999, roundSize = 50,
+                    perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30
+                ),
+                BatchSendType.INTRODUCTION
+            )
+
+            // REMINDER row unchanged (still "40")
+            val reminderCfg = kvService.getConfig(BatchSendType.MATERIAL_REMINDER)
+            assertEquals(40, reminderCfg.dailyCap)
+        }
+
+        @Test
+        fun `MATERIAL_REMINDER config requires templateId on updateConfig (I-7)`() {
+            Mockito.`when`(kvRepo.findAll()).thenReturn(emptyList())
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+                kvService.updateConfig(
+                    BatchSendConfigUpdateRequest(
+                        autoEnabled = true, cron = "0 0 8 * * ?", dailyCap = 60, roundSize = 30,
+                        perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                        // templateId intentionally null → should fail for MATERIAL_REMINDER
+                    ),
+                    BatchSendType.MATERIAL_REMINDER
+                )
+            }
+        }
+    }
+
+    // ──── Template Gate Tests (I-7) ────
+
+    @org.junit.jupiter.api.Nested
+    inner class TemplateGateTests {
+        private val ctrlProgressStore = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+        private val ctrlTaskExecService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        private val ctrlOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
+        private val ctrlSettingService = Mockito.mock(BatchSendSettingService::class.java)
+        private val ctrlMailAccountService = Mockito.mock(com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java)
+        private val ctrlTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        private val ctrlExecutor = Mockito.mock(java.util.concurrent.Executor::class.java)
+
+        private val ctrl = BatchSendControlService(
+            progressStore = ctrlProgressStore,
+            taskExecutionService = ctrlTaskExecService,
+            manualInitialOutreachService = ctrlOutreachService,
+            batchSendSettingService = ctrlSettingService,
+            mailSenderAccountService = ctrlMailAccountService,
+            mailComposeTemplateService = ctrlTemplateService,
+            manualOutreachExecutor = ctrlExecutor
+        )
+
+        private fun reminderConfig(templateId: Long? = 10L) = BatchSendConfig(
+            sendType = BatchSendType.MATERIAL_REMINDER,
+            autoEnabled = true, cron = "0 0 8 * * ?",
+            dailyCap = 60, roundSize = 30, perMailIntervalMs = 0, perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30, templateId = templateId
+        )
+
+        @org.junit.jupiter.api.BeforeEach
+        fun setUpCtrl() {
+            Mockito.`when`(ctrlSettingService.getRuntimeStatus()).thenReturn(
+                BatchSendRuntimeState("IDLE", "NONE", "")
+            )
+            Mockito.`when`(ctrlSettingService.getRuntimeStatus(BatchSendType.MATERIAL_REMINDER)).thenReturn(
+                BatchSendRuntimeState("IDLE", "NONE", "")
+            )
+            Mockito.`when`(ctrlSettingService.getConfig()).thenReturn(
+                BatchSendConfig(
+                    autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 1000, roundSize = 50,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            )
+            Mockito.`when`(ctrlMailAccountService.remainingDailyCapacity(Mockito.anyBoolean())).thenReturn(10)
+            Mockito.`when`(ctrlMailAccountService.warmupActiveCount()).thenReturn(0)
+            Mockito.`when`(ctrlMailAccountService.todayTotalCapacity()).thenReturn(100)
+            // Default: tryStartWithToken succeeds
+            Mockito.doReturn(Pair(true, -1L))
+                .`when`(ctrlProgressStore).tryStartWithToken(
+                    Mockito.anyString(),
+                    Mockito.any(com.weibo.talentintroduction.task.service.TaskProgress::class.java)
+                )
+            // Synchronous executor for determinism
+            Mockito.doAnswer { it.getArgument<Runnable>(0).run() }
+                .`when`(ctrlExecutor).execute(Mockito.any(Runnable::class.java))
+        }
+
+        @Test
+        fun `MATERIAL_REMINDER start blocked when templateId is null (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig(templateId = null))
+
+            val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("模板"))
+            Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
+        }
+
+        @Test
+        fun `MATERIAL_REMINDER start blocked when template is disabled (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig(templateId = 42L))
+            Mockito.`when`(ctrlTemplateService.getById(42L)).thenReturn(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                    id = 42L, templateCode = "MATERIAL_REMINDER", templateName = "Test",
+                    subject = "S", description = null, mailType = "MATERIAL_REMINDER",
+                    subjectVariants = null, enabled = false, blocks = emptyList(),
+                    createdAt = null, updatedAt = null
+                )
+            )
+
+            val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("禁用"))
+            Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
+        }
+
+        @Test
+        fun `MATERIAL_REMINDER start blocked when template mailType does not match (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig(templateId = 99L))
+            Mockito.`when`(ctrlTemplateService.getById(99L)).thenReturn(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                    id = 99L, templateCode = "INTRODUCTION", templateName = "Intro",
+                    subject = "S", description = null, mailType = "INTRODUCTION",
+                    subjectVariants = null, enabled = true, blocks = emptyList(),
+                    createdAt = null, updatedAt = null
+                )
+            )
+
+            val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("类型"))
+            Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
+        }
+
+        @Test
+        fun `INTRODUCTION start is not blocked even without templateId (I-7)`() {
+            Mockito.`when`(ctrlSettingService.getConfig()).thenReturn(
+                BatchSendConfig(
+                    autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 1000, roundSize = 50,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    templateId = null
+                )
+            )
+            // Synchronous execution returns an outreach result
+            Mockito.`when`(ctrlTaskExecService.runAndRecordWithResult<ManualOutreachResult>(
+                Mockito.anyString(), Mockito.anyString(), Mockito.any(), Mockito.any(), Mockito.any()
+            )).thenAnswer { invocation ->
+                val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
+                onStarted?.invoke(99L)
+                val block = invocation.getArgument<() -> ManualOutreachResult>(4)
+                Mockito.`when`(ctrlOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
+                    .thenReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
+                val result = block()
+                Pair(
+                    com.weibo.talentintroduction.task.domain.TaskExecution(
+                        id = 99L, taskType = "T", triggerType = "MANUAL", status = "SUCCESS",
+                        requestPayload = "", resultSummary = null,
+                        startedAt = LocalDateTime.now(), finishedAt = LocalDateTime.now()
+                    ),
+                    result
+                )
+            }
+
+            val response = ctrl.startManual()
+
+            assertEquals(org.springframework.http.HttpStatus.ACCEPTED, response.statusCode)
+        }
+    }
+
+    // ──── Dual Scheduler Tests (I-8) ────
+
+    @org.junit.jupiter.api.Nested
+    inner class DualSchedulerTests {
+        private val schedSettingService = Mockito.mock(BatchSendSettingService::class.java)
+        private val schedControlService = Mockito.mock(BatchSendControlService::class.java)
+        private val schedTaskScheduler = Mockito.mock(org.springframework.scheduling.TaskScheduler::class.java)
+        private val schedFuture = Mockito.mock(java.util.concurrent.ScheduledFuture::class.java)
+
+        private fun introConfig(autoEnabled: Boolean = true) = BatchSendConfig(
+            autoEnabled = autoEnabled, cron = "0 0 0 * * ?",
+            dailyCap = 1000, roundSize = 50, perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+        )
+
+        private fun reminderConfig(autoEnabled: Boolean = true) = BatchSendConfig(
+            sendType = BatchSendType.MATERIAL_REMINDER,
+            autoEnabled = autoEnabled, cron = "0 0 8 * * ?",
+            dailyCap = 60, roundSize = 30, perMailIntervalMs = 0, perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30, templateId = 10L
+        )
+
+        @org.junit.jupiter.api.BeforeEach
+        fun setUpSched() {
+            Mockito.`when`(schedTaskScheduler.schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )).thenReturn(schedFuture)
+            Mockito.`when`(schedSettingService.getConfig()).thenReturn(introConfig())
+            Mockito.`when`(schedSettingService.getConfig(BatchSendType.INTRODUCTION)).thenReturn(introConfig())
+            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)).thenReturn(reminderConfig())
+        }
+
+        @Test
+        fun `scheduleInitial registers two futures when both types are enabled (I-8)`() {
+            val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
+                schedSettingService, schedControlService, schedTaskScheduler
+            )
+            scheduler.scheduleInitial()
+
+            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )
+        }
+
+        @Test
+        fun `scheduleInitial registers only one future when MATERIAL_REMINDER is disabled (I-8)`() {
+            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig(autoEnabled = false))
+
+            val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
+                schedSettingService, schedControlService, schedTaskScheduler
+            )
+            scheduler.scheduleInitial()
+
+            Mockito.verify(schedTaskScheduler, Mockito.times(1)).schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )
+        }
+
+        @Test
+        fun `disabling MATERIAL_REMINDER cancels its future but keeps INTRODUCTION scheduled (I-8)`() {
+            val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
+                schedSettingService, schedControlService, schedTaskScheduler
+            )
+            scheduler.scheduleInitial()
+
+            // 2 futures registered initially (INTRODUCTION + MATERIAL_REMINDER)
+            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )
+
+            // Now disable MATERIAL_REMINDER
+            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig(autoEnabled = false))
+
+            scheduler.onCronChanged(
+                com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent("0 0 8 * * ?", "0 0 8 * * ?")
+            )
+
+            // Only INTRODUCTION is rescheduled (1 more call), MATERIAL_REMINDER is not (no 4th call)
+            Mockito.verify(schedTaskScheduler, Mockito.times(3)).schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )
+            // Old futures were cancelled
+            Mockito.verify(schedFuture, Mockito.atLeast(2)).cancel(false)
+        }
+    }
+
+    // ──── Shared Progress Mutex Tests (I-8) ────
+
+    @org.junit.jupiter.api.Nested
+    inner class SharedMutexTests {
+        private val mutexProgressStore = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+        private val mutexTaskExecService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        private val mutexOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
+        private val mutexSettingService = Mockito.mock(BatchSendSettingService::class.java)
+        private val mutexMailAccountService = Mockito.mock(com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java)
+        private val mutexTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        private val mutexExecutor = Mockito.mock(java.util.concurrent.Executor::class.java)
+
+        private val mutexCtrl = BatchSendControlService(
+            progressStore = mutexProgressStore,
+            taskExecutionService = mutexTaskExecService,
+            manualInitialOutreachService = mutexOutreachService,
+            batchSendSettingService = mutexSettingService,
+            mailSenderAccountService = mutexMailAccountService,
+            mailComposeTemplateService = mutexTemplateService,
+            manualOutreachExecutor = mutexExecutor
+        )
+
+        @org.junit.jupiter.api.BeforeEach
+        fun setUpMutex() {
+            Mockito.`when`(mutexSettingService.getRuntimeStatus()).thenReturn(
+                BatchSendRuntimeState("IDLE", "NONE", "")
+            )
+            Mockito.`when`(mutexSettingService.getRuntimeStatus(BatchSendType.MATERIAL_REMINDER)).thenReturn(
+                BatchSendRuntimeState("IDLE", "NONE", "")
+            )
+            Mockito.`when`(mutexSettingService.getConfig()).thenReturn(
+                BatchSendConfig(
+                    autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            )
+            Mockito.`when`(mutexSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)).thenReturn(
+                BatchSendConfig(
+                    sendType = BatchSendType.MATERIAL_REMINDER,
+                    autoEnabled = true, cron = "0 0 8 * * ?",
+                    dailyCap = 60, roundSize = 30, perMailIntervalMs = 0, perRoundIntervalMs = 0,
+                    selfCheckTtlMinutes = 30, templateId = 10L
+                )
+            )
+            Mockito.`when`(mutexMailAccountService.remainingDailyCapacity(Mockito.anyBoolean())).thenReturn(10)
+            Mockito.`when`(mutexMailAccountService.warmupActiveCount()).thenReturn(0)
+            Mockito.`when`(mutexMailAccountService.todayTotalCapacity()).thenReturn(100)
+            Mockito.`when`(mutexTemplateService.getById(10L)).thenReturn(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                    id = 10L, templateCode = "MATERIAL_REMINDER", templateName = "Reminder",
+                    subject = "S", description = null, mailType = "MATERIAL_REMINDER",
+                    subjectVariants = null, enabled = true, blocks = emptyList(),
+                    createdAt = null, updatedAt = null
+                )
+            )
+        }
+
+        @Test
+        fun `concurrent start of second type returns 409 when progress mutex is held (I-8)`() {
+            // Simulate mutex held: tryStartWithToken returns false
+            Mockito.doReturn(Pair(false, 0L))
+                .`when`(mutexProgressStore).tryStartWithToken(
+                    Mockito.anyString(),
+                    Mockito.any(com.weibo.talentintroduction.task.service.TaskProgress::class.java)
+                )
+
+            val response = mutexCtrl.startManual(BatchSendType.MATERIAL_REMINDER)
+
+            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertTrue(response.body?.get("message")!!.contains("执行中"))
+            Mockito.verify(mutexExecutor, Mockito.never()).execute(Mockito.any())
+        }
+
+        @Test
+        fun `getStatus returns activeSendType from progress details (I-8)`() {
+            Mockito.`when`(mutexSettingService.getRuntimeStatus()).thenReturn(
+                BatchSendRuntimeState("RUNNING", "AUTO", "")
+            )
+            val progress = com.weibo.talentintroduction.task.service.TaskProgress(
+                taskType = BatchSendControlService.TASK_TYPE,
+                status = "RUNNING",
+                batchNumber = 1, processedCount = 3, totalCount = 10,
+                details = mapOf(
+                    "executionMode" to "AUTO",
+                    "sendType" to "MATERIAL_REMINDER",
+                    "accounts" to emptyList<AccountStatRow>()
+                ),
+                executionId = 99L
+            )
+            Mockito.`when`(mutexProgressStore.get(BatchSendControlService.TASK_TYPE)).thenReturn(progress)
+
+            val status = mutexCtrl.getStatus()
+
+            assertEquals("MATERIAL_REMINDER", status.activeSendType)
+        }
     }
 
     // ──── Helpers ────
