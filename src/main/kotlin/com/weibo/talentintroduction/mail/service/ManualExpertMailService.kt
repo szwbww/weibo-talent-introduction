@@ -36,7 +36,9 @@ class ManualExpertMailService(
                     optionValue = template.id?.toString() ?: "",
                     optionName = template.templateName,
                     subject = template.subject,
-                    description = "邮件模板"
+                    description = "邮件模板",
+                    templateCode = template.templateCode,
+                    mailType = template.mailType
                 )
             }
     }
@@ -211,7 +213,9 @@ data class ManualMailOption(
     val optionValue: String,
     val optionName: String,
     val subject: String?,
-    val description: String
+    val description: String,
+    val templateCode: String? = null,
+    val mailType: String? = null
 )
 
 data class ManualMailSendCommand(
