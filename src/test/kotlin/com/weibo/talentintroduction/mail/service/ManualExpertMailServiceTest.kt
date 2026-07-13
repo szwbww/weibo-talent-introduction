@@ -366,6 +366,14 @@ class ManualExpertMailServiceTest {
                     subject = "Intro",
                     mailType = "INTRODUCTION",
                     enabled = true
+                ),
+                MailComposeTemplate(
+                    id = 20,
+                    templateCode = "MATERIAL_REMINDER",
+                    templateName = "Material Reminder Email",
+                    subject = "Gentle Follow-up on the Requested Materials",
+                    mailType = "MATERIAL_REMINDER",
+                    enabled = true
                 )
             )
         )
@@ -375,5 +383,96 @@ class ManualExpertMailServiceTest {
         assertTrue(options.isNotEmpty())
         assertTrue(options.all { it.optionType == "COMPOSE_TEMPLATE" })
         assertTrue(options.none { it.optionType == "QA" })
+        assertTrue(options.none { it.optionType == "TEMPLATE" })
+
+        val intro = options.first { it.optionValue == "10" }
+        assertEquals("INTRODUCTION", intro.templateCode)
+        assertEquals("INTRODUCTION", intro.mailType)
+
+        val reminder = options.first { it.optionValue == "20" }
+        assertEquals("MATERIAL_REMINDER", reminder.templateCode)
+        assertEquals("MATERIAL_REMINDER", reminder.mailType)
+        assertEquals("Material Reminder Email", reminder.optionName)
+    }
+
+    @Test
+    fun `sendManualMail MATERIAL_REMINDER keeps current status and records outbound mail`() {
+        val waitingContact = contact.copy(currentStatus = "WAITING_REPLY")
+        val account = stubAccount()
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(waitingContact.orcidId, waitingContact.expertEmail)
+        val delivered = DeliveredMail(messageId = "msg-reminder", status = "SUCCESS")
+
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(waitingContact))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.getById(20L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 20,
+                templateCode = "MATERIAL_REMINDER",
+                templateName = "Material Reminder Email",
+                subject = "Gentle Follow-up on the Requested Materials",
+                description = null,
+                mailType = "MATERIAL_REMINDER",
+                subjectVariants = null,
+                enabled = true,
+                blocks = emptyList(),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+        Mockito.`when`(
+            mailComposeTemplateService.render(
+                eqValue(20L),
+                anyValue(emptyMap<String, String>()),
+                eqValue(expectedSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Gentle Follow-up on the Requested Materials",
+                body = "Reminder body",
+                mailType = "MATERIAL_REMINDER"
+            )
+        )
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 200) }
+        Mockito.`when`(conversationStateService.transition(
+            anyValue(waitingContact),
+            eqValue(ConversationStatus.WAITING_REPLY),
+            eqValue("MANUAL_MAIL_MATERIAL_REMINDER"),
+            eqValue("MANUAL_MAIL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { waitingContact }
+        )).thenAnswer { invocation ->
+            val base = invocation.getArgument<ExpertContact>(0)
+            val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
+            mutator(base)
+        }
+        Mockito.`when`(mailSenderAccountRepository.save(anyValue(account)))
+            .thenAnswer { it.getArgument<MailSenderAccount>(0) }
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "20", senderAccountCode = null)
+        )
+
+        assertEquals("MATERIAL_REMINDER", result.mailType)
+        assertEquals("SUCCESS", result.sendStatus)
+
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("OUTBOUND", recordCaptor.value.direction)
+        assertEquals("MATERIAL_REMINDER", recordCaptor.value.mailType)
+        assertEquals("OPERATOR", recordCaptor.value.triggeredBy)
+
+        Mockito.verify(conversationStateService).transition(
+            anyValue(waitingContact),
+            eqValue(ConversationStatus.WAITING_REPLY),
+            eqValue("MANUAL_MAIL_MATERIAL_REMINDER"),
+            eqValue("MANUAL_MAIL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { waitingContact }
+        )
     }
 }
