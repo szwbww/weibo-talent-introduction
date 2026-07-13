@@ -1,14 +1,15 @@
 ---
 id: K-manual-send-options-sources
 domain: mail
-created: 2026-07-04
-last_used: 2026-07-09
-hit_count: 4
-source: create-p:mail-compose-template
+created: 2026-07-13
+last_used: 2026-07-13
+hit_count: 5
+source: create-p:material-reminder-batch-send
 ---
-经验：手动发送邮件选项（`ManualExpertMailService.listSendOptions()`）的数据来源有三类，混在一个扁平列表中返回，前端用 `optionType` 字段区分但未向运营显示分组：
-(1) TEMPLATE 系统模板（INTRODUCTION/MEETING_INVITATION/MATERIAL_REMINDER）→ `mail_template` 表 → 通过 `MailTemplateService.render()` 做变量替换。
-(2) QA 规则（已在 compose-template 方案中移除）→ `qa_rule` 表 → `findAllEnabledOrdered()`。
-(3) COMPOSE_TEMPLATE 邮件模板（新增）→ `mail_compose_template` 表 → 引用 QA 规则/回复片段/自定义文本，实时渲染。
-前端 `state.mailSendOptions` 有客户端缓存（`loadMailSendOptions()` 首次加载后不刷新），修改 QA 规则或模板后须清缓存才能同步。
-关联：K-view-registration-triad（Tab 注册）、K-composed-reply-order-contract（顺序契约）。
+现状：手动/批量发送选项（`ManualExpertMailService.listSendOptions()`）只返回 enabled `COMPOSE_TEMPLATE`，数据源为 `mail_compose_template`；旧 `mail_template` 和裸 QA option 已退出该入口。实际正文由 `MailComposeTemplateService.render()` 解析 QA 规则、回复片段、自定义文本和内容变体。
+
+正确做法：前端若要按模板业务类型展示专用行为，后端 option DTO 必须透出 `templateCode/mailType`，禁止使用模板名称、数据库 ID 或 option 顺序猜测。预览使用 `/api/compose-templates/{id}/preview`，最终发送仍以同一 templateId 的 `render()` 为权威。
+
+注意：前端 `state.mailSendOptions` 有客户端缓存；模板保存/删除后必须清缓存。模板正文预览应单独请求权威 preview endpoint，不能把缓存 option 当正文源。
+
+关联：K-view-registration-triad（Tab 注册）、K-composed-reply-order-contract（顺序契约）、K-batch-send-template-type-gate。

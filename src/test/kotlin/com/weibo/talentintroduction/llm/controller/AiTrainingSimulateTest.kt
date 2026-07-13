@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
 import com.weibo.talentintroduction.llm.service.AiReplyPointByPointComposer
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
@@ -59,6 +60,7 @@ import java.util.Optional
     AiReplyDraftService::class,
     LlmStitchService::class,
     AiReplyPointByPointComposer::class,
+    AiReplyGroundedDraftMaterializer::class,
     AiReplyDraftPreviewService::class
 )
 @EnableConfigurationProperties(LlmProperties::class)
@@ -350,9 +352,13 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.requestCoverage[0].index").value(1))
             .andExpect(jsonPath("$.requestCoverage[0].status").value("GROUNDED"))
             .andExpect(jsonPath("$.requestCoverage[0].factRuleIds[0]").value(1))
+            .andExpect(jsonPath("$.requestCoverage[0].requiresResearchContext").doesNotExist())
             .andExpect(jsonPath("$.requestCoverage[1].index").value(2))
             .andExpect(jsonPath("$.requestCoverage[1].status").value("PARTIAL"))
             .andExpect(jsonPath("$.requestCoverage[1].factRuleIds[0]").value(2))
+            .andExpect(jsonPath("$.requestCoverage[1].requiresResearchContext").doesNotExist())
+            .andExpect(jsonPath("$.groundedRequestCount").value(2))
+            .andExpect(jsonPath("$.unsupportedRequests").isEmpty)
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }

@@ -322,6 +322,14 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             },
             response.requestCoverage
         )
+        // Research flag stays internal on RequestFactItem; response DTO has only four fields.
+        assertEquals(
+            setOf("index", "requestText", "status", "factRuleIds"),
+            RequestCoverageItem::class.java.declaredFields
+                .filter { !it.isSynthetic && it.name != "Companion" }
+                .map { it.name }
+                .toSet()
+        )
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 

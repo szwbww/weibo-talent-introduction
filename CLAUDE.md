@@ -68,6 +68,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - AI 草稿生成只有训练模拟与收发件箱两个调用方，跨入口 prompt/约束/模型能力应收口在 `AiReplyDraftService.generate()`；QA_MATCHED verbatim 与 deterministic fallback 仍是独立边界。(K-ai-generate-single-freeform-seam)
 - AI 训练知识进入 prompt 前必须按当前 inbound 定向筛选；QA_GROUNDED/FREE_FORM 可消费，QA_MATCHED verbatim 路径禁止注入。(K-training-knowledge-injection-points)
 - AI prompt 配置表只存自定义覆盖；默认生效值必须由后端 `AiPromptConfigService` 单源提供，前端不得另写默认 prompt。(K-prompt-config-effective-default)
+- `CompositionSuggestResult.gapItems` 只服务建议展示与 AI 请求矩阵；自动回复可共享 tokenizer/count，但不得消费 gapItems 展示结构或 AI grounding 状态。(K-gap-items-compose-only)
 - 需保留段落的外发邮件必须同时提供 plain text 与 HTML multipart；HTML 由纯文本转换或安全渲染，审计仍持久化 plain text。(K-plaintext-reply-client-reflow)
 
 ---

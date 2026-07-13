@@ -3578,7 +3578,8 @@ const AI_REPLY_WARNING_LABELS = {
     EXPERT_RESEARCH_CONTEXT_INSUFFICIENT: "现有专家研究资料不足，匹配度问题需要人工确认或先使用已有资料补充功能。",
     UNAUTHORIZED_ACTION_REMOVED: "已移除未授权的外发动作请求。",
     AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND: "无法确定回信账号，变量预览未完全渲染",
-    AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文"
+    AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文",
+    AI_REPLY_STRUCTURED_RESPONSE_INVALID: "模型返回格式无效，已使用审核依据生成结构化草稿。"
 };
 
 function aiReplyGenerationStateLabel(state) {
@@ -3641,6 +3642,54 @@ function formatUnsupportedRequests(unsupportedRequests) {
     return text;
 }
 
+function collapseAiReplyRequestText(text) {
+    return String(text || "").replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
+function summarizeAiReplyCoverage(requestCoverage) {
+    const items = Array.isArray(requestCoverage) ? requestCoverage : [];
+    let grounded = 0;
+    let partial = 0;
+    let unsupported = 0;
+    const reviewItems = [];
+    let unknownCount = 0;
+    items.forEach((item) => {
+        const status = String(item && item.status != null ? item.status : "");
+        const index = Number(item && item.index) || 0;
+        const requestText = collapseAiReplyRequestText(item && item.requestText);
+        if (status === "GROUNDED") {
+            grounded += 1;
+        } else if (status === "PARTIAL") {
+            partial += 1;
+            reviewItems.push({ index, requestText, status });
+        } else if (status === "UNSUPPORTED") {
+            unsupported += 1;
+            reviewItems.push({ index, requestText, status });
+        } else if (status) {
+            unknownCount += 1;
+        }
+    });
+    return {
+        grounded,
+        partial,
+        unsupported,
+        reviewItems,
+        unknownCount,
+        hasCoverage: items.length > 0,
+        needsGroundingReview: partial > 0 || unsupported > 0
+    };
+}
+
+function formatAiReplyReviewWarnings(summary) {
+    const items = (summary && summary.reviewItems) || [];
+    return items.map((item) => {
+        if (item.status === "PARTIAL") {
+            return `第 ${item.index} 项仅部分有已审核依据：${item.requestText}；请人工补充后再发送。`;
+        }
+        return `第 ${item.index} 项缺少已审核依据：${item.requestText}；草稿未回答该项。`;
+    });
+}
+
 function renderAiReplyFeedback(container, result, error = null) {
     if (!container) return;
     if (error) {
@@ -3657,6 +3706,9 @@ function renderAiReplyFeedback(container, result, error = null) {
     const groundedRequestCount = Number(result.groundedRequestCount) || 0;
     const warnings = Array.isArray(result.contextWarnings) ? result.contextWarnings : [];
     const unsupported = Array.isArray(result.unsupportedRequests) ? result.unsupportedRequests : [];
+    const coverageSummary = Array.isArray(result.requestCoverage)
+        ? summarizeAiReplyCoverage(result.requestCoverage)
+        : null;
     const parts = [];
     if (result.generationState === "LLM_USED") {
         parts.push(
@@ -3668,20 +3720,36 @@ function renderAiReplyFeedback(container, result, error = null) {
             parts.push(`<div class="ai-reply-warning">${escapeHtml(stateLabel)}</div>`);
         }
     }
-    if (requestCount > 0) {
+    if (coverageSummary && coverageSummary.hasCoverage) {
         parts.push(
-            `<div class="ai-reply-coverage">事实覆盖 ${escapeHtml(String(groundedRequestCount))}/${escapeHtml(String(requestCount))} 项</div>`
+            `<div class="ai-reply-coverage">${escapeHtml(
+                `依据覆盖：完整 ${coverageSummary.grounded} 项 · 部分 ${coverageSummary.partial} 项 · 缺失 ${coverageSummary.unsupported} 项`
+            )}</div>`
         );
+        formatAiReplyReviewWarnings(coverageSummary).forEach((warning) => {
+            parts.push(`<div class="ai-reply-warning">${escapeHtml(warning)}</div>`);
+        });
+        if (coverageSummary.unknownCount > 0) {
+            parts.push(
+                `<div class="ai-reply-warning">${escapeHtml("部分请求覆盖状态未知，请人工核对后再发送。")}</div>`
+            );
+        }
+    } else {
+        if (requestCount > 0) {
+            parts.push(
+                `<div class="ai-reply-coverage">事实覆盖 ${escapeHtml(String(groundedRequestCount))}/${escapeHtml(String(requestCount))} 项</div>`
+            );
+        }
+        const unsupportedText = formatUnsupportedRequests(unsupported);
+        if (unsupportedText) {
+            parts.push(`<div class="ai-reply-warning">${escapeHtml(unsupportedText)}</div>`);
+        }
     }
     warnings.forEach((code) => {
         const label = AI_REPLY_WARNING_LABELS[code] || String(code || "");
         if (!label) return;
         parts.push(`<div class="ai-reply-warning">${escapeHtml(label)}</div>`);
     });
-    const unsupportedText = formatUnsupportedRequests(unsupported);
-    if (unsupportedText) {
-        parts.push(`<div class="ai-reply-warning">${escapeHtml(unsupportedText)}</div>`);
-    }
     if (result.selectedModel) {
         parts.push(`<div class="ai-reply-coverage">模型：${escapeHtml(aiReplyModelLabel(result.selectedModel))}</div>`);
     }
@@ -8727,12 +8795,18 @@ function appendAiChatOperatorBubble(instruction) {
     container.scrollTop = container.scrollHeight;
 }
 
-function appendAiChatDraftBubble(rawText, renderedText) {
+function appendAiChatDraftBubble(rawText, renderedText, requestCoverage) {
     const container = $("#aiChatMessages");
     if (!container) return;
     const draftId = ++aiReplyState.nextDraftId;
     const rendered = renderedText || rawText || "";
-    aiReplyState.drafts[draftId] = { raw: rawText || "", rendered };
+    const coverageSummary = summarizeAiReplyCoverage(requestCoverage || []);
+    aiReplyState.drafts[draftId] = {
+        raw: rawText || "",
+        rendered,
+        needsGroundingReview: coverageSummary.needsGroundingReview,
+        reviewItems: coverageSummary.reviewItems
+    };
     const bubble = document.createElement("div");
     bubble.className = "ai-chat-bubble ai-chat-assistant";
     bubble.innerHTML = `
@@ -9288,7 +9362,7 @@ async function handleUnmatchedAction(element) {
             }
             const rawDraft = result.draftText || "";
             const renderedDraft = result.renderedDraftText || rawDraft;
-            appendAiChatDraftBubble(rawDraft, renderedDraft);
+            appendAiChatDraftBubble(rawDraft, renderedDraft, result.requestCoverage || []);
             aiReplyState.lastDraftTemplate = rawDraft;
             aiReplyState.lastRenderedDraft = renderedDraft;
             aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
@@ -9346,7 +9420,9 @@ async function handleUnmatchedAction(element) {
             rawTemplate: raw || "",
             renderedBaseline: editor ? editor.innerText : rendered,
             renderedBaselineHtml: editor ? editor.innerHTML : "",
-            recordId: Number(id)
+            recordId: Number(id),
+            needsGroundingReview: !!entry?.needsGroundingReview,
+            reviewItems: Array.isArray(entry?.reviewItems) ? entry.reviewItems : []
         };
         if (qaIds && qaIds.length > 0) {
             manualReplyQaContext = {
@@ -9375,6 +9451,17 @@ async function handleUnmatchedAction(element) {
             showStatus("请输入邮件正文", "error");
             return;
         }
+        const adopt = aiReplyState.adoptContext;
+        if (
+            adopt
+            && Number(adopt.recordId) === Number(id)
+            && adopt.needsGroundingReview
+            && editor.innerText === (adopt.renderedBaseline || "")
+            && editor.innerHTML === (adopt.renderedBaselineHtml || "")
+        ) {
+            showStatus("草稿仍有未完整覆盖的问题，请先人工补充或修改正文", "error");
+            return;
+        }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
         const requestBody = {
             senderAccountCode: null,
@@ -9383,7 +9470,6 @@ async function handleUnmatchedAction(element) {
             textBody: editor.innerText,
             operatorName
         };
-        const adopt = aiReplyState.adoptContext;
         if (
             adopt
             && Number(adopt.recordId) === Number(id)

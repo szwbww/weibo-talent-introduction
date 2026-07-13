@@ -3,7 +3,7 @@ id: K-url-query-question-tokenizer
 domain: qa
 created: 2026-07-12
 last_used: 2026-07-13
-hit_count: 5
+hit_count: 8
 source: create-p:ai-reply-url-safe-request-extraction
 severity: P1
 ---

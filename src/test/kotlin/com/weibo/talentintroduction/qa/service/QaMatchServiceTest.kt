@@ -701,7 +701,7 @@ class QaMatchServiceTest {
     }
 
     @Test
-    fun `suggestComposition merges bullets first then uncovered question sentences`() {
+    fun `suggestComposition orders request items by source offset`() {
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
             listOf(
                 QaRule(id = 1, categoryId = 1, keywords = "salary,funding", replySubject = "Funding", replyBody = "Funding answer"),
@@ -709,19 +709,18 @@ class QaMatchServiceTest {
             )
         )
 
-        // Bullet covers "funding" question; extra question "deadline" is uncovered
         val body = """
             What is the timeline?
             - salary and funding bullet
         """.trimIndent()
 
         val result = service.suggestComposition(body)
-        // Both bullet (funding) and uncovered question (timeline/deadline context) are request items
-        // Multi-request: raw matches returned (no supersede)
-        // gapItems should have entry for each item
-        assertTrue(result.gapItems.any { it.text.contains("salary", ignoreCase = true) || it.text.contains("funding", ignoreCase = true) },
-            "bullet item should be in gapItems")
-        assertTrue(result.gapItems.size >= 1, "gapItems has multiple items for multi-unit mail")
+        assertEquals(2, result.gapItems.size)
+        assertTrue(result.gapItems[0].text.contains("timeline", ignoreCase = true),
+            "question before bullet must stay first by offset")
+        assertTrue(result.gapItems[1].text.contains("salary", ignoreCase = true) ||
+            result.gapItems[1].text.contains("funding", ignoreCase = true),
+            "bullet item should be second")
     }
 
     @Test
@@ -797,13 +796,15 @@ class QaMatchServiceTest {
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         val researchQuestion =
-            "Could you please confirm whether my research background fits the enterprise projects you manage?"
+            "Based on my research profile and areas of expertise, could you confirm whether my background fits the enterprise projects your team manages?"
         val body = """
             Thank you for your message. Here are my research profiles:
             https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en
             https://www.scopus.com/authid/detail.uri?authorId=57201234567
 
-            $researchQuestion
+            Based on my research profile and
+            areas of expertise, could you confirm whether my background fits the
+            enterprise projects your team manages?
 
             Specifically:
             - What is the registered location of your company?
@@ -829,13 +830,39 @@ class QaMatchServiceTest {
             },
             "URL-only lines must not become request items: $texts"
         )
-        val researchItem = texts.find { it.contains("research background", ignoreCase = true) }
+        val researchItem = texts.find { it.contains("research profile", ignoreCase = true) }
         assertNotNull(researchItem, "research match question must remain")
         assertEquals(researchQuestion, researchItem!!.trim())
-        assertEquals(7, result.gapItems.size, "6 bullets + 1 research question")
-        assertTrue(texts[0].contains("registered location", ignoreCase = true))
-        assertTrue(texts[5].contains("materials", ignoreCase = true))
-        assertEquals(researchQuestion, texts[6].trim())
+        assertFalse(researchItem.contains("\n"), "cross-line research question must fold soft newlines")
+        assertEquals(7, result.gapItems.size, "1 research question + 6 bullets")
+        assertEquals(researchQuestion, texts[0].trim(), "research question must be first by source offset")
+        assertTrue(texts[1].contains("registered location", ignoreCase = true))
+        assertTrue(texts[6].contains("materials", ignoreCase = true))
+    }
+
+    @Test
+    fun `ordinary two-question mail shares extractor count between suggest and match gap`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "funding,salary",
+                    priority = 80,
+                    replySubject = "Funding",
+                    replyBody = "Funding answer"
+                )
+            )
+        )
+
+        val body = "What funding is available? Can we arrange a meeting?"
+        val suggest = service.suggestComposition(body)
+        assertEquals(2, suggest.gapItems.size)
+
+        val match = service.match(body)
+        assertNotNull(match)
+        // 2 request units, 1 matched category → gapDetected
+        assertTrue(match!!.gapDetected)
     }
 
     @Test

@@ -30,6 +30,7 @@ class AiReplyPointByPointComposerTest {
                 ackOptions = emptyList()
             )
         )
+        Mockito.`when`(replySnippetService.resolveAck(null)).thenReturn(null)
     }
 
     private fun rule(id: Long, body: String) = QaRule(
@@ -42,12 +43,12 @@ class AiReplyPointByPointComposerTest {
     )
 
     @Test
-    fun `compose emits salutation acknowledgement numbered sections and closing in order`() {
+    fun `composeFallback emits frame numbered grounded sections and closing`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary facts")))
         Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Visa facts")))
 
-        val text = composer.compose(
+        val text = composer.composeFallback(
             listOf(
                 RequestFactItem(1, "- What is salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
                 RequestFactItem(2, "- Visa process?", listOf(2L), RequestGroundingStatus.GROUNDED)
@@ -58,144 +59,144 @@ class AiReplyPointByPointComposerTest {
         assertTrue(text.contains(QaReplyComposer.GREETING))
         assertTrue(text.contains("1. What is salary"))
         assertTrue(text.contains("2. Visa process"))
-        assertTrue(text.indexOf("1. What is salary") < text.indexOf("2. Visa process"))
-        assertTrue(text.indexOf(QaReplyComposer.GREETING) < text.indexOf("1. What is salary"))
-        assertTrue(text.indexOf("2. Visa process") < text.indexOf(QaReplyComposer.CLOSING))
-        assertTrue(text.endsWith(QaReplyComposer.CLOSING) || text.contains(QaReplyComposer.CLOSING))
+        assertTrue(text.contains("Salary facts"))
+        assertTrue(text.contains("Visa facts"))
+        assertTrue(text.contains(QaReplyComposer.CLOSING))
     }
 
     @Test
-    fun `each section uses only its own facts and unsupported stays in place`() {
+    fun `unsupported and research items are omitted from fallback`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary only")))
-        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Visa only")))
+        Mockito.`when`(qaRuleRepository.findById(7L)).thenReturn(Optional.of(rule(7, "Scope facts")))
 
-        val text = composer.compose(
+        val text = composer.composeFallback(
             listOf(
                 RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "- Visa?", listOf(2L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(3, "- Unknown topic?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+                RequestFactItem(
+                    2,
+                    "- Research match?",
+                    listOf(7L),
+                    RequestGroundingStatus.GROUNDED,
+                    requiresResearchContext = true
+                ),
+                RequestFactItem(3, "- Unknown?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
             )
         )
 
-        val s1 = text.substringAfter("1. Salary").substringBefore("2. Visa")
-        val s2 = text.substringAfter("2. Visa").substringBefore("3. Unknown topic")
-        val s3 = text.substringAfter("3. Unknown topic")
-        assertTrue(s1.contains("Salary only"))
-        assertFalse(s1.contains("Visa only"))
-        assertTrue(s2.contains("Visa only"))
-        assertFalse(s2.contains("Salary only"))
-        assertTrue(s3.contains(AiReplyPointByPointComposer.UNSUPPORTED_TEXT))
-        assertFalse(s3.contains("Salary only"))
-        assertFalse(s3.contains("Visa only"))
+        assertTrue(text.contains("1. Salary"))
+        assertTrue(text.contains("Salary only"))
+        assertFalse(text.contains("Research match"))
+        assertFalse(text.contains("Unknown"))
+        assertFalse(text.contains("Scope facts"))
+        assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
+        assertFalse(text.contains("This still needs confirmation"))
+        assertFalse(text.contains("not covered by the approved information"))
     }
 
     @Test
-    fun `partial section appends fixed confirmation trailer and dedupes rule ids`() {
+    fun `partial has facts without confirmation trailer`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Partial facts")))
 
-        val text = composer.compose(
+        val text = composer.composeFallback(
             listOf(
-                RequestFactItem(1, "Deliverables details?", listOf(1L, 1L), RequestGroundingStatus.PARTIAL),
-                RequestFactItem(2, "Other?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+                RequestFactItem(1, "Deliverables details?", listOf(1L, 1L), RequestGroundingStatus.PARTIAL)
             )
         )
 
-        val section = text.substringAfter("1. Deliverables details").substringBefore("2. Other")
-        assertEquals(1, Regex("Partial facts").findAll(section).count())
-        assertTrue(section.trimEnd().endsWith(AiReplyPointByPointComposer.PARTIAL_CONFIRMATION))
+        assertTrue(text.contains("Partial facts"))
+        assertFalse(text.contains("This still needs confirmation"))
     }
 
     @Test
-    fun `cleanHeading strips bullets question marks and truncates`() {
+    fun `identical fact bodies cross-reference later points`() {
+        stubFrame()
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Shared enterprise matching facts"))
+        )
+
+        val text = composer.composeFallback(
+            listOf(
+                RequestFactItem(3, "- Matching?", listOf(1L), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(7, "- Enterprise projects?", listOf(1L), RequestGroundingStatus.GROUNDED)
+            )
+        )
+
+        assertTrue(text.contains("Shared enterprise matching facts"))
+        assertTrue(text.contains("Please see point 3 above."))
+        assertEquals(1, Regex("Shared enterprise matching facts").findAll(text).count())
+    }
+
+    @Test
+    fun `composeFromAnswers cross-references identical answers`() {
+        stubFrame()
+        val text = composer.composeFromAnswers(
+            requestFacts = listOf(
+                RequestFactItem(1, "- A?", listOf(1L), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(2, "- B?", listOf(2L), RequestGroundingStatus.GROUNDED)
+            ),
+            answersByIndex = mapOf(
+                1 to "Same answer body",
+                2 to "Same answer body"
+            )
+        )
+        assertTrue(text.contains("Same answer body"))
+        assertTrue(text.contains("Please see point 1 above."))
+        assertEquals(1, Regex("Same answer body").findAll(text).count())
+    }
+
+    @Test
+    fun `cleanHeading strips bullets punctuation trailing and and capitalizes`() {
         assertEquals("Salary", AiReplyPointByPointComposer.cleanHeading("- Salary?"))
         assertEquals("Visa process", AiReplyPointByPointComposer.cleanHeading("1. Visa process？"))
-        assertEquals("Topic", AiReplyPointByPointComposer.cleanHeading("• Topic??"))
+        assertEquals(
+            "The full name and registered location of your company",
+            AiReplyPointByPointComposer.cleanHeading("- the full name and registered location of your company;")
+        )
+        assertEquals(
+            "Contractual, financial and IP arrangements",
+            AiReplyPointByPointComposer.cleanHeading("- contractual, financial and IP arrangements; and")
+        )
         val long = "A".repeat(200)
         assertEquals(160, AiReplyPointByPointComposer.cleanHeading(long).length)
     }
 
     @Test
-    fun `compose does not invent CTA and preserves raw template variables`() {
-        stubFrame(salutation = "Dear \${expertName|Professor},")
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Body A")))
-        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Body B")))
+    fun `all omitted items return frame only`() {
+        stubFrame()
+        val text = composer.composeFallback(
+            listOf(
+                RequestFactItem(
+                    1,
+                    "- Research?",
+                    emptyList(),
+                    RequestGroundingStatus.UNSUPPORTED,
+                    requiresResearchContext = true
+                )
+            )
+        )
+        assertTrue(text.contains("Dear \${expertName|Professor},"))
+        assertTrue(text.contains(QaReplyComposer.CLOSING))
+        assertFalse(text.contains("1."))
+        assertFalse(text.contains("confirmation", ignoreCase = true))
+        assertFalse(text.contains("insufficient", ignoreCase = true))
+    }
 
-        val text = composer.compose(
+    @Test
+    fun `composeFromAnswers preserves raw template variables and omits unsupported`() {
+        stubFrame(salutation = "Dear \${expertName|Professor},")
+        val text = composer.composeFromAnswers(
             listOf(
                 RequestFactItem(1, "A?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "B?", listOf(2L), RequestGroundingStatus.GROUNDED)
-            )
+                RequestFactItem(2, "B?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            ),
+            mapOf(1 to "Body A")
         )
-
         assertTrue(text.contains("Dear \${expertName|Professor},"))
+        assertTrue(text.contains("1. A"))
+        assertTrue(text.contains("Body A"))
+        assertFalse(text.contains("2. B"))
         assertFalse(text.contains("Please send your CV", ignoreCase = true))
-        assertFalse(text.contains("schedule a meeting", ignoreCase = true))
-        assertFalse(text.contains("next step", ignoreCase = true))
-    }
-
-    @Test
-    fun `seven requests produce exactly sections 1 through 7`() {
-        stubFrame()
-        (1L..7L).forEach { id ->
-            Mockito.`when`(qaRuleRepository.findById(id)).thenReturn(
-                Optional.of(rule(id, if (id == 7L) "" else "Body $id"))
-            )
-        }
-
-        val facts = (1..7).map { idx ->
-            if (idx == 7) {
-                RequestFactItem(idx, "- Q$idx?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            } else {
-                RequestFactItem(idx, "- Q$idx?", listOf(idx.toLong()), RequestGroundingStatus.GROUNDED)
-            }
-        }
-        val text = composer.compose(facts)
-
-        (1..7).forEach { n ->
-            assertTrue(text.contains("$n. Q$n"))
-        }
-        assertTrue(text.indexOf("1. Q1") < text.indexOf("2. Q2"))
-        assertTrue(text.indexOf("6. Q6") < text.indexOf("7. Q7"))
-        assertTrue(text.substringAfter("7. Q7").contains(AiReplyPointByPointComposer.UNSUPPORTED_TEXT))
-    }
-
-    @Test
-    fun `research GROUNDED empty facts uses profile excerpt when available`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary facts")))
-        val profile = "Name: Dr. Ada\nResearch fields: ML, NLP\nAffiliation: Example University"
-
-        val text = composer.compose(
-            listOf(
-                RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "- Research match?", emptyList(), RequestGroundingStatus.GROUNDED)
-            ),
-            expertProfile = profile
-        )
-
-        val researchSection = text.substringAfter("2. Research match")
-        assertTrue(researchSection.contains("Name: Dr. Ada"))
-        assertTrue(researchSection.contains("Research fields: ML, NLP"))
-        assertFalse(researchSection.contains(AiReplyPointByPointComposer.UNSUPPORTED_TEXT))
-        assertTrue(researchSection.trim().isNotEmpty())
-    }
-
-    @Test
-    fun `research GROUNDED empty facts without profile uses UNSUPPORTED_TEXT`() {
-        stubFrame()
-
-        val text = composer.compose(
-            listOf(
-                RequestFactItem(1, "- Research match?", emptyList(), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "- Other?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            ),
-            expertProfile = null
-        )
-
-        val researchSection = text.substringAfter("1. Research match").substringBefore("2. Other")
-        assertTrue(researchSection.contains(AiReplyPointByPointComposer.UNSUPPORTED_TEXT))
-        assertFalse(researchSection.trim().isEmpty())
     }
 }
