@@ -397,11 +397,12 @@ class ManualExpertMailServiceTest {
 
     @Test
     fun `sendManualMail MATERIAL_REMINDER keeps current status and records outbound mail`() {
+        val waitingContact = contact.copy(currentStatus = "WAITING_REPLY")
         val account = stubAccount()
-        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(waitingContact.orcidId, waitingContact.expertEmail)
         val delivered = DeliveredMail(messageId = "msg-reminder", status = "SUCCESS")
 
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(waitingContact))
         Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
         Mockito.`when`(mailComposeTemplateService.getById(20L)).thenReturn(
             MailComposeTemplateDetail(
@@ -437,12 +438,12 @@ class ManualExpertMailServiceTest {
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 200) }
         Mockito.`when`(conversationStateService.transition(
-            anyValue(contact),
-            eqValue(ConversationStatus.INTRO_SENT),
+            anyValue(waitingContact),
+            eqValue(ConversationStatus.WAITING_REPLY),
             eqValue("MANUAL_MAIL_MATERIAL_REMINDER"),
             eqValue("MANUAL_MAIL"),
             anyValue(LocalDateTime.now()),
-            anyValue { contact }
+            anyValue { waitingContact }
         )).thenAnswer { invocation ->
             val base = invocation.getArgument<ExpertContact>(0)
             val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
@@ -466,12 +467,12 @@ class ManualExpertMailServiceTest {
         assertEquals("OPERATOR", recordCaptor.value.triggeredBy)
 
         Mockito.verify(conversationStateService).transition(
-            anyValue(contact),
-            eqValue(ConversationStatus.INTRO_SENT),
+            anyValue(waitingContact),
+            eqValue(ConversationStatus.WAITING_REPLY),
             eqValue("MANUAL_MAIL_MATERIAL_REMINDER"),
             eqValue("MANUAL_MAIL"),
             anyValue(LocalDateTime.now()),
-            anyValue { contact }
+            anyValue { waitingContact }
         )
     }
 }
