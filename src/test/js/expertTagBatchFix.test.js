@@ -444,9 +444,21 @@ function createBatchMailDialogSandbox() {
     byId.set("actionDialogTitle", titleEl);
     byId.set("actionDialogBody", bodyEl);
 
-    const previewResolvers = new Map();
-    const previewRejecters = new Map();
+    const previewQueues = new Map();
     const apiCalls = [];
+
+    function enqueuePreview(url, resolve, reject) {
+        if (!previewQueues.has(url)) previewQueues.set(url, []);
+        previewQueues.get(url).push({ resolve, reject });
+    }
+
+    function dequeuePreview(url) {
+        const queue = previewQueues.get(url);
+        if (!queue || queue.length === 0) return null;
+        const entry = queue.shift();
+        if (queue.length === 0) previewQueues.delete(url);
+        return entry;
+    }
 
     const sandbox = {
         document: doc,
@@ -459,24 +471,19 @@ function createBatchMailDialogSandbox() {
         api: async (url) => {
             apiCalls.push(url);
             return new Promise((resolve, reject) => {
-                previewResolvers.set(url, resolve);
-                previewRejecters.set(url, reject);
+                enqueuePreview(url, resolve, reject);
             });
         },
         __apiCalls: apiCalls,
         __resolvePreview(url, payload) {
-            const resolve = previewResolvers.get(url);
-            if (!resolve) throw new Error("no pending preview for " + url);
-            previewResolvers.delete(url);
-            previewRejecters.delete(url);
-            resolve(payload);
+            const entry = dequeuePreview(url);
+            if (!entry) throw new Error("no pending preview for " + url);
+            entry.resolve(payload);
         },
         __rejectPreview(url, err) {
-            const reject = previewRejecters.get(url);
-            if (!reject) throw new Error("no pending preview for " + url);
-            previewResolvers.delete(url);
-            previewRejecters.delete(url);
-            reject(err instanceof Error ? err : new Error(String(err)));
+            const entry = dequeuePreview(url);
+            if (!entry) throw new Error("no pending preview for " + url);
+            entry.reject(err instanceof Error ? err : new Error(String(err)));
         },
         __byId: byId,
         __submitBtn: submitBtn,
@@ -654,6 +661,57 @@ describe("openBatchTagMailDialog preview (Task 3)", () => {
         assert.strictEqual(sb.__cancelBtn._listeners.get("click")?.size || 0, 0);
         const select = sb.__byId.get("batchMailOption");
         assert.strictEqual(select._listeners.get("change")?.size || 0, 0);
+    });
+
+    it("reopening dialog does not stack submit listeners (I-7)", async () => {
+        const sb = createBatchMailDialogSandbox();
+        const p1 = sb.openBatchTagMailDialog("summary", 1, 1, sampleOptions());
+        await settle();
+        assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 1);
+        sb.__resolvePreview("/api/compose-templates/10/preview", { subject: "S1", body: "B1" });
+        await settle();
+        sb.__cancelBtn.dispatchEvent("click");
+        await p1;
+        assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 0);
+
+        const p2 = sb.openBatchTagMailDialog("summary", 1, 1, sampleOptions());
+        await settle();
+        assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 1);
+        assert.strictEqual(sb.__cancelBtn._listeners.get("click")?.size || 0, 1);
+        sb.__resolvePreview("/api/compose-templates/10/preview", { subject: "S2", body: "B2" });
+        await settle();
+        sb.__cancelBtn.dispatchEvent("click");
+        await p2;
+        assert.strictEqual(sb.__form._listeners.get("submit")?.size || 0, 0);
+    });
+
+    it("disabled submit ignores programmatic submit events", async () => {
+        const sb = createBatchMailDialogSandbox();
+        let settled = false;
+        const p = sb.openBatchTagMailDialog("summary", 1, 1, sampleOptions()).then((v) => {
+            settled = true;
+            return v;
+        });
+        await settle();
+        assert.strictEqual(sb.__submitBtn.disabled, true);
+        sb.__form.dispatchEvent("submit", { preventDefault() {} });
+        await settle();
+        assert.strictEqual(settled, false);
+        assert.strictEqual(sb.__dialog.open, true);
+        sb.__cancelBtn.dispatchEvent("click");
+        assert.strictEqual(await p, null);
+    });
+
+    it("queues concurrent same-URL preview resolves FIFO", async () => {
+        const sb = createBatchMailDialogSandbox();
+        const url = "/api/compose-templates/10/preview";
+        const results = [];
+        const p1 = sb.api(url).then((v) => { results.push(["a", v.subject]); });
+        const p2 = sb.api(url).then((v) => { results.push(["b", v.subject]); });
+        sb.__resolvePreview(url, { subject: "first" });
+        sb.__resolvePreview(url, { subject: "second" });
+        await Promise.all([p1, p2]);
+        assert.deepStrictEqual(results, [["a", "first"], ["b", "second"]]);
     });
 
     it("submit payload only returns mailOption", async () => {

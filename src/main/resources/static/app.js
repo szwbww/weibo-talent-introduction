@@ -3945,6 +3945,7 @@ function openBatchTagMailDialog(summary, totalHits, sendableCount, templateOptio
         };
         const handleSubmit = (e) => {
             e.preventDefault();
+            if (submitBtn?.disabled) return;
             const mailOption = selectEl.value || "";
             cleanup();
             resolve(mailOption ? { mailOption } : null);
