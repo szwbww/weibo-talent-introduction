@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.llm.service.AiPromptConfigDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigEffectiveDto
 import com.weibo.talentintroduction.llm.service.AiPromptConfigService
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
+import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyModel
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
@@ -35,6 +36,7 @@ class AiTrainingController(
     private val aiTrainingQaService: AiTrainingQaService,
     private val aiPromptConfigService: AiPromptConfigService,
     private val aiReplyDraftService: AiReplyDraftService,
+    private val aiReplyDraftPreviewService: AiReplyDraftPreviewService,
     private val aiReplyContextService: AiReplyContextService,
     private val expertContactRepository: ExpertContactRepository,
     private val mailRecordRepository: MailRecordRepository,
@@ -212,8 +214,14 @@ class AiTrainingController(
             contextWarnings = context.contextWarnings,
             replyModel = request.model
         )
+        val preview = aiReplyDraftPreviewService.preview(
+            raw = result.draftText,
+            contact = contact,
+            senderAccountCode = inboundMail.senderAccountCode
+        )
         return AiTrainingSimulateResponse(
             draftText = result.draftText,
+            renderedDraftText = preview.renderedText,
             usedLlm = result.usedLlm,
             llmEnabled = llmProperties.enabled,
             mode = result.mode.name,
@@ -225,10 +233,24 @@ class AiTrainingController(
             requestCount = result.requestCount,
             groundedRequestCount = result.groundedRequestCount,
             unsupportedRequests = result.unsupportedRequests,
-            contextWarnings = result.contextWarnings,
+            contextWarnings = mergeWarningsPreserveOrder(result.contextWarnings, preview.warningCodes),
             injectedDialogRefs = result.fewShotDialogRefs,
-            selectedModel = result.selectedModel
+            selectedModel = result.selectedModel,
+            requestCoverage = result.requestFacts.map {
+                RequestCoverageItem(
+                    index = it.index,
+                    requestText = it.requestText,
+                    status = it.status.name,
+                    factRuleIds = it.factRuleIds
+                )
+            },
+            generationState = result.generationState.name
         )
+    }
+
+    private fun mergeWarningsPreserveOrder(existing: List<String>, extra: List<String>): List<String> {
+        val seen = linkedSetOf<String>()
+        return (existing + extra).filter { seen.add(it) }
     }
 
     private data class ContactFilter(
@@ -370,6 +392,7 @@ data class AiTrainingQaUpsertRequest(
 
 data class AiTrainingSimulateResponse(
     val draftText: String,
+    val renderedDraftText: String = "",
     val usedLlm: Boolean,
     val llmEnabled: Boolean,
     val mode: String,
@@ -383,5 +406,14 @@ data class AiTrainingSimulateResponse(
     val unsupportedRequests: List<String> = emptyList(),
     val contextWarnings: List<String> = emptyList(),
     val injectedDialogRefs: List<String> = emptyList(),
-    val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name
+    val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name,
+    val requestCoverage: List<RequestCoverageItem> = emptyList(),
+    val generationState: String = "FALLBACK_NO_RESPONSE"
+)
+
+data class RequestCoverageItem(
+    val index: Int,
+    val requestText: String,
+    val status: String,
+    val factRuleIds: List<Long>
 )

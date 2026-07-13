@@ -142,7 +142,8 @@ let manualReplyQaContext = null;
 const aiReplyState = {
     recordId: null,
     turns: [],
-    lastDraft: "",
+    lastDraftTemplate: "",
+    lastRenderedDraft: "",
     /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
     lastQaRuleIds: [],
     /** Locked after first turn: QA_MATCHED | FREE_FORM | QA_GROUNDED */
@@ -151,6 +152,8 @@ const aiReplyState = {
     firstTurnDone: false,
     drafts: {},
     nextDraftId: 0,
+    /** { rawTemplate, renderedBaseline, renderedBaselineHtml, recordId } — cleared on reset / mail switch / send. */
+    adoptContext: null,
     requestSeq: 0,
     inFlight: false,
     selectedModel: "DEEPSEEK_V4_FLASH"
@@ -2896,14 +2899,16 @@ function renderAiTrainingSimulateResult(result) {
                     <span class="ai-draft-badge">只读 · 不外发</span>
                     <button type="button" class="ai-draft-copy" data-action="copy-ai-draft" title="复制草稿">复制</button>
                 </div>
-                ${translatableBody(result.draftText || "(空草稿)")}
+                ${translatableBody(result.renderedDraftText || result.draftText || "(空草稿)")}
             </div>`;
         messages.scrollTop = 0;
     }
     if (meta) {
         const chips = [
             `模式 ${result.mode || "-"}`,
-            `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`,
+            result.generationState
+                ? aiReplyGenerationStateLabel(result.generationState)
+                : `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`,
             `模型：${aiReplyModelLabel(result.selectedModel)}`
         ];
         const requestCount = Number(result.requestCount) || 0;
@@ -3570,8 +3575,26 @@ function setTagEditorLoading(editor, loading, message = "处理中...") {
 
 const AI_REPLY_WARNING_LABELS = {
     EXPERT_PROFILE_NOT_FOUND: "未找到现有专家画像，本次回复未引用研究资料。",
-    EXPERT_RESEARCH_CONTEXT_INSUFFICIENT: "现有专家研究资料不足，匹配度问题需要人工确认或先使用已有资料补充功能。"
+    EXPERT_RESEARCH_CONTEXT_INSUFFICIENT: "现有专家研究资料不足，匹配度问题需要人工确认或先使用已有资料补充功能。",
+    UNAUTHORIZED_ACTION_REMOVED: "已移除未授权的外发动作请求。",
+    AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND: "无法确定回信账号，变量预览未完全渲染",
+    AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文"
 };
+
+function aiReplyGenerationStateLabel(state) {
+    switch (state) {
+        case "LLM_USED":
+            return "模型已生成";
+        case "FALLBACK_LLM_DISABLED":
+            return "LLM 已关闭—结构化规则草稿";
+        case "FALLBACK_CLIENT_UNAVAILABLE":
+            return "模型客户端不可用—结构化规则草稿";
+        case "FALLBACK_NO_RESPONSE":
+            return "模型无有效响应—结构化规则草稿";
+        default:
+            return "";
+    }
+}
 
 function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…") {
     if (!panel) return;
@@ -3635,6 +3658,16 @@ function renderAiReplyFeedback(container, result, error = null) {
     const warnings = Array.isArray(result.contextWarnings) ? result.contextWarnings : [];
     const unsupported = Array.isArray(result.unsupportedRequests) ? result.unsupportedRequests : [];
     const parts = [];
+    if (result.generationState === "LLM_USED") {
+        parts.push(
+            `<div class="ai-reply-coverage">${escapeHtml(aiReplyGenerationStateLabel(result.generationState))}</div>`
+        );
+    } else if (result.generationState) {
+        const stateLabel = aiReplyGenerationStateLabel(result.generationState);
+        if (stateLabel) {
+            parts.push(`<div class="ai-reply-warning">${escapeHtml(stateLabel)}</div>`);
+        }
+    }
     if (requestCount > 0) {
         parts.push(
             `<div class="ai-reply-coverage">事实覆盖 ${escapeHtml(String(groundedRequestCount))}/${escapeHtml(String(requestCount))} 项</div>`
@@ -8673,12 +8706,14 @@ function resetAiReplyState(recordId) {
     aiReplyState.requestSeq += 1;
     aiReplyState.recordId = recordId;
     aiReplyState.turns = [];
-    aiReplyState.lastDraft = "";
+    aiReplyState.lastDraftTemplate = "";
+    aiReplyState.lastRenderedDraft = "";
     aiReplyState.lastQaRuleIds = [];
     aiReplyState.mode = null;
     aiReplyState.firstTurnDone = false;
     aiReplyState.drafts = {};
     aiReplyState.nextDraftId = 0;
+    aiReplyState.adoptContext = null;
     aiReplyState.inFlight = false;
 }
 
@@ -8692,16 +8727,17 @@ function appendAiChatOperatorBubble(instruction) {
     container.scrollTop = container.scrollHeight;
 }
 
-function appendAiChatDraftBubble(draftText) {
+function appendAiChatDraftBubble(rawText, renderedText) {
     const container = $("#aiChatMessages");
     if (!container) return;
     const draftId = ++aiReplyState.nextDraftId;
-    aiReplyState.drafts[draftId] = draftText;
+    const rendered = renderedText || rawText || "";
+    aiReplyState.drafts[draftId] = { raw: rawText || "", rendered };
     const bubble = document.createElement("div");
     bubble.className = "ai-chat-bubble ai-chat-assistant";
     bubble.innerHTML = `
         <div class="ai-chat-label">AI 草稿</div>
-        ${translatableBody(draftText)}
+        ${translatableBody(rendered)}
         <div class="ai-chat-draft-actions">
             <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}">采用此草稿</button>
         </div>`;
@@ -8721,6 +8757,7 @@ function initAiReplyWorkbench(recordId) {
 
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
+    aiReplyState.adoptContext = null;
     state.mailbox.detailContext = {
         source: "INBOUND_PROCESSING",
         id: Number(id),
@@ -9201,7 +9238,7 @@ async function handleUnmatchedAction(element) {
                 return;
             }
             turnsToSend.push({
-                assistantDraft: aiReplyState.lastDraft,
+                assistantDraft: aiReplyState.lastDraftTemplate,
                 operatorInstruction: instruction
             });
         }
@@ -9243,14 +9280,17 @@ async function handleUnmatchedAction(element) {
             if (!isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
                 aiReplyState.turns.push({
-                    assistantDraft: aiReplyState.lastDraft,
+                    assistantDraft: aiReplyState.lastDraftTemplate,
                     operatorInstruction: instruction
                 });
             } else if (isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
             }
-            appendAiChatDraftBubble(result.draftText || "");
-            aiReplyState.lastDraft = result.draftText || "";
+            const rawDraft = result.draftText || "";
+            const renderedDraft = result.renderedDraftText || rawDraft;
+            appendAiChatDraftBubble(rawDraft, renderedDraft);
+            aiReplyState.lastDraftTemplate = rawDraft;
+            aiReplyState.lastRenderedDraft = renderedDraft;
             aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
             if (isFirstTurn) {
                 aiReplyState.mode = result.mode || null;
@@ -9264,7 +9304,7 @@ async function handleUnmatchedAction(element) {
                 : result.mode === "QA_GROUNDED"
                     ? `已基于 ${qaCount} 条 QA 事实综合多项请求`
                     : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
-            showStatus(result.usedLlm ? `AI 生成完成 — ${modeHint}` : `DeepSeek 不可用，已用确定性草稿 — ${modeHint}`);
+            showStatus(`${aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "AI 生成完成" : "结构化规则草稿")} — ${modeHint}`);
         } catch (e) {
             const currentModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
@@ -9289,21 +9329,32 @@ async function handleUnmatchedAction(element) {
     }
     if (action === "ai-adopt-draft") {
         const draftId = Number(element.dataset.draftId);
-        const draft = aiReplyState.drafts[draftId] || aiReplyState.lastDraft;
-        if (!draft) {
+        const entry = aiReplyState.drafts[draftId];
+        const rendered = entry?.rendered ?? aiReplyState.lastRenderedDraft;
+        const raw = entry?.raw ?? aiReplyState.lastDraftTemplate;
+        if (!rendered) {
             showStatus("草稿为空", "error");
             return;
         }
         const qaIds = aiReplyState.lastQaRuleIds;
         const editor = $("#manualRichReplyEditor");
-        if (editor) editor.innerText = draft;
+        if (editor) {
+            editor.innerText = rendered;
+        }
+        // Capture baselines after DOM write: text alone misses rich-format edits.
+        aiReplyState.adoptContext = {
+            rawTemplate: raw || "",
+            renderedBaseline: editor ? editor.innerText : rendered,
+            renderedBaselineHtml: editor ? editor.innerHTML : "",
+            recordId: Number(id)
+        };
         if (qaIds && qaIds.length > 0) {
             manualReplyQaContext = {
                 qaRuleIds: [...qaIds],
                 suggestedRuleIds: [...qaIds],
                 freeText: null,
                 ackSnippetId: null,
-                baselineText: draft
+                baselineText: rendered
             };
             showStatus("草稿已填入人工富文本回复区");
         } else {
@@ -9332,6 +9383,16 @@ async function handleUnmatchedAction(element) {
             textBody: editor.innerText,
             operatorName
         };
+        const adopt = aiReplyState.adoptContext;
+        if (
+            adopt
+            && Number(adopt.recordId) === Number(id)
+            && (adopt.rawTemplate || "").trim()
+            && editor.innerText.trim() === (adopt.renderedBaseline || "").trim()
+            && editor.innerHTML === (adopt.renderedBaselineHtml || "")
+        ) {
+            requestBody.templateTextBody = adopt.rawTemplate;
+        }
         if (manualReplyQaContext?.qaRuleIds?.length) {
             requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;
             requestBody.suggestedRuleIds = manualReplyQaContext.suggestedRuleIds || [];
@@ -9347,6 +9408,7 @@ async function handleUnmatchedAction(element) {
                 body: JSON.stringify(requestBody)
             });
             manualReplyQaContext = null;
+            aiReplyState.adoptContext = null;
             alert("人工回复邮件发送成功");
         } catch (e) {
             alert("人工回复发送失败: " + e.message);
@@ -10353,7 +10415,8 @@ function bindEvents() {
     $("#aiTrainingSimulateMessages")?.addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-action='copy-ai-draft']");
         if (!btn) return;
-        const text = state.aiTraining.simulateResult?.draftText || "";
+        const sim = state.aiTraining.simulateResult;
+        const text = sim?.renderedDraftText || sim?.draftText || "";
         try {
             await navigator.clipboard.writeText(text);
             showStatus("草稿已复制到剪贴板", "ok");

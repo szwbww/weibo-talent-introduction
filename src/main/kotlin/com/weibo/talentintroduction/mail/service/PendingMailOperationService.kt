@@ -184,7 +184,9 @@ class PendingMailOperationService(
         ackSnippetId: Long? = null,
         edited: Boolean? = null,
         freeTextPreview: String? = null,
-        useVariants: Boolean = false
+        useVariants: Boolean = false,
+        templateTextBody: String? = null,
+        templateHtmlBody: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -212,11 +214,39 @@ class PendingMailOperationService(
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
+        // Always-on final render gate (I-1..I-4): every manual-rich request validates and
+        // re-renders with the resolved account/contact. Optional template* fields prefer
+        // AI adoption raw; otherwise editor text/html are treated as the raw input.
+        val rawText = templateTextBody?.takeIf { it.isNotBlank() }
+            ?: textBody?.takeIf { it.isNotBlank() }
+            ?: mailBodyCleaner.clean(htmlBody)
+        val rawHtmlFromTemplate = templateHtmlBody?.takeIf { it.isNotBlank() }
+        mailVariableService.requireValidPlaceholders(rawText)
+        if (rawHtmlFromTemplate != null) {
+            mailVariableService.requireValidPlaceholders(rawHtmlFromTemplate)
+        } else if (templateTextBody.isNullOrBlank()) {
+            // No text template either — validate editor HTML as raw (blocks ${typo} in rich body).
+            mailVariableService.requireValidPlaceholders(htmlBody)
+        }
+
+        val renderedText = mailVariableService.renderForContact(rawText, account, contact)
+        val finalTextBody = renderedText
+        val finalHtmlBody = when {
+            rawHtmlFromTemplate != null ->
+                mailVariableService.renderHtmlForContact(rawHtmlFromTemplate, account, contact)
+            !templateTextBody.isNullOrBlank() ->
+                // Plain AI text template: derive HTML from rendered text (escapes via plainTextToHtml).
+                mailContentService.plainTextToHtml(renderedText)
+            else ->
+                mailVariableService.renderHtmlForContact(htmlBody, account, contact)
+        }
+
         val mail = ComposedMail(
             to = contact.expertEmail,
             subject = subject,
-            body = htmlBody,
-            html = true
+            body = finalHtmlBody,
+            html = true,
+            text = finalTextBody
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()
@@ -232,7 +262,7 @@ class PendingMailOperationService(
                 messageId = delivered.messageId,
                 inReplyTo = record.messageId,
                 subject = mail.subject,
-                body = textBody ?: htmlBody,
+                body = finalTextBody ?: finalHtmlBody,
                 matchedQaRuleId = primaryRuleId,
                 sendStatus = delivered.status,
                 receivedAt = null,
@@ -241,8 +271,8 @@ class PendingMailOperationService(
             )
         )
 
-        val bodyPreviewText = (textBody?.ifBlank { mailBodyCleaner.clean(htmlBody) }
-            ?: mailBodyCleaner.clean(htmlBody)).take(500)
+        val bodyPreviewText = (finalTextBody?.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
+            ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
         val mailRecordId = saved.id ?: error("Mail record id is required")
 
         if (carriesQa) {
@@ -656,7 +686,9 @@ data class PendingManualRichReplyRequest(
     val ackSnippetId: Long? = null,
     val edited: Boolean? = null,
     val freeTextPreview: String? = null,
-    val useVariants: Boolean = false
+    val useVariants: Boolean = false,
+    val templateTextBody: String? = null,
+    val templateHtmlBody: String? = null
 )
 
 data class ComposedReplyRequest(

@@ -756,6 +756,8 @@ class PendingMailOperationServiceTest {
             PendingManualRichReplyRequest::class.java
         )
         assertFalse(richReply.useVariants)
+        assertEquals(null, richReply.templateTextBody)
+        assertEquals(null, richReply.templateHtmlBody)
 
         val composed = jsonMapper.readValue(
             """{"qaRuleIds":[1,2],"overrideTextBody":null,"senderAccountCode":"s","operatorName":"op"}""",
@@ -1339,5 +1341,297 @@ class PendingMailOperationServiceTest {
 
         assertEquals("SUCCESS", result.sendStatus)
         assertEquals("LiLei", result.senderAccountCode)
+    }
+
+    @Test
+    fun `send manual rich reply with templateTextBody re-renders for final sender account`() {
+        val record = inbound(1).copy(senderAccountCode = "accountA")
+        val accountB = stubAccount().copy(
+            accountCode = "accountB",
+            senderName = "Bob B",
+            senderEmail = "bob@test.com"
+        )
+        val delivered = DeliveredMail(messageId = "msg-tpl-b", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId)
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("accountB")).thenReturn(accountB)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(accountB), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 401) }
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = "accountB",
+            subject = "Hello",
+            htmlBody = "<p>Hi from Alice A</p>",
+            textBody = "Hi from Alice A",
+            operatorName = "op",
+            templateTextBody = "Hi from \${senderName}"
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("accountB", result.senderAccountCode)
+        val sentMail = sentMails.single()
+        assertEquals("Hi from Bob B", sentMail.text)
+        assertEquals(mailContentService.plainTextToHtml("Hi from Bob B"), sentMail.body)
+        assertFalse(sentMail.text!!.contains("\${"))
+        assertFalse(sentMail.text!!.contains("Alice"))
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("Hi from Bob B", recordCaptor.value.body)
+    }
+
+    @Test
+    fun `send manual rich reply without template fields re-renders placeholders for final sender`() {
+        val record = inbound(1).copy(senderAccountCode = "accountA")
+        val accountB = stubAccount().copy(
+            accountCode = "accountB",
+            senderName = "Bob B",
+            senderEmail = "bob@test.com"
+        )
+        val delivered = DeliveredMail(messageId = "msg-no-tpl-render", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId)
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("accountB")).thenReturn(accountB)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(accountB), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 402) }
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = "accountB",
+            subject = "Hello",
+            htmlBody = "<p>Hi \${senderName}</p>",
+            textBody = "Hi \${senderName}",
+            operatorName = "op"
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("accountB", result.senderAccountCode)
+        val sentMail = sentMails.single()
+        assertEquals("Hi Bob B", sentMail.text)
+        assertTrue(sentMail.body.contains("Bob B"))
+        assertFalse(sentMail.body.contains("\${"))
+        assertFalse(sentMail.text!!.contains("\${"))
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("Hi Bob B", recordCaptor.value.body)
+        @Suppress("UNCHECKED_CAST")
+        val logCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
+        Mockito.verify(operatorActionLogService).record(
+            anyValue(""), anyValue(0L), anyValue(OperatorActionType.SEND_MANUAL_RICH_REPLY),
+            anyValue(0L), anyValue(0L),
+            anyValue(null), logCaptor.capture(),
+            anyValue(""), anyValue(""), anyValue(null)
+        )
+        assertEquals("Hi Bob B", logCaptor.value!!["bodyPreviewText"])
+    }
+
+    @Test
+    fun `send manual rich reply without template fields rejects unknown token before delivery`() {
+        val record = inbound(1)
+        val account = stubAccount()
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 1,
+                senderAccountCode = null,
+                subject = "Hello",
+                htmlBody = "<p>Hello \${unknownKey}</p>",
+                textBody = "Hello \${unknownKey}",
+                operatorName = "op"
+            )
+        }
+
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+    }
+
+    @Test
+    fun `send manual rich reply rejects unknown token in templateTextBody`() {
+        val record = inbound(1)
+        val account = stubAccount()
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 1,
+                senderAccountCode = null,
+                subject = "Hello",
+                htmlBody = "<p>Hi</p>",
+                textBody = "Hi",
+                operatorName = "op",
+                templateTextBody = "Hello \${unknownKey}"
+            )
+        }
+
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+    }
+
+    @Test
+    fun `send manual rich reply with templateHtmlBody uses renderHtmlForContact`() {
+        val record = inbound(1)
+        val account = stubAccount().copy(senderName = "A&B <Team>")
+        val delivered = DeliveredMail(messageId = "msg-tpl-html", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId, familyNames = "Lovelace")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 403) }
+
+        service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Hello",
+            htmlBody = "<p>stale preview</p>",
+            textBody = "stale preview",
+            operatorName = "op",
+            templateTextBody = "Hi from \${senderName}",
+            templateHtmlBody = "<p>Hi from \${senderName}</p>"
+        )
+
+        val sentMail = sentMails.single()
+        assertEquals("Hi from A&B <Team>", sentMail.text)
+        assertEquals("<p>Hi from A&amp;B &lt;Team&gt;</p>", sentMail.body)
+        assertTrue(sentMail.body.startsWith("<p>"))
+        assertTrue(sentMail.body.endsWith("</p>"))
+        assertFalse(sentMail.body.contains("\${"))
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("Hi from A&B <Team>", recordCaptor.value.body)
+    }
+
+    @Test
+    fun `send manual rich reply with special senderName in templateHtmlBody escapes delivery HTML`() {
+        val record = inbound(1)
+        val account = stubAccount().copy(senderName = "Tom & Jerry <HQ>")
+        val delivered = DeliveredMail(messageId = "msg-tpl-escape", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId)
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            delivered
+        }
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 404) }
+
+        service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Hello",
+            htmlBody = "<p>preview</p>",
+            textBody = "From \${senderName}",
+            operatorName = "op",
+            templateHtmlBody = "<div>From \${senderName}</div>"
+        )
+
+        val sentMail = sentMails.single()
+        assertEquals("<div>From Tom &amp; Jerry &lt;HQ&gt;</div>", sentMail.body)
+        // hasTemplate without templateTextBody: text falls back to textBody then renderForContact
+        assertEquals("From Tom & Jerry <HQ>", sentMail.text)
+        assertFalse(sentMail.text!!.contains("&amp;"))
+    }
+
+    @Test
+    fun `send manual rich reply with template and qaRuleIds keeps composed audit contract`() {
+        val record = inbound(1)
+        val rule1 = qaRule(10, 1, "Body A")
+        val rule2 = qaRule(11, 1, "Body B")
+        val account = stubAccount().copy(senderName = "Bob")
+        val delivered = DeliveredMail(messageId = "msg-tpl-qa", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId)
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule1))
+        Mockito.`when`(qaRuleRepository.findById(11L)).thenReturn(Optional.of(rule2))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 405) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { invocation ->
+                val arg = invocation.getArgument<MailRecordQaRule>(0)
+                arg.copy(id = arg.ordinal + 1L)
+            }
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Subject",
+            htmlBody = "<p>stale</p>",
+            textBody = "stale",
+            operatorName = "op",
+            qaRuleIds = listOf(10, 11),
+            suggestedRuleIds = listOf(10, 11),
+            templateTextBody = "Hi from \${senderName}"
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        assertEquals("MANUAL_RICH_REPLY", result.mailType)
+
+        val qaRuleCaptor = ArgumentCaptor.forClass(MailRecordQaRule::class.java)
+        Mockito.verify(mailRecordQaRuleRepository, Mockito.times(2)).save(qaRuleCaptor.capture())
+        assertEquals(listOf(10L, 11L), qaRuleCaptor.allValues.map { it.qaRuleId })
+        assertEquals(listOf(0, 1), qaRuleCaptor.allValues.map { it.ordinal })
+
+        @Suppress("UNCHECKED_CAST")
+        val afterCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
+        Mockito.verify(operatorActionLogService).record(
+            anyValue(""), anyValue(0L), anyValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
+            anyValue(0L), anyValue(0L),
+            anyValue(null), afterCaptor.capture(),
+            anyValue(""), anyValue(""), anyValue(null)
+        )
+        assertEquals(listOf(10L, 11L), afterCaptor.value!!["qaRuleIds"])
+
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("Hi from Bob", recordCaptor.value.body)
     }
 }

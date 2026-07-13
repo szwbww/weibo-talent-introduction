@@ -13,7 +13,9 @@ import com.weibo.talentintroduction.llm.service.AiReplyContext
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
+import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyPointByPointComposer
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
@@ -23,7 +25,9 @@ import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
+import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
@@ -51,7 +55,12 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.Optional
 
 @WebMvcTest(AiTrainingController::class)
-@Import(AiReplyDraftService::class, LlmStitchService::class)
+@Import(
+    AiReplyDraftService::class,
+    LlmStitchService::class,
+    AiReplyPointByPointComposer::class,
+    AiReplyDraftPreviewService::class
+)
 @EnableConfigurationProperties(LlmProperties::class)
 @TestPropertySource(properties = ["talent-introduction.llm.enabled=false"])
 class AiTrainingSimulateTest {
@@ -100,6 +109,12 @@ class AiTrainingSimulateTest {
 
     @MockBean
     private lateinit var aiTrainingDialogueService: AiTrainingDialogueService
+
+    @MockBean
+    private lateinit var mailVariableService: MailVariableService
+
+    @MockBean
+    private lateinit var mailSenderAccountRepository: MailSenderAccountRepository
 
     @BeforeEach
     fun setUp() {
@@ -160,8 +175,11 @@ class AiTrainingSimulateTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.draftText").isNotEmpty)
             .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("12M RMB")))
+            .andExpect(jsonPath("$.renderedDraftText").isNotEmpty)
+            .andExpect(jsonPath("$.renderedDraftText").value(org.hamcrest.Matchers.containsString("12M RMB")))
             .andExpect(jsonPath("$.usedLlm").value(false))
             .andExpect(jsonPath("$.llmEnabled").value(false))
+            .andExpect(jsonPath("$.generationState").value("FALLBACK_LLM_DISABLED"))
             .andExpect(jsonPath("$.mode").value("FREE_FORM"))
             .andExpect(jsonPath("$.injectedDialogRefs").isArray)
             .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
@@ -169,7 +187,10 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.qaRuleIds").isEmpty)
             .andExpect(jsonPath("$.requestCount").value(0))
             .andExpect(jsonPath("$.contextWarnings").isArray)
+            .andExpect(jsonPath("$.contextWarnings").value(org.hamcrest.Matchers.hasItem("AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND")))
             .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_FLASH"))
+            .andExpect(jsonPath("$.requestCoverage").isArray)
+            .andExpect(jsonPath("$.requestCoverage").isEmpty)
 
         Mockito.verify(aiTrainingQaService).buildKnowledgeContext("What is the funding?")
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
@@ -264,6 +285,74 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("First, you submit the required materials.")))
             .andExpect(jsonPath("$.qaRuleIds").isArray)
             .andExpect(jsonPath("$.qaRuleIds[0]").value(9))
+            .andExpect(jsonPath("$.requestCoverage").isArray)
+
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `simulate exposes requestCoverage from per-request fact matrix`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound(body = "- What is salary?\n- What are the deliverables?")
+        stubSimulateReadPath(contact, inbound)
+        val inboundText = "- What is salary?\n- What are the deliverables?"
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext(inboundText)).thenReturn("")
+        Mockito.`when`(
+            aiReplyContextService.build(contact, listOf(inbound), inboundText, "")
+        ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(qaMatchService.suggestComposition(inboundText)).thenReturn(
+            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
+                suggestedRuleIds = listOf(1L, 2L),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    com.weibo.talentintroduction.qa.service.GapItem("- What is salary?", listOf(1L)),
+                    com.weibo.talentintroduction.qa.service.GapItem("- What are the deliverables?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                com.weibo.talentintroduction.qa.domain.QaRule(
+                    id = 1L,
+                    categoryId = 1,
+                    keywords = "salary",
+                    replySubject = "Salary",
+                    replyBody = "Salary is competitive.",
+                    enabled = true
+                )
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(
+            Optional.of(
+                com.weibo.talentintroduction.qa.domain.QaRule(
+                    id = 2L,
+                    categoryId = 1,
+                    keywords = "deliverables",
+                    replySubject = "Scope",
+                    replyBody = "High-level project overview.",
+                    enabled = true
+                )
+            )
+        )
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expertContactId":10}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.requestCoverage").isArray)
+            .andExpect(jsonPath("$.requestCoverage.length()").value(2))
+            .andExpect(jsonPath("$.requestCoverage[0].index").value(1))
+            .andExpect(jsonPath("$.requestCoverage[0].status").value("GROUNDED"))
+            .andExpect(jsonPath("$.requestCoverage[0].factRuleIds[0]").value(1))
+            .andExpect(jsonPath("$.requestCoverage[1].index").value(2))
+            .andExpect(jsonPath("$.requestCoverage[1].status").value("PARTIAL"))
+            .andExpect(jsonPath("$.requestCoverage[1].factRuleIds[0]").value(2))
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }

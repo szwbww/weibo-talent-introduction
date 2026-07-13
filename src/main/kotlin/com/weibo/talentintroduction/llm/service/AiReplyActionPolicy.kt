@@ -92,12 +92,12 @@ object AiReplyActionPolicy {
         if (text.isBlank()) {
             return emptyList()
         }
-        return splitUnits(text).mapNotNull { unit ->
-            val action = detectDirectRequest(unit) ?: return@mapNotNull null
+        return tokenizeUnits(text).mapNotNull { unit ->
+            val action = detectDirectRequest(unit.text) ?: return@mapNotNull null
             if (action in allowed) {
                 null
             } else {
-                ActionViolation(action = action, sentence = unit)
+                ActionViolation(action = action, sentence = unit.text.trim())
             }
         }
     }
@@ -106,18 +106,38 @@ object AiReplyActionPolicy {
         if (text.isBlank()) {
             return text to false
         }
-        val kept = mutableListOf<String>()
-        var removed = false
-        splitUnits(text).forEach { unit ->
-            val action = detectDirectRequest(unit)
+        val removeRanges = mutableListOf<IntRange>()
+        tokenizeUnits(text).forEach { unit ->
+            val action = detectDirectRequest(unit.text)
             if (action != null && action !in allowed) {
-                removed = true
-            } else {
-                kept += unit
+                removeRanges += unit.start until unit.end
             }
         }
-        val cleaned = kept.joinToString(" ").replace(Regex("""\s+"""), " ").trim()
-        return cleaned to removed
+        if (removeRanges.isEmpty()) {
+            return text to false
+        }
+        val sb = StringBuilder(text.length)
+        var cursor = 0
+        var afterDeletion = false
+        for (range in removeRanges) {
+            if (cursor < range.first) {
+                if (afterDeletion) {
+                    appendCollapsedSeam(sb, text, cursor, range.first)
+                } else {
+                    sb.append(text, cursor, range.first)
+                }
+            }
+            cursor = range.last + 1
+            afterDeletion = true
+        }
+        if (cursor < text.length) {
+            if (afterDeletion) {
+                appendCollapsedSeam(sb, text, cursor, text.length)
+            } else {
+                sb.append(text, cursor, text.length)
+            }
+        }
+        return sb.toString() to true
     }
 
     fun formatAllowedLabel(allowed: Set<AiReplyAction>): String =
@@ -141,8 +161,65 @@ object AiReplyActionPolicy {
         return null
     }
 
-    private fun splitUnits(text: String): List<String> =
-        text.split(SENTENCE_SPLIT)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+    private data class TextUnit(val text: String, val start: Int, val end: Int)
+
+    /** Units with original offsets; delimiters stay as gaps between spans. */
+    private fun tokenizeUnits(text: String): List<TextUnit> {
+        val units = mutableListOf<TextUnit>()
+        var lastEnd = 0
+        for (match in SENTENCE_SPLIT.findAll(text)) {
+            if (match.range.first > lastEnd) {
+                val start = lastEnd
+                val end = match.range.first
+                val unitText = text.substring(start, end)
+                if (unitText.isNotBlank()) {
+                    units += TextUnit(text = unitText, start = start, end = end)
+                }
+            }
+            lastEnd = match.range.last + 1
+        }
+        if (lastEnd < text.length) {
+            val unitText = text.substring(lastEnd)
+            if (unitText.isNotBlank()) {
+                units += TextUnit(text = unitText, start = lastEnd, end = text.length)
+            }
+        }
+        return units
+    }
+
+    /**
+     * Append [from, to) after a deletion. Collapse only the newline run that meets at the seam;
+     * interior of the kept span stays byte-identical.
+     */
+    private fun appendCollapsedSeam(sb: StringBuilder, text: String, from: Int, to: Int) {
+        var trailStart = sb.length
+        while (trailStart > 0 && isNewlineChar(sb[trailStart - 1])) {
+            trailStart--
+        }
+        val trailing = sb.substring(trailStart)
+        sb.setLength(trailStart)
+
+        var leadEnd = from
+        while (leadEnd < to && isNewlineChar(text[leadEnd])) {
+            leadEnd++
+        }
+        val leading = text.substring(from, leadEnd)
+        sb.append(collapseNewlineRun(trailing + leading))
+        sb.append(text, leadEnd, to)
+    }
+
+    private fun isNewlineChar(c: Char): Boolean = c == '\n' || c == '\r'
+
+    /** Cap seam blank lines: 3+ `\n` → two line breaks (LF or CRLF style). */
+    private fun collapseNewlineRun(run: String): String {
+        if (run.isEmpty()) {
+            return run
+        }
+        val nCount = run.count { it == '\n' }
+        if (nCount <= 2) {
+            return run
+        }
+        val useCrlf = run.contains('\r')
+        return if (useCrlf) "\r\n\r\n" else "\n\n"
+    }
 }

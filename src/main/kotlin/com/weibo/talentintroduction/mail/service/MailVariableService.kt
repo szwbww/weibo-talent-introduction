@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.web.util.HtmlUtils
 
 @Service
 class MailVariableService(
@@ -79,6 +80,13 @@ class MailVariableService(
 
     fun renderForContact(text: String, account: MailSenderAccount?, contact: ExpertContact): String =
         renderContact(text, account, contact, previewFallbacks = false).rendered
+
+    fun renderHtmlForContact(html: String, account: MailSenderAccount?, contact: ExpertContact): String {
+        val expert = resolveExpertProfile(contact)
+        val variables = buildVariables(account, expert, contact.expertEmail, previewFallbacks = false)
+            .mapValues { (_, value) -> HtmlUtils.htmlEscape(value) }
+        return mailComposeTemplateService.renderWithVariables(html, variables)
+    }
 
     fun renderPreview(text: String, account: MailSenderAccount?, contact: ExpertContact): RenderPreviewResult =
         renderContact(text, account, contact, previewFallbacks = true)

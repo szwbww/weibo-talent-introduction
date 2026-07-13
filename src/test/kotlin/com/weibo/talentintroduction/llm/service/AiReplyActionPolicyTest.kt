@@ -144,4 +144,127 @@ class AiReplyActionPolicyTest {
         assertFalse(cleaned.contains("résumé", ignoreCase = true))
         assertFalse(cleaned.contains("Let us schedule a meeting", ignoreCase = true))
     }
+
+    @Test
+    fun `sanitize preserves safe multi-paragraph layout byte-for-byte (I-1)`() {
+        val input = """
+            Dear Dr. Smith,
+
+            Thank you for your interest in our program. Here are answers to your questions:
+
+            1. The company is registered in Beijing.
+            2. Expected deliverables are defined per project scope.
+            3. Researchers are matched by domain expertise.
+            4. Intellectual property follows the signed agreement.
+            5. Next stages include document review and interview.
+            6. Early-stage materials are a short CV and research summary.
+
+            Best regards,
+            Talent Introduction Team
+        """.trimIndent() + "\n"
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertFalse(removed)
+        assertEquals(input, sanitized)
+    }
+
+    @Test
+    fun `sanitize removes only unauthorized sentence and keeps numbering signature and blank lines (I-2)`() {
+        val input = """
+            Dear Dr. Smith,
+
+            Thank you for your interest. Answers below:
+
+            1. The company is registered in Beijing.
+            2. Expected deliverables are defined per project scope.
+            Could you share your CV?
+            3. Researchers are matched by domain expertise.
+            4. Intellectual property follows the signed agreement.
+            5. Next stages include document review and interview.
+            6. Early-stage materials are a short CV and research summary.
+
+            Best regards,
+            Talent Introduction Team
+        """.trimIndent()
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("Could you share your CV", ignoreCase = true))
+        assertTrue(sanitized.contains("Dear Dr. Smith,"))
+        assertTrue(sanitized.contains("1. The company is registered in Beijing."))
+        assertTrue(sanitized.contains("2. Expected deliverables are defined per project scope."))
+        assertTrue(sanitized.contains("3. Researchers are matched by domain expertise."))
+        assertTrue(sanitized.contains("6. Early-stage materials are a short CV and research summary."))
+        assertTrue(sanitized.contains("Best regards,"))
+        assertTrue(sanitized.contains("\n\n"))
+        // Numbered items remain on separate lines (layout not collapsed to a single line)
+        assertTrue(sanitized.contains("1. The company is registered in Beijing.\n"))
+        assertTrue(sanitized.contains("\nBest regards,"))
+    }
+
+    @Test
+    fun `sanitize preserves CRLF bullets and trailing newline when safe (I-1 I-3)`() {
+        val input = "Dear colleague,\r\n\r\n" +
+            "- Point one about the program.\r\n" +
+            "- Point two about funding.\r\n" +
+            "- Point three about next steps.\r\n\r\n" +
+            "Best regards\r\n"
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertFalse(removed)
+        assertEquals(input, sanitized)
+    }
+
+    @Test
+    fun `sanitize removes CV request while preserving CRLF bullet layout (I-2 I-3)`() {
+        val input = "Dear colleague,\r\n\r\n" +
+            "- Point one about the program.\r\n" +
+            "Could you share your CV?\r\n" +
+            "- Point two about funding.\r\n\r\n" +
+            "Best regards\r\n"
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("Could you share your CV", ignoreCase = true))
+        assertTrue(sanitized.contains("- Point one about the program."))
+        assertTrue(sanitized.contains("- Point two about funding."))
+        assertTrue(sanitized.contains("Best regards"))
+        assertTrue(sanitized.contains("\r\n"))
+        assertTrue(sanitized.contains("- Point one about the program.\r\n"))
+    }
+
+    @Test
+    fun `sanitize keeps pre-existing triple newlines away from deletion seam (I-2 seam-local)`() {
+        val input = "Intro paragraph.\n\n\nContinued intro.\n\n" +
+            "1. First answer.\n" +
+            "Could you share your CV?\n" +
+            "2. Second answer.\n"
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("Could you share your CV", ignoreCase = true))
+        // Non-seam pre-existing hole must stay byte-identical
+        assertTrue(sanitized.contains("Intro paragraph.\n\n\nContinued intro."))
+        // Deletion seam collapses to at most \n\n (not a huge hole)
+        assertTrue(sanitized.contains("1. First answer.\n\n2. Second answer."))
+        assertFalse(sanitized.contains("1. First answer.\n\n\n2. Second answer."))
+    }
+
+    @Test
+    fun `sanitize collapses CRLF blank-line hole only at deletion seam (I-2)`() {
+        val input = "Dear colleague,\r\n\r\n" +
+            "- Point one about the program.\r\n" +
+            "Could you share your CV?\r\n\r\n\r\n\r\n" +
+            "- Point two about funding.\r\n\r\n" +
+            "Best regards\r\n"
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(input, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("Could you share your CV", ignoreCase = true))
+        assertTrue(sanitized.contains("- Point one about the program."))
+        assertTrue(sanitized.contains("- Point two about funding."))
+        // Seam: at most two CRLF blank-line separators (\r\n\r\n), no 3+ blank lines
+        assertTrue(sanitized.contains("- Point one about the program.\r\n\r\n- Point two about funding."))
+        assertFalse(sanitized.contains("\r\n\r\n\r\n"))
+    }
 }

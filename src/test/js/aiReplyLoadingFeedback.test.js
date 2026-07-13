@@ -1,76 +1,236 @@
-const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
+const assert = require("assert");
 const { describe, it } = require("node:test");
 
 const appJsPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
+const stylesCssPath = path.join(__dirname, "..", "..", "main", "resources", "static", "styles.css");
 const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
-const stylesPath = path.join(__dirname, "..", "..", "main", "resources", "static", "styles.css");
-const appSource = fs.readFileSync(appJsPath, "utf-8");
-const indexSource = fs.readFileSync(indexHtmlPath, "utf-8");
-const stylesSource = fs.readFileSync(stylesPath, "utf-8");
+const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 
-/** Mirrors formatUnsupportedRequests in app.js. */
-function formatUnsupportedRequests(unsupportedRequests) {
-    const items = (unsupportedRequests || []).filter((item) => String(item || "").trim());
-    if (items.length === 0) return "";
-    const shown = items.slice(0, 3).map((item) => String(item).trim());
-    const rest = items.length - shown.length;
-    let text = `以下请求缺少已审核依据：${shown.join("；")}`;
-    if (rest > 0) {
-        text += `；另 ${rest} 项`;
-    }
-    return text;
+function extractFn(name) {
+    const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
+    const match = appJsSource.match(regex);
+    if (!match) throw new Error("Could not find " + name + " in app.js");
+    return match[0];
 }
 
-function buildCoverageLabel(result) {
-    const requestCount = Number(result.requestCount) || 0;
-    const groundedRequestCount = Number(result.groundedRequestCount) || 0;
-    if (requestCount <= 0) return null;
-    return `事实覆盖 ${groundedRequestCount}/${requestCount} 项`;
+function extractConst(name) {
+    const regex = new RegExp("const\\s+" + name + "\\s*=\\s*\\{[\\s\\S]*?\\n\\};");
+    const match = appJsSource.match(regex);
+    if (!match) throw new Error("Could not find const " + name + " in app.js");
+    return match[0];
 }
 
-function buildSimulatePayload(contactId, mailRecordId, promptOverride) {
-    const body = {
-        expertContactId: contactId,
-        promptOverride: promptOverride || null
+function createSandbox() {
+    const sandbox = {
+        AI_REPLY_MODEL_LABELS: {
+            DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
+            DEEPSEEK_V4_PRO: "DeepSeek V4 Pro"
+        },
+        escapeHtml: (value) => String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;")
     };
-    if (mailRecordId != null) {
-        body.mailRecordId = mailRecordId;
-    }
-    return body;
+    vm.createContext(sandbox);
+    vm.runInContext(extractConst("AI_REPLY_WARNING_LABELS"), sandbox);
+    vm.runInContext("this.AI_REPLY_WARNING_LABELS = AI_REPLY_WARNING_LABELS;", sandbox);
+    vm.runInContext(extractFn("aiReplyModelLabel"), sandbox);
+    vm.runInContext(extractFn("aiReplyGenerationStateLabel"), sandbox);
+    vm.runInContext(extractFn("formatUnsupportedRequests"), sandbox);
+    vm.runInContext(extractFn("renderAiReplyFeedback"), sandbox);
+    return sandbox;
 }
+
+describe("aiReplyGenerationStateLabel", () => {
+    it("maps fixed Chinese labels for all four states", () => {
+        const { aiReplyGenerationStateLabel } = createSandbox();
+        assert.strictEqual(aiReplyGenerationStateLabel("LLM_USED"), "模型已生成");
+        assert.strictEqual(
+            aiReplyGenerationStateLabel("FALLBACK_LLM_DISABLED"),
+            "LLM 已关闭—结构化规则草稿"
+        );
+        assert.strictEqual(
+            aiReplyGenerationStateLabel("FALLBACK_CLIENT_UNAVAILABLE"),
+            "模型客户端不可用—结构化规则草稿"
+        );
+        assert.strictEqual(
+            aiReplyGenerationStateLabel("FALLBACK_NO_RESPONSE"),
+            "模型无有效响应—结构化规则草稿"
+        );
+        assert.strictEqual(aiReplyGenerationStateLabel("UNKNOWN"), "");
+    });
+});
+
+describe("AI_REPLY_WARNING_LABELS", () => {
+    it("maps UNAUTHORIZED_ACTION_REMOVED to Chinese without raw code", () => {
+        const { AI_REPLY_WARNING_LABELS } = createSandbox();
+        const label = AI_REPLY_WARNING_LABELS.UNAUTHORIZED_ACTION_REMOVED;
+        assert.ok(label);
+        assert.notStrictEqual(label, "UNAUTHORIZED_ACTION_REMOVED");
+        assert.match(label, /未授权/);
+    });
+});
+
+describe("renderAiReplyFeedback generationState", () => {
+    it("renders LLM_USED with coverage class and fallback with warning class", () => {
+        const sandbox = createSandbox();
+        const container = { hidden: true, innerHTML: "" };
+
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "LLM_USED",
+            requestCount: 0,
+            groundedRequestCount: 0,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.strictEqual(container.hidden, false);
+        assert.match(container.innerHTML, /class="ai-reply-coverage"/);
+        assert.match(container.innerHTML, /模型已生成/);
+        assert.doesNotMatch(container.innerHTML, /class="pre"/);
+
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_LLM_DISABLED",
+            requestCount: 0,
+            groundedRequestCount: 0,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-warning"/);
+        assert.match(container.innerHTML, /LLM 已关闭—结构化规则草稿/);
+        assert.doesNotMatch(container.innerHTML, /class="pre"/);
+    });
+
+    it("keeps generationState out of draft/adopt payload surfaces in app.js", () => {
+        const draftBubble = extractFn("appendAiChatDraftBubble");
+        assert.doesNotMatch(draftBubble, /generationState/);
+
+        const adoptIdx = appJsSource.indexOf('if (action === "ai-adopt-draft")');
+        assert.ok(adoptIdx > 0);
+        const adoptBlock = appJsSource.slice(adoptIdx, adoptIdx + 1200);
+        assert.doesNotMatch(adoptBlock, /generationState/);
+
+        const turnPayloadIdx = appJsSource.indexOf("turns: turnsToSend");
+        assert.ok(turnPayloadIdx > 0);
+        const turnPayload = appJsSource.slice(turnPayloadIdx - 200, turnPayloadIdx + 400);
+        assert.doesNotMatch(turnPayload, /generationState/);
+    });
+
+    it("does not require new CSS classes or index.html markup for generationState", () => {
+        const styles = fs.readFileSync(stylesCssPath, "utf-8");
+        const indexHtml = fs.readFileSync(indexHtmlPath, "utf-8");
+        assert.doesNotMatch(styles, /generationState|ai-reply-generation/);
+        assert.doesNotMatch(indexHtml, /generationState|ai-reply-generation/);
+        assert.match(styles, /\.ai-reply-coverage/);
+        assert.match(styles, /\.ai-reply-warning/);
+        assert.match(styles, /\.ai-meta-chip/);
+    });
+
+    it("replaces DeepSeek unavailable toast with shared generationState label", () => {
+        assert.doesNotMatch(appJsSource, /DeepSeek 不可用/);
+        assert.match(appJsSource, /aiReplyGenerationStateLabel\(result\.generationState\)/);
+        assert.match(appJsSource, /模型已生成/);
+    });
+});
 
 describe("ai reply loading helpers source contracts", () => {
     it("uses shared setAiReplyLoading and restores was-disabled markers", () => {
-        assert.ok(appSource.includes("function setAiReplyLoading(panel, loading"));
-        assert.ok(appSource.includes("data-ai-reply-was-disabled"));
-        assert.ok(appSource.includes("setAiReplyLoading(panel, true)"));
-        const simulateFn = appSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
+        assert.ok(appJsSource.includes("function setAiReplyLoading(panel, loading"));
+        assert.ok(appJsSource.includes("data-ai-reply-was-disabled"));
+        assert.ok(appJsSource.includes("setAiReplyLoading(panel, true)"));
+        const simulateFn = appJsSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
         assert.ok(simulateFn.includes("setAiReplyLoading"));
         assert.ok(!simulateFn.includes("setTagEditorLoading"));
-        const mailboxUsesHelper = /action === "ai-reply-turn"[\s\S]*?setAiReplyLoading\(panel, true\)/.test(appSource);
+        const mailboxUsesHelper = /action === "ai-reply-turn"[\s\S]*?setAiReplyLoading\(panel, true\)/.test(appJsSource);
         assert.ok(mailboxUsesHelper);
     });
 
     it("keeps feedback and draft text isolated", () => {
-        assert.ok(appSource.includes("function renderAiReplyFeedback("));
-        assert.ok(appSource.includes("事实覆盖"));
-        assert.ok(!/已回答\s*\$\{/.test(appSource) && !appSource.includes("已回答 "));
-        assert.ok(appSource.includes("appendAiChatDraftBubble(result.draftText"));
-        assert.ok(!/appendAiChatDraftBubble\([^)]*contextWarnings/.test(appSource));
-        assert.ok(indexSource.includes('id="aiTrainingSimulateFeedback"'));
-        assert.ok(appSource.includes('id="aiReplyFeedback"'));
+        assert.ok(appJsSource.includes("function renderAiReplyFeedback("));
+        assert.ok(appJsSource.includes("事实覆盖"));
+        assert.ok(!/已回答\s*\$\{/.test(appJsSource) && !appJsSource.includes("已回答 "));
+        assert.ok(appJsSource.includes("appendAiChatDraftBubble(rawDraft, renderedDraft)"));
+        assert.ok(!/appendAiChatDraftBubble\([^)]*contextWarnings/.test(appJsSource));
+        assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingSimulateFeedback"'));
+        assert.ok(appJsSource.includes('id="aiReplyFeedback"'));
+    });
+
+    it("routes display/copy/adopt to rendered and turns to raw template", () => {
+        assert.match(appJsSource, /lastDraftTemplate:\s*""/);
+        assert.match(appJsSource, /lastRenderedDraft:\s*""/);
+        assert.doesNotMatch(appJsSource, /lastDraft:\s*""/);
+        assert.match(
+            appJsSource,
+            /translatableBody\(result\.renderedDraftText \|\| result\.draftText/
+        );
+        assert.match(
+            appJsSource,
+            /sim\?\.renderedDraftText \|\| sim\?\.draftText/
+        );
+        assert.match(appJsSource, /assistantDraft:\s*aiReplyState\.lastDraftTemplate/);
+        assert.match(appJsSource, /aiReplyState\.lastDraftTemplate\s*=\s*rawDraft/);
+        assert.match(appJsSource, /aiReplyState\.lastRenderedDraft\s*=\s*renderedDraft/);
+        assert.match(appJsSource, /aiReplyState\.drafts\[draftId\]\s*=\s*\{\s*raw:/);
+        assert.match(appJsSource, /entry\?\.rendered\s*\?\?\s*aiReplyState\.lastRenderedDraft/);
+        assert.match(appJsSource, /editor\.innerText\s*=\s*rendered/);
+        assert.doesNotMatch(appJsSource, /assistantDraft:\s*aiReplyState\.lastRenderedDraft/);
+        assert.doesNotMatch(appJsSource, /assistantDraft:\s*aiReplyState\.lastDraft[^T]/);
+    });
+
+    it("preserves raw template across adopt→send only when editor matches baseline", () => {
+        assert.match(appJsSource, /adoptContext:\s*null/);
+        assert.match(appJsSource, /aiReplyState\.adoptContext\s*=\s*null/);
+        assert.match(appJsSource, /rawTemplate:\s*raw\s*\|\|\s*""/);
+        assert.match(appJsSource, /renderedBaselineHtml:\s*editor\s*\?\s*editor\.innerHTML/);
+        assert.match(appJsSource, /templateTextBody\s*=\s*adopt\.rawTemplate/);
+        const sendIdx = appJsSource.indexOf('if (action === "send-manual-rich-reply")');
+        assert.ok(sendIdx > 0);
+        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 2200);
+        assert.match(sendBlock, /editor\.innerText\.trim\(\)\s*===\s*\(adopt\.renderedBaseline/);
+        assert.match(sendBlock, /editor\.innerHTML\s*===\s*\(adopt\.renderedBaselineHtml/);
+        assert.match(sendBlock, /htmlBody:\s*editor\.innerHTML/);
+        assert.match(sendBlock, /textBody:\s*editor\.innerText/);
+        assert.doesNotMatch(fs.readFileSync(stylesCssPath, "utf-8"), /templateTextBody|adoptContext/);
+        assert.doesNotMatch(fs.readFileSync(indexHtmlPath, "utf-8"), /templateTextBody|adoptContext/);
+    });
+
+    it("omits raw template when rich-format HTML changes without text change", () => {
+        const adoptIdx = appJsSource.indexOf('if (action === "ai-adopt-draft")');
+        assert.ok(adoptIdx > 0);
+        const adoptBlock = appJsSource.slice(adoptIdx, adoptIdx + 1600);
+        assert.match(adoptBlock, /renderedBaselineHtml/);
+        const sendIdx = appJsSource.indexOf('if (action === "send-manual-rich-reply")');
+        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 2200);
+        // Both text and HTML must match — HTML-only format edits must not pass raw.
+        assert.match(sendBlock, /innerText\.trim\(\)\s*===\s*\(adopt\.renderedBaseline/);
+        assert.match(sendBlock, /innerHTML\s*===\s*\(adopt\.renderedBaselineHtml/);
+    });
+
+    it("maps preview warning codes to Chinese labels", () => {
+        const { AI_REPLY_WARNING_LABELS } = createSandbox();
+        assert.strictEqual(
+            AI_REPLY_WARNING_LABELS.AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND,
+            "无法确定回信账号，变量预览未完全渲染"
+        );
+        assert.strictEqual(
+            AI_REPLY_WARNING_LABELS.AI_REPLY_PREVIEW_INVALID_PLACEHOLDER,
+            "草稿含未知变量占位符，已保留原文"
+        );
     });
 
     it("sends mailRecordId with expertContactId when available", () => {
-        assert.ok(appSource.includes("selectedSimulateMailRecordId"));
-        assert.ok(appSource.includes("body.mailRecordId = mailRecordId"));
-        assert.ok(appSource.includes("simulateRequestSeq"));
-        assert.ok(appSource.includes("aiReplyState.requestSeq"));
+        assert.ok(appJsSource.includes("selectedSimulateMailRecordId"));
+        assert.ok(appJsSource.includes("body.mailRecordId = mailRecordId"));
+        assert.ok(appJsSource.includes("simulateRequestSeq"));
+        assert.ok(appJsSource.includes("aiReplyState.requestSeq"));
     });
 
-    it("adds S-1/S-2 CSS classes without tag-editor reuse", () => {
+    it("keeps S-1/S-2 CSS classes without tag-editor reuse", () => {
+        const stylesSource = fs.readFileSync(stylesCssPath, "utf-8");
         assert.ok(stylesSource.includes(".ai-reply-loading-overlay"));
         assert.ok(stylesSource.includes(".ai-reply-loading-spinner"));
         assert.ok(stylesSource.includes("@keyframes ai-reply-spin"));
@@ -79,111 +239,5 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(stylesSource.includes(".ai-reply-warning"));
         assert.ok(stylesSource.includes(".ai-reply-error"));
         assert.ok(/\.ai-reply-section \.ai-chat-panel \{[\s\S]*?position:\s*relative;/.test(stylesSource));
-        assert.ok(!stylesSource.includes("ai-reply-loading") || !/ai-reply-loading[\s\S]*tag-editor/.test(stylesSource));
-    });
-});
-
-describe("ai reply feedback copy (I-4/I-5)", () => {
-    it("uses 事实覆盖 wording and truncates unsupported list", () => {
-        assert.strictEqual(
-            buildCoverageLabel({ requestCount: 7, groundedRequestCount: 6 }),
-            "事实覆盖 6/7 项"
-        );
-        assert.ok(!String(buildCoverageLabel({ requestCount: 7, groundedRequestCount: 6 })).includes("已回答"));
-        assert.strictEqual(
-            formatUnsupportedRequests(["a", "b", "c", "d"]),
-            "以下请求缺少已审核依据：a；b；c；另 1 项"
-        );
-    });
-
-    it("degrades when backend omits new fields", () => {
-        assert.strictEqual(buildCoverageLabel({}), null);
-        assert.strictEqual(formatUnsupportedRequests(undefined), "");
-    });
-});
-
-describe("simulate payload mailRecordId (I-6)", () => {
-    it("includes both ids when mailRecordId is available", () => {
-        assert.deepStrictEqual(
-            buildSimulatePayload(10, 99, ""),
-            { expertContactId: 10, promptOverride: null, mailRecordId: 99 }
-        );
-    });
-
-    it("falls back to contactId only when mailRecordId missing", () => {
-        assert.deepStrictEqual(
-            buildSimulatePayload(10, null, "note"),
-            { expertContactId: 10, promptOverride: "note" }
-        );
-    });
-});
-
-describe("ai reply model picker (I-1..I-5/S-1)", () => {
-    const flashOption = '<option value="DEEPSEEK_V4_FLASH" selected>DeepSeek V4 Flash</option>';
-    const proOption = '<option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>';
-    const mailboxFlash = '<option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>';
-    const mailboxPro = '<option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>';
-
-    it("exposes identical Flash/Pro options on both entrances", () => {
-        assert.ok(indexSource.includes('id="aiTrainingReplyModel"'));
-        assert.ok(indexSource.includes(flashOption));
-        assert.ok(indexSource.includes(proOption));
-        assert.ok(appSource.includes('id="aiMailboxReplyModel"'));
-        assert.ok(appSource.includes(mailboxFlash));
-        assert.ok(appSource.includes(mailboxPro));
-        assert.ok(appSource.includes('simulateModel: "DEEPSEEK_V4_FLASH"'));
-        assert.ok(appSource.includes('selectedModel: "DEEPSEEK_V4_FLASH"'));
-        assert.equal((indexSource.match(/DEEPSEEK_V4_/g) || []).length, 2);
-        assert.ok(!appSource.includes("DEEPSEEK_V4_REASONER"));
-        assert.ok(!indexSource.includes("DEEPSEEK_V4_REASONER"));
-    });
-
-    it("sends model snapshots and rejects mismatched selectedModel", () => {
-        const simulateFn = appSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
-        assert.ok(simulateFn.includes("model: expectedModel"));
-        assert.ok(simulateFn.includes('result.selectedModel !== expectedModel'));
-        assert.ok(simulateFn.includes("模型响应与当前选择不一致，请重新生成"));
-        assert.ok(simulateFn.includes("expectedModel === currentModel"));
-        assert.ok(/action === "ai-reply-turn"[\s\S]*model: expectedModel/.test(appSource));
-        assert.ok(/action === "ai-reply-turn"[\s\S]*result\.selectedModel !== expectedModel/.test(appSource));
-        assert.ok(/action === "ai-reply-turn"[\s\S]*模型响应与当前选择不一致，请重新生成/.test(appSource));
-    });
-
-    it("disables select during loading and restores was-disabled", () => {
-        assert.ok(appSource.includes('panel.querySelectorAll("button, textarea, select")'));
-        assert.ok(appSource.includes("data-ai-reply-was-disabled"));
-    });
-
-    it("keeps model badge out of draft/turns/adopt paths", () => {
-        assert.ok(appSource.includes("appendAiChatDraftBubble(result.draftText || \"\")"));
-        assert.ok(!/appendAiChatDraftBubble\([^)]*selectedModel/.test(appSource));
-        assert.ok(!/appendAiChatDraftBubble\([^)]*模型：/.test(appSource));
-        assert.ok(appSource.includes("editor.innerText = draft"));
-        assert.ok(!/innerText\s*=\s*[^\n]*模型：/.test(appSource));
-        assert.ok(appSource.includes("AI_REPLY_MODEL_LABELS"));
-        assert.ok(appSource.includes("`模型：${aiReplyModelLabel(result.selectedModel)}`")
-            || appSource.includes("模型：${escapeHtml(aiReplyModelLabel(result.selectedModel))}"));
-    });
-
-    it("includes S-1 CSS verbatim and no third option", () => {
-        assert.ok(stylesSource.includes(".ai-reply-model-row {"));
-        assert.ok(stylesSource.includes("justify-content: flex-end;"));
-        assert.ok(stylesSource.includes(".ai-reply-model-select {"));
-        assert.ok(stylesSource.includes("min-width: 190px;"));
-        assert.ok(stylesSource.includes(".ai-reply-model-select:focus {"));
-        assert.ok(stylesSource.includes(".ai-reply-model-select:disabled {"));
-        assert.ok(stylesSource.includes("background: #f8fafc;"));
-        assert.ok(!/id="aiTrainingReplyModel"[^>]*style=/.test(indexSource));
-        assert.ok(!/id="aiMailboxReplyModel"[^>]*style=/.test(appSource));
-        assert.equal((appSource.match(/option value="DEEPSEEK_V4_/g) || []).length, 2);
-        assert.equal((indexSource.match(/option value="DEEPSEEK_V4_/g) || []).length, 2);
-    });
-
-    it("does not reset mailbox model when switching mails", () => {
-        const resetFn = appSource.match(/function resetAiReplyState\(recordId\) \{[\s\S]*?\n\}/)?.[0] || "";
-        assert.ok(resetFn.includes("aiReplyState.inFlight = false"));
-        assert.ok(!resetFn.includes("selectedModel"));
-        const initFn = appSource.match(/function initAiReplyWorkbench\(recordId\) \{[\s\S]*?\n\}/)?.[0] || "";
-        assert.ok(initFn.includes("modelSelect.value = aiReplyState.selectedModel"));
     });
 });

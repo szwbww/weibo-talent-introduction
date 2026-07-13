@@ -340,4 +340,61 @@ class MailVariableServiceTest {
         assertTrue(institution.filled)
         assertFalse(institution.usedFallback)
     }
+
+    @Test
+    fun `renderHtmlForContact escapes special chars while renderForContact keeps raw`() {
+        val specialAccount = account.copy(teamName = "A&B <Team>")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val text = service.renderForContact("From \${teamName}", specialAccount, contact)
+        val html = service.renderHtmlForContact("From \${teamName}", specialAccount, contact)
+
+        assertEquals("From A&B <Team>", text)
+        assertEquals("From A&amp;B &lt;Team&gt;", html)
+    }
+
+    @Test
+    fun `renderHtmlForContact preserves editor tags and escapes substituted values`() {
+        val specialExpert = expert.copy(givenNames = "Ada &", familyNames = "Lovelace <PhD>")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(specialExpert)
+
+        val rendered = service.renderHtmlForContact(
+            "<p>Hello \${expertName}</p>",
+            account,
+            contact
+        )
+
+        assertEquals("<p>Hello Ada &amp; Lovelace &lt;PhD&gt;</p>", rendered)
+        assertTrue(rendered.startsWith("<p>"))
+        assertTrue(rendered.endsWith("</p>"))
+    }
+
+    @Test
+    fun `renderHtmlForContact fallback and empty known keys match renderForContact semantics`() {
+        val sparseExpert = expert.copy(familyNames = null, researchFields = null)
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(sparseExpert)
+
+        val template = "Dear \${expertFamilyName|there}, fields=\${researchFields}"
+        val text = service.renderForContact(template, account, contact)
+        val html = service.renderHtmlForContact(template, account, contact)
+
+        assertEquals("Dear there, fields=", text)
+        assertEquals(text, html)
+    }
+
+    @Test
+    fun `renderHtmlForContact preserves unknown tokens like renderForContact`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val template = "Value: \${unknownKey}"
+        val text = service.renderForContact(template, account, contact)
+        val html = service.renderHtmlForContact(template, account, contact)
+
+        assertEquals("Value: \${unknownKey}", text)
+        assertEquals("Value: \${unknownKey}", html)
+    }
 }

@@ -7,11 +7,16 @@ import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.llm.service.AiReplyContext
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
+import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
 import com.weibo.talentintroduction.llm.service.AiReplyMode
 import com.weibo.talentintroduction.llm.service.AiReplyModel
+import com.weibo.talentintroduction.llm.service.RequestFactItem
+import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
+import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
 import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -36,6 +41,16 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
     private val autoReplyPreviewService = Mockito.mock(AutoReplyPreviewService::class.java)
     private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
     private val aiReplyDraftService = Mockito.mock(AiReplyDraftService::class.java)
+    private val aiReplyDraftPreviewService = Mockito.mock(AiReplyDraftPreviewService::class.java) { invocation ->
+        if (invocation.method.name == "preview") {
+            AiReplyDraftPreviewService.PreviewResult(
+                renderedText = invocation.getArgument(0),
+                warningCodes = emptyList()
+            )
+        } else {
+            Mockito.RETURNS_DEFAULTS.answer(invocation)
+        }
+    }
     private val aiReplyContextBuilder = AiReplyContextBuilder()
     private val aiTrainingQaService = Mockito.mock(AiTrainingQaService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
@@ -51,6 +66,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         autoReplyPreviewService,
         replySnippetService,
         aiReplyDraftService,
+        aiReplyDraftPreviewService,
         aiReplyContextBuilder,
         aiTrainingQaService,
         mailRecordRepository,
@@ -181,7 +197,15 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 groundedRequestCount = 0,
                 unsupportedRequests = listOf("research scope"),
                 contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
-                fewShotDialogRefs = listOf("DIALOG_1")
+                fewShotDialogRefs = listOf("DIALOG_1"),
+                requestFacts = listOf(
+                    RequestFactItem(
+                        index = 1,
+                        requestText = "research scope",
+                        factRuleIds = emptyList(),
+                        status = RequestGroundingStatus.UNSUPPORTED
+                    )
+                )
             )
         ).`when`(aiReplyDraftService).generate(
             Mockito.anyString(),
@@ -197,6 +221,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
 
         val response = controller.aiReplyTurn(2L, AiReplyTurnRequest())
 
+        assertEquals("reply draft", response.draftText)
+        assertEquals("reply draft", response.renderedDraftText)
         assertEquals(listOf(5L), response.qaRuleIds)
         assertEquals("QA_MATCHED", response.mode)
         assertEquals(1, response.requestCount)
@@ -205,6 +231,18 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertEquals(listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"), response.contextWarnings)
         assertEquals(listOf("DIALOG_1"), response.injectedDialogRefs)
         assertEquals(AiReplyModel.DEEPSEEK_V4_FLASH.name, response.selectedModel)
+        Mockito.verify(aiReplyDraftPreviewService).preview("reply draft", contact, "a1")
+        assertEquals(
+            listOf(
+                RequestCoverageItem(
+                    index = 1,
+                    requestText = "research scope",
+                    status = "UNSUPPORTED",
+                    factRuleIds = emptyList()
+                )
+            ),
+            response.requestCoverage
+        )
     }
 
     @Test
@@ -242,23 +280,49 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             unsupportedRequests = listOf("research scope question"),
             contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
             fewShotDialogRefs = listOf("DIALOG_42"),
-            selectedModel = AiReplyModel.DEEPSEEK_V4_PRO.name
+            selectedModel = AiReplyModel.DEEPSEEK_V4_PRO.name,
+            requestFacts = listOf(
+                RequestFactItem(1, "salary question", listOf(1L), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(2, "research scope question", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            ),
+            generationState = AiReplyGenerationState.LLM_USED
         )
         Mockito.doReturn(sourceResult).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
             Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
         )
+        Mockito.`when`(
+            aiReplyDraftPreviewService.preview("Grounded reply body", contact, "a1")
+        ).thenReturn(
+            AiReplyDraftPreviewService.PreviewResult(
+                renderedText = "Grounded reply rendered",
+                warningCodes = listOf("AI_REPLY_PREVIEW_INVALID_PLACEHOLDER")
+            )
+        )
 
         val response = controller.aiReplyTurn(5L, AiReplyTurnRequest())
 
+        assertEquals(sourceResult.draftText, response.draftText)
+        assertEquals("Grounded reply rendered", response.renderedDraftText)
         assertEquals(sourceResult.mode.name, response.mode)
         assertEquals(sourceResult.qaRuleIds, response.qaRuleIds)
         assertEquals(sourceResult.requestCount, response.requestCount)
         assertEquals(sourceResult.groundedRequestCount, response.groundedRequestCount)
         assertEquals(sourceResult.unsupportedRequests, response.unsupportedRequests)
-        assertEquals(sourceResult.contextWarnings, response.contextWarnings)
+        assertEquals(
+            listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT", "AI_REPLY_PREVIEW_INVALID_PLACEHOLDER"),
+            response.contextWarnings
+        )
         assertEquals(sourceResult.fewShotDialogRefs, response.injectedDialogRefs)
         assertEquals(sourceResult.selectedModel, response.selectedModel)
+        assertEquals(sourceResult.generationState.name, response.generationState)
+        assertEquals(
+            sourceResult.requestFacts.map {
+                RequestCoverageItem(it.index, it.requestText, it.status.name, it.factRuleIds)
+            },
+            response.requestCoverage
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test

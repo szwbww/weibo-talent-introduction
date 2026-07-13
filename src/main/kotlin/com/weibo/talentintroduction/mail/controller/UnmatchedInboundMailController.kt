@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewResult
@@ -43,6 +44,7 @@ class UnmatchedInboundMailController(
     private val autoReplyPreviewService: AutoReplyPreviewService,
     private val replySnippetService: ReplySnippetService,
     private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService,
+    private val aiReplyDraftPreviewService: com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService,
     private val aiReplyContextBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder,
     private val aiTrainingQaService: com.weibo.talentintroduction.llm.service.AiTrainingQaService,
     private val mailRecordRepository: MailRecordRepository,
@@ -214,7 +216,9 @@ class UnmatchedInboundMailController(
             ackSnippetId = request.ackSnippetId,
             edited = request.edited,
             freeTextPreview = request.freeTextPreview,
-            useVariants = request.useVariants
+            useVariants = request.useVariants,
+            templateTextBody = request.templateTextBody,
+            templateHtmlBody = request.templateHtmlBody
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
@@ -303,8 +307,14 @@ class UnmatchedInboundMailController(
             contextWarnings = context.contextWarnings,
             replyModel = request.model
         )
+        val preview = aiReplyDraftPreviewService.preview(
+            raw = result.draftText,
+            contact = contact,
+            senderAccountCode = detail.senderAccountCode
+        )
         return AiReplyTurnResponse(
             draftText = result.draftText,
+            renderedDraftText = preview.renderedText,
             usedLlm = result.usedLlm,
             llmEnabled = llmStitchService.isEnabled(),
             qaRuleIds = result.qaRuleIds,
@@ -312,10 +322,24 @@ class UnmatchedInboundMailController(
             requestCount = result.requestCount,
             groundedRequestCount = result.groundedRequestCount,
             unsupportedRequests = result.unsupportedRequests,
-            contextWarnings = result.contextWarnings,
+            contextWarnings = mergeWarningsPreserveOrder(result.contextWarnings, preview.warningCodes),
             injectedDialogRefs = result.fewShotDialogRefs,
-            selectedModel = result.selectedModel
+            selectedModel = result.selectedModel,
+            requestCoverage = result.requestFacts.map {
+                RequestCoverageItem(
+                    index = it.index,
+                    requestText = it.requestText,
+                    status = it.status.name,
+                    factRuleIds = it.factRuleIds
+                )
+            },
+            generationState = result.generationState.name
         )
+    }
+
+    private fun mergeWarningsPreserveOrder(existing: List<String>, extra: List<String>): List<String> {
+        val seen = linkedSetOf<String>()
+        return (existing + extra).filter { seen.add(it) }
     }
 }
 
@@ -527,6 +551,7 @@ data class AiReplyTurnRequest(
 
 data class AiReplyTurnResponse(
     val draftText: String,
+    val renderedDraftText: String = "",
     val usedLlm: Boolean,
     val llmEnabled: Boolean,
     val qaRuleIds: List<Long>,
@@ -536,7 +561,9 @@ data class AiReplyTurnResponse(
     val unsupportedRequests: List<String> = emptyList(),
     val contextWarnings: List<String> = emptyList(),
     val injectedDialogRefs: List<String> = emptyList(),
-    val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name
+    val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name,
+    val requestCoverage: List<RequestCoverageItem> = emptyList(),
+    val generationState: String = "FALLBACK_NO_RESPONSE"
 )
 
 private fun InboundMailProcessing.toResponse(

@@ -25,7 +25,12 @@ object FreeFormPromptDefaults {
         appendLine("Use only the provided context (QA facts, training knowledge, and existing expert profile).")
         appendLine("Tone: warm, professional, concise.")
         appendLine("Reply in the same language as the inbound email.")
-        appendLine("Keep the reply to at most 4 paragraphs.")
+        appendLine("For a single-request email, keep the reply to at most 4 paragraphs.")
+        appendLine(
+            "For a multi-request email (2 or more requests): write a short acknowledgement, " +
+                "then one numbered section per request in order (1..N), then a closing. " +
+                "Prefer 1–3 sentences per section. Do not crush the reply into at most 4 paragraphs."
+        )
         appendLine("Output only the email body text. Do not include a subject line.")
         appendLine(
             "Unless the inbound email or operator instruction explicitly asks or authorizes it, " +

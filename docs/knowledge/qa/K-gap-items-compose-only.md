@@ -2,8 +2,8 @@
 id: K-gap-items-compose-only
 domain: qa
 created: 2026-06-27
-last_used: 2026-07-12
-hit_count: 7
+last_used: 2026-07-13
+hit_count: 9
 source: fix-v:gap-clickable-rule-highlight:verification
 severity: P2
 ---
