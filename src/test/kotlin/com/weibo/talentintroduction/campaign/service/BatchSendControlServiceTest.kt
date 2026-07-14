@@ -1,6 +1,9 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -12,6 +15,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
 import java.util.concurrent.Executor
+import java.time.LocalDateTime
 import java.util.concurrent.RejectedExecutionException
 
 class BatchSendControlServiceTest {
@@ -21,6 +25,8 @@ class BatchSendControlServiceTest {
     private val batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val mailComposeTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+    private val batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
+    private val objectMapper = ObjectMapper().registerKotlinModule()
     private val manualOutreachExecutor = Mockito.mock(Executor::class.java)
 
     private val control = BatchSendControlService(
@@ -28,10 +34,18 @@ class BatchSendControlServiceTest {
         taskExecutionService = taskExecutionService,
         manualInitialOutreachService = manualInitialOutreachService,
         batchSendSettingService = batchSendSettingService,
+        batchSendTaskConfigRepository = batchSendTaskConfigRepository,
         mailSenderAccountService = mailSenderAccountService,
         mailComposeTemplateService = mailComposeTemplateService,
+        objectMapper = objectMapper,
         manualOutreachExecutor = manualOutreachExecutor
     )
+
+    private fun anySnapshot(): com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot =
+        anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+        ))
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
@@ -46,10 +60,10 @@ class BatchSendControlServiceTest {
         }.`when`(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
 
         // Default: tryStartWithToken succeeds
-        Mockito.doReturn(Pair(true, -12345L))
+        Mockito.doAnswer { Pair(true, -12345L) }
             .`when`(progressStore).tryStartWithToken(
-                eqValue(BatchSendControlService.TASK_TYPE),
-                anyValue(TaskProgress(BatchSendControlService.TASK_TYPE, "RUNNING", 0, 0, 0))
+                Mockito.anyString(),
+                Mockito.any(TaskProgress::class.java) ?: TaskProgress(BatchSendControlService.TASK_TYPE, "RUNNING", 0, 0, 0)
             )
 
         // Default config: autoEnabled=true so startAuto passes the gate
@@ -61,15 +75,31 @@ class BatchSendControlServiceTest {
         Mockito.`when`(mailSenderAccountService.warmupActiveCount()).thenReturn(0)
         Mockito.`when`(mailSenderAccountService.todayTotalCapacity()).thenReturn(100)
 
+        val legacyIntroConfig = com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+            id = 1L,
+            configName = "INTRODUCTION",
+            mailType = "INTRODUCTION",
+            autoEnabled = true,
+            cron = "0 0 0 * * ?",
+            dailyCap = 100,
+            roundSize = 10,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            legacyCode = "INTRODUCTION"
+        )
+        Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(legacyIntroConfig)
+        Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("MATERIAL_REMINDER")).thenReturn(null)
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(legacyIntroConfig)
+        Mockito.doReturn(0).`when`(taskExecutionService).sumSuccessCountTodayByBatchConfigId(anyValue(1L), anyValue(LocalDateTime.now()))
+
         // Default runAndRecordWithResult: invoke onStarted(99L) and run the block
-        Mockito.`when`(taskExecutionService.runAndRecordWithResult<ManualOutreachResult>(
-            anyValue(""), anyValue(""), anyValue(Any()), anyValue { }, anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
-        )).thenAnswer { invocation ->
+        Mockito.doAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
             onStarted?.invoke(99L)
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.getArgument<() -> ManualOutreachResult>(4)
+            val block = invocation.getArgument<() -> ManualOutreachResult>(5)
             val result = block()
             val exec = com.weibo.talentintroduction.task.domain.TaskExecution(
                 id = 99L, taskType = invocation.getArgument(0),
@@ -78,7 +108,26 @@ class BatchSendControlServiceTest {
                 startedAt = java.time.LocalDateTime.now(), finishedAt = java.time.LocalDateTime.now()
             )
             Pair(exec, result)
-        }
+        }.`when`(taskExecutionService).runAndRecordWithResult<ManualOutreachResult>(
+            anyValue(""),
+            anyValue(""),
+            anyValue(Any()),
+            anyValue { _: Long -> },
+            anyValue(null as Long?),
+            anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
+        )
+
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+                anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )),
+                anyValue(0L),
+                anyValue(ExecutionMode.MANUAL),
+                anyValue(0),
+                anyValue(false)
+            )
     }
 
     // ──── I-9: state machine transitions ────
@@ -90,8 +139,14 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
-            .thenReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            anySnapshot(),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            anyValue(0),
+            eqValue(false)
+        )
 
         val response = control.startManual()
 
@@ -126,8 +181,14 @@ class BatchSendControlServiceTest {
             BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.AUTO, false))
-            .thenReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            anySnapshot(),
+            eqValue(99L),
+            eqValue(ExecutionMode.AUTO),
+            anyValue(0),
+            eqValue(false)
+        )
 
         val response = control.startAuto()
 
@@ -140,10 +201,23 @@ class BatchSendControlServiceTest {
     fun `startAuto with autoEnabled=false returns 409`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
-        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(
-            BatchSendConfig(autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
-                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
+        val disabledLegacy = com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+            id = 1L,
+            configName = "INTRODUCTION",
+            mailType = "INTRODUCTION",
+            autoEnabled = false,
+            cron = "0 0 0 * * ?",
+            dailyCap = 100,
+            roundSize = 10,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            legacyCode = "INTRODUCTION"
         )
+        Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION"))
+            .thenReturn(disabledLegacy)
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(disabledLegacy)
 
         val response = control.startAuto()
 
@@ -238,8 +312,14 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("PAUSED", "AUTO", "NO_AVAILABLE_ACCOUNT"))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, true))
-            .thenReturn(ManualOutreachResult(total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "PAUSED", stopReason = "ONE_ROUND_DONE"))
+        Mockito.doReturn(ManualOutreachResult(total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "PAUSED", stopReason = "ONE_ROUND_DONE"))
+            .`when`(manualInitialOutreachService).run(
+            anySnapshot(),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            anyValue(0),
+            eqValue(true)
+        )
 
         val response = control.runManualOnce()
 
@@ -256,8 +336,14 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "AUTO", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, true))
-            .thenReturn(ManualOutreachResult(total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "PAUSED", stopReason = "ONE_ROUND_DONE"))
+        Mockito.doReturn(ManualOutreachResult(total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "PAUSED", stopReason = "ONE_ROUND_DONE"))
+            .`when`(manualInitialOutreachService).run(
+            anySnapshot(),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            anyValue(0),
+            eqValue(true)
+        )
 
         val response = control.runManualOnce()
 
@@ -284,8 +370,8 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "AUTO", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, true))
-            .thenReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
+        Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(true))
 
         val response = control.runManualOnce()
 
@@ -301,8 +387,8 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
 
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.AUTO, false))
-            .thenReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
+        Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
 
         control.startAuto()
 
@@ -455,8 +541,8 @@ class BatchSendControlServiceTest {
             BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.AUTO, false))
-            .thenReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
+        Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
 
         control.startAuto()
 
@@ -466,6 +552,7 @@ class BatchSendControlServiceTest {
             eqValue("SCHEDULED"),
             anyValue(Any()),
             anyValue { },
+            anyValue(null as Long?),
             anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
         )
     }
@@ -475,8 +562,8 @@ class BatchSendControlServiceTest {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
-            .thenReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
+        Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
 
         control.startManual()
 
@@ -486,6 +573,7 @@ class BatchSendControlServiceTest {
             eqValue("MANUAL"),
             anyValue(Any()),
             anyValue { },
+            anyValue(null as Long?),
             anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
         )
     }
@@ -521,11 +609,11 @@ class BatchSendControlServiceTest {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.AUTO, false))
-            .thenReturn(ManualOutreachResult(
+        Mockito.doReturn(ManualOutreachResult(
                 total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "WARMUP_LIMIT_REACHED"
             ))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
 
         control.startAuto()
 
@@ -537,11 +625,11 @@ class BatchSendControlServiceTest {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
-        Mockito.`when`(manualInitialOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
-            .thenReturn(ManualOutreachResult(
+        Mockito.doReturn(ManualOutreachResult(
                 total = 5, sent = 5, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "DAILY_LIMIT_REACHED"
             ))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
 
         control.startManual()
 

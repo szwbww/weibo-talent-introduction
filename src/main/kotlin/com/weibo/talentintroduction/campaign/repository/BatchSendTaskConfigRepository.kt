@@ -38,4 +38,13 @@ interface BatchSendTaskConfigRepository : CrudRepository<BatchSendTaskConfig, Lo
     fun findByConfigNameAndDeletedAtIsNull(configName: String): BatchSendTaskConfig?
 
     fun findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc(): List<BatchSendTaskConfig>
+
+    @Query(
+        """
+        SELECT * FROM batch_send_task_config
+        WHERE legacy_code = :legacyCode
+        LIMIT 1
+        """
+    )
+    fun findByLegacyCode(legacyCode: String): BatchSendTaskConfig?
 }

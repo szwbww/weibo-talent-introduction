@@ -141,6 +141,80 @@ class BatchSendTaskConfigService(
         publishReload(existing.cron)
     }
 
+    /**
+     * Legacy typed API adapter: read the seeded `legacy_code` entity as [BatchSendConfig].
+     * Soft-deleted / missing rows → 404; never falls back to KV.
+     */
+    fun getLegacyConfig(sendType: BatchSendType): BatchSendConfig =
+        toLegacyConfig(requireActiveLegacy(sendType), sendType)
+
+    /**
+     * Legacy typed API adapter: update the seeded `legacy_code` entity via the same validate/save/reload path.
+     * Preserves entity `configName` / funnel / tags; maps old [BatchSendConfigUpdateRequest] fields only.
+     */
+    @Transactional
+    fun updateLegacyConfig(sendType: BatchSendType, request: BatchSendConfigUpdateRequest): BatchSendConfig {
+        val existing = requireActiveLegacy(sendType)
+        val id = existing.id ?: error("Batch send task config id is required")
+        val view = update(
+            id,
+            BatchSendTaskConfigUpdateCommand(
+                configName = existing.configName,
+                autoEnabled = request.autoEnabled,
+                cron = request.cron,
+                dailyCap = request.dailyCap,
+                roundSize = request.roundSize,
+                perMailIntervalMs = request.perMailIntervalMs,
+                perRoundIntervalMs = request.perRoundIntervalMs,
+                selfCheckTtlMinutes = request.selfCheckTtlMinutes,
+                funnelLevel = existing.funnelLevel,
+                tags = parseTags(existing.tagsJson),
+                emailDomain = request.emailDomain.ifBlank { null },
+                discipline = request.discipline.ifBlank { null },
+                templateId = request.templateId
+            )
+        )
+        return BatchSendConfig(
+            sendType = sendType,
+            autoEnabled = view.autoEnabled,
+            cron = view.cron,
+            dailyCap = view.dailyCap,
+            roundSize = view.roundSize,
+            perMailIntervalMs = view.perMailIntervalMs,
+            perRoundIntervalMs = view.perRoundIntervalMs,
+            selfCheckTtlMinutes = view.selfCheckTtlMinutes,
+            emailDomain = view.emailDomain.orEmpty(),
+            discipline = view.discipline.orEmpty(),
+            templateId = view.templateId
+        )
+    }
+
+    private fun requireActiveLegacy(sendType: BatchSendType): BatchSendTaskConfig {
+        val row = repository.findByLegacyCode(sendType.name)
+        if (row == null || row.deletedAt != null) {
+            throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Legacy batch send config not found: ${sendType.name}"
+            )
+        }
+        return row
+    }
+
+    private fun toLegacyConfig(row: BatchSendTaskConfig, sendType: BatchSendType): BatchSendConfig =
+        BatchSendConfig(
+            sendType = sendType,
+            autoEnabled = row.autoEnabled,
+            cron = row.cron,
+            dailyCap = row.dailyCap,
+            roundSize = row.roundSize,
+            perMailIntervalMs = row.perMailIntervalMs,
+            perRoundIntervalMs = row.perRoundIntervalMs,
+            selfCheckTtlMinutes = row.selfCheckTtlMinutes,
+            emailDomain = row.emailDomain.orEmpty(),
+            discipline = row.discipline.orEmpty(),
+            templateId = row.templateId
+        )
+
     private fun normalizeAndValidate(fields: ConfigFields, excludeId: Long?): NormalizedConfig {
         val configName = fields.configName.trim()
         require(configName.isNotEmpty()) { "configName must not be blank" }

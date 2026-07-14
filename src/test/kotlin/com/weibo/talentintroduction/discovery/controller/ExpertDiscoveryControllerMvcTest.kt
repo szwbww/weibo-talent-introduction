@@ -93,6 +93,7 @@ class ExpertDiscoveryControllerMvcTest {
             eqValue("MANUAL"),
             anyValue(Any()),
             anyValue<(Long) -> Unit> { },
+            Mockito.isNull(),
             anyValue { Any() }
         )).thenAnswer { invocation ->
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
@@ -143,6 +144,7 @@ class ExpertDiscoveryControllerMvcTest {
             eqValue("MANUAL"),
             anyValue(Any()),
             anyValue<(Long) -> Unit> { },
+            Mockito.isNull(),
             anyValue { Any() }
         )).thenAnswer { invocation ->
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)

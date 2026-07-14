@@ -81,7 +81,7 @@ class MailAutomationControllerTest {
         }.`when`(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
 
         Mockito.`when`(taskExecutionService.runAndRecordWithResult<Any>(
-            anyValue(""), anyValue(""), anyValue(Any()), anyValue { }, anyValue { }
+            anyValue(""), anyValue(""), anyValue(Any()), anyValue { }, Mockito.isNull(), anyValue { }
         )).thenAnswer { invocation ->
             capturedTriggerType = invocation.getArgument(1)
             capturedRequest = invocation.getArgument(2)

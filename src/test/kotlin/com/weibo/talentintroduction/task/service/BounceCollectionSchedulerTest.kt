@@ -48,11 +48,12 @@ class BounceCollectionSchedulerTest {
                 eqValue("SCHEDULED"),
                 eqValue("bounce-collection"),
                 anyValue(null),
+                Mockito.isNull(),
                 anyValue {}
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[4] as () -> Unit
+            val block = invocation.arguments[5] as () -> Unit
             block.invoke()
             TaskExecution(
                 taskType = "BOUNCE_COLLECTION",
@@ -77,6 +78,7 @@ class BounceCollectionSchedulerTest {
             eqValue("SCHEDULED"),
             eqValue("bounce-collection"),
             anyValue(null),
+            Mockito.isNull(),
             anyValue {}
         )
         inOrder.verify(autoMailReplyService).receiveAndAutoReply("a1", 20)

@@ -1,17 +1,21 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
+import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
-import com.weibo.talentintroduction.campaign.service.BatchSendSettingService
 import com.weibo.talentintroduction.campaign.service.BatchSendStatusView
 import com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService
 import com.weibo.talentintroduction.campaign.service.BatchSendType
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
 import com.weibo.talentintroduction.campaign.service.PendingOutreachSummary
+import com.weibo.talentintroduction.task.domain.TaskProgressLog
+import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -25,15 +29,18 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.Duration
 
 @RestController
 @RequestMapping("/api/mail/batch-send")
 class BatchSendConfigController(
-    private val batchSendSettingService: BatchSendSettingService,
     private val batchSendTaskConfigService: BatchSendTaskConfigService,
     private val templateRepository: MailComposeTemplateRepository,
     private val batchSendControlService: BatchSendControlService,
-    private val manualInitialOutreachService: ManualInitialOutreachService
+    private val manualInitialOutreachService: ManualInitialOutreachService,
+    private val taskExecutionService: TaskExecutionService,
+    private val progressLogRepository: TaskProgressLogRepository,
+    private val objectMapper: ObjectMapper
 ) {
     // ── New multi-config CRUD ──────────────────────────────────────────────────
 
@@ -69,23 +76,60 @@ class BatchSendConfigController(
         return ResponseEntity.noContent().build()
     }
 
-    // ── INTRODUCTION compat config endpoints (legacy) ──────────────────────────
+    @PostMapping("/configs/{id}/execute")
+    fun executeConfig(@PathVariable id: Long): ResponseEntity<Map<String, Any>> =
+        batchSendControlService.startManualFromConfig(id)
+
+    @PostMapping("/manual-executions")
+    fun executeManual(@RequestBody request: ManualBatchExecutionRequest): ResponseEntity<Map<String, Any>> =
+        batchSendControlService.startManual(request)
+
+    @GetMapping("/configs/{id}/executions")
+    fun listConfigExecutions(
+        @PathVariable id: Long,
+        @RequestParam(defaultValue = "50") limit: Int
+    ): ResponseEntity<List<BatchConfigExecutionSummary>> {
+        val clamped = limit.coerceIn(1, 200)
+        val executions = taskExecutionService.listRecentByBatchConfigId(id, clamped)
+        return ResponseEntity.ok(executions.map { toSummary(it) })
+    }
+
+    @GetMapping("/configs/{id}/executions/{executionId}")
+    fun getConfigExecutionDetail(
+        @PathVariable id: Long,
+        @PathVariable executionId: Long
+    ): ResponseEntity<BatchConfigExecutionDetail> {
+        val execution = taskExecutionService.getExecution(executionId)
+        if (execution.batchConfigId != id) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
+        val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(executionId)
+            .filter { it.batchNumber > 0 }
+            .groupBy { it.batchNumber }
+            .map { (_, group) -> group.last() }
+            .sortedBy { it.batchNumber }
+        return ResponseEntity.ok(toDetail(execution, logs))
+    }
+
+    // ── INTRODUCTION compat config endpoints (legacy → entity adapter) ─────────
 
     @GetMapping("/config")
     fun getConfig(): ResponseEntity<BatchSendConfig> =
-        ResponseEntity.ok(batchSendSettingService.getConfig())
+        ResponseEntity.ok(batchSendTaskConfigService.getLegacyConfig(BatchSendType.INTRODUCTION))
 
     @PutMapping("/config")
     fun updateConfig(@RequestBody request: BatchSendConfigUpdateRequest): ResponseEntity<BatchSendConfig> {
         validateTemplate(request.templateId, BatchSendType.INTRODUCTION)
-        return ResponseEntity.ok(batchSendSettingService.updateConfig(request))
+        return ResponseEntity.ok(
+            batchSendTaskConfigService.updateLegacyConfig(BatchSendType.INTRODUCTION, request)
+        )
     }
 
-    // ── Typed config endpoints (legacy compat) ─────────────────────────────────
+    // ── Typed config endpoints (legacy compat → entity adapter) ────────────────
 
     @GetMapping("/types/{sendType}/config")
     fun getConfigByType(@PathVariable sendType: BatchSendType): ResponseEntity<BatchSendConfig> =
-        ResponseEntity.ok(batchSendSettingService.getConfig(sendType))
+        ResponseEntity.ok(batchSendTaskConfigService.getLegacyConfig(sendType))
 
     @PutMapping("/types/{sendType}/config")
     fun updateConfigByType(
@@ -93,7 +137,7 @@ class BatchSendConfigController(
         @RequestBody request: BatchSendConfigUpdateRequest
     ): ResponseEntity<BatchSendConfig> {
         validateTemplate(request.templateId, sendType)
-        return ResponseEntity.ok(batchSendSettingService.updateConfig(request, sendType))
+        return ResponseEntity.ok(batchSendTaskConfigService.updateLegacyConfig(sendType, request))
     }
 
     // ── Typed control endpoints ────────────────────────────────────────────────
@@ -132,6 +176,99 @@ class BatchSendConfigController(
 
     // ── I-7: template type gate (legacy typed API) ─────────────────────────────
 
+    private fun toSummary(execution: com.weibo.talentintroduction.task.domain.TaskExecution): BatchConfigExecutionSummary {
+        val outcome = parseOutcome(execution.resultSummary)
+        val durationMs = if (execution.finishedAt != null) {
+            Duration.between(execution.startedAt, execution.finishedAt).toMillis()
+        } else null
+        return BatchConfigExecutionSummary(
+            executionId = execution.id,
+            triggerType = execution.triggerType,
+            status = execution.status,
+            target = outcome?.target ?: execution.successCount + execution.failureCount,
+            success = outcome?.success ?: execution.successCount,
+            failure = outcome?.failure ?: execution.failureCount,
+            skipped = outcome?.skipped ?: 0,
+            remaining = outcome?.remaining ?: 0,
+            startedAt = execution.startedAt,
+            finishedAt = execution.finishedAt,
+            durationMs = durationMs
+        )
+    }
+
+    private fun toDetail(
+        execution: com.weibo.talentintroduction.task.domain.TaskExecution,
+        progressBatches: List<TaskProgressLog>
+    ): BatchConfigExecutionDetail {
+        val outcome = parseOutcome(execution.resultSummary)
+        val requestSnapshot = execution.requestPayload?.let {
+            runCatching { objectMapper.readTree(it) }.getOrNull()
+        }
+        return BatchConfigExecutionDetail(
+            executionId = execution.id,
+            triggerType = execution.triggerType,
+            status = execution.status,
+            target = outcome?.target ?: 0,
+            success = outcome?.success ?: execution.successCount,
+            failure = outcome?.failure ?: execution.failureCount,
+            skipped = outcome?.skipped ?: 0,
+            remaining = outcome?.remaining ?: 0,
+            startedAt = execution.startedAt,
+            finishedAt = execution.finishedAt,
+            durationMs = if (execution.finishedAt != null) {
+                Duration.between(execution.startedAt, execution.finishedAt).toMillis()
+            } else null,
+            requestSnapshot = requestSnapshot,
+            failureReasons = outcome?.failureReasons ?: emptyMap(),
+            skippedReasons = outcome?.skippedReasons ?: emptyMap(),
+            errorSamples = outcome?.errorSamples ?: emptyList(),
+            progressBatches = progressBatches
+        )
+    }
+
+    private fun parseOutcome(resultSummary: String?): ParsedOutcome? {
+        if (resultSummary.isNullOrBlank()) return null
+        return try {
+            val root = objectMapper.readTree(resultSummary)
+            val outcomeNode = root.path("outcome")
+            if (!outcomeNode.isMissingNode) {
+                ParsedOutcome(
+                    target = outcomeNode.path("target").asInt(0),
+                    success = outcomeNode.path("success").asInt(0),
+                    failure = outcomeNode.path("failure").asInt(0),
+                    skipped = outcomeNode.path("skipped").asInt(0),
+                    remaining = outcomeNode.path("remaining").asInt(0),
+                    failureReasons = parseReasonMap(outcomeNode.path("failureReasons")),
+                    skippedReasons = parseReasonMap(outcomeNode.path("skippedReasons")),
+                    errorSamples = outcomeNode.path("errorSamples").map { it.asText() }
+                )
+            } else {
+                ParsedOutcome(
+                    target = root.path("total").asInt(0),
+                    success = root.path("sent").asInt(0),
+                    failure = root.path("failed").asInt(0),
+                    skipped = root.path("skipped").asInt(0),
+                    remaining = root.path("remaining").asInt(0),
+                    failureReasons = emptyMap(),
+                    skippedReasons = emptyMap(),
+                    errorSamples = emptyList()
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseReasonMap(node: com.fasterxml.jackson.databind.JsonNode): Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount> {
+        if (node.isMissingNode || !node.isObject) return emptyMap()
+        return node.fields().asSequence().associate { (code, value) ->
+            code to com.weibo.talentintroduction.campaign.domain.ReasonCount(
+                label = value.path("label").asText(code),
+                count = value.path("count").asInt(0)
+            )
+        }
+    }
+
     /**
      * I-7: enforces that the template pointed to by templateId is enabled and
      * has the mailType matching sendType.
@@ -155,4 +292,48 @@ class BatchSendConfigController(
 
 data class BatchSendTaskConfigEnabledRequest(
     val enabled: Boolean
+)
+
+data class BatchConfigExecutionSummary(
+    val executionId: Long?,
+    val triggerType: String,
+    val status: String,
+    val target: Int,
+    val success: Int,
+    val failure: Int,
+    val skipped: Int,
+    val remaining: Int,
+    val startedAt: java.time.LocalDateTime,
+    val finishedAt: java.time.LocalDateTime?,
+    val durationMs: Long?
+)
+
+data class BatchConfigExecutionDetail(
+    val executionId: Long?,
+    val triggerType: String,
+    val status: String,
+    val target: Int,
+    val success: Int,
+    val failure: Int,
+    val skipped: Int,
+    val remaining: Int,
+    val startedAt: java.time.LocalDateTime,
+    val finishedAt: java.time.LocalDateTime?,
+    val durationMs: Long?,
+    val requestSnapshot: com.fasterxml.jackson.databind.JsonNode?,
+    val failureReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
+    val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
+    val errorSamples: List<String>,
+    val progressBatches: List<TaskProgressLog>
+)
+
+private data class ParsedOutcome(
+    val target: Int,
+    val success: Int,
+    val failure: Int,
+    val skipped: Int,
+    val remaining: Int,
+    val failureReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
+    val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
+    val errorSamples: List<String>
 )

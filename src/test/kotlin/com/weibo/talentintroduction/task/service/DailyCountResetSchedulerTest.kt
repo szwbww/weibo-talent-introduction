@@ -19,11 +19,12 @@ class DailyCountResetSchedulerTest {
                 eqValue("SCHEDULED"),
                 eqValue("daily-count-reset"),
                 Mockito.isNull<(Long) -> Unit>(),
+                Mockito.isNull(),
                 anyValue {}
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[4] as () -> Unit
+            val block = invocation.arguments[5] as () -> Unit
             block.invoke()
             TaskExecution(
                 taskType = "DAILY_COUNT_RESET",
@@ -46,6 +47,7 @@ class DailyCountResetSchedulerTest {
             eqValue("SCHEDULED"),
             eqValue("daily-count-reset"),
             Mockito.isNull<(Long) -> Unit>(),
+            Mockito.isNull(),
             anyValue {}
         )
         Mockito.verify(mailSenderAccountService).resetDailyCounts()

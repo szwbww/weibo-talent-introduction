@@ -422,4 +422,92 @@ class BatchSendTaskConfigServiceTest {
         assertThrows(NoSuchElementException::class.java) { service().softDelete(99L) }
         verify(repository, never()).save(any())
     }
+
+    @Test
+    fun `getLegacyConfig reads active legacy_code entity as BatchSendConfig`() {
+        val entity = BatchSendTaskConfig(
+            id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = true, cron = "0 0 7 * * ?", dailyCap = 55, roundSize = 10,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            emailDomain = "edu.cn", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(entity)
+
+        val config = service().getLegacyConfig(BatchSendType.INTRODUCTION)
+
+        assertEquals(BatchSendType.INTRODUCTION, config.sendType)
+        assertTrue(config.autoEnabled)
+        assertEquals("0 0 7 * * ?", config.cron)
+        assertEquals(55, config.dailyCap)
+        assertEquals("edu.cn", config.emailDomain)
+        assertEquals("STEM", config.discipline)
+    }
+
+    @Test
+    fun `getLegacyConfig returns 404 when legacy entity missing or soft-deleted`() {
+        `when`(repository.findByLegacyCode("MATERIAL_REMINDER")).thenReturn(null)
+        val missing = assertThrows(ResponseStatusException::class.java) {
+            service().getLegacyConfig(BatchSendType.MATERIAL_REMINDER)
+        }
+        assertEquals(HttpStatus.NOT_FOUND, missing.status)
+
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(
+            row(id = 1L, deletedAt = LocalDateTime.now(), mailType = "INTRODUCTION")
+                .copy(legacyCode = "INTRODUCTION")
+        )
+        val deleted = assertThrows(ResponseStatusException::class.java) {
+            service().getLegacyConfig(BatchSendType.INTRODUCTION)
+        }
+        assertEquals(HttpStatus.NOT_FOUND, deleted.status)
+    }
+
+    @Test
+    fun `updateLegacyConfig writes entity row preserves name funnel tags and publishes reload`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 50,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            val saved = invocation.arguments[0] as BatchSendTaskConfig
+            saved.copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        val updated = service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "ox.ac.uk",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        assertEquals("默认介绍邮件任务", captor.value.configName)
+        assertEquals("CANDIDATE", captor.value.funnelLevel)
+        assertEquals("""["保留标签"]""", captor.value.tagsJson)
+        assertEquals("0 30 8 * * ?", captor.value.cron)
+        assertEquals(200, captor.value.dailyCap)
+        assertEquals("ox.ac.uk", captor.value.emailDomain)
+        assertEquals("HUMANITIES", captor.value.discipline)
+        assertTrue(captor.value.autoEnabled)
+        assertEquals("0 30 8 * * ?", updated.cron)
+        assertEquals(200, updated.dailyCap)
+        verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))
+    }
 }

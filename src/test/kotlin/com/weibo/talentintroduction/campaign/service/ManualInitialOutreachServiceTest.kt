@@ -69,6 +69,7 @@ class ManualInitialOutreachServiceTest {
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
     private val manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java)
+    private val taskExecutionService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
     private val providerResolver = ProviderResolver()
     private val senderWarmupService = SenderWarmupService(
         WarmupProperties(
@@ -100,7 +101,8 @@ class ManualInitialOutreachServiceTest {
         providerResolver = providerResolver,
         senderWarmupService = senderWarmupService,
         autoReplySettingService = autoReplySettingService,
-        manualExpertMailService = manualExpertMailService
+        manualExpertMailService = manualExpertMailService,
+        taskExecutionService = taskExecutionService
     )
 
     private fun fastConfig(
@@ -457,7 +459,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(1, result.sent)
         // L3-1: self-check invoked for the sendable account at the round gate
-        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")))
+        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")), anyInt())
     }
 
     @Test
@@ -503,7 +505,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
         assertEquals("PAUSED", result.finalStatus)
         // Self-check was invoked for the candidate
-        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")))
+        Mockito.verify(selfCheckService).checkSendable(anyValue(account("chen")), anyInt())
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
@@ -598,7 +600,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(3, result.total)
         assertEquals("COMPLETED", result.finalStatus)
         // Round gate invoked for each round (2 rounds)
-        Mockito.verify(selfCheckService, Mockito.atLeast(2)).checkSendable(anyValue(account("chen")))
+        Mockito.verify(selfCheckService, Mockito.atLeast(2)).checkSendable(anyValue(account("chen")), anyInt())
     }
 
     @Test
@@ -1801,6 +1803,8 @@ class ManualInitialOutreachServiceTest {
         private val ctrlSettingService = Mockito.mock(BatchSendSettingService::class.java)
         private val ctrlMailAccountService = Mockito.mock(com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java)
         private val ctrlTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        private val ctrlBatchConfigRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository::class.java)
+        private val ctrlObjectMapper = com.fasterxml.jackson.databind.ObjectMapper().registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
         private val ctrlExecutor = Mockito.mock(java.util.concurrent.Executor::class.java)
 
         private val ctrl = BatchSendControlService(
@@ -1808,8 +1812,10 @@ class ManualInitialOutreachServiceTest {
             taskExecutionService = ctrlTaskExecService,
             manualInitialOutreachService = ctrlOutreachService,
             batchSendSettingService = ctrlSettingService,
+            batchSendTaskConfigRepository = ctrlBatchConfigRepository,
             mailSenderAccountService = ctrlMailAccountService,
             mailComposeTemplateService = ctrlTemplateService,
+            objectMapper = ctrlObjectMapper,
             manualOutreachExecutor = ctrlExecutor
         )
 
@@ -1923,11 +1929,12 @@ class ManualInitialOutreachServiceTest {
                 Mockito.anyString(),
                 anyValue(""),
                 anyValue({ _: Long -> }),
+                Mockito.isNull(),
                 anyValue({ ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED") })
             )).thenAnswer { invocation ->
                 val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
                 onStarted?.invoke(99L)
-                val block = invocation.getArgument<() -> ManualOutreachResult>(4)
+                val block = invocation.getArgument<() -> ManualOutreachResult>(5)
                 Mockito.`when`(ctrlOutreachService.runScheduledBatch(99L, ExecutionMode.MANUAL, false))
                     .thenReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
                 val result = block()
@@ -2001,22 +2008,25 @@ class ManualInitialOutreachServiceTest {
 
     @org.junit.jupiter.api.Nested
     inner class DualSchedulerTests {
-        private val schedSettingService = Mockito.mock(BatchSendSettingService::class.java)
+        private val schedConfigRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository::class.java)
         private val schedControlService = Mockito.mock(BatchSendControlService::class.java)
         private val schedTaskScheduler = Mockito.mock(org.springframework.scheduling.TaskScheduler::class.java)
         private val schedFuture = Mockito.mock(java.util.concurrent.ScheduledFuture::class.java)
 
-        private fun introConfig(autoEnabled: Boolean = true) = BatchSendConfig(
-            autoEnabled = autoEnabled, cron = "0 0 0 * * ?",
-            dailyCap = 1000, roundSize = 50, perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
-        )
-
-        private fun reminderConfig(autoEnabled: Boolean = true) = BatchSendConfig(
-            sendType = BatchSendType.MATERIAL_REMINDER,
-            autoEnabled = autoEnabled, cron = "0 0 8 * * ?",
-            dailyCap = 60, roundSize = 30, perMailIntervalMs = 0, perRoundIntervalMs = 0,
-            selfCheckTtlMinutes = 30, templateId = 10L
-        )
+        private fun enabledConfig(id: Long, mailType: String = "INTRODUCTION") =
+            com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+                id = id,
+                configName = "cfg-$id",
+                mailType = mailType,
+                autoEnabled = true,
+                cron = if (mailType == "INTRODUCTION") "0 0 0 * * ?" else "0 0 8 * * ?",
+                dailyCap = 1000,
+                roundSize = 50,
+                perMailIntervalMs = 0,
+                perRoundIntervalMs = 0,
+                selfCheckTtlMinutes = 30,
+                templateId = if (mailType == "MATERIAL_REMINDER") 10L else null
+            )
 
         @org.junit.jupiter.api.BeforeEach
         fun setUpSched() {
@@ -2024,15 +2034,14 @@ class ManualInitialOutreachServiceTest {
                 Mockito.any(Runnable::class.java),
                 Mockito.any(org.springframework.scheduling.Trigger::class.java)
             )).thenReturn(schedFuture)
-            Mockito.`when`(schedSettingService.getConfig()).thenReturn(introConfig())
-            Mockito.`when`(schedSettingService.getConfig(BatchSendType.INTRODUCTION)).thenReturn(introConfig())
-            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)).thenReturn(reminderConfig())
+            Mockito.`when`(schedConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+                .thenReturn(listOf(enabledConfig(1L), enabledConfig(2L, "MATERIAL_REMINDER")))
         }
 
         @Test
-        fun `scheduleInitial registers two futures when both types are enabled (I-8)`() {
+        fun `scheduleInitial registers futures per enabled config`() {
             val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
-                schedSettingService, schedControlService, schedTaskScheduler
+                schedConfigRepository, schedControlService, schedTaskScheduler
             )
             scheduler.scheduleInitial()
 
@@ -2043,12 +2052,12 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `scheduleInitial registers only one future when MATERIAL_REMINDER is disabled (I-8)`() {
-            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
-                .thenReturn(reminderConfig(autoEnabled = false))
+        fun `scheduleInitial registers only one future when one config disabled`() {
+            Mockito.`when`(schedConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+                .thenReturn(listOf(enabledConfig(1L)))
 
             val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
-                schedSettingService, schedControlService, schedTaskScheduler
+                schedConfigRepository, schedControlService, schedTaskScheduler
             )
             scheduler.scheduleInitial()
 
@@ -2059,32 +2068,28 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `disabling MATERIAL_REMINDER cancels its future but keeps INTRODUCTION scheduled (I-8)`() {
+        fun `config change cancels old futures and reschedules`() {
             val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
-                schedSettingService, schedControlService, schedTaskScheduler
+                schedConfigRepository, schedControlService, schedTaskScheduler
             )
             scheduler.scheduleInitial()
 
-            // 2 futures registered initially (INTRODUCTION + MATERIAL_REMINDER)
             Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
                 Mockito.any(Runnable::class.java),
                 Mockito.any(org.springframework.scheduling.Trigger::class.java)
             )
 
-            // Now disable MATERIAL_REMINDER
-            Mockito.`when`(schedSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
-                .thenReturn(reminderConfig(autoEnabled = false))
+            Mockito.`when`(schedConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+                .thenReturn(listOf(enabledConfig(1L)))
 
             scheduler.onCronChanged(
                 com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent("0 0 8 * * ?", "0 0 8 * * ?")
             )
 
-            // Only INTRODUCTION is rescheduled (1 more call), MATERIAL_REMINDER is not (no 4th call)
             Mockito.verify(schedTaskScheduler, Mockito.times(3)).schedule(
                 Mockito.any(Runnable::class.java),
                 Mockito.any(org.springframework.scheduling.Trigger::class.java)
             )
-            // Old futures were cancelled
             Mockito.verify(schedFuture, Mockito.atLeast(2)).cancel(false)
         }
     }
@@ -2099,6 +2104,8 @@ class ManualInitialOutreachServiceTest {
         private val mutexSettingService = Mockito.mock(BatchSendSettingService::class.java)
         private val mutexMailAccountService = Mockito.mock(com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java)
         private val mutexTemplateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        private val mutexBatchConfigRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository::class.java)
+        private val mutexObjectMapper = com.fasterxml.jackson.databind.ObjectMapper().registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
         private val mutexExecutor = Mockito.mock(java.util.concurrent.Executor::class.java)
 
         private val mutexCtrl = BatchSendControlService(
@@ -2106,8 +2113,10 @@ class ManualInitialOutreachServiceTest {
             taskExecutionService = mutexTaskExecService,
             manualInitialOutreachService = mutexOutreachService,
             batchSendSettingService = mutexSettingService,
+            batchSendTaskConfigRepository = mutexBatchConfigRepository,
             mailSenderAccountService = mutexMailAccountService,
             mailComposeTemplateService = mutexTemplateService,
+            objectMapper = mutexObjectMapper,
             manualOutreachExecutor = mutexExecutor
         )
 

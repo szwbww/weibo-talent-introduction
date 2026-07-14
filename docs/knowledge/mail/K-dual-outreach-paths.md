@@ -2,8 +2,8 @@
 id: K-dual-outreach-paths
 domain: mail
 created: 2026-07-06
-last_used: 2026-07-13
-hit_count: 5
+last_used: 2026-07-14
+hit_count: 7
 source: create-p:mail-personalization-anti-spam
 ---
 

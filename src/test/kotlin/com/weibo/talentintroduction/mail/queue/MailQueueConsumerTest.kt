@@ -33,11 +33,12 @@ class MailQueueConsumerTest {
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
                 anyValue<(Long) -> Unit> { },
+                Mockito.isNull(),
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[4] as () -> QueueFanOutResult
+            val block = invocation.arguments[5] as () -> QueueFanOutResult
             block()
             taskExecution()
         }
@@ -59,11 +60,12 @@ class MailQueueConsumerTest {
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
                 anyValue<(Long) -> Unit> { },
+                Mockito.isNull(),
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[4] as () -> QueueFanOutResult
+            val block = invocation.arguments[5] as () -> QueueFanOutResult
             block()
             taskExecution()
         }
@@ -88,11 +90,12 @@ class MailQueueConsumerTest {
                 eqValue("QUEUE"),
                 anyValue(TaskDispatchRequestStub),
                 anyValue<(Long) -> Unit> { },
+                Mockito.isNull(),
                 anyValue { QueueFanOutResult(dispatched = 0) }
             )
         ).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.arguments[4] as () -> QueueFanOutResult
+            val block = invocation.arguments[5] as () -> QueueFanOutResult
             val result = block()
             assertEquals(3, result.dispatched)
             taskExecution()

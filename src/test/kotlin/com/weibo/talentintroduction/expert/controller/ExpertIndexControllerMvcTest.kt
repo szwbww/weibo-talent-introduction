@@ -102,6 +102,7 @@ class ExpertIndexControllerMvcTest {
             eqValue("MANUAL"),
             eqValue("revalidate-candidates"),
             anyValue<(Long) -> Unit> { },
+            Mockito.isNull(),
             anyValue { Any() }
         )).thenAnswer { invocation ->
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
@@ -139,6 +140,7 @@ class ExpertIndexControllerMvcTest {
             eqValue("MANUAL"),
             eqValue("promote-eligible-raw"),
             anyValue<(Long) -> Unit> { },
+            Mockito.isNull(),
             anyValue { Any() }
         )).thenAnswer { invocation ->
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)

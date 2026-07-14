@@ -1,5 +1,10 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
+import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
+import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
+import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -10,46 +15,27 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Service
+import org.springframework.web.server.ResponseStatusException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import javax.annotation.PostConstruct
 
-/**
- * Controls the batch send flow state machine (I-9: IDLE/RUNNING/PAUSED) and provides the
- * operator-facing control surface (start/pause/manual/status). All state transitions are
- * persisted via [BatchSendSettingService.setRuntimeStatus] (L3-3) so they survive refresh/restart.
- *
- * - start: IDLE → RUNNING (full run, AUTO or MANUAL mode, I-2)
- * - pause: RUNNING → PAUSED (operator button or I-5 no-account; cancels active execution)
- * - runManualOnce: IDLE/PAUSED → one round → previous resting state (manual button, I-9/L3-2)
- * - getStatus: merges persisted runtime state with latest TaskProgress (I-5 banner, I-8 stats)
- *
- * Mutual exclusion (I-1/I-8) is enforced by [TaskProgressStore.tryStartWithToken] plus the
- * single-thread [manualOutreachExecutor] (core=max=1, queue=0). INTRODUCTION and
- * MATERIAL_REMINDER share the same executor and TASK_TYPE mutex key — any running type
- * blocks the other (I-8 two-timer independent schedule, shared execution lock).
- *
- * Each [BatchSendType] gets its own persisted runtime state key namespace (I-8). The `sendType`
- * parameter defaults to INTRODUCTION on every public method for backward compat with existing
- * callers (controller, scheduler, tests).
- */
 @Service
 class BatchSendControlService(
     private val progressStore: TaskProgressStore,
     private val taskExecutionService: TaskExecutionService,
     private val manualInitialOutreachService: ManualInitialOutreachService,
     private val batchSendSettingService: BatchSendSettingService,
+    private val batchSendTaskConfigRepository: BatchSendTaskConfigRepository,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailComposeTemplateService: MailComposeTemplateService,
+    private val objectMapper: ObjectMapper,
     @Qualifier("manualOutreachExecutor") private val manualOutreachExecutor: Executor
 ) {
     private val log = LoggerFactory.getLogger(BatchSendControlService::class.java)
 
-    /**
-     * L3-3: on startup, if the persisted runtime status is RUNNING (left over from a crash
-     * mid-run), normalize to PAUSED + INTERRUPTED so the status endpoint never reports a
-     * phantom RUNNING state with no active execution.
-     */
     @PostConstruct
     fun restartRecoveryOnStartup() {
         restartRecovery()
@@ -64,50 +50,152 @@ class BatchSendControlService(
         }
     }
 
-    /**
-     * AUTO run triggered by the scheduler (I-2: triggerType=SCHEDULED). Only allowed when
-     * runtime status is IDLE and autoEnabled is true.
-     */
-    fun startAuto(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
-        val state = getRuntimeStatusInternal(sendType)
-        if (state.status != "IDLE") {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 ${state.status}，无法开始自动运行（需 IDLE）"))
-        }
-        val config = getConfigInternal(sendType)
+    /** Scheduled auto run for one config entity (I-2). */
+    fun startScheduled(configId: Long): ResponseEntity<Map<String, Any>> {
+        val config = batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(configId)
+            ?: return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(mapOf("message" to "配置不存在或已删除: $configId"))
         if (!config.autoEnabled) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "自动定时发送未启用"))
         }
-        return launchExecution(ExecutionMode.AUTO, "SCHEDULED", oneRoundOnly = false, sendType = sendType)
+        val snapshot = config.toExecutionSnapshot(objectMapper)
+        validateSnapshotFields(snapshot)?.let { return it }
+        validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return it }
+        val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(configId)
+        if (alreadySent >= snapshot.dailyCap) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})"))
+        }
+        val request = ManualBatchExecutionRequest(
+            sourceConfigId = configId,
+            sourceUpdatedAt = config.updatedAt,
+            snapshot = snapshot
+        )
+        return launchFromSnapshot(
+            snapshot = snapshot,
+            batchConfigId = configId,
+            triggerType = "SCHEDULED",
+            mode = ExecutionMode.AUTO,
+            requestPayload = request,
+            alreadySentToday = alreadySent
+        )
     }
 
-    /**
-     * MANUAL full run triggered by the operator "开始执行" button (I-2: triggerType=MANUAL).
-     * Only allowed when runtime status is IDLE.
-     */
+    /** Manual run from a full snapshot request (I-1). */
+    fun startManual(request: ManualBatchExecutionRequest): ResponseEntity<Map<String, Any>> {
+        validateSnapshotFields(request.snapshot)?.let { return it }
+        validateTemplateAtLaunch(request.snapshot.mailType, request.snapshot.templateId)?.let { return it }
+        val batchConfigId = request.sourceConfigId
+        val alreadySent = if (batchConfigId != null) {
+            taskExecutionService.sumSuccessCountTodayByBatchConfigId(batchConfigId)
+        } else {
+            0
+        }
+        if (alreadySent >= request.snapshot.dailyCap) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "今日发送额度已达上限 ($alreadySent/${request.snapshot.dailyCap})"))
+        }
+        val capacityError = checkRemainingAccountCapacity()
+        if (capacityError != null) return capacityError
+        return launchFromSnapshot(
+            snapshot = request.snapshot,
+            batchConfigId = batchConfigId,
+            triggerType = "MANUAL",
+            mode = ExecutionMode.MANUAL,
+            requestPayload = request,
+            alreadySentToday = alreadySent,
+            oneRoundOnly = request.snapshot.oneRoundOnly
+        )
+    }
+
+    /** Manual run using the current persisted config row as snapshot (config list "手动"). */
+    fun startManualFromConfig(configId: Long): ResponseEntity<Map<String, Any>> {
+        val config = batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(configId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Batch send task config not found: $configId")
+        val request = ManualBatchExecutionRequest(
+            sourceConfigId = configId,
+            sourceUpdatedAt = config.updatedAt,
+            snapshot = config.toExecutionSnapshot(objectMapper)
+        )
+        return startManual(request)
+    }
+
+    fun startAuto(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
+        if (state.status != "IDLE") {
+            return conflict("流程当前状态为 ${state.status}，无法开始自动运行（需 IDLE）")
+        }
+        val legacy = batchSendTaskConfigRepository.findByLegacyCode(sendType.name)
+        if (legacy != null) {
+            val config = batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(legacy.id!!)
+                ?: return conflict("配置不存在或已删除")
+            if (!config.autoEnabled) {
+                return conflict("自动定时发送未启用")
+            }
+            val snapshot = config.toExecutionSnapshot(objectMapper)
+            validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
+            if (alreadySent >= snapshot.dailyCap) {
+                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
+            }
+            val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
+            val response = launchFromSnapshot(
+                snapshot = snapshot,
+                batchConfigId = legacy.id,
+                triggerType = "SCHEDULED",
+                mode = ExecutionMode.AUTO,
+                requestPayload = request,
+                alreadySentToday = alreadySent,
+                legacySendType = sendType,
+                manageRuntimeStatus = true
+            )
+            return ResponseEntity.status(response.statusCode)
+                .body(response.body?.mapValues { it.value.toString() } ?: emptyMap())
+        }
+        return legacyKvStartAuto(sendType)
+    }
+
     fun startManual(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status != "IDLE") {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 ${state.status}，无法开始（需 IDLE）"))
+            return conflict("流程当前状态为 ${state.status}，无法开始（需 IDLE）")
         }
         val capacityError = checkRemainingDailyCapacity()
-        if (capacityError != null) {
-            return capacityError
+        if (capacityError != null) return capacityError
+        val legacy = batchSendTaskConfigRepository.findByLegacyCode(sendType.name)
+        if (legacy != null) {
+            val config = batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(legacy.id!!)
+                ?: return conflict("配置不存在或已删除")
+            val snapshot = config.toExecutionSnapshot(objectMapper)
+            validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
+            if (alreadySent >= snapshot.dailyCap) {
+                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
+            }
+            val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
+            val response = launchFromSnapshot(
+                snapshot = snapshot,
+                batchConfigId = legacy.id,
+                triggerType = "MANUAL",
+                mode = ExecutionMode.MANUAL,
+                requestPayload = request,
+                alreadySentToday = alreadySent,
+                legacySendType = sendType,
+                manageRuntimeStatus = true
+            )
+            return ResponseEntity.status(response.statusCode)
+                .body(response.body?.mapValues { it.value.toString() } ?: emptyMap())
         }
-        return launchExecution(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = false, sendType = sendType)
+        return legacyKvStartManual(sendType)
     }
 
-    /**
-     * Operator "暂停" button: RUNNING → PAUSED. Requests cancellation of the active execution
-     * (I-1) and persists PAUSED + reason.
-     */
     fun pause(reason: String, sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status != "RUNNING") {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 ${state.status}，无法暂停（需 RUNNING）"))
+            return conflict("流程当前状态为 ${state.status}，无法暂停（需 RUNNING）")
         }
         progressStore.requestCancel(TASK_TYPE)
         setRuntimeStatusInternal("PAUSED", state.mode, reason, sendType)
@@ -115,15 +203,10 @@ class BatchSendControlService(
         return ResponseEntity.ok(mapOf("message" to "已暂停: $reason"))
     }
 
-    /**
-     * Operator resume for scheduled sending. Clears the persisted pause state so the
-     * dynamic cron scheduler can run the next due AUTO execution; does not launch a send now.
-     */
     fun resumeSchedule(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status == "RUNNING") {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 RUNNING，无法恢复定时（需非 RUNNING）"))
+            return conflict("流程当前状态为 RUNNING，无法恢复定时（需非 RUNNING）")
         }
         setAutoEnabledInternal(true, sendType)
         setRuntimeStatusInternal("IDLE", state.mode, "", sendType)
@@ -131,14 +214,10 @@ class BatchSendControlService(
         return ResponseEntity.ok(mapOf("message" to "已恢复定时发送"))
     }
 
-    /**
-     * Pauses the cron-driven schedule when no execution is currently running.
-     */
     fun pauseSchedule(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status == "RUNNING") {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 RUNNING，请使用执行暂停"))
+            return conflict("流程当前状态为 RUNNING，请使用执行暂停")
         }
         setAutoEnabledInternal(false, sendType)
         setRuntimeStatusInternal("PAUSED", "AUTO", "OPERATOR", sendType)
@@ -146,41 +225,48 @@ class BatchSendControlService(
         return ResponseEntity.ok(mapOf("message" to "已暂停定时发送"))
     }
 
-    /**
-     * Operator "手动" button (I-9): IDLE/PAUSED → one round. Normal IDLE starts return to
-     * IDLE so scheduled sending remains armed; PAUSED starts return to PAUSED.
-     */
     fun runManualOnce(sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status !in setOf("IDLE", "PAUSED")) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "流程当前状态为 ${state.status}，手动执行仅在 IDLE 或 PAUSED 时可用"))
+            return conflict("流程当前状态为 ${state.status}，手动执行仅在 IDLE 或 PAUSED 时可用")
         }
         val capacityError = checkRemainingDailyCapacity()
-        if (capacityError != null) {
-            return capacityError
+        if (capacityError != null) return capacityError
+        val legacy = batchSendTaskConfigRepository.findByLegacyCode(sendType.name)
+        if (legacy != null) {
+            val config = batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(legacy.id!!)
+                ?: return conflict("配置不存在或已删除")
+            val snapshot = config.toExecutionSnapshot(objectMapper, oneRoundOnly = true)
+            validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
+            if (alreadySent >= snapshot.dailyCap) {
+                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
+            }
+            val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
+            val response = launchFromSnapshot(
+                snapshot = snapshot,
+                batchConfigId = legacy.id,
+                triggerType = "MANUAL",
+                mode = ExecutionMode.MANUAL,
+                requestPayload = request,
+                alreadySentToday = alreadySent,
+                oneRoundOnly = true,
+                legacySendType = sendType,
+                manageRuntimeStatus = true,
+                returnToPausedAfterOneRound = state.status == "PAUSED"
+            )
+            return ResponseEntity.status(response.statusCode)
+                .body(response.body?.mapValues { it.value.toString() } ?: emptyMap())
         }
-        return launchExecution(
-            mode = ExecutionMode.MANUAL,
-            triggerType = "MANUAL",
-            oneRoundOnly = true,
-            returnToPausedAfterOneRound = state.status == "PAUSED",
-            sendType = sendType
-        )
+        return legacyKvRunManualOnce(sendType)
     }
 
-    /**
-     * Status query (I-5): returns the persisted runtime state (survives refresh) merged with
-     * the latest TaskProgress details (I-8 per-account stats) if an execution is active or recent.
-     * Only merges progress whose sendType matches the requested type (I-8 independent state).
-     * Always returns activeSendType so the frontend can lock the type selector when one is running.
-     */
     fun getStatus(sendType: BatchSendType = BatchSendType.INTRODUCTION): BatchSendStatusView {
         val state = getRuntimeStatusInternal(sendType)
         val config = getConfigInternal(sendType)
         val progress = progressStore.get(TASK_TYPE)
         val activeSendTypeInProgress = progress?.details?.get("sendType") as? String
-        // Only merge progress data if it belongs to this sendType (null → compat, treat as INTRODUCTION)
         val progressForType = if (activeSendTypeInProgress == null || activeSendTypeInProgress == sendType.name) progress else null
         val details = progressForType?.details
         val mode = if (state.status == "IDLE" && config.autoEnabled) "AUTO" else state.mode
@@ -208,62 +294,18 @@ class BatchSendControlService(
         )
     }
 
-    private fun checkRemainingDailyCapacity(): ResponseEntity<Map<String, String>>? {
-        if (mailSenderAccountService.remainingDailyCapacity(ignoreWarmup = true) <= 0) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "今日发送额度已用尽（含预热限制），暂不可手动发送"))
-        }
-        return null
-    }
-
-    /**
-     * I-7: re-validate template gate before launch to catch template disabled/type-changed after
-     * config was saved. INTRODUCTION: null templateId OK. MATERIAL_REMINDER: must have enabled
-     * MATERIAL_REMINDER-type template.
-     */
-    private fun validateTemplateGate(sendType: BatchSendType, config: BatchSendConfig): ResponseEntity<Map<String, String>>? {
-        val templateId = config.templateId
-        // INTRODUCTION may use the hardcoded default composer when templateId is null (I-7).
-        if (templateId == null) {
-            return if (sendType == BatchSendType.MATERIAL_REMINDER) {
-                ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(mapOf("message" to "MATERIAL_REMINDER 必须配置模板才能发送"))
-            } else {
-                null
-            }
-        }
-        return try {
-            val template = mailComposeTemplateService.getById(templateId)
-            when {
-                !template.enabled -> ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(mapOf("message" to "模板 $templateId 已禁用，无法发送"))
-                template.mailType != sendType.name -> ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(mapOf("message" to "模板 $templateId 类型为 ${template.mailType}，与 $sendType 不匹配"))
-                else -> null
-            }
-        } catch (e: Exception) {
-            ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "模板校验失败: ${e.message}"))
-        }
-    }
-
-    /**
-     * Launches an async execution on the single-thread executor (I-1 mutual exclusion).
-     * Persists RUNNING + mode, then post-processes the result to transition runtime status.
-     * Dispatches INTRODUCTION to [ManualInitialOutreachService.runScheduledBatch] and
-     * MATERIAL_REMINDER to [ManualInitialOutreachService.runMaterialReminderBatch] (I-9).
-     */
-    private fun launchExecution(
-        mode: ExecutionMode,
+    private fun launchFromSnapshot(
+        snapshot: BatchExecutionSnapshot,
+        batchConfigId: Long?,
         triggerType: String,
-        oneRoundOnly: Boolean,
-        returnToPausedAfterOneRound: Boolean = true,
-        sendType: BatchSendType = BatchSendType.INTRODUCTION
-    ): ResponseEntity<Map<String, String>> {
-        val config = getConfigInternal(sendType)
-        val templateError = validateTemplateGate(sendType, config)
-        if (templateError != null) return templateError
-
+        mode: ExecutionMode,
+        requestPayload: Any,
+        alreadySentToday: Int,
+        oneRoundOnly: Boolean = snapshot.oneRoundOnly,
+        legacySendType: BatchSendType? = null,
+        manageRuntimeStatus: Boolean = false,
+        returnToPausedAfterOneRound: Boolean = false
+    ): ResponseEntity<Map<String, Any>> {
         val initialProgress = TaskProgress(
             taskType = TASK_TYPE,
             status = "RUNNING",
@@ -273,7 +315,8 @@ class BatchSendControlService(
             message = "正在初始化发送队列...",
             details = mapOf(
                 "executionMode" to mode.name,
-                "sendType" to sendType.name,
+                "sendType" to snapshot.mailType,
+                "batchConfigId" to (batchConfigId ?: ""),
                 "sent" to 0,
                 "failed" to 0,
                 "accounts" to emptyList<AccountStatRow>()
@@ -282,35 +325,46 @@ class BatchSendControlService(
         val (started, pendingToken) = progressStore.tryStartWithToken(TASK_TYPE, initialProgress)
         if (!started) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "任务正在执行中"))
+                .body(mapOf("message" to "已有批量任务执行中"))
         }
 
-        setRuntimeStatusInternal("RUNNING", mode.name, "", sendType)
+        if (manageRuntimeStatus && legacySendType != null) {
+            setRuntimeStatusInternal("RUNNING", mode.name, "", legacySendType)
+        }
 
-        val taskDescription = "batch-send-${sendType.name}-${mode.name}${if (oneRoundOnly) "-one-round" else ""}"
+        val taskDescription = "batch-send-${snapshot.mailType}-${mode.name}${if (oneRoundOnly) "-one-round" else ""}"
+        val executionIdFuture = CompletableFuture<Long>()
 
         try {
             manualOutreachExecutor.execute {
                 var executionId: Long? = null
                 try {
                     val (_, result) = taskExecutionService.runAndRecordWithResult<ManualOutreachResult>(
-                        TASK_TYPE, triggerType, taskDescription,
+                        TASK_TYPE, triggerType, requestPayload,
                         onStarted = { id ->
                             executionId = id
+                            executionIdFuture.complete(id)
                             progressStore.bindExecutionId(TASK_TYPE, pendingToken, id)
-                        }
+                        },
+                        batchConfigId = batchConfigId
                     ) {
-                        when (sendType) {
-                            BatchSendType.INTRODUCTION ->
-                                manualInitialOutreachService.runScheduledBatch(executionId!!, mode, oneRoundOnly)
-                            BatchSendType.MATERIAL_REMINDER ->
-                                manualInitialOutreachService.runMaterialReminderBatch(executionId!!, mode, oneRoundOnly)
-                        }
+                        manualInitialOutreachService.run(
+                            snapshot = snapshot,
+                            executionId = executionId!!,
+                            mode = mode,
+                            alreadySentToday = alreadySentToday,
+                            oneRoundOnly = oneRoundOnly
+                        )
                     }
-                    applyResultToRuntimeStatus(mode, result, returnToPausedAfterOneRound, sendType)
+                    if (manageRuntimeStatus && legacySendType != null) {
+                        applyResultToRuntimeStatus(mode, result, returnToPausedAfterOneRound, legacySendType)
+                    }
                 } catch (ex: Exception) {
-                    log.error("Batch send execution failed for {}", sendType, ex)
-                    setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTION_ERROR:${ex.message?.take(200)}", sendType)
+                    executionIdFuture.completeExceptionally(ex)
+                    log.error("Batch send execution failed for mailType={}", snapshot.mailType, ex)
+                    if (manageRuntimeStatus && legacySendType != null) {
+                        setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTION_ERROR:${ex.message?.take(200)}", legacySendType)
+                    }
                     progressStore.update(TASK_TYPE, TaskProgress(
                         taskType = TASK_TYPE, status = "FAILED",
                         batchNumber = 0, processedCount = 0, totalCount = 0,
@@ -326,8 +380,10 @@ class BatchSendControlService(
                 }
             }
         } catch (reEx: RejectedExecutionException) {
-            log.warn("Batch send launch rejected for {}: {}", sendType, reEx.message)
-            setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTOR_REJECTED", sendType)
+            log.warn("Batch send launch rejected for {}: {}", snapshot.mailType, reEx.message)
+            if (manageRuntimeStatus && legacySendType != null) {
+                setRuntimeStatusInternal("PAUSED", mode.name, "EXECUTOR_REJECTED", legacySendType)
+            }
             progressStore.update(TASK_TYPE, TaskProgress(
                 taskType = TASK_TYPE, status = "FAILED",
                 batchNumber = 0, processedCount = 0, totalCount = 0,
@@ -338,13 +394,67 @@ class BatchSendControlService(
                 .body(mapOf("message" to "启动失败: 线程池满或已关闭"))
         }
 
-        return ResponseEntity.accepted().body(mapOf("message" to "已启动"))
+        val body = mutableMapOf<String, Any>("message" to "已启动")
+        try {
+            val executionId = executionIdFuture.get(5, TimeUnit.SECONDS)
+            body["executionId"] = executionId
+        } catch (e: Exception) {
+            log.warn("Timed out waiting for executionId after launch: {}", e.message)
+        }
+        return ResponseEntity.accepted().body(body)
     }
 
-    /**
-     * Maps the orchestrator result to a runtime status transition (L3-3). Only transitions
-     * if the current status is still RUNNING — does not overwrite an operator-initiated PAUSED.
-     */
+    private fun validateSnapshotFields(snapshot: BatchExecutionSnapshot): ResponseEntity<Map<String, Any>>? {
+        return try {
+            require(snapshot.dailyCap > 0) { "dailyCap must be > 0" }
+            require(snapshot.roundSize > 0) { "roundSize must be > 0" }
+            require(snapshot.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
+            require(snapshot.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
+            require(snapshot.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
+            snapshot.funnelLevel?.let { level ->
+                require(level in setOf("CANDIDATE", "APPLICATION")) {
+                    "funnelLevel must be CANDIDATE, APPLICATION, or empty"
+                }
+            }
+            null
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(mapOf("message" to (e.message ?: "参数校验失败")))
+        }
+    }
+
+    private fun validateTemplateAtLaunch(mailType: String, templateId: Long?): ResponseEntity<Map<String, Any>>? {
+        if (templateId == null) {
+            return if (mailType == BatchSendType.MATERIAL_REMINDER.name) {
+                ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(mapOf("message" to "MATERIAL_REMINDER 必须配置模板才能发送"))
+            } else {
+                null
+            }
+        }
+        return try {
+            val template = mailComposeTemplateService.getById(templateId)
+            when {
+                !template.enabled -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(mapOf("message" to "模板 $templateId 已禁用，无法发送"))
+                template.mailType != mailType -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(mapOf("message" to "模板 $templateId 类型为 ${template.mailType}，与 $mailType 不匹配"))
+                else -> null
+            }
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(mapOf("message" to "模板校验失败: ${e.message}"))
+        }
+    }
+
+    private fun checkRemainingAccountCapacity(): ResponseEntity<Map<String, Any>>? {
+        if (mailSenderAccountService.remainingDailyCapacity(ignoreWarmup = true) <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "今日发送额度已用尽（含预热限制），暂不可手动发送"))
+        }
+        return null
+    }
+
     private fun applyResultToRuntimeStatus(
         mode: ExecutionMode,
         result: ManualOutreachResult,
@@ -380,12 +490,110 @@ class BatchSendControlService(
         }
     }
 
-    // ── Internal helpers — dispatch to compat (INTRODUCTION) or typed (MATERIAL_REMINDER) ─────
+    // ── Legacy KV fallback when legacy_code row missing ─────────────────────────
 
-    /**
-     * For INTRODUCTION, calls the no-arg compat overload so Mockito stubs in existing tests
-     * (which stub `getRuntimeStatus()`) are matched. For other types, calls the typed overload.
-     */
+    private fun legacyKvStartAuto(sendType: BatchSendType): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
+        if (state.status != "IDLE") return conflict("流程当前状态为 ${state.status}，无法开始自动运行（需 IDLE）")
+        val config = getConfigInternal(sendType)
+        if (!config.autoEnabled) return conflict("自动定时发送未启用")
+        return launchLegacyKv(ExecutionMode.AUTO, "SCHEDULED", oneRoundOnly = false, sendType = sendType)
+    }
+
+    private fun legacyKvStartManual(sendType: BatchSendType): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
+        if (state.status != "IDLE") return conflict("流程当前状态为 ${state.status}，无法开始（需 IDLE）")
+        checkRemainingDailyCapacity()?.let { return it }
+        return launchLegacyKv(ExecutionMode.MANUAL, "MANUAL", oneRoundOnly = false, sendType = sendType)
+    }
+
+    private fun legacyKvRunManualOnce(sendType: BatchSendType): ResponseEntity<Map<String, String>> {
+        val state = getRuntimeStatusInternal(sendType)
+        if (state.status !in setOf("IDLE", "PAUSED")) {
+            return conflict("流程当前状态为 ${state.status}，手动执行仅在 IDLE 或 PAUSED 时可用")
+        }
+        checkRemainingDailyCapacity()?.let { return it }
+        return launchLegacyKv(
+            mode = ExecutionMode.MANUAL,
+            triggerType = "MANUAL",
+            oneRoundOnly = true,
+            returnToPausedAfterOneRound = state.status == "PAUSED",
+            sendType = sendType
+        )
+    }
+
+    private fun launchLegacyKv(
+        mode: ExecutionMode,
+        triggerType: String,
+        oneRoundOnly: Boolean,
+        returnToPausedAfterOneRound: Boolean = true,
+        sendType: BatchSendType = BatchSendType.INTRODUCTION
+    ): ResponseEntity<Map<String, String>> {
+        val config = getConfigInternal(sendType)
+        val templateError = validateTemplateGate(sendType, config)
+        if (templateError != null) return templateError
+        val snapshot = config.toLegacySnapshot(oneRoundOnly)
+        val response = launchFromSnapshot(
+            snapshot = snapshot,
+            batchConfigId = null,
+            triggerType = triggerType,
+            mode = mode,
+            requestPayload = mapOf("legacySendType" to sendType.name, "snapshot" to snapshot),
+            alreadySentToday = 0,
+            oneRoundOnly = oneRoundOnly,
+            legacySendType = sendType,
+            manageRuntimeStatus = true,
+            returnToPausedAfterOneRound = returnToPausedAfterOneRound
+        )
+        return ResponseEntity.status(response.statusCode)
+            .body(response.body?.mapValues { it.value.toString() } ?: emptyMap())
+    }
+
+    private fun BatchSendConfig.toLegacySnapshot(oneRoundOnly: Boolean): BatchExecutionSnapshot =
+        BatchExecutionSnapshot(
+            mailType = sendType.name,
+            dailyCap = dailyCap,
+            roundSize = roundSize,
+            perMailIntervalMs = perMailIntervalMs,
+            perRoundIntervalMs = perRoundIntervalMs,
+            selfCheckTtlMinutes = selfCheckTtlMinutes,
+            funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
+            tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
+            emailDomain = emailDomain.ifBlank { null },
+            discipline = discipline.ifBlank { null },
+            templateId = templateId,
+            oneRoundOnly = oneRoundOnly
+        )
+
+    private fun validateTemplateGate(sendType: BatchSendType, config: BatchSendConfig): ResponseEntity<Map<String, String>>? {
+        val err = validateTemplateAtLaunch(sendType.name, config.templateId) ?: return null
+        return ResponseEntity.status(err.statusCode)
+            .body(err.body?.mapValues { it.value.toString() } ?: emptyMap())
+    }
+
+    private fun checkRemainingDailyCapacity(): ResponseEntity<Map<String, String>>? {
+        val err = checkRemainingAccountCapacity() ?: return null
+        return ResponseEntity.status(err.statusCode)
+            .body(err.body?.mapValues { it.value.toString() } ?: emptyMap())
+    }
+
+    private fun conflict(message: String): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to message))
+
+    private fun mapAnyResponse(
+        response: ResponseEntity<Map<String, Any>>,
+        manageRuntime: Boolean,
+        sendType: BatchSendType,
+        mode: ExecutionMode,
+        returnToPausedAfterOneRound: Boolean = false
+    ): ResponseEntity<Map<String, String>> {
+        if (manageRuntime && response.statusCode == HttpStatus.ACCEPTED) {
+            // Runtime transitions happen in async block for legacy paths
+        }
+        return ResponseEntity.status(response.statusCode)
+            .body(response.body?.mapValues { it.value.toString() } ?: emptyMap())
+    }
+
     private fun getRuntimeStatusInternal(sendType: BatchSendType): BatchSendRuntimeState =
         if (sendType == BatchSendType.INTRODUCTION) batchSendSettingService.getRuntimeStatus()
         else batchSendSettingService.getRuntimeStatus(sendType)
@@ -452,7 +660,6 @@ class BatchSendControlService(
     }
 }
 
-/** Status view returned by GET /batch-send/status (I-5 banner + I-8 per-account stats). */
 data class BatchSendStatusView(
     val status: String,
     val mode: String,
@@ -470,6 +677,5 @@ data class BatchSendStatusView(
     val todayTotalCapacity: Int = 0,
     val todayRemainingCapacity: Int = 0,
     val templateName: String? = null,
-    /** The sendType currently running, null when idle. Used by frontend to lock type selector. */
     val activeSendType: String? = null
 )

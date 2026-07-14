@@ -1,9 +1,9 @@
 package com.weibo.talentintroduction.task.service
 
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
-import com.weibo.talentintroduction.campaign.service.BatchSendConfig
+import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
-import com.weibo.talentintroduction.campaign.service.BatchSendSettingService
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -14,18 +14,21 @@ import org.springframework.scheduling.Trigger
 import java.util.concurrent.ScheduledFuture
 
 class BatchSendSchedulerTest {
-    private val batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java)
+    private val batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
     private val batchSendControlService = Mockito.mock(BatchSendControlService::class.java)
     private val taskScheduler = Mockito.mock(TaskScheduler::class.java)
     private val scheduledFuture = Mockito.mock(ScheduledFuture::class.java)
 
     private fun scheduler(): BatchSendScheduler =
-        BatchSendScheduler(batchSendSettingService, batchSendControlService, taskScheduler)
+        BatchSendScheduler(batchSendTaskConfigRepository, batchSendControlService, taskScheduler)
 
-    private fun defaultConfig(autoEnabled: Boolean = true): BatchSendConfig =
-        BatchSendConfig(
-            autoEnabled = autoEnabled,
-            cron = "0 0 0 * * ?",
+    private fun enabledConfig(id: Long = 1L, cron: String = "0 0 0 * * ?"): BatchSendTaskConfig =
+        BatchSendTaskConfig(
+            id = id,
+            configName = "test-$id",
+            mailType = "INTRODUCTION",
+            autoEnabled = true,
+            cron = cron,
             dailyCap = 1000,
             roundSize = 50,
             perMailIntervalMs = 1000,
@@ -35,6 +38,9 @@ class BatchSendSchedulerTest {
 
     @Test
     fun `onCronChanged cancels old future without interrupt and reschedules`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+            .thenReturn(listOf(enabledConfig()))
+            .thenReturn(listOf(enabledConfig(cron = "0 0 8 * * ?")))
         Mockito.`when`(taskScheduler.schedule(Mockito.any(Runnable::class.java), Mockito.any(Trigger::class.java)))
             .thenReturn(scheduledFuture)
 
@@ -49,47 +55,58 @@ class BatchSendSchedulerTest {
     }
 
     @Test
-    fun `scheduleInitial registers trigger task`() {
+    fun `scheduleInitial registers trigger task per enabled config`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+            .thenReturn(listOf(enabledConfig(1L), enabledConfig(2L, "0 0 8 * * ?")))
         Mockito.`when`(taskScheduler.schedule(Mockito.any(Runnable::class.java), Mockito.any(Trigger::class.java)))
             .thenReturn(scheduledFuture)
 
         scheduler().scheduleInitial()
 
-        Mockito.verify(taskScheduler).schedule(Mockito.any(Runnable::class.java), Mockito.any(Trigger::class.java))
+        Mockito.verify(taskScheduler, Mockito.times(2))
+            .schedule(Mockito.any(Runnable::class.java), Mockito.any(Trigger::class.java))
     }
 
     @Test
-    fun `triggerBatchSend skips startAuto when autoEnabled is false`() {
+    fun `triggerBatchSend skips startScheduled when config disabled`() {
         val runnableCaptor = ArgumentCaptor.forClass(Runnable::class.java)
         Mockito.`when`(taskScheduler.schedule(runnableCaptor.capture(), Mockito.any(Trigger::class.java)))
             .thenReturn(scheduledFuture)
-        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(defaultConfig(autoEnabled = false))
+        Mockito.`when`(batchSendTaskConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+            .thenReturn(listOf(enabledConfig()))
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(enabledConfig().copy(autoEnabled = false))
 
         val scheduler = scheduler()
         scheduler.scheduleInitial()
         runnableCaptor.value.run()
 
-        Mockito.verify(batchSendControlService, Mockito.never()).startAuto()
+        Mockito.verify(batchSendControlService, Mockito.never()).startScheduled(Mockito.anyLong())
     }
 
     @Test
-    fun `triggerBatchSend calls startAuto when autoEnabled is true`() {
+    fun `triggerBatchSend calls startScheduled when config enabled`() {
         val runnableCaptor = ArgumentCaptor.forClass(Runnable::class.java)
         Mockito.`when`(taskScheduler.schedule(runnableCaptor.capture(), Mockito.any(Trigger::class.java)))
             .thenReturn(scheduledFuture)
-        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(defaultConfig(autoEnabled = true))
-        Mockito.`when`(batchSendControlService.startAuto())
+        Mockito.`when`(batchSendTaskConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+            .thenReturn(listOf(enabledConfig()))
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(enabledConfig())
+        Mockito.`when`(batchSendControlService.startScheduled(1L))
             .thenReturn(ResponseEntity.ok(mapOf("message" to "started")))
 
         val scheduler = scheduler()
         scheduler.scheduleInitial()
         runnableCaptor.value.run()
 
-        Mockito.verify(batchSendControlService).startAuto()
+        Mockito.verify(batchSendControlService).startScheduled(1L)
     }
 
     @Test
     fun `scheduleInitial leaves a non-null scheduled future`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+            .thenReturn(listOf(enabledConfig()))
         Mockito.`when`(taskScheduler.schedule(Mockito.any(Runnable::class.java), Mockito.any(Trigger::class.java)))
             .thenReturn(scheduledFuture)
 

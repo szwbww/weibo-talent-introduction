@@ -1,12 +1,13 @@
 package com.weibo.talentintroduction.task.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class TaskExecutionService(
@@ -33,6 +34,26 @@ class TaskExecutionService(
         repository.findById(id)
             .orElseThrow { error("Task execution not found: $id") }
 
+    fun listRecentByBatchConfigId(batchConfigId: Long, limit: Int): List<TaskExecution> {
+        require(limit in 1..200) { "limit must be between 1 and 200" }
+        return repository.findRecentByBatchConfigId(batchConfigId, limit)
+    }
+
+    /**
+     * Natural-day success sum for a config (Asia/Shanghai day boundary).
+     * Used by dailyCap across auto + config-sourced manual runs (I-5).
+     */
+    fun sumSuccessCountTodayByBatchConfigId(batchConfigId: Long, now: LocalDateTime = LocalDateTime.now(SHANGHAI)): Int {
+        val dayStart = LocalDate.from(now).atStartOfDay()
+        val nextDayStart = dayStart.plusDays(1)
+        return repository.sumSuccessCountByBatchConfigIdBetween(batchConfigId, dayStart, nextDayStart).toInt()
+    }
+
+    /** Persist mid-run success/failure counts so crash/restart still counts toward dailyCap (I-5). */
+    fun updateProgressCounts(executionId: Long, successCount: Int, failureCount: Int) {
+        repository.updateProgressCounts(executionId, successCount, failureCount, LocalDateTime.now())
+    }
+
     fun listRecentPolls(limit: Int): List<TaskExecution> {
         require(limit in 1..100) { "limit must be between 1 and 100" }
         return repository.findRecentByTaskType("AUTO_REPLY_ALL", limit)
@@ -57,6 +78,7 @@ class TaskExecutionService(
         triggerType: String,
         request: Any,
         onStarted: ((executionId: Long) -> Unit)? = null,
+        batchConfigId: Long? = null,
         block: () -> T
     ): Pair<TaskExecution, T> {
         val startedAt = LocalDateTime.now()
@@ -69,7 +91,8 @@ class TaskExecutionService(
                 resultSummary = null,
                 startedAt = startedAt,
                 createdAt = startedAt,
-                updatedAt = startedAt
+                updatedAt = startedAt,
+                batchConfigId = batchConfigId
             )
         )
 
@@ -133,6 +156,7 @@ class TaskExecutionService(
         triggerType: String,
         request: Any,
         onStarted: ((executionId: Long) -> Unit)? = null,
+        batchConfigId: Long? = null,
         block: () -> T
     ): TaskExecution {
         val startedAt = LocalDateTime.now()
@@ -145,7 +169,8 @@ class TaskExecutionService(
                 resultSummary = null,
                 startedAt = startedAt,
                 createdAt = startedAt,
-                updatedAt = startedAt
+                updatedAt = startedAt,
+                batchConfigId = batchConfigId
             )
         )
 
@@ -203,6 +228,10 @@ class TaskExecutionService(
 
     private fun toJson(value: Any?): String =
         objectMapper.writeValueAsString(value)
+
+    companion object {
+        val SHANGHAI: ZoneId = ZoneId.of("Asia/Shanghai")
+    }
 }
 
 data class TaskDispatchRequest(
