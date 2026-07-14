@@ -22,6 +22,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDateTime
@@ -216,6 +217,50 @@ class BatchSendTaskConfigServiceTest {
         }
         assertEquals(HttpStatus.CONFLICT, ex.status)
         verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create maps active name unique key race to 409`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(null)
+        `when`(repository.save(any())).thenThrow(
+            DuplicateKeyException("Duplicate entry '每日介绍' for key 'uk_batch_send_task_config_active_name'")
+        )
+
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            service().create(createCmd())
+        }
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        verify(eventPublisher, never()).publishEvent(any())
+    }
+
+    @Test
+    fun `create reuses name after soft delete`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(null)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 20L)
+        }
+
+        val view = service().create(createCmd(name = "每日介绍"))
+
+        assertEquals(20L, view.id)
+        assertEquals("每日介绍", view.configName)
+        verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))
+    }
+
+    @Test
+    fun `update maps active name unique key race to 409`() {
+        val existing = row(id = 5L, name = "旧名")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("冲突名")).thenReturn(null)
+        `when`(repository.save(any())).thenThrow(
+            DuplicateKeyException("Duplicate entry '冲突名' for key 'uk_batch_send_task_config_active_name'")
+        )
+
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            service().update(5L, updateCmd(name = "冲突名"))
+        }
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        verify(eventPublisher, never()).publishEvent(any())
     }
 
     @Test

@@ -16,9 +16,13 @@ CREATE TABLE batch_send_task_config (
     template_id BIGINT NULL,
     legacy_code VARCHAR(64) NULL,
     deleted_at DATETIME NULL,
+    -- Active-name uniqueness: NULL when soft-deleted so names can be reused.
+    active_config_name VARCHAR(120)
+        GENERATED ALWAYS AS (IF(deleted_at IS NULL, config_name, NULL)) STORED,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_batch_send_task_config_legacy_code (legacy_code),
+    UNIQUE KEY uk_batch_send_task_config_active_name (active_config_name),
     KEY idx_batch_send_task_config_deleted_updated (deleted_at, updated_at),
     KEY idx_batch_send_task_config_auto_deleted (auto_enabled, deleted_at),
     KEY idx_batch_send_task_config_template (template_id),

@@ -3,7 +3,7 @@ id: K-batch-send-scheduler-reschedule-on-enable
 domain: campaign
 created: 2026-07-13
 last_used: 2026-07-14
-hit_count: 4
+hit_count: 6
 source: create-p:material-reminder-batch-send
 severity: P1
 ---

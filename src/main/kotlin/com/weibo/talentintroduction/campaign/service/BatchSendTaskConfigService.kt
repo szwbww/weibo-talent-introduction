@@ -10,6 +10,8 @@ import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.http.HttpStatus
 import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Service
@@ -45,7 +47,7 @@ class BatchSendTaskConfigService(
     fun create(cmd: BatchSendTaskConfigCreateCommand): BatchSendTaskConfigView {
         val normalized = normalizeAndValidate(cmd.toFields(), excludeId = null)
         val now = LocalDateTime.now()
-        val saved = repository.save(
+        val saved = saveConfig(
             BatchSendTaskConfig(
                 configName = normalized.configName,
                 mailType = normalized.mailType,
@@ -63,7 +65,8 @@ class BatchSendTaskConfigService(
                 templateId = normalized.templateId,
                 createdAt = now,
                 updatedAt = now
-            )
+            ),
+            configName = normalized.configName
         )
         publishReload(normalized.cron)
         return toView(saved)
@@ -75,7 +78,7 @@ class BatchSendTaskConfigService(
             ?: throw NoSuchElementException("Batch send task config not found: $id")
         val normalized = normalizeAndValidate(cmd.toFields(), excludeId = id)
         val now = LocalDateTime.now()
-        val saved = repository.save(
+        val saved = saveConfig(
             existing.copy(
                 configName = normalized.configName,
                 mailType = normalized.mailType,
@@ -92,7 +95,8 @@ class BatchSendTaskConfigService(
                 discipline = normalized.discipline,
                 templateId = normalized.templateId,
                 updatedAt = now
-            )
+            ),
+            configName = normalized.configName
         )
         publishReload(normalized.cron)
         return toView(saved)
@@ -274,6 +278,35 @@ class BatchSendTaskConfigService(
 
     private fun publishReload(cron: String) {
         eventPublisher.publishEvent(BatchSendCronChangedEvent(cron, cron))
+    }
+
+    /**
+     * Persist after service-level checks. Concurrent create/update can still race the
+     * active-name unique key; map that conflict to 409 instead of 500.
+     */
+    private fun saveConfig(entity: BatchSendTaskConfig, configName: String): BatchSendTaskConfig =
+        try {
+            repository.save(entity)
+        } catch (e: DuplicateKeyException) {
+            throwActiveNameConflictOrRethrow(configName, e)
+        } catch (e: DataIntegrityViolationException) {
+            throwActiveNameConflictOrRethrow(configName, e)
+        }
+
+    private fun throwActiveNameConflictOrRethrow(configName: String, e: DataIntegrityViolationException): Nothing {
+        if (isActiveNameUniqueViolation(e)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Config name already exists: $configName", e)
+        }
+        throw e
+    }
+
+    private fun isActiveNameUniqueViolation(e: DataIntegrityViolationException): Boolean {
+        val messages = sequenceOf(e.message, e.mostSpecificCause.message)
+            .filterNotNull()
+            .joinToString(" ")
+            .lowercase()
+        return "uk_batch_send_task_config_active_name" in messages ||
+            "active_config_name" in messages
     }
 
     private data class ConfigFields(

@@ -3,7 +3,7 @@ id: K-batch-send-launch-template-revalidation
 domain: campaign
 created: 2026-07-13
 last_used: 2026-07-14
-hit_count: 3
+hit_count: 5
 source: fix-v:material-reminder-batch-send:fix-1
 severity: P1
 ---
