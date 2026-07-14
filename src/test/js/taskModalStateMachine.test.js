@@ -1212,20 +1212,20 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             assert.ok(statusCalled.msg.includes("失败 10"));
         });
 
-        it("handleBulkOutreach passes knownActiveAtOpen = true if task is running", async () => {
+        it("handleBulkOutreach opens batchSendTaskModal when task is running", async () => {
             const sandbox = createFreshSandbox();
-            let openedModal = null;
+            let openedNewModal = false;
+            sandbox.openBatchSendTaskModal = () => { openedNewModal = true; };
             sandbox.isTaskRunning = async (type) => true;
-            sandbox.openTaskModal = (taskType, label, btnId, options) => {
-                openedModal = { taskType, label, btnId, options };
+            sandbox.document.getElementById = (id) => {
+                if (id === "batchSendTaskModal") return { hidden: true };
+                return null;
             };
             vm.runInContext(extractFn("handleBulkOutreach"), sandbox);
             await sandbox.handleBulkOutreach();
 
-            assert.ok(openedModal);
-            assert.strictEqual(openedModal.taskType, "MANUAL_INITIAL_OUTREACH");
-            assert.ok(openedModal.options);
-            assert.strictEqual(openedModal.options.knownActiveAtOpen, true);
+            assert.strictEqual(openedNewModal, true,
+                "handleBulkOutreach must open the new batchSendTaskModal when task is running");
         });
 
         it("handleCheckReplies passes knownActiveAtOpen = true if task is running", async () => {
@@ -1244,49 +1244,15 @@ describe("Task Modal State Machine & Runtime Tests", () => {
             assert.strictEqual(openedModal.options.knownActiveAtOpen, true);
         });
 
-        it("executeManualOutreach starts watcher and does not notify completion upon acceptance", async () => {
+        it("executeManualOutreach is a no-op (batch send handled by new console)", async () => {
             const sandbox = createFreshSandbox();
-            let openedModal = null;
-            sandbox.progressStoreHasRunningTask = async () => false;
-            sandbox.openTaskModal = (taskType, label, btnId, options) => {
-                openedModal = { taskType, label, btnId, options };
-                sandbox.currentTaskModal = sandbox.createTaskModalContext(taskType, label, btnId, "PROGRESS");
-                sandbox.currentTaskModal.generation = 123;
-            };
-            let isCurrentCallCount = 0;
-            sandbox.isCurrentTaskModal = (taskType, gen) => {
-                isCurrentCallCount++;
-                return isCurrentCallCount === 1;
-            };
-            sandbox.api = async (url, options) => {
-                return { executionId: 456 };
-            };
-            let watcherStarted = null;
-            sandbox.startTaskWatcher = (taskType, options) => {
-                watcherStarted = { taskType, options };
-                sandbox.taskWatchers[taskType] = { awaitingLaunch: true };
-            };
-            let notified = false;
-            sandbox.notifyTaskCompletionOnce = () => { notified = true; };
-            sandbox.hideProgressBar = () => {};
-            sandbox.showTaskErrorLog = () => {};
-
-            vm.runInContext("const BATCH_SEND_TASK_TYPE = \"MANUAL_INITIAL_OUTREACH\";", sandbox);
-            vm.runInContext("var batchSendType = \"INTRODUCTION\";", sandbox);
-            vm.runInContext(
-                "function batchSendTypeBase(sendType) { return '/api/mail/batch-send/types/' + (sendType || batchSendType); }",
-                sandbox
-            );
-            vm.runInContext(extractFn("launchBatchSendWithProgress"), sandbox);
+            let apiCalled = false;
+            sandbox.api = async () => { apiCalled = true; return {}; };
             vm.runInContext(extractFn("executeManualOutreach"), sandbox);
             await sandbox.executeManualOutreach();
 
-            assert.ok(openedModal);
-            assert.strictEqual(openedModal.options.launchRequested, true);
-            assert.strictEqual(sandbox.currentTaskModal.executionId, 456);
-            assert.ok(watcherStarted);
-            assert.strictEqual(watcherStarted.taskType, "MANUAL_INITIAL_OUTREACH");
-            assert.strictEqual(notified, false);
+            assert.strictEqual(apiCalled, false,
+                "executeManualOutreach must not make any API calls (no-op)");
         });
 
         it("executeCheckReplies starts watcher and does not notify completion upon acceptance", async () => {

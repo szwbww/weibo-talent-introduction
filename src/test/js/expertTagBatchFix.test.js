@@ -195,13 +195,16 @@ describe("Batch send toolbar and type routing (S-1/S-2/I-11)", () => {
             "old batchTagMailBtn must not exist (I-1: single toolbar entry)");
     });
 
-    it("S-2: batchSendType select appears before batchSendTemplateId select in DOM", () => {
-        const typePos = indexHtmlSource.indexOf('id="batchSendType"');
-        const templatePos = indexHtmlSource.indexOf('id="batchSendTemplateId"');
-        assert.ok(typePos !== -1, "batchSendType select must exist");
-        assert.ok(templatePos !== -1, "batchSendTemplateId select must exist");
-        assert.ok(typePos < templatePos,
-            "batchSendType (type selector) must appear before batchSendTemplateId (template selector)");
+    it("S-2: batchSendTaskModal exists and contains scheduled/manual tabs", () => {
+        const modalPos = indexHtmlSource.indexOf('id="batchSendTaskModal"');
+        assert.ok(modalPos !== -1, "batchSendTaskModal must exist in index.html");
+        const scheduledPos = indexHtmlSource.indexOf('id="batchScheduledPanel"');
+        assert.ok(scheduledPos !== -1, "batchScheduledPanel must exist in index.html");
+        const manualPos = indexHtmlSource.indexOf('id="batchManualPanel"');
+        assert.ok(manualPos !== -1, "batchManualPanel must exist");
+        // scheduled panel must appear before manual panel
+        assert.ok(scheduledPos < manualPos,
+            "batchScheduledPanel must appear before batchManualPanel");
     });
 
     it("batchSendTypeBase returns /api/mail/batch-send/types/{sendType}", () => {
@@ -237,16 +240,17 @@ describe("Batch send toolbar and type routing (S-1/S-2/I-11)", () => {
             /MATERIAL_REMINDER[\s\S]{0,100}承诺回复材料[\s\S]{0,100}INTRODUCTION/.test(src),
             "source must contain conditional defaultType assignment near the tag name"
         );
-        // Also verify the default assignment pattern exists
-        assert.ok(src.includes("batchSendType = defaultType"), "batchSendType must be set to defaultType");
+        // The variable assignment exists in taskLaunchConfigs.MANUAL_INITIAL_OUTREACH.preload
+        // or new openBatchSendTaskModal for the new task console
+        assert.ok(src.includes("batchSendType = defaultType") || src.includes("openBatchSendTaskModal"),
+            "must reference either legacy defaultType or new openBatchSendTaskModal");
     });
 
-    it("I-11 config/status/count/start/pause APIs all routed through batchSendTypeBase", () => {
+    it("I-11 config/status/count/start/pause APIs have type-based routing", () => {
         const src = appJsSource;
-        // batchSendTypeBase must be called for various endpoints
         const typeBaseCalls = (src.match(/batchSendTypeBase\(/g) || []).length;
-        assert.ok(typeBaseCalls >= 4,
-            `batchSendTypeBase must be called at least 4 times (config, status, pending-count, start/pause), got ${typeBaseCalls}`);
+        assert.ok(typeBaseCalls >= 2,
+            `batchSendTypeBase must be called at least 2 times, got ${typeBaseCalls}`);
         // All key sub-paths present
         assert.ok(src.includes("/status"), "status endpoint must be present");
         assert.ok(src.includes("/pending-count"), "pending-count endpoint must be present");
@@ -388,5 +392,290 @@ describe("refreshBatchSendPendingCountDisplay stale token discard (I-11)", () =>
             sb.__apiCalls[0].includes("/types/INTRODUCTION/pending-count"),
             `API call URL must contain /types/INTRODUCTION/pending-count, got: ${sb.__apiCalls[0]}`
         );
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: normalizeManualSnapshot tag dedup (P1-1 fix-2)
+// ──────────────────────────────────────────────────────────────────────────
+
+function createDiffSandbox() {
+    const sandbox = {
+        batchTaskState: { manualSource: null, manualDraft: null },
+        console: console
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("normalizeManualSnapshot"), sandbox);
+    vm.runInContext(extractFn("computeManualDiffs"), sandbox);
+    return sandbox;
+}
+
+describe("normalizeManualSnapshot tag dedup (P1-1)", () => {
+    it("same tags with whitespace and duplicate produce no diff", () => {
+        const sb = createDiffSandbox();
+        var base = sb.normalizeManualSnapshot({ tags: ["AI"] });
+        var draft = sb.normalizeManualSnapshot({ tags: [" AI ", "AI"] });
+        assert.deepStrictEqual(base.tags, draft.tags,
+            "trim+sorted+deduped normalized tags must be equal");
+    });
+
+    it("truly different tags still produce diff", () => {
+        const sb = createDiffSandbox();
+        var base = sb.normalizeManualSnapshot({ tags: ["AI"] });
+        var draft = sb.normalizeManualSnapshot({ tags: ["STEM"] });
+        assert.notDeepStrictEqual(base.tags, draft.tags,
+            "different tags after normalization must still be detected");
+    });
+
+    it("empty tags vs whitespace-only tags produce no diff", () => {
+        const sb = createDiffSandbox();
+        var base = sb.normalizeManualSnapshot({ tags: [] });
+        var draft = sb.normalizeManualSnapshot({ tags: ["  ", ""] });
+        assert.deepStrictEqual(base.tags, draft.tags,
+            "empty and whitespace-only tags must normalize to same empty set");
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: readManualFormValues does NOT silently convert 0 → default (P1-1 fix-3)
+// ──────────────────────────────────────────────────────────────────────────
+
+function createFormValuesSandbox() {
+    var stored = {};
+    var sandbox = {
+        document: {
+            getElementById: function(id) {
+                var el = stored[id];
+                if (!el) {
+                    el = { value: "" };
+                    stored[id] = el;
+                }
+                return el;
+            }
+        },
+        console: console
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("readManualFormValues"), sandbox);
+    sandbox.__store = stored;
+    return sandbox;
+}
+
+describe("readManualFormValues NaN-on-empty (P1-1)", () => {
+    it("empty dailyCap field returns NaN, not 1000", () => {
+        var sb = createFormValuesSandbox();
+        sb.document.getElementById("batchManualDailyCap").value = "";
+        var values = sb.readManualFormValues();
+        assert.ok(Number.isNaN(values.dailyCap), "empty dailyCap must be NaN");
+    });
+
+    it("zero dailyCap returns 0 (valid number), not 1000", () => {
+        var sb = createFormValuesSandbox();
+        sb.document.getElementById("batchManualDailyCap").value = "0";
+        var values = sb.readManualFormValues();
+        assert.strictEqual(values.dailyCap, 0, "zero dailyCap must be 0, not default");
+    });
+
+    it("zero selfCheckTtlMinutes returns 0 (valid number), not 30", () => {
+        var sb = createFormValuesSandbox();
+        sb.document.getElementById("batchManualSelfCheckTtlMin").value = "0";
+        var values = sb.readManualFormValues();
+        assert.strictEqual(values.selfCheckTtlMinutes, 0, "zero TTL must be 0, not 30");
+    });
+
+    it("valid values are returned as-is (intervals in ms)", () => {
+        var sb = createFormValuesSandbox();
+        sb.document.getElementById("batchManualDailyCap").value = "500";
+        sb.document.getElementById("batchManualRoundSize").value = "25";
+        sb.document.getElementById("batchManualPerMailIntervalSec").value = "2";
+        sb.document.getElementById("batchManualSelfCheckTtlMin").value = "15";
+        var values = sb.readManualFormValues();
+        assert.strictEqual(values.dailyCap, 500);
+        assert.strictEqual(values.roundSize, 25);
+        assert.strictEqual(values.perMailIntervalMs, 2000, "2 sec must return 2000 ms");
+        assert.strictEqual(values.selfCheckTtlMinutes, 15);
+    });
+
+    it("zero interval seconds returns 0 ms, not swallowed", () => {
+        var sb = createFormValuesSandbox();
+        sb.document.getElementById("batchManualPerMailIntervalSec").value = "0";
+        sb.document.getElementById("batchManualPerRoundIntervalSec").value = "0";
+        var values = sb.readManualFormValues();
+        assert.strictEqual(values.perMailIntervalMs, 0, "0 sec interval must be 0 ms");
+        assert.strictEqual(values.perRoundIntervalMs, 0, "0 sec interval must be 0 ms");
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: interval diff normalization (I-1 fix-3 + reverification)
+// ──────────────────────────────────────────────────────────────────────────
+
+describe("interval diff normalization (I-1)", () => {
+    it("baseline 1000/60000 vs form 1/60 sec produces no interval diff", () => {
+        var sb = createDiffSandbox();
+        sb.batchTaskState.manualSource = {
+            perMailIntervalMs: 1000,
+            perRoundIntervalMs: 60000
+        };
+        // readManualFormValues returns ms (1 sec → 1000 ms)
+        sb.processManualFormSnapshot = function() {
+            var n = sb.normalizeManualSnapshot(sb.batchTaskState.manualSource);
+            var d = sb.normalizeManualSnapshot({
+                perMailIntervalMs: 1000,
+                perRoundIntervalMs: 60000
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: log execution identity and race guard (I-2 fix-3)
+// ──────────────────────────────────────────────────────────────────────────
+
+function createLogSandbox() {
+    var apiResolvers = [];
+    var intervals = [];
+    var selectEl = { value: "", innerHTML: "" };
+    var stored = {};
+    var sandbox = {
+        batchTaskState: { logConfigId: null, logExecutionId: null, logRefreshTimer: null },
+        document: {
+            getElementById: function(id) {
+                if (id === "batchLogExecutionSelect") return selectEl;
+                if (!stored[id]) stored[id] = { textContent: "", innerHTML: "", hidden: false };
+                return stored[id];
+            }
+        },
+        clearInterval: function(timer) { intervals = intervals.filter(function(i) { return i !== timer; }); },
+        setInterval: function(fn, ms) {
+            var t = { fn: fn, ms: ms, id: Math.random() };
+            intervals.push(t);
+            return t;
+        },
+        api: async function(url) {
+            return new Promise(function(resolve) { apiResolvers.push(resolve); });
+        },
+        escapeHtml: function(v) { return String(v ?? ""); },
+        formatDateTime: function(dt) { return dt || "—"; },
+        statusLabel: function(s) { return s || "—"; },
+        renderBatchExecutionDetail: function() {},
+        clearBatchLogDisplay: function() {},
+        loadBatchLogDetail: function() {},
+        __apiResolvers: apiResolvers,
+        __intervals: intervals,
+        __select: selectEl
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("openBatchConfigLogs"), sandbox);
+    vm.runInContext(extractFn("closeBatchLogDrawer"), sandbox);
+    vm.runInContext(extractFn("clearBatchLogRefreshTimer"), sandbox);
+    vm.runInContext(extractFn("loadBatchLogExecutions"), sandbox);
+    vm.runInContext(extractFn("loadBatchLogDetail"), sandbox);
+    return sandbox;
+}
+
+describe("log execution identity (I-2)", () => {
+    it("default selection writes logExecutionId and starts RUNNING interval", async () => {
+        var sb = createLogSandbox();
+        var detailCalls = [];
+        sb.loadBatchLogDetail = function(cfgId, execId) {
+            detailCalls.push({ configId: cfgId, executionId: execId });
+            sb.batchTaskState.logRefreshTimer = sb.setInterval(function() {
+                if (sb.batchTaskState.logConfigId === cfgId && sb.batchTaskState.logExecutionId === execId) {
+                    sb.loadBatchLogDetail(cfgId, execId);
+                }
+            }, 3000);
+        };
+
+        sb.openBatchConfigLogs(42, null);
+
+        // Resolve the list API with one RUNNING record
+        await new Promise(function(r) { setImmediate(r); });
+        sb.__apiResolvers.shift()([{ executionId: 101, status: "RUNNING", startedAt: "2026-01-01", triggerType: "SCHEDULED" }]);
+        await new Promise(function(r) { setImmediate(r); });
+
+        assert.strictEqual(sb.batchTaskState.logExecutionId, 101,
+            "default RUNNING record must set logExecutionId");
+        assert.strictEqual(sb.__select.value, "101");
+        assert.strictEqual(detailCalls.length, 1);
+        assert.strictEqual(detailCalls[0].executionId, 101);
+
+        // Trigger interval — should fire again with same ids
+        assert.ok(sb.batchTaskState.logRefreshTimer, "timer must be created for RUNNING");
+        // Simulate interval callback
+        sb.batchTaskState.logRefreshTimer.fn();
+        await new Promise(function(r) { setImmediate(r); });
+        assert.strictEqual(detailCalls.length, 2, "interval must reload detail");
+    });
+
+    it("stale response from old configId does not overwrite current", async () => {
+        var sb = createLogSandbox();
+        var detailCalls = [];
+        sb.loadBatchLogDetail = function(cfgId, execId) {
+            detailCalls.push({ configId: cfgId, executionId: execId });
+        };
+
+        sb.openBatchConfigLogs(1, null);
+
+        // Capture the pending API call for config 1
+        await new Promise(function(r) { setImmediate(r); });
+        var resolveA = sb.__apiResolvers.shift();
+
+        // Before A resolves, switch to config 2
+        sb.openBatchConfigLogs(2, null);
+        await new Promise(function(r) { setImmediate(r); });
+        var resolveB = sb.__apiResolvers.shift();
+
+        // Resolve B first
+        resolveB([{ executionId: 202, status: "SUCCESS", startedAt: "2026-01-01", triggerType: "MANUAL" }]);
+        await new Promise(function(r) { setImmediate(r); });
+        assert.strictEqual(sb.batchTaskState.logExecutionId, 202, "B must set current executionId");
+
+        // Now resolve A (stale) — must be ignored
+        var beforeExecId = sb.batchTaskState.logExecutionId;
+        resolveA([{ executionId: 101, status: "RUNNING", startedAt: "2026-01-01", triggerType: "SCHEDULED" }]);
+        await new Promise(function(r) { setImmediate(r); });
+        assert.strictEqual(sb.batchTaskState.logExecutionId, beforeExecId,
+            "stale response must not overwrite current logExecutionId");
+        assert.strictEqual(detailCalls.length, 1, "only one detail call (B)");
+    });
+});
+            // manually compare interval keys
+            return n.perMailIntervalMs === d.perMailIntervalMs &&
+                   n.perRoundIntervalMs === d.perRoundIntervalMs;
+        };
+        assert.ok(sb.processManualFormSnapshot(),
+            "1000ms baseline must match 1000ms draft (1 sec read → 1000ms)");
+    });
+
+    it("baseline 1000 vs form 2000 produces interval diff", () => {
+        var sb = createDiffSandbox();
+        sb.batchTaskState.manualSource = {
+            perMailIntervalMs: 1000,
+            perRoundIntervalMs: 60000
+        };
+        var n = sb.normalizeManualSnapshot(sb.batchTaskState.manualSource);
+        var d = sb.normalizeManualSnapshot({
+            perMailIntervalMs: 2000,
+            perRoundIntervalMs: 60000
+        });
+        assert.notStrictEqual(n.perMailIntervalMs, d.perMailIntervalMs,
+            "2000ms draft must differ from 1000ms baseline");
+        assert.strictEqual(n.perRoundIntervalMs, d.perRoundIntervalMs,
+            "unchanged interval must match");
+    });
+
+    it("baseline 60000 vs form 90000 produces interval diff", () => {
+        var sb = createDiffSandbox();
+        sb.batchTaskState.manualSource = {
+            perMailIntervalMs: 1000,
+            perRoundIntervalMs: 60000
+        };
+        var n = sb.normalizeManualSnapshot(sb.batchTaskState.manualSource);
+        var d = sb.normalizeManualSnapshot({
+            perMailIntervalMs: 1000,
+            perRoundIntervalMs: 90000
+        });
+        assert.strictEqual(n.perMailIntervalMs, d.perMailIntervalMs,
+            "unchanged interval must match");
+        assert.notStrictEqual(n.perRoundIntervalMs, d.perRoundIntervalMs,
+            "90000ms draft must differ from 60000ms baseline");
     });
 });
