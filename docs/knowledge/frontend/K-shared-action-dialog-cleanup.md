@@ -2,8 +2,8 @@
 id: K-shared-action-dialog-cleanup
 domain: frontend
 created: 2026-07-13
-last_used: 2026-07-13
-hit_count: 0
+last_used: 2026-07-14
+hit_count: 1
 source: create-p:material-reminder-batch-send
 severity: P1
 ---

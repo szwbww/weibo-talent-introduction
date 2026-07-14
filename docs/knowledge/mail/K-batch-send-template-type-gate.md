@@ -2,8 +2,8 @@
 id: K-batch-send-template-type-gate
 domain: mail
 created: 2026-07-05
-last_used: 2026-07-13
-hit_count: 3
+last_used: 2026-07-14
+hit_count: 5
 source: fix-v:batch-send-template-selector:fix-1
 severity: P1
 ---
