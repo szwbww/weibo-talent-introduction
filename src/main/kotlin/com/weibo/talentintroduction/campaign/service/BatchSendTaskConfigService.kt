@@ -1,0 +1,368 @@
+package com.weibo.talentintroduction.campaign.service
+
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
+import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
+import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import org.springframework.context.ApplicationEventPublisher
+import org.springframework.http.HttpStatus
+import org.springframework.scheduling.support.CronExpression
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.server.ResponseStatusException
+import java.time.LocalDateTime
+
+@Service
+class BatchSendTaskConfigService(
+    private val repository: BatchSendTaskConfigRepository,
+    private val mailComposeTemplateService: MailComposeTemplateService,
+    private val objectMapper: ObjectMapper,
+    private val eventPublisher: ApplicationEventPublisher
+) {
+
+    fun list(query: String?): List<BatchSendTaskConfigView> {
+        val trimmed = query?.trim().orEmpty()
+        val rows = if (trimmed.isEmpty()) {
+            repository.findAllActiveOrderByUpdatedAtDescIdDesc()
+        } else {
+            repository.findAllActiveByConfigNameContainingOrderByUpdatedAtDescIdDesc(trimmed)
+        }
+        return rows.map { toView(it) }
+    }
+
+    fun get(id: Long): BatchSendTaskConfigView {
+        val row = repository.findByIdAndDeletedAtIsNull(id)
+            ?: throw NoSuchElementException("Batch send task config not found: $id")
+        return toView(row)
+    }
+
+    @Transactional
+    fun create(cmd: BatchSendTaskConfigCreateCommand): BatchSendTaskConfigView {
+        val normalized = normalizeAndValidate(cmd.toFields(), excludeId = null)
+        val now = LocalDateTime.now()
+        val saved = repository.save(
+            BatchSendTaskConfig(
+                configName = normalized.configName,
+                mailType = normalized.mailType,
+                autoEnabled = normalized.autoEnabled,
+                cron = normalized.cron,
+                dailyCap = normalized.dailyCap,
+                roundSize = normalized.roundSize,
+                perMailIntervalMs = normalized.perMailIntervalMs,
+                perRoundIntervalMs = normalized.perRoundIntervalMs,
+                selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
+                funnelLevel = normalized.funnelLevel,
+                tagsJson = normalized.tagsJson,
+                emailDomain = normalized.emailDomain,
+                discipline = normalized.discipline,
+                templateId = normalized.templateId,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        publishReload(normalized.cron)
+        return toView(saved)
+    }
+
+    @Transactional
+    fun update(id: Long, cmd: BatchSendTaskConfigUpdateCommand): BatchSendTaskConfigView {
+        val existing = repository.findByIdAndDeletedAtIsNull(id)
+            ?: throw NoSuchElementException("Batch send task config not found: $id")
+        val normalized = normalizeAndValidate(cmd.toFields(), excludeId = id)
+        val now = LocalDateTime.now()
+        val saved = repository.save(
+            existing.copy(
+                configName = normalized.configName,
+                mailType = normalized.mailType,
+                autoEnabled = normalized.autoEnabled,
+                cron = normalized.cron,
+                dailyCap = normalized.dailyCap,
+                roundSize = normalized.roundSize,
+                perMailIntervalMs = normalized.perMailIntervalMs,
+                perRoundIntervalMs = normalized.perRoundIntervalMs,
+                selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
+                funnelLevel = normalized.funnelLevel,
+                tagsJson = normalized.tagsJson,
+                emailDomain = normalized.emailDomain,
+                discipline = normalized.discipline,
+                templateId = normalized.templateId,
+                updatedAt = now
+            )
+        )
+        publishReload(normalized.cron)
+        return toView(saved)
+    }
+
+    @Transactional
+    fun setEnabled(id: Long, enabled: Boolean): BatchSendTaskConfigView {
+        val existing = repository.findByIdAndDeletedAtIsNull(id)
+            ?: throw NoSuchElementException("Batch send task config not found: $id")
+        if (enabled) {
+            if (existing.mailType == BatchSendType.MATERIAL_REMINDER.name && existing.templateId == null) {
+                throw ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MATERIAL_REMINDER config requires a templateId"
+                )
+            }
+            normalizeAndValidate(existing.toFields().copy(autoEnabled = true), excludeId = id)
+        }
+        val now = LocalDateTime.now()
+        val saved = repository.save(
+            existing.copy(
+                autoEnabled = enabled,
+                updatedAt = now
+            )
+        )
+        publishReload(saved.cron)
+        return toView(saved)
+    }
+
+    @Transactional
+    fun softDelete(id: Long) {
+        val existing = repository.findByIdAndDeletedAtIsNull(id)
+            ?: throw NoSuchElementException("Batch send task config not found: $id")
+        val now = LocalDateTime.now()
+        repository.save(
+            existing.copy(
+                autoEnabled = false,
+                deletedAt = now,
+                updatedAt = now
+            )
+        )
+        publishReload(existing.cron)
+    }
+
+    private fun normalizeAndValidate(fields: ConfigFields, excludeId: Long?): NormalizedConfig {
+        val configName = fields.configName.trim()
+        require(configName.isNotEmpty()) { "configName must not be blank" }
+        require(configName.length <= 120) { "configName must be <= 120 characters" }
+
+        val duplicate = repository.findByConfigNameAndDeletedAtIsNull(configName)
+        if (duplicate != null && duplicate.id != excludeId) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Config name already exists: $configName")
+        }
+
+        require(fields.dailyCap > 0) { "dailyCap must be > 0" }
+        require(fields.roundSize > 0) { "roundSize must be > 0" }
+        require(fields.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
+        require(fields.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
+        require(fields.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
+        require(fields.cron.isNotBlank()) { "cron must not be blank" }
+        try {
+            CronExpression.parse(fields.cron)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException("cron is not a valid Spring cron expression: ${fields.cron}", e)
+        }
+
+        val funnelLevel = normalizeFunnelLevel(fields.funnelLevel)
+        val emailDomain = normalizeOptionalFilter(fields.emailDomain)
+        val discipline = normalizeOptionalFilter(fields.discipline)
+        if (discipline != null) {
+            require(discipline in ALLOWED_DISCIPLINES) {
+                "discipline must be one of $ALLOWED_DISCIPLINES or ALL/empty"
+            }
+        }
+
+        val tags = normalizeTags(fields.tags)
+        val tagsJson = objectMapper.writeValueAsString(tags)
+        val mailType = resolveMailType(fields.templateId)
+
+        return NormalizedConfig(
+            configName = configName,
+            mailType = mailType,
+            autoEnabled = fields.autoEnabled,
+            cron = fields.cron.trim(),
+            dailyCap = fields.dailyCap,
+            roundSize = fields.roundSize,
+            perMailIntervalMs = fields.perMailIntervalMs,
+            perRoundIntervalMs = fields.perRoundIntervalMs,
+            selfCheckTtlMinutes = fields.selfCheckTtlMinutes,
+            funnelLevel = funnelLevel,
+            tagsJson = tagsJson,
+            emailDomain = emailDomain,
+            discipline = discipline,
+            templateId = fields.templateId
+        )
+    }
+
+    /**
+     * I-2: derive mailType from enabled template; null templateId => INTRODUCTION only.
+     * Invalid/disabled/wrong template => 422, never silent fallback.
+     */
+    private fun resolveMailType(templateId: Long?): String {
+        if (templateId == null) {
+            return BatchSendType.INTRODUCTION.name
+        }
+        require(templateId > 0) { "templateId must be > 0" }
+        val template = try {
+            mailComposeTemplateService.getById(templateId)
+        } catch (e: Exception) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Template $templateId not found", e)
+        }
+        if (!template.enabled) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Template $templateId is not enabled")
+        }
+        val mailType = template.mailType?.trim().orEmpty()
+        if (mailType !in ALLOWED_MAIL_TYPES) {
+            throw ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "Template $templateId has unsupported mailType=$mailType"
+            )
+        }
+        return mailType
+    }
+
+    private fun normalizeFunnelLevel(raw: String?): String? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (value.equals("ALL", ignoreCase = true)) return null
+        require(value in ALLOWED_FUNNEL_LEVELS) {
+            "funnelLevel must be one of $ALLOWED_FUNNEL_LEVELS or empty/ALL"
+        }
+        return value
+    }
+
+    private fun normalizeOptionalFilter(raw: String?): String? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (value.equals("ALL", ignoreCase = true)) return null
+        return value
+    }
+
+    private fun normalizeTags(tags: List<String>): List<String> =
+        tags.map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+
+    private fun parseTags(tagsJson: String): List<String> =
+        try {
+            objectMapper.readValue(tagsJson, object : TypeReference<List<String>>() {})
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sorted()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+    private fun toView(row: BatchSendTaskConfig): BatchSendTaskConfigView {
+        val id = row.id ?: error("Batch send task config id is required")
+        return BatchSendTaskConfigView(
+            id = id,
+            configName = row.configName,
+            mailType = row.mailType,
+            autoEnabled = row.autoEnabled,
+            cron = row.cron,
+            dailyCap = row.dailyCap,
+            roundSize = row.roundSize,
+            perMailIntervalMs = row.perMailIntervalMs,
+            perRoundIntervalMs = row.perRoundIntervalMs,
+            selfCheckTtlMinutes = row.selfCheckTtlMinutes,
+            funnelLevel = row.funnelLevel,
+            tags = parseTags(row.tagsJson),
+            emailDomain = row.emailDomain,
+            discipline = row.discipline,
+            templateId = row.templateId,
+            createdAt = row.createdAt,
+            updatedAt = row.updatedAt
+        )
+    }
+
+    private fun publishReload(cron: String) {
+        eventPublisher.publishEvent(BatchSendCronChangedEvent(cron, cron))
+    }
+
+    private data class ConfigFields(
+        val configName: String,
+        val autoEnabled: Boolean,
+        val cron: String,
+        val dailyCap: Int,
+        val roundSize: Int,
+        val perMailIntervalMs: Long,
+        val perRoundIntervalMs: Long,
+        val selfCheckTtlMinutes: Int,
+        val funnelLevel: String?,
+        val tags: List<String>,
+        val emailDomain: String?,
+        val discipline: String?,
+        val templateId: Long?
+    )
+
+    private data class NormalizedConfig(
+        val configName: String,
+        val mailType: String,
+        val autoEnabled: Boolean,
+        val cron: String,
+        val dailyCap: Int,
+        val roundSize: Int,
+        val perMailIntervalMs: Long,
+        val perRoundIntervalMs: Long,
+        val selfCheckTtlMinutes: Int,
+        val funnelLevel: String?,
+        val tagsJson: String,
+        val emailDomain: String?,
+        val discipline: String?,
+        val templateId: Long?
+    )
+
+    private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
+        configName = configName,
+        autoEnabled = autoEnabled,
+        cron = cron,
+        dailyCap = dailyCap,
+        roundSize = roundSize,
+        perMailIntervalMs = perMailIntervalMs,
+        perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = selfCheckTtlMinutes,
+        funnelLevel = funnelLevel,
+        tags = tags,
+        emailDomain = emailDomain,
+        discipline = discipline,
+        templateId = templateId
+    )
+
+    private fun BatchSendTaskConfigUpdateCommand.toFields() = ConfigFields(
+        configName = configName,
+        autoEnabled = autoEnabled,
+        cron = cron,
+        dailyCap = dailyCap,
+        roundSize = roundSize,
+        perMailIntervalMs = perMailIntervalMs,
+        perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = selfCheckTtlMinutes,
+        funnelLevel = funnelLevel,
+        tags = tags,
+        emailDomain = emailDomain,
+        discipline = discipline,
+        templateId = templateId
+    )
+
+    private fun BatchSendTaskConfig.toFields() = ConfigFields(
+        configName = configName,
+        autoEnabled = autoEnabled,
+        cron = cron,
+        dailyCap = dailyCap,
+        roundSize = roundSize,
+        perMailIntervalMs = perMailIntervalMs,
+        perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = selfCheckTtlMinutes,
+        funnelLevel = funnelLevel,
+        tags = parseTags(tagsJson),
+        emailDomain = emailDomain,
+        discipline = discipline,
+        templateId = templateId
+    )
+
+    private companion object {
+        val ALLOWED_MAIL_TYPES = setOf(
+            BatchSendType.INTRODUCTION.name,
+            BatchSendType.MATERIAL_REMINDER.name
+        )
+        val ALLOWED_FUNNEL_LEVELS = setOf("CANDIDATE", "APPLICATION")
+        val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES")
+    }
+}
