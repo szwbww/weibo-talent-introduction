@@ -456,6 +456,11 @@ function createFormValuesSandbox() {
         console: console
     };
     vm.createContext(sandbox);
+    sandbox.batchTaskState = { preloadedTemplates: [] };
+    vm.runInContext(extractFn("supportedBatchComposeTemplates"), sandbox);
+    vm.runInContext(extractFn("resolveBatchTemplateMailType"), sandbox);
+    vm.runInContext(extractFn("normalizeBatchTags"), sandbox);
+    vm.runInContext(extractFn("readBatchTagPickerValue"), sandbox);
     vm.runInContext(extractFn("readManualFormValues"), sandbox);
     sandbox.__store = stored;
     return sandbox;

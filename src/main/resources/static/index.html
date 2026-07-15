@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260620-blue-refresh">
+    <link rel="stylesheet" href="styles.css?v=20260715-batch-diff-display-fix">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1058,13 +1058,16 @@
 <!-- Batch Send Task Console Modal -->
 <div id="batchSendTaskModal" class="modal-overlay" hidden>
     <div class="modal-content task-modal batch-send-task-modal">
-        <header class="task-modal-header">
-            <h2 id="batchSendTaskModalTitle">批量邮件任务控制台</h2>
+        <header class="modal-header batch-send-task-header">
+            <div class="batch-send-task-heading">
+                <h2 id="batchSendTaskModalTitle">批量邮件任务控制台</h2>
+                <p class="batch-send-task-subtitle">管理定时任务、手动执行与执行日志</p>
+            </div>
             <button class="modal-close-btn batch-send-close-btn" type="button" aria-label="关闭">×</button>
         </header>
         <nav class="batch-send-tabs">
             <button class="batch-send-tab is-active" data-tab="scheduled">定时任务</button>
-            <button class="batch-send-tab" data-tab="manual">手动执行</button>
+            <button class="batch-send-tab" id="batchManualTab" data-tab="manual">手动执行</button>
         </nav>
 
         <!-- Scheduled Tasks Tab -->
@@ -1091,186 +1094,262 @@
                     </tbody>
                 </table>
             </div>
+            <div class="batch-task-footer">
+                <span id="batchConfigCount">共 0 个任务</span>
+            </div>
 
             <!-- Config Edit Form (reused for create/edit) -->
-            <div id="batchConfigEditor" class="batch-send-tab-panel" hidden>
-                <h3 id="batchConfigEditorTitle" style="margin:0 0 16px;font-size:16px;">新增定时任务</h3>
-                <div class="batch-manual-form-grid">
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">任务名称</span>
-                        <input type="text" id="batchConfigEditorName" class="bsc-input" placeholder="如: 每日美国介绍邮件">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">发送类型</span>
-                        <select id="batchConfigEditorMailType" class="bsc-input bsc-select">
-                            <option value="INTRODUCTION">介绍邮件</option>
-                            <option value="MATERIAL_REMINDER">材料提醒邮件</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">模板</span>
-                        <select id="batchConfigEditorTemplateId" class="bsc-input bsc-select">
-                            <option value="">默认 (INTRODUCTION)</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">漏斗层级</span>
-                        <select id="batchConfigEditorFunnelLevel" class="bsc-input bsc-select">
-                            <option value="">全部</option>
-                            <option value="CANDIDATE">CANDIDATE</option>
-                            <option value="APPLICATION">APPLICATION</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">标签 (逗号分隔)</span>
-                        <input type="text" id="batchConfigEditorTags" class="bsc-input" placeholder="如: STEM, AI">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">邮箱服务商</span>
-                        <select id="batchConfigEditorEmailDomain" class="bsc-input bsc-select">
-                            <option value="">全部</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">学科</span>
-                        <select id="batchConfigEditorDiscipline" class="bsc-input bsc-select">
-                            <option value="">全部</option>
-                            <option value="STEM">仅理工科</option>
-                            <option value="HUMANITIES">仅文社科</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">日限额 (封)</span>
-                        <input type="number" id="batchConfigEditorDailyCap" class="bsc-input" min="1" value="1000">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每轮数量 (封)</span>
-                        <input type="number" id="batchConfigEditorRoundSize" class="bsc-input" min="1" value="50">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每封间隔 (秒)</span>
-                        <input type="number" id="batchConfigEditorPerMailIntervalSec" class="bsc-input" min="0" value="1">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每轮间隔 (秒)</span>
-                        <input type="number" id="batchConfigEditorPerRoundIntervalSec" class="bsc-input" min="0" value="60">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">自检 TTL (分钟)</span>
-                        <input type="number" id="batchConfigEditorSelfCheckTtlMin" class="bsc-input" min="1" value="30">
-                    </label>
-                    <label class="batch-config-field">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">执行频率</span>
-                        <select id="batchConfigEditorFrequency" class="bsc-input bsc-select">
-                            <option value="hourly">每小时</option>
-                            <option value="daily" selected>每天</option>
-                            <option value="weekly">每周</option>
-                        </select>
-                    </label>
-                    <label class="batch-config-field" id="batchConfigEditorTimeField">
-                        <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">执行时间</span>
-                        <input type="time" id="batchConfigEditorTime" class="bsc-input" value="09:00">
-                    </label>
-                    <label class="batch-config-field" style="display:flex;align-items:center;gap:8px;">
-                        <input type="checkbox" id="batchConfigEditorAutoEnabled" checked>
-                        <span style="font-size:12px;color:#64748b;">启用定时执行</span>
-                    </label>
+            <div id="batchConfigEditor" class="batch-config-editor" hidden>
+                <div class="batch-config-editor-heading">
+                    <div>
+                        <h3 id="batchConfigEditorTitle">新增定时任务</h3>
+                        <p>邮件类型由所选模板自动确定，无需额外配置。</p>
+                    </div>
                 </div>
-                <div class="batch-manual-actions">
+
+                <section class="batch-config-editor-section">
+                    <div class="batch-config-editor-section-heading">
+                        <h4>基础信息</h4>
+                        <span>定义任务名称和邮件内容</span>
+                    </div>
+                    <div class="batch-config-editor-grid">
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">任务名称</span>
+                            <input type="text" id="batchConfigEditorName" class="bsc-input" placeholder="如：每日美国介绍邮件">
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">模板</span>
+                            <select id="batchConfigEditorTemplateId" class="bsc-input bsc-select">
+                                <option value="">系统默认介绍邮件模板</option>
+                            </select>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="batch-config-editor-section">
+                    <div class="batch-config-editor-section-heading">
+                        <h4>收件范围</h4>
+                        <span>所有条件同时生效，留空表示不限制</span>
+                    </div>
+                    <div class="batch-config-editor-grid">
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">漏斗层级</span>
+                            <select id="batchConfigEditorFunnelLevel" class="bsc-input bsc-select">
+                                <option value="">全部层级</option>
+                                <option value="CANDIDATE">CANDIDATE</option>
+                                <option value="APPLICATION">APPLICATION</option>
+                            </select>
+                        </label>
+                        <div class="batch-config-field">
+                            <span class="batch-config-field-label">标签</span>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorTags">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorTagsChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorTagsSearch" class="batch-tag-picker-search" placeholder="搜索并选择标签" autocomplete="off" aria-controls="batchConfigEditorTagsDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorTags" value="">
+                                <div id="batchConfigEditorTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">邮箱服务商</span>
+                            <select id="batchConfigEditorEmailDomain" class="bsc-input bsc-select">
+                                <option value="">全部服务商</option>
+                            </select>
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">学科</span>
+                            <select id="batchConfigEditorDiscipline" class="bsc-input bsc-select">
+                                <option value="">全部学科</option>
+                                <option value="STEM">仅理工科</option>
+                                <option value="HUMANITIES">仅文社科</option>
+                            </select>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="batch-config-editor-section">
+                    <div class="batch-config-editor-section-heading">
+                        <h4>发送控制</h4>
+                        <span>限制发送节奏，避免单次任务占用过多资源</span>
+                    </div>
+                    <div class="batch-config-editor-grid batch-config-editor-grid-controls">
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">日限额（封）</span>
+                            <input type="number" id="batchConfigEditorDailyCap" class="bsc-input" min="1" value="1000">
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">每轮数量（封）</span>
+                            <input type="number" id="batchConfigEditorRoundSize" class="bsc-input" min="1" value="50">
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">每封间隔（秒）</span>
+                            <input type="number" id="batchConfigEditorPerMailIntervalSec" class="bsc-input" min="0" value="1">
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">每轮间隔（秒）</span>
+                            <input type="number" id="batchConfigEditorPerRoundIntervalSec" class="bsc-input" min="0" value="60">
+                        </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">自检 TTL（分钟）</span>
+                            <input type="number" id="batchConfigEditorSelfCheckTtlMin" class="bsc-input" min="1" value="30">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="batch-config-editor-section">
+                    <div class="batch-config-editor-section-heading">
+                        <h4>定时调度</h4>
+                        <span>设置执行周期；启停状态由任务列表统一控制</span>
+                    </div>
+                    <div class="batch-config-editor-grid batch-config-editor-grid-schedule">
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">执行频率</span>
+                            <select id="batchConfigEditorFrequency" class="bsc-input bsc-select">
+                                <option value="hourly">每小时</option>
+                                <option value="daily" selected>每天</option>
+                                <option value="weekly">每周一</option>
+                            </select>
+                        </label>
+                        <label class="batch-config-field" id="batchConfigEditorTimeField">
+                            <span class="batch-config-field-label">执行时间</span>
+                            <input type="time" id="batchConfigEditorTime" class="bsc-input" value="09:00">
+                        </label>
+                    </div>
+                </section>
+
+                <div class="batch-config-editor-actions">
                     <button class="button secondary" id="batchConfigEditorCancelBtn">取消</button>
-                    <button class="button primary" id="batchConfigEditorSaveBtn">保存</button>
+                    <button class="button primary" id="batchConfigEditorSaveBtn">保存任务</button>
                 </div>
             </div>
         </div>
 
         <!-- Manual Execution Tab -->
         <div id="batchManualPanel" class="batch-send-tab-panel" hidden>
-            <div class="batch-manual-source-card">
-                <div style="display:flex;align-items:center;gap:10px;">
-                    <input type="text" id="batchManualSourceQuery" class="bsc-input" placeholder="输入任务名称搜索，默认不选择" style="flex:1;">
-                    <button class="button secondary" id="batchManualClearSourceBtn" hidden>清除选择</button>
+            <div class="batch-manual-source-layout">
+                <div class="batch-manual-source-card">
+                    <label class="batch-manual-source-label" for="batchManualSourceQuery">采用定时任务配置（可选）</label>
+                    <div class="batch-manual-source-row">
+                        <div class="batch-manual-source-combobox">
+                            <input type="search" id="batchManualSourceQuery" class="bsc-input" placeholder="点击选择或输入任务名称搜索" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="batchManualSourceDropdown" autocomplete="off">
+                            <span class="batch-manual-source-chevron" aria-hidden="true">⌄</span>
+                            <div id="batchManualSourceDropdown" class="batch-manual-source-dropdown" role="listbox" hidden></div>
+                        </div>
+                        <button class="button secondary" id="batchManualClearSourceBtn" hidden>清除选择</button>
+                    </div>
+                    <input type="hidden" id="batchManualSourceId" value="">
+                    <input type="hidden" id="batchManualSourceUpdatedAt" value="">
                 </div>
-                <div id="batchManualSourceDropdown" class="batch-manual-source-dropdown" hidden></div>
-                <div id="batchManualSourceInfo" class="batch-manual-source-note">当前：独立手动执行（未关联定时配置）</div>
-                <input type="hidden" id="batchManualSourceId" value="">
-                <input type="hidden" id="batchManualSourceUpdatedAt" value="">
+                <div class="batch-manual-source-summary">
+                    <span class="batch-manual-source-summary-label">当前来源</span>
+                    <div id="batchManualSourceInfo" class="batch-manual-source-note">独立手动执行（未关联定时配置）</div>
+                    <span class="batch-manual-source-summary-hint">选择配置后自动带入全部参数；修改项会标红。</span>
+                </div>
             </div>
-            <div class="batch-manual-form-grid">
-                <label class="batch-config-field" id="manualFieldTemplate">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">模板</span>
-                    <select id="batchManualTemplateId" class="bsc-input bsc-select">
-                        <option value="">默认 (INTRODUCTION)</option>
-                    </select>
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldFunnelLevel">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">漏斗层级</span>
-                    <select id="batchManualFunnelLevel" class="bsc-input bsc-select">
-                        <option value="">全部</option>
-                        <option value="CANDIDATE">CANDIDATE</option>
-                        <option value="APPLICATION">APPLICATION</option>
-                    </select>
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldTags">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">标签 (逗号分隔)</span>
-                    <input type="text" id="batchManualTags" class="bsc-input" placeholder="如: STEM, AI">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldEmailDomain">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">邮箱服务商</span>
-                    <select id="batchManualEmailDomain" class="bsc-input bsc-select">
-                        <option value="">全部</option>
-                    </select>
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldDiscipline">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">学科</span>
-                    <select id="batchManualDiscipline" class="bsc-input bsc-select">
-                        <option value="">全部</option>
-                        <option value="STEM">仅理工科</option>
-                        <option value="HUMANITIES">仅文社科</option>
-                    </select>
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldDailyCap">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">日限额 (封)</span>
-                    <input type="number" id="batchManualDailyCap" class="bsc-input" min="1" value="1000">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldRoundSize">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每轮数量 (封)</span>
-                    <input type="number" id="batchManualRoundSize" class="bsc-input" min="1" value="50">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldPerMailIntervalSec">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每封间隔 (秒)</span>
-                    <input type="number" id="batchManualPerMailIntervalSec" class="bsc-input" min="0" value="1">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldPerRoundIntervalSec">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">每轮间隔 (秒)</span>
-                    <input type="number" id="batchManualPerRoundIntervalSec" class="bsc-input" min="0" value="60">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-                <label class="batch-config-field" id="manualFieldSelfCheckTtlMin">
-                    <span style="display:block;margin-bottom:4px;font-size:12px;color:#64748b;">自检 TTL (分钟)</span>
-                    <input type="number" id="batchManualSelfCheckTtlMin" class="bsc-input" min="1" value="30">
-                    <span class="batch-config-diff-badge" hidden>已修改</span>
-                    <div class="batch-config-diff-original" hidden></div>
-                </label>
-            </div>
-            <div class="batch-manual-actions">
-                <button class="button primary" id="batchManualExecuteBtn">执行</button>
+
+            <section class="batch-manual-section">
+                <div class="batch-manual-section-heading">
+                    <h4>模板与收件范围</h4>
+                    <span>邮件类型根据模板自动确定；留空筛选项表示不限制</span>
+                </div>
+                <div class="batch-config-editor-grid">
+                    <label class="batch-config-field" id="manualFieldTemplate">
+                        <span class="batch-config-field-label">模板</span>
+                        <select id="batchManualTemplateId" class="bsc-input bsc-select">
+                            <option value="">系统默认介绍邮件模板</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldFunnelLevel">
+                        <span class="batch-config-field-label">漏斗层级</span>
+                        <select id="batchManualFunnelLevel" class="bsc-input bsc-select">
+                            <option value="">全部层级</option>
+                            <option value="CANDIDATE">CANDIDATE</option>
+                            <option value="APPLICATION">APPLICATION</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <div class="batch-config-field" id="manualFieldTags">
+                        <span class="batch-config-field-label">标签</span>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualTags">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualTagsChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualTagsSearch" class="batch-tag-picker-search" placeholder="搜索并选择标签" autocomplete="off" aria-controls="batchManualTagsDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualTags" value="">
+                            <div id="batchManualTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <label class="batch-config-field" id="manualFieldEmailDomain">
+                        <span class="batch-config-field-label">邮箱服务商</span>
+                        <select id="batchManualEmailDomain" class="bsc-input bsc-select">
+                            <option value="">全部服务商</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldDiscipline">
+                        <span class="batch-config-field-label">学科</span>
+                        <select id="batchManualDiscipline" class="bsc-input bsc-select">
+                            <option value="">全部学科</option>
+                            <option value="STEM">仅理工科</option>
+                            <option value="HUMANITIES">仅文社科</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                </div>
+            </section>
+
+            <section class="batch-manual-section">
+                <div class="batch-manual-section-heading">
+                    <h4>发送控制</h4>
+                    <span>仅影响本次执行，不修改原定时任务</span>
+                </div>
+                <div class="batch-config-editor-grid batch-config-editor-grid-controls">
+                    <label class="batch-config-field" id="manualFieldDailyCap">
+                        <span class="batch-config-field-label">日限额（封）</span>
+                        <input type="number" id="batchManualDailyCap" class="bsc-input" min="1" value="1000">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldRoundSize">
+                        <span class="batch-config-field-label">每轮数量（封）</span>
+                        <input type="number" id="batchManualRoundSize" class="bsc-input" min="1" value="50">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldPerMailIntervalSec">
+                        <span class="batch-config-field-label">每封间隔（秒）</span>
+                        <input type="number" id="batchManualPerMailIntervalSec" class="bsc-input" min="0" value="1">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldPerRoundIntervalSec">
+                        <span class="batch-config-field-label">每轮间隔（秒）</span>
+                        <input type="number" id="batchManualPerRoundIntervalSec" class="bsc-input" min="0" value="60">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldSelfCheckTtlMin">
+                        <span class="batch-config-field-label">自检 TTL（分钟）</span>
+                        <input type="number" id="batchManualSelfCheckTtlMin" class="bsc-input" min="1" value="30">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                </div>
+            </section>
+
+            <div class="batch-manual-actions batch-manual-actions-sticky">
+                <span>执行前将展示来源配置与变更项，请确认后继续。</span>
+                <button class="button primary" id="batchManualExecuteBtn">确认并执行</button>
             </div>
         </div>
 
@@ -1785,6 +1864,6 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="app.js?v=20260619-animations"></script>
+<script src="app.js?v=20260715-batch-diff-display-fix"></script>
 </body>
 </html>

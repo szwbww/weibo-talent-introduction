@@ -12049,16 +12049,20 @@ var batchTaskState = {
     query: "",
     editorMode: null,        // "create" | "edit"
     editorId: null,
+    editorAutoEnabled: false,
     logConfigId: null,
     logExecutionId: null,
     logRefreshTimer: null,
     manualSource: null,       // config view object or null
     manualDraft: null,        // current draft values
     preloadedTemplates: [],
-    preloadedProviders: []
+    preloadedProviders: [],
+    preloadedTags: []
 };
 
 var batchConfigSearchTimer = null;
+var batchManualSourceSearchTimer = null;
+var batchManualSourceRequestToken = 0;
 
 function openBatchSendTaskModal() {
     var modal = document.getElementById("batchSendTaskModal");
@@ -12089,17 +12093,22 @@ function resetBatchTaskState() {
         query: "",
         editorMode: null,
         editorId: null,
+        editorAutoEnabled: false,
         logConfigId: null,
         logExecutionId: null,
         logRefreshTimer: null,
         manualSource: null,
         manualDraft: null,
         preloadedTemplates: batchTaskState.preloadedTemplates,
-        preloadedProviders: batchTaskState.preloadedProviders
+        preloadedProviders: batchTaskState.preloadedProviders,
+        preloadedTags: batchTaskState.preloadedTags
     };
     clearBatchLogRefreshTimer();
     clearTimeout(batchConfigSearchTimer);
     batchConfigSearchTimer = null;
+    clearTimeout(batchManualSourceSearchTimer);
+    batchManualSourceSearchTimer = null;
+    batchManualSourceRequestToken += 1;
 }
 
 // ── Preload lookup data (templates, providers) ──────────────────────────────────────
@@ -12107,8 +12116,12 @@ function resetBatchTaskState() {
 async function preloadBatchSendLookups() {
     try {
         var resp = await api("/api/compose-templates");
-        if (Array.isArray(resp)) batchTaskState.preloadedTemplates = resp;
+        if (Array.isArray(resp)) {
+            batchTaskState.preloadedTemplates = resp;
+            refreshBatchTemplateSelectors();
+        }
     } catch (e) { console.error("Failed to load compose templates", e); }
+    await loadBatchTagOptions();
     try {
         var providers = await loadBatchSendTypeProviders("INTRODUCTION");
         if (Array.isArray(providers)) batchTaskState.preloadedProviders = providers;
@@ -12166,6 +12179,8 @@ function renderBatchConfigTable() {
     var tbody = document.getElementById("batchConfigTableBody");
     if (!tbody) return;
     var configs = batchTaskState.configs;
+    var count = document.getElementById("batchConfigCount");
+    if (count) count.textContent = "共 " + configs.length + " 个任务";
     if (configs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">暂无定时任务配置</td></tr>';
         return;
@@ -12206,10 +12221,11 @@ function renderBatchConfigRow(c) {
 }
 
 function renderBatchConfigStatusToggle(c) {
-    var label = c.autoEnabled ? "启用" : "停用";
-    return '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">' +
-        '<input type="checkbox" ' + (c.autoEnabled ? "checked" : "") + ' onchange="toggleBatchConfigEnabled(' + c.id + ', this.checked)" style="accent-color:#2563eb;">' +
-        '<span style="font-size:12px;">' + label + '</span>' +
+    var label = c.autoEnabled ? "已启用" : "已停用";
+    return '<label class="batch-task-status-toggle">' +
+        '<input type="checkbox" aria-label="' + label + '定时任务" ' + (c.autoEnabled ? "checked" : "") + ' onchange="toggleBatchConfigEnabled(' + c.id + ', this.checked)">' +
+        '<span class="batch-task-status-switch" aria-hidden="true"></span>' +
+        '<span class="batch-task-status-label">' + label + '</span>' +
         '</label>';
 }
 
@@ -12259,8 +12275,13 @@ async function deleteBatchConfig(id) {
 function hideBatchConfigEditor() {
     var editor = document.getElementById("batchConfigEditor");
     if (editor) editor.hidden = true;
+    var panel = document.getElementById("batchScheduledPanel");
+    if (panel) panel.classList.remove("is-editing");
+    var manualTab = document.getElementById("batchManualTab");
+    if (manualTab) manualTab.hidden = false;
     batchTaskState.editorMode = null;
     batchTaskState.editorId = null;
+    batchTaskState.editorAutoEnabled = false;
 }
 
 function openBatchConfigEditor(id) {
@@ -12280,6 +12301,13 @@ function showBatchConfigEditorForm() {
 function showBatchConfigEditor(config) {
     var editor = document.getElementById("batchConfigEditor");
     if (!editor) return;
+    var panel = document.getElementById("batchScheduledPanel");
+    if (panel) {
+        panel.classList.add("is-editing");
+        panel.scrollTop = 0;
+    }
+    var manualTab = document.getElementById("batchManualTab");
+    if (manualTab) manualTab.hidden = true;
     editor.hidden = false;
     var title = document.getElementById("batchConfigEditorTitle");
     if (title) title.textContent = config ? "编辑定时任务" : "新增定时任务";
@@ -12287,16 +12315,15 @@ function showBatchConfigEditor(config) {
     // fill form
     var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ""; };
     setVal("batchConfigEditorName", config ? config.configName : "");
-    setVal("batchConfigEditorMailType", config ? config.mailType : "INTRODUCTION");
     setVal("batchConfigEditorFunnelLevel", config ? (config.funnelLevel || "") : "");
-    setVal("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags.join(", ") : "");
+    setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
     setVal("batchConfigEditorDailyCap", config ? config.dailyCap : "1000");
     setVal("batchConfigEditorRoundSize", config ? config.roundSize : "50");
     setVal("batchConfigEditorPerMailIntervalSec", config ? Math.round((config.perMailIntervalMs || 1000) / 1000) : "1");
     setVal("batchConfigEditorPerRoundIntervalSec", config ? Math.round((config.perRoundIntervalMs || 60000) / 1000) : "60");
     setVal("batchConfigEditorSelfCheckTtlMin", config ? config.selfCheckTtlMinutes : "30");
-    document.getElementById("batchConfigEditorAutoEnabled").checked = config ? config.autoEnabled : true;
+    batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
 
     // Parse cron to frequency + time
     var freq = "daily", time = "09:00";
@@ -12315,20 +12342,185 @@ function showBatchConfigEditor(config) {
     if (timeField) timeField.style.display = freq === "hourly" ? "none" : "";
 
     // Fill template selector and provider dropdown
-    fillBatchConfigEditorTemplateSelector(config ? config.templateId : null, config ? config.mailType : "INTRODUCTION");
+    fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
     fillBatchConfigEditorProviderSelect(config ? config.emailDomain : "");
 }
 
-function fillBatchConfigEditorTemplateSelector(selectedId, mailType) {
+function fillBatchConfigEditorTemplateSelector(selectedId) {
     var select = document.getElementById("batchConfigEditorTemplateId");
     if (!select) return;
-    var templates = batchTaskState.preloadedTemplates || [];
-    var type = mailType || "INTRODUCTION";
-    var enabledTyped = templates.filter(function(t) { return t.enabled && t.mailType === type; });
-    var html = type === "INTRODUCTION" ? '<option value="">默认 (INTRODUCTION)</option>' : '';
-    html += enabledTyped.map(function(t) { return '<option value="' + t.id + '">' + escapeHtml(t.templateName) + '</option>'; }).join("");
+    var html = '<option value="">系统默认介绍邮件模板</option>';
+    html += supportedBatchComposeTemplates().map(function(t) { return '<option value="' + t.id + '">' + escapeHtml(t.templateName) + '</option>'; }).join("");
     select.innerHTML = html;
     select.value = selectedId ? String(selectedId) : "";
+}
+
+function supportedBatchComposeTemplates() {
+    return (batchTaskState.preloadedTemplates || []).filter(function(t) {
+        return t.enabled && (t.mailType === "INTRODUCTION" || t.mailType === "MATERIAL_REMINDER");
+    });
+}
+
+function resolveBatchTemplateMailType(templateId) {
+    if (!templateId) return "INTRODUCTION";
+    var template = supportedBatchComposeTemplates().find(function(t) {
+        return Number(t.id) === Number(templateId);
+    });
+    return template ? template.mailType : "INTRODUCTION";
+}
+
+function refreshBatchTemplateSelectors() {
+    var editorSelect = document.getElementById("batchConfigEditorTemplateId");
+    if (editorSelect) {
+        var editorConfig = batchTaskState.configs.find(function(c) {
+            return Number(c.id) === Number(batchTaskState.editorId);
+        });
+        var editorTemplateId = editorConfig ? editorConfig.templateId : (editorSelect.value || null);
+        fillBatchConfigEditorTemplateSelector(editorTemplateId);
+    }
+    var manualSelect = document.getElementById("batchManualTemplateId");
+    if (manualSelect) {
+        var manualTemplateId = batchTaskState.manualDraft && batchTaskState.manualDraft.templateId != null
+            ? batchTaskState.manualDraft.templateId
+            : (manualSelect.value || null);
+        fillBatchManualTemplateSelector(manualTemplateId);
+    }
+}
+
+function normalizeBatchTags(value) {
+    var source = Array.isArray(value) ? value : String(value || "").split(",");
+    var seen = {};
+    return source.map(function(tag) { return String(tag || "").trim(); }).filter(function(tag) {
+        if (!tag || seen[tag]) return false;
+        seen[tag] = true;
+        return true;
+    });
+}
+
+function mergeBatchTagOptions(optionLists, extraTags) {
+    var merged = [];
+    (optionLists || []).forEach(function(list) {
+        (Array.isArray(list) ? list : []).forEach(function(item) {
+            var tag = typeof item === "string" ? item : item && item.tag;
+            merged.push(tag);
+        });
+    });
+    merged = merged.concat(normalizeBatchTags(extraTags));
+    return normalizeBatchTags(merged);
+}
+
+async function loadBatchTagOptions() {
+    var levels = ["CANDIDATE", "APPLICATION"];
+    var results = await Promise.all(levels.map(function(level) {
+        return api("/api/experts/tags/aggregation?level=" + encodeURIComponent(level)).catch(function(e) {
+            console.error("Failed to load batch tags for " + level, e);
+            return [];
+        });
+    }));
+    var currentTags = readBatchTagPickerValue("batchConfigEditorTags")
+        .concat(readBatchTagPickerValue("batchManualTags"));
+    batchTaskState.preloadedTags = mergeBatchTagOptions(results, currentTags);
+    renderBatchTagPicker("batchConfigEditorTags");
+    renderBatchTagPicker("batchManualTags");
+}
+
+function readBatchTagPickerValue(valueId) {
+    var input = document.getElementById(valueId);
+    return normalizeBatchTags(input ? input.value : "");
+}
+
+function setBatchTagPickerValue(valueId, tags) {
+    var input = document.getElementById(valueId);
+    if (!input) return;
+    input.value = normalizeBatchTags(tags).join(",");
+    renderBatchTagPicker(valueId);
+}
+
+function batchTagDisplayName(tag) {
+    return typeof expertTagLabels !== "undefined" && expertTagLabels[tag] ? expertTagLabels[tag] : tag;
+}
+
+function renderBatchTagPicker(valueId) {
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!search || !chips || !dropdown) return;
+    var selected = readBatchTagPickerValue(valueId);
+    var options = mergeBatchTagOptions([batchTaskState.preloadedTags || []], selected);
+    var query = search.value.trim().toLowerCase();
+    var filtered = options.filter(function(tag) {
+        return !query || tag.toLowerCase().includes(query) || batchTagDisplayName(tag).toLowerCase().includes(query);
+    });
+
+    chips.innerHTML = selected.map(function(tag) {
+        return '<span class="batch-tag-picker-chip">' + escapeHtml(batchTagDisplayName(tag)) +
+            '<button type="button" data-remove-tag="' + escapeHtml(tag) + '" aria-label="移除标签 ' + escapeHtml(batchTagDisplayName(tag)) + '">×</button></span>';
+    }).join("");
+    dropdown.innerHTML = filtered.length > 0 ? filtered.map(function(tag) {
+        var checked = selected.includes(tag);
+        return '<button type="button" class="batch-tag-picker-option' + (checked ? ' is-selected' : '') +
+            '" role="option" aria-selected="' + checked + '" data-tag="' + escapeHtml(tag) + '">' +
+            '<span class="batch-tag-picker-check" aria-hidden="true">' + (checked ? '✓' : '') + '</span>' +
+            '<span>' + escapeHtml(batchTagDisplayName(tag)) + '</span></button>';
+    }).join("") : '<div class="batch-tag-picker-empty">没有匹配标签</div>';
+}
+
+function notifyBatchTagPickerChanged(valueId) {
+    if (valueId !== "batchManualTags") return;
+    if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+    batchTaskState.manualDraft.tags = readBatchTagPickerValue(valueId);
+    computeAndRenderDiffs();
+}
+
+function toggleBatchTagPickerValue(valueId, tag) {
+    var selected = readBatchTagPickerValue(valueId);
+    var normalizedTag = String(tag || "").trim();
+    if (!normalizedTag) return;
+    var index = selected.indexOf(normalizedTag);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(normalizedTag);
+    setBatchTagPickerValue(valueId, selected);
+    notifyBatchTagPickerChanged(valueId);
+}
+
+function openBatchTagPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    renderBatchTagPicker(valueId);
+    if (dropdown) dropdown.hidden = false;
+    if (search) search.setAttribute("aria-expanded", "true");
+}
+
+function closeBatchTagPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    if (dropdown) dropdown.hidden = true;
+    if (search) search.setAttribute("aria-expanded", "false");
+}
+
+function bindBatchTagPicker(valueId) {
+    var picker = document.querySelector('[data-tag-picker="' + valueId + '"]');
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!picker || !search || !chips || !dropdown) return;
+    search.addEventListener("focus", function() { openBatchTagPicker(valueId); });
+    search.addEventListener("input", function() { openBatchTagPicker(valueId); });
+    search.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") closeBatchTagPicker(valueId);
+    });
+    chips.addEventListener("click", function(event) {
+        var button = event.target.closest("[data-remove-tag]");
+        if (button) toggleBatchTagPickerValue(valueId, button.dataset.removeTag);
+    });
+    dropdown.addEventListener("click", function(event) {
+        var option = event.target.closest("[data-tag]");
+        if (option) toggleBatchTagPickerValue(valueId, option.dataset.tag);
+    });
+    document.addEventListener("click", function(event) {
+        if (!picker.contains(event.target)) closeBatchTagPicker(valueId);
+    });
+    renderBatchTagPicker(valueId);
 }
 
 function fillBatchConfigEditorProviderSelect(selected) {
@@ -12359,7 +12551,7 @@ async function saveBatchConfigEditor() {
     else if (freq === "weekly") cron = "0 " + min + " " + hour + " ? * MON";
     else cron = "0 " + min + " " + hour + " * * ?";
 
-    var tags = val("batchConfigEditorTags").split(",").map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; });
+    var tags = readBatchTagPickerValue("batchConfigEditorTags");
 
     var templateId = null;
     var rawTemplate = val("batchConfigEditorTemplateId");
@@ -12370,7 +12562,7 @@ async function saveBatchConfigEditor() {
 
     var payload = {
         configName: name,
-        autoEnabled: document.getElementById("batchConfigEditorAutoEnabled").checked,
+        autoEnabled: Boolean(batchTaskState.editorAutoEnabled),
         cron: cron,
         dailyCap: Number(val("batchConfigEditorDailyCap")) || 1000,
         roundSize: Number(val("batchConfigEditorRoundSize")) || 50,
@@ -12415,11 +12607,25 @@ async function saveBatchConfigEditor() {
 // ── Manual Execution Tab ────────────────────────────────────────────────────────────
 
 function openManualTabFromConfig(id) {
-    var config = batchTaskState.configs.find(function(c) { return c.id === id; });
+    var config = batchTaskState.configs.find(function(c) { return Number(c.id) === Number(id); });
+    if (!config) return;
+    applyBatchManualSource(config);
+    switchBatchSendTab("manual");
+}
+
+function applyBatchManualSource(config) {
     if (!config) return;
     batchTaskState.manualSource = deepCloneConfig(config);
     batchTaskState.manualDraft = deepCloneConfig(config);
-    switchBatchSendTab("manual");
+
+    var input = document.getElementById("batchManualSourceQuery");
+    if (input) input.value = config.configName || "";
+    var sourceId = document.getElementById("batchManualSourceId");
+    if (sourceId) sourceId.value = config.id == null ? "" : String(config.id);
+    var sourceUpdatedAt = document.getElementById("batchManualSourceUpdatedAt");
+    if (sourceUpdatedAt) sourceUpdatedAt.value = config.updatedAt || "";
+
+    updateManualSourceInfo();
     fillManualFormFromDraft();
 }
 
@@ -12484,7 +12690,7 @@ function fillManualFormFromDraft() {
     var setVal = function(id, v) { var el = document.getElementById(id); if (el) el.value = v || ""; };
     setVal("batchManualTemplateId", d.templateId ? String(d.templateId) : "");
     setVal("batchManualFunnelLevel", d.funnelLevel || "");
-    setVal("batchManualTags", Array.isArray(d.tags) ? d.tags.join(", ") : "");
+    setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
     setVal("batchManualEmailDomain", d.emailDomain || "");
     setVal("batchManualDiscipline", d.discipline || "");
     setVal("batchManualDailyCap", d.dailyCap);
@@ -12493,26 +12699,22 @@ function fillManualFormFromDraft() {
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
     setVal("batchManualSelfCheckTtlMin", d.selfCheckTtlMinutes);
 
-    if (d.mailType) { setVal("batchConfigEditorMailType", d.mailType); }
     if (batchTaskState.manualSource) {
-        fillBatchManualTemplateSelector(d.templateId, d.mailType);
+        fillBatchManualTemplateSelector(d.templateId);
         fillBatchManualProviderSelect(d.emailDomain);
     } else {
-        fillBatchManualTemplateSelector(d.templateId, "INTRODUCTION");
+        fillBatchManualTemplateSelector(d.templateId);
         fillBatchManualProviderSelect("");
     }
 
     computeAndRenderDiffs();
 }
 
-function fillBatchManualTemplateSelector(selectedId, mailType) {
+function fillBatchManualTemplateSelector(selectedId) {
     var select = document.getElementById("batchManualTemplateId");
     if (!select) return;
-    var templates = batchTaskState.preloadedTemplates || [];
-    var type = mailType || "INTRODUCTION";
-    var enabledTyped = templates.filter(function(t) { return t.enabled && t.mailType === type; });
-    var html = type === "INTRODUCTION" ? '<option value="">默认 (INTRODUCTION)</option>' : '';
-    html += enabledTyped.map(function(t) { return '<option value="' + t.id + '">' + escapeHtml(t.templateName) + '</option>'; }).join("");
+    var html = '<option value="">系统默认介绍邮件模板</option>';
+    html += supportedBatchComposeTemplates().map(function(t) { return '<option value="' + t.id + '">' + escapeHtml(t.templateName) + '</option>'; }).join("");
     select.innerHTML = html;
     select.value = selectedId ? String(selectedId) : "";
 }
@@ -12551,6 +12753,18 @@ function clearManualSource() {
     updateManualSourceInfo();
 }
 
+function detachBatchManualSourcePreservingDraft() {
+    if (!batchTaskState.manualSource) return;
+    batchTaskState.manualDraft = Object.assign({}, batchTaskState.manualDraft || {}, readManualFormValues());
+    batchTaskState.manualSource = null;
+    var sourceId = document.getElementById("batchManualSourceId");
+    if (sourceId) sourceId.value = "";
+    var sourceUpdatedAt = document.getElementById("batchManualSourceUpdatedAt");
+    if (sourceUpdatedAt) sourceUpdatedAt.value = "";
+    updateManualSourceInfo();
+    clearAllDiffMarkers();
+}
+
 // ── Diff Detection ──────────────────────────────────────────────────────────────────
 
 function readManualFormValues() {
@@ -12565,10 +12779,13 @@ function readManualFormValues() {
         var n = parseNum(id);
         return Number.isFinite(n) ? n * 1000 : NaN;
     };
+    var rawTemplateId = val("batchManualTemplateId");
+    var templateId = rawTemplateId ? Number(rawTemplateId) : null;
     return {
-        templateId: val("batchManualTemplateId") ? Number(val("batchManualTemplateId")) : null,
+        templateId: templateId,
+        mailType: resolveBatchTemplateMailType(templateId),
         funnelLevel: val("batchManualFunnelLevel") || null,
-        tags: val("batchManualTags").split(",").map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }),
+        tags: readBatchTagPickerValue("batchManualTags"),
         emailDomain: val("batchManualEmailDomain") || null,
         discipline: val("batchManualDiscipline") || null,
         dailyCap: parseNum("batchManualDailyCap"),
@@ -12592,6 +12809,29 @@ function normalizeManualSnapshot(v) {
         perRoundIntervalMs: Number.isFinite(v.perRoundIntervalMs) ? v.perRoundIntervalMs : null,
         selfCheckTtlMinutes: Number.isFinite(v.selfCheckTtlMinutes) ? v.selfCheckTtlMinutes : null
     };
+}
+
+function formatManualDiffValue(key, value) {
+    if (key === "templateId") {
+        if (!value) return "系统默认介绍邮件模板";
+        var template = supportedBatchComposeTemplates().find(function(item) {
+            return Number(item.id) === Number(value);
+        });
+        return template ? template.templateName : "模板 #" + value;
+    }
+    if (key === "funnelLevel") return value || "全部层级";
+    if (key === "emailDomain") return value || "全部服务商";
+    if (key === "discipline") {
+        if (!value) return "全部学科";
+        if (value === "STEM") return "仅理工科";
+        if (value === "HUMANITIES") return "仅文社科";
+        return String(value);
+    }
+    if (key === "tags") {
+        var tags = Array.isArray(value) ? value : [];
+        return tags.length > 0 ? tags.join(", ") : "(无)";
+    }
+    return value == null || value === "" ? "未设置" : String(value);
 }
 
 function computeManualDiffs() {
@@ -12621,15 +12861,15 @@ function computeManualDiffs() {
             var oldArr = (oldVal || []).join(", ");
             var newArr = (newVal || []).join(", ");
             if (oldArr !== newArr) {
-                diffs.push({ key: fd.key, label: fd.label, oldDisplay: oldArr || "(无)", newDisplay: newArr || "(无)" });
+                diffs.push({ key: fd.key, label: fd.label, oldDisplay: formatManualDiffValue(fd.key, oldVal), newDisplay: formatManualDiffValue(fd.key, newVal) });
             }
         } else if (fd.key === "templateId") {
             if (String(oldVal || "") !== String(newVal || "")) {
-                diffs.push({ key: fd.key, label: fd.label, oldDisplay: oldVal ? String(oldVal) : "(默认)", newDisplay: newVal ? String(newVal) : "(默认)" });
+                diffs.push({ key: fd.key, label: fd.label, oldDisplay: formatManualDiffValue(fd.key, oldVal), newDisplay: formatManualDiffValue(fd.key, newVal) });
             }
         } else {
             if (String(oldVal || "") !== String(newVal || "")) {
-                diffs.push({ key: fd.key, label: fd.label, oldDisplay: String(oldVal || ""), newDisplay: String(newVal || "") });
+                diffs.push({ key: fd.key, label: fd.label, oldDisplay: formatManualDiffValue(fd.key, oldVal), newDisplay: formatManualDiffValue(fd.key, newVal) });
             }
         }
     });
@@ -12748,7 +12988,7 @@ async function confirmManualExecution() {
     var source = batchTaskState.manualSource;
     var values = readManualFormValues();
     var snapshot = {
-        mailType: source ? source.mailType : batchTaskState.manualDraft ? batchTaskState.manualDraft.mailType : "INTRODUCTION",
+        mailType: values.mailType,
         dailyCap: Number.isFinite(values.dailyCap) ? values.dailyCap : 1000,
         roundSize: Number.isFinite(values.roundSize) ? values.roundSize : 50,
         perMailIntervalMs: Number.isFinite(values.perMailIntervalMs) ? values.perMailIntervalMs : 1000,
@@ -12811,36 +13051,48 @@ var batchManualSourceSearchResults = [];
 function handleManualSourceSearch() {
     var input = document.getElementById("batchManualSourceQuery");
     if (!input) return;
-    var q = input.value.trim();
-    if (!q || q.length < 1) {
-        closeBatchManualSourceDropdown();
-        return;
+    var source = batchTaskState.manualSource;
+    if (source && input.value.trim() !== String(source.configName || "").trim()) {
+        detachBatchManualSourcePreservingDraft();
     }
-    api("/api/mail/batch-send/configs?q=" + encodeURIComponent(q))
-        .then(function(configs) {
-            if (!Array.isArray(configs) || configs.length === 0) {
-                closeBatchManualSourceDropdown();
-                return;
-            }
-            batchManualSourceSearchResults = configs;
-            renderBatchManualSourceDropdown(configs);
-        })
-        .catch(function(e) {
-            console.error("Source search failed", e);
-            closeBatchManualSourceDropdown();
-        });
+    clearTimeout(batchManualSourceSearchTimer);
+    batchManualSourceSearchTimer = setTimeout(function() {
+        loadBatchManualSourceOptions(input.value);
+    }, 160);
+}
+
+async function loadBatchManualSourceOptions(query) {
+    var token = ++batchManualSourceRequestToken;
+    var q = (query || "").trim();
+    var url = "/api/mail/batch-send/configs" + (q ? "?q=" + encodeURIComponent(q) : "");
+    try {
+        var configs = await api(url);
+        if (token !== batchManualSourceRequestToken) return;
+        batchManualSourceSearchResults = Array.isArray(configs) ? configs : [];
+        if (batchManualSourceSearchResults.length === 0) {
+            renderBatchManualSourceEmpty();
+        } else {
+            renderBatchManualSourceDropdown(batchManualSourceSearchResults);
+        }
+    } catch (e) {
+        if (token !== batchManualSourceRequestToken) return;
+        console.error("Source search failed", e);
+        renderBatchManualSourceEmpty("任务加载失败");
+    }
 }
 
 function renderBatchManualSourceDropdown(configs) {
     var dropdown = document.getElementById("batchManualSourceDropdown");
     if (!dropdown) return;
     dropdown.innerHTML = configs.map(function(c) {
-        return '<div class="batch-manual-source-dropdown-item" data-id="' + c.id + '">' +
+        return '<button type="button" class="batch-manual-source-dropdown-item" role="option" data-id="' + c.id + '">' +
             '<strong>' + escapeHtml(c.configName) + '</strong><br>' +
             '<span style="font-size:11px;color:#94a3b8;">' + escapeHtml(c.mailType) + ' | 更新于 ' + (c.updatedAt ? formatDateTime(c.updatedAt) : "—") + '</span>' +
-            '</div>';
+            '</button>';
     }).join("");
     dropdown.hidden = false;
+    var input = document.getElementById("batchManualSourceQuery");
+    if (input) input.setAttribute("aria-expanded", "true");
     dropdown.querySelectorAll(".batch-manual-source-dropdown-item").forEach(function(item) {
         item.addEventListener("click", function() {
             var id = Number(item.dataset.id);
@@ -12849,14 +13101,26 @@ function renderBatchManualSourceDropdown(configs) {
     });
 }
 
+function renderBatchManualSourceEmpty(message) {
+    var dropdown = document.getElementById("batchManualSourceDropdown");
+    if (!dropdown) return;
+    dropdown.innerHTML = '<div class="batch-manual-source-dropdown-empty">' + escapeHtml(message || "没有匹配的定时任务") + '</div>';
+    dropdown.hidden = false;
+    var input = document.getElementById("batchManualSourceQuery");
+    if (input) input.setAttribute("aria-expanded", "true");
+}
+
 function closeBatchManualSourceDropdown() {
     var dropdown = document.getElementById("batchManualSourceDropdown");
     if (dropdown) dropdown.hidden = true;
+    var input = document.getElementById("batchManualSourceQuery");
+    if (input) input.setAttribute("aria-expanded", "false");
+    batchManualSourceRequestToken += 1;
     batchManualSourceSearchResults = [];
 }
 
 function selectBatchManualSource(id) {
-    var config = batchManualSourceSearchResults.find(function(c) { return c.id === id; });
+    var config = batchManualSourceSearchResults.find(function(c) { return Number(c.id) === Number(id); });
     if (!config) return;
     closeBatchManualSourceDropdown();
 
@@ -12870,30 +13134,7 @@ function selectBatchManualSource(id) {
         }
     }
 
-    batchTaskState.manualSource = {
-        id: config.id,
-        configName: config.configName,
-        mailType: config.mailType,
-        templateId: config.templateId,
-        funnelLevel: config.funnelLevel,
-        tags: Array.isArray(config.tags) ? config.tags.slice() : [],
-        emailDomain: config.emailDomain,
-        discipline: config.discipline,
-        dailyCap: config.dailyCap,
-        roundSize: config.roundSize,
-        perMailIntervalMs: config.perMailIntervalMs,
-        perRoundIntervalMs: config.perRoundIntervalMs,
-        selfCheckTtlMinutes: config.selfCheckTtlMinutes,
-        updatedAt: config.updatedAt
-    };
-    batchTaskState.manualDraft = deepCloneConfig(batchTaskState.manualSource);
-
-    var input = document.getElementById("batchManualSourceQuery");
-    if (input) input.value = config.configName;
-    document.getElementById("batchManualSourceId").value = String(config.id);
-    document.getElementById("batchManualSourceUpdatedAt").value = config.updatedAt || "";
-    updateManualSourceInfo();
-    fillManualFormFromDraft();
+    applyBatchManualSource(config);
 }
 
 // ── Config Logs ────────────────────────────────────────────────────────────────────
@@ -13159,11 +13400,20 @@ function bindBatchSendTaskEvents() {
         });
     }
 
+    bindBatchTagPicker("batchConfigEditorTags");
+    bindBatchTagPicker("batchManualTags");
+
     // Manual source search — autocomplete
     var sourceQuery = document.getElementById("batchManualSourceQuery");
     if (sourceQuery) {
+        sourceQuery.addEventListener("focus", function() {
+            loadBatchManualSourceOptions("");
+        });
         sourceQuery.addEventListener("input", function() {
             handleManualSourceSearch();
+        });
+        sourceQuery.addEventListener("keydown", function(event) {
+            if (event.key === "Escape") closeBatchManualSourceDropdown();
         });
         sourceQuery.addEventListener("blur", function() {
             setTimeout(function() {
