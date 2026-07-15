@@ -1869,7 +1869,7 @@ class ManualInitialOutreachServiceTest {
 
             val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
 
-            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertEquals(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
             assertTrue(response.body?.get("message")!!.contains("模板"))
             Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
@@ -1889,7 +1889,7 @@ class ManualInitialOutreachServiceTest {
 
             val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
 
-            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertEquals(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
             assertTrue(response.body?.get("message")!!.contains("禁用"))
             Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
@@ -1909,7 +1909,7 @@ class ManualInitialOutreachServiceTest {
 
             val response = ctrl.startManual(BatchSendType.MATERIAL_REMINDER)
 
-            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertEquals(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
             assertTrue(response.body?.get("message")!!.contains("类型"))
             Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
@@ -1973,7 +1973,7 @@ class ManualInitialOutreachServiceTest {
 
             val response = ctrl.startManual()
 
-            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertEquals(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
             assertTrue(response.body?.get("message")!!.contains("类型"))
             Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
@@ -1998,7 +1998,7 @@ class ManualInitialOutreachServiceTest {
 
             val response = ctrl.startManual()
 
-            assertEquals(org.springframework.http.HttpStatus.CONFLICT, response.statusCode)
+            assertEquals(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
             assertTrue(response.body?.get("message")!!.contains("禁用"))
             Mockito.verify(ctrlExecutor, Mockito.never()).execute(Mockito.any())
         }
@@ -2068,7 +2068,7 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `config change cancels old futures and reschedules`() {
+        fun `unchanged config keeps its schedule and cancels removed config`() {
             val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
                 schedConfigRepository, schedControlService, schedTaskScheduler
             )
@@ -2086,11 +2086,32 @@ class ManualInitialOutreachServiceTest {
                 com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent("0 0 8 * * ?", "0 0 8 * * ?")
             )
 
+            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+                Mockito.any(Runnable::class.java),
+                Mockito.any(org.springframework.scheduling.Trigger::class.java)
+            )
+            Mockito.verify(schedFuture, Mockito.times(1)).cancel(false)
+        }
+
+        @Test
+        fun `changed cron cancels and reschedules its config`() {
+            val scheduler = com.weibo.talentintroduction.task.service.BatchSendScheduler(
+                schedConfigRepository, schedControlService, schedTaskScheduler
+            )
+            scheduler.scheduleInitial()
+
+            Mockito.`when`(schedConfigRepository.findAllByAutoEnabledTrueAndDeletedAtIsNullOrderByIdAsc())
+                .thenReturn(listOf(enabledConfig(1L).copy(cron = "0 0 9 * * ?")))
+
+            scheduler.onCronChanged(
+                com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent("0 0 0 * * ?", "0 0 9 * * ?")
+            )
+
             Mockito.verify(schedTaskScheduler, Mockito.times(3)).schedule(
                 Mockito.any(Runnable::class.java),
                 Mockito.any(org.springframework.scheduling.Trigger::class.java)
             )
-            Mockito.verify(schedFuture, Mockito.atLeast(2)).cancel(false)
+            Mockito.verify(schedFuture, Mockito.times(2)).cancel(false)
         }
     }
 

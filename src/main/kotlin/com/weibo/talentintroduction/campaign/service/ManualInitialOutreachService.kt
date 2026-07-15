@@ -153,7 +153,11 @@ class ManualInitialOutreachService(
     ): ManualOutreachResult {
         val config = batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)
         val snapshot = config.toSnapshot(oneRoundOnly = oneRoundOnly)
-        return run(snapshot, executionId, mode, alreadySentToday = 0, oneRoundOnly = oneRoundOnly)
+        val dayStart = LocalDate.now().atStartOfDay()
+        val alreadySentToday = mailRecordRepository
+            .countSentByMailTypeSince(BatchSendType.MATERIAL_REMINDER.name, dayStart)
+            .toInt()
+        return run(snapshot, executionId, mode, alreadySentToday, oneRoundOnly)
     }
 
     private fun runMaterialFromSnapshot(

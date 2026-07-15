@@ -88,8 +88,8 @@ class MailAutomationControllerTest {
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
             onStarted?.invoke(1L)
             @Suppress("UNCHECKED_CAST")
-            val block = invocation.getArgument<() -> Any?>(4)
-            val result = try { block() } catch (_: Exception) { null }
+            val block = invocation.getArgument<() -> Any?>(5)
+            val result = block()
             lastRecordedResult = result
             val execution = TaskExecution(
                 id = 1L,
