@@ -45,6 +45,7 @@ function createSandbox() {
     vm.runInContext(extractFn("collapseAiReplyRequestText"), sandbox);
     vm.runInContext(extractFn("summarizeAiReplyCoverage"), sandbox);
     vm.runInContext(extractFn("formatAiReplyReviewWarnings"), sandbox);
+    vm.runInContext(extractFn("resolveAiDraftReadiness"), sandbox);
     vm.runInContext(extractFn("renderAiReplyFeedback"), sandbox);
     return sandbox;
 }
@@ -156,7 +157,7 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(appJsSource.includes("function renderAiReplyFeedback("));
         assert.ok(appJsSource.includes("依据覆盖：完整"));
         assert.ok(!/已回答\s*\$\{/.test(appJsSource) && !appJsSource.includes("已回答 "));
-        assert.ok(appJsSource.includes("appendAiChatDraftBubble(rawDraft, renderedDraft, result.requestCoverage || [])"));
+        assert.ok(appJsSource.includes("appendAiChatDraftBubble(rawDraft, renderedDraft, result)"));
         assert.ok(!/appendAiChatDraftBubble\([^)]*contextWarnings/.test(appJsSource));
         assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingSimulateFeedback"'));
         assert.ok(appJsSource.includes('id="aiReplyFeedback"'));
@@ -322,39 +323,40 @@ describe("requestCoverage feedback helpers", () => {
 });
 
 describe("coverage isolation and send guard contracts", () => {
-    it("binds review state per draft and copies it on adopt", () => {
+    it("binds review state per draft including draftReadiness and copies it on adopt", () => {
         const draftBubble = extractFn("appendAiChatDraftBubble");
         assert.match(draftBubble, /needsGroundingReview/);
         assert.match(draftBubble, /reviewItems/);
+        assert.match(draftBubble, /draftReadiness/);
+        assert.match(draftBubble, /AI 草稿 — 需补充/);
+        assert.match(draftBubble, /AI 草稿 — 缺依据/);
+        assert.match(draftBubble, /采用并人工补充/);
         assert.doesNotMatch(draftBubble, /依据覆盖/);
         assert.doesNotMatch(draftBubble, /ai-reply-warning/);
         const adoptIdx = appJsSource.indexOf('if (action === "ai-adopt-draft")');
         const adoptBlock = appJsSource.slice(adoptIdx, adoptIdx + 1800);
         assert.match(adoptBlock, /needsGroundingReview:\s*!!entry\?\.needsGroundingReview/);
         assert.match(adoptBlock, /reviewItems:\s*Array\.isArray\(entry\?\.reviewItems\)/);
+        assert.match(adoptBlock, /draftReadiness:\s*entry\?\.draftReadiness/);
+        assert.match(adoptBlock, /requestCount:\s*Number\(entry\?\.requestCount\)/);
         assert.doesNotMatch(adoptBlock, /依据覆盖/);
     });
 
-    it("blocks unmodified gap draft before API and allows after text or HTML edit", () => {
+    it("forces review modal for non-READY gap drafts through openReviewModal guard", () => {
         const sendIdx = appJsSource.indexOf('if (action === "send-manual-rich-reply")');
         assert.ok(sendIdx > 0);
-        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 2800);
-        assert.match(sendBlock, /needsGroundingReview/);
-        assert.match(
-            sendBlock,
-            /草稿仍有未完整覆盖的问题，请先人工补充或修改正文/
-        );
-        const guardIdx = sendBlock.indexOf("needsGroundingReview");
-        const apiIdx = sendBlock.indexOf("/manual-rich-reply");
-        assert.ok(guardIdx >= 0, "guard missing");
-        assert.ok(apiIdx > guardIdx, `api=${apiIdx} guard=${guardIdx}`);
-        assert.match(sendBlock, /editor\.innerText\s*===\s*\(adopt\.renderedBaseline/);
-        assert.match(sendBlock, /editor\.innerHTML\s*===\s*\(adopt\.renderedBaselineHtml/);
-        assert.doesNotMatch(sendBlock, /qaRuleIds:\s*.*reviewItems/);
-        assert.doesNotMatch(sendBlock, /freeTextPreview:\s*.*依据覆盖/);
+        // openReviewModal is called inside the Promise chain, deep in the send block
+        assert.match(appJsSource, /openReviewModal/);
+        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 3500);
+        assert.match(sendBlock, /draftReadiness/);
+        assert.match(sendBlock, /requestBody\.replySource\s*=\s*"AI_DRAFT"/);
+        assert.match(sendBlock, /submitManualRichReply/);
+        // Old text-invariant block messages replaced by forced modal
+        assert.doesNotMatch(sendBlock, /草稿存在缺少审核依据的问题/);
+        assert.doesNotMatch(sendBlock, /草稿仍有部分问题需人工补充/);
     });
 
-    it("keeps coverage out of clipboard continuation and payload text paths", () => {
+    it("keeps coverage and readiness out of clipboard continuation and payload text paths", () => {
         assert.doesNotMatch(
             appJsSource,
             /sim\?\.renderedDraftText[\s\S]{0,80}依据覆盖/
@@ -367,9 +369,105 @@ describe("coverage isolation and send guard contracts", () => {
             appJsSource,
             /templateTextBody[\s\S]{0,120}needsGroundingReview/
         );
+        assert.doesNotMatch(
+            appJsSource,
+            /templateTextBody[\s\S]{0,120}draftReadiness/
+        );
         assert.doesNotMatch(fs.readFileSync(stylesCssPath, "utf-8"), /needsGroundingReview|reviewItems/);
         assert.doesNotMatch(fs.readFileSync(indexHtmlPath, "utf-8"), /needsGroundingReview|reviewItems/);
         assert.match(fs.readFileSync(stylesCssPath, "utf-8"), /\.ai-reply-coverage/);
         assert.match(fs.readFileSync(indexHtmlPath, "utf-8"), /id="aiTrainingSimulateFeedback"/);
+    });
+
+    it("readiness text does not appear in body or template payloads", () => {
+        assert.doesNotMatch(
+            appJsSource,
+            /templateTextBody[\s\S]{0,150}草稿状态/
+        );
+        assert.doesNotMatch(
+            appJsSource,
+            /draftText[\s\S]{0,150}草稿状态/
+        );
+    });
+});
+
+describe("draft readiness resolution and feedback", () => {
+    it("prefers backend draftReadiness over local derivation", () => {
+        const sandbox = createSandbox();
+        assert.strictEqual(sandbox.resolveAiDraftReadiness({ draftReadiness: "READY" }, null), "READY");
+        assert.strictEqual(sandbox.resolveAiDraftReadiness({ draftReadiness: "NEEDS_REVIEW" }, null), "NEEDS_REVIEW");
+        assert.strictEqual(sandbox.resolveAiDraftReadiness({ draftReadiness: "BLOCKED" }, null), "BLOCKED");
+    });
+
+    it("falls back to coverageSummary when draftReadiness absent", () => {
+        const sandbox = createSandbox();
+        assert.strictEqual(
+            sandbox.resolveAiDraftReadiness({}, { hasCoverage: true, grounded: 3, partial: 0, unsupported: 0, reviewItems: [] }),
+            "READY"
+        );
+        assert.strictEqual(
+            sandbox.resolveAiDraftReadiness({}, { hasCoverage: true, grounded: 0, partial: 2, unsupported: 0, reviewItems: [{ index: 1, status: "PARTIAL" }] }),
+            "NEEDS_REVIEW"
+        );
+        assert.strictEqual(
+            sandbox.resolveAiDraftReadiness({}, { hasCoverage: true, grounded: 0, partial: 0, unsupported: 1, reviewItems: [{ index: 1, status: "UNSUPPORTED" }] }),
+            "BLOCKED"
+        );
+    });
+
+    it("returns NEEDS_REVIEW when reviewItems exist but no hasCoverage", () => {
+        const sandbox = createSandbox();
+        assert.strictEqual(
+            sandbox.resolveAiDraftReadiness({}, { hasCoverage: false, reviewItems: [{ index: 1, status: "UNKNOWN" }] }),
+            "NEEDS_REVIEW"
+        );
+    });
+
+    it("defaults to READY when no result and no coverage", () => {
+        const sandbox = createSandbox();
+        assert.strictEqual(sandbox.resolveAiDraftReadiness(null, null), "READY");
+        assert.strictEqual(sandbox.resolveAiDraftReadiness({}, null), "READY");
+    });
+
+    it("shows readiness text in renderAiReplyFeedback for all three states", () => {
+        const sandbox = createSandbox();
+
+        const readyContainer = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(readyContainer, {
+            draftReadiness: "READY",
+            requestCoverage: [{ index: 1, requestText: "Q", status: "GROUNDED" }],
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(readyContainer.innerHTML, /草稿状态：依据完整/);
+
+        const needsReviewContainer = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(needsReviewContainer, {
+            draftReadiness: "NEEDS_REVIEW",
+            requestCoverage: [{ index: 1, requestText: "Q", status: "PARTIAL" }],
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(needsReviewContainer.innerHTML, /草稿状态：部分问题需人工补充/);
+
+        const blockedContainer = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(blockedContainer, {
+            draftReadiness: "BLOCKED",
+            requestCoverage: [{ index: 1, requestText: "Q", status: "UNSUPPORTED" }],
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(blockedContainer.innerHTML, /草稿状态：存在缺少审核依据的问题，不可原样发送/);
+    });
+
+    it("falls back readiness from requestCoverage when draftReadiness absent in feedback", () => {
+        const sandbox = createSandbox();
+        const container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            requestCoverage: [{ index: 1, requestText: "Q", status: "UNSUPPORTED" }],
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /草稿状态：存在缺少审核依据的问题/);
     });
 });

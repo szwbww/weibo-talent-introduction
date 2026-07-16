@@ -16,6 +16,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
+import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
 import com.weibo.talentintroduction.llm.service.AiReplyPointByPointComposer
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
@@ -61,6 +62,7 @@ import java.util.Optional
     LlmStitchService::class,
     AiReplyPointByPointComposer::class,
     AiReplyGroundedDraftMaterializer::class,
+    AiReplyHighRiskClaimValidator::class,
     AiReplyDraftPreviewService::class
 )
 @EnableConfigurationProperties(LlmProperties::class)
@@ -193,6 +195,7 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_FLASH"))
             .andExpect(jsonPath("$.requestCoverage").isArray)
             .andExpect(jsonPath("$.requestCoverage").isEmpty)
+            .andExpect(jsonPath("$.draftReadiness").value("READY"))
 
         Mockito.verify(aiTrainingQaService).buildKnowledgeContext("What is the funding?")
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
@@ -324,7 +327,8 @@ class AiTrainingSimulateTest {
                     keywords = "salary",
                     replySubject = "Salary",
                     replyBody = "Salary is competitive.",
-                    enabled = true
+                    enabled = true,
+                    coverageKeys = "finance.government_funding"
                 )
             )
         )
@@ -336,7 +340,8 @@ class AiTrainingSimulateTest {
                     keywords = "deliverables",
                     replySubject = "Scope",
                     replyBody = "High-level project overview.",
-                    enabled = true
+                    enabled = true,
+                    coverageKeys = "role.deliverables"
                 )
             )
         )
@@ -354,10 +359,12 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.requestCoverage[0].factRuleIds[0]").value(1))
             .andExpect(jsonPath("$.requestCoverage[0].requiresResearchContext").doesNotExist())
             .andExpect(jsonPath("$.requestCoverage[1].index").value(2))
-            .andExpect(jsonPath("$.requestCoverage[1].status").value("PARTIAL"))
+            .andExpect(jsonPath("$.requestCoverage[1].status").value("GROUNDED"))
             .andExpect(jsonPath("$.requestCoverage[1].factRuleIds[0]").value(2))
             .andExpect(jsonPath("$.requestCoverage[1].requiresResearchContext").doesNotExist())
+            .andExpect(jsonPath("$.requestCoverage[1].intents").isArray)
             .andExpect(jsonPath("$.groundedRequestCount").value(2))
+            .andExpect(jsonPath("$.draftReadiness").value("READY"))
             .andExpect(jsonPath("$.unsupportedRequests").isEmpty)
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())

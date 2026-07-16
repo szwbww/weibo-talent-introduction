@@ -1,0 +1,409 @@
+package com.weibo.talentintroduction.llm.service
+
+import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.Mockito
+import java.util.Optional
+
+class AiReplyHighRiskClaimValidatorTest {
+    private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
+    private val validator = AiReplyHighRiskClaimValidator(qaRuleRepository)
+
+    private fun rule(id: Long, body: String) = QaRule(
+        id = id,
+        categoryId = 1,
+        keywords = "k$id",
+        replyBody = body,
+        replySubject = "Re $id",
+        enabled = true
+    )
+
+    @Test
+    fun `hallucinated number not in source fact is detected`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "The programme offers competitive compensation.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The salary is RMB 500,000 per year.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        assertTrue(validator.containsHallucinatedNumberOrUrl("The salary is RMB 500,000 per year.", "The programme offers competitive compensation."))
+    }
+
+    @Test
+    fun `number also present in source fact passes`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Monthly stipend is RMB 8,000.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The monthly stipend is RMB 8,000.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Stipend?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `hallucinated URL detected`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Visit our website for more info.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("application.next_stages", "Apply at https://example.com/apply now.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Apply?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("application.next_stages", "Next", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
+    }
+
+    @Test
+    fun `modality strengthening detected when source says may but answer says will`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Participants may receive travel support.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "Participants will definitely receive full travel support.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Travel?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `modality check passes when source is unconditional`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Participants will receive a certificate.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("role.deliverables", "Participants will receive a certificate.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Certificate?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("role.deliverables", "Deliverables", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `government claim without government source is detected`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "The programme is organized by a research institute.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("programme.purpose", "The programme is funded by the government.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Programme?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("programme.purpose", "Purpose", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED))
+    }
+
+    @Test
+    fun `labor contract claim with labor contract source passes`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "A labor contract will be signed with the host institution.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("contract.terms", "A labor contract will be signed.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Contract?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("contract.terms", "Contract", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `multiple validation failures return all distinct warning codes`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Participants may receive a small allowance.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "Participants will definitely receive government funding of RMB 500,000.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Finance?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.size >= 2)
+    }
+
+    @Test
+    fun `empty sections pass validation`() {
+        val result = validator.validate(emptyList(), emptyList())
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `empty answers pass validation`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Some fact.")))
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "X?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "F", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `number substring 2 not matched by source containing 2026`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Programme runs from 2026 to 2028."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("programme.purpose", "The programme spans 2 years.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Timeline?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("programme.purpose", "Purpose", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        assertTrue(validator.containsHallucinatedNumberOrUrl("The programme spans 2 years.", "Programme runs from 2026 to 2028."))
+    }
+
+    @Test
+    fun `URL same host but different path is rejected`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "More info at https://example.com/approved-page."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("application.next_stages", "Apply at https://example.com/other-page.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Apply?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("application.next_stages", "Next", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
+    }
+
+    @Test
+    fun `claim using fact from replySubject passes validation`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                QaRule(id = 1, categoryId = 1, keywords = "k1",
+                    replyBody = "The institute is located in Beijing.",
+                    replySubject = "About the China Academy of Sciences",
+                    enabled = true)
+            )
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("company.registered_location", "We are associated with the China Academy of Sciences.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Company?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("company.registered_location", "Location", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `missing source rule fails validation with source unavailable warning`() {
+        Mockito.`when`(qaRuleRepository.findById(999L)).thenReturn(Optional.empty())
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The stipend is generous.", listOf(999L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Stipend?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE))
+    }
+
+    @Test
+    fun `empty source text fails validation`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "").copy(replySubject = null))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "Some claim.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "X?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "F", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE))
+    }
+
+    @Test
+    fun `validator returns source unavailable for null replySubject and empty replyBody`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                QaRule(id = 1, categoryId = 1, keywords = "k1",
+                    replyBody = "",
+                    replySubject = null,
+                    enabled = true)
+            )
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "Some claim.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "X?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "F", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE))
+    }
+
+    @Test
+    fun `currency switch USD to RMB is detected as hallucinated`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "The stipend is USD 8,000 per month."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The stipend is RMB 8,000 per month.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Stipend?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
+    }
+
+    @Test
+    fun `time unit switch month to year is detected as hallucinated`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "The stipend is USD 8,000 per month."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The stipend is USD 8,000 per year.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Stipend?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
+    }
+
+    @Test
+    fun `exact compound token match passes validation`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "The stipend is USD 8,000 per month."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "The stipend is USD 8,000 per month.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Stipend?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `frequency switch monthly to annually is detected`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Visits are limited to 2 monthly."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("role.responsibilities", "Visits are limited to 2 annually.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Visits?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("role.responsibilities", "Role", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
+    }
+}

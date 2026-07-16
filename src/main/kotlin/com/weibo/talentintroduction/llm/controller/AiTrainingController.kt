@@ -241,10 +241,21 @@ class AiTrainingController(
                     index = it.index,
                     requestText = it.requestText,
                     status = it.status.name,
-                    factRuleIds = it.factRuleIds
+                    factRuleIds = it.factRuleIds,
+                    intents = it.intents.map { intent ->
+                        IntentCoverageResponse(
+                            intentKey = intent.intentKey,
+                            title = intent.title,
+                            status = intent.status,
+                            evidenceRuleIds = intent.evidenceRuleIds,
+                            missingEvidenceKeys = intent.missingEvidenceKeys,
+                            requiresResearchContext = intent.requiresResearchContext
+                        )
+                    }
                 )
             },
-            generationState = result.generationState.name
+            generationState = result.generationState.name,
+            draftReadiness = result.draftReadiness.name
         )
     }
 
@@ -408,12 +419,23 @@ data class AiTrainingSimulateResponse(
     val injectedDialogRefs: List<String> = emptyList(),
     val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name,
     val requestCoverage: List<RequestCoverageItem> = emptyList(),
-    val generationState: String = "FALLBACK_NO_RESPONSE"
+    val generationState: String = "FALLBACK_NO_RESPONSE",
+    val draftReadiness: String = "READY"
 )
 
 data class RequestCoverageItem(
     val index: Int,
     val requestText: String,
     val status: String,
-    val factRuleIds: List<Long>
+    val factRuleIds: List<Long>,
+    val intents: List<IntentCoverageResponse> = emptyList()
+)
+
+data class IntentCoverageResponse(
+    val intentKey: String,
+    val title: String,
+    val status: String,
+    val evidenceRuleIds: List<Long>,
+    val missingEvidenceKeys: List<String>,
+    val requiresResearchContext: Boolean
 )

@@ -42,53 +42,54 @@ class AiReplyPointByPointComposerTest {
         enabled = true
     )
 
+    private fun supportedIntent(key: String, title: String, evidenceIds: List<Long>) =
+        RequestIntentCoverage(key, title, emptyList(), evidenceIds, "SUPPORTED", emptyList())
+
     @Test
-    fun `composeFallback emits frame numbered grounded sections and closing`() {
+    fun `composeFallback emits frame numbered sections for all requests including empty ones`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary facts")))
         Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Visa facts")))
 
         val text = composer.composeFallback(
             listOf(
-                RequestFactItem(1, "- What is salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "- Visa process?", listOf(2L), RequestGroundingStatus.GROUNDED)
+                RequestFactItem(1, "- What is salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
+                RequestFactItem(2, "- Visa process?", listOf(2L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("application.next_stages", "Next stages", listOf(2L))))
             )
         )
 
         assertTrue(text.startsWith("Dear \${expertName|Professor},"))
         assertTrue(text.contains(QaReplyComposer.GREETING))
-        assertTrue(text.contains("1. What is salary"))
-        assertTrue(text.contains("2. Visa process"))
+        assertTrue(text.contains("1. Financial arrangements"))
+        assertTrue(text.contains("2. Next stages"))
         assertTrue(text.contains("Salary facts"))
         assertTrue(text.contains("Visa facts"))
         assertTrue(text.contains(QaReplyComposer.CLOSING))
     }
 
     @Test
-    fun `unsupported and research items are omitted from fallback`() {
+    fun `unsupported items get heading but no body in fallback`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary only")))
-        Mockito.`when`(qaRuleRepository.findById(7L)).thenReturn(Optional.of(rule(7, "Scope facts")))
 
         val text = composer.composeFallback(
             listOf(
-                RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(
-                    2,
-                    "- Research match?",
-                    listOf(7L),
-                    RequestGroundingStatus.GROUNDED,
-                    requiresResearchContext = true
-                ),
+                RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
+                RequestFactItem(2, "- Research match?", listOf(7L), RequestGroundingStatus.GROUNDED,
+                    requiresResearchContext = true,
+                    intents = listOf(RequestIntentCoverage("expertise.programme_fit", "Research fit", emptyList(), listOf(7L), "SUPPORTED", emptyList(), requiresResearchContext = true))),
                 RequestFactItem(3, "- Unknown?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
             )
         )
 
-        assertTrue(text.contains("1. Salary"))
+        assertTrue(text.contains("1. Financial arrangements"))
         assertTrue(text.contains("Salary only"))
+        assertTrue(text.contains("2. Research fit and enterprise projects"))
         assertFalse(text.contains("Research match"))
-        assertFalse(text.contains("Unknown"))
-        assertFalse(text.contains("Scope facts"))
+        assertTrue(text.contains("3. Unknown"))
         assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
         assertFalse(text.contains("This still needs confirmation"))
         assertFalse(text.contains("not covered by the approved information"))
@@ -101,7 +102,8 @@ class AiReplyPointByPointComposerTest {
 
         val text = composer.composeFallback(
             listOf(
-                RequestFactItem(1, "Deliverables details?", listOf(1L, 1L), RequestGroundingStatus.PARTIAL)
+                RequestFactItem(1, "Deliverables details?", listOf(1L), RequestGroundingStatus.PARTIAL,
+                    intents = listOf(supportedIntent("role.deliverables", "Deliverables", listOf(1L))))
             )
         )
 
@@ -118,8 +120,10 @@ class AiReplyPointByPointComposerTest {
 
         val text = composer.composeFallback(
             listOf(
-                RequestFactItem(3, "- Matching?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(7, "- Enterprise projects?", listOf(1L), RequestGroundingStatus.GROUNDED)
+                RequestFactItem(3, "- Matching?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("enterprise.matching", "Enterprise matching", listOf(1L)))),
+                RequestFactItem(7, "- Enterprise projects?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("enterprise.project_types", "Enterprise project types", listOf(1L))))
             )
         )
 
@@ -129,21 +133,47 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
-    fun `composeFromAnswers cross-references identical answers`() {
+    fun `composeFromSections cross-references identical answers`() {
         stubFrame()
-        val text = composer.composeFromAnswers(
+        val text = composer.composeFromSections(
             requestFacts = listOf(
-                RequestFactItem(1, "- A?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "- B?", listOf(2L), RequestGroundingStatus.GROUNDED)
+                RequestFactItem(1, "- A?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
+                RequestFactItem(2, "- B?", listOf(2L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(2L))))
             ),
-            answersByIndex = mapOf(
-                1 to "Same answer body",
-                2 to "Same answer body"
+            sections = listOf(
+                ValidatedSection(1, listOf(IntentAnswer("finance.arrangements", "Same answer body", listOf(1L)))),
+                ValidatedSection(2, listOf(IntentAnswer("finance.arrangements", "Same answer body", listOf(2L))))
             )
         )
         assertTrue(text.contains("Same answer body"))
         assertTrue(text.contains("Please see point 1 above."))
         assertEquals(1, Regex("Same answer body").findAll(text).count())
+    }
+
+    @Test
+    fun `composeFromSections includes all request indexes even without answers`() {
+        stubFrame()
+        val text = composer.composeFromSections(
+            requestFacts = listOf(
+                RequestFactItem(1, "- A?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
+                RequestFactItem(2, "- B?", listOf(2L), RequestGroundingStatus.PARTIAL,
+                    intents = listOf(supportedIntent("role.deliverables", "Deliverables", listOf(2L)))),
+                RequestFactItem(3, "- C?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            ),
+            sections = listOf(
+                ValidatedSection(1, listOf(IntentAnswer("finance.arrangements", "Body A", listOf(1L)))),
+                ValidatedSection(2, listOf(IntentAnswer("role.deliverables", "Body B", listOf(2L))))
+            )
+        )
+        assertTrue(text.contains("1. Financial arrangements"))
+        assertTrue(text.contains("Body A"))
+        assertTrue(text.contains("2. Deliverables"))
+        assertTrue(text.contains("Body B"))
+        assertTrue(text.contains("3. C"))
+        assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
     }
 
     @Test
@@ -163,40 +193,109 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
-    fun `all omitted items return frame only`() {
+    fun `all omitted items return frame with section headings but empty bodies`() {
         stubFrame()
         val text = composer.composeFallback(
             listOf(
-                RequestFactItem(
-                    1,
-                    "- Research?",
-                    emptyList(),
-                    RequestGroundingStatus.UNSUPPORTED,
-                    requiresResearchContext = true
-                )
+                RequestFactItem(1, "- Research?", emptyList(), RequestGroundingStatus.UNSUPPORTED,
+                    requiresResearchContext = true,
+                    intents = listOf(RequestIntentCoverage("expertise.programme_fit", "Research fit and enterprise projects", emptyList(), emptyList(), "MISSING", emptyList())))
             )
         )
         assertTrue(text.contains("Dear \${expertName|Professor},"))
         assertTrue(text.contains(QaReplyComposer.CLOSING))
-        assertFalse(text.contains("1."))
+        assertTrue(text.contains("1. Research fit and enterprise projects"))
         assertFalse(text.contains("confirmation", ignoreCase = true))
         assertFalse(text.contains("insufficient", ignoreCase = true))
     }
 
     @Test
-    fun `composeFromAnswers preserves raw template variables and omits unsupported`() {
-        stubFrame(salutation = "Dear \${expertName|Professor},")
-        val text = composer.composeFromAnswers(
-            listOf(
-                RequestFactItem(1, "A?", listOf(1L), RequestGroundingStatus.GROUNDED),
-                RequestFactItem(2, "B?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            ),
-            mapOf(1 to "Body A")
+    fun `resolveGroupTitle merges company intents into company details`() {
+        val title = AiReplyIntentCatalog.resolveGroupTitle(
+            listOf("company.legal_name", "company.registered_location"),
+            "fallback"
         )
-        assertTrue(text.contains("Dear \${expertName|Professor},"))
-        assertTrue(text.contains("1. A"))
-        assertTrue(text.contains("Body A"))
-        assertFalse(text.contains("2. B"))
-        assertFalse(text.contains("Please send your CV", ignoreCase = true))
+        assertEquals("Company details", title)
+    }
+
+    @Test
+    fun `resolveGroupTitle uses single intent title when unique`() {
+        val title = AiReplyIntentCatalog.resolveGroupTitle(
+            listOf("application.next_stages"),
+            "fallback"
+        )
+        assertEquals("Next stages", title)
+    }
+
+    @Test
+    fun `resolveGroupTitle falls back to cleanHeading for unknown intents`() {
+        val title = AiReplyIntentCatalog.resolveGroupTitle(
+            listOf("general.answer"),
+            "- Some question text?"
+        )
+        assertEquals("Some question text", title)
+    }
+
+    @Test
+    fun `research intent fallback consumes supported evidence`() {
+        stubFrame()
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Programme scope includes ML, NLP, and computer vision."))
+        )
+
+        val text = composer.composeFallback(
+            listOf(
+                RequestFactItem(
+                    1, "- Research fit?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    requiresResearchContext = true,
+                    intents = listOf(
+                        RequestIntentCoverage(
+                            "expertise.programme_fit",
+                            "Research fit and enterprise projects",
+                            listOf("programme.scope"),
+                            listOf(1L),
+                            "SUPPORTED",
+                            emptyList(),
+                            requiresResearchContext = true
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(text.contains("Research fit and enterprise projects"))
+        assertTrue(text.contains("Programme scope includes ML, NLP, and computer vision."))
+        assertFalse(text.contains("This still needs confirmation"))
+    }
+
+    @Test
+    fun `research fallback does not dump profile text`() {
+        stubFrame()
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Expert profile: Dr. Smith, PhD in ML."))
+        )
+
+        val text = composer.composeFallback(
+            listOf(
+                RequestFactItem(
+                    1, "- Research fit?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    requiresResearchContext = true,
+                    intents = listOf(
+                        RequestIntentCoverage(
+                            "expertise.programme_fit",
+                            "Research fit and enterprise projects",
+                            listOf("programme.scope"),
+                            listOf(1L),
+                            "SUPPORTED",
+                            emptyList(),
+                            requiresResearchContext = true
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(text.contains("Research fit and enterprise projects"))
+        assertTrue(text.contains("Expert profile: Dr. Smith, PhD in ML."))
     }
 }

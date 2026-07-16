@@ -15,6 +15,7 @@ class QaRuleAuditService(
     private val objectMapper: ObjectMapper
 ) {
     fun aggregateRuleUsage(from: LocalDateTime, to: LocalDateTime): QaRuleUsageAuditReport {
+        val metrics = aggregateAiReplyQualityMetrics(from, to)
         val logs = operatorActionLogRepository.search(
             expertContactId = null,
             inboundProcessingId = null,
@@ -65,7 +66,8 @@ class QaRuleAuditService(
                 .map { RuleUsageCount(it.key, it.value) },
             freeTextTopicCounts = freeTextTopicCounts.entries
                 .sortedByDescending { it.value }
-                .map { FreeTextTopicCount(it.key, it.value) }
+                .map { FreeTextTopicCount(it.key, it.value) },
+            aiReplyQuality = metrics
         )
     }
 
@@ -116,7 +118,52 @@ class QaRuleAuditService(
             is String -> value
             else -> value.toString()
         }
+
+    internal fun aggregateAiReplyQualityMetrics(from: LocalDateTime, to: LocalDateTime): AiReplyQualityMetrics {
+        val readyCount = operatorActionLogRepository.countSearch(
+            null, null, OperatorActionType.AI_REPLY_DRAFT_READY.name, null, from, to
+        )
+        val needsReviewCount = operatorActionLogRepository.countSearch(
+            null, null, OperatorActionType.AI_REPLY_DRAFT_NEEDS_REVIEW.name, null, from, to
+        )
+        val blockedCount = operatorActionLogRepository.countSearch(
+            null, null, OperatorActionType.AI_REPLY_DRAFT_BLOCKED.name, null, from, to
+        )
+        val totalGenerated = readyCount + needsReviewCount + blockedCount
+        val directSendBlockedCount = operatorActionLogRepository.countSearch(
+            null, null, OperatorActionType.AI_REPLY_SEND_BLOCKED.name, null, from, to
+        )
+        val reviewConfirmedCount = operatorActionLogRepository.countSearch(
+            null, null, OperatorActionType.AI_REPLY_REVIEW_CONFIRMED.name, null, from, to
+        )
+        val readyRate = if (totalGenerated > 0) readyCount.toDouble() / totalGenerated else 0.0
+        val partialRate = if (totalGenerated > 0) needsReviewCount.toDouble() / totalGenerated else 0.0
+        val omissionRate = if (totalGenerated > 0) blockedCount.toDouble() / totalGenerated else 0.0
+        return AiReplyQualityMetrics(
+            readyCount = readyCount,
+            needsReviewCount = needsReviewCount,
+            blockedCount = blockedCount,
+            totalGenerated = totalGenerated,
+            readyRate = readyRate,
+            partialRate = partialRate,
+            omissionRate = omissionRate,
+            directSendBlockedCount = directSendBlockedCount,
+            reviewConfirmedCount = reviewConfirmedCount
+        )
+    }
 }
+
+data class AiReplyQualityMetrics(
+    val readyCount: Long,
+    val needsReviewCount: Long,
+    val blockedCount: Long,
+    val totalGenerated: Long,
+    val readyRate: Double,
+    val partialRate: Double,
+    val omissionRate: Double,
+    val directSendBlockedCount: Long,
+    val reviewConfirmedCount: Long
+)
 
 data class QaRuleUsageAuditReport(
     val from: String,
@@ -125,7 +172,8 @@ data class QaRuleUsageAuditReport(
     val editedReplyCount: Int,
     val removedRuleCounts: List<RuleUsageCount>,
     val addedRuleCounts: List<RuleUsageCount>,
-    val freeTextTopicCounts: List<FreeTextTopicCount> = emptyList()
+    val freeTextTopicCounts: List<FreeTextTopicCount> = emptyList(),
+    val aiReplyQuality: AiReplyQualityMetrics? = null
 )
 
 data class RuleUsageCount(

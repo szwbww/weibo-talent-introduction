@@ -8,6 +8,7 @@ const state = {
     accounts: [],
     categories: [],
     qaRules: [],
+    qaCoverageKeys: [],
     composeTemplates: [],
     mailTemplatesSubTab: "qa",
     selectedComposeTemplateId: null,
@@ -146,6 +147,8 @@ const aiReplyState = {
     lastRenderedDraft: "",
     /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
     lastQaRuleIds: [],
+    /** Opaque draft identity returned by server; sent back in confirmation. */
+    lastDraftIdentity: null,
     /** Locked after first turn: QA_MATCHED | FREE_FORM | QA_GROUNDED */
     mode: null,
     /** Whether first turn has completed (locks mode and qaRuleIds for continuation). */
@@ -158,6 +161,97 @@ const aiReplyState = {
     inFlight: false,
     selectedModel: "DEEPSEEK_V4_FLASH"
 };
+
+const aiReplyReviewState = {
+    pendingRequestBody: null,
+    reviewItems: [],
+    readiness: "READY",
+    recordId: null,
+    resolve: null,
+    reject: null
+};
+
+function openReviewModal() {
+    const list = $("#aiReplyReviewList");
+    if (!list) return;
+    var items = aiReplyReviewState.reviewItems || [];
+    list.innerHTML = items.map(function (item) {
+        var label = escapeHtml(item.title || item.intentKey || "");
+        var key = escapeHtml(item.reviewKey || "");
+        var badge = item.status === "MISSING" ? "未覆盖" : "部分覆盖";
+        return '<label class="checkbox-row" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;">'
+            + '<input type="checkbox" class="ai-review-check" data-key="' + key + '">'
+            + '<span style="flex:1;font-size:12px;line-height:1.4;">'
+            + '<strong>' + key + '</strong> <span class="badge">' + badge + '</span>'
+            + '<br>' + label
+            + '</span>'
+            + '</label>';
+    }).join("");
+    $("#aiReplyReviewNote").value = "";
+    updateReviewConfirmButton();
+    $("#aiReplyReviewModal").hidden = false;
+}
+
+function closeReviewModal() {
+    $("#aiReplyReviewModal").hidden = true;
+}
+
+function cancelReviewSession() {
+    closeReviewModal();
+    if (aiReplyReviewState.reject) {
+        aiReplyReviewState.reject();
+        aiReplyReviewState.reject = null;
+    }
+    clearReviewState();
+}
+
+function clearReviewState() {
+    aiReplyReviewState.pendingRequestBody = null;
+    aiReplyReviewState.reviewItems = [];
+    aiReplyReviewState.readiness = "READY";
+    aiReplyReviewState.recordId = null;
+    aiReplyReviewState.draftIdentity = null;
+    aiReplyReviewState.resolve = null;
+}
+
+function updateReviewConfirmButton() {
+    var checkboxes = document.querySelectorAll("#aiReplyReviewList .ai-review-check");
+    var allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(function (cb) { return cb.checked; });
+    var note = ($("#aiReplyReviewNote")?.value || "").trim();
+    var isBlocked = aiReplyReviewState.readiness === "BLOCKED";
+    var noteValid = !isBlocked || note.length >= 5;
+    var btn = $("#aiReplyReviewConfirmBtn");
+    if (btn) {
+        btn.disabled = !allChecked || !noteValid;
+    }
+}
+
+function confirmReview() {
+    var checkboxes = document.querySelectorAll("#aiReplyReviewList .ai-review-check");
+    if (checkboxes.length === 0) return;
+    var allChecked = Array.from(checkboxes).every(function (cb) { return cb.checked; });
+    if (!allChecked) {
+        showStatus("请勾选所有审核项后再确认发送", "error");
+        return;
+    }
+    var note = ($("#aiReplyReviewNote")?.value || "").trim();
+    if (aiReplyReviewState.readiness === "BLOCKED" && note.length < 5) {
+        showStatus("BLOCKED 草稿必须填写审核说明（至少 5 个字符）", "error");
+        return;
+    }
+    var payload = {
+        draftIdentity: aiReplyReviewState.draftIdentity || null,
+        confirmedReviewKeys: aiReplyReviewState.reviewItems.map(function (it) { return it.reviewKey; }),
+        operatorNote: note,
+        recordId: aiReplyReviewState.recordId
+    };
+    var resolveFn = aiReplyReviewState.resolve;
+    closeReviewModal();
+    clearReviewState();
+    if (resolveFn) {
+        resolveFn(payload);
+    }
+}
 
 const AI_REPLY_MODEL_LABELS = {
     DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
@@ -1604,13 +1698,47 @@ async function handleAccountAction(button) {
     }
 }
 
+function renderQaCoverageKeyOptions(selectedKeys) {
+    const container = $("#qaCoverageKeyOptions");
+    const warning = $("#qaCoverageKeyWarning");
+    if (!container) return;
+    const selected = new Set(selectedKeys || []);
+    const groups = new Map();
+    state.qaCoverageKeys.forEach((entry) => {
+        const g = entry.group || "其他";
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(entry);
+    });
+    container.innerHTML = "";
+    groups.forEach((entries, group) => {
+        const title = document.createElement("div");
+        title.className = "field-label";
+        title.style.cssText = "grid-column:1/-1;margin-top:6px;";
+        title.textContent = group;
+        container.appendChild(title);
+        entries.forEach((entry) => {
+            const row = document.createElement("label");
+            row.className = "checkbox-row";
+            row.title = escapeHtml(entry.description || "");
+            row.innerHTML = `<input type="checkbox" data-qa-coverage-key="${escapeHtml(entry.key)}" ${selected.has(entry.key) ? "checked" : ""}>
+                <span>${escapeHtml(entry.label)}</span>`;
+            container.appendChild(row);
+        });
+    });
+    if (warning) {
+        warning.style.display = selected.size > 0 ? "none" : "";
+    }
+}
+
 async function loadQa() {
-    const [categories, rules] = await Promise.all([
+    const [categories, rules, coverageKeys] = await Promise.all([
         api("/api/qa/categories"),
-        api("/api/qa/rules")
+        api("/api/qa/rules"),
+        api("/api/qa/coverage-keys")
     ]);
     state.categories = categories;
     state.qaRules = rules;
+    state.qaCoverageKeys = coverageKeys;
 
     const formSelect = $("#qaRuleForm").categoryId;
     const formSelectValue = formSelect.value;
@@ -1655,11 +1783,45 @@ function renderQaAuditPanel() {
                 ${rows.map((row) => `<li><span>规则 #${row.qaRuleId}</span><span class="badge ok">${row.count} 次</span></li>`).join("")}
             </ul>`;
     };
+    const renderQualityMetrics = (qm) => {
+        if (!qm) return `<p class="text-muted" style="font-size:12px;">AI 回复质量指标：无数据</p>`;
+        const safeNum = (v) => (v != null ? v : 0);
+        const total = safeNum(qm.totalGenerated);
+        return `
+            <h4 style="margin:8px 0 4px;font-size:13px;">AI 回复质量指标</h4>
+            <div class="metadata-grid">
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>AI 初稿总数</span></div>
+                    <div class="metadata-card-value">${total}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>完整率 (READY)</span></div>
+                    <div class="metadata-card-value">${formatPercent(qm.readyRate)}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>部分覆盖率 (NEEDS_REVIEW)</span></div>
+                    <div class="metadata-card-value">${formatPercent(qm.partialRate)}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>遗漏率 (BLOCKED)</span></div>
+                    <div class="metadata-card-value">${formatPercent(qm.omissionRate)}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>直发拦截</span></div>
+                    <div class="metadata-card-value">${safeNum(qm.directSendBlockedCount)}</div>
+                </div>
+                <div class="metadata-card">
+                    <div class="metadata-card-header"><span>人工确认</span></div>
+                    <div class="metadata-card-value">${safeNum(qm.reviewConfirmedCount)}</div>
+                </div>
+            </div>`;
+    };
     container.innerHTML = `
         <div class="metadata-grid" style="margin-bottom:12px;">
             <div class="metadata-card"><div class="metadata-card-header"><span>组装回复次数</span></div><div class="metadata-card-value">${report.totalActions}</div></div>
             <div class="metadata-card"><div class="metadata-card-header"><span>人工改写次数</span></div><div class="metadata-card-value">${report.editedReplyCount}</div></div>
         </div>
+        ${renderQualityMetrics(report.aiReplyQuality)}
         ${renderCounts(report.removedRuleCounts, "运营移除的建议规则（疑似误命中）")}
         ${renderCounts(report.addedRuleCounts, "运营新增的规则（疑似缺失/盲区）")}
         ${renderFreeTextTopics(report.freeTextTopicCounts || [])}
@@ -1679,6 +1841,18 @@ function renderFreeTextTopics(rows) {
         </ul>`;
 }
 
+function renderQaCoverageKeyLabels(coverageKeys) {
+    const keys = coverageKeys || [];
+    if (keys.length === 0) return badge("未配置 AI 覆盖能力", "warn");
+    const labels = keys.map((key) => {
+        const entry = state.qaCoverageKeys.find((ek) => ek.key === key);
+        return entry ? entry.label : key;
+    });
+    if (labels.length <= 3) return labels.map(escapeHtml).join(" · ");
+    const shown = labels.slice(0, 3).map(escapeHtml).join(" · ");
+    return `${shown} <span class="muted">另 ${labels.length - 3} 项</span>`;
+}
+
 function renderQaRulesTable() {
     $("#qaRulesTable").innerHTML = state.qaRules.map((rule) => {
         const displayName = rule.displayName?.trim();
@@ -1688,6 +1862,7 @@ function renderQaRulesTable() {
         const variantBadge = (rule.variants || []).length > 0
             ? ` ${badge(`${rule.variants.length} 变体`, "primary")}`
             : "";
+        const coverageCell = renderQaCoverageKeyLabels(rule.coverageKeys);
         return `
         <tr>
             <td>${rule.id}</td>
@@ -1695,6 +1870,7 @@ function renderQaRulesTable() {
             <td>${escapeHtml(rule.categoryName || rule.categoryCode || rule.categoryId)}</td>
             <td>${escapeHtml(rule.replySubject || "")}${variantBadge}</td>
             <td class="muted-cell">${escapeHtml(rule.keywords)}</td>
+            <td>${coverageCell}</td>
             <td>${rule.priority}</td>
             <td>${badge(rule.enabled ? "启用" : "禁用", rule.enabled ? "ok" : "error")}</td>
             <td class="actions">
@@ -1705,7 +1881,7 @@ function renderQaRulesTable() {
             </td>
         </tr>
     `;
-    }).join("") || `<tr><td colspan="8" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>    `;
+    }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>    `;
 }
 
 async function ensureVariableMeta() {
@@ -2388,6 +2564,7 @@ function hideQaRuleEditor() {
     const form = $("#qaRuleForm");
     form.reset();
     renderContentVariantRows($("#qaRuleVariantsContainer"), []);
+    renderQaCoverageKeyOptions([]);
     $("#qaRuleModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedRuleId = null;
@@ -2412,6 +2589,7 @@ function fillQaRuleForm(rule) {
     form.autoReplyEnabled.checked = rule?.autoReplyEnabled ?? true;
     form.handoffRequired.checked = rule?.handoffRequired ?? false;
     form.enabled.checked = rule?.enabled ?? true;
+    renderQaCoverageKeyOptions(rule?.coverageKeys || []);
     renderContentVariantRows($("#qaRuleVariantsContainer"), rule?.variants || []);
     const replyBodyEl = $("#qaRuleReplyBody");
     if (replyBodyEl) {
@@ -2445,7 +2623,8 @@ async function saveQaRule(event) {
         autoReplyEnabled: form.autoReplyEnabled.checked,
         handoffRequired: form.handoffRequired.checked,
         enabled: form.enabled.checked,
-        variants: collectContentVariants(variantsContainer)
+        variants: collectContentVariants(variantsContainer),
+        coverageKeys: [...form.querySelectorAll("[data-qa-coverage-key]:checked")].map((el) => el.dataset.qaCoverageKey)
     };
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -3667,6 +3846,58 @@ function summarizeAiReplyCoverage(requestCoverage) {
     };
 }
 
+function buildIntentReviewItems(requestCoverage) {
+    const items = Array.isArray(requestCoverage) ? requestCoverage : [];
+    const result = [];
+    items.forEach((item) => {
+        const requestIndex = Number(item && item.index) || 0;
+        const intents = Array.isArray(item && item.intents) ? item.intents : [];
+        if (intents.length > 0) {
+            intents.forEach((intent) => {
+                if (intent && intent.status !== "SUPPORTED") {
+                    result.push({
+                        reviewKey: requestIndex + ":" + (intent.intentKey || ""),
+                        requestIndex,
+                        intentKey: intent.intentKey || "",
+                        title: intent.title || "",
+                        status: intent.status || "",
+                        missingEvidenceKeys: Array.isArray(intent.missingEvidenceKeys) ? intent.missingEvidenceKeys : []
+                    });
+                }
+            });
+        } else {
+            const status = String(item && item.status != null ? item.status : "");
+            const requestText = collapseAiReplyRequestText(item && item.requestText);
+            if (status === "PARTIAL" || status === "UNSUPPORTED") {
+                result.push({
+                    reviewKey: requestIndex + ":legacy",
+                    requestIndex,
+                    intentKey: "legacy",
+                    title: requestText,
+                    status,
+                    missingEvidenceKeys: []
+                });
+            }
+        }
+    });
+    return result;
+}
+
+function resolveAiDraftReadiness(result, coverageSummary) {
+    if (result && result.draftReadiness === "READY") return "READY";
+    if (result && result.draftReadiness === "NEEDS_REVIEW") return "NEEDS_REVIEW";
+    if (result && result.draftReadiness === "BLOCKED") return "BLOCKED";
+    if (coverageSummary && coverageSummary.hasCoverage) {
+        if (coverageSummary.unsupported > 0) return "BLOCKED";
+        if (coverageSummary.partial > 0) return "NEEDS_REVIEW";
+        return "READY";
+    }
+    if (coverageSummary && (coverageSummary.reviewItems || []).length > 0) {
+        return "NEEDS_REVIEW";
+    }
+    return "READY";
+}
+
 function formatAiReplyReviewWarnings(summary) {
     const items = (summary && summary.reviewItems) || [];
     return items.map((item) => {
@@ -3696,7 +3927,15 @@ function renderAiReplyFeedback(container, result, error = null) {
     const coverageSummary = Array.isArray(result.requestCoverage)
         ? summarizeAiReplyCoverage(result.requestCoverage)
         : null;
+    const readiness = resolveAiDraftReadiness(result, coverageSummary);
     const parts = [];
+    if (readiness === "READY") {
+        parts.push(`<div class="ai-reply-coverage">草稿状态：依据完整</div>`);
+    } else if (readiness === "NEEDS_REVIEW") {
+        parts.push(`<div class="ai-reply-warning">草稿状态：部分问题需人工补充</div>`);
+    } else if (readiness === "BLOCKED") {
+        parts.push(`<div class="ai-reply-warning">草稿状态：存在缺少审核依据的问题，不可原样发送</div>`);
+    }
     if (result.generationState === "LLM_USED") {
         parts.push(
             `<div class="ai-reply-coverage">${escapeHtml(aiReplyGenerationStateLabel(result.generationState))}</div>`
@@ -8712,12 +8951,14 @@ function renderAiReplyPanelHtml(recordId) {
 }
 
 function resetAiReplyState(recordId) {
+    cancelReviewSession();
     aiReplyState.requestSeq += 1;
     aiReplyState.recordId = recordId;
     aiReplyState.turns = [];
     aiReplyState.lastDraftTemplate = "";
     aiReplyState.lastRenderedDraft = "";
     aiReplyState.lastQaRuleIds = [];
+    aiReplyState.lastDraftIdentity = null;
     aiReplyState.mode = null;
     aiReplyState.firstTurnDone = false;
     aiReplyState.drafts = {};
@@ -8736,25 +8977,38 @@ function appendAiChatOperatorBubble(instruction) {
     container.scrollTop = container.scrollHeight;
 }
 
-function appendAiChatDraftBubble(rawText, renderedText, requestCoverage) {
+function appendAiChatDraftBubble(rawText, renderedText, result) {
     const container = $("#aiChatMessages");
     if (!container) return;
     const draftId = ++aiReplyState.nextDraftId;
     const rendered = renderedText || rawText || "";
-    const coverageSummary = summarizeAiReplyCoverage(requestCoverage || []);
+    const requestCoverage = (result && result.requestCoverage) || [];
+    const coverageSummary = summarizeAiReplyCoverage(requestCoverage);
+    const readiness = resolveAiDraftReadiness(result, coverageSummary);
+    let label = "AI 草稿";
+    if (readiness === "NEEDS_REVIEW") label = "AI 草稿 — 需补充";
+    else if (readiness === "BLOCKED") label = "AI 草稿 — 缺依据";
+    let adoptLabel = "采用此草稿";
+    if (readiness !== "READY") adoptLabel = "采用并人工补充";
+    const intentItems = buildIntentReviewItems(requestCoverage);
     aiReplyState.drafts[draftId] = {
         raw: rawText || "",
         rendered,
         needsGroundingReview: coverageSummary.needsGroundingReview,
-        reviewItems: coverageSummary.reviewItems
+        reviewItems: coverageSummary.reviewItems,
+        intentItems,
+        draftReadiness: readiness,
+        requestCount: Number((result && result.requestCount)) || 0,
+        mode: (result && result.mode) || "",
+        draftIdentity: (result && result.draftIdentity) || aiReplyState.lastDraftIdentity || null
     };
     const bubble = document.createElement("div");
     bubble.className = "ai-chat-bubble ai-chat-assistant";
     bubble.innerHTML = `
-        <div class="ai-chat-label">AI 草稿</div>
+        <div class="ai-chat-label">${escapeHtml(label)}</div>
         ${translatableBody(rendered)}
         <div class="ai-chat-draft-actions">
-            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}">采用此草稿</button>
+            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}">${escapeHtml(adoptLabel)}</button>
         </div>`;
     container.appendChild(bubble);
     container.scrollTop = container.scrollHeight;
@@ -8773,6 +9027,7 @@ function initAiReplyWorkbench(recordId) {
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
     aiReplyState.adoptContext = null;
+    cancelReviewSession();
     state.mailbox.detailContext = {
         source: "INBOUND_PROCESSING",
         id: Number(id),
@@ -9303,10 +9558,13 @@ async function handleUnmatchedAction(element) {
             }
             const rawDraft = result.draftText || "";
             const renderedDraft = result.renderedDraftText || rawDraft;
-            appendAiChatDraftBubble(rawDraft, renderedDraft, result.requestCoverage || []);
+            appendAiChatDraftBubble(rawDraft, renderedDraft, result);
             aiReplyState.lastDraftTemplate = rawDraft;
             aiReplyState.lastRenderedDraft = renderedDraft;
             aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
+            if (result.draftIdentity) {
+                aiReplyState.lastDraftIdentity = result.draftIdentity;
+            }
             if (isFirstTurn) {
                 aiReplyState.mode = result.mode || null;
                 aiReplyState.firstTurnDone = true;
@@ -9343,6 +9601,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "ai-adopt-draft") {
+        cancelReviewSession();
         const draftId = Number(element.dataset.draftId);
         const entry = aiReplyState.drafts[draftId];
         const rendered = entry?.rendered ?? aiReplyState.lastRenderedDraft;
@@ -9363,7 +9622,12 @@ async function handleUnmatchedAction(element) {
             renderedBaselineHtml: editor ? editor.innerHTML : "",
             recordId: Number(id),
             needsGroundingReview: !!entry?.needsGroundingReview,
-            reviewItems: Array.isArray(entry?.reviewItems) ? entry.reviewItems : []
+            reviewItems: Array.isArray(entry?.reviewItems) ? entry.reviewItems : [],
+            intentItems: Array.isArray(entry?.intentItems) ? entry.intentItems : [],
+            draftReadiness: entry?.draftReadiness || "READY",
+            draftIdentity: entry?.draftIdentity || null,
+            requestCount: Number(entry?.requestCount) || 0,
+            mode: entry?.mode || ""
         };
         if (qaIds && qaIds.length > 0) {
             manualReplyQaContext = {
@@ -9381,6 +9645,58 @@ async function handleUnmatchedAction(element) {
         editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
         return;
     }
+
+    async function submitManualRichReply(recordId, requestBody) {
+        try {
+            await api(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, {
+                method: "POST",
+                body: JSON.stringify(requestBody)
+            });
+            manualReplyQaContext = null;
+            aiReplyState.adoptContext = null;
+            alert("人工回复邮件发送成功");
+        } catch (e) {
+            alert("人工回复发送失败: " + e.message);
+            throw e;
+        }
+        await showUnmatchedDetail(recordId);
+        await refreshMailboxAfterPendingAction();
+    }
+
+    function validateSectionNumbering(bodyText, requestCount) {
+        if (!bodyText || requestCount < 2) return null;
+        var nums = [];
+        var pattern = /^(\d+)\.\s+/mg;
+        var m;
+        while ((m = pattern.exec(bodyText)) !== null) {
+            var n = Number(m[1]);
+            if (n >= 1 && n <= requestCount) {
+                nums.push(n);
+            } else {
+                return "正文编号 " + n + " 越界（应为 1.." + requestCount + "），请修正后再发送。";
+            }
+        }
+        if (nums.length === 0) {
+            return "正文缺少 " + requestCount + " 项编号标题（1. ~ " + requestCount + ".），请补全后再发送。";
+        }
+        if (nums.length !== requestCount) {
+            return "正文编号数量不匹配（期望 " + requestCount + " 项，实际 " + nums.length + " 项），请检查标题序号。";
+        }
+        for (var i = 1; i <= requestCount; i++) {
+            if (nums[i - 1] !== i) {
+                return "正文编号不连续（期望 " + i + "，实际 " + nums[i - 1] + "），请修正标题序号。";
+            }
+        }
+        var seen = {};
+        for (var j = 0; j < nums.length; j++) {
+            if (seen[nums[j]]) {
+                return "正文编号 " + nums[j] + " 重复出现，请删除重复标题。";
+            }
+            seen[nums[j]] = true;
+        }
+        return null;
+    }
+
     if (action === "send-manual-rich-reply") {
         const editor = $("#manualRichReplyEditor");
         const subject = $("#manualReplySubject")?.value?.trim();
@@ -9393,16 +9709,6 @@ async function handleUnmatchedAction(element) {
             return;
         }
         const adopt = aiReplyState.adoptContext;
-        if (
-            adopt
-            && Number(adopt.recordId) === Number(id)
-            && adopt.needsGroundingReview
-            && editor.innerText === (adopt.renderedBaseline || "")
-            && editor.innerHTML === (adopt.renderedBaselineHtml || "")
-        ) {
-            showStatus("草稿仍有未完整覆盖的问题，请先人工补充或修改正文", "error");
-            return;
-        }
         const operatorName = window.localStorage.getItem("operatorName") || "console";
         const requestBody = {
             senderAccountCode: null,
@@ -9429,21 +9735,62 @@ async function handleUnmatchedAction(element) {
             requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
         }
         requestBody.useVariants = $("#manualReplyUseVariants")?.checked === true;
-        try {
-            await api(`/api/mail/unmatched-inbound/${id}/manual-rich-reply`, {
-                method: "POST",
-                body: JSON.stringify(requestBody)
-            });
-            manualReplyQaContext = null;
-            aiReplyState.adoptContext = null;
-            alert("人工回复邮件发送成功");
-        } catch (e) {
-            alert("人工回复发送失败: " + e.message);
+
+        const numberingError = validateSectionNumbering(editor.innerText, adopt?.requestCount || 0);
+        if (numberingError) {
+            showStatus(numberingError, "error");
             return;
         }
-        await showUnmatchedDetail(id);
-        await refreshMailboxAfterPendingAction();
-        return;
+
+        const readiness = adopt && Number(adopt.recordId) === Number(id)
+            ? (adopt.draftReadiness || "READY")
+            : "READY";
+
+        if (readiness === "READY" || !adopt || Number(adopt.recordId) !== Number(id)) {
+            return submitManualRichReply(id, requestBody);
+        }
+
+        requestBody.replySource = "AI_DRAFT";
+        const intentItems = Array.isArray(adopt.intentItems) ? adopt.intentItems : [];
+        const nonSupported = intentItems.filter(function (it) { return it.status !== "SUPPORTED"; });
+
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/ai-reply/review-event`, {
+                method: "POST",
+                body: JSON.stringify({
+                    eventType: "SEND_BLOCKED",
+                    operatorName,
+                    unresolvedItems: nonSupported.map(function (it) {
+                        return { reviewKey: it.reviewKey, requestIndex: it.requestIndex, intentKey: it.intentKey, status: it.status, missingEvidenceKeys: it.missingEvidenceKeys };
+                    })
+                })
+            });
+        } catch (_) { /* best-effort */ }
+
+        aiReplyReviewState.pendingRequestBody = requestBody;
+        aiReplyReviewState.reviewItems = nonSupported;
+        aiReplyReviewState.readiness = readiness;
+        aiReplyReviewState.recordId = Number(id);
+        aiReplyReviewState.draftIdentity = adopt.draftIdentity || null;
+
+        return new Promise(function (resolve, reject) {
+            aiReplyReviewState.resolve = function (payload) {
+                resolve(payload);
+            };
+            aiReplyReviewState.reject = function () {
+                reject(new Error("cancelled"));
+            };
+            openReviewModal();
+        }).then(function (confirmedPayload) {
+            requestBody.aiReviewConfirmation = {
+                draftIdentity: confirmedPayload.draftIdentity || null,
+                confirmedReviewKeys: confirmedPayload.confirmedReviewKeys || [],
+                operatorNote: confirmedPayload.operatorNote || ""
+            };
+            return submitManualRichReply(id, requestBody);
+        }).catch(function (_) {
+            clearReviewState();
+        });
     }
     if (action === "rich-command") {
         const command = element.dataset.command;
@@ -10254,6 +10601,16 @@ function bindEvents() {
         if (!Number.isFinite(fieldId)) return;
         saveAiAnalysisField(fieldId, input.value);
     });
+    $("#aiReplyReviewBackdrop")?.addEventListener("click", cancelReviewSession);
+    $("#aiReplyReviewCloseBtn")?.addEventListener("click", cancelReviewSession);
+    $("#aiReplyReviewCancelBtn")?.addEventListener("click", cancelReviewSession);
+    $("#aiReplyReviewConfirmBtn")?.addEventListener("click", confirmReview);
+    $("#aiReplyReviewList")?.addEventListener("change", function (event) {
+        if (event.target && event.target.classList.contains("ai-review-check")) {
+            updateReviewConfirmButton();
+        }
+    });
+    $("#aiReplyReviewNote")?.addEventListener("input", updateReviewConfirmButton);
     $("#contactHeadActions").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) {

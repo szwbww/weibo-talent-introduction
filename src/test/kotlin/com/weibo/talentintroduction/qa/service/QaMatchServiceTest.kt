@@ -950,4 +950,144 @@ class QaMatchServiceTest {
             "text+URL bullets still count toward automatic gap detection"
         )
     }
+
+    // ── V75: company identity / trust split regression ─────────────────────────
+
+    /** V75 fixture: id=18 trust-only keywords; id=41 new company identity rule. */
+    private fun stubV75KeywordRules() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 24,
+                    categoryId = 2,
+                    keywords = "learn more,more information,name and background,objectives and scope,before sharing,understand the program,additional information,about the initiative,participating institution,participating organization,why was i selected,why did you choose me,why did you contact me,official website,program objectives,tell me more,more details,more detail,know more details,want to know more details,further information,purpose and structure,structure of the program,more about the program,know more about",
+                    priority = 5,
+                    replySubject = "Program overview",
+                    replyBody = "Two tracks:",
+                    supersedesChildren = true
+                ),
+                QaRule(
+                    id = 18,
+                    categoryId = 3,
+                    keywords = "accredited,official agency,prove government,cooperation with government,authorized,how can i trust,trust you,can i trust,commercial,not academic,is this legitimate,legitimate,is this a scam,scam,verify,company website,company site,who are you,real company,are you real",
+                    priority = 100,
+                    replySubject = "Agency credentials",
+                    replyBody = "Credentials answer"
+                ),
+                QaRule(
+                    id = 41,
+                    categoryId = 3,
+                    keywords = "registered location,registered address,company registration,name of your company,your company name,full name and registered,where is your company,where are you based",
+                    priority = 90,
+                    replySubject = "Company registered identity and location",
+                    replyBody = "Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd."
+                ),
+                QaRule(
+                    id = 5,
+                    categoryId = 1,
+                    keywords = "duty,my rights,responsibility,responsibilities,benefit,benefits,what will i get,what do i get,deliverables,my duties,expected responsibilities",
+                    priority = 100,
+                    replySubject = "Responsibilities and benefits",
+                    replyBody = "Responsibilities answer"
+                ),
+                QaRule(
+                    id = 23,
+                    categoryId = 1,
+                    keywords = "which company,partner company,company profile,is it a good match,within the scope,selected and matched,how do you match,matching process,enterprise projects",
+                    priority = 100,
+                    replySubject = "Partner company information",
+                    replyBody = "Partner answer"
+                ),
+                QaRule(
+                    id = 9,
+                    categoryId = 1,
+                    keywords = "application process,the process,procedure,timeline,next stages,next steps,what happens next,stages of the application,selection process,how are researchers selected",
+                    priority = 100,
+                    replySubject = "Application process",
+                    replyBody = "Process answer"
+                ),
+                QaRule(
+                    id = 33,
+                    categoryId = 2,
+                    keywords = "what documents,materials needed,cv,what to send,what do you need,send my documents,what should i send,provide my cv,what should i provide",
+                    priority = 35,
+                    replySubject = "Getting started materials",
+                    replyBody = "Materials answer"
+                ),
+                QaRule(
+                    id = 40,
+                    categoryId = 1,
+                    keywords = "intellectual property,ip rights,ip arrangements,contractual,contract terms,patent ownership,who owns the",
+                    priority = 120,
+                    replySubject = "Contract and IP arrangements",
+                    replyBody = "After selection, you will sign a labor contract directly with the matched enterprise"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `v75 full name and registered location matches company identity not credentials`() {
+        stubV75KeywordRules()
+
+        val suggest = service.suggestComposition("Please provide the full name and registered location of your company.")
+
+        assertTrue(suggest.suggestedRuleIds.contains(41L), "should match id41 (company identity)")
+        assertFalse(suggest.suggestedRuleIds.contains(18L), "should NOT match id18 (credentials)")
+    }
+
+    @Test
+    fun `v75 legitimacy and verify still matches agency credentials`() {
+        stubV75KeywordRules()
+
+        val suggest = service.suggestComposition("How can I verify that your agency is legitimate?")
+
+        assertTrue(suggest.suggestedRuleIds.contains(18L), "should match id18 (credentials)")
+        assertFalse(suggest.suggestedRuleIds.contains(41L), "should NOT match id41 (company identity)")
+    }
+
+    @Test
+    fun `v75 combined company identity and legitimacy matches both rules`() {
+        stubV75KeywordRules()
+
+        val mail = """
+            Could you provide the registered location of your company?
+            Also, how can I verify that your agency is legitimate and trusted?
+        """.trimIndent()
+
+        val suggest = service.suggestComposition(mail)
+
+        assertTrue(suggest.suggestedRuleIds.contains(41L), "should match id41 (company identity)")
+        assertTrue(suggest.suggestedRuleIds.contains(18L), "should match id18 (credentials)")
+    }
+
+    @Test
+    fun `v75 multi-request overview mail matches company identity not credentials`() {
+        stubV75KeywordRules()
+
+        val overviewMail = """
+            Dear team,
+
+            Could you provide further information regarding the purpose and structure of the program?
+
+            Specifically:
+            - What is the registered location of your company?
+            - What are the expected responsibilities and deliverables?
+            - How are researchers selected and matched within the scope of enterprise projects?
+            - What are the intellectual property arrangements?
+            - What are the next stages of the application?
+            - What materials should I send?
+
+            Best regards
+        """.trimIndent()
+
+        val suggest = service.suggestComposition(overviewMail)
+        assertTrue(suggest.suggestedRuleIds.contains(24L), "should contain id24 (overview)")
+        assertTrue(suggest.suggestedRuleIds.contains(41L), "should contain id41 (company identity)")
+        assertFalse(suggest.suggestedRuleIds.contains(18L), "should NOT contain id18 (credentials)")
+        assertTrue(suggest.suggestedRuleIds.contains(5L), "should contain id5 (responsibilities/deliverables)")
+        assertTrue(suggest.suggestedRuleIds.contains(23L), "should contain id23 (partner/within scope)")
+        assertTrue(suggest.suggestedRuleIds.contains(9L), "should contain id9 (process/selection)")
+        assertTrue(suggest.suggestedRuleIds.contains(40L), "should contain id40 (IP/contract)")
+    }
 }

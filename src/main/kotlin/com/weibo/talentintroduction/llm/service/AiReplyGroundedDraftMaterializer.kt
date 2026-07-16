@@ -4,18 +4,21 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
 
-internal data class GroundedAnswer(
-    val index: Int,
-    val answer: String
+data class IntentAnswer(
+    val intentKey: String,
+    val answer: String,
+    val sourceRuleIds: List<Long>
 )
 
-internal data class GroundedAnswerEnvelope(
-    val answers: List<GroundedAnswer>
+data class ValidatedSection(
+    val requestIndex: Int,
+    val answers: List<IntentAnswer>
 )
 
 data class MaterializedDraft(
     val text: String,
     val valid: Boolean,
+    val sections: List<ValidatedSection> = emptyList(),
     val warningCodes: List<String> = emptyList()
 )
 
@@ -25,28 +28,26 @@ class AiReplyGroundedDraftMaterializer(
     private val composer: AiReplyPointByPointComposer
 ) {
     fun materialize(rawResponse: String, requestFacts: List<RequestFactItem>): MaterializedDraft {
-        val parsed = parseStrict(rawResponse, requestFacts)
-            ?: return invalid()
-        val text = composer.composeFromAnswers(
-            requestFacts = requestFacts,
-            answersByIndex = parsed.answers.associate { it.index to it.answer }
-        )
-        return MaterializedDraft(text = text, valid = true)
+        val sections = parseStrict(rawResponse, requestFacts)
+            ?: return invalid(sections = emptyList())
+        val text = composer.composeFromSections(requestFacts, sections)
+        return MaterializedDraft(text = text, valid = true, sections = sections)
     }
 
-    private fun invalid(): MaterializedDraft =
-        MaterializedDraft(
-            text = "",
-            valid = false,
-            warningCodes = listOf(WARNING_STRUCTURED_RESPONSE_INVALID)
-        )
+    internal fun invalid(
+        sections: List<ValidatedSection> = emptyList(),
+        warningCodes: List<String> = listOf(WARNING_STRUCTURED_RESPONSE_INVALID)
+    ): MaterializedDraft =
+        MaterializedDraft(text = "", valid = false, sections = sections, warningCodes = warningCodes)
 
-    private fun parseStrict(rawResponse: String, requestFacts: List<RequestFactItem>): GroundedAnswerEnvelope? {
+    private fun parseStrict(
+        rawResponse: String,
+        requestFacts: List<RequestFactItem>
+    ): List<ValidatedSection>? {
         val trimmed = rawResponse.trim()
         if (trimmed.isBlank()) {
             return null
         }
-        // Markdown fences are rejected (I-1); do not strip.
         if (trimmed.startsWith("```")) {
             return null
         }
@@ -59,66 +60,148 @@ class AiReplyGroundedDraftMaterializer(
             return null
         }
         val fieldNames = root.fieldNames().asSequence().toSet()
-        if (fieldNames != setOf("answers")) {
+        if (fieldNames != setOf("sections")) {
             return null
         }
-        val answersNode = root.get("answers")
-        if (answersNode == null || !answersNode.isArray) {
+        val sectionsNode = root.get("sections")
+        if (sectionsNode == null || !sectionsNode.isArray) {
             return null
         }
 
-        val answerableIndexes = requestFacts
-            .filter {
-                it.status == RequestGroundingStatus.GROUNDED || it.status == RequestGroundingStatus.PARTIAL
+        val factByIndex = requestFacts.associateBy { it.index }
+        val sections = mutableListOf<ValidatedSection>()
+        val seenRequestIndexes = mutableSetOf<Int>()
+
+        for (sectionNode in sectionsNode) {
+            if (!sectionNode.isObject) {
+                return null
+            }
+            val sectionFields = sectionNode.fieldNames().asSequence().toSet()
+            if (sectionFields != setOf("requestIndex", "answers")) {
+                return null
+            }
+            val requestIndexNode = sectionNode.get("requestIndex") ?: return null
+            if (!requestIndexNode.isIntegralNumber || !requestIndexNode.canConvertToInt()) {
+                return null
+            }
+            val requestIndex = requestIndexNode.intValue()
+            val answersNode = sectionNode.get("answers")
+            if (answersNode == null || !answersNode.isArray) {
+                return null
+            }
+
+            if (!seenRequestIndexes.add(requestIndex)) {
+                return null
+            }
+
+            val fact = factByIndex[requestIndex] ?: return null
+
+            val allowedStatuses = setOf(
+                RequestGroundingStatus.GROUNDED,
+                RequestGroundingStatus.PARTIAL
+            )
+            if (fact.status !in allowedStatuses) {
+                return null
+            }
+
+            val allowedIntentKeys = fact.intents
+                .filter { it.status == "SUPPORTED" }
+                .map { it.intentKey }
+                .toSet()
+            if (allowedIntentKeys.isEmpty()) {
+                return null
+            }
+
+            val answers = mutableListOf<IntentAnswer>()
+            val seenIntentKeys = mutableSetOf<String>()
+
+            for (answerNode in answersNode) {
+                if (!answerNode.isObject) {
+                    return null
+                }
+                val answerFields = answerNode.fieldNames().asSequence().toSet()
+                if (answerFields != setOf("intentKey", "answer", "sourceRuleIds")) {
+                    return null
+                }
+                if (!answerNode.get("intentKey").isTextual) {
+                    return null
+                }
+                val intentKey = answerNode.get("intentKey").asText()
+                if (!answerNode.get("answer").isTextual) {
+                    return null
+                }
+                val answer = answerNode.get("answer").asText()
+                if (answer.isBlank()) {
+                    return null
+                }
+                if (containsInternalMarker(answer)) {
+                    return null
+                }
+                if (intentKey !in allowedIntentKeys) {
+                    return null
+                }
+                if (!seenIntentKeys.add(intentKey)) {
+                    return null
+                }
+
+                val sourceIdsNode = answerNode.get("sourceRuleIds")
+                if (sourceIdsNode == null || !sourceIdsNode.isArray) {
+                    return null
+                }
+                if (!sourceIdsNode.asSequence().all {
+                        it.isIntegralNumber && it.canConvertToLong()
+                    }
+                ) {
+                    return null
+                }
+                val sourceIds = sourceIdsNode.asSequence()
+                    .map { it.longValue() }
+                    .toList()
+                if (sourceIds.isEmpty()) {
+                    return null
+                }
+
+                val intent = fact.intents.firstOrNull { it.intentKey == intentKey } ?: return null
+                val evidenceIds = intent.evidenceRuleIds.toSet()
+                if (sourceIds.any { it !in evidenceIds }) {
+                    return null
+                }
+
+                answers += IntentAnswer(
+                    intentKey = intentKey,
+                    answer = answer,
+                    sourceRuleIds = sourceIds
+                )
+            }
+
+            if (seenIntentKeys != allowedIntentKeys) {
+                return null
+            }
+
+            if (answers.isEmpty()) {
+                return null
+            }
+
+            sections += ValidatedSection(
+                requestIndex = requestIndex,
+                answers = answers
+            )
+        }
+
+        val expectedRequestIndexes = requestFacts
+            .filter { fact ->
+                fact.intents.any { it.status == "SUPPORTED" } &&
+                    (fact.status == RequestGroundingStatus.GROUNDED ||
+                        fact.status == RequestGroundingStatus.PARTIAL)
             }
             .map { it.index }
             .toSet()
-        val unsupportedIndexes = requestFacts
-            .filter { it.status == RequestGroundingStatus.UNSUPPORTED }
-            .map { it.index }
-            .toSet()
 
-        val answers = mutableListOf<GroundedAnswer>()
-        val seenIndexes = mutableSetOf<Int>()
-
-        for (node in answersNode) {
-            if (!node.isObject) {
-                return null
-            }
-            val answerFields = node.fieldNames().asSequence().toSet()
-            if (answerFields != setOf("index", "answer")) {
-                return null
-            }
-            if (!node.get("index").canConvertToInt()) {
-                return null
-            }
-            val index = node.get("index").asInt()
-            if (!node.get("answer").isTextual) {
-                return null
-            }
-            val answer = node.get("answer").asText()
-            if (answer.isBlank()) {
-                return null
-            }
-            if (containsInternalMarker(answer)) {
-                return null
-            }
-            if (index in unsupportedIndexes) {
-                return null
-            }
-            if (index !in answerableIndexes) {
-                return null
-            }
-            if (!seenIndexes.add(index)) {
-                return null
-            }
-            answers += GroundedAnswer(index = index, answer = answer)
-        }
-
-        if (seenIndexes != answerableIndexes) {
+        if (expectedRequestIndexes.isNotEmpty() && seenRequestIndexes != expectedRequestIndexes) {
             return null
         }
-        return GroundedAnswerEnvelope(answers = answers.sortedBy { it.index })
+
+        return sections.sortedBy { it.requestIndex }
     }
 
     private fun containsInternalMarker(answer: String): Boolean {
@@ -134,6 +217,7 @@ class AiReplyGroundedDraftMaterializer(
 
     companion object {
         const val WARNING_STRUCTURED_RESPONSE_INVALID = "AI_REPLY_STRUCTURED_RESPONSE_INVALID"
+        const val WARNING_CLAIM_VALIDATION_FAILED = "AI_REPLY_CLAIM_VALIDATION_FAILED"
 
         private val INTERNAL_PHRASES = listOf(
             "This still needs confirmation on remaining details.",

@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.mail.service.VariableMeta
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.service.QaCategoryCreateCommand
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import com.weibo.talentintroduction.qa.service.QaRuleCreateCommand
 import com.weibo.talentintroduction.qa.service.QaRuleDetail
 import com.weibo.talentintroduction.qa.service.QaRuleManagementService
@@ -127,6 +128,17 @@ class QaRuleManagementController(
     fun disableRule(@PathVariable ruleId: Long): QaRuleResponse =
         service.setRuleEnabled(ruleId, false).toResponse(category = null)
 
+    @GetMapping("/coverage-keys")
+    fun listCoverageKeys(): List<CoverageKeyMetadataResponse> =
+        QaCoverageKeyCatalog.all().map {
+            CoverageKeyMetadataResponse(
+                key = it.key,
+                label = it.label,
+                description = it.description,
+                group = it.group
+            )
+        }
+
     @GetMapping("/audit/rule-usage")
     fun ruleUsageAudit(
         @RequestParam from: String,
@@ -242,7 +254,8 @@ data class QaRuleCreateRequest(
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
     val enabled: Boolean = true,
-    val variants: List<String> = emptyList()
+    val variants: List<String> = emptyList(),
+    val coverageKeys: List<String>? = null
 ) {
     fun toCommand(): QaRuleCreateCommand =
         QaRuleCreateCommand(
@@ -256,7 +269,8 @@ data class QaRuleCreateRequest(
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
             enabled = enabled,
-            variants = variants
+            variants = variants,
+            coverageKeys = coverageKeys
         )
 }
 
@@ -271,7 +285,8 @@ data class QaRuleUpdateRequest(
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean,
-    val variants: List<String> = emptyList()
+    val variants: List<String> = emptyList(),
+    val coverageKeys: List<String>? = null
 ) {
     fun toCommand(): QaRuleUpdateCommand =
         QaRuleUpdateCommand(
@@ -285,7 +300,8 @@ data class QaRuleUpdateRequest(
             autoReplyEnabled = autoReplyEnabled,
             handoffRequired = handoffRequired,
             enabled = enabled,
-            variants = variants
+            variants = variants,
+            coverageKeys = coverageKeys
         )
 }
 
@@ -311,7 +327,15 @@ data class QaRuleResponse(
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean,
-    val variants: List<String> = emptyList()
+    val variants: List<String> = emptyList(),
+    val coverageKeys: List<String> = emptyList()
+)
+
+data class CoverageKeyMetadataResponse(
+    val key: String,
+    val label: String,
+    val description: String,
+    val group: String
 )
 
 private fun QaCategory.toResponse(): QaCategoryResponse =
@@ -344,5 +368,6 @@ private fun QaRule.toResponse(category: QaCategory?, variants: List<String> = em
         autoReplyEnabled = autoReplyEnabled,
         handoffRequired = handoffRequired,
         enabled = enabled,
-        variants = variants
+        variants = variants,
+        coverageKeys = QaCoverageKeyCatalog.parseStored(coverageKeys)
     )

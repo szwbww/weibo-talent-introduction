@@ -20,6 +20,7 @@ data class QaRule(
     val handoffRequired: Boolean = false,
     val supersedesChildren: Boolean = false,
     val enabled: Boolean = true,
+    val coverageKeys: String = "",
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )

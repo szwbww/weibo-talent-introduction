@@ -49,4 +49,15 @@ interface OperatorActionLogRepository : CrudRepository<OperatorActionLog, Long> 
         start: LocalDateTime?,
         end: LocalDateTime?
     ): Long
+
+    @Query(
+        """
+        SELECT * FROM operator_action_log
+        WHERE inbound_processing_id = :inboundProcessingId
+          AND action_type IN ('AI_REPLY_DRAFT_READY', 'AI_REPLY_DRAFT_NEEDS_REVIEW', 'AI_REPLY_DRAFT_BLOCKED')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    fun findLatestAiDraftByInboundProcessingId(inboundProcessingId: Long): OperatorActionLog?
 }

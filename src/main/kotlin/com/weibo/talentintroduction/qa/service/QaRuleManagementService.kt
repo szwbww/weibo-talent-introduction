@@ -67,7 +67,9 @@ class QaRuleManagementService(
         requireCategoryExists(command.categoryId)
         validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
         contentVariantService.validateVariantTexts(command.replyBody, command.variants)
-        val saved = ruleRepository.save(command.toDomain())
+        val normalizedCoverage = QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys)
+        val domain = command.toDomain().copy(coverageKeys = QaCoverageKeyCatalog.serialize(normalizedCoverage))
+        val saved = ruleRepository.save(domain)
         val ruleId = saved.id ?: error("QA rule id is required")
         contentVariantService.replaceForOwner(
             ContentVariantOwnerType.QA_RULE,
@@ -86,6 +88,12 @@ class QaRuleManagementService(
         validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
         contentVariantService.validateVariantTexts(command.replyBody, command.variants)
 
+        val newCoverage = if (command.coverageKeys != null) {
+            QaCoverageKeyCatalog.serialize(QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys))
+        } else {
+            existing.coverageKeys
+        }
+
         val saved = ruleRepository.save(
             existing.copy(
                 categoryId = command.categoryId,
@@ -97,7 +105,8 @@ class QaRuleManagementService(
                 displayName = command.displayName?.trim()?.takeIf { it.isNotEmpty() },
                 autoReplyEnabled = command.autoReplyEnabled,
                 handoffRequired = command.handoffRequired,
-                enabled = command.enabled
+                enabled = command.enabled,
+                coverageKeys = newCoverage
             )
         )
         contentVariantService.replaceForOwner(
@@ -168,7 +177,8 @@ data class QaRuleCreateCommand(
     val autoReplyEnabled: Boolean = true,
     val handoffRequired: Boolean = false,
     val enabled: Boolean = true,
-    val variants: List<String> = emptyList()
+    val variants: List<String> = emptyList(),
+    val coverageKeys: List<String>? = null
 ) {
     fun toDomain(): QaRule =
         QaRule(
@@ -196,5 +206,6 @@ data class QaRuleUpdateCommand(
     val autoReplyEnabled: Boolean,
     val handoffRequired: Boolean,
     val enabled: Boolean,
-    val variants: List<String> = emptyList()
+    val variants: List<String> = emptyList(),
+    val coverageKeys: List<String>? = null
 )

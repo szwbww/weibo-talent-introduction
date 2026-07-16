@@ -2,8 +2,8 @@
 id: K-ai-draft-review-state-per-draft
 domain: frontend
 created: 2026-07-13
-last_used: 2026-07-14
-hit_count: 2
+last_used: 2026-07-16
+hit_count: 8
 source: create-p:ai-reply-04-coverage-warning-ui
 severity: P1
 ---

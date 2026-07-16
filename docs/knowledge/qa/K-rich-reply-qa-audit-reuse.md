@@ -2,8 +2,8 @@
 id: K-rich-reply-qa-audit-reuse
 domain: qa
 created: 2026-06-30
-last_used: 2026-07-13
-hit_count: 9
+last_used: 2026-07-16
+hit_count: 14
 source: create-p:manual-compose-segmented-preview
 severity: P1
 ---

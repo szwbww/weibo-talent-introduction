@@ -337,6 +337,7 @@
                                 <th>业务分类 ID</th>
                                 <th>回复邮件主题</th>
                                 <th>触发匹配关键词</th>
+                                <th>AI 覆盖能力</th>
                                 <th>匹配优先级</th>
                                 <th>状态</th>
                                 <th style="text-align: right;">管理操作</th>
@@ -1569,6 +1570,12 @@
                 </select>
             </label>
             <label>匹配优先级 (数字越小越优先)<input name="priority" type="number" value="100" required></label>
+            <div class="span-2" style="margin:4px 0;">
+                <span class="field-label">AI 覆盖能力标签</span>
+                <p class="muted" style="margin:2px 0 6px;font-size:12px;">勾选该规则正文已审核覆盖的业务事实；关键词决定"可能相关"，覆盖能力决定"足以回答"</p>
+                <div class="metadata-grid" id="qaCoverageKeyOptions"></div>
+                <div id="qaCoverageKeyWarning" class="badge warn" style="display:none;margin-top:4px;">未配置 AI 覆盖能力</div>
+            </div>
             <label class="span-2">自动回复英文主题<input name="replySubject" placeholder="如: Re: About our global talent invitation program"></label>
             <label class="span-2">自动回复邮件英文正文
                 <div class="var-editor-wrap">
@@ -1861,6 +1868,26 @@
     <span class="preview-rail-icon" aria-hidden="true">‹</span>
     <span class="preview-rail-label" id="previewRailLabel">邮件预览</span>
 </button>
+
+<div class="modal-shell" id="aiReplyReviewModal" hidden>
+    <button class="modal-backdrop" id="aiReplyReviewBackdrop" type="button" aria-label="关闭审核"> </button>
+    <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="aiReplyReviewTitle">
+        <div class="panel-head modal-head">
+            <h2 id="aiReplyReviewTitle">AI 草稿审核确认</h2>
+            <button class="modal-close-btn" id="aiReplyReviewCloseBtn" type="button" aria-label="关闭">×</button>
+        </div>
+        <p class="form-grid single" style="margin: 0 0 8px 0; font-size:12px; color: var(--text-muted);">勾选表示已在正文中人工补充或已核验，此操作不会将信息写回 QA 知识库。</p>
+        <div class="form-grid single compose-gap-list" id="aiReplyReviewList" style="max-height:min(50vh,420px); overflow-y:auto; margin-bottom:8px;"></div>
+        <div class="form-grid single">
+            <label for="aiReplyReviewNote">审核说明<span class="hint">（BLOCKED 时必填，至少 5 个字符）</span></label>
+            <textarea id="aiReplyReviewNote" rows="3" placeholder="请简要说明人工补充/核验内容"></textarea>
+        </div>
+        <div class="form-actions modal-actions">
+            <button type="button" class="button secondary" id="aiReplyReviewCancelBtn">取消</button>
+            <button type="button" class="button primary" id="aiReplyReviewConfirmBtn" disabled>确认并发送</button>
+        </div>
+    </section>
+</div>
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>

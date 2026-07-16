@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
+import com.weibo.talentintroduction.llm.controller.IntentCoverageResponse
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewResult
@@ -22,6 +23,8 @@ import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.SuggestQaRule
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
+import com.weibo.talentintroduction.llm.service.AiReplyReviewItem
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -48,7 +51,8 @@ class UnmatchedInboundMailController(
     private val aiReplyContextBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder,
     private val aiTrainingQaService: com.weibo.talentintroduction.llm.service.AiTrainingQaService,
     private val mailRecordRepository: MailRecordRepository,
-    private val aiReplyContextService: com.weibo.talentintroduction.llm.service.AiReplyContextService
+    private val aiReplyContextService: com.weibo.talentintroduction.llm.service.AiReplyContextService,
+    private val aiReplyReviewAuditService: com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
 ) {
     @GetMapping("/unmatched-inbound")
     fun list(
@@ -218,7 +222,9 @@ class UnmatchedInboundMailController(
             freeTextPreview = request.freeTextPreview,
             useVariants = request.useVariants,
             templateTextBody = request.templateTextBody,
-            templateHtmlBody = request.templateHtmlBody
+            templateHtmlBody = request.templateHtmlBody,
+            replySource = request.replySource,
+            aiReviewConfirmation = request.aiReviewConfirmation
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
@@ -307,6 +313,20 @@ class UnmatchedInboundMailController(
             contextWarnings = context.contextWarnings,
             replyModel = request.model
         )
+        val draftIdentity: String? = if (request.turns.isEmpty()) {
+            try {
+                aiReplyReviewAuditService.recordInitialDraft(
+                    inboundProcessingId = id,
+                    contactId = contactId,
+                    result = result,
+                    operatorName = request.operatorName
+                )
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
         val preview = aiReplyDraftPreviewService.preview(
             raw = result.draftText,
             contact = contact,
@@ -330,10 +350,41 @@ class UnmatchedInboundMailController(
                     index = it.index,
                     requestText = it.requestText,
                     status = it.status.name,
-                    factRuleIds = it.factRuleIds
+                    factRuleIds = it.factRuleIds,
+                    intents = it.intents.map { intent ->
+                        IntentCoverageResponse(
+                            intentKey = intent.intentKey,
+                            title = intent.title,
+                            status = intent.status,
+                            evidenceRuleIds = intent.evidenceRuleIds,
+                            missingEvidenceKeys = intent.missingEvidenceKeys,
+                            requiresResearchContext = intent.requiresResearchContext
+                        )
+                    }
                 )
             },
-            generationState = result.generationState.name
+            generationState = result.generationState.name,
+            draftReadiness = result.draftReadiness.name,
+            draftIdentity = draftIdentity
+        )
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/ai-reply/review-event")
+    fun recordReviewEvent(
+        @PathVariable id: Long,
+        @RequestBody request: ReviewEventRequest
+    ) {
+        require(request.eventType == "SEND_BLOCKED") {
+            "Unsupported review event type: ${request.eventType}"
+        }
+        val detail = unmatchedInboundMailService.getDetail(id)
+        val contactId = detail.expertContactId
+            ?: throw IllegalArgumentException("Inbound processing $id has no expertContactId")
+        aiReplyReviewAuditService.recordSendBlocked(
+            inboundProcessingId = id,
+            contactId = contactId,
+            unresolvedItems = request.unresolvedItems,
+            operatorName = request.operatorName
         )
     }
 
@@ -546,7 +597,14 @@ data class AiReplyTurnRequest(
     val qaRuleIds: List<Long>? = null,
     val sessionId: String? = null,
     val operatorInstruction: String? = null,
+    val operatorName: String? = null,
     val model: String? = null
+)
+
+data class ReviewEventRequest(
+    val eventType: String,
+    val operatorName: String? = null,
+    val unresolvedItems: List<AiReplyReviewItem> = emptyList()
 )
 
 data class AiReplyTurnResponse(
@@ -563,7 +621,9 @@ data class AiReplyTurnResponse(
     val injectedDialogRefs: List<String> = emptyList(),
     val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name,
     val requestCoverage: List<RequestCoverageItem> = emptyList(),
-    val generationState: String = "FALLBACK_NO_RESPONSE"
+    val generationState: String = "FALLBACK_NO_RESPONSE",
+    val draftReadiness: String = "READY",
+    val draftIdentity: String? = null
 )
 
 private fun InboundMailProcessing.toResponse(

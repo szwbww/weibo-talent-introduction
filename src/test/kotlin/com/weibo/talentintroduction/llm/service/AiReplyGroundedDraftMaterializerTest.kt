@@ -17,9 +17,29 @@ class AiReplyGroundedDraftMaterializerTest {
     private val composer = AiReplyPointByPointComposer(qaRuleRepository, replySnippetService)
     private val materializer = AiReplyGroundedDraftMaterializer(ObjectMapper(), composer)
 
+    private val supportedIntent = RequestIntentCoverage(
+        intentKey = "finance.arrangements",
+        title = "Financial arrangements",
+        requiredCoverageKeys = emptyList(),
+        evidenceRuleIds = listOf(1L),
+        status = "SUPPORTED",
+        missingEvidenceKeys = emptyList()
+    )
+
+    private val supportedIntent2 = RequestIntentCoverage(
+        intentKey = "role.deliverables",
+        title = "Deliverables",
+        requiredCoverageKeys = emptyList(),
+        evidenceRuleIds = listOf(2L),
+        status = "SUPPORTED",
+        missingEvidenceKeys = emptyList()
+    )
+
     private val facts = listOf(
-        RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED),
-        RequestFactItem(2, "- Deliverables?", listOf(2L), RequestGroundingStatus.PARTIAL),
+        RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+            intents = listOf(supportedIntent)),
+        RequestFactItem(2, "- Deliverables?", listOf(2L), RequestGroundingStatus.PARTIAL,
+            intents = listOf(supportedIntent2)),
         RequestFactItem(3, "- Unknown?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
     )
 
@@ -36,18 +56,18 @@ class AiReplyGroundedDraftMaterializerTest {
     }
 
     @Test
-    fun `valid json materializes numbered draft without raw json`() {
+    fun `valid per-intent json materializes with fixed section titles`() {
         val raw = """
-            {"answers":[{"index":1,"answer":"Salary is competitive."},{"index":2,"answer":"Deliverables depend on project."}]}
+            {"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary is competitive.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"role.deliverables","answer":"Deliverables depend on project.","sourceRuleIds":[2]}]}]}
         """.trimIndent()
 
         val result = materializer.materialize(raw, facts)
         assertTrue(result.valid)
-        assertTrue(result.text.contains("1. Salary"))
+        assertTrue(result.text.contains("1. Financial arrangements"))
         assertTrue(result.text.contains("Salary is competitive."))
         assertTrue(result.text.contains("2. Deliverables"))
-        assertFalse(result.text.contains("\"answers\""))
-        assertFalse(result.text.contains("3. Unknown"))
+        assertTrue(result.text.contains("Deliverables depend on project."))
+        assertFalse(result.text.contains("\"sections\""))
         assertFalse(result.text.contains("STATUS:"))
     }
 
@@ -55,7 +75,7 @@ class AiReplyGroundedDraftMaterializerTest {
     fun `markdown fence is invalid`() {
         val raw = """
             ```json
-            {"answers":[{"index":1,"answer":"A"},{"index":2,"answer":"B"}]}
+            {"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}]}
             ```
         """.trimIndent()
         val result = materializer.materialize(raw, facts)
@@ -65,33 +85,45 @@ class AiReplyGroundedDraftMaterializerTest {
 
     @Test
     fun `extra top-level field is invalid`() {
-        val raw = """{"answers":[{"index":1,"answer":"A"},{"index":2,"answer":"B"}],"note":"x"}"""
+        val raw = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}],"note":"x"}"""
         assertFalse(materializer.materialize(raw, facts).valid)
     }
 
     @Test
-    fun `duplicate missing unknown and unsupported indexes are invalid`() {
+    fun `duplicate request index is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"A"},{"index":1,"answer":"B"},{"index":2,"answer":"C"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]},{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"B","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
+    }
+
+    @Test
+    fun `unsupported request index in section is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"A"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]},{"requestIndex":3,"answers":[{"intentKey":"general.answer","answer":"X","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
+    }
+
+    @Test
+    fun `missing expected request index is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"A"},{"index":2,"answer":"B"},{"index":9,"answer":"C"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
+    }
+
+    @Test
+    fun `unknown unknown request index is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"A"},{"index":2,"answer":"B"},{"index":3,"answer":"C"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]},{"requestIndex":99,"answers":[{"intentKey":"general.answer","answer":"X","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
@@ -101,19 +133,122 @@ class AiReplyGroundedDraftMaterializerTest {
     fun `blank answer or internal marker is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"  "},{"index":2,"answer":"B"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"  ","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"STATUS: GROUNDED ok"},{"index":2,"answer":"B"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"STATUS: GROUNDED ok","sourceRuleIds":[1]}]}]}""",
                 facts
             ).valid
         )
+    }
+
+    @Test
+    fun `empty sourceRuleIds is invalid`() {
         assertFalse(
             materializer.materialize(
-                """{"answers":[{"index":1,"answer":"This still needs confirmation on remaining details."},{"index":2,"answer":"B"}]}""",
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `sourceRuleIds outside evidence set is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[999]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `unsupported intent key is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"ip.arrangements","answer":"A","sourceRuleIds":[1]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `request with two supported intents must output both`() {
+        val twoIntentFacts = listOf(
+            RequestFactItem(1, "- Compound?", listOf(1L, 2L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(supportedIntent, supportedIntent2))
+        )
+        // Model outputs only one of two supported intents → invalid
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}]}""",
+                twoIntentFacts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `request with two supported intents passes when both output`() {
+        val twoIntentFacts = listOf(
+            RequestFactItem(1, "- Compound?", listOf(1L, 2L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(supportedIntent, supportedIntent2))
+        )
+        assertTrue(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]},{"intentKey":"role.deliverables","answer":"B","sourceRuleIds":[2]}]}]}""",
+                twoIntentFacts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `mixed type sourceRuleIds is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1,"2",3]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `float sourceRuleIds is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1.5]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `float requestIndex is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1.5,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `out of range requestIndex is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":4294967297,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[1]}]}]}""",
+                facts
+            ).valid
+        )
+    }
+
+    @Test
+    fun `out of range sourceRuleId is invalid`() {
+        assertFalse(
+            materializer.materialize(
+                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"A","sourceRuleIds":[18446744073709551617]}]}]}""",
                 facts
             ).valid
         )
