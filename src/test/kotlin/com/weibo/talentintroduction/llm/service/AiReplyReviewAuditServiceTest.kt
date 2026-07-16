@@ -69,6 +69,46 @@ class AiReplyReviewAuditServiceTest {
     }
 
     @Test
+    fun `gate rejects READY when unresolvedSnapshot is non-empty even if count matches`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-ready-corrupt",
+            "readiness" to "READY",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
+            ),
+            "unresolvedCount" to 1
+        ))
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_READY")
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, null, null)
+        }
+        assertTrue(ex.message!!.contains("empty unresolvedSnapshot"))
+    }
+
+    @Test
+    fun `gate rejects READY when unresolvedCount is non-zero even if snapshot is empty`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-ready-count",
+            "readiness" to "READY",
+            "unresolvedSnapshot" to emptyList<Map<String, Any?>>(),
+            "unresolvedCount" to 1
+        ))
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_READY")
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, null, null)
+        }
+        assertTrue(ex.message!!.contains("does not match snapshot size"))
+    }
+
+    @Test
     fun `gate rejects when readiness does not match action_type`() {
         val repo = Mockito.mock(OperatorActionLogRepository::class.java)
         val afterJson = objectMapper.writeValueAsString(mapOf(

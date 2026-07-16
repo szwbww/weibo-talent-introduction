@@ -222,12 +222,6 @@ class AiReplyReviewAuditService(
 
         val canonicalKeys = validateSnapshot(inboundProcessingId, rawSnapshot)
 
-        if (readiness != "READY") {
-            require(canonicalKeys.isNotEmpty()) {
-                "Unresolved snapshot must not be empty for non-READY draft"
-            }
-        }
-
         val unresolvedCount = requireNonNegativeInt(
             afterMap["unresolvedCount"],
             "unresolvedCount",
@@ -237,6 +231,25 @@ class AiReplyReviewAuditService(
             throw IllegalArgumentException(
                 "AI draft audit record for inbound $inboundProcessingId unresolvedCount ($unresolvedCount) does not match snapshot size (${rawSnapshot.size})"
             )
+        }
+
+        when (readiness) {
+            "READY" -> {
+                require(rawSnapshot.isEmpty()) {
+                    "READY draft for inbound $inboundProcessingId must have empty unresolvedSnapshot"
+                }
+                require(unresolvedCount == 0) {
+                    "READY draft for inbound $inboundProcessingId must have unresolvedCount 0"
+                }
+            }
+            "NEEDS_REVIEW", "BLOCKED" -> {
+                require(rawSnapshot.isNotEmpty()) {
+                    "Unresolved snapshot must not be empty for non-READY draft"
+                }
+                require(unresolvedCount > 0) {
+                    "Non-READY draft for inbound $inboundProcessingId must have unresolvedCount > 0"
+                }
+            }
         }
 
         if (readiness == "READY") {
