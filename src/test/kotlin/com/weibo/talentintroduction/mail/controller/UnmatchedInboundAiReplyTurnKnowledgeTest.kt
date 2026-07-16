@@ -163,7 +163,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(),
             Mockito.anyBoolean(),
             Mockito.anyList(),
-            Mockito.any()
+            Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         controller.aiReplyTurn(1L, AiReplyTurnRequest())
@@ -204,7 +205,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             AiReplyContext(
                 profileText = "Name: Dr. Test",
                 mailHistory = "",
-                contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+                contextWarnings = listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
+                researchProfileSufficient = false
             )
         )
 
@@ -238,7 +240,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(),
             Mockito.anyBoolean(),
             Mockito.anyList(),
-            Mockito.any()
+            Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         val response = controller.aiReplyTurn(2L, AiReplyTurnRequest())
@@ -313,7 +316,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         )
         Mockito.doReturn(sourceResult).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
         Mockito.`when`(
             aiReplyDraftPreviewService.preview("Grounded reply body", contact, "a1")
@@ -416,7 +420,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             )
         }.`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         val response = controller.aiReplyTurn(9L, AiReplyTurnRequest(model = "DEEPSEEK_V4_PRO"))
@@ -430,7 +435,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             throw IllegalArgumentException("Unknown AI reply model: DEEPSEEK_UNKNOWN")
         }.`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
             controller.aiReplyTurn(9L, AiReplyTurnRequest(model = "DEEPSEEK_UNKNOWN"))
@@ -471,7 +477,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             )
         ).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         Mockito.doReturn(InitialDraftAuthorityResult(available = true, draftIdentity = "uuid-test-123"))
@@ -521,7 +528,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             )
         ).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         Mockito.doReturn(InitialDraftAuthorityResult(available = false, draftIdentity = null))
@@ -572,7 +580,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             )
         ).`when`(aiReplyDraftService).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
 
         Mockito.doReturn(InitialDraftAuthorityResult(available = true, draftIdentity = "existing-id"))
@@ -623,7 +632,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertTrue(response.contextWarnings.contains("AI_REPLY_AUDIT_UNAVAILABLE"))
         Mockito.verify(aiReplyDraftService, Mockito.never()).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
         Mockito.verify(aiReplyDraftPreviewService, Mockito.never()).preview(Mockito.anyString(), anyV(contact), Mockito.anyString())
         Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordInitialDraft(
@@ -661,7 +671,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertEquals("", response.draftText)
         Mockito.verify(aiReplyDraftService, Mockito.never()).generate(
             Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
-            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
         )
     }
 

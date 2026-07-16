@@ -143,16 +143,15 @@ class AiReplyHighRiskClaimValidator(
     }
 
     internal fun containsUnbackedHighRiskDeclarations(answer: String, combinedFacts: String): Boolean {
-        val lowerAnswer = answer.lowercase()
-        val lowerFacts = combinedFacts.lowercase()
-
         for (entry in HIGH_RISK_PHRASE_FAMILIES) {
-            val answerHas = wordBoundaryContains(lowerAnswer, entry.key)
+            val answerHas = entry.value.any { phrase ->
+                wordBoundaryContains(answer, phrase)
+            }
             if (!answerHas) {
                 continue
             }
             val factsHave = entry.value.any { phrase ->
-                lowerFacts.contains(phrase)
+                wordBoundaryContains(combinedFacts, phrase)
             }
             if (!factsHave) {
                 return true

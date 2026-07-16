@@ -212,7 +212,8 @@ class AiTrainingController(
             expertProfile = context.profileText,
             mailHistory = context.mailHistory,
             contextWarnings = context.contextWarnings,
-            replyModel = request.model
+            replyModel = request.model,
+            researchProfileSufficient = context.researchProfileSufficient
         )
         val preview = aiReplyDraftPreviewService.preview(
             raw = result.draftText,

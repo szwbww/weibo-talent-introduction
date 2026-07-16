@@ -3,7 +3,7 @@ id: K-compound-request-coverage-intent-atomic
 domain: llm
 created: 2026-07-15
 last_used: 2026-07-16
-hit_count: 8
+hit_count: 12
 source: create-p:ai-reply-p0-p2
 severity: P0
 ---

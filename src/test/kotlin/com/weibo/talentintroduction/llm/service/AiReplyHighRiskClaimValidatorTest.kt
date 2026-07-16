@@ -151,6 +151,28 @@ class AiReplyHighRiskClaimValidatorTest {
     }
 
     @Test
+    fun `all registered high-risk aliases require same-family source`() {
+        val cases = listOf(
+            "Travel costs covered" to "travel expenses",
+            "The programme is free of charge" to "no fees",
+            "There is an employment contract" to "labor contract",
+            "IP ownership is defined" to "intellectual property",
+            "An NDA is required" to "confidentiality"
+        )
+
+        cases.forEach { (answer, source) ->
+            assertTrue(
+                validator.containsUnbackedHighRiskDeclarations(answer, "General programme information."),
+                "must reject unbacked alias: $answer"
+            )
+            assertFalse(
+                validator.containsUnbackedHighRiskDeclarations(answer, "Approved terms cover $source."),
+                "must accept same-family source: $answer"
+            )
+        }
+    }
+
+    @Test
     fun `multiple validation failures return all distinct warning codes`() {
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Participants may receive a small allowance.")))
 

@@ -11,7 +11,8 @@ import org.springframework.stereotype.Service
 data class AiReplyContext(
     val profileText: String,
     val mailHistory: String,
-    val contextWarnings: List<String>
+    val contextWarnings: List<String>,
+    val researchProfileSufficient: Boolean = true
 )
 
 @Service
@@ -21,22 +22,8 @@ class AiReplyContextService(
 ) {
     private val log = LoggerFactory.getLogger(AiReplyContextService::class.java)
 
-    companion object {
-        private val RESEARCH_PHRASES = listOf(
-            "research profile",
-            "research background",
-            "areas of expertise",
-            "expertise fall within",
-            "within the scope",
-            "google scholar",
-            "scopus"
-        )
-    }
-
-    fun requiresResearchContext(text: String): Boolean {
-        val lower = text.lowercase()
-        return RESEARCH_PHRASES.any { lower.contains(it) }
-    }
+    fun requiresResearchContext(text: String): Boolean =
+        AiReplyIntentCatalog.matchIntents(text).any { it.requiresProfile }
 
     fun build(
         contact: ExpertContact,
@@ -47,6 +34,7 @@ class AiReplyContextService(
         val warnings = mutableListOf<String>()
 
         val profile: ExpertProfile? = loadProfile(contact, warnings)
+        val researchProfileSufficient = isResearchSufficient(profile)
 
         val profileText = contextBuilder.appendKnowledgeToProfile(
             contextBuilder.buildExpertProfile(contact, profile),
@@ -54,14 +42,15 @@ class AiReplyContextService(
         )
         val mailHistory = contextBuilder.buildMailHistory(records)
 
-        if (requiresResearchContext(inboundText) && !isResearchSufficient(profile)) {
+        if (requiresResearchContext(inboundText) && !researchProfileSufficient) {
             warnings.add("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
         }
 
         return AiReplyContext(
             profileText = profileText,
             mailHistory = mailHistory,
-            contextWarnings = warnings
+            contextWarnings = warnings,
+            researchProfileSufficient = researchProfileSufficient
         )
     }
 

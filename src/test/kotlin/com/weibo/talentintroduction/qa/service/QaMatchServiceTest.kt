@@ -977,7 +977,7 @@ class QaMatchServiceTest {
                 QaRule(
                     id = 41,
                     categoryId = 3,
-                    keywords = "registered location,registered address,company registration,name of your company,your company name,full name and registered,where is your company,where are you based",
+                    keywords = "registered location,registered address,company registration,name of your company,your company name,full name and registered,where is your company,where are you based,full legal name,legal name,full name,company name",
                     priority = 90,
                     replySubject = "Company registered identity and location",
                     replyBody = "Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd."
@@ -1034,6 +1034,16 @@ class QaMatchServiceTest {
 
         assertTrue(suggest.suggestedRuleIds.contains(41L), "should match id41 (company identity)")
         assertFalse(suggest.suggestedRuleIds.contains(18L), "should NOT match id18 (credentials)")
+    }
+
+    @Test
+    fun `v77 standalone legal name matches company identity not credentials`() {
+        stubV75KeywordRules()
+
+        val suggest = service.suggestComposition("What is your full legal name?")
+
+        assertEquals(listOf(41L), suggest.suggestedRuleIds)
+        assertEquals(listOf(41L), suggest.gapItems.single().candidateRuleIds)
     }
 
     @Test

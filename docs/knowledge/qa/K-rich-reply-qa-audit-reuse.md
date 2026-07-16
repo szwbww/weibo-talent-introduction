@@ -3,8 +3,8 @@ id: K-rich-reply-qa-audit-reuse
 domain: qa
 created: 2026-06-30
 last_used: 2026-07-16
-hit_count: 14
-source: create-p:manual-compose-segmented-preview
+hit_count: 19
+source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---
 经验：人工富文本回复（`sendManualRichReply`）若承接了组装台/AI 的 QA 规则子集，要让现有审计零改动地继续统计，必须用 `SEND_MANUAL_COMPOSED_REPLY` 这个 action type 记日志（而非 `SEND_MANUAL_RICH_REPLY`），并同时写 `mail_record_qa_rule`。原因：`QaRuleAuditService.aggregateRuleUsage` 只查 `SEND_MANUAL_COMPOSED_REPLY` 单一 action，并经 `resolveSelectedRuleIds` 从 `mail_record_qa_rule` 取 selected。

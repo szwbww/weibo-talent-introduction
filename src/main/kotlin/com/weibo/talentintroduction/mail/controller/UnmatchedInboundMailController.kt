@@ -320,7 +320,8 @@ class UnmatchedInboundMailController(
             expertProfile = context.profileText,
             mailHistory = context.mailHistory,
             contextWarnings = context.contextWarnings,
-            replyModel = request.model
+            replyModel = request.model,
+            researchProfileSufficient = context.researchProfileSufficient
         )
 
         val authorityResult: com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult =

@@ -3,8 +3,8 @@ id: K-ai-review-authority-loss-and-order
 domain: mail
 created: 2026-07-16
 last_used: 2026-07-16
-hit_count: 2
-source: fix-v:ai-reply-08-p2-review-audit-backend:fix-3
+hit_count: 8
+source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---
 经验：服务端 authority 不仅要防客户端伪造，还要覆盖“审计写失败”和“同时间戳多版本”路径；无记录直接放行或只按秒级时间排序都会让 current identity 失真。

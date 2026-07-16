@@ -3,10 +3,10 @@ id: K-ai-reply-intent-alias-fixture-fidelity
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-16
-hit_count: 4
+hit_count: 8
 source: fix-v:ai-reply-06-p1-intent-coverage-matrix:stop-after-fix-3
 severity: P1
 ---
 经验：intent catalog 只覆盖测试改写后的问法，会让真实验收邮件退化为 `general.answer` 或漏掉复合子意图；英美拼写、连字符及词序差异都可能静默改变 readiness。
-正确做法：以原始验收 fixture 逐 group 断言精确 intent 列表；在 URL 屏蔽后统一规范化 programme/program、常见连字符和空白，再做边界安全 alias 匹配。
-反例：`purpose and structure of the programme` 未命中 purpose/structure；`intellectual-property arrangements` 未命中 IP intent。
+正确做法：以逐字保留的原始验收 fixture 逐 group 断言精确 intent 列表；语义等价改写不能替代原文回归。在 URL 屏蔽后统一规范化 programme/program、常见连字符和空白，再做边界安全 alias 匹配。
+反例：测试声称使用完整原始邮件，却只恢复出错的 G4、继续改写 G1 与 URL；`purpose and structure of the programme` 或 `intellectual-property arrangements` 的真实形态仍可能再次失去覆盖。

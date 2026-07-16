@@ -3,7 +3,7 @@ id: K-ai-reply-modality-plain-will
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-16
-hit_count: 6
+hit_count: 9
 source: fix-v:ai-reply-modality-strengthening:fix-2
 severity: P1
 ---

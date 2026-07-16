@@ -88,7 +88,14 @@ object AiReplyIntentCatalog {
         RequestIntentDefinition(
             key = "expertise.programme_fit",
             title = "Research fit and enterprise projects",
-            requestAliases = listOf("research background", "research profile", "research fit", "does my research"),
+            requestAliases = listOf(
+                "research background",
+                "research profile",
+                "research fit",
+                "does my research",
+                "does my expertise",
+                "expertise fall within"
+            ),
             requiredCoverageKeys = listOf("programme.scope"),
             requiresProfile = true
         ),

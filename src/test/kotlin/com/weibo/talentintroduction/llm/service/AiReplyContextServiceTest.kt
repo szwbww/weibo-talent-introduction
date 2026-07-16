@@ -84,11 +84,8 @@ class AiReplyContextServiceTest {
         val phrases = listOf(
             "research profile",
             "research background",
-            "areas of expertise",
-            "expertise fall within",
-            "within the scope",
-            "google scholar",
-            "scopus"
+            "research fit",
+            "does my research"
         )
         for (phrase in phrases) {
             assertTrue(service.requiresResearchContext(phrase), "Expected true for: $phrase")
@@ -121,6 +118,7 @@ class AiReplyContextServiceTest {
 
         assertTrue(result.contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"))
         assertFalse(result.contextWarnings.contains("EXPERT_PROFILE_NOT_FOUND"))
+        assertFalse(result.researchProfileSufficient)
     }
 
     // Test 5: Research phrases + researchFields present → no insufficient warning
@@ -134,6 +132,24 @@ class AiReplyContextServiceTest {
         val result = service.build(c, emptyList(), "Tell me about your research background", "")
 
         assertFalse(result.contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"))
+        assertTrue(result.researchProfileSufficient)
+    }
+
+    @Test
+    fun `catalog research-fit aliases require actual profile evidence`() {
+        val c = contact(indexLevel = "CANDIDATE")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profileWith())
+
+        listOf(
+            "Does my research fit the programme?",
+            "Does my research align with the programme?"
+        ).forEach { inbound ->
+            val result = service.build(c, emptyList(), inbound, "")
+            assertTrue(service.requiresResearchContext(inbound), inbound)
+            assertFalse(result.researchProfileSufficient, inbound)
+            assertTrue(result.contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"), inbound)
+        }
     }
 
     // Test 6: Profile text includes research fields when present

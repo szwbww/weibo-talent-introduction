@@ -69,11 +69,20 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
 - 人工回复 frame（问候、致谢、结束语）存在外发、确定性润色 fallback、前端预览三个消费者；修改时必须同源同序，且不得波及自动回复使用的 `QaReplyComposer.compose`。(K-manual-frame-three-consumers)
 - AI 草稿生成只有训练模拟与收发件箱两个调用方，跨入口 prompt/约束/模型能力应收口在 `AiReplyDraftService.generate()`；QA_MATCHED verbatim 与 deterministic fallback 仍是独立边界。(K-ai-generate-single-freeform-seam)
+- AI 草稿发送 authority 必须以服务端 current identity/readiness/canonical snapshot 为准；客户端 source 或确认字段不得降级，损坏审计记录一律在投递前拒绝。(K-ai-review-server-authoritative-snapshot)
+- 多请求 grounded LLM 首轮与动作重试都必须先按严格 request-index JSON materialize，再做 claim/action policy；无效结构统一 fallback，raw JSON 不得进入 response。(K-grounded-json-materialize-before-policy)
+- AI 回复 loading 必须挂在稳定的 `.ai-chat-panel`，由共享 helper 在 finally 恢复遮罩和控件状态；训练模拟与收发件箱共用 requestSeq/邮件/模型快照防陈旧响应。(K-ai-reply-loading-panel)
+- AI 聊天每个草稿条目必须自带 review state；采用旧草稿时不可复用最后一次响应的 identity、coverage 或 readiness。(K-ai-draft-review-state-per-draft)
+- 动作安全 sanitizer 无违规时必须逐字返回原文；有违规时按原始 span 删除且只清理接缝，禁止全局压缩空白破坏布局。(K-action-sanitizer-preserve-layout)
+- 只读专家画像的 ORCID 缺失、允许层无文档和查询异常都必须统一产生 profile-not-found；研究请求还要标记 research-context-insufficient，且不得触发 enrichment。(K-ai-reply-profile-absence-warning)
+- 采用 AI 草稿时编辑器展示 rendered 值，但未编辑路径必须保留 raw 及 text/HTML baseline；任一内容或格式改动后禁止 raw 重渲染覆盖编辑。(K-ai-preview-raw-adoption-boundary)
 - AI 训练知识进入 prompt 前必须按当前 inbound 定向筛选；QA_GROUNDED/FREE_FORM 可消费，QA_MATCHED verbatim 路径禁止注入。(K-training-knowledge-injection-points)
 - AI prompt 配置表只存自定义覆盖；默认生效值必须由后端 `AiPromptConfigService` 单源提供，前端不得另写默认 prompt。(K-prompt-config-effective-default)
 - `CompositionSuggestResult.gapItems` 只服务建议展示与 AI 请求矩阵；自动回复可共享 tokenizer/count，但不得消费 gapItems 展示结构或 AI grounding 状态。(K-gap-items-compose-only)
 - 需保留段落的外发邮件必须同时提供 plain text 与 HTML multipart；HTML 由纯文本转换或安全渲染，审计仍持久化 plain text。(K-plaintext-reply-client-reflow)
 - 研究匹配必须同时具备专家画像与 `programme.scope` 审核依据；任一缺失即 UNSUPPORTED，且只读画像不得触发 enrichment。(K-research-fit-dual-evidence)
+- 复合 request 必须先拆成稳定原子 intent，再按当前 request 的 QA coverage 独立取证；任一子 intent 缺证都不能把整组标为完整。(K-compound-request-coverage-intent-atomic)
+- AI 审核 canonical snapshot 必须先严格校验 key/index/intent/count 的类型、格式、唯一性和数量一致性，再做确认集合比较。(K-ai-review-canonical-key-uniqueness)
 
 ---
 

@@ -2886,6 +2886,33 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `standalone legal name uses company identity evidence`() {
+        val request = "What is your full legal name?"
+        val companyRule = sampleRule(1).copy(
+            replyBody = "Our legal name is Jiangsu Qingfei Talent Technology Co., Ltd.",
+            coverageKeys = "company.legal_name"
+        )
+        Mockito.`when`(qaMatchService.suggestComposition(request)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(GapItem(request, listOf(1L))),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(companyRule))
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(request, null)
+
+        assertEquals(RequestGroundingStatus.GROUNDED, resolved.requestFacts.single().status)
+        assertEquals(listOf(1L), resolved.requestFacts.single().factRuleIds)
+        assertEquals("company.legal_name", resolved.requestFacts.single().intents.single().intentKey)
+        assertEquals("SUPPORTED", resolved.requestFacts.single().intents.single().status)
+    }
+
+    @Test
     fun `unknown request falls back to general answer intent`() {
         val request = "Is there a cafeteria on site?"
         Mockito.`when`(qaMatchService.suggestComposition(request)).thenReturn(
@@ -2960,6 +2987,54 @@ class AiReplyDraftServiceTest {
         )
 
         assertTrue(resolved.requestFacts[0].intents.any { it.intentKey == "expertise.programme_fit" && it.status == "MISSING" })
+    }
+
+    @Test
+    fun `research-fit aliases cannot bypass missing profile`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(
+            replyBody = "Programme scope covers applied AI.",
+            coverageKeys = "programme.scope"
+        )
+        val requests = listOf(
+            "Does my research fit the programme?",
+            "Does my research align with the programme?"
+        )
+        requests.forEach { request ->
+            Mockito.`when`(qaMatchService.suggestComposition(request)).thenReturn(
+                CompositionSuggestResult(
+                    suggestedRuleIds = listOf(1),
+                    suggestedRules = emptyList(),
+                    rulesByCategory = emptyList(),
+                    gapItems = listOf(GapItem(request, listOf(1L))),
+                    gapDetected = false,
+                    matchedCategoryIds = emptyList()
+                )
+            )
+        }
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        requests.forEach { request ->
+            val resolved = draftService.resolveQaRules(
+                request,
+                null,
+                emptyList(),
+                researchProfileSufficient = false
+            )
+            val fact = resolved.requestFacts.single()
+            assertTrue(fact.requiresResearchContext, request)
+            assertEquals(RequestGroundingStatus.UNSUPPORTED, fact.status, request)
+            assertEquals("MISSING", fact.intents.single().status, request)
+
+            val generated = draftService.generate(
+                inboundText = request,
+                operatorTurns = emptyList(),
+                researchProfileSufficient = false
+            )
+            assertEquals(AiReplyMode.QA_GROUNDED, generated.mode, request)
+            assertEquals(AiReplyDraftReadiness.BLOCKED, generated.draftReadiness, request)
+        }
     }
 
     @Test
@@ -3244,28 +3319,38 @@ class AiReplyDraftServiceTest {
     // ── T4: DraftService end-to-end intent/coverage matrix regression ─────────────
 
     /**
-     * Full original expert-mail fixture (British programme + hyphenated intellectual-property).
+     * Original expert email copied verbatim (apart from trimIndent removing test indentation).
      * G4 keeps real "enterprise projects" wording; catalog disambiguation must drop the
      * project-types object hit so intents stay selection + matching only.
      */
     private val janmedaMail = """
-        Thank you for your message. Here are my research profiles:
-        https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en&selected=true
-        https://www.scopus.com/authid/detail.uri?authorId=57201234567
+        Dear Mr Wu,
 
-        Based on my research profile and
-        areas of expertise, could you confirm whether my background fits the
+        Thank you for your email and for considering me for this research
+        collaboration initiative.
+
+        You may review my research background and publications through my Google
+        Scholar/Scopus profile:
+
+        https://scholar.google.com/citations?user=1oMj67wAAAAJ&hl=en
+        <https://scholar.google.com/citations?user=1oMj67wAAAAJ&hl=en>
+
+        https://www.scopus.com/authid/detail.uri?authorId=56022647300
+
+        Based on my research profile, could you please confirm whether my areas of
+        expertise fall within the scope of your programme and the types of
         enterprise projects your team manages?
 
-        Specifically:
-        - What is the full name and registered location of your company?
-        - Could you provide further information regarding the purpose and structure of the programme?
-        - How are researchers selected and matched with enterprise projects?
-        - What are the expected responsibilities and deliverables?
-        - Could you explain the contractual, financial, and intellectual-property arrangements?
-        - What are the next stages?
+        I would also be grateful if you could provide further information regarding:
 
-        Best regards
+        - the full name and registered location of your company;
+        - the purpose and structure of the programme;
+        - how researchers are selected and matched with enterprise projects;
+        - the expected responsibilities and deliverables;
+        - the contractual, financial, and intellectual-property arrangements; and
+        - the next stages of the application and collaboration process.
+
+        I am keen to have your email.
     """.trimIndent()
 
     private fun makeJanmedaRule(id: Long, body: String, coverageKeys: String) =
@@ -3351,20 +3436,22 @@ class AiReplyDraftServiceTest {
         val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
         assertEquals(7, extracted.size, "extractor must yield exactly 7 groups: ${extracted.map { it.text }}")
 
-        // Verify order and original wording preserved in requestText
-        assertTrue(extracted[0].text.contains("research profile"), "G1 must contain 'research profile': ${extracted[0].text}")
-        assertTrue(extracted[0].text.contains("enterprise projects"), "G1 must contain 'enterprise projects': ${extracted[0].text}")
-        assertFalse(extracted[0].text.contains("\n"), "G1 soft newlines must fold: ${extracted[0].text}")
-        assertTrue(extracted[1].text.contains("full name and registered location"), "G2: ${extracted[1].text}")
-        assertTrue(extracted[2].text.contains("purpose and structure of the programme"), "G3 must keep British 'programme': ${extracted[2].text}")
-        assertTrue(extracted[3].text.contains("selected and matched"), "G4: ${extracted[3].text}")
-        assertTrue(extracted[4].text.contains("responsibilities and deliverables"), "G5: ${extracted[4].text}")
-        assertTrue(extracted[5].text.contains("intellectual-property"), "G6 must keep hyphenated 'intellectual-property': ${extracted[5].text}")
-        assertTrue(extracted[6].text.contains("next stages"), "G7: ${extracted[6].text}")
+        // Verify order and original wording preserved in requestText (soft line wraps fold to spaces).
+        assertEquals(
+            "Based on my research profile, could you please confirm whether my areas of expertise fall within the scope of your programme and the types of enterprise projects your team manages?",
+            extracted[0].text,
+            "G1 original wording"
+        )
+        assertEquals("- the full name and registered location of your company;", extracted[1].text, "G2 original wording")
+        assertEquals("- the purpose and structure of the programme;", extracted[2].text, "G3 original wording")
+        assertEquals("- how researchers are selected and matched with enterprise projects;", extracted[3].text, "G4 original wording")
+        assertEquals("- the expected responsibilities and deliverables;", extracted[4].text, "G5 original wording")
+        assertEquals("- the contractual, financial, and intellectual-property arrangements; and", extracted[5].text, "G6 original wording")
+        assertEquals("- the next stages of the application and collaboration process.", extracted[6].text, "G7 original wording")
 
         // No URL fragments in any extracted group
         assertTrue(extracted.none { it.text.contains("scholar.google.com/citations?") }, "URLs must not form groups")
-        assertTrue(extracted.none { it.text.contains("selected=true") }, "URL query params must not appear")
+        assertTrue(extracted.none { it.text.contains("citations?user=") }, "Scholar query params must not appear")
         assertTrue(extracted.none { it.text.contains("authorId") }, "URL params must not appear")
 
         stubJanmedaComposition(extracted)
@@ -3544,7 +3631,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `janmeda URLs do not form extra groups and selected URL param does not trigger researcher selection`() {
+    fun `original janmeda URLs and query params do not form extra groups or request text`() {
         val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
 
         // No URL-only group
@@ -3566,19 +3653,12 @@ class AiReplyDraftServiceTest {
             "no fact must reference scholar URL"
         )
 
-        // G4 (index 3): must NOT have researcher.selection triggered by URL query param "selected=true"
-        // The research question (G1) may have researcher.selection if "selected" matches, but the URL "selected=true" is masked.
-        // Verify G4 specifically has only researcher.selection + enterprise.matching (not triggered by URL param)
-        val g4 = resolved.requestFacts[3]
-        assertFalse(
-            g4.requestText.contains("selected=true"),
-            "G4 requestText must not contain URL parameter: ${g4.requestText}"
-        )
-
-        // No fact references the URL parameter selected=true
+        // No fact references either original URL query fragment.
         assertTrue(
-            resolved.requestFacts.none { it.requestText.contains("selected=true") },
-            "URL query param 'selected=true' must not appear in any requestText"
+            resolved.requestFacts.none {
+                it.requestText.contains("citations?user=") || it.requestText.contains("authorId")
+            },
+            "Original URL query params must not appear in any requestText"
         )
     }
 
@@ -3634,6 +3714,29 @@ class AiReplyDraftServiceTest {
         assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
         assertTrue(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
         assertFalse(result.draftText.contains("You will receive salary support", ignoreCase = true))
+    }
+
+    @Test
+    fun `high-risk family alias in grounded response causes fallback`() {
+        stubDefaultFrame()
+        val inbound = "- Salary?\n- Visa?"
+        stubModalityT3(inbound, sourceBody1 = "General compensation information is available.")
+        val groundedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Participation is free of charge.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = groundedJson
+        }
+
+        val result = service(
+            LlmProperties(enabled = true, apiUrl = "http://llm"),
+            client,
+            validator = AiReplyHighRiskClaimValidator(qaRuleRepository)
+        ).generate(inboundText = inbound, operatorTurns = emptyList())
+
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+        assertTrue(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED))
+        assertFalse(result.draftText.contains("free of charge", ignoreCase = true))
     }
 
     @Test

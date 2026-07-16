@@ -100,11 +100,18 @@ class AiReplyDraftService(
         mailHistory: String? = null,
         simulateOnly: Boolean = false, // deprecated: has no effect; do not read
         contextWarnings: List<String> = emptyList(),
-        replyModel: String? = null
+        replyModel: String? = null,
+        researchProfileSufficient: Boolean =
+            !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
     ): AiReplyDraftResult {
         val selectedModel = AiReplyModel.fromNullable(replyModel)
         val providerModel = selectedModel.resolveProviderModel(properties)
-        val resolved = resolveQaRules(inboundText, qaRuleIds, contextWarnings)
+        val resolved = resolveQaRules(
+            inboundText,
+            qaRuleIds,
+            contextWarnings,
+            researchProfileSufficient
+        )
         val mode = when {
             resolved.requestCount >= 2 ||
                 resolved.requestFacts.any { it.requiresResearchContext } ->
@@ -559,7 +566,9 @@ class AiReplyDraftService(
     internal fun resolveQaRules(
         inboundText: String,
         qaRuleIds: List<Long>?,
-        contextWarnings: List<String> = emptyList()
+        contextWarnings: List<String> = emptyList(),
+        researchProfileSufficient: Boolean =
+            !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
     ): ResolvedQaRules {
         val composition = qaMatchService.suggestComposition(inboundText)
         val gapItems = composition.gapItems
@@ -576,9 +585,9 @@ class AiReplyDraftService(
         }
 
         val promptSet = promptRuleIds.toSet()
-        val profileSufficient = !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
         val requestFacts = gapItems.mapIndexed { idx, item ->
-            val isResearch = aiReplyContextService.requiresResearchContext(item.text)
+            val matchedIntents = AiReplyIntentCatalog.matchIntents(item.text)
+            val isResearch = matchedIntents.any { it.requiresProfile }
             val candidateIds = item.candidateRuleIds
                 .filter { it in promptSet }
                 .distinct()
@@ -596,18 +605,17 @@ class AiReplyDraftService(
                     )
                 }
 
-            val matchedIntents = AiReplyIntentCatalog.matchIntents(item.text)
             val intentCoverages = matchedIntents.map { intent ->
                 AiReplyIntentCatalog.resolveIntentCoverage(
                     intent = intent,
                     candidateRuleIds = validFactRuleIds,
                     promptSet = promptSet,
                     ruleCoverageKeys = ruleCoverageKeys,
-                    profileSufficient = profileSufficient
+                    profileSufficient = researchProfileSufficient
                 )
             }
 
-            val researchWarned = isResearch && !profileSufficient
+            val researchWarned = isResearch && !researchProfileSufficient
             val allMissing = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "MISSING" }
             val anyMissing = intentCoverages.any { it.status == "MISSING" }
             val allSupported = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "SUPPORTED" }
