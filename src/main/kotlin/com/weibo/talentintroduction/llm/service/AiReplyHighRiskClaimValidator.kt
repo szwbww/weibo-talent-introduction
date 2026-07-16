@@ -117,27 +117,29 @@ class AiReplyHighRiskClaimValidator(
     }
 
     internal fun detectsModalityStrengthening(answer: String, combinedFacts: String): Boolean {
-        val hitFamilies = DEFINITIVE_FAMILIES.filter { family ->
-            family.patterns.any { it.containsMatchIn(answer) }
-        }
-
-        if (hitFamilies.isNotEmpty()) {
-            val sourceConditional = CONDITIONAL_PHRASES.any { phrase ->
-                combinedFacts.contains(phrase, ignoreCase = true)
-            }
-            if (!sourceConditional) return false
-            // Strengthened if any hit family has no same-family definitive in source
-            return hitFamilies.any { family ->
-                family.patterns.none { it.containsMatchIn(combinedFacts) }
-            }
-        }
-
-        // No definitive family hit — fall through to generic strong-commitment words
         val sourceConditional = CONDITIONAL_PHRASES.any { phrase ->
             combinedFacts.contains(phrase, ignoreCase = true)
         }
-        if (!sourceConditional) return false
-        return STRENGTHENING_PHRASES.any { phrase -> wordBoundaryContains(answer, phrase) }
+        if (!sourceConditional) {
+            return false
+        }
+
+        // Generic strong-commitment words always strengthen when source is conditional,
+        // even if the same definitive family also appears elsewhere in the source.
+        if (STRENGTHENING_PHRASES.any { phrase -> wordBoundaryContains(answer, phrase) }) {
+            return true
+        }
+
+        val hitFamilies = DEFINITIVE_FAMILIES.filter { family ->
+            family.patterns.any { it.containsMatchIn(answer) }
+        }
+        if (hitFamilies.isEmpty()) {
+            return false
+        }
+        // Strengthened if any hit family has no same-family definitive in source
+        return hitFamilies.any { family ->
+            family.patterns.none { it.containsMatchIn(combinedFacts) }
+        }
     }
 
     internal fun containsUnbackedHighRiskDeclarations(answer: String, combinedFacts: String): Boolean {

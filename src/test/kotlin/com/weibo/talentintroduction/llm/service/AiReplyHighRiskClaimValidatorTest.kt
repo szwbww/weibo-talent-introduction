@@ -572,4 +572,34 @@ class AiReplyHighRiskClaimValidatorTest {
         val result = validator.validate(sections, facts)
         assertTrue(result.valid)
     }
+
+    @Test
+    fun `guaranteed still rejected when mixed source has same-family definitive`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                rule(
+                    1,
+                    "Candidates may receive salary support. Selected candidates will receive a certificate."
+                )
+            )
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer(
+                    "finance.arrangements",
+                    "You will receive salary support; this is guaranteed.",
+                    listOf(1L)
+                )
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
 }
