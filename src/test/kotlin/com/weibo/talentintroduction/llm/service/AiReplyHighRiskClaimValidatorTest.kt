@@ -406,4 +406,170 @@ class AiReplyHighRiskClaimValidatorTest {
         assertFalse(result.valid)
         assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT))
     }
+
+    // ── T2: Phase 2 — predicate family modality tests ─────────────────────────
+
+    @Test
+    fun `plain will receive rejected when source says may receive`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Selected candidates may receive salary support."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "You will receive salary support.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `travel costs will be covered rejected when source says can be covered`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Travel costs can be covered depending on the project."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "All travel costs will be covered.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Travel?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `will own IP rejected when source says subject to enterprise agreement`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "IP terms are subject to the enterprise agreement."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("ip.arrangements", "You will own the intellectual property.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "IP?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("ip.arrangements", "IP", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `shall be provided rejected when source says may be provided`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Funding may be provided after evaluation."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "Funding shall be provided.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Funding?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `explicit will receive source allows same family answer`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "Selected candidates will receive salary support."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "You will receive salary support.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `active will pay source with typically still allows will be paid answer`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "We will pay the salary support typically after onboarding."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "You will be paid salary support.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `after selection will sign source allows will be signed answer`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "After selection, you will sign a labor contract with the host institution."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("contract.terms", "A labor contract will be signed.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Contract?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("contract.terms", "Contract", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
+
+    @Test
+    fun `low risk we will share details does not trigger modality`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(rule(1, "We can share the enterprise profile upon request."))
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("general.answer", "We will share details about the enterprise.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Profile?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("general.answer", "General", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertTrue(result.valid)
+    }
 }

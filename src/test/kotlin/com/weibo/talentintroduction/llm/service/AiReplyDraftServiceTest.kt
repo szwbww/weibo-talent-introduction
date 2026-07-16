@@ -3573,4 +3573,115 @@ class AiReplyDraftServiceTest {
             "URL query param 'selected=true' must not appear in any requestText"
         )
     }
+
+    // ── T3: Phase 2 — modality strengthening E2E fallback ────────────────────
+    // Two-question inbound forces requestCount=2 → QA_GROUNDED mode (claim validator is active).
+    // sampleRule default coverageKeys = "finance.government_funding" satisfies finance.arrangements intent.
+    // "- Visa?" maps to general.answer; any rule becomes evidence for that intent.
+
+    private fun stubModalityT3(inbound: String, sourceBody1: String) {
+        Mockito.`when`(qaMatchService.suggestComposition(inbound)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(1, 2),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = listOf(
+                    GapItem("- Salary?", listOf(1L)),
+                    GapItem("- Visa?", listOf(2L))
+                ),
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(sampleRule(1).copy(replyBody = sourceBody1))
+        )
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(
+            Optional.of(sampleRule(2).copy(replyBody = "Visa info"))
+        )
+    }
+
+    private val modalityGroundedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"You will receive salary support.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+
+    @Test
+    fun `modality strengthening in grounded response causes fallback`() {
+        stubDefaultFrame()
+        val inbound = "- Salary?\n- Visa?"
+        stubModalityT3(inbound, sourceBody1 = "Selected candidates may receive salary support.")
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = modalityGroundedJson
+        }
+
+        val result = service(
+            LlmProperties(enabled = true, apiUrl = "http://llm"),
+            client,
+            validator = AiReplyHighRiskClaimValidator(qaRuleRepository)
+        ).generate(inboundText = inbound, operatorTurns = emptyList())
+
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+        assertTrue(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+        assertFalse(result.draftText.contains("You will receive salary support", ignoreCase = true))
+    }
+
+    @Test
+    fun `explicit will receive source allows grounded response`() {
+        stubDefaultFrame()
+        val inbound = "- Salary?\n- Visa?"
+        stubModalityT3(inbound, sourceBody1 = "Selected candidates will receive salary support.")
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = modalityGroundedJson
+        }
+
+        val result = service(
+            LlmProperties(enabled = true, apiUrl = "http://llm"),
+            client,
+            validator = AiReplyHighRiskClaimValidator(qaRuleRepository)
+        ).generate(inboundText = inbound, operatorTurns = emptyList())
+
+        assertTrue(result.usedLlm)
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
+        assertFalse(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `CTA retry returning modality strengthened answer falls back`() {
+        stubDefaultFrame()
+        val inbound = "- Salary?\n- Visa?"
+        stubModalityT3(inbound, sourceBody1 = "Selected candidates may receive salary support.")
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return if (chats == 1) {
+                    // First call: valid claim but CTA present — triggers retry
+                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Competitive allowance. Please send your CV.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                } else {
+                    // Retry: no CTA but modality-strengthened answer
+                    modalityGroundedJson
+                }
+            }
+        }
+
+        val result = service(
+            LlmProperties(enabled = true, apiUrl = "http://llm"),
+            client,
+            validator = AiReplyHighRiskClaimValidator(qaRuleRepository)
+        ).generate(inboundText = inbound, operatorTurns = emptyList())
+
+        assertEquals(2, chats)
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+        assertTrue(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+        assertFalse(result.draftText.contains("You will receive salary support", ignoreCase = true))
+        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+    }
 }

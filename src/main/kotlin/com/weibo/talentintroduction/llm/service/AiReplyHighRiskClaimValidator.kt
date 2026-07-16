@@ -117,16 +117,27 @@ class AiReplyHighRiskClaimValidator(
     }
 
     internal fun detectsModalityStrengthening(answer: String, combinedFacts: String): Boolean {
+        val hitFamilies = DEFINITIVE_FAMILIES.filter { family ->
+            family.patterns.any { it.containsMatchIn(answer) }
+        }
+
+        if (hitFamilies.isNotEmpty()) {
+            val sourceConditional = CONDITIONAL_PHRASES.any { phrase ->
+                combinedFacts.contains(phrase, ignoreCase = true)
+            }
+            if (!sourceConditional) return false
+            // Strengthened if any hit family has no same-family definitive in source
+            return hitFamilies.any { family ->
+                family.patterns.none { it.containsMatchIn(combinedFacts) }
+            }
+        }
+
+        // No definitive family hit — fall through to generic strong-commitment words
         val sourceConditional = CONDITIONAL_PHRASES.any { phrase ->
             combinedFacts.contains(phrase, ignoreCase = true)
         }
-        if (!sourceConditional) {
-            return false
-        }
-        val answerStrengthened = STRENGTHENING_PHRASES.any { phrase ->
-            wordBoundaryContains(answer, phrase)
-        }
-        return answerStrengthened
+        if (!sourceConditional) return false
+        return STRENGTHENING_PHRASES.any { phrase -> wordBoundaryContains(answer, phrase) }
     }
 
     internal fun containsUnbackedHighRiskDeclarations(answer: String, combinedFacts: String): Boolean {
@@ -173,6 +184,44 @@ class AiReplyHighRiskClaimValidator(
             "\\b\\d[\\d,.]*\\s*(per\\s+)?(years?|months?|weeks?|days?|annually|monthly|weekly|yearly|annum)\\b|" +
                 "\\b(per\\s+)?(years?|months?|weeks?|days?)\\s+\\d[\\d,.]*\\b",
             RegexOption.IGNORE_CASE
+        )
+
+        private data class DefinitiveFamily(val name: String, val patterns: List<Regex>)
+
+        private val DEFINITIVE_FAMILIES = listOf(
+            DefinitiveFamily(
+                "receive_pay_provide",
+                listOf(
+                    Regex("""\b(will|shall)\s+receive\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+pay\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+provide\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+be\s+paid\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+be\s+provided\b""", setOf(RegexOption.IGNORE_CASE))
+                )
+            ),
+            DefinitiveFamily(
+                "cover_reimburse",
+                listOf(
+                    Regex("""\b(will|shall)\s+cover\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+reimburse\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+be\s+covered\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""\b(will|shall)\s+be\s+reimbursed\b""", setOf(RegexOption.IGNORE_CASE))
+                )
+            ),
+            DefinitiveFamily(
+                "entitlement_ownership",
+                listOf(
+                    Regex("""\b(is|are)\s+entitled\s+to\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""(will|shall)\s+own\b""", setOf(RegexOption.IGNORE_CASE))
+                )
+            ),
+            DefinitiveFamily(
+                "contract",
+                listOf(
+                    Regex("""(will|shall)\s+sign\b""", setOf(RegexOption.IGNORE_CASE)),
+                    Regex("""(will|shall)\s+be\s+signed\b""", setOf(RegexOption.IGNORE_CASE))
+                )
+            )
         )
 
         private val CONDITIONAL_PHRASES = listOf(
