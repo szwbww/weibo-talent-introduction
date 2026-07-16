@@ -3745,6 +3745,7 @@ const AI_REPLY_WARNING_LABELS = {
     UNAUTHORIZED_ACTION_REMOVED: "已移除未授权的外发动作请求。",
     AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND: "无法确定回信账号，变量预览未完全渲染",
     AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文",
+    AI_REPLY_AUDIT_UNAVAILABLE: "AI 草稿审核记录保存失败，本次草稿未提供。请重试生成。",
     AI_REPLY_STRUCTURED_RESPONSE_INVALID: "模型返回格式无效，已使用审核依据生成结构化草稿。"
 };
 
@@ -9545,6 +9546,10 @@ async function handleUnmatchedAction(element) {
             }
             if (result.selectedModel !== expectedModel) {
                 renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
+                return;
+            }
+            if (result.draftAuthorityAvailable === false) {
+                renderAiReplyFeedback(feedback, null, "AI 草稿审核记录保存失败，本次草稿未提供。请重试生成。");
                 return;
             }
             if (!isFirstTurn && instruction) {

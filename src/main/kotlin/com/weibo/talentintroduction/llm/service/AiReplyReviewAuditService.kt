@@ -28,6 +28,21 @@ data class AiReviewConfirmation(
     val operatorNote: String = ""
 )
 
+data class InitialDraftAuthorityResult(
+    val available: Boolean,
+    val draftIdentity: String?
+)
+
+sealed class AiReplySendAuthorityResult {
+    object MANUAL : AiReplySendAuthorityResult()
+    object AI_READY : AiReplySendAuthorityResult()
+    data class AI_REVIEW_CONFIRMED(
+        val draftIdentity: String,
+        val confirmedReviewKeys: List<String>,
+        val operatorNote: String
+    ) : AiReplySendAuthorityResult()
+}
+
 @Service
 class AiReplyReviewAuditService(
     private val operatorActionLogService: OperatorActionLogService,
@@ -36,6 +51,7 @@ class AiReplyReviewAuditService(
 
     companion object {
         private const val MIN_NOTE_LENGTH_BLOCKED = 5
+        const val WARNING_AI_REPLY_AUDIT_UNAVAILABLE = "AI_REPLY_AUDIT_UNAVAILABLE"
     }
 
     private val objectMapper = jacksonObjectMapper()
@@ -45,7 +61,7 @@ class AiReplyReviewAuditService(
         contactId: Long,
         result: AiReplyDraftResult,
         operatorName: String?
-    ): String? {
+    ): InitialDraftAuthorityResult {
         return try {
             val actionType = when (result.draftReadiness) {
                 AiReplyDraftReadiness.READY -> OperatorActionType.AI_REPLY_DRAFT_READY
@@ -99,10 +115,10 @@ class AiReplyReviewAuditService(
                 operatorName = operatorName,
                 note = "AI reply draft generated for inbound processing $inboundProcessingId"
             )
-            draftIdentity
+            InitialDraftAuthorityResult(available = true, draftIdentity = draftIdentity)
         } catch (ex: Exception) {
             logger.warn("Failed to record AI reply draft audit for inboundProcessingId={}: {}", inboundProcessingId, ex.message)
-            null
+            InitialDraftAuthorityResult(available = false, draftIdentity = null)
         }
     }
 
@@ -144,14 +160,18 @@ class AiReplyReviewAuditService(
 
     fun validateConfirmationForSend(
         inboundProcessingId: Long,
-        draftIdentity: String?,
-        confirmedReviewKeys: List<String>,
-        operatorNote: String
-    ) {
+        replySource: String?,
+        confirmation: AiReviewConfirmation?
+    ): AiReplySendAuthorityResult {
         val latestDraft = operatorActionLogRepository.findLatestAiDraftByInboundProcessingId(inboundProcessingId)
 
         if (latestDraft == null) {
-            return
+            if (replySource.isNullOrBlank() && confirmation == null) {
+                return AiReplySendAuthorityResult.MANUAL
+            }
+            throw IllegalArgumentException(
+                "No AI draft record exists for inbound $inboundProcessingId but replySource or confirmation was provided"
+            )
         }
 
         val afterJson = latestDraft.afterValue
@@ -165,17 +185,55 @@ class AiReplyReviewAuditService(
         }
 
         val readiness = afterMap["readiness"] as? String
-            ?: return
+            ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId missing readiness field")
 
-        if (readiness == "READY") {
-            return
+        val expectedReadiness = when (latestDraft.actionType) {
+            "AI_REPLY_DRAFT_READY" -> "READY"
+            "AI_REPLY_DRAFT_NEEDS_REVIEW" -> "NEEDS_REVIEW"
+            "AI_REPLY_DRAFT_BLOCKED" -> "BLOCKED"
+            else -> throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId has unexpected action_type: ${latestDraft.actionType}"
+            )
+        }
+        require(readiness == expectedReadiness) {
+            "AI draft audit record for inbound $inboundProcessingId readiness '$readiness' does not match action_type '${latestDraft.actionType}' (expected '$expectedReadiness')"
         }
 
         val storedIdentity = afterMap["draftIdentity"] as? String
-        if (storedIdentity == null) {
-            throw IllegalArgumentException("AI draft for inbound $inboundProcessingId is $readiness but has no draftIdentity — cannot send")
+        if (storedIdentity.isNullOrBlank()) {
+            throw IllegalArgumentException("AI draft for inbound $inboundProcessingId has no draftIdentity — corrupt record")
         }
 
+        @Suppress("UNCHECKED_CAST")
+        val rawSnapshot = afterMap["unresolvedSnapshot"] as? List<Map<String, Any?>>
+            ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId missing unresolvedSnapshot")
+
+        val canonicalKeys = validateSnapshot(inboundProcessingId, rawSnapshot)
+
+        if (readiness != "READY") {
+            require(canonicalKeys.isNotEmpty()) {
+                "Unresolved snapshot must not be empty for non-READY draft"
+            }
+        }
+
+        val unresolvedCount = afterMap["unresolvedCount"]
+        if (unresolvedCount is Number && unresolvedCount.toInt() != rawSnapshot.size) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId unresolvedCount (${unresolvedCount.toInt()}) does not match snapshot size (${rawSnapshot.size})"
+            )
+        }
+
+        if (readiness == "READY") {
+            val draftIdentity = confirmation?.draftIdentity
+            if (!draftIdentity.isNullOrBlank()) {
+                require(draftIdentity == storedIdentity) {
+                    "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
+                }
+            }
+            return AiReplySendAuthorityResult.AI_READY
+        }
+
+        val draftIdentity = confirmation?.draftIdentity
         if (draftIdentity.isNullOrBlank()) {
             throw IllegalArgumentException("AI draft for inbound $inboundProcessingId is $readiness — must provide draftIdentity to confirm")
         }
@@ -184,10 +242,44 @@ class AiReplyReviewAuditService(
             "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val rawSnapshot = afterMap["unresolvedSnapshot"] as? List<Map<String, Any?>>
-            ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId missing unresolvedSnapshot")
+        val confirmedReviewKeys = confirmation.confirmedReviewKeys
 
+        val duplicateConfirmed = confirmedReviewKeys
+            .groupBy { it }
+            .filter { it.value.size > 1 }
+            .keys
+        require(duplicateConfirmed.isEmpty()) {
+            "Duplicate review keys in confirmation: $duplicateConfirmed"
+        }
+
+        val extraKeys = confirmedReviewKeys.toSet() - canonicalKeys.toSet()
+        require(extraKeys.isEmpty()) {
+            "Unknown review keys in confirmation: $extraKeys"
+        }
+
+        val missingKeys = canonicalKeys.toSet() - confirmedReviewKeys.toSet()
+        require(missingKeys.isEmpty()) {
+            "Missing review keys need confirmation: $missingKeys"
+        }
+
+        if (readiness == "BLOCKED") {
+            val note = (confirmation.operatorNote).trim()
+            require(note.length >= MIN_NOTE_LENGTH_BLOCKED) {
+                "Operator note must be at least $MIN_NOTE_LENGTH_BLOCKED characters for BLOCKED draft (got ${note.length})"
+            }
+        }
+
+        return AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED(
+            draftIdentity = draftIdentity,
+            confirmedReviewKeys = confirmedReviewKeys,
+            operatorNote = confirmation.operatorNote
+        )
+    }
+
+    private fun validateSnapshot(
+        inboundProcessingId: Long,
+        rawSnapshot: List<Map<String, Any?>>
+    ): List<String> {
         val canonicalKeys = rawSnapshot.map { entry ->
             val key = entry["reviewKey"] as? String
                 ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot item missing reviewKey")
@@ -209,35 +301,7 @@ class AiReplyReviewAuditService(
                 "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot contains duplicate reviewKeys: $duplicates"
             )
         }
-
-        require(canonicalKeys.isNotEmpty()) {
-            "Unresolved snapshot must not be empty for non-READY draft"
-        }
-
-        val duplicateConfirmed = confirmedReviewKeys
-            .groupBy { it }
-            .filter { it.value.size > 1 }
-            .keys
-        require(duplicateConfirmed.isEmpty()) {
-            "Duplicate review keys in confirmation: $duplicateConfirmed"
-        }
-
-        val extraKeys = confirmedReviewKeys.toSet() - canonicalKeys.toSet()
-        require(extraKeys.isEmpty()) {
-            "Unknown review keys in confirmation: $extraKeys"
-        }
-
-        val missingKeys = canonicalKeys.toSet() - confirmedReviewKeys.toSet()
-        require(missingKeys.isEmpty()) {
-            "Missing review keys need confirmation: $missingKeys"
-        }
-
-        if (readiness == "BLOCKED") {
-            val note = operatorNote.trim()
-            require(note.length >= MIN_NOTE_LENGTH_BLOCKED) {
-                "Operator note must be at least $MIN_NOTE_LENGTH_BLOCKED characters for BLOCKED draft (got ${note.length})"
-            }
-        }
+        return canonicalKeys
     }
 
     fun recordConfirmed(

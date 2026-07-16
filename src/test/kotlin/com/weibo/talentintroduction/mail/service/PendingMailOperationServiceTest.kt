@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
+import com.weibo.talentintroduction.llm.service.AiReplySendAuthorityResult
 import com.weibo.talentintroduction.llm.service.AiReviewConfirmation
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -87,7 +88,11 @@ class PendingMailOperationServiceTest {
         contentVariantRepository,
         MailPlaceholderService()
     )
-    private val aiReplyReviewAuditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+    private val aiReplyReviewAuditService = Mockito.mock(AiReplyReviewAuditService::class.java).also {
+        Mockito.`when`(it.validateConfirmationForSend(
+            Mockito.anyLong(), Mockito.any(), Mockito.any()
+        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
+    }
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -1660,7 +1665,7 @@ class PendingMailOperationServiceTest {
 
         Mockito.doThrow(IllegalArgumentException("must provide draftIdentity"))
             .`when`(aiReplyReviewAuditService)
-            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyValue(emptyList<String>()), anyValue(""))
+            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.sendManualRichReply(
@@ -1701,6 +1706,14 @@ class PendingMailOperationServiceTest {
             operatorNote = "Reviewed"
         )
 
+        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
+            anyValue(0L), anyNullable(), anyNullable()
+        )).thenReturn(AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED(
+            draftIdentity = "uuid-123",
+            confirmedReviewKeys = listOf("1:a"),
+            operatorNote = "Reviewed"
+        ))
+
         val result = service.sendManualRichReply(
             inboundProcessingId = 1,
             senderAccountCode = null,
@@ -1708,6 +1721,7 @@ class PendingMailOperationServiceTest {
             htmlBody = "<p>Body</p>",
             textBody = "Body",
             operatorName = "op",
+            replySource = "AI_DRAFT",
             aiReviewConfirmation = confirmation
         )
 
@@ -1719,7 +1733,7 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
-    fun `send manual rich reply does not record audit when no draft identity`() {
+    fun `send manual rich reply does not record audit when result is MANUAL`() {
         val record = inbound(1)
         val account = stubAccount()
         val delivered = DeliveredMail(messageId = "msg-manual", status = "SUCCESS")
@@ -1733,6 +1747,9 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 403) }
         Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
+        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
+            anyValue(0L), anyNullable(), anyNullable()
+        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
 
         service.sendManualRichReply(
             inboundProcessingId = 1,
@@ -1743,6 +1760,42 @@ class PendingMailOperationServiceTest {
             operatorName = "op",
             replySource = null,
             aiReviewConfirmation = null
+        )
+
+        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
+            anyValue(0L), anyValue(0L), anyValue(0L),
+            anyNullable(), anyValue("op")
+        )
+    }
+
+    @Test
+    fun `send manual rich reply does not record audit when result is AI_READY`() {
+        val record = inbound(1)
+        val account = stubAccount()
+        val delivered = DeliveredMail(messageId = "msg-ready", status = "SUCCESS")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 406) }
+        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
+        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
+            anyValue(0L), anyNullable(), anyNullable()
+        )).thenReturn(AiReplySendAuthorityResult.AI_READY)
+
+        service.sendManualRichReply(
+            inboundProcessingId = 1,
+            senderAccountCode = null,
+            subject = "Test",
+            htmlBody = "<p>Body</p>",
+            textBody = "Body",
+            operatorName = "op",
+            replySource = "AI_DRAFT",
+            aiReviewConfirmation = AiReviewConfirmation(draftIdentity = "id-ready")
         )
 
         Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
@@ -1766,8 +1819,10 @@ class PendingMailOperationServiceTest {
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
             .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 404) }
         Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
+        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
+            anyValue(0L), anyNullable(), anyNullable()
+        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
 
-        // No aiReviewConfirmation at all
         service.sendManualRichReply(
             inboundProcessingId = 1,
             senderAccountCode = null,
@@ -1778,7 +1833,7 @@ class PendingMailOperationServiceTest {
         )
 
         Mockito.verify(aiReplyReviewAuditService).validateConfirmationForSend(
-            anyValue(1L), anyNullable(), anyValue(emptyList<String>()), anyValue("")
+            anyValue(1L), anyNullable(), anyNullable()
         )
     }
 

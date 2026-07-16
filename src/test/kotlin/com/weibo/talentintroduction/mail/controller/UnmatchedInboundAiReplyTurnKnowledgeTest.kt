@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
 import com.weibo.talentintroduction.llm.service.AiReplyReviewItem
+import com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
@@ -28,6 +29,7 @@ import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -462,15 +464,69 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
         )
 
-        Mockito.doReturn("uuid-test-123").`when`(aiReplyReviewAuditService).recordInitialDraft(
-            anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("op")
-        )
+        Mockito.doReturn(InitialDraftAuthorityResult(available = true, draftIdentity = "uuid-test-123"))
+            .`when`(aiReplyReviewAuditService).recordInitialDraft(
+                anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("op")
+            )
 
-        controller.aiReplyTurn(6L, AiReplyTurnRequest(operatorName = "op"))
+        val response = controller.aiReplyTurn(6L, AiReplyTurnRequest(operatorName = "op"))
 
+        assertEquals(true, response.draftAuthorityAvailable)
+        assertEquals("uuid-test-123", response.draftIdentity)
         Mockito.verify(aiReplyReviewAuditService).recordInitialDraft(
             anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("op")
         )
+    }
+
+    @Test
+    fun `aiReplyTurn returns empty draft and draftAuthorityAvailable false when audit fails`() {
+        val detail = InboundMailProcessing(
+            id = 60L,
+            senderAccountCode = "a1",
+            imapUid = 60L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "First turn fail",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(60L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
+        Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
+            .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
+
+        Mockito.doReturn(
+            AiReplyDraftResult(
+                draftText = "draft body here",
+                usedLlm = true,
+                qaRuleIds = listOf(1L),
+                mode = AiReplyMode.QA_GROUNDED
+            )
+        ).`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+        )
+
+        Mockito.doReturn(InitialDraftAuthorityResult(available = false, draftIdentity = null))
+            .`when`(aiReplyReviewAuditService).recordInitialDraft(
+                anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("op")
+            )
+
+        val response = controller.aiReplyTurn(60L, AiReplyTurnRequest(operatorName = "op"))
+
+        assertEquals("", response.draftText)
+        assertEquals("", response.renderedDraftText)
+        assertNull(response.draftIdentity)
+        assertEquals(false, response.draftAuthorityAvailable)
+        assertTrue(response.contextWarnings.contains("AI_REPLY_AUDIT_UNAVAILABLE"))
+        Mockito.verify(aiReplyDraftPreviewService, Mockito.never()).preview(Mockito.anyString(), anyV(contact), Mockito.anyString())
     }
 
     @Test

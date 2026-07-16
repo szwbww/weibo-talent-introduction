@@ -21,29 +21,72 @@ class AiReplyReviewAuditServiceTest {
         logService: OperatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
     ) = AiReplyReviewAuditService(logService, repo)
 
-    // -- validateConfirmationForSend: no draft, READY bypass --
+    // -- validateConfirmationForSend: no draft, MANUAL result --
 
     @Test
-    fun `gate bypasses when no AI draft record exists`() {
+    fun `gate returns MANUAL when no AI draft record and no source or confirmation`() {
         val repo = Mockito.mock(OperatorActionLogRepository::class.java)
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(null)
         val s = svc(repo = repo)
 
-        assertDoesNotThrow {
-            s.validateConfirmationForSend(1L, null, emptyList(), "")
-        }
+        val result = s.validateConfirmationForSend(1L, null, null)
+        assertEquals(AiReplySendAuthorityResult.MANUAL, result)
     }
 
     @Test
-    fun `gate bypasses when latest draft is READY`() {
+    fun `gate rejects when no draft but replySource is AI_DRAFT`() {
         val repo = Mockito.mock(OperatorActionLogRepository::class.java)
-        val record = auditLog(1L, readyAfterJson())
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(null)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, "AI_DRAFT", null)
+        }
+        assertTrue(ex.message!!.contains("No AI draft record"))
+    }
+
+    @Test
+    fun `gate rejects when no draft but confirmation provided`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(null)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, null, AiReviewConfirmation())
+        }
+        assertTrue(ex.message!!.contains("No AI draft record"))
+    }
+
+    @Test
+    fun `gate returns AI_READY when latest draft is READY`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val record = auditLog(1L, readyAfterJson(), "AI_REPLY_DRAFT_READY")
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         val s = svc(repo = repo)
 
-        assertDoesNotThrow {
-            s.validateConfirmationForSend(1L, null, emptyList(), "")
+        val result = s.validateConfirmationForSend(1L, null, null)
+        assertEquals(AiReplySendAuthorityResult.AI_READY, result)
+    }
+
+    @Test
+    fun `gate rejects when readiness does not match action_type`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-mismatch",
+            "readiness" to "BLOCKED",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
+            ),
+            "unresolvedCount" to 1
+        ))
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_NEEDS_REVIEW")
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, null, AiReviewConfirmation(draftIdentity = "id-mismatch", confirmedReviewKeys = listOf("1:a")))
         }
+        assertTrue(ex.message!!.contains("does not match action_type"))
     }
 
     // -- non-READY: identity required --
@@ -54,7 +97,7 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, null, emptyList(), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation())
         }
         assertTrue(ex.message!!.contains("must provide draftIdentity"))
     }
@@ -65,7 +108,7 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "   ", emptyList(), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "   "))
         }
         assertTrue(ex.message!!.contains("must provide draftIdentity"))
     }
@@ -76,7 +119,7 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "wrong-id", listOf("1:a"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "wrong-id", confirmedReviewKeys = listOf("1:a")))
         }
         assertTrue(ex.message!!.contains("does not match"))
     }
@@ -88,16 +131,17 @@ class AiReplyReviewAuditServiceTest {
             "readiness" to "NEEDS_REVIEW",
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
-            )
+            ),
+            "unresolvedCount" to 1
         ))
         val record = auditLog(1L, afterJson)
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "any-id", emptyList(), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "any-id"))
         }
-        assertTrue(ex.message!!.contains("has no draftIdentity"))
+        assertTrue(ex.message!!.contains("corrupt record") || ex.message!!.contains("no draftIdentity"))
     }
 
     // -- valid identity: key & note checks --
@@ -108,7 +152,7 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-abc", listOf("1:a", "1:a"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-abc", confirmedReviewKeys = listOf("1:a", "1:a")))
         }
         assertTrue(ex.message!!.contains("Duplicate"))
     }
@@ -119,7 +163,7 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-abc", listOf("1:a", "2:unknown"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-abc", confirmedReviewKeys = listOf("1:a", "2:unknown")))
         }
         assertTrue(ex.message!!.contains("Unknown"))
     }
@@ -130,19 +174,21 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-abc", listOf("1:a"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-abc", confirmedReviewKeys = listOf("1:a")))
         }
         assertTrue(ex.message!!.contains("Missing"))
     }
 
     @Test
-    fun `gate succeeds when identity matches and all keys confirmed`() {
+    fun `gate returns AI_REVIEW_CONFIRMED when identity matches and all keys confirmed`() {
         val repo = repoWithNeedsReview("id-abc")
         val s = svc(repo = repo)
 
-        assertDoesNotThrow {
-            s.validateConfirmationForSend(1L, "id-abc", listOf("1:a"), "")
-        }
+        val result = s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-abc", confirmedReviewKeys = listOf("1:a")))
+        assertTrue(result is AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED)
+        val confirmed = result as AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED
+        assertEquals("id-abc", confirmed.draftIdentity)
+        assertEquals(listOf("1:a"), confirmed.confirmedReviewKeys)
     }
 
     @Test
@@ -151,19 +197,18 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-blocked", listOf("1:a"), "ab")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-blocked", confirmedReviewKeys = listOf("1:a"), operatorNote = "ab"))
         }
         assertTrue(ex.message!!.contains("at least 5"))
     }
 
     @Test
-    fun `gate accepts BLOCKED with sufficient note`() {
+    fun `gate accepts BLOCKED with sufficient note and returns AI_REVIEW_CONFIRMED`() {
         val repo = repoWithBlocked("id-blocked")
         val s = svc(repo = repo)
 
-        assertDoesNotThrow {
-            s.validateConfirmationForSend(1L, "id-blocked", listOf("1:a"), "Verified ok")
-        }
+        val result = s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-blocked", confirmedReviewKeys = listOf("1:a"), operatorNote = "Verified ok"))
+        assertTrue(result is AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED)
     }
 
     @Test
@@ -175,14 +220,15 @@ class AiReplyReviewAuditServiceTest {
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a"),
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
-            )
+            ),
+            "unresolvedCount" to 2
         ))
         val record = auditLog(1L, afterJson)
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-dup", listOf("1:a"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-dup", confirmedReviewKeys = listOf("1:a")))
         }
         assertTrue(ex.message!!.contains("duplicate reviewKeys"))
     }
@@ -195,22 +241,35 @@ class AiReplyReviewAuditServiceTest {
             "readiness" to "NEEDS_REVIEW",
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "wrong-format", "requestIndex" to 1, "intentKey" to "a")
-            )
+            ),
+            "unresolvedCount" to 1
         ))
         val record = auditLog(1L, afterJson)
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         val s = svc(repo = repo)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
-            s.validateConfirmationForSend(1L, "id-fmt", listOf("1:a"), "")
+            s.validateConfirmationForSend(1L, "AI_DRAFT", AiReviewConfirmation(draftIdentity = "id-fmt", confirmedReviewKeys = listOf("1:a")))
         }
         assertTrue(ex.message!!.contains("does not match"))
+    }
+
+    @Test
+    fun `gate rejects unknown non-empty replySource without confirmation`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(null)
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, "UNKNOWN_SOURCE", null)
+        }
+        assertTrue(ex.message!!.contains("No AI draft record"))
     }
 
     // -- recordInitialDraft returns identity --
 
     @Test
-    fun `recordInitialDraft returns non-null identity on success`() {
+    fun `recordInitialDraft returns available with non-null identity on success`() {
         val logService = Mockito.mock(OperatorActionLogService::class.java)
         Mockito.`when`(logService.record(
             anyNonNull(""), anyNonNull(0L), anyNonNull(OperatorActionType.AI_REPLY_DRAFT_READY),
@@ -222,13 +281,14 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(logService = logService)
         val result = simpleResult(AiReplyDraftReadiness.READY)
 
-        val id = s.recordInitialDraft(1L, 1L, result, "op")
-        assertNotNull(id)
-        assertFalse(id!!.matches(Regex("\\d+"))) // should NOT be a pure number
+        val authorityResult = s.recordInitialDraft(1L, 1L, result, "op")
+        assertTrue(authorityResult.available)
+        assertNotNull(authorityResult.draftIdentity)
+        assertFalse(authorityResult.draftIdentity!!.matches(Regex("\\d+")))
     }
 
     @Test
-    fun `recordInitialDraft returns null when recording fails`() {
+    fun `recordInitialDraft returns unavailable when recording fails`() {
         val logService = Mockito.mock(OperatorActionLogService::class.java)
         Mockito.doThrow(RuntimeException("DB error")).`when`(logService).record(
             anyNonNull(""), anyNonNull(0L), anyNonNull(OperatorActionType.AI_REPLY_DRAFT_READY),
@@ -238,8 +298,9 @@ class AiReplyReviewAuditServiceTest {
         val s = svc(logService = logService)
         val result = simpleResult(AiReplyDraftReadiness.READY)
 
-        val id = s.recordInitialDraft(1L, 1L, result, "op")
-        assertNull(id)
+        val authorityResult = s.recordInitialDraft(1L, 1L, result, "op")
+        assertFalse(authorityResult.available)
+        assertNull(authorityResult.draftIdentity)
     }
 
     // -- SEND_BLOCKED payload limits --
@@ -288,9 +349,10 @@ class AiReplyReviewAuditServiceTest {
             "readiness" to "NEEDS_REVIEW",
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
-            )
+            ),
+            "unresolvedCount" to 1
         ))
-        val record = auditLog(1L, afterJson)
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_NEEDS_REVIEW")
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         return repo
     }
@@ -303,9 +365,10 @@ class AiReplyReviewAuditServiceTest {
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a"),
                 mapOf("reviewKey" to "1:b", "requestIndex" to 1, "intentKey" to "b")
-            )
+            ),
+            "unresolvedCount" to 2
         ))
-        val record = auditLog(1L, afterJson)
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_NEEDS_REVIEW")
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         return repo
     }
@@ -317,9 +380,10 @@ class AiReplyReviewAuditServiceTest {
             "readiness" to "BLOCKED",
             "unresolvedSnapshot" to listOf(
                 mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
-            )
+            ),
+            "unresolvedCount" to 1
         ))
-        val record = auditLog(1L, afterJson)
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_BLOCKED")
         Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
         return repo
     }
@@ -327,17 +391,18 @@ class AiReplyReviewAuditServiceTest {
     private fun readyAfterJson(): String = objectMapper.writeValueAsString(mapOf(
         "draftIdentity" to "id-ready",
         "readiness" to "READY",
-        "unresolvedSnapshot" to emptyList<Map<String, Any?>>()
+        "unresolvedSnapshot" to emptyList<Map<String, Any?>>(),
+        "unresolvedCount" to 0
     ))
 
-    private fun auditLog(inboundProcessingId: Long, afterJson: String) = OperatorActionLog(
+    private fun auditLog(inboundProcessingId: Long, afterJson: String, actionType: String = "AI_REPLY_DRAFT_NEEDS_REVIEW") = OperatorActionLog(
         id = 1L,
         targetType = "INBOUND_MAIL_PROCESSING",
         targetId = inboundProcessingId,
         expertContactId = 1L,
         inboundProcessingId = inboundProcessingId,
-        actionType = "AI_REPLY_DRAFT_NEEDS_REVIEW",
-        actionSummary = "AI 草稿生成-需审核",
+        actionType = actionType,
+        actionSummary = "AI 草稿生成",
         afterValue = afterJson,
         createdAt = LocalDateTime.now()
     )

@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
+import com.weibo.talentintroduction.llm.service.AiReplySendAuthorityResult
 import com.weibo.talentintroduction.llm.service.AiReviewConfirmation
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -203,11 +204,10 @@ class PendingMailOperationService(
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
 
-        aiReplyReviewAuditService.validateConfirmationForSend(
+        val authorityResult = aiReplyReviewAuditService.validateConfirmationForSend(
             inboundProcessingId = inboundProcessingId,
-            draftIdentity = aiReviewConfirmation?.draftIdentity,
-            confirmedReviewKeys = aiReviewConfirmation?.confirmedReviewKeys ?: emptyList(),
-            operatorNote = aiReviewConfirmation?.operatorNote ?: ""
+            replySource = replySource,
+            confirmation = aiReviewConfirmation
         )
 
         val carriesQa = !qaRuleIds.isNullOrEmpty()
@@ -287,12 +287,16 @@ class PendingMailOperationService(
             ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
         val mailRecordId = saved.id ?: error("Mail record id is required")
 
-        if (aiReviewConfirmation?.draftIdentity != null || replySource == "AI_DRAFT") {
+        if (authorityResult is AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED) {
             aiReplyReviewAuditService.recordConfirmed(
                 inboundProcessingId = inboundProcessingId,
                 contactId = contactId,
                 mailRecordId = mailRecordId,
-                confirmation = aiReviewConfirmation,
+                confirmation = AiReviewConfirmation(
+                    draftIdentity = authorityResult.draftIdentity,
+                    confirmedReviewKeys = authorityResult.confirmedReviewKeys,
+                    operatorNote = authorityResult.operatorNote
+                ),
                 operatorName = operatorName
             )
         }

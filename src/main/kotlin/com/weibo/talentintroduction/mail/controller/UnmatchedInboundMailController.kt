@@ -313,20 +313,65 @@ class UnmatchedInboundMailController(
             contextWarnings = context.contextWarnings,
             replyModel = request.model
         )
-        val draftIdentity: String? = if (request.turns.isEmpty()) {
-            try {
+
+        val authorityResult: com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult? =
+            if (request.turns.isEmpty()) {
                 aiReplyReviewAuditService.recordInitialDraft(
                     inboundProcessingId = id,
                     contactId = contactId,
                     result = result,
                     operatorName = request.operatorName
                 )
-            } catch (_: Exception) {
+            } else {
                 null
             }
-        } else {
-            null
+
+        val draftAuthorityAvailable = authorityResult?.available ?: true
+        val draftIdentity: String? = authorityResult?.draftIdentity
+
+        if (!draftAuthorityAvailable) {
+            val warnings = mergeWarningsPreserveOrder(
+                result.contextWarnings,
+                listOf(AiReplyReviewAuditService.WARNING_AI_REPLY_AUDIT_UNAVAILABLE)
+            )
+            return AiReplyTurnResponse(
+                draftText = "",
+                renderedDraftText = "",
+                usedLlm = result.usedLlm,
+                llmEnabled = llmStitchService.isEnabled(),
+                qaRuleIds = result.qaRuleIds,
+                mode = result.mode.name,
+                requestCount = result.requestCount,
+                groundedRequestCount = result.groundedRequestCount,
+                unsupportedRequests = result.unsupportedRequests,
+                contextWarnings = warnings,
+                injectedDialogRefs = result.fewShotDialogRefs,
+                selectedModel = result.selectedModel,
+                requestCoverage = result.requestFacts.map {
+                    RequestCoverageItem(
+                        index = it.index,
+                        requestText = it.requestText,
+                        status = it.status.name,
+                        factRuleIds = it.factRuleIds,
+                        intents = it.intents.map { intent ->
+                            IntentCoverageResponse(
+                                intentKey = intent.intentKey,
+                                title = intent.title,
+                                status = intent.status,
+                                evidenceRuleIds = intent.evidenceRuleIds,
+                                missingEvidenceKeys = intent.missingEvidenceKeys,
+                                requiresResearchContext = intent.requiresResearchContext
+                            )
+                        }
+                    )
+                },
+                generationState = result.generationState.name,
+                draftReadiness = result.draftReadiness.name,
+                draftIdentity = null,
+                draftAuthorityAvailable = false
+            )
         }
+
         val preview = aiReplyDraftPreviewService.preview(
             raw = result.draftText,
             contact = contact,
@@ -623,7 +668,8 @@ data class AiReplyTurnResponse(
     val requestCoverage: List<RequestCoverageItem> = emptyList(),
     val generationState: String = "FALLBACK_NO_RESPONSE",
     val draftReadiness: String = "READY",
-    val draftIdentity: String? = null
+    val draftIdentity: String? = null,
+    val draftAuthorityAvailable: Boolean = true
 )
 
 private fun InboundMailProcessing.toResponse(

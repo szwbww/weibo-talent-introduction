@@ -154,6 +154,25 @@ describe("Phase 9 AI reply review confirmation UI", function () {
     });
 });
 
+describe("Phase 10 AI reply authority fail-closed", function () {
+    it("AI_REPLY_AUDIT_UNAVAILABLE registered in warning labels", function () {
+        if (!app.includes("AI_REPLY_AUDIT_UNAVAILABLE")) throw new Error("missing AI_REPLY_AUDIT_UNAVAILABLE in warning labels");
+        if (!app.includes("AI 草稿审核记录保存失败，本次草稿未提供。请重试生成。")) throw new Error("missing Chinese text for audit unavailable");
+    });
+
+    it("draftAuthorityAvailable false branch renders error and returns early", function () {
+        if (!app.includes("result.draftAuthorityAvailable === false")) throw new Error("missing draftAuthorityAvailable check");
+    });
+
+    it("draftAuthorityAvailable false does not set firstTurnDone or write drafts", function () {
+        const idx = app.indexOf("result.draftAuthorityAvailable === false");
+        if (idx < 0) throw new Error("missing check");
+        const returnIdx = app.indexOf("return;", idx);
+        const firstTurnIdx = app.indexOf("aiReplyState.firstTurnDone = true", idx);
+        if (firstTurnIdx > 0 && firstTurnIdx < returnIdx) throw new Error("firstTurnDone should not be set in authority-fail path");
+    });
+});
+
 describe("Phase 9 regression: existing tests", function () {
     it("batchSendTaskConsoleVisualFix.test.js still exists and references unchanged", function () {
         const exists = fs.existsSync("src/test/js/batchSendTaskConsoleVisualFix.test.js");
