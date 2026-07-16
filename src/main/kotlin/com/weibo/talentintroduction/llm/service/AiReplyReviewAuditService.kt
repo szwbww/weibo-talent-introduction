@@ -158,6 +158,17 @@ class AiReplyReviewAuditService(
         )
     }
 
+    fun resolveCurrentDraftAuthority(inboundProcessingId: Long): InitialDraftAuthorityResult {
+        val latestDraft = operatorActionLogRepository.findLatestAiDraftByInboundProcessingId(inboundProcessingId)
+            ?: return InitialDraftAuthorityResult(available = false, draftIdentity = null)
+        return try {
+            val validated = validateLatestDraftAuthorityRecord(latestDraft, inboundProcessingId)
+            InitialDraftAuthorityResult(available = true, draftIdentity = validated.draftIdentity)
+        } catch (ex: IllegalArgumentException) {
+            InitialDraftAuthorityResult(available = false, draftIdentity = null)
+        }
+    }
+
     fun validateConfirmationForSend(
         inboundProcessingId: Long,
         replySource: String?,
@@ -181,6 +192,74 @@ class AiReplyReviewAuditService(
             )
         }
 
+        val validated = validateLatestDraftAuthorityRecord(latestDraft, inboundProcessingId)
+        val storedIdentity = validated.draftIdentity
+        val readiness = validated.readiness
+        val canonicalKeys = validated.canonicalKeys
+
+        if (readiness == "READY") {
+            val draftIdentity = confirmation?.draftIdentity
+            if (!draftIdentity.isNullOrBlank()) {
+                require(draftIdentity == storedIdentity) {
+                    "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
+                }
+            }
+            return AiReplySendAuthorityResult.AI_READY
+        }
+
+        val draftIdentity = confirmation?.draftIdentity
+        if (draftIdentity.isNullOrBlank()) {
+            throw IllegalArgumentException("AI draft for inbound $inboundProcessingId is $readiness — must provide draftIdentity to confirm")
+        }
+
+        require(draftIdentity == storedIdentity) {
+            "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
+        }
+
+        val confirmedReviewKeys = confirmation.confirmedReviewKeys
+
+        val duplicateConfirmed = confirmedReviewKeys
+            .groupBy { it }
+            .filter { it.value.size > 1 }
+            .keys
+        require(duplicateConfirmed.isEmpty()) {
+            "Duplicate review keys in confirmation: $duplicateConfirmed"
+        }
+
+        val extraKeys = confirmedReviewKeys.toSet() - canonicalKeys.toSet()
+        require(extraKeys.isEmpty()) {
+            "Unknown review keys in confirmation: $extraKeys"
+        }
+
+        val missingKeys = canonicalKeys.toSet() - confirmedReviewKeys.toSet()
+        require(missingKeys.isEmpty()) {
+            "Missing review keys need confirmation: $missingKeys"
+        }
+
+        if (readiness == "BLOCKED") {
+            val note = (confirmation.operatorNote).trim()
+            require(note.length >= MIN_NOTE_LENGTH_BLOCKED) {
+                "Operator note must be at least $MIN_NOTE_LENGTH_BLOCKED characters for BLOCKED draft (got ${note.length})"
+            }
+        }
+
+        return AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED(
+            draftIdentity = draftIdentity,
+            confirmedReviewKeys = confirmedReviewKeys,
+            operatorNote = confirmation.operatorNote
+        )
+    }
+
+    private data class ValidatedDraftAuthority(
+        val draftIdentity: String,
+        val readiness: String,
+        val canonicalKeys: List<String>
+    )
+
+    private fun validateLatestDraftAuthorityRecord(
+        latestDraft: OperatorActionLog,
+        inboundProcessingId: Long
+    ): ValidatedDraftAuthority {
         val afterJson = latestDraft.afterValue
             ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId has no afterValue")
 
@@ -252,56 +331,10 @@ class AiReplyReviewAuditService(
             }
         }
 
-        if (readiness == "READY") {
-            val draftIdentity = confirmation?.draftIdentity
-            if (!draftIdentity.isNullOrBlank()) {
-                require(draftIdentity == storedIdentity) {
-                    "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
-                }
-            }
-            return AiReplySendAuthorityResult.AI_READY
-        }
-
-        val draftIdentity = confirmation?.draftIdentity
-        if (draftIdentity.isNullOrBlank()) {
-            throw IllegalArgumentException("AI draft for inbound $inboundProcessingId is $readiness — must provide draftIdentity to confirm")
-        }
-
-        require(draftIdentity == storedIdentity) {
-            "draftIdentity does not match current AI draft for inbound $inboundProcessingId"
-        }
-
-        val confirmedReviewKeys = confirmation.confirmedReviewKeys
-
-        val duplicateConfirmed = confirmedReviewKeys
-            .groupBy { it }
-            .filter { it.value.size > 1 }
-            .keys
-        require(duplicateConfirmed.isEmpty()) {
-            "Duplicate review keys in confirmation: $duplicateConfirmed"
-        }
-
-        val extraKeys = confirmedReviewKeys.toSet() - canonicalKeys.toSet()
-        require(extraKeys.isEmpty()) {
-            "Unknown review keys in confirmation: $extraKeys"
-        }
-
-        val missingKeys = canonicalKeys.toSet() - confirmedReviewKeys.toSet()
-        require(missingKeys.isEmpty()) {
-            "Missing review keys need confirmation: $missingKeys"
-        }
-
-        if (readiness == "BLOCKED") {
-            val note = (confirmation.operatorNote).trim()
-            require(note.length >= MIN_NOTE_LENGTH_BLOCKED) {
-                "Operator note must be at least $MIN_NOTE_LENGTH_BLOCKED characters for BLOCKED draft (got ${note.length})"
-            }
-        }
-
-        return AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED(
-            draftIdentity = draftIdentity,
-            confirmedReviewKeys = confirmedReviewKeys,
-            operatorNote = confirmation.operatorNote
+        return ValidatedDraftAuthority(
+            draftIdentity = storedIdentity,
+            readiness = readiness,
+            canonicalKeys = canonicalKeys
         )
     }
 

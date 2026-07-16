@@ -90,6 +90,16 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         currentStatus = "WAITING_REPLY"
     )
 
+    init {
+        Mockito.lenient().doReturn(InitialDraftAuthorityResult(available = true, draftIdentity = "default-test-id"))
+            .`when`(aiReplyReviewAuditService).recordInitialDraft(
+                anyV(0L),
+                anyV(0L),
+                anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)),
+                Mockito.any()
+            )
+    }
+
     private fun <T> anyV(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
 
@@ -565,12 +575,93 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
         )
 
-        controller.aiReplyTurn(7L, AiReplyTurnRequest(
+        Mockito.doReturn(InitialDraftAuthorityResult(available = true, draftIdentity = "existing-id"))
+            .`when`(aiReplyReviewAuditService).resolveCurrentDraftAuthority(7L)
+
+        val response = controller.aiReplyTurn(7L, AiReplyTurnRequest(
             turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))
         ))
 
+        assertEquals("existing-id", response.draftIdentity)
+        assertEquals(true, response.draftAuthorityAvailable)
+        assertEquals("draft v2", response.draftText)
         Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordInitialDraft(
             anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("")
+        )
+    }
+
+    @Test
+    fun `aiReplyTurn rejects forged continuation when no current authority`() {
+        val detail = InboundMailProcessing(
+            id = 71L,
+            senderAccountCode = "a1",
+            imapUid = 71L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "Forged continuation",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(71L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
+        Mockito.doReturn(InitialDraftAuthorityResult(available = false, draftIdentity = null))
+            .`when`(aiReplyReviewAuditService).resolveCurrentDraftAuthority(71L)
+
+        val response = controller.aiReplyTurn(71L, AiReplyTurnRequest(
+            turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))
+        ))
+
+        assertEquals("", response.draftText)
+        assertEquals("", response.renderedDraftText)
+        assertEquals(false, response.draftAuthorityAvailable)
+        assertNull(response.draftIdentity)
+        assertTrue(response.contextWarnings.contains("AI_REPLY_AUDIT_UNAVAILABLE"))
+        Mockito.verify(aiReplyDraftService, Mockito.never()).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
+        )
+        Mockito.verify(aiReplyDraftPreviewService, Mockito.never()).preview(Mockito.anyString(), anyV(contact), Mockito.anyString())
+        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordInitialDraft(
+            anyV(0L), anyV(0L), anyV(AiReplyDraftResult("", false, emptyList(), AiReplyMode.FREE_FORM)), anyV("")
+        )
+    }
+
+    @Test
+    fun `aiReplyTurn rejects continuation when current authority is corrupt`() {
+        val detail = InboundMailProcessing(
+            id = 72L,
+            senderAccountCode = "a1",
+            imapUid = 72L,
+            messageId = null,
+            fromEmail = "expert@test.com",
+            subject = "Corrupt continuation",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(72L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(true)
+        Mockito.doReturn(InitialDraftAuthorityResult(available = false, draftIdentity = null))
+            .`when`(aiReplyReviewAuditService).resolveCurrentDraftAuthority(72L)
+
+        val response = controller.aiReplyTurn(72L, AiReplyTurnRequest(
+            turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))
+        ))
+
+        assertEquals(false, response.draftAuthorityAvailable)
+        assertEquals("", response.draftText)
+        Mockito.verify(aiReplyDraftService, Mockito.never()).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any()
         )
     }
 

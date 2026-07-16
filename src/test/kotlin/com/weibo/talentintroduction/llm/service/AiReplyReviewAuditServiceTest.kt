@@ -493,6 +493,54 @@ class AiReplyReviewAuditServiceTest {
         assertNull(authorityResult.draftIdentity)
     }
 
+    // -- resolveCurrentDraftAuthority --
+
+    @Test
+    fun `resolveCurrentDraftAuthority returns unavailable when no latest draft`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(null)
+        val s = svc(repo = repo)
+
+        val result = s.resolveCurrentDraftAuthority(1L)
+
+        assertEquals(false, result.available)
+        assertNull(result.draftIdentity)
+    }
+
+    @Test
+    fun `resolveCurrentDraftAuthority returns identity when latest draft is valid READY`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val record = auditLog(1L, readyAfterJson(), "AI_REPLY_DRAFT_READY")
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
+        val s = svc(repo = repo)
+
+        val result = s.resolveCurrentDraftAuthority(1L)
+
+        assertEquals(true, result.available)
+        assertEquals("id-ready", result.draftIdentity)
+    }
+
+    @Test
+    fun `resolveCurrentDraftAuthority returns unavailable when READY snapshot is corrupt`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-ready-corrupt",
+            "readiness" to "READY",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
+            ),
+            "unresolvedCount" to 1
+        ))
+        val record = auditLog(1L, afterJson, "AI_REPLY_DRAFT_READY")
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L)).thenReturn(record)
+        val s = svc(repo = repo)
+
+        val result = s.resolveCurrentDraftAuthority(1L)
+
+        assertEquals(false, result.available)
+        assertNull(result.draftIdentity)
+    }
+
     // -- SEND_BLOCKED payload limits --
 
     @Test

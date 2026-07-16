@@ -299,6 +299,15 @@ class UnmatchedInboundMailController(
             ?: throw IllegalArgumentException("Inbound processing $id has no expertContactId")
         val contact = expertContactRepository.findById(contactId).orElse(null)
             ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+        val isContinuation = request.turns.isNotEmpty()
+        val continuationAuthority = if (isContinuation) {
+            aiReplyReviewAuditService.resolveCurrentDraftAuthority(id)
+        } else {
+            null
+        }
+        if (continuationAuthority != null && !continuationAuthority.available) {
+            return aiReplyTurnAuthorityUnavailableResponse(llmStitchService.isEnabled())
+        }
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
         val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
         val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
@@ -314,20 +323,20 @@ class UnmatchedInboundMailController(
             replyModel = request.model
         )
 
-        val authorityResult: com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult? =
-            if (request.turns.isEmpty()) {
+        val authorityResult: com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult =
+            if (isContinuation) {
+                continuationAuthority!!
+            } else {
                 aiReplyReviewAuditService.recordInitialDraft(
                     inboundProcessingId = id,
                     contactId = contactId,
                     result = result,
                     operatorName = request.operatorName
                 )
-            } else {
-                null
             }
 
-        val draftAuthorityAvailable = authorityResult?.available ?: true
-        val draftIdentity: String? = authorityResult?.draftIdentity
+        val draftAuthorityAvailable = authorityResult.available
+        val draftIdentity: String? = authorityResult.draftIdentity
 
         if (!draftAuthorityAvailable) {
             val warnings = mergeWarningsPreserveOrder(
@@ -437,6 +446,18 @@ class UnmatchedInboundMailController(
         val seen = linkedSetOf<String>()
         return (existing + extra).filter { seen.add(it) }
     }
+
+    private fun aiReplyTurnAuthorityUnavailableResponse(llmEnabled: Boolean) = AiReplyTurnResponse(
+        draftText = "",
+        renderedDraftText = "",
+        usedLlm = false,
+        llmEnabled = llmEnabled,
+        qaRuleIds = emptyList(),
+        mode = "",
+        contextWarnings = listOf(AiReplyReviewAuditService.WARNING_AI_REPLY_AUDIT_UNAVAILABLE),
+        draftIdentity = null,
+        draftAuthorityAvailable = false
+    )
 }
 
 @RestController
