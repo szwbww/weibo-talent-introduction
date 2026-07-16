@@ -266,6 +266,156 @@ class AiReplyReviewAuditServiceTest {
         assertTrue(ex.message!!.contains("No AI draft record"))
     }
 
+    @Test
+    fun `gate rejects missing requestIndex in snapshot item`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-miss-idx",
+            "readiness" to "NEEDS_REVIEW",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "intentKey" to "a")
+            ),
+            "unresolvedCount" to 1
+        ))
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-miss-idx", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("missing requestIndex"))
+    }
+
+    @Test
+    fun `gate rejects missing intentKey in snapshot item`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-miss-ik",
+            "readiness" to "NEEDS_REVIEW",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "requestIndex" to 1)
+            ),
+            "unresolvedCount" to 1
+        ))
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-miss-ik", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("missing intentKey"))
+    }
+
+    @Test
+    fun `gate rejects string unresolvedCount`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = """{"draftIdentity":"id-str-count","readiness":"NEEDS_REVIEW","unresolvedSnapshot":[{"reviewKey":"1:a","requestIndex":1,"intentKey":"a"}],"unresolvedCount":"1"}"""
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-str-count", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("unresolvedCount"))
+    }
+
+    @Test
+    fun `gate rejects decimal unresolvedCount`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = """{"draftIdentity":"id-dec-count","readiness":"NEEDS_REVIEW","unresolvedSnapshot":[{"reviewKey":"1:a","requestIndex":1,"intentKey":"a"}],"unresolvedCount":1.5}"""
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-dec-count", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("unresolvedCount"))
+    }
+
+    @Test
+    fun `gate rejects missing unresolvedCount`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = objectMapper.writeValueAsString(mapOf(
+            "draftIdentity" to "id-no-count",
+            "readiness" to "NEEDS_REVIEW",
+            "unresolvedSnapshot" to listOf(
+                mapOf("reviewKey" to "1:a", "requestIndex" to 1, "intentKey" to "a")
+            )
+        ))
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-no-count", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("missing unresolvedCount"))
+    }
+
+    @Test
+    fun `gate rejects non-object snapshot item`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        val afterJson = """{"draftIdentity":"id-bad-item","readiness":"NEEDS_REVIEW","unresolvedSnapshot":["1:a"],"unresolvedCount":1}"""
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, afterJson))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L, "AI_DRAFT",
+                AiReviewConfirmation(draftIdentity = "id-bad-item", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("must be an object"))
+    }
+
+    @Test
+    fun `gate rejects UNKNOWN_SOURCE when READY authority exists`() {
+        val repo = Mockito.mock(OperatorActionLogRepository::class.java)
+        Mockito.`when`(repo.findLatestAiDraftByInboundProcessingId(1L))
+            .thenReturn(auditLog(1L, readyAfterJson(), "AI_REPLY_DRAFT_READY"))
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(1L, "UNKNOWN_SOURCE", null)
+        }
+        assertTrue(ex.message!!.contains("Unsupported replySource"))
+    }
+
+    @Test
+    fun `gate rejects UNKNOWN_SOURCE when NEEDS_REVIEW authority exists even with valid confirmation`() {
+        val repo = repoWithNeedsReview("id-abc")
+        val s = svc(repo = repo)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            s.validateConfirmationForSend(
+                1L,
+                "UNKNOWN_SOURCE",
+                AiReviewConfirmation(draftIdentity = "id-abc", confirmedReviewKeys = listOf("1:a"))
+            )
+        }
+        assertTrue(ex.message!!.contains("Unsupported replySource"))
+    }
+
     // -- recordInitialDraft returns identity --
 
     @Test

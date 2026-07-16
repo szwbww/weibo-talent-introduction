@@ -1685,6 +1685,88 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
+    fun `send manual rich reply rejects corrupt authority with zero delivery mail QA and confirmed writes`() {
+        val record = inbound(1)
+        val account = stubAccount()
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
+        Mockito.doThrow(IllegalArgumentException("missing requestIndex"))
+            .`when`(aiReplyReviewAuditService)
+            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 1,
+                senderAccountCode = null,
+                subject = "Test",
+                htmlBody = "<p>Body</p>",
+                textBody = "Body",
+                operatorName = "op",
+                replySource = "AI_DRAFT",
+                aiReviewConfirmation = AiReviewConfirmation(
+                    draftIdentity = "id-corrupt",
+                    confirmedReviewKeys = listOf("1:a")
+                ),
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertTrue(ex.message!!.contains("missing requestIndex"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+        Mockito.verify(mailRecordQaRuleRepository, Mockito.never()).save(anyValue(
+            MailRecordQaRule(mailRecordId = 1L, qaRuleId = 10L, ordinal = 0)
+        ))
+        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
+            anyValue(0L), anyValue(0L), anyValue(0L),
+            anyNullable(), anyValue("op")
+        )
+    }
+
+    @Test
+    fun `send manual rich reply rejects UNKNOWN_SOURCE with zero delivery and confirmed writes`() {
+        val record = inbound(1)
+        val account = stubAccount()
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
+        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
+        Mockito.doThrow(IllegalArgumentException("Unsupported replySource 'UNKNOWN_SOURCE'"))
+            .`when`(aiReplyReviewAuditService)
+            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 1,
+                senderAccountCode = null,
+                subject = "Test",
+                htmlBody = "<p>Body</p>",
+                textBody = "Body",
+                operatorName = "op",
+                replySource = "UNKNOWN_SOURCE",
+                aiReviewConfirmation = AiReviewConfirmation(
+                    draftIdentity = "id-abc",
+                    confirmedReviewKeys = listOf("1:a")
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("Unsupported replySource"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
+            anyValue(0L), anyValue(0L), anyValue(0L),
+            anyNullable(), anyValue("op")
+        )
+    }
+
+    @Test
     fun `send manual rich reply with valid draftIdentity confirmation sends and records audit`() {
         val record = inbound(1)
         val account = stubAccount()

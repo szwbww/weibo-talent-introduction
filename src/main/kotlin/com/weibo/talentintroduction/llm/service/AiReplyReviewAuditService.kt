@@ -174,6 +174,13 @@ class AiReplyReviewAuditService(
             )
         }
 
+        // I-4: with latest authority present, replySource may only be blank or AI_DRAFT
+        if (!replySource.isNullOrBlank() && replySource != "AI_DRAFT") {
+            throw IllegalArgumentException(
+                "Unsupported replySource '$replySource' for inbound $inboundProcessingId — must be blank or AI_DRAFT"
+            )
+        }
+
         val afterJson = latestDraft.afterValue
             ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId has no afterValue")
 
@@ -204,9 +211,14 @@ class AiReplyReviewAuditService(
             throw IllegalArgumentException("AI draft for inbound $inboundProcessingId has no draftIdentity — corrupt record")
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val rawSnapshot = afterMap["unresolvedSnapshot"] as? List<Map<String, Any?>>
+        val rawSnapshotValue = afterMap["unresolvedSnapshot"]
             ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId missing unresolvedSnapshot")
+        if (rawSnapshotValue !is List<*>) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot must be a list"
+            )
+        }
+        val rawSnapshot = rawSnapshotValue
 
         val canonicalKeys = validateSnapshot(inboundProcessingId, rawSnapshot)
 
@@ -216,10 +228,14 @@ class AiReplyReviewAuditService(
             }
         }
 
-        val unresolvedCount = afterMap["unresolvedCount"]
-        if (unresolvedCount is Number && unresolvedCount.toInt() != rawSnapshot.size) {
+        val unresolvedCount = requireNonNegativeInt(
+            afterMap["unresolvedCount"],
+            "unresolvedCount",
+            inboundProcessingId
+        )
+        if (unresolvedCount != rawSnapshot.size) {
             throw IllegalArgumentException(
-                "AI draft audit record for inbound $inboundProcessingId unresolvedCount (${unresolvedCount.toInt()}) does not match snapshot size (${rawSnapshot.size})"
+                "AI draft audit record for inbound $inboundProcessingId unresolvedCount ($unresolvedCount) does not match snapshot size (${rawSnapshot.size})"
             )
         }
 
@@ -278,17 +294,47 @@ class AiReplyReviewAuditService(
 
     private fun validateSnapshot(
         inboundProcessingId: Long,
-        rawSnapshot: List<Map<String, Any?>>
+        rawSnapshot: List<*>
     ): List<String> {
-        val canonicalKeys = rawSnapshot.map { entry ->
-            val key = entry["reviewKey"] as? String
-                ?: throw IllegalArgumentException("AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot item missing reviewKey")
-            val idx = entry["requestIndex"] as? Int
-            val ik = entry["intentKey"] as? String
-            val expectedKey = if (idx != null && ik != null) "$idx:$ik" else null
-            if (expectedKey != null && key != expectedKey) {
+        val canonicalKeys = rawSnapshot.mapIndexed { index, item ->
+            if (item !is Map<*, *>) {
                 throw IllegalArgumentException(
-                    "AI draft audit record for inbound $inboundProcessingId unresolved reviewKey '$key' does not match index-colon-intentKey format ($idx:$ik)"
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] must be an object"
+                )
+            }
+            val key = item["reviewKey"] as? String
+                ?: throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] missing reviewKey"
+                )
+            if (key.isBlank()) {
+                throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] reviewKey is blank"
+                )
+            }
+            if (!item.containsKey("requestIndex")) {
+                throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] missing requestIndex"
+                )
+            }
+            if (!item.containsKey("intentKey")) {
+                throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] missing intentKey"
+                )
+            }
+            val idx = requireNonNegativeInt(item["requestIndex"], "requestIndex", inboundProcessingId)
+            val ik = item["intentKey"] as? String
+                ?: throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] intentKey must be a string"
+                )
+            if (ik.isBlank()) {
+                throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolvedSnapshot[$index] intentKey is blank"
+                )
+            }
+            val expectedKey = "$idx:$ik"
+            if (key != expectedKey) {
+                throw IllegalArgumentException(
+                    "AI draft audit record for inbound $inboundProcessingId unresolved reviewKey '$key' does not match index-colon-intentKey format ($expectedKey)"
                 )
             }
             key
@@ -302,6 +348,37 @@ class AiReplyReviewAuditService(
             )
         }
         return canonicalKeys
+    }
+
+    private fun requireNonNegativeInt(value: Any?, fieldName: String, inboundProcessingId: Long): Int {
+        if (value == null) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId missing $fieldName"
+            )
+        }
+        if (value is String) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId $fieldName must be an integer, got string"
+            )
+        }
+        if (value !is Number) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId $fieldName must be an integer"
+            )
+        }
+        val asDouble = value.toDouble()
+        if (asDouble % 1.0 != 0.0) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId $fieldName must be an integer, got decimal"
+            )
+        }
+        val asInt = value.toInt()
+        if (asInt.toDouble() != asDouble || asInt < 0) {
+            throw IllegalArgumentException(
+                "AI draft audit record for inbound $inboundProcessingId $fieldName must be a non-negative integer"
+            )
+        }
+        return asInt
     }
 
     fun recordConfirmed(
