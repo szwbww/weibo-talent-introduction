@@ -113,13 +113,19 @@ object AiReplyIntentCatalog {
         RequestIntentDefinition(
             key = "programme.purpose",
             title = "Programme purpose",
-            requestAliases = listOf("purpose of the program", "programme purpose", "what is the program", "objectives"),
+            requestAliases = listOf(
+                "purpose of the program", "programme purpose", "what is the program", "objectives",
+                "purpose and structure of the programme", "purpose and structure of the program"
+            ),
             requiredCoverageKeys = listOf("programme.purpose")
         ),
         RequestIntentDefinition(
             key = "programme.structure",
             title = "Programme structure",
-            requestAliases = listOf("structure of the program", "how is the program", "programme structure", "program structure"),
+            requestAliases = listOf(
+                "structure of the program", "how is the program", "programme structure", "program structure",
+                "purpose and structure of the programme", "purpose and structure of the program"
+            ),
             requiredCoverageKeys = listOf("programme.structure"),
             alternativeCoverageKeys = listOf("programme.tracks")
         ),
@@ -176,15 +182,25 @@ object AiReplyIntentCatalog {
     )
 
     private val timingAliases = listOf("timeline", "when", "how long", "duration", "dates", "deadline", "time frame")
-    private val urlPattern = Regex("""https?://\S+|[?&]\w+=\S+""")
+    private val urlPattern = Regex("""https?://\S+|[?&]\w+=\S+""", RegexOption.IGNORE_CASE)
+    private val dashPattern = Regex("""[\u002D\u2013\u2014\u2015]+""")
+    private val programmePattern = Regex("""\bprogramme\b""")
+
+    private fun canonicalize(text: String): String {
+        // I-1: case-insensitive URL/query mask first, then lowercase + dash/whitespace/programme normalize
+        val urlMasked = urlPattern.replace(text, " ")
+        val lower = urlMasked.lowercase()
+        val dashNormalized = dashPattern.replace(lower, " ")
+        val whitespaceCollapsed = dashNormalized.replace(Regex("""\s+"""), " ").trim()
+        return programmePattern.replace(whitespaceCollapsed, "program")
+    }
 
     fun matchIntents(requestText: String): List<RequestIntentDefinition> {
-        val normalized = requestText.lowercase()
-        val cleaned = urlPattern.replace(normalized, " ")
+        val canonical = canonicalize(requestText)
         val matched = definitions.filter { def ->
-            def.requestAliases.any { alias -> wordBoundaryContains(cleaned, alias) }
+            def.requestAliases.any { alias -> wordBoundaryContains(canonical, canonicalize(alias)) }
         }
-        val asksTiming = timingAliases.any { wordBoundaryContains(cleaned, it) }
+        val asksTiming = timingAliases.any { wordBoundaryContains(canonical, it) }
 
         val result = if (matched.isEmpty()) {
             listOf(

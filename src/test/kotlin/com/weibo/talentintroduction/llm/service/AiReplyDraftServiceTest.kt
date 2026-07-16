@@ -3240,4 +3240,337 @@ class AiReplyDraftServiceTest {
         assertTrue(resolved.requestFacts[0].intents.all { it.status == "SUPPORTED" })
         assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds, "sendQaRuleIds unchanged")
     }
+
+    // ── T4: DraftService end-to-end intent/coverage matrix regression ─────────────
+
+    /**
+     * Full expert reply fixture with British "programme" and hyphenated "intellectual-property".
+     * G4 uses "enterprise partners" (not "enterprise projects") so it does not trigger
+     * enterprise.project_types and matches only researcher.selection + enterprise.matching.
+     */
+    private val janmedaMail = """
+        Thank you for your message. Here are my research profiles:
+        https://scholar.google.com/citations?user=OT-O6joAAAAJ&hl=en&selected=true
+        https://www.scopus.com/authid/detail.uri?authorId=57201234567
+
+        Based on my research profile and
+        areas of expertise, could you confirm whether my background fits the
+        enterprise projects your team manages?
+
+        Specifically:
+        - What is the full name and registered location of your company?
+        - Could you provide further information regarding the purpose and structure of the programme?
+        - How are researchers selected and matched with enterprise partners?
+        - What are the expected responsibilities and deliverables?
+        - Could you explain the contractual, financial, and intellectual-property arrangements?
+        - What are the next stages?
+
+        Best regards
+    """.trimIndent()
+
+    private fun makeJanmedaRule(id: Long, body: String, coverageKeys: String) =
+        sampleRule(id).copy(replyBody = body, coverageKeys = coverageKeys)
+
+    private fun stubJanmedaQaRules(
+        ipCoverageKey: String = "ip.arrangements",
+        programmeScopeKey: String = "programme.scope"
+    ) {
+        Mockito.`when`(qaRuleRepository.findById(101L)).thenReturn(
+            Optional.of(makeJanmedaRule(101L, "Programme scope covers AI and engineering.", programmeScopeKey))
+        )
+        Mockito.`when`(qaRuleRepository.findById(102L)).thenReturn(
+            Optional.of(makeJanmedaRule(102L, "Enterprise projects include applied research.", "enterprise.project_types"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(201L)).thenReturn(
+            Optional.of(makeJanmedaRule(201L, "Our legal name is Weibo Technology.", "company.legal_name"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(202L)).thenReturn(
+            Optional.of(makeJanmedaRule(202L, "We are registered in Beijing.", "company.registered_location"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(301L)).thenReturn(
+            Optional.of(makeJanmedaRule(301L, "The programme aims to bridge academia and industry.", "programme.purpose"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(302L)).thenReturn(
+            Optional.of(makeJanmedaRule(302L, "The programme spans 12 months with two tracks.", "programme.structure"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(401L)).thenReturn(
+            Optional.of(makeJanmedaRule(401L, "Researchers are selected by peer review.", "researcher.selection"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(402L)).thenReturn(
+            Optional.of(makeJanmedaRule(402L, "Matching is based on research direction.", "enterprise.matching"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(501L)).thenReturn(
+            Optional.of(makeJanmedaRule(501L, "Responsibilities include research advisory.", "role.responsibilities"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(502L)).thenReturn(
+            Optional.of(makeJanmedaRule(502L, "Deliverables are defined per project.", "role.deliverables"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(601L)).thenReturn(
+            Optional.of(makeJanmedaRule(601L, "A formal contract is signed.", "contract.terms"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(602L)).thenReturn(
+            Optional.of(makeJanmedaRule(602L, "Funding is provided by the government.", "finance.government_funding"))
+        )
+        Mockito.`when`(qaRuleRepository.findById(603L)).thenReturn(
+            Optional.of(makeJanmedaRule(603L, "IP belongs to the enterprise by default.", ipCoverageKey))
+        )
+        Mockito.`when`(qaRuleRepository.findById(701L)).thenReturn(
+            Optional.of(makeJanmedaRule(701L, "Next steps include document submission.", "application.steps"))
+        )
+    }
+
+    private fun stubJanmedaComposition(extracted: List<com.weibo.talentintroduction.qa.service.QaRequestExtractor.ExtractedRequest>) {
+        val gapItems = listOf(
+            GapItem(extracted[0].text, listOf(101L, 102L)),
+            GapItem(extracted[1].text, listOf(201L, 202L)),
+            GapItem(extracted[2].text, listOf(301L, 302L)),
+            GapItem(extracted[3].text, listOf(401L, 402L)),
+            GapItem(extracted[4].text, listOf(501L, 502L)),
+            GapItem(extracted[5].text, listOf(601L, 602L, 603L)),
+            GapItem(extracted[6].text, listOf(701L))
+        )
+        Mockito.`when`(qaMatchService.suggestComposition(janmedaMail)).thenReturn(
+            CompositionSuggestResult(
+                suggestedRuleIds = listOf(101, 102, 201, 202, 301, 302, 401, 402, 501, 502, 601, 602, 603, 701),
+                suggestedRules = emptyList(),
+                rulesByCategory = emptyList(),
+                gapItems = gapItems,
+                gapDetected = false,
+                matchedCategoryIds = emptyList()
+            )
+        )
+    }
+
+    private fun stubJanmedaResearchContext(extracted: List<com.weibo.talentintroduction.qa.service.QaRequestExtractor.ExtractedRequest>) {
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(extracted[0].text)).thenReturn(true)
+    }
+
+    @Test
+    fun `janmeda full mail yields 7 request facts with correct I2 intent matrix happy path`() {
+        val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
+        assertEquals(7, extracted.size, "extractor must yield exactly 7 groups: ${extracted.map { it.text }}")
+
+        // Verify order and original wording preserved in requestText
+        assertTrue(extracted[0].text.contains("research profile"), "G1 must contain 'research profile': ${extracted[0].text}")
+        assertTrue(extracted[0].text.contains("enterprise projects"), "G1 must contain 'enterprise projects': ${extracted[0].text}")
+        assertFalse(extracted[0].text.contains("\n"), "G1 soft newlines must fold: ${extracted[0].text}")
+        assertTrue(extracted[1].text.contains("full name and registered location"), "G2: ${extracted[1].text}")
+        assertTrue(extracted[2].text.contains("purpose and structure of the programme"), "G3 must keep British 'programme': ${extracted[2].text}")
+        assertTrue(extracted[3].text.contains("selected and matched"), "G4: ${extracted[3].text}")
+        assertTrue(extracted[4].text.contains("responsibilities and deliverables"), "G5: ${extracted[4].text}")
+        assertTrue(extracted[5].text.contains("intellectual-property"), "G6 must keep hyphenated 'intellectual-property': ${extracted[5].text}")
+        assertTrue(extracted[6].text.contains("next stages"), "G7: ${extracted[6].text}")
+
+        // No URL fragments in any extracted group
+        assertTrue(extracted.none { it.text.contains("scholar.google.com/citations?") }, "URLs must not form groups")
+        assertTrue(extracted.none { it.text.contains("selected=true") }, "URL query params must not appear")
+        assertTrue(extracted.none { it.text.contains("authorId") }, "URL params must not appear")
+
+        stubJanmedaComposition(extracted)
+        stubJanmedaResearchContext(extracted)
+        stubJanmedaQaRules()
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(janmedaMail, null)
+
+        assertEquals(7, resolved.requestFacts.size, "must have exactly 7 request facts")
+
+        // Assert index and requestText preserved
+        (0..6).forEach { i ->
+            assertEquals(i + 1, resolved.requestFacts[i].index, "fact index must be 1-based")
+            assertEquals(extracted[i].text, resolved.requestFacts[i].requestText, "requestText G${i+1} must match extractor output")
+        }
+
+        // Assert I-2 intent key matrix (order matters)
+        val g1Keys = resolved.requestFacts[0].intents.map { it.intentKey }
+        assertEquals(listOf("expertise.programme_fit", "enterprise.project_types"), g1Keys, "G1 intents")
+
+        val g2Keys = resolved.requestFacts[1].intents.map { it.intentKey }
+        assertEquals(listOf("company.legal_name", "company.registered_location"), g2Keys, "G2 intents")
+
+        val g3Keys = resolved.requestFacts[2].intents.map { it.intentKey }
+        assertEquals(listOf("programme.purpose", "programme.structure"), g3Keys, "G3 intents")
+
+        val g4Keys = resolved.requestFacts[3].intents.map { it.intentKey }
+        assertEquals(listOf("researcher.selection", "enterprise.matching"), g4Keys, "G4 intents")
+
+        val g5Keys = resolved.requestFacts[4].intents.map { it.intentKey }
+        assertEquals(listOf("role.responsibilities", "role.deliverables"), g5Keys, "G5 intents")
+
+        val g6Keys = resolved.requestFacts[5].intents.map { it.intentKey }
+        assertEquals(listOf("contract.terms", "finance.arrangements", "ip.arrangements"), g6Keys, "G6 intents")
+
+        val g7Keys = resolved.requestFacts[6].intents.map { it.intentKey }
+        assertEquals(listOf("application.next_stages"), g7Keys, "G7 intents")
+
+        // All groups GROUNDED in happy path
+        resolved.requestFacts.forEach { fact ->
+            assertEquals(RequestGroundingStatus.GROUNDED, fact.status, "G${fact.index} must be GROUNDED")
+        }
+
+        // No general.answer intents
+        resolved.requestFacts.forEach { fact ->
+            assertTrue(fact.intents.none { it.intentKey == "general.answer" }, "G${fact.index} must not have general.answer")
+        }
+
+        // G1 requiresResearchContext=true
+        assertTrue(resolved.requestFacts[0].requiresResearchContext, "G1 must require research context")
+        (1..6).forEach { i ->
+            assertFalse(resolved.requestFacts[i].requiresResearchContext, "G${i+1} must not require research context")
+        }
+
+        // draftReadiness = READY
+        val draftService = service(LlmProperties(enabled = false), null)
+        assertEquals(AiReplyDraftReadiness.READY, draftService.resolveDraftReadiness(resolved.requestFacts))
+    }
+
+    @Test
+    fun `janmeda removing IP coverage degrades G6 to PARTIAL and readiness to NEEDS_REVIEW`() {
+        val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
+        assertEquals(7, extracted.size)
+
+        stubJanmedaComposition(extracted)
+        stubJanmedaResearchContext(extracted)
+        // Stub with empty ip coverage key on rule 603
+        stubJanmedaQaRules(ipCoverageKey = "")
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(janmedaMail, null)
+
+        // G6 must degrade: ip.arrangements intent MISSING → group PARTIAL
+        val g6 = resolved.requestFacts[5]
+        assertEquals(RequestGroundingStatus.PARTIAL, g6.status, "G6 must be PARTIAL when IP coverage removed")
+        val ipIntent = g6.intents.find { it.intentKey == "ip.arrangements" }
+        assertNotNull(ipIntent, "G6 must still have ip.arrangements intent")
+        assertEquals("MISSING", ipIntent!!.status, "ip.arrangements must be MISSING")
+
+        // contract and finance still SUPPORTED
+        val contractIntent = g6.intents.find { it.intentKey == "contract.terms" }
+        val financeIntent = g6.intents.find { it.intentKey == "finance.arrangements" }
+        assertNotNull(contractIntent)
+        assertNotNull(financeIntent)
+        assertEquals("SUPPORTED", contractIntent!!.status, "contract.terms must remain SUPPORTED")
+        assertEquals("SUPPORTED", financeIntent!!.status, "finance.arrangements must remain SUPPORTED")
+
+        // Other groups unchanged at GROUNDED
+        listOf(0, 1, 2, 3, 4, 6).forEach { i ->
+            assertEquals(
+                RequestGroundingStatus.GROUNDED,
+                resolved.requestFacts[i].status,
+                "G${i+1} must remain GROUNDED"
+            )
+        }
+
+        // draftReadiness = NEEDS_REVIEW (has PARTIAL)
+        val draftService = service(LlmProperties(enabled = false), null)
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, draftService.resolveDraftReadiness(resolved.requestFacts))
+    }
+
+    @Test
+    fun `janmeda removing programme scope degrades G1 only and other groups unaffected`() {
+        val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
+        assertEquals(7, extracted.size)
+
+        stubJanmedaComposition(extracted)
+        stubJanmedaResearchContext(extracted)
+        // Stub with empty programme scope on rule 101 → expertise.programme_fit loses coverage
+        stubJanmedaQaRules(programmeScopeKey = "")
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(janmedaMail, null)
+
+        // G1 must degrade: expertise.programme_fit MISSING → group PARTIAL
+        val g1 = resolved.requestFacts[0]
+        assertEquals(RequestGroundingStatus.PARTIAL, g1.status, "G1 must be PARTIAL when programme.scope removed")
+        val fitIntent = g1.intents.find { it.intentKey == "expertise.programme_fit" }
+        assertNotNull(fitIntent)
+        assertEquals("MISSING", fitIntent!!.status, "expertise.programme_fit must be MISSING")
+        // enterprise.project_types still SUPPORTED
+        val projIntent = g1.intents.find { it.intentKey == "enterprise.project_types" }
+        assertNotNull(projIntent)
+        assertEquals("SUPPORTED", projIntent!!.status, "enterprise.project_types must remain SUPPORTED")
+
+        // G2-G7 unchanged at GROUNDED
+        (1..6).forEach { i ->
+            assertEquals(
+                RequestGroundingStatus.GROUNDED,
+                resolved.requestFacts[i].status,
+                "G${i+1} must remain GROUNDED"
+            )
+        }
+
+        // draftReadiness = NEEDS_REVIEW
+        val draftService = service(LlmProperties(enabled = false), null)
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, draftService.resolveDraftReadiness(resolved.requestFacts))
+    }
+
+    @Test
+    fun `janmeda profile context warning degrades G1 only leaving G2-G7 at GROUNDED`() {
+        val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
+        assertEquals(7, extracted.size)
+
+        stubJanmedaComposition(extracted)
+        stubJanmedaResearchContext(extracted)
+        stubJanmedaQaRules()
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(
+            janmedaMail, null, listOf("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+        )
+
+        // G1 expertise.programme_fit MISSING (profile insufficient)
+        val g1 = resolved.requestFacts[0]
+        val fitIntent = g1.intents.find { it.intentKey == "expertise.programme_fit" }
+        assertNotNull(fitIntent)
+        assertEquals("MISSING", fitIntent!!.status, "expertise.programme_fit must be MISSING when profile insufficient")
+        assertEquals(RequestGroundingStatus.PARTIAL, g1.status, "G1 must be PARTIAL with profile warning")
+
+        // G2-G7 unchanged at GROUNDED
+        (1..6).forEach { i ->
+            assertEquals(
+                RequestGroundingStatus.GROUNDED,
+                resolved.requestFacts[i].status,
+                "G${i+1} must remain GROUNDED despite profile warning"
+            )
+        }
+
+        val draftService = service(LlmProperties(enabled = false), null)
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, draftService.resolveDraftReadiness(resolved.requestFacts))
+    }
+
+    @Test
+    fun `janmeda URLs do not form extra groups and selected URL param does not trigger researcher selection`() {
+        val extracted = com.weibo.talentintroduction.qa.service.QaRequestExtractor.extract(janmedaMail)
+
+        // No URL-only group
+        assertTrue(extracted.none { it.text.contains("scholar.google.com") }, "scholar URL must not be a group")
+        assertTrue(extracted.none { it.text.contains("scopus.com") }, "scopus URL must not be a group")
+
+        stubJanmedaComposition(extracted)
+        stubJanmedaResearchContext(extracted)
+        stubJanmedaQaRules()
+
+        val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(janmedaMail, null)
+
+        // Exactly 7 facts - no extra URL group
+        assertEquals(7, resolved.requestFacts.size, "must not create extra group for URLs")
+
+        // No fact has requestText containing URL
+        assertTrue(
+            resolved.requestFacts.none { it.requestText.contains("scholar.google.com") },
+            "no fact must reference scholar URL"
+        )
+
+        // G4 (index 3): must NOT have researcher.selection triggered by URL query param "selected=true"
+        // The research question (G1) may have researcher.selection if "selected" matches, but the URL "selected=true" is masked.
+        // Verify G4 specifically has only researcher.selection + enterprise.matching (not triggered by URL param)
+        val g4 = resolved.requestFacts[3]
+        assertFalse(
+            g4.requestText.contains("selected=true"),
+            "G4 requestText must not contain URL parameter: ${g4.requestText}"
+        )
+
+        // No fact references the URL parameter selected=true
+        assertTrue(
+            resolved.requestFacts.none { it.requestText.contains("selected=true") },
+            "URL query param 'selected=true' must not appear in any requestText"
+        )
+    }
 }
