@@ -3,7 +3,7 @@ id: K-ai-reply-intent-alias-fixture-fidelity
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-16
-hit_count: 2
+hit_count: 4
 source: fix-v:ai-reply-06-p1-intent-coverage-matrix:stop-after-fix-3
 severity: P1
 ---

@@ -73,6 +73,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - AI prompt 配置表只存自定义覆盖；默认生效值必须由后端 `AiPromptConfigService` 单源提供，前端不得另写默认 prompt。(K-prompt-config-effective-default)
 - `CompositionSuggestResult.gapItems` 只服务建议展示与 AI 请求矩阵；自动回复可共享 tokenizer/count，但不得消费 gapItems 展示结构或 AI grounding 状态。(K-gap-items-compose-only)
 - 需保留段落的外发邮件必须同时提供 plain text 与 HTML multipart；HTML 由纯文本转换或安全渲染，审计仍持久化 plain text。(K-plaintext-reply-client-reflow)
+- 研究匹配必须同时具备专家画像与 `programme.scope` 审核依据；任一缺失即 UNSUPPORTED，且只读画像不得触发 enrichment。(K-research-fit-dual-evidence)
 
 ---
 

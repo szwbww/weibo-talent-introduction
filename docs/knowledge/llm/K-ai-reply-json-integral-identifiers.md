@@ -2,8 +2,8 @@
 id: K-ai-reply-json-integral-identifiers
 domain: llm
 created: 2026-07-15
-last_used: 2026-07-15
-hit_count: 1
+last_used: 2026-07-16
+hit_count: 2
 source: fix-v:ai-reply-07-p1-intent-output-and-claim-validation:fix-3
 severity: P1
 ---

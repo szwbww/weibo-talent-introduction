@@ -3,7 +3,7 @@ id: K-ai-reply-json-integral-range
 domain: llm
 created: 2026-07-15
 last_used: 2026-07-16
-hit_count: 2
+hit_count: 3
 source: fix-v:ai-reply-07-p1-intent-output-and-claim-validation:stop-after-fix-3
 severity: P1
 ---

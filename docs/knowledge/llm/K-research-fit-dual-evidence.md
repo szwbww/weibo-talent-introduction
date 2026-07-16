@@ -3,7 +3,7 @@ id: K-research-fit-dual-evidence
 domain: llm
 created: 2026-07-13
 last_used: 2026-07-16
-hit_count: 9
+hit_count: 11
 source: create-p:ai-reply-02-grounding-evidence-semantics
 severity: P1
 ---
