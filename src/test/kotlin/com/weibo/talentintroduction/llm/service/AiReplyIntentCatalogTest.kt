@@ -46,6 +46,37 @@ class AiReplyIntentCatalogTest {
     }
 
     @Test
+    fun `group 4 - selected and matched with enterprise projects drops project types object`() {
+        val keys = AiReplyIntentCatalog.matchIntents(
+            "How researchers are selected and matched with enterprise projects"
+        ).map { it.key }
+        assertEquals(listOf("researcher.selection", "enterprise.matching"), keys)
+        assertEquals(
+            "Selection and enterprise matching",
+            AiReplyIntentCatalog.resolveGroupTitle(keys, "")
+        )
+    }
+
+    @Test
+    fun `standalone types of enterprise projects still matches project types`() {
+        val keys = AiReplyIntentCatalog.matchIntents(
+            "What types of enterprise projects do you manage?"
+        ).map { it.key }
+        assertEquals(listOf("enterprise.project_types"), keys)
+    }
+
+    @Test
+    fun `selection matching with explicit project type ask keeps three intents`() {
+        val keys = AiReplyIntentCatalog.matchIntents(
+            "How are researchers selected and matched, and what types of enterprise projects do you manage?"
+        ).map { it.key }
+        assertEquals(
+            listOf("enterprise.project_types", "researcher.selection", "enterprise.matching"),
+            keys
+        )
+    }
+
+    @Test
     fun `group 5 - responsibilities and deliverables`() {
         val keys = AiReplyIntentCatalog.matchIntents("responsibilities and deliverables").map { it.key }
         assertEquals(listOf("role.responsibilities", "role.deliverables"), keys)

@@ -3244,9 +3244,9 @@ class AiReplyDraftServiceTest {
     // ── T4: DraftService end-to-end intent/coverage matrix regression ─────────────
 
     /**
-     * Full expert reply fixture with British "programme" and hyphenated "intellectual-property".
-     * G4 uses "enterprise partners" (not "enterprise projects") so it does not trigger
-     * enterprise.project_types and matches only researcher.selection + enterprise.matching.
+     * Full original expert-mail fixture (British programme + hyphenated intellectual-property).
+     * G4 keeps real "enterprise projects" wording; catalog disambiguation must drop the
+     * project-types object hit so intents stay selection + matching only.
      */
     private val janmedaMail = """
         Thank you for your message. Here are my research profiles:
@@ -3260,7 +3260,7 @@ class AiReplyDraftServiceTest {
         Specifically:
         - What is the full name and registered location of your company?
         - Could you provide further information regarding the purpose and structure of the programme?
-        - How are researchers selected and matched with enterprise partners?
+        - How are researchers selected and matched with enterprise projects?
         - What are the expected responsibilities and deliverables?
         - Could you explain the contractual, financial, and intellectual-property arrangements?
         - What are the next stages?
@@ -3393,6 +3393,11 @@ class AiReplyDraftServiceTest {
 
         val g4Keys = resolved.requestFacts[3].intents.map { it.intentKey }
         assertEquals(listOf("researcher.selection", "enterprise.matching"), g4Keys, "G4 intents")
+        assertEquals(
+            "Selection and enterprise matching",
+            AiReplyIntentCatalog.resolveGroupTitle(g4Keys, extracted[3].text),
+            "G4 fixed title"
+        )
 
         val g5Keys = resolved.requestFacts[4].intents.map { it.intentKey }
         assertEquals(listOf("role.responsibilities", "role.deliverables"), g5Keys, "G5 intents")
@@ -3402,6 +3407,9 @@ class AiReplyDraftServiceTest {
 
         val g7Keys = resolved.requestFacts[6].intents.map { it.intentKey }
         assertEquals(listOf("application.next_stages"), g7Keys, "G7 intents")
+
+        val totalIntents = resolved.requestFacts.sumOf { it.intents.size }
+        assertEquals(14, totalIntents, "I-2 requires exactly 14 intents across 7 groups")
 
         // All groups GROUNDED in happy path
         resolved.requestFacts.forEach { fact ->

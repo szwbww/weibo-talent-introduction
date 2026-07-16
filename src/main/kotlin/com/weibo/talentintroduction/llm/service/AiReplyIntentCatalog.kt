@@ -182,6 +182,10 @@ object AiReplyIntentCatalog {
     )
 
     private val timingAliases = listOf("timeline", "when", "how long", "duration", "dates", "deadline", "time frame")
+    /** Explicit project-type ask phrases — keep enterprise.project_types even alongside selection/matching. */
+    private val explicitProjectTypeAliases = listOf(
+        "types of projects", "types of enterprise", "project type", "project types"
+    )
     private val urlPattern = Regex("""https?://\S+|[?&]\w+=\S+""", RegexOption.IGNORE_CASE)
     private val dashPattern = Regex("""[\u002D\u2013\u2014\u2015]+""")
     private val programmePattern = Regex("""\bprogramme\b""")
@@ -200,9 +204,10 @@ object AiReplyIntentCatalog {
         val matched = definitions.filter { def ->
             def.requestAliases.any { alias -> wordBoundaryContains(canonical, canonicalize(alias)) }
         }
+        val disambiguated = disambiguateSelectionMatchingProjectTypes(canonical, matched)
         val asksTiming = timingAliases.any { wordBoundaryContains(canonical, it) }
 
-        val result = if (matched.isEmpty()) {
+        val result = if (disambiguated.isEmpty()) {
             listOf(
                 RequestIntentDefinition(
                     key = "general.answer",
@@ -212,7 +217,7 @@ object AiReplyIntentCatalog {
                 )
             )
         } else {
-            matched.map { def ->
+            disambiguated.map { def ->
                 if (def.key == "application.next_stages" && asksTiming) {
                     def.copy(requiredCoverageKeys = listOf("application.steps", "application.timeline"))
                 } else {
@@ -221,6 +226,31 @@ object AiReplyIntentCatalog {
             }
         }
         return result
+    }
+
+    /**
+     * When a request already asks selection+matching, a bare "enterprise project(s)" object
+     * is the matching complement — not a separate project-types question — unless an explicit
+     * type phrase is also present.
+     */
+    private fun disambiguateSelectionMatchingProjectTypes(
+        canonical: String,
+        matched: List<RequestIntentDefinition>
+    ): List<RequestIntentDefinition> {
+        val keys = matched.map { it.key }.toSet()
+        if ("researcher.selection" !in keys ||
+            "enterprise.matching" !in keys ||
+            "enterprise.project_types" !in keys
+        ) {
+            return matched
+        }
+        val hasExplicitProjectTypeAsk = explicitProjectTypeAliases.any { alias ->
+            wordBoundaryContains(canonical, canonicalize(alias))
+        }
+        if (hasExplicitProjectTypeAsk) {
+            return matched
+        }
+        return matched.filter { it.key != "enterprise.project_types" }
     }
 
     private fun wordBoundaryContains(text: String, phrase: String): Boolean {
