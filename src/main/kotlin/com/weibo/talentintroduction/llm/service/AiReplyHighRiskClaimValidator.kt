@@ -163,7 +163,7 @@ class AiReplyHighRiskClaimValidator(
 
     internal fun wordBoundaryContains(text: String, phrase: String): Boolean {
         val escaped = Regex.escape(phrase)
-        return Regex("\\b" + escaped + "\\b").containsMatchIn(text)
+        return Regex("\\b" + escaped + "\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
     }
 
     companion object {
