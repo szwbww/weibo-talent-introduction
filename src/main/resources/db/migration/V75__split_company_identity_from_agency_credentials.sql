@@ -13,9 +13,15 @@ UPDATE qa_rule
 
 -- 2. Remove company name paragraph appended by V68 from id=18 reply_body.
 UPDATE qa_rule
-   SET reply_body = REPLACE(reply_body, CONCAT('
+   SET reply_body = REPLACE(
+       reply_body COLLATE utf8mb4_unicode_ci,
+       CONCAT(_utf8mb4'
 
-Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd. (', CONVERT(UNHEX('E6B19FE88B8FE6B885E9A39EE4BABAE6898DE7A791E68A80E69C89E99990E585ACE58FB8') USING utf8mb4), '), registered in Nanjing, China.'), '')
+Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd. (' COLLATE utf8mb4_unicode_ci,
+              CONVERT(UNHEX('E6B19FE88B8FE6B885E9A39EE4BABAE6898DE7A791E68A80E69C89E99990E585ACE58FB8') USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+              _utf8mb4'), registered in Nanjing, China.' COLLATE utf8mb4_unicode_ci),
+       _utf8mb4'' COLLATE utf8mb4_unicode_ci
+   )
  WHERE id = 18 AND reply_body LIKE '%Jiangsu Qingfei Talent Technology%';
 
 -- 3. New rule: company registered identity and location (facts only).
@@ -26,7 +32,9 @@ INSERT INTO qa_rule (
 SELECT (SELECT id FROM qa_category WHERE category_code = 'TRUST_AND_COMPLIANCE'),
        'registered location,registered address,company registration,name of your company,your company name,full name and registered,where is your company,where are you based',
        'ANY', 90, 'Company registered identity and location',
-       CONCAT('Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd. (', CONVERT(UNHEX('E6B19FE88B8FE6B885E9A39EE4BABAE6898DE7A791E68A80E69C89E99990E585ACE58FB8') USING utf8mb4), '), registered in Nanjing, China.'),
+       CONCAT(_utf8mb4'Our full registered name is Jiangsu Qingfei Talent Technology Co., Ltd. (' COLLATE utf8mb4_unicode_ci,
+              CONVERT(UNHEX('E6B19FE88B8FE6B885E9A39EE4BABAE6898DE7A791E68A80E69C89E99990E585ACE58FB8') USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+              _utf8mb4'), registered in Nanjing, China.' COLLATE utf8mb4_unicode_ci),
        CONVERT(UNHEX('E585ACE58FB8E6B3A8E5868CE4BFA1E681AF') USING utf8mb4),
        1, 0, 1, 0
  WHERE NOT EXISTS (SELECT 1 FROM qa_rule WHERE reply_subject = 'Company registered identity and location');
