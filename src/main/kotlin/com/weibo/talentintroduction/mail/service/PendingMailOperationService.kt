@@ -6,9 +6,6 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
-import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
-import com.weibo.talentintroduction.llm.service.AiReplySendAuthorityResult
-import com.weibo.talentintroduction.llm.service.AiReviewConfirmation
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
@@ -49,8 +46,7 @@ class PendingMailOperationService(
     private val mailContentService: MailContentService,
     private val replySnippetService: ReplySnippetService,
     private val mailVariableService: MailVariableService,
-    private val contentVariantService: ContentVariantService,
-    private val aiReplyReviewAuditService: AiReplyReviewAuditService
+    private val contentVariantService: ContentVariantService
 ) {
     @Transactional
     fun changeOperatorStatus(
@@ -190,9 +186,7 @@ class PendingMailOperationService(
         freeTextPreview: String? = null,
         useVariants: Boolean = false,
         templateTextBody: String? = null,
-        templateHtmlBody: String? = null,
-        replySource: String? = null,
-        aiReviewConfirmation: AiReviewConfirmation? = null
+        templateHtmlBody: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -203,12 +197,6 @@ class PendingMailOperationService(
 
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
-
-        val authorityResult = aiReplyReviewAuditService.validateConfirmationForSend(
-            inboundProcessingId = inboundProcessingId,
-            replySource = replySource,
-            confirmation = aiReviewConfirmation
-        )
 
         val carriesQa = !qaRuleIds.isNullOrEmpty()
         val primaryRuleId = if (carriesQa) {
@@ -286,20 +274,6 @@ class PendingMailOperationService(
         val bodyPreviewText = (finalTextBody?.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
             ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
         val mailRecordId = saved.id ?: error("Mail record id is required")
-
-        if (authorityResult is AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED) {
-            aiReplyReviewAuditService.recordConfirmed(
-                inboundProcessingId = inboundProcessingId,
-                contactId = contactId,
-                mailRecordId = mailRecordId,
-                confirmation = AiReviewConfirmation(
-                    draftIdentity = authorityResult.draftIdentity,
-                    confirmedReviewKeys = authorityResult.confirmedReviewKeys,
-                    operatorNote = authorityResult.operatorNote
-                ),
-                operatorName = operatorName
-            )
-        }
 
         if (carriesQa) {
             qaRuleIds!!.forEachIndexed { ordinal, qaRuleId ->
@@ -714,9 +688,7 @@ data class PendingManualRichReplyRequest(
     val freeTextPreview: String? = null,
     val useVariants: Boolean = false,
     val templateTextBody: String? = null,
-    val templateHtmlBody: String? = null,
-    val replySource: String? = null,
-    val aiReviewConfirmation: AiReviewConfirmation? = null
+    val templateHtmlBody: String? = null
 )
 
 data class ComposedReplyRequest(

@@ -3,7 +3,7 @@ id: K-ai-reply-modal-helper-scope
 domain: frontend
 created: 2026-07-16
 last_used: 2026-07-16
-hit_count: 7
+hit_count: 11
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---

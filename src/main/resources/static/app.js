@@ -147,8 +147,6 @@ const aiReplyState = {
     lastRenderedDraft: "",
     /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
     lastQaRuleIds: [],
-    /** Opaque draft identity returned by server; sent back in confirmation. */
-    lastDraftIdentity: null,
     /** Locked after first turn: QA_MATCHED | FREE_FORM | QA_GROUNDED */
     mode: null,
     /** Whether first turn has completed (locks mode and qaRuleIds for continuation). */
@@ -161,97 +159,6 @@ const aiReplyState = {
     inFlight: false,
     selectedModel: "DEEPSEEK_V4_FLASH"
 };
-
-const aiReplyReviewState = {
-    pendingRequestBody: null,
-    reviewItems: [],
-    readiness: "READY",
-    recordId: null,
-    resolve: null,
-    reject: null
-};
-
-function openReviewModal() {
-    const list = $("#aiReplyReviewList");
-    if (!list) return;
-    var items = aiReplyReviewState.reviewItems || [];
-    list.innerHTML = items.map(function (item) {
-        var label = escapeHtml(item.title || item.intentKey || "");
-        var key = escapeHtml(item.reviewKey || "");
-        var badge = item.status === "MISSING" ? "未覆盖" : "部分覆盖";
-        return '<label class="checkbox-row" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;">'
-            + '<input type="checkbox" class="ai-review-check" data-key="' + key + '">'
-            + '<span style="flex:1;font-size:12px;line-height:1.4;">'
-            + '<strong>' + key + '</strong> <span class="badge">' + badge + '</span>'
-            + '<br>' + label
-            + '</span>'
-            + '</label>';
-    }).join("");
-    $("#aiReplyReviewNote").value = "";
-    updateReviewConfirmButton();
-    $("#aiReplyReviewModal").hidden = false;
-}
-
-function closeReviewModal() {
-    $("#aiReplyReviewModal").hidden = true;
-}
-
-function cancelReviewSession() {
-    closeReviewModal();
-    if (aiReplyReviewState.reject) {
-        aiReplyReviewState.reject();
-        aiReplyReviewState.reject = null;
-    }
-    clearReviewState();
-}
-
-function clearReviewState() {
-    aiReplyReviewState.pendingRequestBody = null;
-    aiReplyReviewState.reviewItems = [];
-    aiReplyReviewState.readiness = "READY";
-    aiReplyReviewState.recordId = null;
-    aiReplyReviewState.draftIdentity = null;
-    aiReplyReviewState.resolve = null;
-}
-
-function updateReviewConfirmButton() {
-    var checkboxes = document.querySelectorAll("#aiReplyReviewList .ai-review-check");
-    var allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(function (cb) { return cb.checked; });
-    var note = ($("#aiReplyReviewNote")?.value || "").trim();
-    var isBlocked = aiReplyReviewState.readiness === "BLOCKED";
-    var noteValid = !isBlocked || note.length >= 5;
-    var btn = $("#aiReplyReviewConfirmBtn");
-    if (btn) {
-        btn.disabled = !allChecked || !noteValid;
-    }
-}
-
-function confirmReview() {
-    var checkboxes = document.querySelectorAll("#aiReplyReviewList .ai-review-check");
-    if (checkboxes.length === 0) return;
-    var allChecked = Array.from(checkboxes).every(function (cb) { return cb.checked; });
-    if (!allChecked) {
-        showStatus("请勾选所有审核项后再确认发送", "error");
-        return;
-    }
-    var note = ($("#aiReplyReviewNote")?.value || "").trim();
-    if (aiReplyReviewState.readiness === "BLOCKED" && note.length < 5) {
-        showStatus("BLOCKED 草稿必须填写审核说明（至少 5 个字符）", "error");
-        return;
-    }
-    var payload = {
-        draftIdentity: aiReplyReviewState.draftIdentity || null,
-        confirmedReviewKeys: aiReplyReviewState.reviewItems.map(function (it) { return it.reviewKey; }),
-        operatorNote: note,
-        recordId: aiReplyReviewState.recordId
-    };
-    var resolveFn = aiReplyReviewState.resolve;
-    closeReviewModal();
-    clearReviewState();
-    if (resolveFn) {
-        resolveFn(payload);
-    }
-}
 
 const AI_REPLY_MODEL_LABELS = {
     DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
@@ -1805,14 +1712,6 @@ function renderQaAuditPanel() {
                 <div class="metadata-card">
                     <div class="metadata-card-header"><span>遗漏率 (BLOCKED)</span></div>
                     <div class="metadata-card-value">${formatPercent(qm.omissionRate)}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>直发拦截</span></div>
-                    <div class="metadata-card-value">${safeNum(qm.directSendBlockedCount)}</div>
-                </div>
-                <div class="metadata-card">
-                    <div class="metadata-card-header"><span>人工确认</span></div>
-                    <div class="metadata-card-value">${safeNum(qm.reviewConfirmedCount)}</div>
                 </div>
             </div>`;
     };
@@ -3745,7 +3644,6 @@ const AI_REPLY_WARNING_LABELS = {
     UNAUTHORIZED_ACTION_REMOVED: "已移除未授权的外发动作请求。",
     AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND: "无法确定回信账号，变量预览未完全渲染",
     AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文",
-    AI_REPLY_AUDIT_UNAVAILABLE: "AI 草稿审核记录保存失败，本次草稿未提供。请重试生成。",
     AI_REPLY_STRUCTURED_RESPONSE_INVALID: "模型返回格式无效，已使用审核依据生成结构化草稿。"
 };
 
@@ -3845,43 +3743,6 @@ function summarizeAiReplyCoverage(requestCoverage) {
         hasCoverage: items.length > 0,
         needsGroundingReview: partial > 0 || unsupported > 0
     };
-}
-
-function buildIntentReviewItems(requestCoverage) {
-    const items = Array.isArray(requestCoverage) ? requestCoverage : [];
-    const result = [];
-    items.forEach((item) => {
-        const requestIndex = Number(item && item.index) || 0;
-        const intents = Array.isArray(item && item.intents) ? item.intents : [];
-        if (intents.length > 0) {
-            intents.forEach((intent) => {
-                if (intent && intent.status !== "SUPPORTED") {
-                    result.push({
-                        reviewKey: requestIndex + ":" + (intent.intentKey || ""),
-                        requestIndex,
-                        intentKey: intent.intentKey || "",
-                        title: intent.title || "",
-                        status: intent.status || "",
-                        missingEvidenceKeys: Array.isArray(intent.missingEvidenceKeys) ? intent.missingEvidenceKeys : []
-                    });
-                }
-            });
-        } else {
-            const status = String(item && item.status != null ? item.status : "");
-            const requestText = collapseAiReplyRequestText(item && item.requestText);
-            if (status === "PARTIAL" || status === "UNSUPPORTED") {
-                result.push({
-                    reviewKey: requestIndex + ":legacy",
-                    requestIndex,
-                    intentKey: "legacy",
-                    title: requestText,
-                    status,
-                    missingEvidenceKeys: []
-                });
-            }
-        }
-    });
-    return result;
 }
 
 function resolveAiDraftReadiness(result, coverageSummary) {
@@ -8952,14 +8813,12 @@ function renderAiReplyPanelHtml(recordId) {
 }
 
 function resetAiReplyState(recordId) {
-    cancelReviewSession();
     aiReplyState.requestSeq += 1;
     aiReplyState.recordId = recordId;
     aiReplyState.turns = [];
     aiReplyState.lastDraftTemplate = "";
     aiReplyState.lastRenderedDraft = "";
     aiReplyState.lastQaRuleIds = [];
-    aiReplyState.lastDraftIdentity = null;
     aiReplyState.mode = null;
     aiReplyState.firstTurnDone = false;
     aiReplyState.drafts = {};
@@ -8990,18 +8849,14 @@ function appendAiChatDraftBubble(rawText, renderedText, result) {
     if (readiness === "NEEDS_REVIEW") label = "AI 草稿 — 需补充";
     else if (readiness === "BLOCKED") label = "AI 草稿 — 缺依据";
     let adoptLabel = "采用此草稿";
-    if (readiness !== "READY") adoptLabel = "采用并人工补充";
-    const intentItems = buildIntentReviewItems(requestCoverage);
     aiReplyState.drafts[draftId] = {
         raw: rawText || "",
         rendered,
         needsGroundingReview: coverageSummary.needsGroundingReview,
         reviewItems: coverageSummary.reviewItems,
-        intentItems,
         draftReadiness: readiness,
         requestCount: Number((result && result.requestCount)) || 0,
-        mode: (result && result.mode) || "",
-        draftIdentity: (result && result.draftIdentity) || aiReplyState.lastDraftIdentity || null
+        mode: (result && result.mode) || ""
     };
     const bubble = document.createElement("div");
     bubble.className = "ai-chat-bubble ai-chat-assistant";
@@ -9028,7 +8883,6 @@ function initAiReplyWorkbench(recordId) {
 async function showUnmatchedDetail(id) {
     manualReplyQaContext = null;
     aiReplyState.adoptContext = null;
-    cancelReviewSession();
     state.mailbox.detailContext = {
         source: "INBOUND_PROCESSING",
         id: Number(id),
@@ -9548,10 +9402,6 @@ async function handleUnmatchedAction(element) {
                 renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
                 return;
             }
-            if (result.draftAuthorityAvailable === false) {
-                renderAiReplyFeedback(feedback, null, "AI 草稿审核记录保存失败，本次草稿未提供。请重试生成。");
-                return;
-            }
             if (!isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
                 aiReplyState.turns.push({
@@ -9567,9 +9417,6 @@ async function handleUnmatchedAction(element) {
             aiReplyState.lastDraftTemplate = rawDraft;
             aiReplyState.lastRenderedDraft = renderedDraft;
             aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
-            if (result.draftIdentity) {
-                aiReplyState.lastDraftIdentity = result.draftIdentity;
-            }
             if (isFirstTurn) {
                 aiReplyState.mode = result.mode || null;
                 aiReplyState.firstTurnDone = true;
@@ -9606,7 +9453,6 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "ai-adopt-draft") {
-        cancelReviewSession();
         const draftId = Number(element.dataset.draftId);
         const entry = aiReplyState.drafts[draftId];
         const rendered = entry?.rendered ?? aiReplyState.lastRenderedDraft;
@@ -9628,9 +9474,7 @@ async function handleUnmatchedAction(element) {
             recordId: Number(id),
             needsGroundingReview: !!entry?.needsGroundingReview,
             reviewItems: Array.isArray(entry?.reviewItems) ? entry.reviewItems : [],
-            intentItems: Array.isArray(entry?.intentItems) ? entry.intentItems : [],
             draftReadiness: entry?.draftReadiness || "READY",
-            draftIdentity: entry?.draftIdentity || null,
             requestCount: Number(entry?.requestCount) || 0,
             mode: entry?.mode || ""
         };
@@ -9666,40 +9510,6 @@ async function handleUnmatchedAction(element) {
         }
         await showUnmatchedDetail(recordId);
         await refreshMailboxAfterPendingAction();
-    }
-
-    function validateSectionNumbering(bodyText, requestCount) {
-        if (!bodyText || requestCount < 2) return null;
-        var nums = [];
-        var pattern = /^(\d+)\.\s+/mg;
-        var m;
-        while ((m = pattern.exec(bodyText)) !== null) {
-            var n = Number(m[1]);
-            if (n >= 1 && n <= requestCount) {
-                nums.push(n);
-            } else {
-                return "正文编号 " + n + " 越界（应为 1.." + requestCount + "），请修正后再发送。";
-            }
-        }
-        if (nums.length === 0) {
-            return "正文缺少 " + requestCount + " 项编号标题（1. ~ " + requestCount + ".），请补全后再发送。";
-        }
-        if (nums.length !== requestCount) {
-            return "正文编号数量不匹配（期望 " + requestCount + " 项，实际 " + nums.length + " 项），请检查标题序号。";
-        }
-        for (var i = 1; i <= requestCount; i++) {
-            if (nums[i - 1] !== i) {
-                return "正文编号不连续（期望 " + i + "，实际 " + nums[i - 1] + "），请修正标题序号。";
-            }
-        }
-        var seen = {};
-        for (var j = 0; j < nums.length; j++) {
-            if (seen[nums[j]]) {
-                return "正文编号 " + nums[j] + " 重复出现，请删除重复标题。";
-            }
-            seen[nums[j]] = true;
-        }
-        return null;
     }
 
     if (action === "send-manual-rich-reply") {
@@ -9741,61 +9551,7 @@ async function handleUnmatchedAction(element) {
         }
         requestBody.useVariants = $("#manualReplyUseVariants")?.checked === true;
 
-        const numberingError = validateSectionNumbering(editor.innerText, adopt?.requestCount || 0);
-        if (numberingError) {
-            showStatus(numberingError, "error");
-            return;
-        }
-
-        const readiness = adopt && Number(adopt.recordId) === Number(id)
-            ? (adopt.draftReadiness || "READY")
-            : "READY";
-
-        if (readiness === "READY" || !adopt || Number(adopt.recordId) !== Number(id)) {
-            return submitManualRichReply(id, requestBody);
-        }
-
-        requestBody.replySource = "AI_DRAFT";
-        const intentItems = Array.isArray(adopt.intentItems) ? adopt.intentItems : [];
-        const nonSupported = intentItems.filter(function (it) { return it.status !== "SUPPORTED"; });
-
-        try {
-            await api(`/api/mail/unmatched-inbound/${id}/ai-reply/review-event`, {
-                method: "POST",
-                body: JSON.stringify({
-                    eventType: "SEND_BLOCKED",
-                    operatorName,
-                    unresolvedItems: nonSupported.map(function (it) {
-                        return { reviewKey: it.reviewKey, requestIndex: it.requestIndex, intentKey: it.intentKey, status: it.status, missingEvidenceKeys: it.missingEvidenceKeys };
-                    })
-                })
-            });
-        } catch (_) { /* best-effort */ }
-
-        aiReplyReviewState.pendingRequestBody = requestBody;
-        aiReplyReviewState.reviewItems = nonSupported;
-        aiReplyReviewState.readiness = readiness;
-        aiReplyReviewState.recordId = Number(id);
-        aiReplyReviewState.draftIdentity = adopt.draftIdentity || null;
-
-        return new Promise(function (resolve, reject) {
-            aiReplyReviewState.resolve = function (payload) {
-                resolve(payload);
-            };
-            aiReplyReviewState.reject = function () {
-                reject(new Error("cancelled"));
-            };
-            openReviewModal();
-        }).then(function (confirmedPayload) {
-            requestBody.aiReviewConfirmation = {
-                draftIdentity: confirmedPayload.draftIdentity || null,
-                confirmedReviewKeys: confirmedPayload.confirmedReviewKeys || [],
-                operatorNote: confirmedPayload.operatorNote || ""
-            };
-            return submitManualRichReply(id, requestBody);
-        }).catch(function (_) {
-            clearReviewState();
-        });
+        return submitManualRichReply(id, requestBody);
     }
     if (action === "rich-command") {
         const command = element.dataset.command;
@@ -10606,16 +10362,6 @@ function bindEvents() {
         if (!Number.isFinite(fieldId)) return;
         saveAiAnalysisField(fieldId, input.value);
     });
-    $("#aiReplyReviewBackdrop")?.addEventListener("click", cancelReviewSession);
-    $("#aiReplyReviewCloseBtn")?.addEventListener("click", cancelReviewSession);
-    $("#aiReplyReviewCancelBtn")?.addEventListener("click", cancelReviewSession);
-    $("#aiReplyReviewConfirmBtn")?.addEventListener("click", confirmReview);
-    $("#aiReplyReviewList")?.addEventListener("change", function (event) {
-        if (event.target && event.target.classList.contains("ai-review-check")) {
-            updateReviewConfirmButton();
-        }
-    });
-    $("#aiReplyReviewNote")?.addEventListener("input", updateReviewConfirmButton);
     $("#contactHeadActions").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) {

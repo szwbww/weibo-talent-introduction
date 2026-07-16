@@ -6,9 +6,6 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
-import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
-import com.weibo.talentintroduction.llm.service.AiReplySendAuthorityResult
-import com.weibo.talentintroduction.llm.service.AiReviewConfirmation
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -88,11 +85,6 @@ class PendingMailOperationServiceTest {
         contentVariantRepository,
         MailPlaceholderService()
     )
-    private val aiReplyReviewAuditService = Mockito.mock(AiReplyReviewAuditService::class.java).also {
-        Mockito.`when`(it.validateConfirmationForSend(
-            Mockito.anyLong(), Mockito.any(), Mockito.any()
-        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
-    }
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -109,8 +101,7 @@ class PendingMailOperationServiceTest {
         mailContentService,
         replySnippetService,
         mailVariableService,
-        contentVariantService,
-        aiReplyReviewAuditService
+        contentVariantService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -1648,339 +1639,51 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
-    fun `send manual rich reply rejects when gate validateConfirmationForSend throws`() {
+    fun `send manual rich reply with adopted draft template succeeds without audit gate`() {
         val record = inbound(1)
-        val account = stubAccount()
-        val delivered = DeliveredMail(messageId = "msg-blocked-reject", status = "SUCCESS")
+        val rule = qaRule(10, 1, "Body A")
+        val account = stubAccount().copy(senderName = "Bob")
+        val delivered = DeliveredMail(messageId = "msg-adopted", status = "SUCCESS")
+        stubExpertProfile(contact.orcidId)
 
         Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
         Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
         Mockito.`when`(mailDeliveryService.send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
         )).thenReturn(delivered)
         Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
-            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 400) }
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-
-        Mockito.doThrow(IllegalArgumentException("must provide draftIdentity"))
-            .`when`(aiReplyReviewAuditService)
-            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.sendManualRichReply(
-                inboundProcessingId = 1,
-                senderAccountCode = null,
-                subject = "Test",
-                htmlBody = "<p>Body</p>",
-                textBody = "Body",
-                operatorName = "op",
-                aiReviewConfirmation = null
-            )
-        }
-        assertTrue(ex.message!!.contains("must provide draftIdentity"))
-        Mockito.verify(mailDeliveryService, Mockito.never()).send(
-            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
-        )
-    }
-
-    @Test
-    fun `send manual rich reply rejects corrupt authority with zero delivery mail QA and confirmed writes`() {
-        val record = inbound(1)
-        val account = stubAccount()
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.doThrow(IllegalArgumentException("missing requestIndex"))
-            .`when`(aiReplyReviewAuditService)
-            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.sendManualRichReply(
-                inboundProcessingId = 1,
-                senderAccountCode = null,
-                subject = "Test",
-                htmlBody = "<p>Body</p>",
-                textBody = "Body",
-                operatorName = "op",
-                replySource = "AI_DRAFT",
-                aiReviewConfirmation = AiReviewConfirmation(
-                    draftIdentity = "id-corrupt",
-                    confirmedReviewKeys = listOf("1:a")
-                ),
-                qaRuleIds = listOf(10L)
-            )
-        }
-        assertTrue(ex.message!!.contains("missing requestIndex"))
-        Mockito.verify(mailDeliveryService, Mockito.never()).send(
-            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
-        )
-        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
-        Mockito.verify(mailRecordQaRuleRepository, Mockito.never()).save(anyValue(
-            MailRecordQaRule(mailRecordId = 1L, qaRuleId = 10L, ordinal = 0)
-        ))
-        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(0L),
-            anyNullable(), anyValue("op")
-        )
-    }
-
-    @Test
-    fun `send manual rich reply rejects corrupt READY authority with zero delivery mail QA and confirmed writes`() {
-        val record = inbound(1)
-        val account = stubAccount()
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.doThrow(IllegalArgumentException("READY draft for inbound 1 must have empty unresolvedSnapshot"))
-            .`when`(aiReplyReviewAuditService)
-            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.sendManualRichReply(
-                inboundProcessingId = 1,
-                senderAccountCode = null,
-                subject = "Test",
-                htmlBody = "<p>Body</p>",
-                textBody = "Body",
-                operatorName = "op",
-                replySource = "AI_DRAFT",
-                aiReviewConfirmation = null,
-                qaRuleIds = listOf(10L)
-            )
-        }
-        assertTrue(ex.message!!.contains("empty unresolvedSnapshot"))
-        Mockito.verify(mailDeliveryService, Mockito.never()).send(
-            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
-        )
-        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
-        Mockito.verify(mailRecordQaRuleRepository, Mockito.never()).save(anyValue(
-            MailRecordQaRule(mailRecordId = 1L, qaRuleId = 10L, ordinal = 0)
-        ))
-        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(0L),
-            anyNullable(), anyValue("op")
-        )
-    }
-
-    @Test
-    fun `send manual rich reply rejects UNKNOWN_SOURCE with zero delivery and confirmed writes`() {
-        val record = inbound(1)
-        val account = stubAccount()
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.doThrow(IllegalArgumentException("Unsupported replySource 'UNKNOWN_SOURCE'"))
-            .`when`(aiReplyReviewAuditService)
-            .validateConfirmationForSend(anyValue(0L), anyNullable(), anyNullable())
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.sendManualRichReply(
-                inboundProcessingId = 1,
-                senderAccountCode = null,
-                subject = "Test",
-                htmlBody = "<p>Body</p>",
-                textBody = "Body",
-                operatorName = "op",
-                replySource = "UNKNOWN_SOURCE",
-                aiReviewConfirmation = AiReviewConfirmation(
-                    draftIdentity = "id-abc",
-                    confirmedReviewKeys = listOf("1:a")
-                )
-            )
-        }
-        assertTrue(ex.message!!.contains("Unsupported replySource"))
-        Mockito.verify(mailDeliveryService, Mockito.never()).send(
-            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
-        )
-        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
-        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(0L),
-            anyNullable(), anyValue("op")
-        )
-    }
-
-    @Test
-    fun `send manual rich reply with valid draftIdentity confirmation sends and records audit`() {
-        val record = inbound(1)
-        val account = stubAccount()
-        val delivered = DeliveredMail(messageId = "msg-review-ok", status = "SUCCESS")
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailDeliveryService.send(
-            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
-        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
-            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 401) }
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-
-        val confirmation = AiReviewConfirmation(
-            draftIdentity = "uuid-123",
-            confirmedReviewKeys = listOf("1:a"),
-            operatorNote = "Reviewed"
-        )
-
-        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
-            anyValue(0L), anyNullable(), anyNullable()
-        )).thenReturn(AiReplySendAuthorityResult.AI_REVIEW_CONFIRMED(
-            draftIdentity = "uuid-123",
-            confirmedReviewKeys = listOf("1:a"),
-            operatorNote = "Reviewed"
-        ))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 407) }
+        Mockito.`when`(mailRecordQaRuleRepository.save(anyValue(MailRecordQaRule(mailRecordId = 0, qaRuleId = 0, ordinal = 0))))
+            .thenAnswer { invocation ->
+                val arg = invocation.getArgument<MailRecordQaRule>(0)
+                arg.copy(id = arg.ordinal + 1L)
+            }
 
         val result = service.sendManualRichReply(
             inboundProcessingId = 1,
             senderAccountCode = null,
-            subject = "Test",
-            htmlBody = "<p>Body</p>",
-            textBody = "Body",
+            subject = "Subject",
+            htmlBody = "<p>Hi from Bob</p>",
+            textBody = "Hi from Bob",
             operatorName = "op",
-            replySource = "AI_DRAFT",
-            aiReviewConfirmation = confirmation
+            qaRuleIds = listOf(10L),
+            suggestedRuleIds = listOf(10L),
+            templateTextBody = "Hi from \${senderName}"
         )
 
         assertEquals("SUCCESS", result.sendStatus)
-        Mockito.verify(aiReplyReviewAuditService).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(401L),
-            anyValue(confirmation), anyValue("op")
-        )
-    }
-
-    @Test
-    fun `send manual rich reply does not record audit when result is MANUAL`() {
-        val record = inbound(1)
-        val account = stubAccount()
-        val delivered = DeliveredMail(messageId = "msg-manual", status = "SUCCESS")
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailDeliveryService.send(
+        Mockito.verify(mailDeliveryService).send(
             anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
-        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
-            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 403) }
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
-            anyValue(0L), anyNullable(), anyNullable()
-        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
-
-        service.sendManualRichReply(
-            inboundProcessingId = 1,
-            senderAccountCode = null,
-            subject = "Test",
-            htmlBody = "<p>Body</p>",
-            textBody = "Body",
-            operatorName = "op",
-            replySource = null,
-            aiReviewConfirmation = null
         )
-
-        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(0L),
-            anyNullable(), anyValue("op")
+        Mockito.verify(mailRecordRepository).save(anyValue(stubMailRecord))
+        Mockito.verify(mailRecordQaRuleRepository).save(anyValue(MailRecordQaRule(mailRecordId = 407L, qaRuleId = 10L, ordinal = 0)))
+        Mockito.verify(operatorActionLogService).record(
+            anyValue(""), anyValue(0L), anyValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
+            anyValue(0L), anyValue(0L),
+            anyValue(null), anyValue(emptyMap<String, Any?>()),
+            anyValue(""), anyValue(""), anyValue(null)
         )
-    }
-
-    @Test
-    fun `send manual rich reply does not record audit when result is AI_READY`() {
-        val record = inbound(1)
-        val account = stubAccount()
-        val delivered = DeliveredMail(messageId = "msg-ready", status = "SUCCESS")
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailDeliveryService.send(
-            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
-        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
-            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 406) }
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
-            anyValue(0L), anyNullable(), anyNullable()
-        )).thenReturn(AiReplySendAuthorityResult.AI_READY)
-
-        service.sendManualRichReply(
-            inboundProcessingId = 1,
-            senderAccountCode = null,
-            subject = "Test",
-            htmlBody = "<p>Body</p>",
-            textBody = "Body",
-            operatorName = "op",
-            replySource = "AI_DRAFT",
-            aiReviewConfirmation = AiReviewConfirmation(draftIdentity = "id-ready")
-        )
-
-        Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordConfirmed(
-            anyValue(0L), anyValue(0L), anyValue(0L),
-            anyNullable(), anyValue("op")
-        )
-    }
-
-    @Test
-    fun `gate validateConfirmationForSend is always called regardless of aiReviewConfirmation`() {
-        val record = inbound(1)
-        val account = stubAccount()
-        val delivered = DeliveredMail(messageId = "msg-gate-always", status = "SUCCESS")
-
-        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
-        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender")).thenReturn(account)
-        Mockito.`when`(mailDeliveryService.send(
-            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
-        )).thenReturn(delivered)
-        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
-            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 404) }
-        Mockito.`when`(mailBodyCleaner.clean("<p>Body</p>")).thenReturn("Body")
-        Mockito.`when`(aiReplyReviewAuditService.validateConfirmationForSend(
-            anyValue(0L), anyNullable(), anyNullable()
-        )).thenReturn(AiReplySendAuthorityResult.MANUAL)
-
-        service.sendManualRichReply(
-            inboundProcessingId = 1,
-            senderAccountCode = null,
-            subject = "Test",
-            htmlBody = "<p>Body</p>",
-            textBody = "Body",
-            operatorName = "op"
-        )
-
-        Mockito.verify(aiReplyReviewAuditService).validateConfirmationForSend(
-            anyValue(1L), anyNullable(), anyNullable()
-        )
-    }
-
-    @Test
-    fun `request DTO deserializes draftIdentity confirmation`() {
-        val json = """
-            {
-                "senderAccountCode": "s",
-                "subject": "Sub",
-                "htmlBody": "<p>x</p>",
-                "textBody": "x",
-                "operatorName": "op",
-                "replySource": "AI_DRAFT",
-                "aiReviewConfirmation": {
-                    "draftIdentity": "abc-123-def",
-                    "confirmedReviewKeys": ["1:a"],
-                    "operatorNote": "checked"
-                }
-            }
-        """.trimIndent()
-        val req = jsonMapper.readValue(json, PendingManualRichReplyRequest::class.java)
-        assertEquals("AI_DRAFT", req.replySource)
-        assertNotNull(req.aiReviewConfirmation)
-        assertEquals("abc-123-def", req.aiReviewConfirmation!!.draftIdentity)
-        assertEquals(listOf("1:a"), req.aiReviewConfirmation!!.confirmedReviewKeys)
-        assertEquals("checked", req.aiReviewConfirmation!!.operatorNote)
     }
 }

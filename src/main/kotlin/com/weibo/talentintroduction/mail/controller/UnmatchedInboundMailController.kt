@@ -24,7 +24,6 @@ import com.weibo.talentintroduction.qa.service.SuggestQaRule
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
-import com.weibo.talentintroduction.llm.service.AiReplyReviewItem
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -222,9 +221,7 @@ class UnmatchedInboundMailController(
             freeTextPreview = request.freeTextPreview,
             useVariants = request.useVariants,
             templateTextBody = request.templateTextBody,
-            templateHtmlBody = request.templateHtmlBody,
-            replySource = request.replySource,
-            aiReviewConfirmation = request.aiReviewConfirmation
+            templateHtmlBody = request.templateHtmlBody
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
@@ -300,14 +297,6 @@ class UnmatchedInboundMailController(
         val contact = expertContactRepository.findById(contactId).orElse(null)
             ?: throw IllegalArgumentException("Expert contact not found: $contactId")
         val isContinuation = request.turns.isNotEmpty()
-        val continuationAuthority = if (isContinuation) {
-            aiReplyReviewAuditService.resolveCurrentDraftAuthority(id)
-        } else {
-            null
-        }
-        if (continuationAuthority != null && !continuationAuthority.available) {
-            return aiReplyTurnAuthorityUnavailableResponse(llmStitchService.isEnabled())
-        }
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
         val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
         val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
@@ -324,61 +313,12 @@ class UnmatchedInboundMailController(
             researchProfileSufficient = context.researchProfileSufficient
         )
 
-        val authorityResult: com.weibo.talentintroduction.llm.service.InitialDraftAuthorityResult =
-            if (isContinuation) {
-                continuationAuthority!!
-            } else {
-                aiReplyReviewAuditService.recordInitialDraft(
-                    inboundProcessingId = id,
-                    contactId = contactId,
-                    result = result,
-                    operatorName = request.operatorName
-                )
-            }
-
-        val draftAuthorityAvailable = authorityResult.available
-        val draftIdentity: String? = authorityResult.draftIdentity
-
-        if (!draftAuthorityAvailable) {
-            val warnings = mergeWarningsPreserveOrder(
-                result.contextWarnings,
-                listOf(AiReplyReviewAuditService.WARNING_AI_REPLY_AUDIT_UNAVAILABLE)
-            )
-            return AiReplyTurnResponse(
-                draftText = "",
-                renderedDraftText = "",
-                usedLlm = result.usedLlm,
-                llmEnabled = llmStitchService.isEnabled(),
-                qaRuleIds = result.qaRuleIds,
-                mode = result.mode.name,
-                requestCount = result.requestCount,
-                groundedRequestCount = result.groundedRequestCount,
-                unsupportedRequests = result.unsupportedRequests,
-                contextWarnings = warnings,
-                injectedDialogRefs = result.fewShotDialogRefs,
-                selectedModel = result.selectedModel,
-                requestCoverage = result.requestFacts.map {
-                    RequestCoverageItem(
-                        index = it.index,
-                        requestText = it.requestText,
-                        status = it.status.name,
-                        factRuleIds = it.factRuleIds,
-                        intents = it.intents.map { intent ->
-                            IntentCoverageResponse(
-                                intentKey = intent.intentKey,
-                                title = intent.title,
-                                status = intent.status,
-                                evidenceRuleIds = intent.evidenceRuleIds,
-                                missingEvidenceKeys = intent.missingEvidenceKeys,
-                                requiresResearchContext = intent.requiresResearchContext
-                            )
-                        }
-                    )
-                },
-                generationState = result.generationState.name,
-                draftReadiness = result.draftReadiness.name,
-                draftIdentity = null,
-                draftAuthorityAvailable = false
+        if (!isContinuation) {
+            aiReplyReviewAuditService.recordInitialDraft(
+                inboundProcessingId = id,
+                contactId = contactId,
+                result = result,
+                operatorName = request.operatorName
             )
         }
 
@@ -419,27 +359,7 @@ class UnmatchedInboundMailController(
                 )
             },
             generationState = result.generationState.name,
-            draftReadiness = result.draftReadiness.name,
-            draftIdentity = draftIdentity
-        )
-    }
-
-    @PostMapping("/unmatched-inbound/{id}/ai-reply/review-event")
-    fun recordReviewEvent(
-        @PathVariable id: Long,
-        @RequestBody request: ReviewEventRequest
-    ) {
-        require(request.eventType == "SEND_BLOCKED") {
-            "Unsupported review event type: ${request.eventType}"
-        }
-        val detail = unmatchedInboundMailService.getDetail(id)
-        val contactId = detail.expertContactId
-            ?: throw IllegalArgumentException("Inbound processing $id has no expertContactId")
-        aiReplyReviewAuditService.recordSendBlocked(
-            inboundProcessingId = id,
-            contactId = contactId,
-            unresolvedItems = request.unresolvedItems,
-            operatorName = request.operatorName
+            draftReadiness = result.draftReadiness.name
         )
     }
 
@@ -447,18 +367,6 @@ class UnmatchedInboundMailController(
         val seen = linkedSetOf<String>()
         return (existing + extra).filter { seen.add(it) }
     }
-
-    private fun aiReplyTurnAuthorityUnavailableResponse(llmEnabled: Boolean) = AiReplyTurnResponse(
-        draftText = "",
-        renderedDraftText = "",
-        usedLlm = false,
-        llmEnabled = llmEnabled,
-        qaRuleIds = emptyList(),
-        mode = "",
-        contextWarnings = listOf(AiReplyReviewAuditService.WARNING_AI_REPLY_AUDIT_UNAVAILABLE),
-        draftIdentity = null,
-        draftAuthorityAvailable = false
-    )
 }
 
 @RestController
@@ -668,12 +576,6 @@ data class AiReplyTurnRequest(
     val model: String? = null
 )
 
-data class ReviewEventRequest(
-    val eventType: String,
-    val operatorName: String? = null,
-    val unresolvedItems: List<AiReplyReviewItem> = emptyList()
-)
-
 data class AiReplyTurnResponse(
     val draftText: String,
     val renderedDraftText: String = "",
@@ -689,9 +591,7 @@ data class AiReplyTurnResponse(
     val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name,
     val requestCoverage: List<RequestCoverageItem> = emptyList(),
     val generationState: String = "FALLBACK_NO_RESPONSE",
-    val draftReadiness: String = "READY",
-    val draftIdentity: String? = null,
-    val draftAuthorityAvailable: Boolean = true
+    val draftReadiness: String = "READY"
 )
 
 private fun InboundMailProcessing.toResponse(

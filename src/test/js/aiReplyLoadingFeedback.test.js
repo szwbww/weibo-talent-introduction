@@ -328,9 +328,8 @@ describe("coverage isolation and send guard contracts", () => {
         assert.match(draftBubble, /needsGroundingReview/);
         assert.match(draftBubble, /reviewItems/);
         assert.match(draftBubble, /draftReadiness/);
-        assert.match(draftBubble, /AI 草稿 — 需补充/);
-        assert.match(draftBubble, /AI 草稿 — 缺依据/);
-        assert.match(draftBubble, /采用并人工补充/);
+        assert.match(draftBubble, /采用此草稿/);
+        assert.doesNotMatch(draftBubble, /采用并人工补充/);
         assert.doesNotMatch(draftBubble, /依据覆盖/);
         assert.doesNotMatch(draftBubble, /ai-reply-warning/);
         const adoptIdx = appJsSource.indexOf('if (action === "ai-adopt-draft")');
@@ -342,18 +341,24 @@ describe("coverage isolation and send guard contracts", () => {
         assert.doesNotMatch(adoptBlock, /依据覆盖/);
     });
 
-    it("forces review modal for non-READY gap drafts through openReviewModal guard", () => {
+    it("send-manual-rich-reply submits directly without review modal or numbering gate", () => {
         const sendIdx = appJsSource.indexOf('if (action === "send-manual-rich-reply")');
         assert.ok(sendIdx > 0);
-        // openReviewModal is called inside the Promise chain, deep in the send block
-        assert.match(appJsSource, /openReviewModal/);
-        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 3500);
-        assert.match(sendBlock, /draftReadiness/);
-        assert.match(sendBlock, /requestBody\.replySource\s*=\s*"AI_DRAFT"/);
+        const sendBlock = appJsSource.slice(sendIdx, sendIdx + 2200);
         assert.match(sendBlock, /submitManualRichReply/);
-        // Old text-invariant block messages replaced by forced modal
-        assert.doesNotMatch(sendBlock, /草稿存在缺少审核依据的问题/);
-        assert.doesNotMatch(sendBlock, /草稿仍有部分问题需人工补充/);
+        assert.doesNotMatch(sendBlock, /openReviewModal/);
+        assert.doesNotMatch(sendBlock, /requestBody\.replySource\s*=\s*"AI_DRAFT"/);
+        assert.doesNotMatch(sendBlock, /ai-reply\/review-event/);
+        assert.doesNotMatch(sendBlock, /validateSectionNumbering/);
+        assert.doesNotMatch(sendBlock, /正文编号/);
+        assert.doesNotMatch(appJsSource, /function validateSectionNumbering/);
+    });
+
+    it("quality panel omits deprecated review metric cards", () => {
+        const panelFn = appJsSource.match(/function renderQaAuditPanel\([\s\S]*?\n\}/)?.[0] || "";
+        assert.doesNotMatch(panelFn, /直发拦截/);
+        assert.doesNotMatch(panelFn, /人工确认/);
+        assert.match(panelFn, /遗漏率 \(BLOCKED\)/);
     });
 
     it("keeps coverage and readiness out of clipboard continuation and payload text paths", () => {

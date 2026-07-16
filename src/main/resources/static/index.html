@@ -1869,26 +1869,6 @@
     <span class="preview-rail-label" id="previewRailLabel">邮件预览</span>
 </button>
 
-<div class="modal-shell" id="aiReplyReviewModal" hidden>
-    <button class="modal-backdrop" id="aiReplyReviewBackdrop" type="button" aria-label="关闭审核"> </button>
-    <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="aiReplyReviewTitle">
-        <div class="panel-head modal-head">
-            <h2 id="aiReplyReviewTitle">AI 草稿审核确认</h2>
-            <button class="modal-close-btn" id="aiReplyReviewCloseBtn" type="button" aria-label="关闭">×</button>
-        </div>
-        <p class="form-grid single" style="margin: 0 0 8px 0; font-size:12px; color: var(--text-muted);">勾选表示已在正文中人工补充或已核验，此操作不会将信息写回 QA 知识库。</p>
-        <div class="form-grid single compose-gap-list" id="aiReplyReviewList" style="max-height:min(50vh,420px); overflow-y:auto; margin-bottom:8px;"></div>
-        <div class="form-grid single">
-            <label for="aiReplyReviewNote">审核说明<span class="hint">（BLOCKED 时必填，至少 5 个字符）</span></label>
-            <textarea id="aiReplyReviewNote" rows="3" placeholder="请简要说明人工补充/核验内容"></textarea>
-        </div>
-        <div class="form-actions modal-actions">
-            <button type="button" class="button secondary" id="aiReplyReviewCancelBtn">取消</button>
-            <button type="button" class="button primary" id="aiReplyReviewConfirmBtn" disabled>确认并发送</button>
-        </div>
-    </section>
-</div>
-
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
 <script src="app.js?v=20260715-batch-diff-display-fix"></script>
