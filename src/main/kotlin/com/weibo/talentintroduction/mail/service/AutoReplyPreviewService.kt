@@ -6,7 +6,6 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
-import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 
@@ -38,13 +37,14 @@ class AutoReplyPreviewService(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
-    private val qaMatchService: QaMatchService,
+    private val groundedAutoReplyDecisionService: GroundedAutoReplyDecisionService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailRecordRepository: MailRecordRepository,
     private val expertContactRepository: ExpertContactRepository,
     private val mailAttachmentRepository: MailAttachmentRepository,
-    private val emailSuppressionService: EmailSuppressionService
+    private val emailSuppressionService: EmailSuppressionService,
+    private val mailVariableService: MailVariableService
 ) {
     fun preview(inboundProcessingId: Long): AutoReplyPreviewResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
@@ -108,30 +108,32 @@ class AutoReplyPreviewService(
             }
 
             AutoIntentAction.QA -> {
-                val contactForSeed = contactId?.let { expertContactRepository.findById(it).orElse(null) }
-                // contactId null: no matching outbound send exists for this preview case; seed=0 may differ from send.
-                val variantSeed = if (contactForSeed != null) {
-                    MailComposeTemplateService.variantSeedFor(contactForSeed.orcidId, contactForSeed.expertEmail)
-                } else {
-                    0
-                }
-                val match = qaMatchService.match(cleanedBody, variantSeed)
+                val decision = groundedAutoReplyDecisionService.decide(cleanedBody, record.subject)
                 when {
-                    match == null || !match.autoReplyEnabled || match.handoffRequired -> base.copy(
-                        previewKind = AutoReplyPreviewKind.QA_NO_MATCH,
-                        reason = "QA_NO_MATCH"
-                    )
+                    decision.readyToSend -> {
+                        val account = mailSenderAccountService.getManualSendAccount(record.senderAccountCode)
+                        val contact = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+                        val replyBody = if (contact != null && decision.rawDraftText != null) {
+                            mailVariableService.renderForContact(decision.rawDraftText, account, contact)
+                        } else {
+                            decision.rawDraftText
+                        }
+                        base.copy(
+                            previewKind = AutoReplyPreviewKind.QA_AUTO_REPLIED,
+                            replySubject = decision.subject,
+                            replyBody = replyBody,
+                            matchedRuleIds = decision.qaRuleIds
+                        )
+                    }
 
-                    match.gapDetected -> base.copy(
+                    decision.reason == GroundedAutoReplyReason.QA_GROUNDING_GAP -> base.copy(
                         previewKind = AutoReplyPreviewKind.QA_GAP,
-                        reason = "QA_GAP"
+                        reason = decision.reason
                     )
 
                     else -> base.copy(
-                        previewKind = AutoReplyPreviewKind.QA_AUTO_REPLIED,
-                        replySubject = match.replySubject ?: "Re: ${record.subject.orEmpty()}".trim(),
-                        replyBody = match.replyBody,
-                        matchedRuleIds = match.matchedRuleIds
+                        previewKind = AutoReplyPreviewKind.QA_NO_MATCH,
+                        reason = decision.reason
                     )
                 }
             }

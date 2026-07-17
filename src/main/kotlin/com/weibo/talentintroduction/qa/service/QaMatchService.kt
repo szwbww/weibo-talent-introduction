@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.qa.service
 
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -16,7 +17,7 @@ class QaMatchService(
 ) {
     fun suggestComposition(messageBody: String): CompositionSuggestResult {
         val normalizedBody = normalize(messageBody)
-        val enabledRules = qaRuleRepository.findAllEnabledOrdered()
+        val enabledRules = matchableRules()
         val rawMatches = enabledRules
             .mapNotNull { rule -> matchRule(rule, normalizedBody) }
 
@@ -42,7 +43,7 @@ class QaMatchService(
                 categoryCode = category.categoryCode,
                 categoryName = category.categoryName,
                 composeOrder = category.composeOrder,
-                rules = qaRuleRepository.findAllEnabledOrdered()
+                rules = matchableRules()
                     .filter { it.categoryId == categoryId }
                     .map { it.toSuggestRule() }
             )
@@ -60,14 +61,14 @@ class QaMatchService(
 
     fun matchAllRuleIds(messageBody: String): List<Long> {
         val normalizedBody = normalize(messageBody)
-        return qaRuleRepository.findAllEnabledOrdered()
+        return matchableRules()
             .mapNotNull { rule -> matchRule(rule, normalizedBody)?.let { rule.id } }
             .distinct()
     }
 
     fun match(messageBody: String, variantSeed: Int = 0): QaMatchResult? {
         val normalizedBody = normalize(messageBody)
-        val rawMatches = qaRuleRepository.findAllEnabledOrdered()
+        val rawMatches = matchableRules()
             .mapNotNull { rule -> matchRule(rule, normalizedBody) }
 
         if (rawMatches.isEmpty()) {
@@ -82,16 +83,22 @@ class QaMatchService(
         val composed = QaReplyComposer.compose(matches, categoryComposeOrder)
         val gapDetected = detectGap(messageBody, rawMatches, matches)
 
+        val aggregatedPolicy = QaReplyPolicy.aggregate(matches.map { it.rule.replyPolicyEnum() })
+
         return QaMatchResult(
             ruleId = primary.rule.id,
             replySubject = composed.replySubject,
             replyBody = composed.replyBody,
-            handoffRequired = matches.any { it.rule.handoffRequired },
-            autoReplyEnabled = matches.all { it.rule.autoReplyEnabled },
+            replyPolicy = aggregatedPolicy.name,
+            handoffRequired = aggregatedPolicy.legacyHandoffRequired(),
+            autoReplyEnabled = aggregatedPolicy.legacyAutoReplyEnabled(),
             matchedRuleIds = matches.mapNotNull { it.rule.id },
             gapDetected = gapDetected
         )
     }
+
+    private fun matchableRules(): List<QaRule> =
+        qaRuleRepository.findAllEnabledOrdered().filter { it.isMatchable() }
 
     private fun resolveMatchVariant(match: QaRuleMatch, variantSeed: Int): QaRuleMatch {
         val ruleId = match.rule.id ?: return match
@@ -186,6 +193,7 @@ data class QaMatchResult(
     val ruleId: Long?,
     val replySubject: String?,
     val replyBody: String,
+    val replyPolicy: String = QaReplyPolicy.AUTO.name,
     val handoffRequired: Boolean,
     val autoReplyEnabled: Boolean,
     val matchedRuleIds: List<Long> = emptyList(),
@@ -221,7 +229,8 @@ data class SuggestQaRule(
     val sectionTitle: String?,
     val replySubject: String?,
     val replyBody: String,
-    val keywords: String
+    val keywords: String,
+    val replyPolicy: String
 )
 
 private fun QaRule.toSuggestRule() = SuggestQaRule(
@@ -231,5 +240,6 @@ private fun QaRule.toSuggestRule() = SuggestQaRule(
     sectionTitle = sectionTitle,
     replySubject = replySubject,
     replyBody = replyBody,
-    keywords = keywords
+    keywords = keywords,
+    replyPolicy = replyPolicyEnum().name
 )

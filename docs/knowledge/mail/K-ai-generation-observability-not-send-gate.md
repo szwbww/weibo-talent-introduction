@@ -3,7 +3,7 @@ id: K-ai-generation-observability-not-send-gate
 domain: mail
 created: 2026-07-16
 last_used: 2026-07-17
-hit_count: 5
+hit_count: 8
 source: create-p:ai-adopt-direct-manual-send
 severity: P1
 ---

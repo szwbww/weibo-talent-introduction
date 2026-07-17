@@ -130,13 +130,44 @@ const composedReplyState = {
     contactId: null,
     contactOrcid: null,
     suggest: null,
-    selectedRuleIds: [],
-    freeText: "",
-    previewEdited: false,
-    baselinePreview: "",
-    activeGapIndex: null,
-    ackSnippetId: null
+    selectedFactIds: [],
+    evaluation: null,
+    confirmedEvaluation: null,
+    evaluationPending: false,
+    lockedFactIds: null,
+    draft: null,
+    evaluateTimer: null,
+    evaluateSeq: 0
 };
+
+const UNNAMED_FACT_LABEL = "未命名事实";
+
+function sameFactIdSet(left, right) {
+    const a = [...(left || [])].sort((x, y) => x - y);
+    const b = [...(right || [])].sort((x, y) => x - y);
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((value, index) => value === b[index]);
+}
+
+function confirmedCanonicalFactIds() {
+    if (composedReplyState.evaluationPending || !composedReplyState.confirmedEvaluation) {
+        return null;
+    }
+    const canonical = composedReplyState.confirmedEvaluation.canonicalFactIds || [];
+    if (!sameFactIdSet(canonical, composedReplyState.selectedFactIds)) {
+        return null;
+    }
+    return [...canonical];
+}
+
+function markComposedEvaluationPending() {
+    composedReplyState.evaluationPending = true;
+    composedReplyState.confirmedEvaluation = null;
+    composedReplyState.evaluation = null;
+    clearComposedDraftSession();
+}
 
 let manualReplyQaContext = null;
 
@@ -1638,18 +1669,16 @@ function renderQaCoverageKeyOptions(selectedKeys) {
 }
 
 async function loadQa() {
-    const [categories, rules, coverageKeys] = await Promise.all([
+    const [categories, rules] = await Promise.all([
         api("/api/qa/categories"),
-        api("/api/qa/rules"),
-        api("/api/qa/coverage-keys")
+        api("/api/qa/rules")
     ]);
     state.categories = categories;
     state.qaRules = rules;
-    state.qaCoverageKeys = coverageKeys;
 
     const formSelect = $("#qaRuleForm").categoryId;
     const formSelectValue = formSelect.value;
-    formSelect.innerHTML = `<option value="">请选择分类</option>` + categories.map((category) => `
+    formSelect.innerHTML = `<option value="">选择事实分类</option>` + categories.map((category) => `
         <option value="${category.id}">${escapeHtml(category.categoryName)}</option>
     `).join("");
     formSelect.value = formSelectValue;
@@ -1752,26 +1781,42 @@ function renderQaCoverageKeyLabels(coverageKeys) {
     return `${shown} <span class="muted">另 ${labels.length - 3} 项</span>`;
 }
 
+function qaReplyPolicyBadge(rule) {
+    const policy = rule.replyPolicy || "REVIEW";
+    if (policy === "AUTO") {
+        return badge("AUTO", "ok");
+    }
+    if (policy === "NEVER") {
+        return badge("NEVER", "error");
+    }
+    return badge("REVIEW", "warn");
+}
+
+function qaFactBodyPreview(text) {
+    const value = String(text || "");
+    if (value.length <= 120) {
+        return escapeHtml(value);
+    }
+    return `${escapeHtml(value.slice(0, 120))}…`;
+}
+
 function renderQaRulesTable() {
     $("#qaRulesTable").innerHTML = state.qaRules.map((rule) => {
         const displayName = rule.displayName?.trim();
         const nameCell = displayName
-            ? `<strong>${escapeHtml(displayName)}</strong>`
-            : `<span class="muted">（未设置中文名）</span>`;
-        const variantBadge = (rule.variants || []).length > 0
-            ? ` ${badge(`${rule.variants.length} 变体`, "primary")}`
-            : "";
-        const coverageCell = renderQaCoverageKeyLabels(rule.coverageKeys);
+            ? escapeHtml(displayName)
+            : `<span class="muted">（未设置标题）</span>`;
+        const factBody = rule.answerBody || rule.replyBody || "";
         return `
         <tr>
             <td>${rule.id}</td>
             <td>${nameCell}</td>
             <td>${escapeHtml(rule.categoryName || rule.categoryCode || rule.categoryId)}</td>
-            <td>${escapeHtml(rule.replySubject || "")}${variantBadge}</td>
             <td class="muted-cell">${escapeHtml(rule.keywords)}</td>
-            <td>${coverageCell}</td>
+            <td class="muted-cell">${qaFactBodyPreview(factBody)}</td>
             <td>${rule.priority}</td>
-            <td>${badge(rule.enabled ? "启用" : "禁用", rule.enabled ? "ok" : "error")}</td>
+            <td>${qaReplyPolicyBadge(rule)}</td>
+            <td>${badge(rule.enabled ? "启用" : "禁用", rule.enabled ? "ok" : "warn")}</td>
             <td class="actions">
                 <button class="button" data-action="edit-rule" data-id="${rule.id}">编辑</button>
                 <button class="button" data-action="toggle-rule" data-id="${rule.id}" data-enabled="${rule.enabled}">
@@ -1780,7 +1825,7 @@ function renderQaRulesTable() {
             </td>
         </tr>
     `;
-    }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">暂无 QA 规则</td></tr>    `;
+    }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">暂无 QA 事实</td></tr>`;
 }
 
 async function ensureVariableMeta() {
@@ -2112,9 +2157,8 @@ function resolvePreviewDrawerContact() {
 }
 
 function resolvePreviewDrawerSubject(targetId) {
-    if (targetId === "qaRuleReplyBody") {
-        const subject = $("#qaRuleForm")?.replySubject?.value?.trim();
-        return subject || null;
+    if (targetId === "qaRuleAnswerBody") {
+        return null;
     }
     return null;
 }
@@ -2219,7 +2263,7 @@ function syncBodyScrollLock() {
 }
 
 function previewRailLabelForTarget(targetId) {
-    return targetId === "qaRuleReplyBody" ? "命中预览" : "邮件预览";
+    return targetId === "qaRuleAnswerBody" ? "命中预览" : "邮件预览";
 }
 
 function shouldDockPreviewInComposeTemplate(targetId, composeModalHidden) {
@@ -2462,8 +2506,6 @@ function showQaRuleEditor() {
 function hideQaRuleEditor() {
     const form = $("#qaRuleForm");
     form.reset();
-    renderContentVariantRows($("#qaRuleVariantsContainer"), []);
-    renderQaCoverageKeyOptions([]);
     $("#qaRuleModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedRuleId = null;
@@ -2475,39 +2517,30 @@ function fillQaRuleForm(rule) {
     showQaRuleEditor();
     state.selectedRuleId = rule?.id || null;
     $("#qaRuleEditorTitle").textContent = rule
-        ? `编辑规则：${rule.displayName || `#${rule.id}`}`
-        : "新增 QA 规则";
+        ? `编辑事实：${rule.displayName || `#${rule.id}`}`
+        : "新增 QA 事实";
     form.id.value = rule?.id || "";
     form.displayName.value = rule?.displayName || "";
     form.categoryId.value = rule?.categoryId || "";
     form.keywords.value = rule?.keywords || "";
     form.matchMode.value = rule?.matchMode || "ANY";
     form.priority.value = rule?.priority || 100;
-    form.replySubject.value = rule?.replySubject || "";
-    form.replyBody.value = rule?.replyBody || "";
-    form.autoReplyEnabled.checked = rule?.autoReplyEnabled ?? true;
-    form.handoffRequired.checked = rule?.handoffRequired ?? false;
+    form.replyPolicy.value = rule?.replyPolicy || "REVIEW";
+    form.answerBody.value = rule?.answerBody || rule?.replyBody || "";
     form.enabled.checked = rule?.enabled ?? true;
-    renderQaCoverageKeyOptions(rule?.coverageKeys || []);
-    renderContentVariantRows($("#qaRuleVariantsContainer"), rule?.variants || []);
-    const replyBodyEl = $("#qaRuleReplyBody");
-    if (replyBodyEl) {
-        updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl);
+    const answerBodyEl = $("#qaRuleAnswerBody");
+    if (answerBodyEl) {
+        updateVarValidationForTarget("qaRuleAnswerBody", answerBodyEl);
     }
-    mountPreviewRail({ targetId: "qaRuleReplyBody" });
+    mountPreviewRail({ targetId: "qaRuleAnswerBody" });
 }
 
 async function saveQaRule(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    const replyBodyEl = $("#qaRuleReplyBody");
-    if (replyBodyEl && !updateVarValidationForTarget("qaRuleReplyBody", replyBodyEl)) {
+    const answerBodyEl = $("#qaRuleAnswerBody");
+    if (answerBodyEl && !updateVarValidationForTarget("qaRuleAnswerBody", answerBodyEl)) {
         showStatus("请先修正非法占位符", "error");
-        return;
-    }
-    const variantsContainer = $("#qaRuleVariantsContainer");
-    const mainText = replyBodyEl?.value || "";
-    if (!validateContentVariantInputs(variantsContainer, mainText)) {
         return;
     }
     const values = formValues(form);
@@ -2516,18 +2549,14 @@ async function saveQaRule(event) {
         keywords: values.keywords,
         matchMode: values.matchMode,
         priority: numberValue(values.priority, 100),
-        replySubject: values.replySubject || null,
-        replyBody: values.replyBody,
+        answerBody: values.answerBody,
+        replyPolicy: values.replyPolicy,
         displayName: values.displayName?.trim() || null,
-        autoReplyEnabled: form.autoReplyEnabled.checked,
-        handoffRequired: form.handoffRequired.checked,
-        enabled: form.enabled.checked,
-        variants: collectContentVariants(variantsContainer),
-        coverageKeys: [...form.querySelectorAll("[data-qa-coverage-key]:checked")].map((el) => el.dataset.qaCoverageKey)
+        enabled: form.enabled.checked
     };
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
-    showStatus("QA 规则已保存");
+    showStatus("QA 事实已保存");
     hideQaRuleEditor();
     await loadQa();
 }
@@ -7369,13 +7398,8 @@ function renderComposeTemplateBlockRows(blocks) {
 }
 
 function composeTemplateBlockRowHtml(index, block) {
-    const blockType = block.blockType || "QA_RULE";
-    const enabledQaRules = state.qaRules.filter((rule) => rule.enabled);
+    const blockType = block.blockType || "CUSTOM_TEXT";
     const enabledSnippets = (state.replySnippets || []).filter((snippet) => snippet.enabled);
-    const qaOptions = enabledQaRules.map((rule) => {
-        const name = rule.displayName || rule.replySubject || `Rule #${rule.id}`;
-        return `<option value="${rule.id}" ${String(block.refId) === String(rule.id) ? "selected" : ""}>${escapeHtml(name)}</option>`;
-    }).join("");
     const snippetOptions = enabledSnippets.map((snippet) => {
         const label = `${replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType} #${snippet.id}`;
         return `<option value="${snippet.id}" ${String(block.refId) === String(snippet.id) ? "selected" : ""}>${escapeHtml(label)}</option>`;
@@ -7385,12 +7409,10 @@ function composeTemplateBlockRowHtml(index, block) {
         <span class="block-drag-handle">⋮⋮</span>
         <span class="block-order">#${index + 1}</span>
         <select class="block-type-select" data-field="blockType">
-            <option value="QA_RULE" ${blockType === "QA_RULE" ? "selected" : ""}>QA 规则</option>
             <option value="REPLY_SNIPPET" ${blockType === "REPLY_SNIPPET" ? "selected" : ""}>回复片段</option>
             <option value="CUSTOM_TEXT" ${blockType === "CUSTOM_TEXT" ? "selected" : ""}>自定义文本</option>
         </select>
         <div class="block-ref">
-            ${blockType === "QA_RULE" ? `<select data-field="refId"><option value="">请选择 QA 规则</option>${qaOptions}</select>` : ""}
             ${blockType === "REPLY_SNIPPET" ? `<select data-field="refId"><option value="">请选择回复片段</option>${snippetOptions}</select>` : ""}
             ${blockType === "CUSTOM_TEXT" ? `<div class="var-editor-wrap"><div class="var-editor-toolbar"><div class="var-insert-wrap"><button type="button" class="var-insert-btn" data-var-insert-target="composeBlockCustomText-${index}">+ 插入变量 ▾</button><div class="var-insert-menu" hidden></div></div></div><textarea id="composeBlockCustomText-${index}" data-field="customText" rows="4" placeholder="输入自定义文本">${escapeHtml(block.customText || "")}</textarea></div>` : ""}
         </div>
@@ -7405,7 +7427,7 @@ function composeTemplateBlockRowHtml(index, block) {
 function collectComposeTemplateBlocksFromForm() {
     const rows = $$("#composeTemplateBlocksList .compose-template-block-row");
     return rows.map((row, index) => {
-        const blockType = row.querySelector('[data-field="blockType"]')?.value || "QA_RULE";
+        const blockType = row.querySelector('[data-field="blockType"]')?.value || "CUSTOM_TEXT";
         const refIdRaw = row.querySelector('[data-field="refId"]')?.value;
         const customText = row.querySelector('[data-field="customText"]')?.value || "";
         return {
@@ -8226,200 +8248,184 @@ function findSuggestRule(suggest, ruleId) {
     return null;
 }
 
-function resolveAckContent(suggest, ackSnippetId) {
-    if (ackSnippetId == null) return null;
-    return (suggest?.ackOptions || []).find((option) => option.id === ackSnippetId)?.content || null;
-}
-
-function buildComposedSegments(selectedRuleIds, suggest, freeText, ackContent) {
-    const segments = [];
-    const salutation = suggest?.salutation?.trim();
-    if (salutation) {
-        segments.push({ type: "salutation", label: "尊语", text: salutation });
+function requestCoverageBadgeClass(status) {
+    switch (status) {
+        case "GROUNDED":
+            return "ok";
+        case "NEEDS_REVIEW":
+        case "PARTIAL":
+            return "warn";
+        case "UNSUPPORTED":
+        case "BLOCKED":
+            return "error";
+        default:
+            return "";
     }
-    const ack = ackContent?.trim();
-    if (ack) {
-        segments.push({ type: "ack", label: "致谢", text: ack });
+}
+
+function requestCoverageBadgeLabel(status) {
+    switch (status) {
+        case "GROUNDED":
+            return "完整";
+        case "NEEDS_REVIEW":
+            return "需复核";
+        case "PARTIAL":
+            return "部分";
+        case "UNSUPPORTED":
+            return "缺依据";
+        case "BLOCKED":
+            return "阻断";
+        default:
+            return status || "未知";
     }
-    const greeting = suggest?.greeting?.trim();
-    if (greeting) {
-        segments.push({ type: "greeting", label: "开场白", text: greeting });
+}
+
+function activeComposedRequestCoverage() {
+    return composedReplyState.evaluation?.requestCoverage
+        || composedReplyState.suggest?.requestCoverage
+        || [];
+}
+
+function clearComposedDraftSession() {
+    composedReplyState.draft = null;
+    composedReplyState.lockedFactIds = null;
+    if (composedReplyState.recordId != null) {
+        resetAiReplyState(composedReplyState.recordId);
     }
-    selectedRuleIds.forEach((ruleId, index) => {
-        const rule = findSuggestRule(suggest, ruleId);
-        if (!rule) return;
-        const label = rule.displayName || rule.sectionTitle || `规则 #${ruleId}`;
-        const text = rule.replyBody;
-        segments.push({ type: "rule", ruleId, label, text, ruleIndex: index });
-    });
-    const trimmedFree = (freeText || "").trim();
-    if (trimmedFree) {
-        segments.push({ type: "freeText", label: "自由文本", text: trimmedFree });
-    }
-    const closing = suggest?.closing?.trim();
-    if (closing) {
-        segments.push({ type: "closing", label: "结束敬语", text: closing });
-    }
-    return segments;
+    renderComposedDraftPreview();
+    updateTrustWorkbenchButtons();
 }
 
-function mergeSegmentsToText(segments) {
-    return segments.map((segment) => segment.text).join("\n\n");
-}
-
-function buildDeterministicComposedPreview(selectedRuleIds, suggest, freeText, ackContent) {
-    return mergeSegmentsToText(buildComposedSegments(selectedRuleIds, suggest, freeText, ackContent));
-}
-
-function renderComposedPreviewSegments() {
-    const container = $("#composedPreviewSegments");
-    if (!container || !composedReplyState.suggest) return;
-    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
-    const segments = buildComposedSegments(
-        composedReplyState.selectedRuleIds,
-        composedReplyState.suggest,
-        composedReplyState.freeText,
-        ackContent
-    );
-    container.innerHTML = segments.map((segment) => {
-        const ruleClass = segment.type === "rule"
-            ? ` compose-seg-rule-${segment.ruleIndex % 6}`
-            : "";
-        const ruleIdAttr = segment.ruleId != null ? ` data-rule-id="${segment.ruleId}"` : "";
-        return `
-            <div class="compose-seg compose-seg-${segment.type}${ruleClass}"${ruleIdAttr}>
-                <span class="compose-seg-tag">${escapeHtml(segment.label)}</span>
-                <div class="compose-seg-body pre">${escapeHtml(segment.text)}</div>
-            </div>`;
-    }).join("") || `<p class="text-muted">暂无预览内容</p>`;
-    applyGapHighlight();
-}
-
-function isGapCovered(gapItem, selectedRuleIds) {
-    const candidates = gapItem.candidateRuleIds || [];
-    return candidates.some((id) => selectedRuleIds.includes(id));
-}
-
-function clearGapHighlight() {
-    document.querySelectorAll(".compose-rule-item.gap-highlight").forEach((el) => {
-        el.classList.remove("gap-highlight");
-    });
-    document.querySelectorAll("#composedPreviewSegments .compose-seg.gap-highlight").forEach((el) => {
-        el.classList.remove("gap-highlight");
+function syncComposeFactCheckboxes() {
+    const selected = new Set(composedReplyState.selectedFactIds);
+    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
+        checkbox.checked = selected.has(Number(checkbox.dataset.ruleId));
     });
 }
 
-function applyGapHighlight() {
-    clearGapHighlight();
-    const activeIndex = composedReplyState.activeGapIndex;
-    if (activeIndex == null || !composedReplyState.suggest) return;
-    const gapItems = composedReplyState.suggest.gapItems || [];
-    const gapItem = gapItems[activeIndex];
-    if (!gapItem?.candidateRuleIds?.length) return;
-    gapItem.candidateRuleIds.forEach((ruleId) => {
-        const checkbox = document.querySelector(`.compose-rule-checkbox[data-rule-id="${ruleId}"]`);
-        checkbox?.closest(".compose-rule-item")?.classList.add("gap-highlight");
-        document.querySelectorAll(`#composedPreviewSegments [data-rule-id="${ruleId}"]`).forEach((el) => {
-            el.classList.add("gap-highlight");
+function debouncedEvaluateComposedFacts() {
+    if (composedReplyState.evaluateTimer) {
+        clearTimeout(composedReplyState.evaluateTimer);
+    }
+    composedReplyState.evaluateTimer = setTimeout(() => {
+        composedReplyState.evaluateTimer = null;
+        evaluateComposedFacts().catch((error) => showStatus(error.message, "error"));
+    }, 300);
+}
+
+async function evaluateComposedFacts() {
+    const recordId = composedReplyState.recordId;
+    if (!recordId) return;
+    const seq = ++composedReplyState.evaluateSeq;
+    const requestedFactIds = [...composedReplyState.selectedFactIds];
+    composedReplyState.evaluationPending = true;
+    composedReplyState.confirmedEvaluation = null;
+    try {
+        const evaluation = await api(`/api/mail/unmatched-inbound/${recordId}/composed-reply/evaluate`, {
+            method: "POST",
+            body: JSON.stringify({ factRuleIds: requestedFactIds })
         });
-    });
-}
-
-function setupComposedGapClickHandlers() {
-    const list = $("#composedGapList");
-    if (!list) return;
-    list.querySelectorAll("li[data-gap-index]").forEach((li) => {
-        li.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const index = Number(li.dataset.gapIndex);
-            const gapItems = composedReplyState.suggest?.gapItems || [];
-            const gapItem = gapItems[index];
-            if (!gapItem?.candidateRuleIds?.length) return;
-            composedReplyState.activeGapIndex = composedReplyState.activeGapIndex === index ? null : index;
-            renderComposedGapList();
-        });
-    });
+        if (seq !== composedReplyState.evaluateSeq) return;
+        if (!sameFactIdSet(requestedFactIds, composedReplyState.selectedFactIds)) return;
+        composedReplyState.evaluation = evaluation;
+        composedReplyState.confirmedEvaluation = evaluation;
+        composedReplyState.evaluationPending = false;
+        composedReplyState.selectedFactIds = [...(evaluation.canonicalFactIds || [])];
+        syncComposeFactCheckboxes();
+        refreshComposedWorkbenchUI();
+    } catch (error) {
+        if (seq === composedReplyState.evaluateSeq) {
+            composedReplyState.evaluationPending = false;
+            refreshComposedWorkbenchUI();
+        }
+        throw error;
+    }
 }
 
 function renderComposedGapList() {
     const list = $("#composedGapList");
     if (!list || !composedReplyState.suggest) return;
-    const selectedRuleIds = composedReplyState.selectedRuleIds;
-    const gapItems = composedReplyState.suggest.gapItems || [];
+    const requestCoverage = activeComposedRequestCoverage();
     const countEl = $("#composedGapCount");
-    if (!gapItems.length) {
-        list.innerHTML = `<li class="text-muted">暂无缺口项</li>`;
+    if (!requestCoverage.length) {
+        list.innerHTML = `<li class="text-muted">暂无问题项</li>`;
         if (countEl) countEl.textContent = "";
-        clearGapHighlight();
         return;
     }
-    const coveredCount = gapItems.filter((item) => isGapCovered(item, selectedRuleIds)).length;
-    if (countEl) countEl.textContent = `${coveredCount}/${gapItems.length}`;
-    const activeIndex = composedReplyState.activeGapIndex;
-    list.innerHTML = gapItems.map((item, index) => {
-        const covered = isGapCovered(item, selectedRuleIds);
-        const hasCandidates = (item.candidateRuleIds || []).length > 0;
-        const classes = [
-            covered ? "covered" : "",
-            hasCandidates ? "clickable" : "no-rules",
-            activeIndex === index ? "active-gap" : ""
-        ].filter(Boolean).join(" ");
-        const noRuleHint = hasCandidates ? "" : `<span class="gap-no-rules-hint">无可用规则</span>`;
+    const groundedCount = requestCoverage.filter((item) => item.status === "GROUNDED").length;
+    if (countEl) countEl.textContent = `${groundedCount}/${requestCoverage.length}`;
+    list.innerHTML = requestCoverage.map((item) => {
+        const status = String(item.status || "");
+        const hasFacts = (item.factRuleIds || []).length > 0;
+        const symbol = status === "GROUNDED" ? "✓" : "○";
+        const noRuleHint = hasFacts ? "" : `<span class="gap-no-rules-hint">暂无可核验事实</span>`;
+        const statusBadge = badge(
+            requestCoverageBadgeLabel(status),
+            requestCoverageBadgeClass(status)
+        );
         return `
-        <li class="${classes}" data-gap-index="${index}">
-            <span>${covered ? "✓" : "○"}</span>
-            <span>${escapeHtml(item.text)}${noRuleHint}</span>
+        <li>
+            <span>${symbol}</span>
+            <span>${escapeHtml(item.requestText || "")}${noRuleHint}</span>
+            ${statusBadge}
         </li>`;
     }).join("");
-    setupComposedGapClickHandlers();
-    applyGapHighlight();
 }
 
 function renderComposedSelectedList() {
     const list = $("#composedSelectedList");
     if (!list || !composedReplyState.suggest) return;
-    list.innerHTML = composedReplyState.selectedRuleIds.map((ruleId, index) => {
+    const factIds = composedReplyState.evaluationPending
+        ? composedReplyState.selectedFactIds
+        : (confirmedCanonicalFactIds() || composedReplyState.selectedFactIds);
+    list.innerHTML = factIds.map((ruleId) => {
         const rule = findSuggestRule(composedReplyState.suggest, ruleId);
-        const label = rule?.displayName || rule?.sectionTitle || `规则 #${ruleId}`;
-        return `
-            <li draggable="true" data-rule-id="${ruleId}" data-index="${index}">
-                <span class="compose-drag-handle">☰</span>
-                <span>${escapeHtml(label)}</span>
-                <span class="compose-selected-actions">
-                    <button type="button" class="button small" data-action="compose-move-up" data-index="${index}">↑</button>
-                    <button type="button" class="button small" data-action="compose-move-down" data-index="${index}">↓</button>
-                </span>
-            </li>`;
-    }).join("") || `<li class="text-muted">未选择规则</li>`;
-    setupComposeDragDrop();
+        const label = rule?.displayName || rule?.sectionTitle || UNNAMED_FACT_LABEL;
+        return `<li data-rule-id="${ruleId}"><span>${escapeHtml(label)}</span></li>`;
+    }).join("") || `<li class="text-muted">未选择事实</li>`;
 }
 
-function setupComposeDragDrop() {
-    const list = $("#composedSelectedList");
-    if (!list) return;
-    let dragIndex = null;
-    list.querySelectorAll("li[data-rule-id]").forEach((li) => {
-        li.addEventListener("dragstart", (event) => {
-            dragIndex = Number(li.dataset.index);
-            event.dataTransfer.effectAllowed = "move";
-        });
-        li.addEventListener("dragover", (event) => {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-        });
-        li.addEventListener("drop", (event) => {
-            event.preventDefault();
-            const dropIndex = Number(li.dataset.index);
-            if (dragIndex == null || Number.isNaN(dropIndex) || dragIndex === dropIndex) {
-                return;
-            }
-            const ids = composedReplyState.selectedRuleIds;
-            const [moved] = ids.splice(dragIndex, 1);
-            ids.splice(dropIndex, 0, moved);
-            dragIndex = null;
-            refreshComposedPreviewFromRules();
-        });
-    });
+function renderComposedDraftPreview() {
+    const container = $("#composedRenderedPreview");
+    const feedback = $("#trustReplyFeedback");
+    if (!container) return;
+    const draft = composedReplyState.draft;
+    if (!draft?.rendered) {
+        container.textContent = "";
+        if (feedback) {
+            feedback.hidden = true;
+            feedback.innerHTML = "";
+        }
+        return;
+    }
+    container.textContent = draft.rendered;
+    renderAiReplyFeedback(feedback, draft.result || null);
+}
+
+function updateTrustWorkbenchButtons() {
+    const generateBtn = $("#trustGenerateDraftBtn");
+    const adoptBtn = $("#trustAdoptDraftBtn");
+    const hasConfirmedFacts = (confirmedCanonicalFactIds() || []).length > 0;
+    const canGenerateContinuation = aiReplyState.firstTurnDone && !!composedReplyState.lockedFactIds?.length;
+    if (generateBtn) {
+        generateBtn.textContent = aiReplyState.firstTurnDone ? "重新生成表达" : "生成可信草稿";
+        generateBtn.disabled = composedReplyState.suggest?.llmEnabled === false
+            || aiReplyState.inFlight
+            || composedReplyState.evaluationPending
+            || (!canGenerateContinuation && !hasConfirmedFacts);
+    }
+    if (adoptBtn) {
+        adoptBtn.disabled = !composedReplyState.draft?.rendered
+            || composedReplyState.evaluationPending
+            || !(composedReplyState.lockedFactIds?.length || hasConfirmedFacts);
+    }
+}
+
+function refreshComposedWorkbenchUI() {
+    renderComposedSelectedList();
+    renderComposedGapList();
+    renderComposedDraftPreview();
+    updateTrustWorkbenchButtons();
 }
 
 function sortCategoryRulesForDisplay(rules, suggestedSet) {
@@ -8435,154 +8441,48 @@ function sortCategoryRulesForDisplay(rules, suggestedSet) {
     return [...suggested, ...others];
 }
 
-function refreshComposedPreviewFromRules() {
-    if (!composedReplyState.suggest) return;
-    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
-    composedReplyState.baselinePreview = buildDeterministicComposedPreview(
-        composedReplyState.selectedRuleIds,
-        composedReplyState.suggest,
-        composedReplyState.freeText,
-        ackContent
-    );
-    renderComposedPreviewSegments();
-    renderComposedGapList();
-    renderComposedSelectedList();
-    refreshComposedRenderedPreview().catch((error) => showStatus(error.message, "error"));
-}
-
-async function refreshComposedRenderedPreview() {
-    const container = $("#composedRenderedPreview");
-    const hints = $("#composedFallbackHints");
-    if (!container) return;
-    const ackContent = resolveAckContent(composedReplyState.suggest, composedReplyState.ackSnippetId);
-    const plain = buildDeterministicComposedPreview(
-        composedReplyState.selectedRuleIds,
-        composedReplyState.suggest,
-        composedReplyState.freeText,
-        ackContent
-    );
-    if (!plain.includes("${")) {
-        container.textContent = plain;
-        if (hints) hints.innerHTML = "";
-        return;
-    }
-    const payload = { text: plain };
-    if (composedReplyState.contactId) {
-        payload.contactId = composedReplyState.contactId;
-    } else if (composedReplyState.contactOrcid) {
-        payload.orcidId = composedReplyState.contactOrcid;
-        payload.level = "CANDIDATE";
-    } else {
-        container.textContent = plain;
-        if (hints) {
-            hints.innerHTML = `<span class="var-fallback-hint">未绑定专家，仅显示未渲染的拼接文本</span>`;
-        }
-        return;
-    }
-    const result = await api("/api/qa/render-preview", {
-        method: "POST",
-        body: JSON.stringify(payload)
-    });
-    container.textContent = result.rendered || "";
-    if (hints) {
-        const keys = result.fallbackKeys || [];
-        hints.innerHTML = keys.map((key) => {
-            const meta = (state.variableMeta || []).find((item) => item.key === key);
-            const label = meta?.label || key;
-            return `<span class="var-fallback-hint">「${escapeHtml(label)}」该专家此字段为空，将使用兜底文案</span>`;
-        }).join("");
-    }
-}
-
-let composedGapDismissHandlerBound = false;
-
-function ensureComposedGapDismissHandler() {
-    if (composedGapDismissHandlerBound) return;
-    composedGapDismissHandlerBound = true;
-    document.addEventListener("click", (event) => {
-        if (!composedReplyState.suggest) return;
-        if (!event.target.closest(".compose-workbench")) return;
-        if (event.target.closest(".compose-gaps li[data-gap-index]")) return;
-        if (composedReplyState.activeGapIndex != null) {
-            composedReplyState.activeGapIndex = null;
-            renderComposedGapList();
-        }
-    });
-}
-
-function updateAckChipSelection() {
-    const selectedId = composedReplyState.ackSnippetId;
-    document.querySelectorAll(".compose-ack-chip").forEach((chip) => {
-        const chipId = chip.dataset.ackId ? Number(chip.dataset.ackId) : null;
-        chip.classList.toggle("primary", chipId === selectedId);
-    });
-}
-
 function initComposedReplyWorkbench(recordId, suggest) {
     manualReplyQaContext = null;
     composedReplyState.recordId = recordId;
     composedReplyState.suggest = suggest;
-    composedReplyState.selectedRuleIds = [...(suggest.suggestedRuleIds || [])];
-    composedReplyState.freeText = "";
-    composedReplyState.previewEdited = false;
-    composedReplyState.baselinePreview = "";
-    composedReplyState.activeGapIndex = null;
-    composedReplyState.ackSnippetId = null;
-
-    ensureComposedGapDismissHandler();
-
-    document.querySelectorAll(".compose-ack-chip").forEach((chip) => {
-        chip.addEventListener("click", () => {
-            const ackId = chip.dataset.ackId;
-            composedReplyState.ackSnippetId = ackId ? Number(ackId) : null;
-            updateAckChipSelection();
-            refreshComposedPreviewFromRules();
-        });
-    });
+    composedReplyState.selectedFactIds = [...(suggest.suggestedRuleIds || [])];
+    const initialEvaluation = {
+        canonicalFactIds: [...(suggest.suggestedRuleIds || [])],
+        suggestedFactIds: [...(suggest.suggestedRuleIds || [])],
+        draftReadiness: suggest.draftReadiness || "READY",
+        requestCoverage: suggest.requestCoverage || [],
+        gapDetected: !!suggest.gapDetected
+    };
+    composedReplyState.evaluation = initialEvaluation;
+    composedReplyState.confirmedEvaluation = initialEvaluation;
+    composedReplyState.evaluationPending = false;
+    composedReplyState.lockedFactIds = null;
+    composedReplyState.draft = null;
+    composedReplyState.evaluateSeq = 0;
+    resetAiReplyState(recordId);
 
     document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
             const ruleId = Number(checkbox.dataset.ruleId);
             if (checkbox.checked) {
-                if (!composedReplyState.selectedRuleIds.includes(ruleId)) {
-                    composedReplyState.selectedRuleIds.push(ruleId);
+                if (!composedReplyState.selectedFactIds.includes(ruleId)) {
+                    composedReplyState.selectedFactIds.push(ruleId);
                 }
             } else {
-                composedReplyState.selectedRuleIds = composedReplyState.selectedRuleIds.filter((id) => id !== ruleId);
+                composedReplyState.selectedFactIds = composedReplyState.selectedFactIds.filter((id) => id !== ruleId);
             }
-            refreshComposedPreviewFromRules();
+            markComposedEvaluationPending();
+            debouncedEvaluateComposedFacts();
         });
     });
 
-    $("#composedFreeText")?.addEventListener("input", (event) => {
-        composedReplyState.freeText = event.target.value;
-        refreshComposedPreviewFromRules();
-    });
-
-    const useVariantsCheckbox = $("#manualReplyUseVariants");
-    if (useVariantsCheckbox) {
-        useVariantsCheckbox.checked = false;
-        useVariantsCheckbox.addEventListener("change", () => {
-            reloadComposedReplySuggest().catch((error) => showStatus(error.message, "error"));
-        });
+    const modelSelect = $("#trustReplyModel");
+    if (modelSelect) {
+        modelSelect.value = aiReplyState.selectedModel || "DEEPSEEK_V4_FLASH";
     }
 
-    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
-    refreshComposedPreviewFromRules();
-}
-
-async function reloadComposedReplySuggest() {
-    if (!composedReplyState.recordId) return;
-    const useVariants = $("#manualReplyUseVariants")?.checked === true;
-    const suggest = await api(
-        `/api/mail/unmatched-inbound/${composedReplyState.recordId}/composed-reply/suggest?useVariants=${useVariants}`
-    );
-    composedReplyState.suggest = suggest;
-    composedReplyState.selectedRuleIds = [...(suggest.suggestedRuleIds || [])];
-    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
-        checkbox.checked = composedReplyState.selectedRuleIds.includes(Number(checkbox.dataset.ruleId));
-    });
-    refreshComposedPreviewFromRules();
+    refreshComposedWorkbenchUI();
+    evaluateComposedFacts().catch((error) => showStatus(error.message, "error"));
 }
 
 const autoReplyPreviewKindLabels = {
@@ -8702,7 +8602,7 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     const checked = suggestedSet.has(rule.id) ? "checked" : "";
                     const suggested = suggestedSet.has(rule.id)
                         ? `<span class="badge ok">建议</span>` : "";
-                    const label = rule.displayName || rule.sectionTitle || `规则 #${rule.id}`;
+                    const label = rule.displayName || rule.sectionTitle || UNNAMED_FACT_LABEL;
                     return `
                         <label class="compose-rule-item">
                             <input type="checkbox" class="compose-rule-checkbox" data-rule-id="${rule.id}" ${checked}>
@@ -8714,98 +8614,44 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
         </details>
     `).join("");
 
-    const ackOptions = suggest.ackOptions || [];
-    const ackChipsHtml = `
-        <button type="button" class="button small compose-ack-chip primary" data-ack-id="">不添加</button>
-        ${ackOptions.map((option) => {
-            const label = (option.content || "").trim().split("\n")[0].slice(0, 48);
-            return `<button type="button" class="button small compose-ack-chip" data-ack-id="${option.id}">${escapeHtml(label || `致谢 #${option.id}`)}</button>`;
-        }).join("")}
-    `;
+    const llmDisabled = suggest.llmEnabled === false;
 
     return `
         <details class="detail-section reply-workflow-detail compose-workbench-section">
             <summary class="reply-workflow-summary">
                 <span class="reply-workflow-icon" aria-hidden="true">⌘</span>
-                <span class="reply-workflow-title"><strong>组装台回复</strong><small>按 QA 规则组合，可补充自由文本</small></span>
+                <span class="reply-workflow-title"><strong>可信回复工作台</strong><small>选择事实、生成草稿、采用后人工发送</small></span>
                 <span class="reply-workflow-status">已匹配 ${suggest.suggestedRuleIds?.length || 0} 条</span>
                 <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="reply-workflow-content">
             <div class="compose-workbench">
                 <div class="compose-panel compose-fragments">
-                    <h4>片段面板</h4>
-                    ${categoriesHtml || "<p class='text-muted'>暂无可用规则</p>"}
+                    <h4>可用事实</h4>
+                    ${categoriesHtml || "<p class='text-muted'>暂无可用事实</p>"}
                 </div>
-                <div class="compose-panel compose-draft">
-                    <h4>草稿预览</h4>
-                    <p class="text-muted" style="font-size:12px;margin:0 0 8px;">已选规则段 + 自由文本（两层模型）</p>
+                <div class="compose-panel compose-draft ai-chat-panel">
+                    <h4>可信草稿</h4>
+                    <div class="ai-reply-model-row">
+                        <label>生成模型
+                            <select id="trustReplyModel" class="ai-reply-model-select"${llmDisabled ? " disabled" : ""}>
+                                <option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>
+                                <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="trustReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
                     <ul id="composedSelectedList" class="compose-selected-list"></ul>
-                    ${suggest.salutation ? `
-                    <p class="text-muted compose-salutation-readonly" style="font-size:12px;margin:0 0 8px;">
-                        尊语：<span>${escapeHtml(suggest.salutation)}</span>
-                    </p>` : ""}
-                    <div class="compose-ack-section" style="margin-bottom:8px;">
-                        <p class="text-muted" style="font-size:11px;margin:0 0 6px;">致谢语（单选可不选）</p>
-                        <div class="compose-ack-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
-                            ${ackChipsHtml}
-                        </div>
-                    </div>
-                    <div class="var-editor-wrap" style="margin-bottom:8px;">
-                        <div class="var-editor-toolbar">
-                            <div class="var-insert-wrap">
-                                <button type="button" class="var-insert-btn" data-var-insert-target="composedFreeText">+ 插入变量 ▾</button>
-                                <div class="var-insert-menu" hidden></div>
-                            </div>
-                        </div>
-                        <div class="var-validation-hint" id="varHint-composedFreeText" hidden></div>
-                    </div>
-                    <textarea id="composedFreeText" class="compose-free-text" placeholder="补充自由文本（勾选/取消规则不会清空）"></textarea>
-                    <label class="checkbox-row"><input type="checkbox" id="manualReplyUseVariants"> 使用内容变体（按专家轮换）</label>
-                    <p class="text-muted" style="font-size:11px;margin:0 0 6px;">合并预览（只读分段）</p>
-                    <div id="composedPreviewSegments" class="compose-preview-segments"></div>
-                    <p class="text-muted" style="font-size:11px;margin:8px 0 6px;">变量渲染预览（只读）</p>
+                    <textarea id="composedOperatorInstruction" class="compose-free-text" placeholder="可选：语气、长度、结构要求（不会作为事实写入正文）"${llmDisabled ? " disabled" : ""}></textarea>
                     <div id="composedRenderedPreview" class="compose-rendered-preview pre"></div>
-                    <div id="composedFallbackHints" class="var-fallback-hints"></div>
                     <div class="compose-draft-actions">
-                        <button type="button" class="button primary" data-action="copy-to-manual-rich-reply" data-record-id="${recordId}">拷贝到人工富文本回复</button>
+                        <button type="button" class="button primary" id="trustGenerateDraftBtn" data-action="trust-generate-draft" data-record-id="${recordId}"${llmDisabled ? " disabled" : ""}>生成可信草稿</button>
+                        <button type="button" class="button secondary" id="trustAdoptDraftBtn" data-action="trust-adopt-draft" data-record-id="${recordId}" disabled>采用到人工回复</button>
                     </div>
                 </div>
                 <div class="compose-panel compose-gaps">
-                    <h4>缺口清单<span class="compose-count" id="composedGapCount"></span></h4>
+                    <h4>问题与依据<span class="compose-count" id="composedGapCount"></span></h4>
                     <ul id="composedGapList" class="compose-gap-list"></ul>
-                </div>
-            </div>
-            </div>
-        </details>
-        ${suggest.llmEnabled ? renderAiReplyPanelHtml(recordId) : ""}`;
-}
-
-function renderAiReplyPanelHtml(recordId) {
-    return `
-        <details class="detail-section reply-workflow-detail ai-reply-section">
-            <summary class="reply-workflow-summary">
-                <span class="reply-workflow-icon" aria-hidden="true">✦</span>
-                <span class="reply-workflow-title"><strong>AI 生成回复</strong><small>依据专家画像、历史邮件和命中规则生成</small></span>
-                <span class="reply-workflow-status">可用</span>
-                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
-            </summary>
-            <div class="reply-workflow-content">
-            <p class="text-muted" style="font-size:12px;margin:0 0 8px;">命中 QA 规则则按规则拼接；未命中则依据专家画像与历史邮件自由生成。首轮可填补充要求。</p>
-            <div class="ai-chat-panel">
-                <div class="ai-reply-model-row">
-                    <label>生成模型
-                        <select id="aiMailboxReplyModel" class="ai-reply-model-select">
-                            <option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>
-                            <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
-                        </select>
-                    </label>
-                </div>
-                <div id="aiReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
-                <div id="aiChatMessages" class="ai-chat-messages"></div>
-                <div class="ai-chat-input-row">
-                    <textarea id="aiChatInput" class="ai-chat-input" rows="2" placeholder="首轮可填补充要求或直接生成；续轮输入修改要求，如「语气更正式」"></textarea>
-                    <button type="button" class="button primary" data-action="ai-reply-turn" data-record-id="${recordId}">生成 / 继续修改</button>
                 </div>
             </div>
             </div>
@@ -8897,7 +8743,7 @@ async function showUnmatchedDetail(id) {
     const inboundTags = threadData.tags || [];
     const record = data.record;
     const suggest = record.expertContactId
-        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest?useVariants=false`).catch(() => null)
+        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
         : null;
     const history = record.expertContactId
         ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
@@ -9111,9 +8957,6 @@ async function showUnmatchedDetail(id) {
         composedReplyState.contactId = record.expertContactId || null;
         composedReplyState.contactOrcid = contact?.orcidId || null;
         initComposedReplyWorkbench(id, suggest);
-        if (suggest.llmEnabled) {
-            initAiReplyWorkbench(id);
-        }
     }
 
     loadAutoReplyPreview(id).catch(() => {});
@@ -9299,53 +9142,158 @@ async function handleUnmatchedAction(element) {
         await mailboxRemoveTag(Number(element.dataset.tagId));
         return;
     }
-    if (action === "compose-move-up") {
-        const index = Number(element.dataset.index);
-        if (index > 0) {
-            const ids = composedReplyState.selectedRuleIds;
-            [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-            refreshComposedPreviewFromRules();
-        }
-        return;
-    }
-    if (action === "compose-move-down") {
-        const index = Number(element.dataset.index);
-        const ids = composedReplyState.selectedRuleIds;
-        if (index >= 0 && index < ids.length - 1) {
-            [ids[index + 1], ids[index]] = [ids[index], ids[index + 1]];
-            refreshComposedPreviewFromRules();
-        }
-        return;
-    }
-    if (action === "copy-to-manual-rich-reply") {
-        const hasRules = composedReplyState.selectedRuleIds.length > 0;
-        const hasFreeText = (composedReplyState.freeText || "").trim().length > 0;
-        if (!hasRules && !hasFreeText) {
-            showStatus("请至少选择一条规则或填写自由文本", "error");
+    if (action === "trust-generate-draft") {
+        if (aiReplyState.inFlight) {
             return;
         }
-        const mergedText = composedReplyState.baselinePreview || "";
-        const editor = $("#manualRichReplyEditor");
-        if (editor) editor.innerText = mergedText;
-        const subjectEl = $("#manualReplySubject");
-        if (subjectEl && !subjectEl.value.trim() && hasRules) {
-            const firstRule = findSuggestRule(composedReplyState.suggest, composedReplyState.selectedRuleIds[0]);
-            if (firstRule?.replySubject) {
-                subjectEl.value = firstRule.replySubject;
+        const isFirstTurn = !composedReplyState.lockedFactIds;
+        const factIds = isFirstTurn
+            ? (confirmedCanonicalFactIds() || [])
+            : [...composedReplyState.lockedFactIds];
+        if (composedReplyState.evaluationPending) {
+            showStatus("事实校验中，请稍候", "error");
+            return;
+        }
+        if (!factIds.length) {
+            showStatus("请至少选择一条事实", "error");
+            return;
+        }
+        const instruction = $("#composedOperatorInstruction")?.value?.trim() || "";
+        const turnsToSend = isFirstTurn ? [] : [...aiReplyState.turns];
+        if (!isFirstTurn && !instruction) {
+            showStatus("请输入修改要求", "error");
+            return;
+        }
+        if (!isFirstTurn && instruction) {
+            turnsToSend.push({
+                assistantDraft: aiReplyState.lastDraftTemplate,
+                operatorInstruction: instruction
+            });
+        }
+        const expectedModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
+        aiReplyState.selectedModel = expectedModel;
+        const body = {
+            turns: turnsToSend,
+            qaRuleIds: factIds,
+            model: expectedModel
+        };
+        if (isFirstTurn && instruction) {
+            body.operatorInstruction = instruction;
+        }
+        const panel = $(".compose-draft.ai-chat-panel");
+        const feedback = $("#trustReplyFeedback");
+        const requestSeq = aiReplyState.requestSeq;
+        const expectedRecordId = composedReplyState.recordId;
+        const detailId = Number(id);
+        aiReplyState.inFlight = true;
+        renderAiReplyFeedback(feedback, null);
+        setAiReplyLoading(panel, true);
+        updateTrustWorkbenchButtons();
+        try {
+            const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === composedReplyState.recordId
+                && detailId === Number(state.mailbox.detailContext?.id)
+                && expectedModel === currentModel;
+            if (!stillCurrent) {
+                return;
+            }
+            if (result.selectedModel !== expectedModel) {
+                renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
+                return;
+            }
+            const rawDraft = result.draftText || "";
+            const renderedDraft = result.renderedDraftText || rawDraft;
+            if (isFirstTurn) {
+                composedReplyState.lockedFactIds = [...factIds];
+            } else if (instruction) {
+                aiReplyState.turns.push({
+                    assistantDraft: aiReplyState.lastDraftTemplate,
+                    operatorInstruction: instruction
+                });
+            }
+            aiReplyState.lastDraftTemplate = rawDraft;
+            aiReplyState.lastRenderedDraft = renderedDraft;
+            aiReplyState.lastQaRuleIds = [...factIds];
+            aiReplyState.firstTurnDone = true;
+            composedReplyState.draft = { raw: rawDraft, rendered: renderedDraft, result };
+            renderComposedDraftPreview();
+            renderAiReplyFeedback(feedback, result);
+            if (!isFirstTurn && instruction) {
+                $("#composedOperatorInstruction").value = "";
+            }
+            showStatus(aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "可信草稿已生成" : "结构化草稿已生成"));
+        } catch (e) {
+            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === composedReplyState.recordId
+                && detailId === Number(state.mailbox.detailContext?.id)
+                && expectedModel === currentModel;
+            if (stillCurrent) {
+                renderAiReplyFeedback(feedback, null, e.message || "未知错误");
+            }
+            showStatus(`生成失败：${e.message || "未知错误"}`, "error");
+        } finally {
+            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
+            const stillCurrent = requestSeq === aiReplyState.requestSeq
+                && expectedRecordId === composedReplyState.recordId
+                && expectedModel === currentModel;
+            if (stillCurrent) {
+                setAiReplyLoading(panel, false);
+                aiReplyState.inFlight = false;
+                updateTrustWorkbenchButtons();
             }
         }
-        if (hasRules) {
+        return;
+    }
+    if (action === "trust-adopt-draft") {
+        const draft = composedReplyState.draft;
+        const rendered = draft?.rendered || "";
+        const raw = draft?.raw || "";
+        if (!rendered) {
+            showStatus("请先生成可信草稿", "error");
+            return;
+        }
+        if (composedReplyState.evaluationPending) {
+            showStatus("事实校验中，请稍候", "error");
+            return;
+        }
+        const factIds = composedReplyState.lockedFactIds
+            || confirmedCanonicalFactIds()
+            || [];
+        if (!factIds.length) {
+            showStatus("当前事实集合未确认，请重新选择事实", "error");
+            return;
+        }
+        const editor = $("#manualRichReplyEditor");
+        if (editor) {
+            editor.innerText = rendered;
+        }
+        aiReplyState.adoptContext = {
+            rawTemplate: raw,
+            renderedBaseline: editor ? editor.innerText : rendered,
+            renderedBaselineHtml: editor ? editor.innerHTML : "",
+            recordId: Number(id),
+            needsGroundingReview: false,
+            reviewItems: [],
+            draftReadiness: draft?.result?.draftReadiness || composedReplyState.evaluation?.draftReadiness || "READY",
+            requestCount: Number(draft?.result?.requestCount) || 0,
+            mode: draft?.result?.mode || ""
+        };
+        if (factIds.length > 0) {
             manualReplyQaContext = {
-                qaRuleIds: [...composedReplyState.selectedRuleIds],
-                suggestedRuleIds: [...(composedReplyState.suggest?.suggestedRuleIds || [])],
-                freeText: composedReplyState.freeText,
-                ackSnippetId: composedReplyState.ackSnippetId,
-                baselineText: mergedText
+                qaRuleIds: [...factIds],
+                baselineText: rendered
             };
+            showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
         } else {
             manualReplyQaContext = null;
+            showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
         }
-        showStatus("已拷贝到人工富文本回复区，可编辑后发送");
         editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
         return;
     }
@@ -9543,13 +9491,8 @@ async function handleUnmatchedAction(element) {
         }
         if (manualReplyQaContext?.qaRuleIds?.length) {
             requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;
-            requestBody.suggestedRuleIds = manualReplyQaContext.suggestedRuleIds || [];
-            requestBody.ackSnippetId = manualReplyQaContext.ackSnippetId;
-            const freePreview = (manualReplyQaContext.freeText || "").trim().slice(0, 200);
-            requestBody.freeTextPreview = freePreview || null;
             requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
         }
-        requestBody.useVariants = $("#manualReplyUseVariants")?.checked === true;
 
         return submitManualRichReply(id, requestBody);
     }
@@ -10233,10 +10176,6 @@ function bindEvents() {
     $("#replySnippetForm")?.snippetType?.addEventListener("change", () => {
         updateReplySnippetDefaultFieldVisibility();
     });
-    $("#qaRuleForm")?.addEventListener("click", (event) => {
-        handleContentVariantEditorClick(event, $("#qaRuleForm"));
-    });
-    $("#qaRuleForm")?.addEventListener("input", handleContentVariantEditorInput);
     $("#replySnippetForm")?.addEventListener("click", (event) => {
         handleContentVariantEditorClick(event, $("#replySnippetForm"));
     });
@@ -10543,6 +10482,9 @@ function bindEvents() {
         state.aiTraining.simulateModel = readAiReplyModelSelection("#aiTrainingReplyModel", event.target.value);
     });
     document.addEventListener("change", (event) => {
+        if (event.target?.id === "trustReplyModel") {
+            aiReplyState.selectedModel = readAiReplyModelSelection("#trustReplyModel", event.target.value);
+        }
         if (event.target?.id === "aiMailboxReplyModel") {
             aiReplyState.selectedModel = readAiReplyModelSelection("#aiMailboxReplyModel", event.target.value);
         }

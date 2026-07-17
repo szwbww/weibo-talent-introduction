@@ -21,7 +21,6 @@ import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
-import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -42,7 +41,7 @@ class AutoMailReplyService(
     private val mailBodyCleaner: MailBodyCleaner,
     private val inboundIntentClassifier: InboundIntentClassifier,
     private val mailComposeTemplateService: MailComposeTemplateService,
-    private val qaMatchService: QaMatchService,
+    private val groundedAutoReplyDecisionService: GroundedAutoReplyDecisionService,
     private val conversationStateService: ConversationStateService,
     private val meetingScheduleService: MeetingScheduleService,
     private val expertEmailAliasService: ExpertEmailAliasService,
@@ -503,22 +502,22 @@ class AutoMailReplyService(
             AutoIntentAction.QA -> Unit
         }
 
-        val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
-        val match = qaMatchService.match(cleanedBody, variantSeed)
-        if (match == null || !match.autoReplyEnabled || match.handoffRequired) {
+        val decision = groundedAutoReplyDecisionService.decide(cleanedBody, received.subject)
+        if (!decision.readyToSend) {
+            val manualReason = decision.reason
             markManualReview(
                 contact = effectiveContact,
                 received = received,
                 status = ConversationStatus.MANUAL_HANDOFF,
-                reason = "QA_NO_MATCH",
+                reason = manualReason,
                 note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
             )
             confirmManualReviewWithBody(
                 account = account,
                 received = received,
                 expertContactId = contactId,
-                reason = "QA_NO_MATCH",
-                reasonType = "QA_NO_MATCH",
+                reason = manualReason,
+                reasonType = manualReason,
                 cleanedBody = cleanedBody,
                 skipImapAck = skipImapAck
             )
@@ -532,38 +531,7 @@ class AutoMailReplyService(
                 matchedKeywords = intent.matchedKeywords,
                 newStatus = ConversationStatus.MANUAL_HANDOFF.name,
                 previousStatus = contact.currentStatus,
-                reason = "QA_NO_MATCH"
-            )
-        }
-
-        if (match.gapDetected) {
-            markManualReview(
-                contact = effectiveContact,
-                received = received,
-                status = ConversationStatus.MANUAL_HANDOFF,
-                reason = "QA_GAP",
-                note = "Subject: ${received.subject.orEmpty()}\n\n${cleanedBody.take(1200)}"
-            )
-            confirmManualReviewWithBody(
-                account = account,
-                received = received,
-                expertContactId = contactId,
-                reason = "QA_GAP",
-                reasonType = "QA_GAP",
-                cleanedBody = cleanedBody,
-                skipImapAck = skipImapAck
-            )
-            return SinglePipelineResult(
-                outcome = SinglePipelineOutcome.QA_NO_MATCH,
-                recorded = true,
-                expertContactId = contactId,
-                inboundMailRecordId = inboundMailRecordId,
-                intentCode = intent.intentCode,
-                autoAction = intent.autoAction,
-                matchedKeywords = intent.matchedKeywords,
-                newStatus = ConversationStatus.MANUAL_HANDOFF.name,
-                previousStatus = contact.currentStatus,
-                reason = "QA_GAP"
+                reason = manualReason
             )
         }
 
@@ -591,10 +559,14 @@ class AutoMailReplyService(
             )
         }
 
-        val plainBody = mailVariableService.renderForContact(match.replyBody, account, contact)
+        val plainBody = mailVariableService.renderForContact(
+            requireNotNull(decision.rawDraftText) { "Grounded auto reply draft text is required" },
+            account,
+            contact
+        )
         val reply = ComposedMail(
             to = received.from,
-            subject = match.replySubject ?: "Re: ${received.subject.orEmpty()}".trim(),
+            subject = decision.subject,
             body = mailContentService.plainTextToHtml(plainBody),
             html = true,
             text = plainBody
@@ -615,7 +587,7 @@ class AutoMailReplyService(
                 subject = reply.subject,
                 body = plainBody,
                 cleanedBody = null,
-                matchedQaRuleId = match.ruleId,
+                matchedQaRuleId = decision.qaRuleIds.firstOrNull(),
                 sendStatus = delivered.status,
                 receivedAt = null,
                 sentAt = now,
@@ -624,7 +596,7 @@ class AutoMailReplyService(
         )
 
         val outboundRecordId = outboundRecord.id ?: error("Outbound mail record id is required")
-        match.matchedRuleIds.forEachIndexed { ordinal, qaRuleId ->
+        decision.qaRuleIds.forEachIndexed { ordinal, qaRuleId ->
             mailRecordQaRuleRepository.save(
                 MailRecordQaRule(
                     mailRecordId = outboundRecordId,

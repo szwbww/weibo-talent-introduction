@@ -3,7 +3,7 @@ id: K-content-variant-input-read-contract
 domain: frontend
 created: 2026-07-09
 last_used: 2026-07-17
-hit_count: 3
+hit_count: 9
 source: create-p:ui-collapsible-preview-and-variant-carousel
 severity: P1
 ---

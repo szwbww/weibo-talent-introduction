@@ -12,6 +12,30 @@ data class ClaimValidationResult(
 class AiReplyHighRiskClaimValidator(
     private val qaRuleRepository: QaRuleRepository
 ) {
+    fun validatePlainText(finalRawText: String, factRuleIds: List<Long>): ClaimValidationResult {
+        if (factRuleIds.isEmpty()) {
+            return ClaimValidationResult(valid = true)
+        }
+        val sourceText = resolveSourceText(factRuleIds)
+        if (sourceText == null) {
+            return ClaimValidationResult(
+                valid = false,
+                warningCodes = listOf(WARNING_CLAIM_SOURCE_UNAVAILABLE)
+            )
+        }
+        val warnings = mutableListOf<String>()
+        if (containsHallucinatedNumberOrUrl(finalRawText, sourceText)) {
+            warnings += WARNING_CLAIM_HALLUCINATED_FACT
+        }
+        if (detectsModalityStrengthening(finalRawText, sourceText)) {
+            warnings += WARNING_CLAIM_MODALITY_STRENGTHENED
+        }
+        if (containsUnbackedHighRiskDeclarations(finalRawText, sourceText)) {
+            warnings += WARNING_CLAIM_HIGH_RISK_UNBACKED
+        }
+        return ClaimValidationResult(valid = warnings.isEmpty(), warningCodes = warnings.distinct())
+    }
+
     fun validate(
         sections: List<ValidatedSection>,
         requestFacts: List<RequestFactItem>
@@ -44,10 +68,6 @@ class AiReplyHighRiskClaimValidator(
         return ClaimValidationResult(valid = valid, warningCodes = warnings.distinct())
     }
 
-    /**
-     * Returns the combined [replySubject] + [replyBody] of all referenced rules,
-     * or null if any referenced rule is missing or has empty text.
-     */
     internal fun resolveSourceText(sourceRuleIds: List<Long>): String? {
         val texts = mutableListOf<String>()
         val seen = linkedSetOf<Long>()
@@ -56,16 +76,15 @@ class AiReplyHighRiskClaimValidator(
                 continue
             }
             val rule = qaRuleRepository.findById(ruleId).orElse(null) ?: return null
-            val subject = rule.replySubject?.trim().orEmpty()
-            val body = rule.replyBody.trim()
-            if (subject.isBlank() && body.isBlank()) {
+            val body = rule.answerBody.trim()
+            if (body.isBlank()) {
                 return null
             }
-            if (subject.isNotBlank()) {
-                texts += subject + "\n" + body
-            } else {
-                texts += body
-            }
+            val title = rule.displayName?.trim().orEmpty()
+            texts += listOfNotNull(
+                title.takeIf { it.isNotBlank() },
+                body
+            ).joinToString("\n")
         }
         return texts.joinToString("\n")
     }

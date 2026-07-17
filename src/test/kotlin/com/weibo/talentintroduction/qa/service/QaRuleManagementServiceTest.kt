@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -60,42 +61,70 @@ class QaRuleManagementServiceTest {
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
 
+        val factBody = "The program may provide funding support."
         val created = service.createRule(
             QaRuleCreateCommand(
                 categoryId = 1L,
                 keywords = "funding, salary",
                 matchMode = "any",
                 priority = 10,
-                replySubject = "Funding support",
-                replyBody = "The program may provide funding support."
+                answerBody = factBody
             )
         )
 
         assertEquals(1L, created.rule.categoryId)
         assertEquals("ANY", created.rule.matchMode)
         assertEquals(10, created.rule.priority)
+        assertEquals(factBody, created.rule.answerBody)
+        assertEquals(factBody, created.rule.replyBody)
+        assertEquals(QaReplyPolicy.REVIEW.name, created.rule.replyPolicy)
+        assertFalse(created.rule.autoReplyEnabled)
+        assertTrue(created.rule.handoffRequired)
         assertTrue(created.variants.isEmpty())
     }
 
     @Test
-    fun `create persists variants in order and update replaces them`() {
+    fun `rejects qa variants on create`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    answerBody = "The program may provide funding support.",
+                    variants = listOf("Variant A")
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("content variants are no longer supported"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `update answerBody preserves legacy replyBody and routing fields`() {
+        val existing = rule(
+            id = 10L,
+            enabled = true,
+            replyBody = "Legacy runtime body",
+            answerBody = "Legacy runtime body",
+            autoReplyEnabled = true,
+            handoffRequired = false
+        ).copy(
+            replySubject = "Legacy subject",
+            coverageKeys = "company.legal_name"
+        )
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
-            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
-        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(rule(id = 10L, enabled = true)))
-        stubVariantPersistence()
-
-        val created = service.createRule(
-            QaRuleCreateCommand(
-                categoryId = 1L,
-                keywords = "funding",
-                replySubject = null,
-                replyBody = "Main body",
-                variants = listOf("Variant A", "Variant B")
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
             )
-        )
-
-        assertEquals(listOf("Variant A", "Variant B"), created.variants)
+        ).thenReturn(emptyList())
 
         val updated = service.updateRule(
             10L,
@@ -104,19 +133,44 @@ class QaRuleManagementServiceTest {
                 keywords = "funding",
                 matchMode = "ANY",
                 priority = 100,
-                replySubject = "Subject",
-                replyBody = "Main body",
-                displayName = null,
-                autoReplyEnabled = true,
-                handoffRequired = false,
-                enabled = true,
-                variants = emptyList()
+                answerBody = "Updated fact-only body.",
+                replyPolicy = QaReplyPolicy.AUTO.name,
+                displayName = "Fact title",
+                enabled = true
             )
         )
 
-        assertTrue(updated.variants.isEmpty())
-        Mockito.verify(contentVariantRepository, Mockito.times(2))
-            .deleteByOwnerTypeAndOwnerId(ContentVariantOwnerType.QA_RULE, 10L)
+        assertEquals("Updated fact-only body.", updated.rule.answerBody)
+        assertEquals("Legacy runtime body", updated.rule.replyBody)
+        assertEquals(QaReplyPolicy.AUTO.name, updated.rule.replyPolicy)
+        assertEquals("Legacy subject", updated.rule.replySubject)
+        assertTrue(updated.rule.autoReplyEnabled)
+        assertFalse(updated.rule.handoffRequired)
+        assertEquals("company.legal_name", updated.rule.coverageKeys)
+    }
+
+    @Test
+    fun `rejects non-empty qa variants on update`() {
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(rule(id = 10L, enabled = true)))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.updateRule(
+                10L,
+                QaRuleUpdateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    matchMode = "ANY",
+                    priority = 100,
+                    answerBody = "Updated fact-only body.",
+                    enabled = true,
+                    variants = listOf("Variant A")
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("content variants are no longer supported"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test
@@ -130,7 +184,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `rejects variant duplicate of main body`() {
+    fun `rejects non-empty qa variants on create duplicate message`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
@@ -138,14 +192,13 @@ class QaRuleManagementServiceTest {
                 QaRuleCreateCommand(
                     categoryId = 1L,
                     keywords = "funding",
-                    replySubject = null,
-                    replyBody = "Main body",
-                    variants = listOf("Main body")
+                    answerBody = "The program may provide funding support.",
+                    variants = listOf("The program may provide funding support.")
                 )
             )
         }
 
-        assertTrue(ex.message!!.contains("变体不能与主体重复"))
+        assertTrue(ex.message!!.contains("content variants are no longer supported"))
         Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
         Mockito.verify(contentVariantRepository, Mockito.never()).deleteByOwnerTypeAndOwnerId(
             Mockito.anyString(),
@@ -163,7 +216,7 @@ class QaRuleManagementServiceTest {
                     categoryId = 1L,
                     keywords = "funding",
                     replySubject = null,
-                    replyBody = "Dear \${unknownKey}, welcome."
+                    answerBody = "Topic references \${unknownKey} information."
                 )
             )
         }
@@ -182,7 +235,7 @@ class QaRuleManagementServiceTest {
                     categoryId = 1L,
                     keywords = "funding",
                     replySubject = null,
-                    replyBody = "Dear \${expertFamilyName}, welcome."
+                    answerBody = "Contact \${expertFamilyName} for details."
                 )
             )
         }
@@ -200,7 +253,7 @@ class QaRuleManagementServiceTest {
                     categoryId = 1L,
                     keywords = "funding",
                     replySubject = null,
-                    replyBody = "Dear \${expertFamilyName|   }, welcome."
+                    answerBody = "Topic \${expertFamilyName|   } is supported."
                 )
             )
         }
@@ -219,20 +272,20 @@ class QaRuleManagementServiceTest {
             QaRuleCreateCommand(
                 categoryId = 1L,
                 keywords = "funding",
-                replySubject = null,
-                replyBody = "Dear \${expertFamilyName|Professor}, welcome."
+                answerBody = "Topic: \${researchFields|Science}."
             )
         )
 
-        assertEquals("Dear \${expertFamilyName|Professor}, welcome.", created.rule.replyBody)
+        assertEquals("Topic: \${researchFields|Science}.", created.rule.answerBody)
     }
 
     @Test
-    fun `update validates new reply body only`() {
+    fun `update validates answer body only`() {
         val existing = rule(
             id = 2L,
             enabled = true,
-            replyBody = "Legacy body with \${badToken}"
+            replyBody = "Legacy body with \${badToken}",
+            answerBody = "Legacy body with \${badToken}"
         )
         Mockito.`when`(ruleRepository.findById(2L)).thenReturn(Optional.of(existing))
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
@@ -245,17 +298,226 @@ class QaRuleManagementServiceTest {
                     keywords = "funding",
                     matchMode = "ANY",
                     priority = 100,
-                    replySubject = "Subject",
-                    replyBody = "Dear \${expertFamilyName}, updated.",
+                    answerBody = "Contact \${expertFamilyName} for details.",
                     displayName = null,
-                    autoReplyEnabled = true,
-                    handoffRequired = false,
                     enabled = true
                 )
             )
         }
 
         assertTrue(ex.message!!.contains("\${expertFamilyName}"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `rejects salutation in answerBody`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "identity",
+                    answerBody = "Dear Professor, the program is administered by the local government."
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("salutation"))
+    }
+
+    @Test
+    fun `rejects email signature in answerBody`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "fee",
+                    answerBody = "The application does not charge experts a service fee. Best regards"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("signature"))
+    }
+
+    @Test
+    fun `v79 backfills answer_body from reply_body`() {
+        val v79 = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/main/resources/db/migration/V79__add_qa_answer_body.sql")
+        )
+        assertTrue(v79.contains("ADD COLUMN answer_body"))
+        assertTrue(v79.contains("SET answer_body = reply_body"))
+        assertTrue(v79.contains("updated_at = updated_at"))
+        assertTrue(v79.contains("MODIFY answer_body TEXT NOT NULL"))
+    }
+
+    @Test
+    fun `rejects blank answerBody on create`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    answerBody = "   "
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("answerBody is required"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `update trims answerBody before save`() {
+        val existing = rule(id = 10L, enabled = true)
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
+            )
+        ).thenReturn(emptyList())
+
+        val core = "A".repeat(4000)
+        val updated = service.updateRule(
+            10L,
+            QaRuleUpdateCommand(
+                categoryId = 1L,
+                keywords = "funding",
+                matchMode = "ANY",
+                priority = 100,
+                answerBody = "  $core  ",
+                enabled = true
+            )
+        )
+
+        assertEquals(4000, updated.rule.answerBody.length)
+        assertEquals(core, updated.rule.answerBody)
+    }
+
+    @Test
+    fun `update rejects answerBody longer than 4000 trimmed characters`() {
+        val existing = rule(id = 10L, enabled = true)
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.updateRule(
+                10L,
+                QaRuleUpdateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    matchMode = "ANY",
+                    priority = 100,
+                    answerBody = "A".repeat(4001),
+                    enabled = true
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("4000"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `default replyPolicy is REVIEW for fail-safe domain construction`() {
+        val rule = QaRule(
+            categoryId = 1L,
+            keywords = "funding",
+            replySubject = null,
+            replyBody = "Funding info."
+        )
+
+        assertEquals(QaReplyPolicy.REVIEW.name, rule.replyPolicy)
+        assertFalse(rule.withReplyPolicy(rule.replyPolicyEnum()).autoReplyEnabled)
+        assertTrue(rule.withReplyPolicy(rule.replyPolicyEnum()).handoffRequired)
+    }
+
+    @Test
+    fun `create applies reply policy shadow mapping`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 11L) }
+
+        val auto = service.createRule(
+            QaRuleCreateCommand(
+                categoryId = 1L,
+                keywords = "fee",
+                answerBody = "No service fee.",
+                replyPolicy = QaReplyPolicy.AUTO.name
+            )
+        )
+        assertEquals(QaReplyPolicy.AUTO.name, auto.rule.replyPolicy)
+        assertTrue(auto.rule.autoReplyEnabled)
+        assertFalse(auto.rule.handoffRequired)
+
+        val never = service.createRule(
+            QaRuleCreateCommand(
+                categoryId = 1L,
+                keywords = "legacy",
+                answerBody = "Internal only.",
+                replyPolicy = QaReplyPolicy.NEVER.name
+            )
+        )
+        assertEquals(QaReplyPolicy.NEVER.name, never.rule.replyPolicy)
+        assertFalse(never.rule.autoReplyEnabled)
+        assertTrue(never.rule.handoffRequired)
+    }
+
+    @Test
+    fun `rejects invalid replyPolicy`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "fee",
+                    answerBody = "No service fee.",
+                    replyPolicy = "INVALID"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("replyPolicy"))
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `v80 backfills reply_policy and syncs legacy booleans`() {
+        val v80 = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/main/resources/db/migration/V80__add_qa_reply_policy.sql")
+        )
+        assertTrue(v80.contains("ADD COLUMN reply_policy"))
+        assertTrue(v80.contains("handoff_required = 1 OR auto_reply_enabled = 0 THEN 'REVIEW'"))
+        assertTrue(v80.contains("updated_at = updated_at"))
+        assertTrue(v80.contains("reply_policy = 'AUTO' THEN 1 ELSE 0"))
+        assertTrue(v80.contains("reply_policy IN ('REVIEW', 'NEVER') THEN 1 ELSE 0"))
+    }
+
+    @Test
+    fun `rejects email signature with comma in answerBody`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "fee",
+                    answerBody = "The application does not charge experts a service fee. Best regards,"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("signature"))
         Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
     }
 
@@ -278,10 +540,10 @@ class QaRuleManagementServiceTest {
         assertFalse(disabled.rule.enabled)
     }
 
-    // ── coverage keys ──────────────────────────────────────────────────────────
+    // ── coverage keys (frozen — request ignored) ───────────────────────────────
 
     @Test
-    fun `create rule with valid coverage keys`() {
+    fun `create ignores coverage keys in request`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -290,13 +552,12 @@ class QaRuleManagementServiceTest {
             QaRuleCreateCommand(
                 categoryId = 1L,
                 keywords = "funding",
-                replySubject = null,
-                replyBody = "Funding info",
+                answerBody = "Funding info.",
                 coverageKeys = listOf("company.legal_name", "finance.government_funding")
             )
         )
 
-        assertEquals("company.legal_name,finance.government_funding", created.rule.coverageKeys)
+        assertEquals("", created.rule.coverageKeys)
     }
 
     @Test
@@ -309,8 +570,7 @@ class QaRuleManagementServiceTest {
             QaRuleCreateCommand(
                 categoryId = 1L,
                 keywords = "funding",
-                replySubject = null,
-                replyBody = "Funding info",
+                answerBody = "Funding info.",
                 coverageKeys = null
             )
         )
@@ -319,7 +579,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `create rule with empty coverage keys saves empty`() {
+    fun `create ignores unknown coverage keys`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -328,9 +588,8 @@ class QaRuleManagementServiceTest {
             QaRuleCreateCommand(
                 categoryId = 1L,
                 keywords = "funding",
-                replySubject = null,
-                replyBody = "Funding info",
-                coverageKeys = emptyList()
+                answerBody = "Funding info.",
+                coverageKeys = listOf("finance.guaranteed_amount")
             )
         )
 
@@ -338,48 +597,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `rejects unknown coverage key`() {
-        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.createRule(
-                QaRuleCreateCommand(
-                    categoryId = 1L,
-                    keywords = "funding",
-                    replySubject = null,
-                    replyBody = "Funding info",
-                    coverageKeys = listOf("finance.guaranteed_amount")
-                )
-            )
-        }
-
-        assertTrue(ex.message!!.contains("Unknown coverage keys"))
-        assertTrue(ex.message!!.contains("finance.guaranteed_amount"))
-        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
-    }
-
-    @Test
-    fun `rejects duplicate coverage keys`() {
-        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.createRule(
-                QaRuleCreateCommand(
-                    categoryId = 1L,
-                    keywords = "funding",
-                    replySubject = null,
-                    replyBody = "Funding info",
-                    coverageKeys = listOf("company.legal_name", "company.legal_name")
-                )
-            )
-        }
-
-        assertTrue(ex.message!!.contains("Duplicate coverage keys"))
-        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
-    }
-
-    @Test
-    fun `update with null coverage keys preserves existing`() {
+    fun `update preserves coverage keys when request sends null`() {
         val existing = rule(id = 10L, enabled = true).copy(
             coverageKeys = "company.legal_name,company.registered_location"
         )
@@ -387,7 +605,12 @@ class QaRuleManagementServiceTest {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
-        stubVariantPersistence()
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
+            )
+        ).thenReturn(emptyList())
 
         val updated = service.updateRule(
             10L,
@@ -396,11 +619,7 @@ class QaRuleManagementServiceTest {
                 keywords = "funding",
                 matchMode = "ANY",
                 priority = 100,
-                replySubject = "Subject",
-                replyBody = "Funding info",
-                displayName = null,
-                autoReplyEnabled = true,
-                handoffRequired = false,
+                answerBody = "Funding info.",
                 enabled = true,
                 coverageKeys = null
             )
@@ -410,7 +629,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `update with empty coverage keys clears`() {
+    fun `update preserves coverage keys when request sends empty list`() {
         val existing = rule(id = 10L, enabled = true).copy(
             coverageKeys = "company.legal_name,company.registered_location"
         )
@@ -418,7 +637,12 @@ class QaRuleManagementServiceTest {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
-        stubVariantPersistence()
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
+            )
+        ).thenReturn(emptyList())
 
         val updated = service.updateRule(
             10L,
@@ -427,17 +651,13 @@ class QaRuleManagementServiceTest {
                 keywords = "funding",
                 matchMode = "ANY",
                 priority = 100,
-                replySubject = "Subject",
-                replyBody = "Funding info",
-                displayName = null,
-                autoReplyEnabled = true,
-                handoffRequired = false,
+                answerBody = "Funding info.",
                 enabled = true,
                 coverageKeys = emptyList()
             )
         )
 
-        assertEquals("", updated.rule.coverageKeys)
+        assertEquals("company.legal_name,company.registered_location", updated.rule.coverageKeys)
     }
 
     @Test
@@ -461,55 +681,54 @@ class QaRuleManagementServiceTest {
         assertEquals("company.legal_name,company.verification_evidence", disabled.rule.coverageKeys)
     }
 
-    // ── P1-1: blank key rejection ──────────────────────────────────────────────
+    // ── P1-1: blank key rejection (ignored in fact-card phase) ─────────────────
 
     @Test
-    fun `create rejects blank coverage key item`() {
+    fun `create ignores blank coverage key items`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
 
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.createRule(
-                QaRuleCreateCommand(
-                    categoryId = 1L,
-                    keywords = "funding",
-                    replySubject = null,
-                    replyBody = "Funding info",
-                    coverageKeys = listOf("", "company.legal_name")
-                )
+        val created = service.createRule(
+            QaRuleCreateCommand(
+                categoryId = 1L,
+                keywords = "funding",
+                answerBody = "Funding info.",
+                coverageKeys = listOf("", "company.legal_name")
             )
-        }
+        )
 
-        assertTrue(ex.message!!.contains("Coverage keys must not be blank"))
-        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+        assertEquals("", created.rule.coverageKeys)
     }
 
     @Test
-    fun `update rejects blank coverage key item`() {
-        val existing = rule(id = 10L, enabled = true)
+    fun `update ignores blank coverage key items`() {
+        val existing = rule(id = 10L, enabled = true).copy(coverageKeys = "company.legal_name")
         Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
-
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.updateRule(
-                10L,
-                QaRuleUpdateCommand(
-                    categoryId = 1L,
-                    keywords = "funding",
-                    matchMode = "ANY",
-                    priority = 100,
-                    replySubject = "Subject",
-                    replyBody = "Funding info",
-                    displayName = null,
-                    autoReplyEnabled = true,
-                    handoffRequired = false,
-                    enabled = true,
-                    coverageKeys = listOf("company.legal_name", "  ")
-                )
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
             )
-        }
+        ).thenReturn(emptyList())
 
-        assertTrue(ex.message!!.contains("Coverage keys must not be blank"))
-        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+        val updated = service.updateRule(
+            10L,
+            QaRuleUpdateCommand(
+                categoryId = 1L,
+                keywords = "funding",
+                matchMode = "ANY",
+                priority = 100,
+                answerBody = "Funding info.",
+                enabled = true,
+                coverageKeys = listOf("company.legal_name", "  ")
+            )
+        )
+
+        assertEquals("company.legal_name", updated.rule.coverageKeys)
     }
 
     // ── P1-2/P1-3/P1-4: V76 migration static checks ────────────────────────────
@@ -658,7 +877,19 @@ class QaRuleManagementServiceTest {
         }
     }
 
-    private fun rule(id: Long, enabled: Boolean, replyBody: String = "The program may provide funding support."): QaRule =
+    private fun rule(
+        id: Long,
+        enabled: Boolean,
+        replyBody: String = "The program may provide funding support.",
+        answerBody: String = replyBody,
+        autoReplyEnabled: Boolean = true,
+        handoffRequired: Boolean = false,
+        replyPolicy: String = if (autoReplyEnabled && !handoffRequired) {
+            QaReplyPolicy.AUTO.name
+        } else {
+            QaReplyPolicy.REVIEW.name
+        }
+    ): QaRule =
         QaRule(
             id = id,
             categoryId = 1L,
@@ -667,6 +898,10 @@ class QaRuleManagementServiceTest {
             priority = 100,
             replySubject = "Funding support",
             replyBody = replyBody,
+            answerBody = answerBody,
+            replyPolicy = replyPolicy,
+            autoReplyEnabled = autoReplyEnabled,
+            handoffRequired = handoffRequired,
             enabled = enabled
         )
 }

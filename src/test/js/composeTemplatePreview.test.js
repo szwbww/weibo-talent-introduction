@@ -64,6 +64,9 @@ function createSandbox(blocks) {
             REPLY_SNIPPET: "回复片段",
             CUSTOM_TEXT: "自定义文本"
         },
+        replySnippetTypeLabels: {
+            greeting: "问候"
+        },
         isPreviewDrawerOpen: () => true,
         isComposeTemplatePreviewTarget: () => true,
         updatePreviewCoverage: () => {},
@@ -86,6 +89,7 @@ function createSandbox(blocks) {
         "composeTemplatePreviewExpertLabel",
         "composeTemplatePreviewAccountLabel",
         "findComposeTemplatePreviewOption",
+        "composeTemplateBlockRowHtml",
         "collectComposeTemplateBlocksFromForm",
         "collectComposeTemplatePreviewContext",
         "collectComposeTemplatePreviewSampleText",
@@ -227,5 +231,33 @@ describe("compose template server preview", () => {
         assert.equal(sb.__store.get("previewComposeExpertInput").value, "Ada Smith <ada@mit.edu>");
         assert.equal(previewPayload.orcidId, "0000-0001");
         assert.equal(previewPayload.expertEmail, "ada@mit.edu");
+    });
+
+    it("compose block editor omits QA_RULE option and defaults to CUSTOM_TEXT", () => {
+        const sb = createSandbox([]);
+        const defaultRow = sb.composeTemplateBlockRowHtml(0, {});
+        assert.ok(!defaultRow.includes('<option value="QA_RULE">'));
+        assert.ok(defaultRow.includes('<option value="CUSTOM_TEXT" selected'));
+        assert.ok(defaultRow.includes('data-field="customText"'));
+
+        const blocks = sb.collectComposeTemplateBlocksFromForm();
+        assert.equal(blocks.length, 0);
+    });
+
+    it("compose block row keeps QA sample text branch for legacy preview", () => {
+        const sb = createSandbox([]);
+        sb.state.qaRules = [{ id: 1, replyBody: "Legacy QA body" }];
+        const row = {
+            querySelector(selector) {
+                if (selector === '[data-field="blockType"]') return { value: "QA_RULE" };
+                if (selector === '[data-field="refId"]') return { value: "1" };
+                return null;
+            }
+        };
+        sb.$$ = () => [row];
+        assert.equal(
+            sb.collectComposeTemplatePreviewSampleText(),
+            'Professor ${expertFamilyName|Professor} - ${researchFields|Your Field}\nLegacy QA body'
+        );
     });
 });

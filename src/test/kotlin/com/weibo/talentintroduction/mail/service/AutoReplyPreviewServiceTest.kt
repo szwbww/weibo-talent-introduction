@@ -9,8 +9,8 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
-import com.weibo.talentintroduction.qa.service.QaMatchResult
-import com.weibo.talentintroduction.qa.service.QaMatchService
+import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
+import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,25 +27,27 @@ class AutoReplyPreviewServiceTest {
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val mailBodyCleaner = MailBodyCleaner()
     private val inboundIntentClassifier = InboundIntentClassifier()
-    private val qaMatchService = Mockito.mock(QaMatchService::class.java)
+    private val groundedAutoReplyDecisionService = Mockito.mock(GroundedAutoReplyDecisionService::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val mailVariableService = Mockito.mock(MailVariableService::class.java)
 
     private val service = AutoReplyPreviewService(
         inboundMailProcessingRepository,
         mailBodyCleaner,
         inboundIntentClassifier,
-        qaMatchService,
+        groundedAutoReplyDecisionService,
         mailComposeTemplateService,
         mailSenderAccountService,
         mailRecordRepository,
         expertContactRepository,
         mailAttachmentRepository,
-        emailSuppressionService
+        emailSuppressionService,
+        mailVariableService
     )
 
     private val contactId = 42L
@@ -78,21 +80,23 @@ class AutoReplyPreviewServiceTest {
         stubIntroductionSent(introSent = true)
         stubMeetingSent(meetingSent = false)
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
+        stubSenderAccount()
+        Mockito.`when`(
+            mailVariableService.renderForContact(
+                anyValue(""),
+                anyValue<MailSenderAccount?>(null),
+                anyValue(previewContact)
+            )
+        ).thenAnswer { invocation -> invocation.getArgument<String>(0) }
     }
 
     @Test
-    fun `QA match returns QA_AUTO_REPLIED with reply from match`() {
-        stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
-            QaMatchResult(
-                ruleId = 7L,
-                replySubject = "Re: Remote work",
-                replyBody = "Yes, remote is possible.",
-                handoffRequired = false,
-                autoReplyEnabled = true,
-                matchedRuleIds = listOf(7L),
-                gapDetected = false
-            )
+    fun `QA ready decision returns QA_AUTO_REPLIED with grounded draft`() {
+        stubRecord(body = "Can I work remotely part time?", subject = "Remote work")
+        stubReadyDecision(
+            subject = "Re: Remote work",
+            body = "Yes, remote is possible.",
+            ruleIds = listOf(7L)
         )
 
         val result = service.preview(processingId)
@@ -106,74 +110,111 @@ class AutoReplyPreviewServiceTest {
     }
 
     @Test
-    fun `QA preview passes same variant seed as auto reply would use`() {
-        stubRecord(body = "Can I work remotely part time?")
-        val expectedSeed = MailComposeTemplateService.variantSeedFor(previewContact.orcidId, previewContact.expertEmail)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), eqValue(expectedSeed))).thenReturn(
-            QaMatchResult(
-                ruleId = 7L,
-                replySubject = "Re: Remote work",
-                replyBody = "Yes, remote is possible.",
-                handoffRequired = false,
-                autoReplyEnabled = true,
-                matchedRuleIds = listOf(7L),
-                gapDetected = false
-            )
+    fun `QA ready preview renders sender and contact placeholders like auto send`() {
+        stubRecord(body = "Can I work remotely part time?", subject = "Remote work")
+        val rawDraft = "Dear \${expertFamilyName}, this is \${senderName}."
+        val renderedBody = "Dear Expert, this is Sender."
+        stubReadyDecision(
+            subject = "Re: Remote work",
+            body = rawDraft,
+            ruleIds = listOf(7L)
         )
+        val account = MailSenderAccount(
+            accountCode = "sender-1",
+            senderEmail = "sender@test.com",
+            senderName = "Sender",
+            senderTitle = "Title",
+            senderDisplayName = "Sender",
+            teamName = "Team",
+            countryName = "CN",
+            smtpHost = "smtp.test.com",
+            smtpPort = 465,
+            smtpUsername = "u",
+            smtpPassword = "p",
+            imapHost = "imap.test.com",
+            imapPort = 993,
+            imapUsername = "u",
+            imapPassword = "p",
+            enabled = true
+        )
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender-1")).thenReturn(account)
+        Mockito.`when`(
+            mailVariableService.renderForContact(
+                eqValue(rawDraft),
+                eqValue(account),
+                eqValue(previewContact)
+            )
+        ).thenReturn(renderedBody)
 
-        service.preview(processingId)
+        val result = service.preview(processingId)
 
-        Mockito.verify(qaMatchService).match(Mockito.anyString(), eqValue(expectedSeed))
+        assertEquals(AutoReplyPreviewKind.QA_AUTO_REPLIED, result.previewKind)
+        assertEquals("Re: Remote work", result.replySubject)
+        assertEquals(renderedBody, result.replyBody)
+        assertEquals(listOf(7L), result.matchedRuleIds)
+        Mockito.verify(mailVariableService).renderForContact(
+            eqValue(rawDraft),
+            eqValue(account),
+            eqValue(previewContact)
+        )
     }
 
     @Test
-    fun `QA null match returns QA_NO_MATCH`() {
+    fun `QA preview uses shared grounded decision service`() {
+        stubRecord(body = "Can I work remotely part time?", subject = "Remote work")
+        stubReadyDecision()
+
+        service.preview(processingId)
+
+        Mockito.verify(groundedAutoReplyDecisionService).decide(
+            Mockito.anyString(),
+            eqValue("Remote work")
+        )
+    }
+
+    @Test
+    fun `QA not ready returns QA_NO_MATCH`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(null)
+        stubNotReadyDecision(GroundedAutoReplyReason.QA_NO_MATCH)
 
         val result = service.preview(processingId)
 
         assertEquals(AutoReplyPreviewKind.QA_NO_MATCH, result.previewKind)
-        assertEquals("QA_NO_MATCH", result.reason)
+        assertEquals(GroundedAutoReplyReason.QA_NO_MATCH, result.reason)
         assertNull(result.replyBody)
     }
 
     @Test
-    fun `QA handoffRequired returns QA_NO_MATCH`() {
+    fun `QA policy review returns QA_NO_MATCH with precise reason`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
-            qaMatch(handoffRequired = true)
-        )
+        stubNotReadyDecision(GroundedAutoReplyReason.QA_POLICY_REVIEW)
 
         val result = service.preview(processingId)
 
         assertEquals(AutoReplyPreviewKind.QA_NO_MATCH, result.previewKind)
-        assertEquals("QA_NO_MATCH", result.reason)
+        assertEquals(GroundedAutoReplyReason.QA_POLICY_REVIEW, result.reason)
     }
 
     @Test
-    fun `QA autoReplyEnabled false returns QA_NO_MATCH`() {
+    fun `QA kill switch returns QA_NO_MATCH with AI_AUTO_REPLY_DISABLED`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
-            qaMatch(autoReplyEnabled = false)
-        )
+        stubNotReadyDecision(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED)
 
         val result = service.preview(processingId)
 
         assertEquals(AutoReplyPreviewKind.QA_NO_MATCH, result.previewKind)
+        assertEquals(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED, result.reason)
     }
 
     @Test
-    fun `QA gapDetected returns QA_GAP`() {
+    fun `QA grounding gap returns QA_GAP with precise reason`() {
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(
-            qaMatch(gapDetected = true)
-        )
+        stubNotReadyDecision(GroundedAutoReplyReason.QA_GROUNDING_GAP)
 
         val result = service.preview(processingId)
 
         assertEquals(AutoReplyPreviewKind.QA_GAP, result.previewKind)
-        assertEquals("QA_GAP", result.reason)
+        assertEquals(GroundedAutoReplyReason.QA_GROUNDING_GAP, result.reason)
     }
 
     @Test
@@ -317,7 +358,7 @@ class AutoReplyPreviewServiceTest {
     fun `autoReply disabled still shows QA body and marks wouldBeBlockedBy`() {
         stubContact(autoReplyEnabled = false, currentStatus = ConversationStatus.WAITING_REPLY.name)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -330,7 +371,7 @@ class AutoReplyPreviewServiceTest {
     fun `MANUAL_HANDOFF status still shows QA body and marks wouldBeBlockedBy`() {
         stubContact(autoReplyEnabled = true, currentStatus = ConversationStatus.MANUAL_HANDOFF.name)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -342,7 +383,7 @@ class AutoReplyPreviewServiceTest {
     fun `missing introduction marks INTRODUCTION_NOT_SENT without hiding body`() {
         stubIntroductionSent(introSent = false)
         stubRecord(body = "Can I work remotely part time?")
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -354,7 +395,7 @@ class AutoReplyPreviewServiceTest {
     fun `suppressed recipient still shows QA body and marks RECIPIENT_UNSUBSCRIBED`() {
         stubRecord(body = "Can I work remotely part time?")
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@test.com")).thenReturn(true)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -390,7 +431,7 @@ class AutoReplyPreviewServiceTest {
         stubContact(autoReplyEnabled = true, currentStatus = ConversationStatus.WAITING_REPLY.name)
         stubRecord(body = "Can I work remotely part time?")
         stubSenderAccount(enabled = false)
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -404,7 +445,7 @@ class AutoReplyPreviewServiceTest {
         stubRecord(body = "Hello there, just checking in")
         Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(processingId))
             .thenReturn(listOf(sampleAttachment()))
-        Mockito.`when`(qaMatchService.match(Mockito.anyString(), Mockito.anyInt())).thenReturn(qaMatch())
+        stubReadyDecision()
 
         val result = service.preview(processingId)
 
@@ -484,19 +525,47 @@ class AutoReplyPreviewServiceTest {
         )
     }
 
-    private fun qaMatch(
-        handoffRequired: Boolean = false,
-        autoReplyEnabled: Boolean = true,
-        gapDetected: Boolean = false
-    ) = QaMatchResult(
-        ruleId = 1L,
-        replySubject = "Re: Test",
-        replyBody = "QA reply body",
-        handoffRequired = handoffRequired,
-        autoReplyEnabled = autoReplyEnabled,
-        matchedRuleIds = listOf(1L),
-        gapDetected = gapDetected
+    private fun readyDecision(
+        subject: String = "Re: Test",
+        body: String = "QA reply body",
+        ruleIds: List<Long> = listOf(1L)
+    ) = GroundedAutoReplyDecision(
+        readyToSend = true,
+        reason = GroundedAutoReplyReason.QA_AUTO_REPLIED,
+        subject = subject,
+        rawDraftText = body,
+        qaRuleIds = ruleIds,
+        draftReadiness = AiReplyDraftReadiness.READY,
+        generationState = AiReplyGenerationState.LLM_USED,
+        usedLlm = true
     )
+
+    private fun stubReadyDecision(
+        subject: String = "Re: Test",
+        body: String = "QA reply body",
+        ruleIds: List<Long> = listOf(1L)
+    ) {
+        Mockito.`when`(
+            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+        ).thenReturn(readyDecision(subject, body, ruleIds))
+    }
+
+    private fun stubNotReadyDecision(reason: String) {
+        Mockito.`when`(
+            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+        ).thenReturn(
+            GroundedAutoReplyDecision(
+                readyToSend = false,
+                reason = reason,
+                subject = "Re: Test",
+                rawDraftText = null,
+                qaRuleIds = emptyList(),
+                draftReadiness = AiReplyDraftReadiness.BLOCKED,
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                usedLlm = false
+            )
+        )
+    }
 
     private fun sampleAttachment() = MailAttachment(
         id = 1L,

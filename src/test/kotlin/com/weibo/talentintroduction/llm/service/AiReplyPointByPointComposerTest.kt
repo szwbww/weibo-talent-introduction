@@ -38,6 +38,7 @@ class AiReplyPointByPointComposerTest {
         categoryId = 1,
         keywords = "k$id",
         replyBody = body,
+        answerBody = body,
         replySubject = "Re $id",
         enabled = true
     )
@@ -46,7 +47,7 @@ class AiReplyPointByPointComposerTest {
         RequestIntentCoverage(key, title, emptyList(), evidenceIds, "SUPPORTED", emptyList())
 
     @Test
-    fun `composeFallback emits frame numbered sections for all requests including empty ones`() {
+    fun `composeFallback emits natural paragraphs without numbered headings`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary facts")))
         Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Visa facts")))
@@ -62,15 +63,16 @@ class AiReplyPointByPointComposerTest {
 
         assertTrue(text.startsWith("Dear \${expertName|Professor},"))
         assertTrue(text.contains(QaReplyComposer.GREETING))
-        assertTrue(text.contains("1. Financial arrangements"))
-        assertTrue(text.contains("2. Next stages"))
         assertTrue(text.contains("Salary facts"))
         assertTrue(text.contains("Visa facts"))
         assertTrue(text.contains(QaReplyComposer.CLOSING))
+        assertFalse(text.contains("1. Financial arrangements"))
+        assertFalse(text.contains("2. Next stages"))
+        assertFalse(text.contains("Please see point"))
     }
 
     @Test
-    fun `unsupported items get heading but no body in fallback`() {
+    fun `unsupported items are omitted from fallback body`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary only")))
 
@@ -85,14 +87,11 @@ class AiReplyPointByPointComposerTest {
             )
         )
 
-        assertTrue(text.contains("1. Financial arrangements"))
         assertTrue(text.contains("Salary only"))
-        assertTrue(text.contains("2. Research fit and enterprise projects"))
         assertFalse(text.contains("Research match"))
-        assertTrue(text.contains("3. Unknown"))
+        assertFalse(text.contains("Unknown"))
         assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
         assertFalse(text.contains("This still needs confirmation"))
-        assertFalse(text.contains("not covered by the approved information"))
     }
 
     @Test
@@ -112,7 +111,7 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
-    fun `identical fact bodies cross-reference later points`() {
+    fun `identical fact bodies are deduplicated without cross references`() {
         stubFrame()
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
             Optional.of(rule(1, "Shared enterprise matching facts"))
@@ -128,12 +127,40 @@ class AiReplyPointByPointComposerTest {
         )
 
         assertTrue(text.contains("Shared enterprise matching facts"))
-        assertTrue(text.contains("Please see point 3 above."))
+        assertFalse(text.contains("Please see point"))
         assertEquals(1, Regex("Shared enterprise matching facts").findAll(text).count())
     }
 
     @Test
-    fun `composeFromSections cross-references identical answers`() {
+    fun `composeFallback skips blank answerBody and does not read replyBody`() {
+        stubFrame()
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                rule(1, "Visible salary facts").copy(
+                    answerBody = "",
+                    replyBody = "Legacy 10 million RMB guarantee"
+                )
+            )
+        )
+
+        val text = composer.composeFallback(
+            listOf(
+                RequestFactItem(
+                    1,
+                    "Salary?",
+                    listOf(1L),
+                    RequestGroundingStatus.GROUNDED,
+                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))
+                )
+            )
+        )
+
+        assertFalse(text.contains("Legacy 10 million RMB guarantee"))
+        assertFalse(text.contains("Visible salary facts"))
+    }
+
+    @Test
+    fun `composeFromSections deduplicates identical answers`() {
         stubFrame()
         val text = composer.composeFromSections(
             requestFacts = listOf(
@@ -148,12 +175,12 @@ class AiReplyPointByPointComposerTest {
             )
         )
         assertTrue(text.contains("Same answer body"))
-        assertTrue(text.contains("Please see point 1 above."))
+        assertFalse(text.contains("Please see point"))
         assertEquals(1, Regex("Same answer body").findAll(text).count())
     }
 
     @Test
-    fun `composeFromSections includes all request indexes even without answers`() {
+    fun `composeFromSections includes supported answers only`() {
         stubFrame()
         val text = composer.composeFromSections(
             requestFacts = listOf(
@@ -168,11 +195,9 @@ class AiReplyPointByPointComposerTest {
                 ValidatedSection(2, listOf(IntentAnswer("role.deliverables", "Body B", listOf(2L))))
             )
         )
-        assertTrue(text.contains("1. Financial arrangements"))
         assertTrue(text.contains("Body A"))
-        assertTrue(text.contains("2. Deliverables"))
         assertTrue(text.contains("Body B"))
-        assertTrue(text.contains("3. C"))
+        assertFalse(text.contains("1. Financial arrangements"))
         assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
     }
 
@@ -193,7 +218,7 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
-    fun `all omitted items return frame with section headings but empty bodies`() {
+    fun `all omitted items return frame only`() {
         stubFrame()
         val text = composer.composeFallback(
             listOf(
@@ -204,7 +229,7 @@ class AiReplyPointByPointComposerTest {
         )
         assertTrue(text.contains("Dear \${expertName|Professor},"))
         assertTrue(text.contains(QaReplyComposer.CLOSING))
-        assertTrue(text.contains("1. Research fit and enterprise projects"))
+        assertFalse(text.contains("1. Research fit"))
         assertFalse(text.contains("confirmation", ignoreCase = true))
         assertFalse(text.contains("insufficient", ignoreCase = true))
     }
@@ -252,7 +277,7 @@ class AiReplyPointByPointComposerTest {
                         RequestIntentCoverage(
                             "expertise.programme_fit",
                             "Research fit and enterprise projects",
-                            listOf("programme.scope"),
+                            emptyList(),
                             listOf(1L),
                             "SUPPORTED",
                             emptyList(),
@@ -263,8 +288,8 @@ class AiReplyPointByPointComposerTest {
             )
         )
 
-        assertTrue(text.contains("Research fit and enterprise projects"))
         assertTrue(text.contains("Programme scope includes ML, NLP, and computer vision."))
+        assertFalse(text.contains("Research fit and enterprise projects"))
         assertFalse(text.contains("This still needs confirmation"))
     }
 
@@ -284,7 +309,7 @@ class AiReplyPointByPointComposerTest {
                         RequestIntentCoverage(
                             "expertise.programme_fit",
                             "Research fit and enterprise projects",
-                            listOf("programme.scope"),
+                            emptyList(),
                             listOf(1L),
                             "SUPPORTED",
                             emptyList(),
@@ -295,7 +320,6 @@ class AiReplyPointByPointComposerTest {
             )
         )
 
-        assertTrue(text.contains("Research fit and enterprise projects"))
         assertTrue(text.contains("Expert profile: Dr. Smith, PhD in ML."))
     }
 }

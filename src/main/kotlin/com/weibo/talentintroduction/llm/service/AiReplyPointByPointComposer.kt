@@ -6,56 +6,38 @@ import org.springframework.stereotype.Service
 
 /**
  * Backend-owned assembler for QA_GROUNDED drafts (LLM answers + deterministic fallback).
- * Frame, headings, numbering, and cross-references are never delegated to the model.
+ * Frame and natural paragraph flow are never delegated to the model.
  */
 @Service
 class AiReplyPointByPointComposer(
     private val qaRuleRepository: QaRuleRepository,
     private val replySnippetService: ReplySnippetService
 ) {
-    /**
-     * Compose from per-intent structured LLM output.
-     * Uses intent catalog fixed titles; includes ALL request indexes (empty section for MISSING/UNSUPPORTED).
-     */
     fun composeFromSections(
         requestFacts: List<RequestFactItem>,
         sections: List<ValidatedSection>
     ): String {
         val sectionByIndex = sections.associateBy { it.requestIndex }
-        val headingByIndex = requestFacts.associate { item ->
-            item.index to resolveSectionHeading(item)
-        }
-        val indexedBodies = linkedMapOf<Int, String>()
-        val firstIndexByNormalizedAnswer = linkedMapOf<String, Int>()
+        val bodies = linkedSetOf<String>()
 
         for (item in requestFacts) {
-            val section = sectionByIndex[item.index]
-            if (section != null && section.answers.isNotEmpty()) {
-                val combined = section.answers.joinToString("\n\n") { it.answer }
-                val normalized = normalizeForDedup(combined)
-                val prior = firstIndexByNormalizedAnswer[normalized]
-                val body = if (prior != null) {
-                    crossReference(prior)
-                } else {
-                    firstIndexByNormalizedAnswer[normalized] = item.index
-                    combined
+            val section = sectionByIndex[item.index] ?: continue
+            if (section.answers.isEmpty()) {
+                continue
+            }
+            section.answers.forEach { answer ->
+                val text = answer.answer.trim()
+                if (text.isNotBlank()) {
+                    bodies += text
                 }
-                indexedBodies[item.index] = body
             }
         }
-        return assembleByAllRequests(headingByIndex, indexedBodies)
+        return assembleNaturalEmail(bodies.toList())
     }
 
-    /**
-     * Deterministic fallback with intent evidence. Keeps old composeFallback() API
-     * but uses intent catalog titles for section headings.
-     */
     fun composeFallback(requestFacts: List<RequestFactItem>): String {
-        val headingByIndex = requestFacts.associate { item ->
-            item.index to resolveSectionHeading(item)
-        }
-        val indexedBodies = linkedMapOf<Int, String>()
-        val firstIndexByFactKey = linkedMapOf<String, Int>()
+        val bodies = linkedSetOf<String>()
+        val seenFactKeys = linkedSetOf<String>()
 
         for (item in requestFacts) {
             if (item.status == RequestGroundingStatus.UNSUPPORTED) {
@@ -71,32 +53,18 @@ class AiReplyPointByPointComposer(
                 continue
             }
             val key = normalizeForDedup(facts)
-            val prior = firstIndexByFactKey[key]
-            val body = if (prior != null) {
-                crossReference(prior)
-            } else {
-                firstIndexByFactKey[key] = item.index
-                facts
+            if (seenFactKeys.add(key)) {
+                bodies += facts
             }
-            indexedBodies[item.index] = body
         }
-        return assembleByAllRequests(headingByIndex, indexedBodies)
+        return assembleNaturalEmail(bodies.toList())
     }
 
-    /**
-     * Legacy: used by older callers that pass per-request answers. Kept for backward compat
-     * but new code should use composeFromSections().
-     */
     fun composeFromAnswers(
         requestFacts: List<RequestFactItem>,
         answersByIndex: Map<Int, String>
     ): String {
-        val headingByIndex = requestFacts.associate { item ->
-            item.index to resolveSectionHeading(item)
-        }
-        val indexedBodies = linkedMapOf<Int, String>()
-        val firstIndexByNormalizedAnswer = linkedMapOf<String, Int>()
-
+        val bodies = linkedSetOf<String>()
         for (item in requestFacts) {
             if (item.status != RequestGroundingStatus.GROUNDED &&
                 item.status != RequestGroundingStatus.PARTIAL
@@ -104,40 +72,16 @@ class AiReplyPointByPointComposer(
                 continue
             }
             val answer = answersByIndex[item.index]?.trim().orEmpty()
-            if (answer.isBlank()) {
-                continue
+            if (answer.isNotBlank()) {
+                bodies += answer
             }
-            val normalized = normalizeForDedup(answer)
-            val prior = firstIndexByNormalizedAnswer[normalized]
-            val body = if (prior != null) {
-                crossReference(prior)
-            } else {
-                firstIndexByNormalizedAnswer[normalized] = item.index
-                answer
-            }
-            indexedBodies[item.index] = body
         }
-        return assembleByAllRequests(headingByIndex, indexedBodies)
+        return assembleNaturalEmail(bodies.toList())
     }
 
-    private fun resolveSectionHeading(item: RequestFactItem): String {
-        if (item.intents.isNotEmpty()) {
-            val intentKeys = item.intents.map { it.intentKey }
-            return AiReplyIntentCatalog.resolveGroupTitle(intentKeys, item.requestText)
-        }
-        return cleanHeading(item.requestText)
-    }
-
-    /**
-     * Assembles email with heading for EVERY request (by index), even if body is empty.
-     * This ensures section numbering stays stable and gaps are visible.
-     */
-    private fun assembleByAllRequests(
-        headingByIndex: Map<Int, String>,
-        indexedBodies: Map<Int, String>
-    ): String {
+    private fun assembleNaturalEmail(paragraphs: List<String>): String {
         val frame = replySnippetService.resolveManualFrame()
-        val orderedIndexes = headingByIndex.keys.sorted()
+        val limited = paragraphs.filter { it.isNotBlank() }.take(4)
         return buildString {
             frame.salutation?.takeIf { it.isNotBlank() }?.let {
                 appendLine(it)
@@ -151,12 +95,8 @@ class AiReplyPointByPointComposer(
                 appendLine(it)
                 appendLine()
             }
-            orderedIndexes.forEach { index ->
-                appendLine("$index. ${headingByIndex[index].orEmpty()}")
-                val body = indexedBodies[index]
-                if (body != null) {
-                    appendLine(body)
-                }
+            limited.forEach { paragraph ->
+                appendLine(paragraph.trim())
                 appendLine()
             }
             frame.closing?.takeIf { it.isNotBlank() }?.let {
@@ -172,14 +112,12 @@ class AiReplyPointByPointComposer(
             .filter { seen.add(it) }
             .mapNotNull { ruleId ->
                 qaRuleRepository.findById(ruleId).orElse(null)
-                    ?.replyBody
-                    ?.takeIf { it.isNotBlank() }
+                    ?.answerBody
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
             }
             .joinToString("\n\n")
     }
-
-    private fun crossReference(firstIndex: Int): String =
-        "Please see point $firstIndex above."
 
     private fun normalizeForDedup(text: String): String =
         text.lowercase().replace(WHITESPACE_REGEX, " ").trim()

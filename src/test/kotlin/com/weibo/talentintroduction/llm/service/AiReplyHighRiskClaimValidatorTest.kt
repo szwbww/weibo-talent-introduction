@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -18,6 +19,7 @@ class AiReplyHighRiskClaimValidatorTest {
         categoryId = 1,
         keywords = "k$id",
         replyBody = body,
+        answerBody = body,
         replySubject = "Re $id",
         enabled = true
     )
@@ -259,10 +261,16 @@ class AiReplyHighRiskClaimValidatorTest {
     fun `claim using fact from replySubject passes validation`() {
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
             Optional.of(
-                QaRule(id = 1, categoryId = 1, keywords = "k1",
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "k1",
                     replyBody = "The institute is located in Beijing.",
+                    answerBody = "The institute is located in Beijing.",
                     replySubject = "About the China Academy of Sciences",
-                    enabled = true)
+                    displayName = "About the China Academy of Sciences",
+                    enabled = true
+                )
             )
         )
 
@@ -626,6 +634,58 @@ class AiReplyHighRiskClaimValidatorTest {
     }
 
     @Test
+    fun `resolveSourceText ignores displayName when answerBody blank`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary",
+                    replyBody = "10 million RMB guarantee",
+                    answerBody = "",
+                    replySubject = "Re 1",
+                    displayName = "Salary support facts",
+                    enabled = true
+                )
+            )
+        )
+
+        assertNull(validator.resolveSourceText(listOf(1L)))
+    }
+
+    @Test
+    fun `claim with displayName only and blank answerBody fails source validation`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
+            Optional.of(
+                QaRule(
+                    id = 1,
+                    categoryId = 1,
+                    keywords = "salary",
+                    replyBody = "10 million RMB guarantee",
+                    answerBody = "",
+                    replySubject = null,
+                    displayName = "Salary support facts",
+                    enabled = true
+                )
+            )
+        )
+
+        val sections = listOf(
+            ValidatedSection(1, listOf(
+                IntentAnswer("finance.arrangements", "You will receive 10 million RMB.", listOf(1L))
+            ))
+        )
+        val facts = listOf(
+            RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                intents = listOf(RequestIntentCoverage("finance.arrangements", "Finance", emptyList(), listOf(1L), "SUPPORTED", emptyList())))
+        )
+
+        val result = validator.validate(sections, facts)
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE))
+    }
+
+    @Test
     fun `uppercase GUARANTEED still rejected when mixed source has same-family definitive`() {
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
             Optional.of(
@@ -653,5 +713,35 @@ class AiReplyHighRiskClaimValidatorTest {
         val result = validator.validate(sections, facts)
         assertFalse(result.valid)
         assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
+    }
+
+    @Test
+    fun `validatePlainText rejects unbacked high risk amount in final text`() {
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(
+            Optional.of(rule(10L, "Remote work is possible for eligible candidates."))
+        )
+
+        val result = validator.validatePlainText("We guarantee 10 million RMB with no fees.", listOf(10L))
+
+        assertFalse(result.valid)
+        assertTrue(result.warningCodes.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED))
+    }
+
+    @Test
+    fun `validatePlainText passes when final text stays within fact sources`() {
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(
+            Optional.of(rule(10L, "Remote work is possible for eligible candidates."))
+        )
+
+        val result = validator.validatePlainText("Remote work is possible for eligible candidates.", listOf(10L))
+
+        assertTrue(result.valid)
+        assertTrue(result.warningCodes.isEmpty())
+    }
+
+    @Test
+    fun `validatePlainText skips validation when no fact ids provided`() {
+        val result = validator.validatePlainText("Any text with 10 million RMB.", emptyList())
+        assertTrue(result.valid)
     }
 }

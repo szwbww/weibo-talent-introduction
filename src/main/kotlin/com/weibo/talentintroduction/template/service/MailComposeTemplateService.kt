@@ -155,6 +155,16 @@ class MailComposeTemplateService(
     }
 
     fun previewDraft(request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult {
+        request.blocks.forEach { block ->
+            validateBlockCommand(
+                MailComposeTemplateBlockCommand(
+                    blockOrder = block.blockOrder,
+                    blockType = block.blockType,
+                    refId = block.refId,
+                    customText = block.customText
+                )
+            )
+        }
         val variantSeed = request.variantIndex ?: 0
         val draftBlocks = request.blocks.map { block ->
             ComposeDraftBlock(
@@ -362,7 +372,8 @@ class MailComposeTemplateService(
     private fun validateBlockCommand(block: MailComposeTemplateBlockCommand) {
         require(block.blockOrder >= 0) { "blockOrder must be non-negative" }
         when (block.blockType.uppercase()) {
-            ComposeBlockType.QA_RULE -> require(block.refId != null) { "QA_RULE block requires refId" }
+            ComposeBlockType.QA_RULE ->
+                throw IllegalArgumentException("QA_RULE blocks are read-only and cannot be created")
             ComposeBlockType.REPLY_SNIPPET -> require(block.refId != null) { "REPLY_SNIPPET block requires refId" }
             ComposeBlockType.CUSTOM_TEXT -> require(!block.customText.isNullOrBlank()) { "CUSTOM_TEXT block requires customText" }
             else -> error("Unsupported block type: ${block.blockType}")
@@ -398,19 +409,10 @@ class MailComposeTemplateService(
                         ?: rule.replySubject?.takeIf { it.isNotBlank() }
                         ?: "Rule #$refId"
                     if (!rule.enabled) {
-                        previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
+                        previewBlocks += skippedPreviewBlock(block, "已禁用（legacy QA_RULE）", refId, displayName)
                         return@forEach
                     }
-                    val resolvedBody = contentVariantService.resolveBody(
-                        ContentVariantOwnerType.QA_RULE,
-                        refId,
-                        rule.replyBody,
-                        variantSeed
-                    )
-                    variantPoolSize = maxOf(
-                        variantPoolSize,
-                        contentVariantService.poolSize(ContentVariantOwnerType.QA_RULE, refId, rule.replyBody)
-                    )
+                    val resolvedBody = rule.replyBody
                     val text = if (renderVariables) {
                         renderText(resolvedBody, variables).trim()
                     } else {
@@ -427,7 +429,7 @@ class MailComposeTemplateService(
                         refId = refId,
                         refDisplayName = displayName,
                         included = text.isNotBlank(),
-                        skipReason = if (text.isBlank()) "正文为空" else null,
+                        skipReason = if (text.isBlank()) "正文为空（legacy QA_RULE）" else null,
                         textPreview = text.take(200).ifBlank { null }
                     )
                 }

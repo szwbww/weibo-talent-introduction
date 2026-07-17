@@ -332,15 +332,15 @@
                         <table>
                             <thead>
                             <tr>
-                                <th>规则代码</th>
-                                <th>分类显示名称</th>
-                                <th>业务分类 ID</th>
-                                <th>回复邮件主题</th>
-                                <th>触发匹配关键词</th>
-                                <th>AI 覆盖能力</th>
-                                <th>匹配优先级</th>
+                                <th>ID</th>
+                                <th>事实标题</th>
+                                <th>分类</th>
+                                <th>匹配短语</th>
+                                <th>事实正文</th>
+                                <th>优先级</th>
+                                <th>回复策略</th>
                                 <th>状态</th>
-                                <th style="text-align: right;">管理操作</th>
+                                <th style="text-align: right;">操作</th>
                             </tr>
                             </thead>
                             <tbody id="qaRulesTable"></tbody>
@@ -1555,50 +1555,43 @@
             <button class="button secondary" id="qaRuleModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
         </div>
         <form id="qaRuleForm" class="form-grid">
-            <label class="span-2">规则中文名 (备注用途)<input name="displayName" placeholder="如：咨询工作性质与全职/兼职规则" required></label>
-            <label>规则配置 ID<input name="id" disabled placeholder="系统自动生成"></label>
-            <label>FAQ 主题分类
+            <label class="span-2">事实标题<input name="displayName" placeholder="如：项目组织方身份" required></label>
+            <label>规则 ID<input name="id" disabled placeholder="系统自动生成"></label>
+            <label>事实分类
                 <select name="categoryId" required>
-                    <option value="">选择关联分类</option>
+                    <option value="">选择事实分类</option>
                 </select>
             </label>
-            <label class="span-2">匹配关键词 (英文半角逗号分隔)<input name="keywords" placeholder="如: part-time, full-time, working hour" required></label>
-            <label>关键字逻辑判定
+            <label class="span-2">专家表达/匹配短语<input name="keywords" placeholder="如: who are you, organization, official" required></label>
+            <label>匹配方式
                 <select name="matchMode">
-                    <option value="ANY">ANY (命中任一即触发)</option>
-                    <option value="ALL">ALL (全部命中才触发)</option>
+                    <option value="ANY">ANY（命中任一）</option>
+                    <option value="ALL">ALL（全部命中）</option>
                 </select>
             </label>
-            <label>匹配优先级 (数字越小越优先)<input name="priority" type="number" value="100" required></label>
-            <div class="span-2" style="margin:4px 0;">
-                <span class="field-label">AI 覆盖能力标签</span>
-                <p class="muted" style="margin:2px 0 6px;font-size:12px;">勾选该规则正文已审核覆盖的业务事实；关键词决定"可能相关"，覆盖能力决定"足以回答"</p>
-                <div class="metadata-grid" id="qaCoverageKeyOptions"></div>
-                <div id="qaCoverageKeyWarning" class="badge warn" style="display:none;margin-top:4px;">未配置 AI 覆盖能力</div>
-            </div>
-            <label class="span-2">自动回复英文主题<input name="replySubject" placeholder="如: Re: About our global talent invitation program"></label>
-            <label class="span-2">自动回复邮件英文正文
+            <label>匹配优先级<input name="priority" type="number" value="100" required></label>
+            <label>回复策略
+                <select name="replyPolicy" required>
+                    <option value="AUTO">AUTO（可自动回复）</option>
+                    <option value="REVIEW">REVIEW（仅人工草稿）</option>
+                    <option value="NEVER">NEVER（禁止外发）</option>
+                </select>
+            </label>
+            <label class="span-2">标准事实正文
                 <div class="var-editor-wrap">
                     <div class="var-editor-toolbar">
                         <div class="var-insert-wrap">
-                            <button type="button" class="var-insert-btn" data-var-insert-target="qaRuleReplyBody">+ 插入变量 ▾</button>
+                            <button type="button" class="var-insert-btn" data-var-insert-target="qaRuleAnswerBody">+ 插入变量 ▾</button>
                             <div class="var-insert-menu" hidden></div>
                         </div>
                     </div>
-                    <div class="var-validation-hint" id="varHint-qaRuleReplyBody" hidden></div>
-                    <textarea id="qaRuleReplyBody" name="replyBody" rows="8" placeholder="使用 HTML 或纯文本编写自动回复的正文内容" required></textarea>
+                    <div class="var-validation-hint" id="varHint-qaRuleAnswerBody" hidden></div>
+                    <textarea id="qaRuleAnswerBody" name="answerBody" rows="8" placeholder="只写已核验事实，不写称呼、寒暄和签名" required></textarea>
                 </div>
             </label>
-            <div class="full-width content-variants-block">
-                <span class="field-label">内容变体 <span class="badge primary content-variants-count" hidden></span></span>
-                <div class="content-variants-container" id="qaRuleVariantsContainer"></div>
-                <p class="compose-template-variable-hint">主体与全部变体共同轮换，每位专家固定命中其中一个；变体输入 textarea 支持多行</p>
-            </div>
-            <label class="checkbox-row"><input name="autoReplyEnabled" type="checkbox" checked> 允许系统匹配到该规则后自动回复邮件</label>
-            <label class="checkbox-row"><input name="handoffRequired" type="checkbox"> 命中该分类后同时将状态标记为人工跟进 (Handoff)</label>
-            <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该规则判定</label>
+            <label class="checkbox-row"><input name="enabled" type="checkbox" checked>启用事实</label>
             <div class="form-actions modal-actions">
-                <button class="button primary" type="submit">保存规则</button>
+                <button class="button primary" type="submit">保存事实</button>
                 <button class="button secondary" type="button" id="clearQaRuleBtn">取消</button>
             </div>
         </form>

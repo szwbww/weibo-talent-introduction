@@ -1,20 +1,29 @@
 const assert = require("assert");
 const { describe, it } = require("node:test");
 
-/** Mirrors ai-adopt-draft send-path branch in app.js handleUnmatchedAction. */
-function resolveAiAdoptTarget(sendQaRuleIds) {
-    if (sendQaRuleIds && sendQaRuleIds.length > 0) {
-        return "composed-reply";
+/** Mirrors manual rich send QA context in app.js handleUnmatchedAction. */
+function buildManualRichQaPayload(qaRuleIds, baselineText, editorText) {
+    if (!qaRuleIds || qaRuleIds.length === 0) {
+        return {};
     }
-    return "manual-rich-reply";
+    return {
+        qaRuleIds: [...qaRuleIds],
+        edited: editorText.trim() !== (baselineText || "").trim()
+    };
 }
 
-describe("ai adopt draft send path (from app.js semantics)", () => {
-    it("routes to manual-rich-reply when lastQaRuleIds is empty", () => {
-        assert.strictEqual(resolveAiAdoptTarget([]), "manual-rich-reply");
+describe("trust workbench adopt send path (from app.js semantics)", () => {
+    it("sends only qaRuleIds without suggestedRuleIds authority fields", () => {
+        const payload = buildManualRichQaPayload([10, 20], "Draft body", "Draft body");
+        assert.deepStrictEqual(payload.qaRuleIds, [10, 20]);
+        assert.strictEqual(payload.edited, false);
+        assert.strictEqual(payload.suggestedRuleIds, undefined);
+        assert.strictEqual(payload.useVariants, undefined);
+        assert.strictEqual(payload.ackSnippetId, undefined);
     });
 
-    it("routes to composed-reply when lastQaRuleIds has matched subset", () => {
-        assert.strictEqual(resolveAiAdoptTarget([10, 20]), "composed-reply");
+    it("marks edited when operator changes adopted draft", () => {
+        const payload = buildManualRichQaPayload([10], "Draft body", "Draft body edited");
+        assert.strictEqual(payload.edited, true);
     });
 });

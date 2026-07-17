@@ -10,9 +10,8 @@ describe("mail processing reply workflow source", () => {
     it("renders history and all supported reply modes as collapsed workflow details", () => {
         assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-history-detail"'));
         assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail compose-workbench-section"'));
-        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail ai-reply-section"'));
         assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail manual-rich-reply-section"'));
-        assert.ok((appJsSource.match(/<details class="detail-section reply-workflow-detail/g) || []).length >= 4);
+        assert.ok((appJsSource.match(/<details class="detail-section reply-workflow-detail/g) || []).length >= 3);
     });
 
     it("does not render the unsupported single-rule QA reply", () => {

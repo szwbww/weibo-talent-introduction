@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.weibo.talentintroduction.qa.domain.QaRule
+
 internal data class IntentGroupTitle(
     val intentKeys: Set<String>,
     val title: String
@@ -265,6 +267,93 @@ object AiReplyIntentCatalog {
         return Regex("\\b$escaped\\b").containsMatchIn(text)
     }
 
+    fun resolveIntentEvidence(
+        intent: RequestIntentDefinition,
+        assignedRuleIds: List<Long>,
+        profileSufficient: Boolean
+    ): RequestIntentCoverage {
+        if (intent.requiresProfile && !profileSufficient) {
+            return RequestIntentCoverage(
+                intentKey = intent.key,
+                title = intent.title,
+                requiredCoverageKeys = emptyList(),
+                evidenceRuleIds = emptyList(),
+                status = "MISSING",
+                missingEvidenceKeys = listOf(intent.key, "profile"),
+                requiresResearchContext = true
+            )
+        }
+
+        val evidenceRuleIds = assignedRuleIds.distinct()
+        val status = if (evidenceRuleIds.isNotEmpty()) "SUPPORTED" else "MISSING"
+        return RequestIntentCoverage(
+            intentKey = intent.key,
+            title = intent.title,
+            requiredCoverageKeys = emptyList(),
+            evidenceRuleIds = evidenceRuleIds,
+            status = status,
+            missingEvidenceKeys = if (evidenceRuleIds.isEmpty()) listOf(intent.key) else emptyList(),
+            requiresResearchContext = intent.requiresProfile
+        )
+    }
+
+    fun assignRulesToIntents(
+        rules: List<QaRule>,
+        intents: List<RequestIntentDefinition>
+    ): Map<String, List<QaRule>> {
+        val catalogOrder = definitions.mapIndexed { index, def -> def.key to index }.toMap()
+        val intentKeys = intents.map { it.key }.toSet()
+        val buckets = intents.associate { it.key to mutableListOf<QaRule>() }.toMutableMap()
+
+        rules.forEach { rule ->
+            val targetKey = selectIntentKeyForRule(rule, intents, catalogOrder, intentKeys)
+            if (targetKey != null) {
+                buckets.getOrPut(targetKey) { mutableListOf() }.add(rule)
+            }
+        }
+
+        return buckets.mapValues { (_, assigned) ->
+            assigned.sortedWith(compareBy({ it.priority }, { it.id ?: Long.MAX_VALUE }))
+        }
+    }
+
+    fun scoreRuleIntentAlignment(rule: QaRule, intent: RequestIntentDefinition): Int {
+        val keywords = QaFactKeywordMatcher.parseKeywords(rule)
+        if (keywords.isEmpty()) {
+            return 0
+        }
+        val phrases = (listOf(intent.title) + intent.requestAliases).map { canonicalize(it) }
+        var score = 0
+        keywords.forEach { keyword ->
+            phrases.forEach { phrase ->
+                if (phrase.contains(keyword)) {
+                    score++
+                }
+            }
+        }
+        return score
+    }
+
+    private fun selectIntentKeyForRule(
+        rule: QaRule,
+        intents: List<RequestIntentDefinition>,
+        catalogOrder: Map<String, Int>,
+        intentKeys: Set<String>
+    ): String? {
+        val scored = intents.map { intent ->
+            intent.key to scoreRuleIntentAlignment(rule, intent)
+        }.filter { (_, score) -> score > 0 }
+
+        if (scored.isEmpty()) {
+            return if ("general.answer" in intentKeys) "general.answer" else null
+        }
+
+        val bestScore = scored.maxOf { it.second }
+        val tied = scored.filter { it.second == bestScore }
+        return tied.minByOrNull { catalogOrder[it.first] ?: Int.MAX_VALUE }?.first
+    }
+
+    @Deprecated("Coverage keys are no longer used for grounded fact selection")
     fun resolveIntentCoverage(
         intent: RequestIntentDefinition,
         candidateRuleIds: List<Long>,

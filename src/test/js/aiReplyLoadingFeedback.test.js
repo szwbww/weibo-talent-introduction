@@ -149,7 +149,7 @@ describe("ai reply loading helpers source contracts", () => {
         const simulateFn = appJsSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
         assert.ok(simulateFn.includes("setAiReplyLoading"));
         assert.ok(!simulateFn.includes("setTagEditorLoading"));
-        const mailboxUsesHelper = /action === "ai-reply-turn"[\s\S]*?setAiReplyLoading\(panel, true\)/.test(appJsSource);
+        const mailboxUsesHelper = /action === "trust-generate-draft"[\s\S]*?setAiReplyLoading\(panel, true\)/.test(appJsSource);
         assert.ok(mailboxUsesHelper);
     });
 
@@ -157,10 +157,10 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(appJsSource.includes("function renderAiReplyFeedback("));
         assert.ok(appJsSource.includes("依据覆盖：完整"));
         assert.ok(!/已回答\s*\$\{/.test(appJsSource) && !appJsSource.includes("已回答 "));
-        assert.ok(appJsSource.includes("appendAiChatDraftBubble(rawDraft, renderedDraft, result)"));
-        assert.ok(!/appendAiChatDraftBubble\([^)]*contextWarnings/.test(appJsSource));
+        assert.ok(appJsSource.includes("composedReplyState.draft = { raw: rawDraft, rendered: renderedDraft, result }"));
+        assert.ok(appJsSource.includes('id="composedRenderedPreview"'));
         assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingSimulateFeedback"'));
-        assert.ok(appJsSource.includes('id="aiReplyFeedback"'));
+        assert.ok(appJsSource.includes('id="trustReplyFeedback"'));
     });
 
     it("routes display/copy/adopt to rendered and turns to raw template", () => {
@@ -243,6 +243,8 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(stylesSource.includes(".ai-reply-warning"));
         assert.ok(stylesSource.includes(".ai-reply-error"));
         assert.ok(/\.ai-reply-section \.ai-chat-panel \{[\s\S]*?position:\s*relative;/.test(stylesSource));
+        assert.ok(appJsSource.includes("compose-workbench-section"));
+        assert.ok(appJsSource.includes("compose-draft ai-chat-panel"));
     });
 });
 

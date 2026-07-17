@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.qa.service
 
 import com.weibo.talentintroduction.qa.domain.QaCategory
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -195,7 +196,7 @@ class QaMatchServiceTest {
                     keywords = "salary",
                     replySubject = "Funding",
                     replyBody = "Funding answer",
-                    handoffRequired = false
+                    replyPolicy = QaReplyPolicy.AUTO.name
                 ),
                 QaRule(
                     id = 2,
@@ -203,7 +204,7 @@ class QaMatchServiceTest {
                     keywords = "meeting",
                     replySubject = "Meeting",
                     replyBody = "Meeting answer",
-                    handoffRequired = true
+                    replyPolicy = QaReplyPolicy.REVIEW.name
                 )
             )
         )
@@ -211,6 +212,7 @@ class QaMatchServiceTest {
         val result = service.match("salary and meeting")
 
         assertTrue(result!!.handoffRequired)
+        assertEquals(QaReplyPolicy.REVIEW.name, result.replyPolicy)
     }
 
     @Test
@@ -223,7 +225,7 @@ class QaMatchServiceTest {
                     keywords = "salary",
                     replySubject = "Funding",
                     replyBody = "Funding answer",
-                    autoReplyEnabled = true
+                    replyPolicy = QaReplyPolicy.AUTO.name
                 ),
                 QaRule(
                     id = 2,
@@ -231,7 +233,7 @@ class QaMatchServiceTest {
                     keywords = "meeting",
                     replySubject = "Meeting",
                     replyBody = "Meeting answer",
-                    autoReplyEnabled = false
+                    replyPolicy = QaReplyPolicy.REVIEW.name
                 )
             )
         )
@@ -239,6 +241,37 @@ class QaMatchServiceTest {
         val result = service.match("salary and meeting")
 
         assertFalse(result!!.autoReplyEnabled)
+        assertEquals(QaReplyPolicy.REVIEW.name, result.replyPolicy)
+    }
+
+    @Test
+    fun `excludes NEVER rules from match suggest and matchAll`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(
+                QaRule(
+                    id = 99,
+                    categoryId = 1,
+                    keywords = "salary",
+                    replySubject = "Hidden",
+                    replyBody = "Hidden answer",
+                    replyPolicy = QaReplyPolicy.NEVER.name
+                ),
+                QaRule(
+                    id = 2,
+                    categoryId = 1,
+                    keywords = "funding",
+                    replySubject = "Funding",
+                    replyBody = "Funding answer",
+                    replyPolicy = QaReplyPolicy.AUTO.name
+                )
+            )
+        )
+
+        assertNull(service.match("salary support"))
+        assertEquals(listOf(2L), service.matchAllRuleIds("funding support"))
+        val suggest = service.suggestComposition("funding support")
+        assertEquals(listOf(2L), suggest.suggestedRuleIds)
+        assertTrue(suggest.rulesByCategory.flatMap { it.rules }.none { it.id == 99L })
     }
 
     @Test

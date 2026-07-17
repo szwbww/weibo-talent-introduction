@@ -47,7 +47,7 @@ describe("adopt-direct-send UI contracts", function () {
     });
 
     it("preserves raw template across adopt→send only when editor matches baseline", function () {
-        const adoptIdx = app.indexOf('if (action === "ai-adopt-draft")');
+        const adoptIdx = app.indexOf('if (action === "trust-adopt-draft")');
         const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
         const adoptBlock = app.slice(adoptIdx, adoptIdx + 1600);
         const sendBlock = app.slice(sendIdx, sendIdx + 2200);
@@ -61,14 +61,12 @@ describe("adopt-direct-send UI contracts", function () {
         if (app.includes("validateSectionNumbering")) throw new Error("numbering gate helper should be removed");
         if (app.includes("正文编号")) throw new Error("numbering error messages should be removed");
         const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
-        const sendBlock = app.slice(sendIdx, sendIdx + 2200);
-        if (sendBlock.includes("requestCount") && sendBlock.includes("showStatus") && sendBlock.indexOf("requestCount") < sendBlock.lastIndexOf("showStatus")) {
+        const submitIdx = app.indexOf("return submitManualRichReply(id, requestBody);", sendIdx);
+        if (sendIdx < 0 || submitIdx < 0) throw new Error("missing send handler or submit call");
+        const sendBlock = app.slice(sendIdx, submitIdx + "return submitManualRichReply(id, requestBody);".length);
+        if (sendBlock.includes("openReviewModal")) throw new Error("send should not open review modal");
+        if (/showStatus[\s\S]*requestCount/.test(sendBlock)) {
             throw new Error("send should not gate on requestCount");
-        }
-        const payloadEnd = sendBlock.indexOf("requestBody.useVariants");
-        const submitIdx = sendBlock.indexOf("return submitManualRichReply");
-        if (payloadEnd < 0 || submitIdx < 0 || submitIdx - payloadEnd > 120) {
-            throw new Error("submitManualRichReply should follow payload assembly without intermediate gates");
         }
     });
 
@@ -82,7 +80,7 @@ describe("adopt-direct-send UI contracts", function () {
 
     it("existing handler structure preserved", function () {
         if (!app.includes('"send-manual-rich-reply"')) throw new Error("send handler missing");
-        if (!app.includes('"ai-adopt-draft"')) throw new Error("adopt handler missing");
+        if (!app.includes('"trust-adopt-draft"')) throw new Error("trust adopt handler missing");
     });
 });
 

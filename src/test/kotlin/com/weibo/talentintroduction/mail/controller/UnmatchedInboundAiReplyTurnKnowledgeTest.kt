@@ -20,13 +20,12 @@ import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
-import com.weibo.talentintroduction.llm.service.LlmStitchService
+import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
-import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -42,9 +41,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val pendingMailOperationService = Mockito.mock(PendingMailOperationService::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
-    private val llmStitchService = Mockito.mock(LlmStitchService::class.java)
+    private val llmProperties = LlmProperties(enabled = false)
     private val autoReplyPreviewService = Mockito.mock(AutoReplyPreviewService::class.java)
-    private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
     private val aiReplyDraftService = Mockito.mock(AiReplyDraftService::class.java)
     private val aiReplyDraftPreviewService = Mockito.mock(AiReplyDraftPreviewService::class.java) { invocation ->
         if (invocation.method.name == "preview") {
@@ -68,9 +66,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         expertContactRepository,
         pendingMailOperationService,
         operatorActionLogService,
-        llmStitchService,
+        llmProperties,
         autoReplyPreviewService,
-        replySnippetService,
         aiReplyDraftService,
         aiReplyDraftPreviewService,
         aiReplyContextBuilder,
@@ -119,8 +116,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             .thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello"))
             .thenReturn("Topic: office mascot\nAnswer: QINGFEI-PANDA")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
-
         val expectedProfile = "Name: Dr. Test\nTraining knowledge base:\nTopic: office mascot\nAnswer: QINGFEI-PANDA"
         val expectedContext = AiReplyContext(
             profileText = expectedProfile,
@@ -190,8 +185,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
             .thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Question text")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
-
         // Use exact values (not matchers) to avoid Kotlin non-null parameter check issues
         Mockito.`when`(
             aiReplyContextService.build(contact, emptyList(), "Question text", "")
@@ -285,7 +278,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Multiple questions")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(
             aiReplyContextService.build(contact, emptyList(), "Multiple questions", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
@@ -398,7 +390,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 
@@ -458,7 +449,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 
@@ -504,7 +494,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 
@@ -534,9 +523,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             expertContactRepository,
             pendingMailOperationService,
             operatorActionLogService,
-            llmStitchService,
+            llmProperties,
             autoReplyPreviewService,
-            replySnippetService,
             aiReplyDraftService,
             aiReplyDraftPreviewService,
             aiReplyContextBuilder,
@@ -576,7 +564,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 
@@ -624,7 +611,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(false)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 
@@ -673,7 +659,6 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
         Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
-        Mockito.`when`(llmStitchService.isEnabled()).thenReturn(true)
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Hello", ""))
             .thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
 

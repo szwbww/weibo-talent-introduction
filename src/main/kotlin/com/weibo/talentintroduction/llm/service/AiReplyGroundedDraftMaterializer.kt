@@ -218,6 +218,38 @@ class AiReplyGroundedDraftMaterializer(
     companion object {
         const val WARNING_STRUCTURED_RESPONSE_INVALID = "AI_REPLY_STRUCTURED_RESPONSE_INVALID"
         const val WARNING_CLAIM_VALIDATION_FAILED = "AI_REPLY_CLAIM_VALIDATION_FAILED"
+        const val WARNING_UNNATURAL_GROUNDED_STRUCTURE = "AI_REPLY_UNNATURAL_GROUNDED_STRUCTURE"
+
+        fun containsNonNaturalGroundedStructure(text: String): Boolean {
+            if (NUMBERED_LIST_LINE.containsMatchIn(text)) {
+                return true
+            }
+            if (FIXED_SECTION_HEADING.containsMatchIn(text)) {
+                return true
+            }
+            if (INTERNAL_INTENT_LABEL.containsMatchIn(text)) {
+                return true
+            }
+            if (STATUS_TOKEN_REGEX.containsMatchIn(text)) {
+                return true
+            }
+            if (RULE_ID_LABEL.containsMatchIn(text)) {
+                return true
+            }
+            return false
+        }
+
+        private val NUMBERED_LIST_LINE = Regex("""(?m)^\s*\d+\.\s+\S""")
+        private val FIXED_SECTION_HEADING = Regex(
+            """(?m)^\s*(?:Program(?:me)?\s*&\s*eligibility|Financial\s*arrangements)\s*$""",
+            RegexOption.IGNORE_CASE
+        )
+        private val INTERNAL_INTENT_LABEL = Regex(
+            """(?<![A-Za-z0-9_.])[a-z]+\.[a-z_]+(?:\.[a-z_]+)?(?![A-Za-z0-9_.])"""
+        )
+        private val RULE_ID_LABEL = Regex(
+            """(?i)(?:\bRULE\s+\d+\b|EVIDENCE_RULE_IDS|INTENT:\s*\w+\.\w+)"""
+        )
 
         private val INTERNAL_PHRASES = listOf(
             "This still needs confirmation on remaining details.",

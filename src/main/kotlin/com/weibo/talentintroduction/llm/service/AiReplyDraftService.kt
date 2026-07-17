@@ -1,8 +1,8 @@
 package com.weibo.talentintroduction.llm.service
 
 import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
-import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
@@ -67,7 +67,7 @@ data class RequestFactItem(
     val intents: List<RequestIntentCoverage> = emptyList()
 )
 
-internal data class ResolvedQaRules(
+data class ResolvedQaRules(
     val sendQaRuleIds: List<Long>,
     val promptRuleIds: List<Long>,
     val requestFacts: List<RequestFactItem> = emptyList(),
@@ -80,9 +80,8 @@ internal data class ResolvedQaRules(
 class AiReplyDraftService(
     private val properties: LlmProperties,
     private val llmDraftClientProvider: ObjectProvider<LlmDraftClient>,
-    private val qaMatchService: QaMatchService,
+    private val qaFactSelectionService: QaFactSelectionService,
     private val qaRuleRepository: QaRuleRepository,
-    private val llmStitchService: LlmStitchService,
     private val replySnippetService: ReplySnippetService,
     private val aiPromptConfigService: AiPromptConfigService,
     private val aiTrainingDialogueService: AiTrainingDialogueService,
@@ -113,14 +112,10 @@ class AiReplyDraftService(
             researchProfileSufficient
         )
         val mode = when {
-            resolved.requestCount >= 2 ||
+            resolved.sendQaRuleIds.isNotEmpty() ||
+                resolved.requestFacts.any { it.factRuleIds.isNotEmpty() } ||
+                resolved.requestCount >= 2 ||
                 resolved.requestFacts.any { it.requiresResearchContext } ->
-                AiReplyMode.QA_GROUNDED
-            resolved.sendQaRuleIds.isNotEmpty() &&
-                resolved.requestCount <= 1 &&
-                resolved.unsupportedRequests.isEmpty() ->
-                AiReplyMode.QA_MATCHED
-            resolved.sendQaRuleIds.isNotEmpty() ->
                 AiReplyMode.QA_GROUNDED
             else ->
                 AiReplyMode.FREE_FORM
@@ -189,15 +184,6 @@ class AiReplyDraftService(
 
         val fewShotDialogRefs: List<String>
         val messages = when (mode) {
-            AiReplyMode.QA_MATCHED -> {
-                fewShotDialogRefs = emptyList()
-                buildMatchedMessages(
-                    inboundText = inboundText,
-                    operatorTurns = operatorTurns,
-                    promptRuleIds = resolved.promptRuleIds,
-                    operatorInstruction = operatorInstruction
-                )
-            }
             AiReplyMode.QA_GROUNDED -> {
                 val buildResult = buildGroundedMessages(
                     inboundText = inboundText,
@@ -210,6 +196,18 @@ class AiReplyDraftService(
                 )
                 fewShotDialogRefs = buildResult.fewShotDialogRefs
                 buildResult.messages
+            }
+            AiReplyMode.QA_MATCHED -> {
+                fewShotDialogRefs = emptyList()
+                buildGroundedMessages(
+                    inboundText = inboundText,
+                    operatorTurns = operatorTurns,
+                    requestFacts = resolved.requestFacts,
+                    expertProfile = expertProfile,
+                    mailHistory = mailHistory,
+                    contextWarnings = contextWarnings,
+                    operatorInstruction = operatorInstruction
+                ).messages
             }
             AiReplyMode.FREE_FORM -> {
                 val buildResult = buildFreeFormMessages(
@@ -226,8 +224,8 @@ class AiReplyDraftService(
         }
         val boundedMessages = withActionBoundary(messages, allowedActions)
         val temperature = when (mode) {
-            AiReplyMode.QA_MATCHED -> properties.temperature
-            AiReplyMode.QA_GROUNDED, AiReplyMode.FREE_FORM -> properties.freeFormTemperature
+            AiReplyMode.QA_GROUNDED, AiReplyMode.QA_MATCHED -> properties.freeFormTemperature
+            AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val llmText = try {
             client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
@@ -236,8 +234,10 @@ class AiReplyDraftService(
         }
 
         return if (llmText != null) {
-            if (mode == AiReplyMode.QA_GROUNDED) {
-                val materialized = groundedDraftMaterializer.materialize(llmText, resolved.requestFacts)
+            if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
+                val materialized = acceptGroundedMaterialization(
+                    groundedDraftMaterializer.materialize(llmText, resolved.requestFacts)
+                )
                 if (materialized.valid) {
                     val claimResult = claimValidator.validate(materialized.sections, resolved.requestFacts)
                     if (claimResult.valid) {
@@ -404,7 +404,9 @@ class AiReplyDraftService(
             }
             if (retryText != null) {
                 if (mode == AiReplyMode.QA_GROUNDED) {
-                    val materialized = groundedDraftMaterializer.materialize(retryText, resolved.requestFacts)
+                    val materialized = acceptGroundedMaterialization(
+                        groundedDraftMaterializer.materialize(retryText, resolved.requestFacts)
+                    )
                     if (materialized.valid) {
                         val claimResult = claimValidator.validate(materialized.sections, resolved.requestFacts)
                         if (claimResult.valid) {
@@ -430,7 +432,7 @@ class AiReplyDraftService(
                                 selectedModel = selectedModel,
                                 requestFacts = resolved.requestFacts,
                                 generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                                draftReadiness = resolveDraftReadiness(resolved.requestFacts)
+                                draftReadiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
                             )
                         }
                     } else {
@@ -490,7 +492,7 @@ class AiReplyDraftService(
         // Retry success stays LLM_USED; sanitize never invents fallback when used=true.
         val finalState = if (used) AiReplyGenerationState.LLM_USED else generationState
 
-        val readiness = resolveDraftReadiness(resolved.requestFacts)
+        val readiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
 
         return AiReplyDraftResult(
             draftText = text,
@@ -546,10 +548,8 @@ class AiReplyDraftService(
     ): String {
         return if (operatorTurns.isEmpty()) {
             when {
-                mode == AiReplyMode.QA_GROUNDED ->
+                mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED ->
                     aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
-                resolved.promptRuleIds.isNotEmpty() ->
-                    llmStitchService.composeDeterministicDraft(resolved.promptRuleIds)
                 else ->
                     composeFreeFormDeterministicDraft(
                         inboundText = inboundText,
@@ -569,107 +569,38 @@ class AiReplyDraftService(
         contextWarnings: List<String> = emptyList(),
         researchProfileSufficient: Boolean =
             !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
-    ): ResolvedQaRules {
-        val composition = qaMatchService.suggestComposition(inboundText)
-        val gapItems = composition.gapItems
-
-        val sendQaRuleIds: List<Long>
-        val promptRuleIds: List<Long>
-        if (qaRuleIds != null) {
-            sendQaRuleIds = qaRuleIds
-            promptRuleIds = qaRuleIds
-        } else {
-            val matched = composition.suggestedRuleIds
-            sendQaRuleIds = matched
-            promptRuleIds = if (matched.isNotEmpty()) matched else qaRuleRepository.findAllEnabledOrdered().mapNotNull { it.id }
-        }
-
-        val promptSet = promptRuleIds.toSet()
-        val requestFacts = gapItems.mapIndexed { idx, item ->
-            val matchedIntents = AiReplyIntentCatalog.matchIntents(item.text)
-            val isResearch = matchedIntents.any { it.requiresProfile }
-            val candidateIds = item.candidateRuleIds
-                .filter { it in promptSet }
-                .distinct()
-            val candidateRules = candidateIds.mapNotNull { ruleId ->
-                qaRuleRepository.findById(ruleId).orElse(null)
-            }
-            val validFactRuleIds = candidateRules
-                .filter { it.replyBody.isNotBlank() }
-                .mapNotNull { it.id }
-
-            val ruleCoverageKeys: Map<Long, List<String>> = candidateRules
-                .associate { rule ->
-                    (rule.id ?: 0L) to com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog.parseStored(
-                        rule.coverageKeys
-                    )
-                }
-
-            val intentCoverages = matchedIntents.map { intent ->
-                AiReplyIntentCatalog.resolveIntentCoverage(
-                    intent = intent,
-                    candidateRuleIds = validFactRuleIds,
-                    promptSet = promptSet,
-                    ruleCoverageKeys = ruleCoverageKeys,
-                    profileSufficient = researchProfileSufficient
-                )
-            }
-
-            val researchWarned = isResearch && !researchProfileSufficient
-            val allMissing = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "MISSING" }
-            val anyMissing = intentCoverages.any { it.status == "MISSING" }
-            val allSupported = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "SUPPORTED" }
-
-            val status = when {
-                researchWarned && validFactRuleIds.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
-                validFactRuleIds.isEmpty() && intentCoverages.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
-                validFactRuleIds.isEmpty() && allMissing -> RequestGroundingStatus.UNSUPPORTED
-                validFactRuleIds.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
-                intentCoverages.isEmpty() -> RequestGroundingStatus.GROUNDED
-                allSupported -> RequestGroundingStatus.GROUNDED
-                allMissing -> RequestGroundingStatus.UNSUPPORTED
-                else -> RequestGroundingStatus.PARTIAL
-            }
-
-            val evidenceSet = intentCoverages
-                .filter { it.status == "SUPPORTED" }
-                .flatMap { it.evidenceRuleIds }
-                .toSet()
-
-            RequestFactItem(
-                index = idx + 1,
-                requestText = item.text,
-                factRuleIds = validFactRuleIds.filter { it in evidenceSet },
-                status = status,
-                requiresResearchContext = isResearch,
-                intents = intentCoverages
-            )
-        }
-
-        return ResolvedQaRules(
-            sendQaRuleIds = sendQaRuleIds,
-            promptRuleIds = promptRuleIds,
-            requestFacts = requestFacts,
-            unsupportedRequests = requestFacts
-                .filter { it.status == RequestGroundingStatus.UNSUPPORTED }
-                .map { it.requestText },
-            requestCount = requestFacts.size,
-            groundedRequestCount = requestFacts.count {
-                it.status == RequestGroundingStatus.GROUNDED || it.status == RequestGroundingStatus.PARTIAL
-            }
+    ): ResolvedQaRules =
+        qaFactSelectionService.select(
+            inboundText = inboundText,
+            selectedRuleIds = qaRuleIds,
+            researchProfileSufficient = researchProfileSufficient
         )
-    }
 
-    internal fun resolveDraftReadiness(requestFacts: List<RequestFactItem>): AiReplyDraftReadiness {
+    fun resolveDraftReadinessForSelection(
+        requestFacts: List<RequestFactItem>,
+        evidenceRuleIds: List<Long>
+    ): AiReplyDraftReadiness = resolveDraftReadiness(requestFacts, evidenceRuleIds)
+
+    internal fun resolveDraftReadiness(
+        requestFacts: List<RequestFactItem>,
+        evidenceRuleIds: List<Long> = requestFacts.flatMap { it.factRuleIds }.distinct()
+    ): AiReplyDraftReadiness {
         if (requestFacts.isEmpty()) {
             return AiReplyDraftReadiness.READY
         }
-        val hasUnsupported = requestFacts.any { it.status == RequestGroundingStatus.UNSUPPORTED }
-        if (hasUnsupported) {
+        if (requestFacts.any { it.status == RequestGroundingStatus.UNSUPPORTED }) {
             return AiReplyDraftReadiness.BLOCKED
         }
-        val hasPartial = requestFacts.any { it.status == RequestGroundingStatus.PARTIAL }
-        if (hasPartial) {
+        if (evidenceRuleIds.isEmpty()) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+        if (requestFacts.any { it.status == RequestGroundingStatus.PARTIAL }) {
+            return AiReplyDraftReadiness.NEEDS_REVIEW
+        }
+        val policies = evidenceRuleIds.mapNotNull { ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)?.replyPolicyEnum()
+        }
+        if (policies.any { it == QaReplyPolicy.REVIEW }) {
             return AiReplyDraftReadiness.NEEDS_REVIEW
         }
         return AiReplyDraftReadiness.READY
@@ -809,8 +740,9 @@ class AiReplyDraftService(
             " intentKey matching the allowed intent keys, answer text, and sourceRuleIds referencing" +
             " only the evidence rule IDs listed for that intent.")
         appendLine("- Do not include requests with no supported intents.")
-        appendLine("- Do not emit Markdown fences, salutation, greeting, closing, headings, or STATUS labels.")
-        appendLine("- Do not write UNSUPPORTED, PARTIAL, GROUNDED, or confirmation/pending boilerplate in answers.")
+        appendLine("- Write natural prose in 2-4 short paragraphs total across all answers; do not use numbered lists, section headings, or internal labels.")
+        appendLine("- Use one brief acknowledgment only; do not repeat salutation, thanks, or closing in JSON answers.")
+        appendLine("- Do not expose intent keys, rule IDs, GROUNDED/PARTIAL/UNSUPPORTED, or coverage labels in answer text.")
         appendLine("- Each answer uses only that intent's approved facts; do not invent or borrow across intents.")
         appendLine("- sourceRuleIds must be a non-empty subset of the evidence rule IDs listed for that intent.")
         appendLine(
@@ -819,8 +751,7 @@ class AiReplyDraftService(
         )
         if (multiRequest) {
             appendLine(
-                "If two answerable intents share the same facts, write the full answer once and " +
-                    "rely on the composer for cross-references."
+                "When multiple requests share the same facts, paraphrase once per intent without repeating identical wording."
             )
         }
     }
@@ -897,8 +828,13 @@ class AiReplyDraftService(
                         return@forEach
                     }
                     qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
-                        appendLine("--- RULE $ruleId (subject: ${rule.replySubject.orEmpty()}) ---")
-                        appendLine(rule.replyBody)
+                        val body = rule.answerBody.trim()
+                        if (body.isBlank()) {
+                            return@forEach
+                        }
+                        val title = rule.displayName?.trim().takeIf { !it.isNullOrBlank() } ?: "Fact $ruleId"
+                        appendLine("--- RULE $ruleId ($title) ---")
+                        appendLine(body)
                     }
                 }
             }
@@ -938,7 +874,12 @@ class AiReplyDraftService(
         if (promptRuleIds.isNotEmpty()) {
             val knowledge = promptRuleIds.mapNotNull { ruleId ->
                 qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
-                    "${rule.replySubject.orEmpty()}\n${rule.replyBody}"
+                    val body = rule.answerBody.trim()
+                    if (body.isBlank()) {
+                        return@mapNotNull null
+                    }
+                    val title = rule.displayName?.trim().takeIf { !it.isNullOrBlank() } ?: "Fact $ruleId"
+                    "$title\n$body"
                 }
             }.joinToString("\n\n").take(12000)
             appendLine("QA rule knowledge (authoritative facts):")
@@ -1026,6 +967,18 @@ class AiReplyDraftService(
             ?.removePrefix("Answer:")
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun acceptGroundedMaterialization(materialized: MaterializedDraft): MaterializedDraft {
+        if (!materialized.valid) {
+            return materialized
+        }
+        if (AiReplyGroundedDraftMaterializer.containsNonNaturalGroundedStructure(materialized.text)) {
+            return groundedDraftMaterializer.invalid(
+                warningCodes = listOf(AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE)
+            )
+        }
+        return materialized
     }
 
     companion object {

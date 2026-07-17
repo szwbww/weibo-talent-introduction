@@ -21,8 +21,13 @@ import com.weibo.talentintroduction.mail.service.UnmatchedInboundMailService
 import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.SuggestQaRule
-import com.weibo.talentintroduction.reply.service.ManualReplyFrame
-import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
+import com.weibo.talentintroduction.mail.service.ComposedReplyEvaluateRequest
+import com.weibo.talentintroduction.mail.service.TrustWorkbenchEvaluateResult
+import com.weibo.talentintroduction.mail.service.TrustWorkbenchSuggestResult
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -42,9 +47,8 @@ class UnmatchedInboundMailController(
     private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository,
     private val pendingMailOperationService: PendingMailOperationService,
     private val operatorActionLogService: OperatorActionLogService,
-    private val llmStitchService: com.weibo.talentintroduction.llm.service.LlmStitchService,
+    private val llmProperties: LlmProperties,
     private val autoReplyPreviewService: AutoReplyPreviewService,
-    private val replySnippetService: ReplySnippetService,
     private val aiReplyDraftService: com.weibo.talentintroduction.llm.service.AiReplyDraftService,
     private val aiReplyDraftPreviewService: com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService,
     private val aiReplyContextBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder,
@@ -194,12 +198,9 @@ class UnmatchedInboundMailController(
         @PathVariable id: Long,
         @RequestBody request: PendingQaReplyRequest
     ): PendingMailSendResult =
-        pendingMailOperationService.sendQaReply(
-            inboundProcessingId = id,
-            qaRuleId = request.qaRuleId,
-            senderAccountCode = request.senderAccountCode,
-            operatorName = request.operatorName,
-            useVariants = request.useVariants
+        throw ResponseStatusException(
+            HttpStatus.GONE,
+            "Use trust workbench and manual-rich-reply"
         )
 
     @PostMapping("/unmatched-inbound/{id}/manual-rich-reply")
@@ -230,53 +231,39 @@ class UnmatchedInboundMailController(
 
     @GetMapping("/unmatched-inbound/{id}/composed-reply/suggest")
     fun suggestComposedReply(
-        @PathVariable id: Long,
-        @RequestParam(defaultValue = "false") useVariants: Boolean
+        @PathVariable id: Long
     ): ComposedReplySuggestResponse {
-        val detail = unmatchedInboundMailService.getDetail(id)
-        val suggest = pendingMailOperationService.suggestComposedReply(id, useVariants)
-        val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
-        return suggest.toResponse(
-            llmEnabled = llmStitchService.isEnabled(),
-            inboundText = inboundText,
-            frame = pendingMailOperationService.resolveManualFrameForInbound(id, useVariants)
-        )
+        val suggest = pendingMailOperationService.suggestComposedReply(id)
+        return suggest.toResponse(llmEnabled = llmProperties.enabled)
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/composed-reply/evaluate")
+    fun evaluateComposedReply(
+        @PathVariable id: Long,
+        @RequestBody request: ComposedReplyEvaluateRequest
+    ): ComposedReplyEvaluateResponse {
+        val result = pendingMailOperationService.evaluateComposedReply(id, request.factRuleIds)
+        return result.toResponse()
     }
 
     @PostMapping("/unmatched-inbound/{id}/composed-reply/polish")
     fun polishComposedReply(
         @PathVariable id: Long,
-        @RequestBody request: com.weibo.talentintroduction.llm.service.PolishDraftRequest
-    ): com.weibo.talentintroduction.llm.service.PolishDraftResponse {
-        val detail = unmatchedInboundMailService.getDetail(id)
-        val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
-        val result = llmStitchService.polishDraft(
-            qaRuleIds = request.qaRuleIds,
-            inboundQuestion = inboundText,
-            freeText = request.freeText,
-            ackSnippetId = request.ackSnippetId
+        @RequestBody @Suppress("UNUSED_PARAMETER") request: DeprecatedPolishDraftRequest
+    ): Nothing =
+        throw ResponseStatusException(
+            HttpStatus.GONE,
+            "Use trust workbench and manual-rich-reply"
         )
-        return com.weibo.talentintroduction.llm.service.PolishDraftResponse(
-            draftText = result.draftText,
-            usedLlm = result.usedLlm,
-            llmEnabled = llmStitchService.isEnabled()
-        )
-    }
 
     @PostMapping("/unmatched-inbound/{id}/composed-reply")
     fun sendComposedReply(
         @PathVariable id: Long,
         @RequestBody request: ComposedReplyRequest
     ): PendingMailSendResult =
-        pendingMailOperationService.sendManualComposedReply(
-            inboundProcessingId = id,
-            qaRuleIds = request.qaRuleIds,
-            overrideTextBody = request.overrideTextBody,
-            freeTextBody = request.freeTextBody,
-            ackSnippetId = request.ackSnippetId,
-            senderAccountCode = request.senderAccountCode,
-            operatorName = request.operatorName,
-            useVariants = request.useVariants
+        throw ResponseStatusException(
+            HttpStatus.GONE,
+            "Use trust workbench and manual-rich-reply"
         )
 
     @PostMapping("/unmatched-inbound/{id}/ai-reply/turn")
@@ -331,7 +318,7 @@ class UnmatchedInboundMailController(
             draftText = result.draftText,
             renderedDraftText = preview.renderedText,
             usedLlm = result.usedLlm,
-            llmEnabled = llmStitchService.isEnabled(),
+            llmEnabled = llmProperties.enabled,
             qaRuleIds = result.qaRuleIds,
             mode = result.mode.name,
             requestCount = result.requestCount,
@@ -533,10 +520,21 @@ data class ComposedReplySuggestResponse(
     val matchedCategoryIds: List<Long>,
     val llmEnabled: Boolean,
     val inboundText: String,
-    val salutation: String?,
-    val greeting: String?,
-    val closing: String?,
-    val ackOptions: List<AckOptionResponse>
+    val draftReadiness: String,
+    val requestCoverage: List<RequestCoverageItem>
+)
+
+data class ComposedReplyEvaluateResponse(
+    val canonicalFactIds: List<Long>,
+    val suggestedFactIds: List<Long>,
+    val draftReadiness: String,
+    val requestCoverage: List<RequestCoverageItem>,
+    val gapDetected: Boolean
+)
+
+data class DeprecatedPolishDraftRequest(
+    val qaRuleIds: List<Long> = emptyList(),
+    val operatorInstruction: String? = null
 )
 
 data class AckOptionResponse(
@@ -677,10 +675,30 @@ private fun AutoReplyPreviewResult.toResponse() = AutoReplyPreviewResponse(
     attachmentIntentIgnored = attachmentIntentIgnored
 )
 
+private fun TrustWorkbenchSuggestResult.toResponse(llmEnabled: Boolean) = ComposedReplySuggestResponse(
+    suggestedRuleIds = suggestedRuleIds,
+    suggestedRules = suggestedRules.map { it.toResponse() },
+    rulesByCategory = rulesByCategory.map { it.toResponse() },
+    gapItems = gapItems.map { GapItemResponse(it.text, it.candidateRuleIds) },
+    gapDetected = gapDetected,
+    matchedCategoryIds = matchedCategoryIds,
+    llmEnabled = llmEnabled,
+    inboundText = inboundText,
+    draftReadiness = draftReadiness,
+    requestCoverage = requestCoverage
+)
+
+private fun TrustWorkbenchEvaluateResult.toResponse() = ComposedReplyEvaluateResponse(
+    canonicalFactIds = canonicalFactIds,
+    suggestedFactIds = suggestedFactIds,
+    draftReadiness = draftReadiness,
+    requestCoverage = requestCoverage,
+    gapDetected = gapDetected
+)
+
 private fun CompositionSuggestResult.toResponse(
     llmEnabled: Boolean,
-    inboundText: String,
-    frame: ManualReplyFrame
+    inboundText: String
 ) = ComposedReplySuggestResponse(
     suggestedRuleIds = suggestedRuleIds,
     suggestedRules = suggestedRules.map { it.toResponse() },
@@ -690,10 +708,8 @@ private fun CompositionSuggestResult.toResponse(
     matchedCategoryIds = matchedCategoryIds,
     llmEnabled = llmEnabled,
     inboundText = inboundText,
-    salutation = frame.salutation,
-    greeting = frame.greeting,
-    closing = frame.closing,
-    ackOptions = frame.ackOptions.map { AckOptionResponse(id = it.id, content = it.content) }
+    draftReadiness = AiReplyDraftReadiness.READY.name,
+    requestCoverage = emptyList()
 )
 
 private fun SuggestQaRule.toResponse() = SuggestQaRuleResponse(

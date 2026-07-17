@@ -248,11 +248,13 @@ data class QaRuleCreateRequest(
     val keywords: String,
     val matchMode: String = "ANY",
     val priority: Int = 100,
-    val replySubject: String?,
-    val replyBody: String,
+    val answerBody: String,
+    val replyPolicy: String,
+    val replySubject: String? = null,
+    val replyBody: String? = null,
     val displayName: String?,
-    val autoReplyEnabled: Boolean = true,
-    val handoffRequired: Boolean = false,
+    val autoReplyEnabled: Boolean? = null,
+    val handoffRequired: Boolean? = null,
     val enabled: Boolean = true,
     val variants: List<String> = emptyList(),
     val coverageKeys: List<String>? = null
@@ -263,11 +265,10 @@ data class QaRuleCreateRequest(
             keywords = keywords,
             matchMode = matchMode,
             priority = priority,
+            answerBody = answerBody,
+            replyPolicy = replyPolicy,
             replySubject = replySubject,
-            replyBody = replyBody,
             displayName = displayName,
-            autoReplyEnabled = autoReplyEnabled,
-            handoffRequired = handoffRequired,
             enabled = enabled,
             variants = variants,
             coverageKeys = coverageKeys
@@ -279,11 +280,13 @@ data class QaRuleUpdateRequest(
     val keywords: String,
     val matchMode: String,
     val priority: Int,
-    val replySubject: String?,
-    val replyBody: String,
+    val answerBody: String,
+    val replyPolicy: String,
+    val replySubject: String? = null,
+    val replyBody: String? = null,
     val displayName: String?,
-    val autoReplyEnabled: Boolean,
-    val handoffRequired: Boolean,
+    val autoReplyEnabled: Boolean? = null,
+    val handoffRequired: Boolean? = null,
     val enabled: Boolean,
     val variants: List<String> = emptyList(),
     val coverageKeys: List<String>? = null
@@ -294,11 +297,11 @@ data class QaRuleUpdateRequest(
             keywords = keywords,
             matchMode = matchMode,
             priority = priority,
+            answerBody = answerBody,
+            replyPolicy = replyPolicy,
             replySubject = replySubject,
             replyBody = replyBody,
             displayName = displayName,
-            autoReplyEnabled = autoReplyEnabled,
-            handoffRequired = handoffRequired,
             enabled = enabled,
             variants = variants,
             coverageKeys = coverageKeys
@@ -321,6 +324,8 @@ data class QaRuleResponse(
     val keywords: String,
     val matchMode: String,
     val priority: Int,
+    val answerBody: String,
+    val replyPolicy: String,
     val replySubject: String?,
     val replyBody: String,
     val displayName: String?,
@@ -353,8 +358,9 @@ private fun QaRuleWithCategory.toResponse(): QaRuleResponse =
 private fun QaRuleDetail.toResponse(category: QaCategory?): QaRuleResponse =
     rule.toResponse(category, variants)
 
-private fun QaRule.toResponse(category: QaCategory?, variants: List<String> = emptyList()): QaRuleResponse =
-    QaRuleResponse(
+private fun QaRule.toResponse(category: QaCategory?, variants: List<String> = emptyList()): QaRuleResponse {
+    val policy = replyPolicyEnum()
+    return QaRuleResponse(
         id = id,
         categoryId = categoryId,
         categoryCode = category?.categoryCode,
@@ -362,12 +368,15 @@ private fun QaRule.toResponse(category: QaCategory?, variants: List<String> = em
         keywords = keywords,
         matchMode = matchMode,
         priority = priority,
+        answerBody = answerBody,
+        replyPolicy = policy.name,
         replySubject = replySubject,
         replyBody = replyBody,
         displayName = displayName,
-        autoReplyEnabled = autoReplyEnabled,
-        handoffRequired = handoffRequired,
+        autoReplyEnabled = policy.legacyAutoReplyEnabled(),
+        handoffRequired = policy.legacyHandoffRequired(),
         enabled = enabled,
         variants = variants,
         coverageKeys = QaCoverageKeyCatalog.parseStored(coverageKeys)
     )
+}

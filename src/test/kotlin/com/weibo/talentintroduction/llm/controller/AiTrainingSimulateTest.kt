@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.FreeFormPromptDefaults
 import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
+import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
@@ -23,7 +24,6 @@ import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
-import com.weibo.talentintroduction.llm.service.LlmStitchService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -59,7 +59,7 @@ import java.util.Optional
 @WebMvcTest(AiTrainingController::class)
 @Import(
     AiReplyDraftService::class,
-    LlmStitchService::class,
+    QaFactSelectionService::class,
     AiReplyPointByPointComposer::class,
     AiReplyGroundedDraftMaterializer::class,
     AiReplyHighRiskClaimValidator::class,
@@ -159,16 +159,6 @@ class AiTrainingSimulateTest {
                 contextWarnings = emptyList()
             )
         )
-        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
@@ -189,13 +179,13 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
             .andExpect(jsonPath("$.qaRuleIds").isArray)
             .andExpect(jsonPath("$.qaRuleIds").isEmpty)
-            .andExpect(jsonPath("$.requestCount").value(0))
+            .andExpect(jsonPath("$.requestCount").value(1))
             .andExpect(jsonPath("$.contextWarnings").isArray)
             .andExpect(jsonPath("$.contextWarnings").value(org.hamcrest.Matchers.hasItem("AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND")))
             .andExpect(jsonPath("$.selectedModel").value("DEEPSEEK_V4_FLASH"))
             .andExpect(jsonPath("$.requestCoverage").isArray)
-            .andExpect(jsonPath("$.requestCoverage").isEmpty)
-            .andExpect(jsonPath("$.draftReadiness").value("READY"))
+            .andExpect(jsonPath("$.requestCoverage.length()").value(1))
+            .andExpect(jsonPath("$.draftReadiness").value("BLOCKED"))
 
         Mockito.verify(aiTrainingQaService).buildKnowledgeContext("What is the funding?")
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
@@ -210,16 +200,6 @@ class AiTrainingSimulateTest {
         Mockito.`when`(
             aiReplyContextService.build(contact, listOf(inbound), "What is the funding?", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
-        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
@@ -247,7 +227,7 @@ class AiTrainingSimulateTest {
     }
 
     @Test
-    fun `simulate with matched rules returns QA_MATCHED with qaRuleIds in response`() {
+    fun `simulate with matched rules returns QA_GROUNDED with qaRuleIds in response`() {
         val contact = sampleContact()
         val inbound = sampleInbound(body = "what is the application process?")
         stubSimulateReadPath(contact, inbound)
@@ -260,24 +240,16 @@ class AiTrainingSimulateTest {
                 ""
             )
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
-        Mockito.`when`(qaMatchService.suggestComposition("what is the application process?")).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = listOf(9L),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         val rule = com.weibo.talentintroduction.qa.domain.QaRule(
             id = 9L,
             categoryId = 1,
-            keywords = "application process",
+            keywords = "application,process",
             replySubject = "Application process",
             replyBody = "First, you submit the required materials.",
+            answerBody = "First, you submit the required materials.",
             enabled = true
         )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(listOf(rule))
         Mockito.`when`(qaRuleRepository.findById(9L)).thenReturn(Optional.of(rule))
 
         mockMvc.perform(
@@ -286,7 +258,7 @@ class AiTrainingSimulateTest {
                 .content("""{"expertContactId":10}""")
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.mode").value("QA_MATCHED"))
+            .andExpect(jsonPath("$.mode").value("QA_GROUNDED"))
             .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("First, you submit the required materials.")))
             .andExpect(jsonPath("$.qaRuleIds").isArray)
             .andExpect(jsonPath("$.qaRuleIds[0]").value(9))
@@ -306,45 +278,31 @@ class AiTrainingSimulateTest {
             aiReplyContextService.build(contact, listOf(inbound), inboundText, "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
         Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
-        Mockito.`when`(qaMatchService.suggestComposition(inboundText)).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = listOf(1L, 2L),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = listOf(
-                    com.weibo.talentintroduction.qa.service.GapItem("- What is salary?", listOf(1L)),
-                    com.weibo.talentintroduction.qa.service.GapItem("- What are the deliverables?", listOf(2L))
-                ),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
+        val salaryRule = com.weibo.talentintroduction.qa.domain.QaRule(
+            id = 1L,
+            categoryId = 1,
+            keywords = "salary",
+            replySubject = "Salary",
+            replyBody = "Salary is competitive.",
+            answerBody = "Salary is competitive.",
+            enabled = true,
+            replyPolicy = com.weibo.talentintroduction.qa.domain.QaReplyPolicy.AUTO.name,
+            coverageKeys = "finance.government_funding"
         )
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(
-                com.weibo.talentintroduction.qa.domain.QaRule(
-                    id = 1L,
-                    categoryId = 1,
-                    keywords = "salary",
-                    replySubject = "Salary",
-                    replyBody = "Salary is competitive.",
-                    enabled = true,
-                    coverageKeys = "finance.government_funding"
-                )
-            )
+        val deliverRule = com.weibo.talentintroduction.qa.domain.QaRule(
+            id = 2L,
+            categoryId = 1,
+            keywords = "deliverables",
+            replySubject = "Scope",
+            replyBody = "High-level project overview.",
+            answerBody = "High-level project overview.",
+            enabled = true,
+            replyPolicy = com.weibo.talentintroduction.qa.domain.QaReplyPolicy.AUTO.name,
+            coverageKeys = "role.deliverables"
         )
-        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(
-            Optional.of(
-                com.weibo.talentintroduction.qa.domain.QaRule(
-                    id = 2L,
-                    categoryId = 1,
-                    keywords = "deliverables",
-                    replySubject = "Scope",
-                    replyBody = "High-level project overview.",
-                    enabled = true,
-                    coverageKeys = "role.deliverables"
-                )
-            )
-        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(listOf(salaryRule, deliverRule))
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(deliverRule))
 
         mockMvc.perform(
             post("/api/ai-training/simulate")
@@ -391,16 +349,6 @@ class AiTrainingSimulateTest {
                 contextWarnings = emptyList()
             )
         )
-        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
@@ -432,16 +380,6 @@ class AiTrainingSimulateTest {
         Mockito.`when`(
             aiReplyContextService.build(contact, listOf(exactMail), "Exact mail body for funding?", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
-        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(
@@ -522,16 +460,6 @@ class AiTrainingSimulateTest {
         Mockito.`when`(
             aiReplyContextService.build(contact, listOf(inbound), "What is the funding?", "")
         ).thenReturn(AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList()))
-        Mockito.`when`(qaMatchService.suggestComposition(Mockito.anyString())).thenReturn(
-            com.weibo.talentintroduction.qa.service.CompositionSuggestResult(
-                suggestedRuleIds = emptyList(),
-                suggestedRules = emptyList(),
-                rulesByCategory = emptyList(),
-                gapItems = emptyList(),
-                gapDetected = false,
-                matchedCategoryIds = emptyList()
-            )
-        )
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         mockMvc.perform(

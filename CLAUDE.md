@@ -66,6 +66,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 人工富文本回复只要携带 QA 规则，就必须同时写 `mail_record_qa_rule` 并沿用 `SEND_MANUAL_COMPOSED_REPLY` 审计；纯人工空规则回复不得用 QA 全集兜底。(K-rich-reply-qa-audit-reuse)
 - 多问题 AI 回复必须保留按原邮件顺序的 request→factRuleIds→groundingStatus 矩阵，生成与 fallback 共用矩阵，发送审计规则集单独维护。(K-request-facts-not-flat-pool)
 - QA 使用审计的实际选用规则必须以 `mail_record_qa_rule` 为准；操作日志仅记录上下文，只有历史关联缺失时才允许回退日志字段。(K-audit-selected-source)
+- QA 人工外发回复的纯文本与 HTML 渲染、风险校验、落库和审计必须共享同一 canonical `qaRuleIds`，并在 SMTP 前完成校验。(K-qa-outbound-render-seams)
 - 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
 - 人工回复 frame（问候、致谢、结束语）存在外发、确定性润色 fallback、前端预览三个消费者；修改时必须同源同序，且不得波及自动回复使用的 `QaReplyComposer.compose`。(K-manual-frame-three-consumers)
 - AI 草稿生成只有训练模拟与收发件箱两个调用方，跨入口 prompt/约束/模型能力应收口在 `AiReplyDraftService.generate()`；QA_MATCHED verbatim 与 deterministic fallback 仍是独立边界。(K-ai-generate-single-freeform-seam)

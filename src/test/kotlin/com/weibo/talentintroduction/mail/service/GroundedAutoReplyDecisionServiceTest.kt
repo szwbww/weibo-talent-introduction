@@ -1,0 +1,199 @@
+package com.weibo.talentintroduction.mail.service
+
+import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
+import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
+import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
+import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
+import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
+import com.weibo.talentintroduction.llm.service.AiReplyMode
+import com.weibo.talentintroduction.llm.service.RequestFactItem
+import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
+import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.mockito.Mockito
+import java.util.Optional
+
+class GroundedAutoReplyDecisionServiceTest {
+    private val aiReplyDraftService = Mockito.mock(AiReplyDraftService::class.java)
+    private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
+
+    @BeforeEach
+    fun resetMocks() {
+        Mockito.reset(aiReplyDraftService, qaRuleRepository)
+    }
+
+    private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
+    private fun stubGenerate(result: AiReplyDraftResult) {
+        Mockito.`when`(
+            aiReplyDraftService.generate(
+                Mockito.anyString(),
+                Mockito.anyList(),
+                Mockito.isNull(),
+                Mockito.isNull(),
+                Mockito.isNull(),
+                Mockito.isNull(),
+                Mockito.anyBoolean(),
+                Mockito.anyList(),
+                Mockito.isNull(),
+                Mockito.anyBoolean()
+            )
+        ).thenReturn(result)
+    }
+
+    private fun service(autoReplyEnabled: Boolean = true) =
+        GroundedAutoReplyDecisionService(
+            LlmProperties(enabled = true, autoReplyEnabled = autoReplyEnabled),
+            aiReplyDraftService,
+            qaRuleRepository
+        )
+
+    private fun autoRule(id: Long, policy: QaReplyPolicy = QaReplyPolicy.AUTO) = QaRule(
+        id = id,
+        categoryId = 1,
+        keywords = "salary",
+        replyBody = "Body $id",
+        answerBody = "Body $id",
+        replySubject = null,
+        replyPolicy = policy.name,
+        enabled = true
+    )
+
+    private fun readyDraft(
+        text: String = "Grounded reply",
+        ruleIds: List<Long> = listOf(1L)
+    ) = AiReplyDraftResult(
+        draftText = text,
+        usedLlm = true,
+        qaRuleIds = ruleIds,
+        mode = AiReplyMode.QA_GROUNDED,
+        generationState = AiReplyGenerationState.LLM_USED,
+        draftReadiness = AiReplyDraftReadiness.READY,
+        requestFacts = listOf(
+            RequestFactItem(
+                index = 1,
+                requestText = "Salary?",
+                factRuleIds = ruleIds,
+                status = RequestGroundingStatus.GROUNDED
+            )
+        )
+    )
+
+    @Test
+    fun `kill switch returns AI_AUTO_REPLY_DISABLED without generating`() {
+        val decision = service(autoReplyEnabled = false).decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED, decision.reason)
+        Mockito.verifyNoInteractions(aiReplyDraftService)
+    }
+
+    @Test
+    fun `ready draft with verified AUTO rules is ready to send`() {
+        stubGenerate(readyDraft())
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertTrue(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.QA_AUTO_REPLIED, decision.reason)
+        assertEquals("Re: Question", decision.subject)
+        assertEquals("Grounded reply", decision.rawDraftText)
+        assertEquals(listOf(1L), decision.qaRuleIds)
+    }
+
+    @Test
+    fun `empty qaRuleIds returns QA_NO_MATCH`() {
+        stubGenerate(readyDraft(text = "", ruleIds = emptyList()).copy(draftText = ""))
+
+        val decision = service().decide("Hello", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.QA_NO_MATCH, decision.reason)
+    }
+
+    @Test
+    fun `REVIEW policy evidence returns QA_POLICY_REVIEW before grounding gap`() {
+        stubGenerate(
+                readyDraft(ruleIds = listOf(1L)).copy(
+                    requestFacts = listOf(
+                        RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.PARTIAL)
+                    )
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L))
+            .thenReturn(Optional.of(autoRule(1, QaReplyPolicy.REVIEW)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.QA_POLICY_REVIEW, decision.reason)
+    }
+
+    @Test
+    fun `PARTIAL request fact returns QA_GROUNDING_GAP`() {
+        stubGenerate(
+                readyDraft().copy(
+                    requestFacts = listOf(
+                        RequestFactItem(1, "Salary?", listOf(1L), RequestGroundingStatus.PARTIAL)
+                    ),
+                    draftReadiness = AiReplyDraftReadiness.NEEDS_REVIEW
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.QA_GROUNDING_GAP, decision.reason)
+    }
+
+    @Test
+    fun `validation warnings return AI_REPLY_VALIDATION_FAILED before generation unavailable`() {
+        stubGenerate(
+                readyDraft().copy(
+                    usedLlm = false,
+                    generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                    contextWarnings = listOf(AiReplyGroundedDraftMaterializer.WARNING_CLAIM_VALIDATION_FAILED)
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED, decision.reason)
+    }
+
+    @Test
+    fun `LLM unavailable returns AI_GENERATION_UNAVAILABLE`() {
+        stubGenerate(
+                readyDraft().copy(
+                    usedLlm = false,
+                    generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_GENERATION_UNAVAILABLE, decision.reason)
+    }
+
+    @Test
+    fun `buildReplySubject keeps existing Re prefix`() {
+        val svc = service()
+        assertEquals("Re: Question", svc.buildReplySubject("Question"))
+        assertEquals("Re: Question", svc.buildReplySubject("Re: Question"))
+        assertEquals("Re:", svc.buildReplySubject(null))
+    }
+}

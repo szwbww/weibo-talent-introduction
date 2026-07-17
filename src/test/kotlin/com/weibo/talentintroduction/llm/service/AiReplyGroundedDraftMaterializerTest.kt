@@ -56,17 +56,22 @@ class AiReplyGroundedDraftMaterializerTest {
     }
 
     @Test
-    fun `valid per-intent json materializes with fixed section titles`() {
+    fun `valid per-intent json materializes natural paragraphs without fixed section titles`() {
         val raw = """
             {"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary is competitive.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"role.deliverables","answer":"Deliverables depend on project.","sourceRuleIds":[2]}]}]}
         """.trimIndent()
 
         val result = materializer.materialize(raw, facts)
         assertTrue(result.valid)
-        assertTrue(result.text.contains("1. Financial arrangements"))
         assertTrue(result.text.contains("Salary is competitive."))
-        assertTrue(result.text.contains("2. Deliverables"))
         assertTrue(result.text.contains("Deliverables depend on project."))
+        assertTrue(result.text.indexOf("Salary is competitive.") < result.text.indexOf("Deliverables depend on project."))
+        assertFalse(result.text.contains("1. Financial arrangements"))
+        assertFalse(result.text.contains("2. Deliverables"))
+        assertFalse(result.text.contains("finance.arrangements"))
+        assertFalse(result.text.contains("role.deliverables"))
+        assertFalse(result.text.contains("sourceRuleIds"))
+        assertFalse(result.text.contains("RULE 1"))
         assertFalse(result.text.contains("\"sections\""))
         assertFalse(result.text.contains("STATUS:"))
     }

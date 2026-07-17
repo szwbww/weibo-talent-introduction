@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.qa.service
 
 import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.qa.domain.QaCategory
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -65,18 +66,22 @@ class QaRuleManagementService(
     @Transactional
     fun createRule(command: QaRuleCreateCommand): QaRuleDetail {
         requireCategoryExists(command.categoryId)
-        validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
-        contentVariantService.validateVariantTexts(command.replyBody, command.variants)
-        val normalizedCoverage = QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys)
-        val domain = command.toDomain().copy(coverageKeys = QaCoverageKeyCatalog.serialize(normalizedCoverage))
-        val saved = ruleRepository.save(domain)
-        val ruleId = saved.id ?: error("QA rule id is required")
-        contentVariantService.replaceForOwner(
-            ContentVariantOwnerType.QA_RULE,
-            ruleId,
-            saved.replyBody,
-            command.variants
+        rejectQaVariants(command.variants)
+        val answerBody = command.answerBody.trim()
+        QaFactBodyPolicy.validate(answerBody, mailVariableService)
+        validateRuleMeta(command.keywords, command.matchMode, command.priority)
+        val policy = QaReplyPolicy.fromName(command.replyPolicy)
+
+        val saved = ruleRepository.save(
+            command.toDomain(answerBody)
+                .copy(
+                    replyBody = answerBody,
+                    answerBody = answerBody,
+                    coverageKeys = ""
+                )
+                .withReplyPolicy(policy)
         )
+        val ruleId = saved.id ?: error("QA rule id is required")
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
@@ -85,14 +90,11 @@ class QaRuleManagementService(
         val existing = ruleRepository.findById(ruleId)
             .orElseThrow { error("QA rule not found: $ruleId") }
         requireCategoryExists(command.categoryId)
-        validateRule(command.keywords, command.matchMode, command.priority, command.replyBody)
-        contentVariantService.validateVariantTexts(command.replyBody, command.variants)
-
-        val newCoverage = if (command.coverageKeys != null) {
-            QaCoverageKeyCatalog.serialize(QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys))
-        } else {
-            existing.coverageKeys
-        }
+        rejectQaVariants(command.variants)
+        val answerBody = command.answerBody.trim()
+        QaFactBodyPolicy.validate(answerBody, mailVariableService)
+        validateRuleMeta(command.keywords, command.matchMode, command.priority)
+        val policy = QaReplyPolicy.fromName(command.replyPolicy)
 
         val saved = ruleRepository.save(
             existing.copy(
@@ -100,20 +102,10 @@ class QaRuleManagementService(
                 keywords = command.keywords,
                 matchMode = command.matchMode.uppercase(),
                 priority = command.priority,
-                replySubject = command.replySubject,
-                replyBody = command.replyBody,
                 displayName = command.displayName?.trim()?.takeIf { it.isNotEmpty() },
-                autoReplyEnabled = command.autoReplyEnabled,
-                handoffRequired = command.handoffRequired,
-                enabled = command.enabled,
-                coverageKeys = newCoverage
-            )
-        )
-        contentVariantService.replaceForOwner(
-            ContentVariantOwnerType.QA_RULE,
-            ruleId,
-            saved.replyBody,
-            command.variants
+                answerBody = answerBody,
+                enabled = command.enabled
+            ).withReplyPolicy(policy)
         )
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
@@ -132,6 +124,12 @@ class QaRuleManagementService(
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
+    private fun rejectQaVariants(variants: List<String>) {
+        if (variants.isNotEmpty()) {
+            throw IllegalArgumentException("QA rule content variants are no longer supported")
+        }
+    }
+
     private fun loadVariantTexts(ruleId: Long): List<String> =
         contentVariantService.listByOwner(ContentVariantOwnerType.QA_RULE, ruleId).map { it.content }
 
@@ -139,12 +137,10 @@ class QaRuleManagementService(
         require(categoryRepository.existsById(categoryId)) { "QA category not found: $categoryId" }
     }
 
-    private fun validateRule(keywords: String, matchMode: String, priority: Int, replyBody: String) {
+    private fun validateRuleMeta(keywords: String, matchMode: String, priority: Int) {
         require(keywords.split(",").any { it.isNotBlank() }) { "keywords is required" }
         require(matchMode.uppercase() in setOf("ANY", "ALL")) { "matchMode must be ANY or ALL" }
         require(priority > 0) { "priority must be positive" }
-        require(replyBody.isNotBlank()) { "replyBody is required" }
-        mailVariableService.requireValidPlaceholders(replyBody)
     }
 }
 
@@ -171,26 +167,24 @@ data class QaRuleCreateCommand(
     val keywords: String,
     val matchMode: String = "ANY",
     val priority: Int = 100,
-    val replySubject: String?,
-    val replyBody: String,
+    val answerBody: String,
+    val replyPolicy: String = QaReplyPolicy.REVIEW.name,
+    val replySubject: String? = null,
     val displayName: String? = null,
-    val autoReplyEnabled: Boolean = true,
-    val handoffRequired: Boolean = false,
     val enabled: Boolean = true,
     val variants: List<String> = emptyList(),
     val coverageKeys: List<String>? = null
 ) {
-    fun toDomain(): QaRule =
+    fun toDomain(answerBody: String): QaRule =
         QaRule(
             categoryId = categoryId,
             keywords = keywords,
             matchMode = matchMode.uppercase(),
             priority = priority,
             replySubject = replySubject,
-            replyBody = replyBody,
+            replyBody = answerBody,
+            answerBody = answerBody,
             displayName = displayName?.trim()?.takeIf { it.isNotEmpty() },
-            autoReplyEnabled = autoReplyEnabled,
-            handoffRequired = handoffRequired,
             enabled = enabled
         )
 }
@@ -200,11 +194,11 @@ data class QaRuleUpdateCommand(
     val keywords: String,
     val matchMode: String,
     val priority: Int,
-    val replySubject: String?,
-    val replyBody: String,
+    val answerBody: String,
+    val replyPolicy: String = QaReplyPolicy.REVIEW.name,
+    val replySubject: String? = null,
+    val replyBody: String? = null,
     val displayName: String? = null,
-    val autoReplyEnabled: Boolean,
-    val handoffRequired: Boolean,
     val enabled: Boolean,
     val variants: List<String> = emptyList(),
     val coverageKeys: List<String>? = null

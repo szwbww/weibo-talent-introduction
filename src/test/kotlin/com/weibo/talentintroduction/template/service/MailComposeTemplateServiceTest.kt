@@ -394,7 +394,67 @@ class MailComposeTemplateServiceTest {
     }
 
     @Test
-    fun `renderByCode selects QA rule variant from content_variant`() {
+    fun `create rejects QA_RULE blocks`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.create(
+                validTemplateCommand().copy(
+                    blocks = listOf(
+                        MailComposeTemplateBlockCommand(
+                            blockOrder = 0,
+                            blockType = ComposeBlockType.QA_RULE,
+                            refId = 1L
+                        )
+                    )
+                )
+            )
+        }
+        assertEquals("QA_RULE blocks are read-only and cannot be created", ex.message)
+    }
+
+    @Test
+    fun `update rejects QA_RULE blocks`() {
+        Mockito.`when`(templateRepository.findById(10))
+            .thenReturn(
+                Optional.of(
+                    MailComposeTemplate(
+                        id = 10,
+                        templateName = "Intro",
+                        subject = "Old"
+                    )
+                )
+            )
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.update(
+                10,
+                validTemplateCommand().copy(
+                    blocks = listOf(
+                        MailComposeTemplateBlockCommand(
+                            blockOrder = 0,
+                            blockType = ComposeBlockType.QA_RULE,
+                            refId = 1L
+                        )
+                    )
+                )
+            )
+        }
+        assertEquals("QA_RULE blocks are read-only and cannot be created", ex.message)
+    }
+
+    @Test
+    fun `previewDraft rejects QA_RULE blocks`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.previewDraft(
+                ComposeTemplatePreviewDraftRequest(
+                    subject = "S",
+                    blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = 3L))
+                )
+            )
+        }
+        assertEquals("QA_RULE blocks are read-only and cannot be created", ex.message)
+    }
+
+    @Test
+    fun `renderByCode legacy QA rule uses main reply body without content variants`() {
         stubIntroQaTemplate(refId = 11L)
         Mockito.`when`(qaRuleRepository.findById(11))
             .thenReturn(
@@ -414,10 +474,9 @@ class MailComposeTemplateServiceTest {
             variants = listOf(contentVariant(id = 1L, ownerId = 11L, order = 1, content = "VARIANT-A"))
         )
 
-        val seed = 0
-        val rendered = service.renderByCode("INTRO", variantSeed = seed)
+        val rendered = service.renderByCode("INTRO", variantSeed = 0)
 
-        assertEquals("VARIANT-A", rendered.body)
+        assertEquals("MAIN body", rendered.body)
         assertEquals(listOf(11L), rendered.qaRuleIds)
     }
 
@@ -567,47 +626,45 @@ class MailComposeTemplateServiceTest {
     }
 
     @Test
-    fun `previewDraft variantIndex scrolls QA block and reports variantPoolSize`() {
-        val ruleId = 3L
-        Mockito.`when`(qaRuleRepository.findById(ruleId))
+    fun `previewDraft variantIndex scrolls reply snippet block and reports variantPoolSize`() {
+        val snippetId = 3L
+        Mockito.`when`(replySnippetRepository.findById(snippetId))
             .thenReturn(
                 Optional.of(
-                    QaRule(
-                        id = ruleId,
-                        categoryId = 1,
-                        keywords = "kw",
-                        replySubject = "Subj",
-                        replyBody = "MAIN body",
+                    ReplySnippet(
+                        id = snippetId,
+                        snippetType = "greeting",
+                        content = "MAIN body",
                         enabled = true
                     )
                 )
             )
-        stubQaVariants(
-            ownerId = ruleId,
+        stubSnippetVariants(
+            ownerId = snippetId,
             variants = listOf(
-                contentVariant(id = 1L, ownerId = ruleId, order = 1, content = "VARIANT-A"),
-                contentVariant(id = 2L, ownerId = ruleId, order = 2, content = "VARIANT-B")
+                contentVariant(id = 1L, ownerId = snippetId, order = 1, content = "VARIANT-A"),
+                contentVariant(id = 2L, ownerId = snippetId, order = 2, content = "VARIANT-B")
             )
         )
 
         val result0 = service.previewDraft(
             ComposeTemplatePreviewDraftRequest(
                 subject = "S",
-                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = ruleId)),
+                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.REPLY_SNIPPET, refId = snippetId)),
                 variantIndex = 0
             )
         )
         val result1 = service.previewDraft(
             ComposeTemplatePreviewDraftRequest(
                 subject = "S",
-                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = ruleId)),
+                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.REPLY_SNIPPET, refId = snippetId)),
                 variantIndex = 1
             )
         )
         val result2 = service.previewDraft(
             ComposeTemplatePreviewDraftRequest(
                 subject = "S",
-                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = ruleId)),
+                blocks = listOf(ComposeDraftBlock(0, ComposeBlockType.REPLY_SNIPPET, refId = snippetId)),
                 variantIndex = 2
             )
         )
@@ -720,19 +777,6 @@ class MailComposeTemplateServiceTest {
         )
         Mockito.`when`(expertContactRepository.findById(7)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailSenderAccountService.getAccount("ops")).thenReturn(account)
-        Mockito.`when`(qaRuleRepository.findById(11))
-            .thenReturn(
-                Optional.of(
-                    QaRule(
-                        id = 11,
-                        categoryId = 1,
-                        keywords = "kw",
-                        replySubject = "Subj",
-                        replyBody = "Visible \${senderName}",
-                        enabled = true
-                    )
-                )
-            )
         Mockito.`when`(mailVariableService.renderPreview("Hello \${senderName}", account, contact))
             .thenReturn(
                 RenderPreviewResult(
@@ -768,7 +812,7 @@ class MailComposeTemplateServiceTest {
             ComposeTemplatePreviewDraftRequest(
                 subject = "Hello \${senderName}",
                 blocks = listOf(
-                    ComposeDraftBlock(0, ComposeBlockType.QA_RULE, refId = 11),
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = "Visible \${senderName}"),
                     ComposeDraftBlock(1, ComposeBlockType.CUSTOM_TEXT, customText = "Hidden \${researchFields}")
                 ),
                 contactId = 7,
