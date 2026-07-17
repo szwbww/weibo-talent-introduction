@@ -2,8 +2,8 @@
 id: K-qa-outbound-render-seams
 domain: qa
 created: 2026-07-12
-last_used: 2026-07-13
-hit_count: 6
+last_used: 2026-07-17
+hit_count: 7
 source: create-p:qa-reply-personalization-backend
 ---
 经验：QA 回复的外发 seam 当前有四个，任何“对 QA 外发正文统一加能力”（变量渲染、脱敏、签名等）的需求必须先按实际入口确定覆盖全集，漏一个即路径行为漂移：
