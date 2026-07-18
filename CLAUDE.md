@@ -85,6 +85,21 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 研究匹配必须同时具备专家画像与 `programme.scope` 审核依据；任一缺失即 UNSUPPORTED，且只读画像不得触发 enrichment。(K-research-fit-dual-evidence)
 - 复合 request 必须先拆成稳定原子 intent，再按当前 request 的 QA coverage 独立取证；任一子 intent 缺证都不能把整组标为完整。(K-compound-request-coverage-intent-atomic)
 - AI 审核 canonical snapshot 必须先严格校验 key/index/intent/count 的类型、格式、唯一性和数量一致性，再做确认集合比较。(K-ai-review-canonical-key-uniqueness)
+- OpenAlex enrichment 已有 `OpenAlexDataSource`/`ExpertDiscoveryService`/`POST /api/expert-discovery/enrich` 基础设施，扩展 enrichment 应改造现有链路而非新建服务。(K-openalex-enrichment-existing)
+- intent catalog 与回归必须以逐字原始验收 fixture 断言精确 intent；英美拼写、连字符、词序差异须边界安全 alias 匹配，语义改写不能替代原文。(K-ai-reply-intent-alias-fixture-fidelity)
+- AI CTA 拦截 regex 须同时覆盖祈使句、疑问式请求和材料同义词，所有变体须经 findViolations、sanitize 与运行时最终 gate 验证。(K-ai-reply-action-cta-variant-coverage)
+- 条件性 QA 的 modality 校验须大小写不敏感拒绝强承诺词，family short-circuit 不得绕过；同 family 仅允许普通 will/shall，不能覆盖 guaranteed/absolutely。(K-ai-reply-modality-plain-will)
+- 手动/批量发送选项只来自 enabled COMPOSE_TEMPLATE；前端须用 templateCode/mailType 识别模板，预览走权威 preview endpoint，禁止用名称/ID/顺序猜测。(K-manual-send-options-sources)
+- `batch_send_setting` 是旧 typed API 的 KV 兼容表，不是列式任务配置 SSOT；新任务配置须独立实体/迁移，不得与 KV 双写。(K-batch-send-setting-kv)
+- dry-run/自动回复预览必须复用 `AutoMailReplyService.processSingle` 同源同序注入与分支；运行期闸门只作信息标记不隐藏内容，无法等价处须显式标注偏差。(K-preview-mirrors-pipeline)
+- 面向操作端的审计事件须限制 payload 项数与长度并标记截断，只存稳定 key，不存正文或可替代正文的字段。(K-review-event-audit-payload-bounds)
+- 启用 AI 审核 authority gate 时须 fail-closed 覆盖审计写失败与同秒多版本 tie-break；当前「采用后直接人工发送」不使用该 gate，生成日志不得阻断草稿或外发。(K-ai-review-authority-loss-and-order)
+- `MailComposeTemplateService.renderText()` 是唯一模板变量替换点，修改须覆盖 resolveBlocks 内部调用与全部 5 个 variables 注入入口。(K-renderText-all-callers)
+- `IntroductionMailComposer.compose()` 仅有 InitialOutreachService 与 ManualInitialOutreachService 两个调用方，改 variables map 时两路径自动继承。(K-introduction-compose-callers)
+- Flyway 对 `qa_rule` 的 keywords/reply_body UPDATE 会覆盖运营运行时改动；关键词/正文迁移须上线前基线核对，CONCAT 带 NOT LIKE、INSERT 带 NOT EXISTS。(K-qa-rule-runtime-vs-migration-writes)
+- FREE_FORM LLM 关闭/失败须有独立非空确定性兜底，禁止空 `qaRuleIds` 复用 QA_MATCHED fallback；发送审计 `qaRuleIds` 仍须为空。(K-free-form-fallback-nonempty)
+- LLM 超时回退须专用 RestTemplate 接入 connect/read timeout，超时返回 null 由确定性组装兜底，不得用无 timeout 通用 client 阻塞工作台。(K-llm-timeout-fallback)
+- 改变 QA `replyBody` 出站形态须覆盖 QaMatchService/QaReplyComposer、PendingMailOperationService、LlmStitchService、MailComposeTemplateService.resolveBlocks 全集。(K-qa-replybody-outbound-sites)
 
 ---
 
