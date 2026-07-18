@@ -56,4 +56,10 @@ describe("mail processing reply workflow source", () => {
         assert.ok(appJsSource.includes("body: JSON.stringify({ operatorStatus: newStatus, operatorName })"));
         assert.ok(appJsSource.includes("body: JSON.stringify({ targetLevel: newLevel, operatorName })"));
     });
+
+    it("moves the mailbox scroll container to the processing panel after opening a mail", () => {
+        assert.ok(appJsSource.includes("function focusMailboxProcessingPanel()"));
+        assert.ok(appJsSource.includes('scrollContainer.scrollTo({ top, behavior: "smooth" })'));
+        assert.ok((appJsSource.match(/focusMailboxProcessingPanel\(\);/g) || []).length >= 2);
+    });
 });

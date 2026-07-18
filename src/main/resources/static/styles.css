@@ -5578,6 +5578,17 @@ tr td {
     gap: 8px;
 }
 
+.qa-fact-body-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.qa-fact-body-toolbar {
+    flex: 0 0 auto;
+}
+
 .var-chip {
     border: 1px solid #cbd5e1;
     background: #f8fafc;

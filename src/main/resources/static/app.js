@@ -1119,6 +1119,27 @@ function renderBySourceTable(bySource, container) {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+function focusMailboxProcessingPanel() {
+    const panel = $("#unmatchedDetailPanel");
+    const scrollContainer = document.querySelector(".main");
+    if (!panel) return;
+
+    requestAnimationFrame(() => {
+        if (!scrollContainer) {
+            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+            return;
+        }
+        const top = Math.max(
+            0,
+            scrollContainer.scrollTop
+                + panel.getBoundingClientRect().top
+                - scrollContainer.getBoundingClientRect().top
+                - 12
+        );
+        scrollContainer.scrollTo({ top, behavior: "smooth" });
+    });
+}
+
 async function api(path, options = {}) {
     const response = await fetch(`${contextPath}${path}`, {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -8205,7 +8226,7 @@ async function showMailDetail(source, id) {
                 </div>
             </div>
         `;
-        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        focusMailboxProcessingPanel();
     } catch (e) {
         showStatus(e.message, "error");
     }
@@ -8961,7 +8982,7 @@ async function showUnmatchedDetail(id) {
 
     loadAutoReplyPreview(id).catch(() => {});
 
-    panel.scrollIntoView({ behavior: "smooth" });
+    focusMailboxProcessingPanel();
 }
 
 async function handleUnmatchedAction(element) {

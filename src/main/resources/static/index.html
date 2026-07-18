@@ -1577,14 +1577,17 @@
                     <option value="NEVER">NEVER（禁止外发）</option>
                 </select>
             </label>
-            <label class="span-2">标准事实正文
-                <div class="var-editor-wrap">
-                    <div class="var-editor-toolbar">
+            <label class="span-2 qa-fact-body-field">
+                <div class="qa-fact-body-head">
+                    <span>标准事实正文</span>
+                    <div class="var-editor-toolbar qa-fact-body-toolbar">
                         <div class="var-insert-wrap">
                             <button type="button" class="var-insert-btn" data-var-insert-target="qaRuleAnswerBody">+ 插入变量 ▾</button>
                             <div class="var-insert-menu" hidden></div>
                         </div>
                     </div>
+                </div>
+                <div class="var-editor-wrap">
                     <div class="var-validation-hint" id="varHint-qaRuleAnswerBody" hidden></div>
                     <textarea id="qaRuleAnswerBody" name="answerBody" rows="8" placeholder="只写已核验事实，不写称呼、寒暄和签名" required></textarea>
                 </div>
