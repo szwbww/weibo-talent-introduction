@@ -3,7 +3,7 @@ id: K-group-before-pagination
 domain: mail
 created: 2026-07-18
 last_used: 2026-07-18
-hit_count: 0
+hit_count: 1
 source: create-p:mailbox-pending-by-expert
 severity: P1
 ---

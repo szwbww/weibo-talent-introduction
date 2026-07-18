@@ -45,6 +45,15 @@ function createMailboxSandbox() {
 
     const sandbox = {
         $: (sel) => el(sel.replace(/^#/, "")),
+        document: {
+            querySelector: (selector) => {
+                if (selector === 'input[name="mailboxViewMode"]:checked') {
+                    return { value: "MAIL" };
+                }
+                return null;
+            },
+            querySelectorAll: () => []
+        },
         URLSearchParams,
         state: {
             mailbox: {
@@ -67,6 +76,8 @@ function createMailboxSandbox() {
 
     vm.createContext(sandbox);
     vm.runInContext(extractFn("monitoringToday"), sandbox);
+    vm.runInContext(extractFn("mailboxViewMode"), sandbox);
+    vm.runInContext(extractFn("syncMailboxViewModeControls"), sandbox);
     vm.runInContext("async function loadMailboxAccounts() {}", sandbox);
     vm.runInContext(extractFn("loadMailbox"), sandbox);
     sandbox.__store = store;
@@ -82,13 +93,13 @@ describe("mailbox date default", () => {
         );
         assert.match(
             appJsSource,
-            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
-            "loadMailbox should only apply defaults when not pending-only"
+            /if\s*\(!expertMode\s*&&\s*!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
+            "loadMailbox should only apply defaults when not pending-only and not expert mode"
         );
         assert.match(
             appJsSource,
-            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
-            "loadMailbox should mark date defaults applied only outside pending-only mode"
+            /if\s*\(!expertMode\s*&&\s*!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
+            "loadMailbox should mark date defaults applied only outside pending-only and expert mode"
         );
     });
 

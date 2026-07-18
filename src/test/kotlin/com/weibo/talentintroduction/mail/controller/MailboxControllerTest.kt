@@ -115,6 +115,100 @@ class MailboxControllerTest {
     }
 
     @Test
+    fun `list pending by expert maps query params and returns nested DTO`() {
+        val testResponse = MailboxExpertGroupListResponse(
+            groups = listOf(
+                MailboxExpertGroupResponse(
+                    expertContactId = 100L,
+                    expertName = "张三",
+                    expertEmail = "zhang@example.com",
+                    expertOrcidId = "0000-0001-0002-0003",
+                    operatorStatus = "REPLIED",
+                    expertIndexLevel = "APPLICATION",
+                    pendingCount = 2L,
+                    mails = listOf(
+                        MailboxItemResponse(
+                            id = 10L,
+                            source = "INBOUND_PROCESSING",
+                            expertContactId = 100L,
+                            direction = "INBOUND",
+                            mailType = "REPLY",
+                            senderAccountCode = "account1",
+                            triggeredBy = null,
+                            isSystemSent = false,
+                            expertEmail = "zhang@example.com",
+                            expertName = "张三",
+                            subject = "Question 1",
+                            bodyPreview = "Body 1",
+                            hasAttachment = false,
+                            sendStatus = null,
+                            timestamp = "2026-07-18T10:00:00",
+                            tags = listOf("专家", "收件", "待处理"),
+                            processStatus = "MANUAL_REVIEW",
+                            reasonType = null,
+                            inboundProcessingId = 10L
+                        )
+                    )
+                )
+            ),
+            totalCount = 1L
+        )
+
+        Mockito.`when`(
+            mailboxService.listPendingByExpert(
+                accountCode = "account1",
+                keyword = "Question",
+                recipientEmail = "zhang@example.com",
+                page = 0,
+                size = 20
+            )
+        ).thenReturn(testResponse)
+
+        mockMvc.perform(
+            get("/api/mail/mailbox/pending-by-expert")
+                .param("accountCode", "account1")
+                .param("keyword", "Question")
+                .param("recipientEmail", "zhang@example.com")
+                .param("page", "0")
+                .param("size", "20")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.totalCount").value(1))
+            .andExpect(jsonPath("$.groups[0].expertContactId").value(100))
+            .andExpect(jsonPath("$.groups[0].pendingCount").value(2))
+            .andExpect(jsonPath("$.groups[0].mails[0].source").value("INBOUND_PROCESSING"))
+            .andExpect(jsonPath("$.groups[0].mails[0].id").value(10))
+            .andExpect(jsonPath("$.groups[0].mails[0].inboundProcessingId").value(10))
+    }
+
+    @Test
+    fun `list pending by expert coerces size to max 100`() {
+        Mockito.`when`(
+            mailboxService.listPendingByExpert(
+                accountCode = null,
+                keyword = null,
+                recipientEmail = null,
+                page = 0,
+                size = 100
+            )
+        ).thenReturn(MailboxExpertGroupListResponse(emptyList(), 0))
+
+        mockMvc.perform(
+            get("/api/mail/mailbox/pending-by-expert")
+                .param("size", "500")
+        )
+            .andExpect(status().isOk)
+
+        Mockito.verify(mailboxService).listPendingByExpert(
+            accountCode = null,
+            keyword = null,
+            recipientEmail = null,
+            page = 0,
+            size = 100
+        )
+    }
+
+    @Test
     fun `detail mailbox record returns detail DTO`() {
         val detail = MailboxDetailResponse(
             id = 1L,

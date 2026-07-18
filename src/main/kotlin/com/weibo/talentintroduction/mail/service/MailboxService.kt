@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.controller.MailboxDetailResponse
+import com.weibo.talentintroduction.mail.controller.MailboxExpertGroupListResponse
+import com.weibo.talentintroduction.mail.controller.MailboxExpertGroupResponse
 import com.weibo.talentintroduction.mail.controller.MailboxItemResponse
 import com.weibo.talentintroduction.mail.controller.MailboxListResponse
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -74,33 +76,108 @@ class MailboxService(
         val inboundIds = rows.mapNotNull { it.inboundProcessingId }
         val inboundTagsById = inboundMailTagService.listTagsBatch(inboundIds)
 
-        val items = rows.map { row ->
-            val timestamp = (row.sentAt ?: row.receivedAt)?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-            MailboxItemResponse(
-                id = row.id,
-                source = row.source,
-                expertContactId = row.expertContactId,
-                direction = row.direction,
-                mailType = row.mailType,
-                senderAccountCode = row.senderAccountCode,
-                triggeredBy = row.triggeredBy,
-                isSystemSent = row.triggeredBy == "SYSTEM",
-                expertEmail = row.expertEmail,
-                expertName = row.expertName,
-                subject = row.subject,
-                bodyPreview = row.bodyPreview,
-                hasAttachment = row.hasAttachment != 0L,
-                sendStatus = row.sendStatus,
-                timestamp = timestamp,
-                tags = computeTags(row),
-                processStatus = row.processStatus,
-                reasonType = row.reasonType,
-                inboundProcessingId = row.inboundProcessingId,
-                inboundTags = row.inboundProcessingId?.let { inboundTagsById[it] } ?: emptyList()
+        val items = rows.map { row -> toMailboxItemResponse(row, inboundTagsById) }
+
+        return MailboxListResponse(items, total)
+    }
+
+    fun listPendingByExpert(
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?,
+        page: Int,
+        size: Int
+    ): MailboxExpertGroupListResponse {
+        val activeAccounts = senderAccountRepository.findAllByAccountCodeNot(
+            MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
+        )
+        val activeCodes = activeAccounts.map { it.accountCode }
+        if (activeCodes.isEmpty()) return MailboxExpertGroupListResponse(emptyList(), 0)
+
+        if (accountCode != null && accountCode !in activeCodes) {
+            return MailboxExpertGroupListResponse(emptyList(), 0)
+        }
+
+        val offset = page.toLong() * size
+        val total = mailRecordRepository.countPendingExperts(
+            accountCodes = activeCodes,
+            accountCode = accountCode,
+            keyword = keyword,
+            recipientEmail = recipientEmail
+        )
+        if (total == 0L) {
+            return MailboxExpertGroupListResponse(emptyList(), 0)
+        }
+
+        val summaries = mailRecordRepository.listPendingExpertSummaries(
+            accountCodes = activeCodes,
+            accountCode = accountCode,
+            keyword = keyword,
+            recipientEmail = recipientEmail,
+            limit = size,
+            offset = offset
+        )
+        if (summaries.isEmpty()) {
+            return MailboxExpertGroupListResponse(emptyList(), total)
+        }
+
+        val expertContactIds = summaries.map { it.expertContactId }
+        val mailRows = mailRecordRepository.listPendingMailsByExpertContactIds(
+            expertContactIds = expertContactIds,
+            accountCodes = activeCodes,
+            accountCode = accountCode,
+            keyword = keyword,
+            recipientEmail = recipientEmail
+        )
+        val inboundIds = mailRows.mapNotNull { it.inboundProcessingId }
+        val inboundTagsById = inboundMailTagService.listTagsBatch(inboundIds)
+        val mailsByExpert = mailRows
+            .map { row -> toMailboxItemResponse(row, inboundTagsById) }
+            .groupBy { it.expertContactId }
+
+        val groups = summaries.map { summary ->
+            MailboxExpertGroupResponse(
+                expertContactId = summary.expertContactId,
+                expertName = summary.expertName,
+                expertEmail = summary.expertEmail,
+                expertOrcidId = summary.orcidId,
+                operatorStatus = summary.operatorStatus,
+                expertIndexLevel = summary.currentIndexLevel,
+                pendingCount = summary.pendingCount,
+                mails = mailsByExpert[summary.expertContactId] ?: emptyList()
             )
         }
 
-        return MailboxListResponse(items, total)
+        return MailboxExpertGroupListResponse(groups, total)
+    }
+
+    private fun toMailboxItemResponse(
+        row: MailboxRow,
+        inboundTagsById: Map<Long, List<TagView>>
+    ): MailboxItemResponse {
+        val timestamp = (row.sentAt ?: row.receivedAt)?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        return MailboxItemResponse(
+            id = row.id,
+            source = row.source,
+            expertContactId = row.expertContactId,
+            direction = row.direction,
+            mailType = row.mailType,
+            senderAccountCode = row.senderAccountCode,
+            triggeredBy = row.triggeredBy,
+            isSystemSent = row.triggeredBy == "SYSTEM",
+            expertEmail = row.expertEmail,
+            expertName = row.expertName,
+            subject = row.subject,
+            bodyPreview = row.bodyPreview,
+            hasAttachment = row.hasAttachment != 0L,
+            sendStatus = row.sendStatus,
+            timestamp = timestamp,
+            tags = computeTags(row),
+            processStatus = row.processStatus,
+            reasonType = row.reasonType,
+            inboundProcessingId = row.inboundProcessingId,
+            inboundTags = row.inboundProcessingId?.let { inboundTagsById[it] } ?: emptyList()
+        )
     }
 
     fun getMailboxDetail(source: String, id: Long): MailboxDetailResponse {

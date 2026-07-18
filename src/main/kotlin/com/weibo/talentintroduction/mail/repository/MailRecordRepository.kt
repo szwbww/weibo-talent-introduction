@@ -527,7 +527,117 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         endTime: LocalDateTime?,
         onlyPending: Int
     ): Long
+
+    @Query(
+        """
+        SELECT imp.expert_contact_id AS expert_contact_id,
+               ec.expert_name AS expert_name,
+               ec.expert_email AS expert_email,
+               ec.orcid_id AS orcid_id,
+               ec.operator_status AS operator_status,
+               ec.current_index_level AS current_index_level,
+               COUNT(*) AS pending_count,
+               MAX(imp.received_at) AS latest_received_at
+          FROM inbound_mail_processing imp
+         INNER JOIN expert_contact ec ON imp.expert_contact_id = ec.id
+         WHERE imp.process_status = 'MANUAL_REVIEW'
+           AND imp.expert_contact_id IS NOT NULL
+           AND imp.sender_account_code IN (:accountCodes)
+           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+         GROUP BY imp.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id,
+                  ec.operator_status, ec.current_index_level
+         ORDER BY latest_received_at DESC, imp.expert_contact_id DESC
+         LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listPendingExpertSummaries(
+        accountCodes: List<String>,
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?,
+        limit: Int,
+        offset: Long
+    ): List<MailboxExpertSummaryRow>
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT imp.expert_contact_id)
+          FROM inbound_mail_processing imp
+         INNER JOIN expert_contact ec ON imp.expert_contact_id = ec.id
+         WHERE imp.process_status = 'MANUAL_REVIEW'
+           AND imp.expert_contact_id IS NOT NULL
+           AND imp.sender_account_code IN (:accountCodes)
+           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+        """
+    )
+    fun countPendingExperts(
+        accountCodes: List<String>,
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?
+    ): Long
+
+    @Query(
+        """
+        SELECT CONVERT('INBOUND_PROCESSING' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+               imp.id AS id, imp.expert_contact_id,
+               CONVERT('INBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+               CONVERT('REPLY' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
+               CONVERT(imp.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
+               CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
+               CAST(NULL AS SIGNED) AS matched_qa_rule_id,
+               CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+               CONVERT(imp.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+               CONVERT(SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
+               CAST(NULL AS DATETIME) AS sent_at, imp.received_at,
+               CONVERT(imp.process_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+               CONVERT(imp.reason_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
+               CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
+               CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
+               CAST(EXISTS(
+                 SELECT 1 FROM mail_attachment ma
+                   JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+                  WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+               ) AS SIGNED) AS has_attachment,
+               imp.id AS inbound_processing_id
+          FROM inbound_mail_processing imp
+          LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+         WHERE imp.process_status = 'MANUAL_REVIEW'
+           AND imp.expert_contact_id IS NOT NULL
+           AND imp.expert_contact_id IN (:expertContactIds)
+           AND imp.sender_account_code IN (:accountCodes)
+           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+           AND (:recipientEmail IS NULL OR ec2.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+         ORDER BY imp.expert_contact_id DESC, imp.received_at DESC
+        """
+    )
+    fun listPendingMailsByExpertContactIds(
+        expertContactIds: List<Long>,
+        accountCodes: List<String>,
+        accountCode: String?,
+        keyword: String?,
+        recipientEmail: String?
+    ): List<MailboxRow>
 }
+
+data class MailboxExpertSummaryRow(
+    val expertContactId: Long,
+    val expertName: String?,
+    val expertEmail: String,
+    val orcidId: String,
+    val operatorStatus: String,
+    val currentIndexLevel: String,
+    val pendingCount: Long,
+    val latestReceivedAt: LocalDateTime
+)
 
 data class MailboxRow(
     val source: String,

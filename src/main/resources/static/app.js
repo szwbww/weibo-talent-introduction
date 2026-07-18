@@ -50,6 +50,8 @@ const state = {
     },
     mailbox: {
         items: [],
+        groups: [],
+        viewMode: "MAIL",
         page: 0,
         totalCount: 0,
         pageSize: 20,
@@ -10984,6 +10986,13 @@ function initBulkAutoReply() {
         }
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
+    document.querySelectorAll('input[name="mailboxViewMode"]').forEach((input) => {
+        input.addEventListener("change", () => {
+            state.mailbox.page = 0;
+            syncMailboxViewModeControls();
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+        });
+    });
     $("#mailboxList").addEventListener("click", async (event) => {
         const target = event.target.closest("[data-action]");
         if (!target) return;
@@ -11301,6 +11310,22 @@ function bindAuthEvents() {
     });
 }
 
+function mailboxViewMode() {
+    const checked = document.querySelector('input[name="mailboxViewMode"]:checked');
+    return checked?.value === "EXPERT" ? "EXPERT" : "MAIL";
+}
+
+function syncMailboxViewModeControls() {
+    const expertMode = mailboxViewMode() === "EXPERT";
+    state.mailbox.viewMode = expertMode ? "EXPERT" : "MAIL";
+    ["#mailboxFilterDirection", "#mailboxFilterTag", "#mailboxFilterOnlyPending", "#mailboxFilterStartDate", "#mailboxFilterEndDate"].forEach((sel) => {
+        const el = $(sel);
+        if (!el) return;
+        el.disabled = expertMode;
+        el.classList.toggle("input-disabled", expertMode);
+    });
+}
+
 async function loadMailboxAccounts() {
     if (state.mailbox.accountsLoaded) return;
     try {
@@ -11318,19 +11343,21 @@ async function loadMailboxAccounts() {
 
 async function loadMailbox() {
     await loadMailboxAccounts();
+    syncMailboxViewModeControls();
 
+    const expertMode = state.mailbox.viewMode === "EXPERT";
     state.mailbox.onlyPending = $("#mailboxFilterOnlyPending")?.checked || false;
     state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
 
     const startInput = $("#mailboxFilterStartDate");
     const endInput = $("#mailboxFilterEndDate");
-    const disabled = state.mailbox.onlyPending;
+    const disabled = expertMode || state.mailbox.onlyPending;
     startInput.disabled = disabled;
     endInput.disabled = disabled;
     startInput.classList.toggle("input-disabled", disabled);
     endInput.classList.toggle("input-disabled", disabled);
 
-    if (!state.mailbox.onlyPending) {
+    if (!expertMode && !state.mailbox.onlyPending) {
         if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
             const weekAgo = new Date();
             weekAgo.setDate(weekAgo.getDate() - 7);
@@ -11341,36 +11368,131 @@ async function loadMailbox() {
     }
 
     const params = new URLSearchParams();
-    const direction = $("#mailboxFilterDirection").value;
     const accountCode = $("#mailboxFilterAccountCode").value;
     const recipientEmail = $("#mailboxFilterRecipient").value.trim();
     const keyword = $("#mailboxFilterKeyword").value.trim();
-    const startDate = startInput.value;
-    const endDate = endInput.value;
 
-    if (direction) params.set("direction", direction);
     if (accountCode) params.set("accountCode", accountCode);
     if (recipientEmail) params.set("recipientEmail", recipientEmail);
     if (keyword) params.set("keyword", keyword);
-    if (!state.mailbox.onlyPending) {
-        if (startDate) params.set("startDate", startDate);
-        if (endDate) params.set("endDate", endDate);
+
+    if (!expertMode) {
+        const direction = $("#mailboxFilterDirection").value;
+        const startDate = startInput.value;
+        const endDate = endInput.value;
+        if (direction) params.set("direction", direction);
+        if (!state.mailbox.onlyPending) {
+            if (startDate) params.set("startDate", startDate);
+            if (endDate) params.set("endDate", endDate);
+        }
+        if (state.mailbox.onlyPending) params.set("pending", "true");
     }
-    if (state.mailbox.onlyPending) params.set("pending", "true");
 
     params.set("page", state.mailbox.page);
     params.set("size", state.mailbox.pageSize);
 
     try {
-        const data = await api(`/api/mail/mailbox?${params}`);
-        state.mailbox.items = data.items || [];
-        state.mailbox.totalCount = data.totalCount || 0;
-        renderMailboxTable();
+        if (expertMode) {
+            const data = await api(`/api/mail/mailbox/pending-by-expert?${params}`);
+            state.mailbox.groups = data.groups || [];
+            state.mailbox.items = [];
+            state.mailbox.totalCount = data.totalCount || 0;
+            renderMailboxExpertGroups();
+        } else {
+            const data = await api(`/api/mail/mailbox?${params}`);
+            state.mailbox.items = data.items || [];
+            state.mailbox.groups = [];
+            state.mailbox.totalCount = data.totalCount || 0;
+            renderMailboxTable();
+        }
         renderMailboxPagination();
         await refreshUnmatchedBadge();
     } catch (e) {
         showStatus("获取邮件记录失败: " + e.message, "error");
     }
+}
+
+function renderMailboxCard(row) {
+    const timeStr = row.timestamp ? row.timestamp.replace('T', ' ').slice(0, 19) : "-";
+    const directionBadge = row.direction === "INBOUND"
+        ? '<span class="badge">收件</span>'
+        : '<span class="badge ok">发件</span>';
+
+    const expertEmailLink = row.expertContactId
+        ? `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${row.expertContactId}">${escapeHtml(row.expertEmail || "")}</a>`
+        : escapeHtml(row.expertEmail || "-");
+
+    let sourceBadge = "";
+    if (row.direction === "OUTBOUND") {
+        if (row.triggeredBy === "SYSTEM") {
+            sourceBadge = '<span class="badge warn">系统自动</span>';
+        } else if (row.triggeredBy === "OPERATOR") {
+            sourceBadge = '<span class="badge">人工</span>';
+        } else if (row.triggeredBy === "MANUAL") {
+            sourceBadge = '<span class="badge">手动</span>';
+        }
+    }
+
+    const attachment = row.hasAttachment
+        ? '<span class="badge warn" title="有附件">📎 附件</span>'
+        : "";
+
+    const sendStatus = (row.direction === "OUTBOUND" && row.sendStatus !== "SENT")
+        ? `<span class="badge error" title="发送失败">发送失败</span>`
+        : "";
+
+    const actions = renderMailboxActions(row);
+
+    return `
+        <div class="mailbox-card" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">
+            <div class="mailbox-card-tags">
+                ${directionBadge}
+                ${renderMailboxTagBadges(row.tags)}
+                ${sourceBadge}
+                ${attachment}
+                ${sendStatus}
+            </div>
+            <div class="mailbox-card-subject">${escapeHtml(row.subject || "(无主题)")}</div>
+            <div class="mailbox-card-meta">
+                <span>${escapeHtml(timeStr)}</span>
+                <span>${escapeHtml(row.senderAccountCode || "-")}</span>
+                <span>${escapeHtml(row.expertName || "-")}</span>
+                <span>${expertEmailLink}</span>
+            </div>
+            ${actions ? `<div class="mailbox-card-actions">${actions}</div>` : ""}
+        </div>
+    `;
+}
+
+function renderMailboxExpertGroups() {
+    const list = $("#mailboxList");
+    const groups = state.mailbox.groups || [];
+
+    if (groups.length === 0) {
+        list.innerHTML = `<div class="mailbox-empty muted">暂无待处理专家</div>`;
+        return;
+    }
+
+    list.innerHTML = groups.map((group) => {
+        const nameLink = group.expertContactId
+            ? `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${group.expertContactId}">${escapeHtml(group.expertName || "-")}</a>`
+            : escapeHtml(group.expertName || "-");
+        const statusBadge = badge(operatorStatusLabels[group.operatorStatus] || group.operatorStatus || "?", "ok");
+        const levelBadge = badge(indexLevelLabels[group.expertIndexLevel] || group.expertIndexLevel || "?", "");
+        const emailLine = `${escapeHtml(group.expertEmail || "-")} · ${escapeHtml(group.expertOrcidId || "-")}`;
+        const mailCards = (group.mails || []).map((row) => renderMailboxCard(row)).join("");
+
+        return `
+            <details class="inbound-expert-group">
+                <summary class="inbound-expert-group-header">
+                    <span class="inbound-expert-group-name">${nameLink} ${statusBadge} ${levelBadge}</span>
+                    <span class="inbound-expert-group-email">${emailLine}</span>
+                    <span class="inbound-expert-group-count">${escapeHtml(group.pendingCount)} 封待处理</span>
+                </summary>
+                <div class="inbound-expert-group-mails">${mailCards}</div>
+            </details>
+        `;
+    }).join("");
 }
 
 function renderMailboxTable() {
@@ -11386,64 +11508,14 @@ function renderMailboxTable() {
         return;
     }
 
-    list.innerHTML = rows.map(row => {
-        const timeStr = row.timestamp ? row.timestamp.replace('T', ' ').slice(0, 19) : "-";
-        const directionBadge = row.direction === "INBOUND"
-            ? '<span class="badge">收件</span>'
-            : '<span class="badge ok">发件</span>';
-
-        const expertEmailLink = row.expertContactId
-            ? `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${row.expertContactId}">${escapeHtml(row.expertEmail || "")}</a>`
-            : escapeHtml(row.expertEmail || "-");
-
-        let sourceBadge = "";
-        if (row.direction === "OUTBOUND") {
-            if (row.triggeredBy === "SYSTEM") {
-                sourceBadge = '<span class="badge warn">系统自动</span>';
-            } else if (row.triggeredBy === "OPERATOR") {
-                sourceBadge = '<span class="badge">人工</span>';
-            } else if (row.triggeredBy === "MANUAL") {
-                sourceBadge = '<span class="badge">手动</span>';
-            }
-        }
-
-        const attachment = row.hasAttachment
-            ? '<span class="badge warn" title="有附件">📎 附件</span>'
-            : "";
-
-        // 只在发送失败时高亮，成功态不占视觉
-        const sendStatus = (row.direction === "OUTBOUND" && row.sendStatus !== "SENT")
-            ? `<span class="badge error" title="发送失败">发送失败</span>`
-            : "";
-
-        const actions = renderMailboxActions(row);
-
-        return `
-            <div class="mailbox-card" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">
-                <div class="mailbox-card-tags">
-                    ${directionBadge}
-                    ${renderMailboxTagBadges(row.tags)}
-                    ${sourceBadge}
-                    ${attachment}
-                    ${sendStatus}
-                </div>
-                <div class="mailbox-card-subject">${escapeHtml(row.subject || "(无主题)")}</div>
-                <div class="mailbox-card-meta">
-                    <span>${escapeHtml(timeStr)}</span>
-                    <span>${escapeHtml(row.senderAccountCode || "-")}</span>
-                    <span>${escapeHtml(row.expertName || "-")}</span>
-                    <span>${expertEmailLink}</span>
-                </div>
-                ${actions ? `<div class="mailbox-card-actions">${actions}</div>` : ""}
-            </div>
-        `;
-    }).join("");
+    list.innerHTML = rows.map((row) => renderMailboxCard(row)).join("");
 }
 
 function renderMailboxPagination() {
     const total = state.mailbox.totalCount || 0;
     const page = state.mailbox.page;
     const maxPage = Math.max(0, Math.ceil(total / state.mailbox.pageSize) - 1);
+    const unitLabel = state.mailbox.viewMode === "EXPERT" ? "位专家" : "条";
 
     // 生成页码窗口：当前页两侧各 2 页，首尾用省略号补齐
     const pages = [];
@@ -11462,7 +11534,7 @@ function renderMailboxPagination() {
     }
 
     $("#mailboxPagination").innerHTML = `
-        <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
+        <span class="muted">共 ${escapeHtml(total)} ${unitLabel}，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
         <button class="button secondary" data-action="mailbox-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
         ${pageBtns}
         <button class="button secondary" data-action="mailbox-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>

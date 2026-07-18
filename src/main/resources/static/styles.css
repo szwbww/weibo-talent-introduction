@@ -331,6 +331,62 @@ p {
     min-height: 32px;
 }
 
+.mailbox-view-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.mailbox-view-mode label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.mailbox-view-mode input {
+    position: absolute;
+    width: 1px;
+    min-width: 0;
+    height: 1px;
+    min-height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mailbox-view-mode label:hover {
+    color: var(--text-main);
+    background: rgba(var(--primary-rgb), 0.06);
+}
+
+.mailbox-view-mode label:has(input:checked) {
+    color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.mailbox-view-mode label:has(input:focus-visible) {
+    outline: 2px solid rgba(var(--primary-rgb), 0.35);
+    outline-offset: 1px;
+}
+
+.mailbox-view-mode label:has(input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* Toolbar groups: filters vs actions */
 .contacts-toolbar {
     justify-content: space-between;

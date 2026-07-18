@@ -679,6 +679,10 @@
         <section class="view" id="view-mailbox">
             <div class="toolbar">
                 <button class="button primary" id="mailboxRefreshBtn">刷新</button>
+                <div class="mailbox-view-mode" role="radiogroup" aria-label="收发件箱展示方式">
+                    <label><input type="radio" name="mailboxViewMode" value="MAIL" checked><span>按邮件</span></label>
+                    <label><input type="radio" name="mailboxViewMode" value="EXPERT"><span>按专家聚合</span></label>
+                </div>
                 <select id="mailboxFilterAccountCode">
                     <option value="">全部邮箱账号</option>
                 </select>
