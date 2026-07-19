@@ -574,10 +574,10 @@ class AiReplyDraftService(
             finalWarnings += UNAUTHORIZED_ACTION_REMOVED
         }
 
-        val readiness = if (TRUST_REPAIR_EXHAUSTED in contextWarnings) {
-            AiReplyDraftReadiness.BLOCKED
-        } else {
-            resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
+        val readiness = when {
+            TRUST_REPAIR_EXHAUSTED in contextWarnings -> AiReplyDraftReadiness.BLOCKED
+            removed -> AiReplyDraftReadiness.NEEDS_REVIEW
+            else -> resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
         }
 
         return AiReplyDraftResult(
@@ -832,8 +832,22 @@ class AiReplyDraftService(
             return AiReplyDraftReadiness.BLOCKED
         }
 
-        val policies = evidenceRuleIds.mapNotNull { ruleId ->
-            qaRuleRepository.findById(ruleId).orElse(null)?.replyPolicyEnum()
+        val rules = evidenceRuleIds.mapNotNull { ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)
+        }
+        if (rules.size != evidenceRuleIds.size) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+        if (rules.any { !it.enabled }) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+        if (rules.any { it.answerBody.isBlank() }) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+        val policies = try {
+            rules.map { it.replyPolicyEnum() }
+        } catch (_: IllegalArgumentException) {
+            return AiReplyDraftReadiness.BLOCKED
         }
         if (policies.any { it == QaReplyPolicy.NEVER }) {
             return AiReplyDraftReadiness.BLOCKED

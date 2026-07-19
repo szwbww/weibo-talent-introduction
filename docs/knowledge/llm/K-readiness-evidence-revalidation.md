@@ -3,7 +3,7 @@ id: K-readiness-evidence-revalidation
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-19
-hit_count: 1
+hit_count: 3
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-3
 severity: P1
 ---

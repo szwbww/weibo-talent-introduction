@@ -2266,6 +2266,8 @@ class AiReplyDraftServiceTest {
 
     @Test
     fun `resolveDraftReadiness returns BLOCKED when any UNSUPPORTED present`() {
+        val rule = sampleRule(1)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
         val draftService = service(LlmProperties(enabled = false), null)
         assertEquals(
             AiReplyDraftReadiness.BLOCKED,
@@ -2273,13 +2275,18 @@ class AiReplyDraftServiceTest {
                 listOf(
                     RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED),
                     RequestFactItem(2, "b", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-                )
+                ),
+                listOf(1L)
             )
         )
     }
 
     @Test
     fun `resolveDraftReadiness returns NEEDS_REVIEW when only PARTIAL no UNSUPPORTED`() {
+        val rule1 = sampleRule(1)
+        val rule2 = sampleRule(2).copy(replyBody = "Rule 2", answerBody = "Rule 2", keywords = "b")
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule1))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule2))
         val draftService = service(LlmProperties(enabled = false), null)
         assertEquals(
             AiReplyDraftReadiness.NEEDS_REVIEW,
@@ -2287,13 +2294,18 @@ class AiReplyDraftServiceTest {
                 listOf(
                     RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED),
                     RequestFactItem(2, "b", listOf(2L), RequestGroundingStatus.PARTIAL)
-                )
+                ),
+                listOf(1L, 2L)
             )
         )
     }
 
     @Test
     fun `resolveDraftReadiness returns READY when all GROUNDED`() {
+        val rule1 = sampleRule(1)
+        val rule2 = sampleRule(2).copy(replyBody = "Rule 2", answerBody = "Rule 2", keywords = "b")
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule1))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule2))
         val draftService = service(LlmProperties(enabled = false), null)
         assertEquals(
             AiReplyDraftReadiness.READY,
@@ -2301,7 +2313,8 @@ class AiReplyDraftServiceTest {
                 listOf(
                     RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED),
                     RequestFactItem(2, "b", listOf(2L), RequestGroundingStatus.GROUNDED)
-                )
+                ),
+                listOf(1L, 2L)
             )
         )
     }
@@ -3207,5 +3220,216 @@ class AiReplyDraftServiceTest {
         assertFalse(result.usedLlm)
         assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
         assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+    }
+
+    // ── Phase 5B: grounded fallback readiness & evidence revalidation ──────────
+
+    @Test
+    fun `grounded fallback with sanitize removal returns NEEDS_REVIEW on full AUTO facts`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(
+            replyBody = "Please send your CV for matching. Applicants submit materials for review.",
+            answerBody = "Please send your CV for matching. Applicants submit materials for review."
+        )
+        stubMatchPool(rule)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "What is salary support?",
+            operatorTurns = emptyList()
+        )
+
+        assertFalse(result.usedLlm)
+        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertTrue(result.draftText.contains("Applicants submit materials for review"))
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, result.draftReadiness)
+    }
+
+    @Test
+    fun `grounded fallback repair exhausted keeps BLOCKED over sanitize removal`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1).copy(
+            replyBody = "Salary info. Please send your CV.",
+            answerBody = "Salary info. Please send your CV."
+        )
+        val rule2 = sampleRule(2).copy(keywords = "visa", replyBody = "Visa info", answerBody = "Visa info")
+        stubMatchPool(rule, rule2)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?\n- Visa?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chats)
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.TRUST_REPAIR_EXHAUSTED))
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
+    }
+
+    @Test
+    fun `llm disabled fallback without removal returns READY for complete AUTO facts`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+
+        val result = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "What is salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyDraftReadiness.READY, result.draftReadiness)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns BLOCKED when evidence rule missing from repository`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L, 999L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns BLOCKED when evidence rule is disabled`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(enabled = false)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns BLOCKED when evidence rule has blank answerBody`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(answerBody = "   ")
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns BLOCKED when evidence rule has NEVER policy`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(
+            replyPolicy = com.weibo.talentintroduction.qa.domain.QaReplyPolicy.NEVER.name,
+            replyBody = "Salary info",
+            answerBody = "Salary info"
+        )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns NEEDS_REVIEW when evidence rule has REVIEW policy`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(
+            replyPolicy = com.weibo.talentintroduction.qa.domain.QaReplyPolicy.REVIEW.name,
+            replyBody = "Salary info",
+            answerBody = "Salary info"
+        )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns READY when all evidence rules are present enabled auto with answerBody`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.READY, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness noncritical unsupported still returns NEEDS_REVIEW with valid evidence`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(
+                RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(2, "b", emptyList(), RequestGroundingStatus.UNSUPPORTED,
+                    intents = listOf(RequestIntentCoverage(
+                        intentKey = "general.answer",
+                        title = "General",
+                        requiredCoverageKeys = emptyList(),
+                        evidenceRuleIds = emptyList(),
+                        status = "UNSUPPORTED",
+                        missingEvidenceKeys = emptyList()
+                    )))
+            ),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, result)
+    }
+
+    @Test
+    fun `resolveDraftReadiness returns BLOCKED when evidence rule has invalid replyPolicy`() {
+        stubDefaultFrame()
+        val rule = sampleRule(1).copy(replyPolicy = "invalid")
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
+        val draftService = service(LlmProperties(enabled = false), null)
+
+        val result = draftService.resolveDraftReadiness(
+            listOf(RequestFactItem(1, "a", listOf(1L), RequestGroundingStatus.GROUNDED)),
+            listOf(1L)
+        )
+
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result)
     }
 }
