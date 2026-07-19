@@ -3,7 +3,7 @@ id: K-validation-reason-before-no-match
 domain: mail
 created: 2026-07-19
 last_used: 2026-07-19
-hit_count: 3
+hit_count: 4
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-1
 severity: P1
 ---

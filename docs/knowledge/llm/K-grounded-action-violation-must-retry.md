@@ -3,7 +3,7 @@ id: K-grounded-action-violation-must-retry
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-19
-hit_count: 7
+hit_count: 8
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-2
 severity: P1
 ---

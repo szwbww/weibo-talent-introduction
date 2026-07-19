@@ -3,7 +3,7 @@ id: K-rich-reply-qa-audit-reuse
 domain: qa
 created: 2026-06-30
 last_used: 2026-07-19
-hit_count: 24
+hit_count: 25
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---

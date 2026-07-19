@@ -2,8 +2,8 @@
 id: K-ai-adopt-direct-send-no-residual-gates
 domain: frontend
 created: 2026-07-16
-last_used: 2026-07-17
-hit_count: 6
+last_used: 2026-07-19
+hit_count: 7
 source: fix-v:ai-adopt-direct-manual-send:fix-1
 severity: P1
 ---

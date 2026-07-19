@@ -77,6 +77,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - `GROUNDED/PARTIAL/UNSUPPORTED` 只属于操作端审核状态；PARTIAL 外文只含有据事实，UNSUPPORTED 不生成答案，materializer 必须拒绝内部状态 token 或说明句进入邮件正文。(K-grounding-status-ui-only)
 - AI 回复 loading 必须挂在稳定的 `.ai-chat-panel`，由共享 helper 在 finally 恢复遮罩和控件状态；训练模拟与收发件箱共用 requestSeq/邮件/模型快照防陈旧响应。(K-ai-reply-loading-panel)
 - AI 聊天每个草稿条目必须自带自己的 raw/rendered 采用边界；采用旧草稿不可复用最后一次响应的内容。若未来恢复审核，再为每条草稿单独保存 review state。(K-ai-draft-review-state-per-draft)
+- AI 草稿是否被编辑只能决定 raw/rendered 采用边界，不能证明缺失事实已解决；复验必须针对当前全文和服务端事实重新执行，且当前策略不得把编辑差异变成历史审核发送闸门。(K-ai-draft-edit-not-review-confirmation)
 - 删除或重构跨详情调用的前端 modal/workflow helper 时，必须同步删除 reset、详情切换和全局事件绑定的引用，并用 DOM stub 覆盖这些入口，避免遗留未定义函数。(K-ai-reply-modal-helper-scope)
 - 动作安全 sanitizer 无违规时必须逐字返回原文；有违规时按原始 span 删除且只清理接缝，禁止全局压缩空白破坏布局。(K-action-sanitizer-preserve-layout)
 - 只读专家画像的 ORCID 缺失、允许层无文档和查询异常都必须统一产生 profile-not-found；研究请求还要标记 research-context-insufficient，且不得触发 enrichment。(K-ai-reply-profile-absence-warning)
