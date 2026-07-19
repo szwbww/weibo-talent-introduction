@@ -195,6 +195,7 @@ class GroundedAutoReplyDecisionService(
                 warning == AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE ||
                 warning == AiReplyGroundedDraftMaterializer.WARNING_CLAIM_VALIDATION_FAILED ||
                 warning == AiReplyDraftService.TRUST_REPAIR_EXHAUSTED ||
+                warning == AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED ||
                 warning.startsWith("AI_REPLY_CLAIM_") ||
                 warning.startsWith("AI_REPLY_ACTION_")
         }

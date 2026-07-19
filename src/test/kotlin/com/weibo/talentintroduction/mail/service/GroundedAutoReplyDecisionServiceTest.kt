@@ -190,6 +190,37 @@ class GroundedAutoReplyDecisionServiceTest {
     }
 
     @Test
+    fun `READY draft with UNAUTHORIZED_ACTION_REMOVED returns AI_REPLY_VALIDATION_FAILED`() {
+        stubGenerate(
+                readyDraft().copy(
+                    contextWarnings = listOf(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED)
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED, decision.reason)
+    }
+
+    @Test
+    fun `BLOCKED draft with UNAUTHORIZED_ACTION_REMOVED returns AI_REPLY_VALIDATION_FAILED`() {
+        stubGenerate(
+                readyDraft().copy(
+                    draftReadiness = AiReplyDraftReadiness.BLOCKED,
+                    contextWarnings = listOf(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED)
+                )
+            )
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED, decision.reason)
+    }
+
+    @Test
     fun `buildReplySubject keeps existing Re prefix`() {
         val svc = service()
         assertEquals("Re: Question", svc.buildReplySubject("Question"))
