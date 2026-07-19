@@ -2,8 +2,8 @@
 id: K-grounding-status-ui-only
 domain: llm
 created: 2026-07-13
-last_used: 2026-07-16
-hit_count: 9
+last_used: 2026-07-19
+hit_count: 10
 source: create-p:ai-reply-03-structured-answer-materialization
 severity: P1
 ---

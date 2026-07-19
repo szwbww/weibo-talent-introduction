@@ -2,8 +2,8 @@
 id: K-research-fit-dual-evidence
 domain: llm
 created: 2026-07-13
-last_used: 2026-07-16
-hit_count: 15
+last_used: 2026-07-19
+hit_count: 16
 source: create-p:ai-reply-02-grounding-evidence-semantics
 severity: P1
 ---

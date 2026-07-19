@@ -1,10 +1,10 @@
 ---
 id: K-ai-generate-single-freeform-seam
 domain: qa
-created: 2026-07-08
-last_used: 2026-07-13
-hit_count: 15
-source: create-p:ai-training-dialogue-fewshot
+created: 2026-07-19
+last_used: 2026-07-19
+hit_count: 16
+source: create-p:ai-reply-04-grounded-trust-content-plan
 ---
-经验：`AiReplyDraftService.generate()` 全库仅两个调用方——`UnmatchedInboundMailController.aiReplyTurn`（人工工作台 AI 草稿）与 `AiTrainingController.simulate`（AI 训练模拟）。任何要"对所有 FREE_FORM 生成生效"的 prompt 能力（知识注入、few-shot、约束），改 `buildFreeFormMessages` 这一个 seam 即可全覆盖，不需要也不应该在 controller 层各改一份。
-注意：QA_MATCHED 模式（`buildMatchedMessages`）有 verbatim 拼接契约，prompt 增强类改动默认不得触碰；fallback / `composeSimulateDeterministicDraft` 是 LLM 之外的独立文本源，同样不注入。
+经验：`AiReplyDraftService.generate()` 当前有三个生产入口：`UnmatchedInboundMailController.aiReplyTurn`（人工工作台）、`AiTrainingController.simulate`（训练模拟）和 `GroundedAutoReplyDecisionService.decide`（自动实发/预览共享 decision）。任何生成 prompt、结构协议、claim/action gate 改动必须收口在 service 内，不能在 controller 或自动服务各复制一份。
+正确做法：FREE_FORM 只改 `buildFreeFormMessages`；QA_GROUNDED 同时覆盖首轮、operator continuation 和动作纠正重试的 build→materialize→validate 链；deterministic fallback 是独立文本源。三入口共享 `AiReplyDraftResult`，自动入口另有 fail-closed 发送门禁。

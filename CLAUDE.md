@@ -68,10 +68,11 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - QA 使用审计的实际选用规则必须以 `mail_record_qa_rule` 为准；操作日志仅记录上下文，只有历史关联缺失时才允许回退日志字段。(K-audit-selected-source)
 - QA 人工外发回复的纯文本与 HTML 渲染、风险校验、落库和审计必须共享同一 canonical `qaRuleIds`，并在 SMTP 前完成校验。(K-qa-outbound-render-seams)
 - 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
-- 人工回复 frame（问候、致谢、结束语）存在外发、确定性润色 fallback、前端预览三个消费者；修改时必须同源同序，且不得波及自动回复使用的 `QaReplyComposer.compose`。(K-manual-frame-three-consumers)
-- AI 草稿生成只有训练模拟与收发件箱两个调用方，跨入口 prompt/约束/模型能力应收口在 `AiReplyDraftService.generate()`；QA_MATCHED verbatim 与 deterministic fallback 仍是独立边界。(K-ai-generate-single-freeform-seam)
+- 回复 frame（问候、致谢、结束语）的现存消费者集中在 `AiReplyPointByPointComposer` Grounded 组装及 `AiReplyDraftService` matched/FREE_FORM prompt/fallback；改 Grounded frame 只改前者，改全局 snippet 前重新 grep 全部 `resolveManualFrame/resolveAck`。(K-manual-frame-three-consumers)
+- AI 草稿生成有训练模拟、收发件箱工作台、Grounded 自动 decision 三个生产入口；跨入口 prompt/结构/claim/action gate 必须收口在 `AiReplyDraftService.generate()`，deterministic fallback 与自动 fail-closed 门禁仍是独立边界。(K-ai-generate-single-freeform-seam)
 - 若未来重新启用 AI 草稿审核发送闸门，authority 必须以服务端 current identity/readiness/canonical snapshot 为准；当前“采用后直接人工发送”不以 identity、readiness 或审计记录决定外发。(K-ai-review-server-authoritative-snapshot)
 - 多请求 grounded LLM 首轮与动作重试都必须先按严格 request-index JSON materialize，再做 claim/action policy；无效结构统一 fallback，raw JSON 不得进入 response。(K-grounded-json-materialize-before-policy)
+- `GROUNDED/PARTIAL/UNSUPPORTED` 只属于操作端审核状态；PARTIAL 外文只含有据事实，UNSUPPORTED 不生成答案，materializer 必须拒绝内部状态 token 或说明句进入邮件正文。(K-grounding-status-ui-only)
 - AI 回复 loading 必须挂在稳定的 `.ai-chat-panel`，由共享 helper 在 finally 恢复遮罩和控件状态；训练模拟与收发件箱共用 requestSeq/邮件/模型快照防陈旧响应。(K-ai-reply-loading-panel)
 - AI 聊天每个草稿条目必须自带自己的 raw/rendered 采用边界；采用旧草稿不可复用最后一次响应的内容。若未来恢复审核，再为每条草稿单独保存 review state。(K-ai-draft-review-state-per-draft)
 - 删除或重构跨详情调用的前端 modal/workflow helper 时，必须同步删除 reset、详情切换和全局事件绑定的引用，并用 DOM stub 覆盖这些入口，避免遗留未定义函数。(K-ai-reply-modal-helper-scope)
@@ -99,6 +100,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - Flyway 对 `qa_rule` 的 keywords/reply_body UPDATE 会覆盖运营运行时改动；关键词/正文迁移须上线前基线核对，CONCAT 带 NOT LIKE、INSERT 带 NOT EXISTS。(K-qa-rule-runtime-vs-migration-writes)
 - FREE_FORM LLM 关闭/失败须有独立非空确定性兜底，禁止空 `qaRuleIds` 复用 QA_MATCHED fallback；发送审计 `qaRuleIds` 仍须为空。(K-free-form-fallback-nonempty)
 - LLM 超时回退须专用 RestTemplate 接入 connect/read timeout，超时返回 null 由确定性组装兜底，不得用无 timeout 通用 client 阻塞工作台。(K-llm-timeout-fallback)
+- 人工富文本外发的 raw text/HTML 必须在每次发送时先校验占位符，再用最终 sender/contact 渲染，之后才允许 SMTP、mail_record 与审计；前端 adoption 标记不能决定此安全边界。(K-manual-rich-render-before-send)
 - 改变 QA `replyBody` 出站形态须覆盖 QaMatchService/QaReplyComposer、PendingMailOperationService、LlmStitchService、MailComposeTemplateService.resolveBlocks 全集。(K-qa-replybody-outbound-sites)
 
 ---
