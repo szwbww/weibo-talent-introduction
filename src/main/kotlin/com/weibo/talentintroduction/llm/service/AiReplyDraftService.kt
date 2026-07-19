@@ -2,10 +2,13 @@ package com.weibo.talentintroduction.llm.service
 
 import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
+import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
+import java.security.MessageDigest
+import java.time.Instant
 
 enum class AiReplyMode {
     QA_MATCHED,
@@ -31,6 +34,19 @@ data class AiReplyTurn(
     val operatorInstruction: String
 )
 
+data class AiReplyPromptSnapshot(
+    val systemPrompt: String,
+    val version: String
+)
+
+data class AiReplyEvidenceSnapshot(
+    val ruleId: Long,
+    val displayName: String,
+    val updatedAt: String?,
+    val answerBodySha256: String,
+    val available: Boolean
+)
+
 data class AiReplyDraftResult(
     val draftText: String,
     val usedLlm: Boolean,
@@ -44,7 +60,10 @@ data class AiReplyDraftResult(
     val selectedModel: String = AiReplyModel.DEEPSEEK_V4_FLASH.name,
     val requestFacts: List<RequestFactItem> = emptyList(),
     val generationState: AiReplyGenerationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-    val draftReadiness: AiReplyDraftReadiness = AiReplyDraftReadiness.READY
+    val draftReadiness: AiReplyDraftReadiness = AiReplyDraftReadiness.READY,
+    val promptVersion: String = "",
+    val evidenceSetVersion: String = "",
+    val evidenceSources: List<AiReplyEvidenceSnapshot> = emptyList()
 )
 
 internal data class FreeFormBuildResult(
@@ -134,6 +153,8 @@ class AiReplyDraftService(
             mode = AiReplyMode.QA_GROUNDED
         }
 
+        val promptSnapshot = resolvePromptSnapshot(mode)
+
         if (!properties.enabled) {
             return groundedFallbackResult(
                 resolved = resolved,
@@ -148,7 +169,8 @@ class AiReplyDraftService(
                 contextWarnings = contextWarnings,
                 plan = plan,
                 allowedActions = allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED
+                generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED,
+                promptVersion = promptSnapshot.version
             )
         }
 
@@ -167,7 +189,8 @@ class AiReplyDraftService(
                 contextWarnings = contextWarnings,
                 plan = plan,
                 allowedActions = allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                generationState = AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE,
+                promptVersion = promptSnapshot.version
             )
         }
 
@@ -207,7 +230,8 @@ class AiReplyDraftService(
                     operatorInstruction = operatorInstruction,
                     expertProfile = expertProfile,
                     mailHistory = mailHistory,
-                    promptRuleIds = resolved.promptRuleIds
+                    promptRuleIds = resolved.promptRuleIds,
+                    promptSnapshot = promptSnapshot
                 )
                 fewShotDialogRefs = buildResult.fewShotDialogRefs
                 buildResult.messages
@@ -236,7 +260,8 @@ class AiReplyDraftService(
                 inboundText = inboundText,
                 expertProfile = expertProfile,
                 mailHistory = mailHistory,
-                operatorInstruction = operatorInstruction
+                operatorInstruction = operatorInstruction,
+                promptVersion = promptSnapshot.version
             )
         }
 
@@ -261,7 +286,8 @@ class AiReplyDraftService(
                 mode = mode,
                 fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings,
-                plan = plan
+                plan = plan,
+                promptVersion = promptSnapshot.version
             )
         } else {
             groundedFallbackResult(
@@ -277,7 +303,8 @@ class AiReplyDraftService(
                 contextWarnings = contextWarnings,
                 plan = plan,
                 allowedActions = plan.allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                promptVersion = promptSnapshot.version
             )
         }
     }
@@ -298,7 +325,8 @@ class AiReplyDraftService(
         inboundText: String,
         expertProfile: String?,
         mailHistory: String?,
-        operatorInstruction: String?
+        operatorInstruction: String?,
+        promptVersion: String
     ): AiReplyDraftResult {
         val llmText = try {
             client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
@@ -320,7 +348,8 @@ class AiReplyDraftService(
                 contextWarnings = contextWarnings,
                 plan = plan,
                 allowedActions = plan.allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                promptVersion = promptVersion
             )
         }
 
@@ -343,7 +372,8 @@ class AiReplyDraftService(
                 mode = mode,
                 fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings,
-                plan = plan
+                plan = plan,
+                promptVersion = promptVersion
             )
         }
 
@@ -375,7 +405,8 @@ class AiReplyDraftService(
                 contextWarnings = mergedWarnings.distinct(),
                 plan = plan,
                 allowedActions = plan.allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                promptVersion = promptVersion
             )
         }
 
@@ -397,7 +428,8 @@ class AiReplyDraftService(
                 mode = mode,
                 fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings,
-                plan = plan
+                plan = plan,
+                promptVersion = promptVersion
             )
         }
 
@@ -418,7 +450,8 @@ class AiReplyDraftService(
             contextWarnings = mergedWarnings.distinct(),
             plan = plan,
             allowedActions = plan.allowedActions,
-            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+            promptVersion = promptVersion
         )
     }
 
@@ -506,7 +539,8 @@ class AiReplyDraftService(
         mode: AiReplyMode,
         fewShotDialogRefs: List<String>,
         contextWarnings: List<String>,
-        plan: GroundedContentPlan
+        plan: GroundedContentPlan,
+        promptVersion: String
     ): AiReplyDraftResult {
         val text = validated.text
         val finalWarnings = contextWarnings.toMutableList()
@@ -525,6 +559,13 @@ class AiReplyDraftService(
             resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
         }
 
+        val (evidenceSetVersion, evidenceSources, evidenceObservedWarnings) = buildEvidenceSnapshotForSelection(resolved.sendQaRuleIds)
+        if (evidenceObservedWarnings.isNotEmpty()) {
+            evidenceObservedWarnings.forEach { w ->
+                if (w !in finalWarnings) finalWarnings += w
+            }
+        }
+
         return AiReplyDraftResult(
             draftText = finalText,
             usedLlm = usedLlm,
@@ -538,7 +579,10 @@ class AiReplyDraftService(
             selectedModel = selectedModel,
             requestFacts = resolved.requestFacts,
             generationState = finalState,
-            draftReadiness = readiness
+            draftReadiness = readiness,
+            promptVersion = promptVersion,
+            evidenceSetVersion = evidenceSetVersion,
+            evidenceSources = evidenceSources
         )
     }
 
@@ -555,7 +599,8 @@ class AiReplyDraftService(
         contextWarnings: List<String>,
         plan: GroundedContentPlan,
         allowedActions: Set<AiReplyAction>,
-        generationState: AiReplyGenerationState
+        generationState: AiReplyGenerationState,
+        promptVersion: String
     ): AiReplyDraftResult {
         val fallbackText = if (operatorTurns.isEmpty()) {
             if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
@@ -580,6 +625,13 @@ class AiReplyDraftService(
             else -> resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
         }
 
+        val (evidenceSetVersion, evidenceSources, evidenceObservedWarnings) = buildEvidenceSnapshotForSelection(resolved.sendQaRuleIds)
+        if (evidenceObservedWarnings.isNotEmpty()) {
+            evidenceObservedWarnings.forEach { w ->
+                if (w !in finalWarnings) finalWarnings += w
+            }
+        }
+
         return AiReplyDraftResult(
             draftText = finalText,
             usedLlm = false,
@@ -593,7 +645,10 @@ class AiReplyDraftService(
             selectedModel = selectedModel,
             requestFacts = resolved.requestFacts,
             generationState = generationState,
-            draftReadiness = readiness
+            draftReadiness = readiness,
+            promptVersion = promptVersion,
+            evidenceSetVersion = evidenceSetVersion,
+            evidenceSources = evidenceSources
         )
     }
 
@@ -654,7 +709,8 @@ class AiReplyDraftService(
         mode: AiReplyMode,
         fewShotDialogRefs: List<String>,
         contextWarnings: List<String>,
-        plan: GroundedContentPlan
+        plan: GroundedContentPlan,
+        promptVersion: String
     ): AiReplyDraftResult {
         var text = draftText
         var used = usedLlm
@@ -705,6 +761,13 @@ class AiReplyDraftService(
 
         val readiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
 
+        val (evidenceSetVersion, evidenceSources, evidenceObservedWarnings) = buildEvidenceSnapshotForSelection(resolved.sendQaRuleIds)
+        if (evidenceObservedWarnings.isNotEmpty()) {
+            evidenceObservedWarnings.forEach { w ->
+                if (w !in warnings) warnings += w
+            }
+        }
+
         return AiReplyDraftResult(
             draftText = text,
             usedLlm = used,
@@ -718,7 +781,10 @@ class AiReplyDraftService(
             selectedModel = selectedModel,
             requestFacts = resolved.requestFacts,
             generationState = finalState,
-            draftReadiness = readiness
+            draftReadiness = readiness,
+            promptVersion = promptVersion,
+            evidenceSetVersion = evidenceSetVersion,
+            evidenceSources = evidenceSources
         )
     }
 
@@ -922,16 +988,18 @@ class AiReplyDraftService(
         operatorInstruction: String? = null,
         expertProfile: String? = null,
         mailHistory: String? = null,
-        promptRuleIds: List<Long> = emptyList()
+        promptRuleIds: List<Long> = emptyList(),
+        promptSnapshot: AiReplyPromptSnapshot
     ): FreeFormBuildResult {
         val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText, max = 2)
         val messages = mutableListOf<LlmChatMessage>()
-        val systemPrompt = if (fewShots.isEmpty()) {
-            buildFreeFormSystemPrompt()
+        val systemPrompt = promptSnapshot.systemPrompt
+        val augmentedPrompt = if (fewShots.isEmpty()) {
+            systemPrompt
         } else {
-            buildFreeFormSystemPrompt() + buildFewShotBoundaryNote(fewShots.size)
+            systemPrompt + buildFewShotBoundaryNote(fewShots.size)
         }
-        messages += LlmChatMessage(role = "system", content = systemPrompt)
+        messages += LlmChatMessage(role = "system", content = augmentedPrompt)
         fewShots.forEach { dialogue ->
             messages += dialogue.messages
         }
@@ -1288,5 +1356,76 @@ class AiReplyDraftService(
         const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"
         const val INSUFFICIENT_SAFE_REPLY =
             "The available approved information is not sufficient for a reliable reply, so this item should be confirmed manually."
+        const val PROMPT_VERSION_QA_MATCHED = "qa-matched-v1"
+        const val PROMPT_VERSION_QA_GROUNDED = "qa-grounded-trust-json-v2"
+        const val PROMPT_VERSION_FREE_FORM_DEFAULT = "free-form-default-v1"
+        const val WARNING_EVIDENCE_SOURCE_UNAVAILABLE = "AI_REPLY_EVIDENCE_SOURCE_UNAVAILABLE"
+        const val WARNING_EVIDENCE_SOURCE_READ_ERROR = "AI_REPLY_EVIDENCE_SOURCE_READ_ERROR"
+        val PREFLIGHT_VERSION_CHARSET = Regex("^[a-zA-Z0-9._:\\-]*$")
+
+        fun sha256Hex(input: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val hash = digest.digest(input.toByteArray(Charsets.UTF_8))
+            return hash.joinToString("") { "%02x".format(it) }
+        }
+    }
+
+    fun buildEvidenceSnapshotForSelection(sendQaRuleIds: List<Long>): Triple<String, List<AiReplyEvidenceSnapshot>, List<String>> {
+        val sources = mutableListOf<AiReplyEvidenceSnapshot>()
+        val observedWarnings = mutableListOf<String>()
+        for (ruleId in sendQaRuleIds.distinct()) {
+            val rule = try {
+                qaRuleRepository.findById(ruleId).orElse(null)
+            } catch (ex: Exception) {
+                observedWarnings += WARNING_EVIDENCE_SOURCE_READ_ERROR
+                null
+            }
+            if (rule == null || !rule.enabled || rule.answerBody.isBlank()) {
+                sources += AiReplyEvidenceSnapshot(
+                    ruleId = ruleId,
+                    displayName = rule?.displayName?.takeIf { it.isNotBlank() } ?: "未命名事实",
+                    updatedAt = rule?.updatedAt?.toString(),
+                    answerBodySha256 = "",
+                    available = false
+                )
+                if (WARNING_EVIDENCE_SOURCE_UNAVAILABLE !in observedWarnings) {
+                    observedWarnings += WARNING_EVIDENCE_SOURCE_UNAVAILABLE
+                }
+            } else {
+                val bodyHash = sha256Hex(rule.answerBody)
+                sources += AiReplyEvidenceSnapshot(
+                    ruleId = ruleId,
+                    displayName = rule.displayName?.takeIf { it.isNotBlank() } ?: "未命名事实",
+                    updatedAt = rule.updatedAt?.toString(),
+                    answerBodySha256 = bodyHash,
+                    available = true
+                )
+            }
+        }
+        val versionParts = sources.map { "${it.ruleId}:${it.available}:${it.updatedAt}:${it.answerBodySha256}" }
+        val aggregateHash = sha256Hex(versionParts.joinToString("|"))
+        val evidenceSetVersion = aggregateHash
+        return Triple(evidenceSetVersion, sources, observedWarnings.distinct())
+    }
+
+    fun hasBlockingTrustGapForSelection(requestFacts: List<RequestFactItem>): Boolean =
+        contentPlanner.hasBlockingTrustGap(requestFacts)
+
+    private fun resolvePromptSnapshot(mode: AiReplyMode): AiReplyPromptSnapshot {
+        return when (mode) {
+            AiReplyMode.QA_MATCHED -> AiReplyPromptSnapshot("", PROMPT_VERSION_QA_MATCHED)
+            AiReplyMode.QA_GROUNDED -> AiReplyPromptSnapshot("", PROMPT_VERSION_QA_GROUNDED)
+            AiReplyMode.FREE_FORM -> {
+                val effective = aiPromptConfigService.getEffectiveDto()
+                val systemPrompt = effective.freeFormSystemPrompt
+                if (!effective.isCustom) {
+                    AiReplyPromptSnapshot(systemPrompt, PROMPT_VERSION_FREE_FORM_DEFAULT)
+                } else {
+                    val shortHash = sha256Hex(systemPrompt).take(12)
+                    val updatedAt = effective.updatedAt ?: "none"
+                    AiReplyPromptSnapshot(systemPrompt, "free-form-custom:$updatedAt:$shortHash")
+                }
+            }
+        }
     }
 }

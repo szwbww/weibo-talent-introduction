@@ -58,7 +58,23 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
     private val aiTrainingQaService = Mockito.mock(AiTrainingQaService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val aiReplyContextService = Mockito.mock(AiReplyContextService::class.java)
-    private val aiReplyReviewAuditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+    private val aiReplyReviewAuditService = Mockito.mock(AiReplyReviewAuditService::class.java) { invocation ->
+        if (invocation.method.name == "recordInitialDraft") {
+            val result = invocation.getArgument<AiReplyDraftResult>(2)
+            val svc = com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService(
+                operatorActionLogService
+            )
+            svc.buildSnapshot(result)
+        } else if (invocation.method.name == "buildSnapshot") {
+            val result = invocation.getArgument<AiReplyDraftResult>(0)
+            val svc = com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService(
+                operatorActionLogService
+            )
+            svc.buildSnapshot(result)
+        } else {
+            Mockito.RETURNS_DEFAULTS.answer(invocation)
+        }
+    }
 
     private val controller = UnmatchedInboundMailController(
         unmatchedInboundMailService,

@@ -31,6 +31,13 @@ class AiReplyDraftServiceTest {
     init {
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenAnswer { invocation -> invocation.getArgument(0) }
+        Mockito.`when`(aiPromptConfigService.getEffectiveDto())
+            .thenReturn(AiPromptConfigEffectiveDto(
+                freeFormSystemPrompt = FreeFormPromptDefaults.defaultFreeFormSystemPrompt(),
+                constraints = null,
+                updatedAt = null,
+                isCustom = false
+            ))
         Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
             .thenReturn(emptyList())
     }
@@ -447,6 +454,13 @@ class AiReplyDraftServiceTest {
         val customPrompt = "Custom free-form prompt with extra constraints."
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenReturn(customPrompt)
+        Mockito.`when`(aiPromptConfigService.getEffectiveDto())
+            .thenReturn(AiPromptConfigEffectiveDto(
+                freeFormSystemPrompt = customPrompt,
+                constraints = null,
+                updatedAt = "2026-07-19T00:00:00",
+                isCustom = true
+            ))
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -714,17 +728,25 @@ class AiReplyDraftServiceTest {
     fun `free form without keyword match keeps messages unchanged`() {
         stubEmptyFrame()
         val draftService = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null)
+        val effectiveDto = aiPromptConfigService.getEffectiveDto()
+        val promptSnapshot = if (effectiveDto.isCustom) {
+            AiReplyPromptSnapshot(effectiveDto.freeFormSystemPrompt, "free-form-custom:${effectiveDto.updatedAt}:${AiReplyDraftService.sha256Hex(effectiveDto.freeFormSystemPrompt).take(12)}")
+        } else {
+            AiReplyPromptSnapshot(effectiveDto.freeFormSystemPrompt, "free-form-default-v1")
+        }
         val baseline = draftService.buildFreeFormMessages(
             inboundText = "Hello without keywords",
             operatorTurns = emptyList(),
             expertProfile = "Name: Dr. Smith",
-            mailHistory = "History"
+            mailHistory = "History",
+            promptSnapshot = promptSnapshot
         )
         val result = draftService.buildFreeFormMessages(
             inboundText = "Hello without keywords",
             operatorTurns = emptyList(),
             expertProfile = "Name: Dr. Smith",
-            mailHistory = "History"
+            mailHistory = "History",
+            promptSnapshot = promptSnapshot
         )
 
         assertEquals(baseline.messages, result.messages)

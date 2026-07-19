@@ -14,6 +14,8 @@ import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.llm.controller.IntentCoverageResponse
 import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
+import com.weibo.talentintroduction.llm.service.AiReplyAction
+import com.weibo.talentintroduction.llm.service.AiReplyActionPolicy
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
@@ -59,6 +61,8 @@ class PendingMailOperationService(
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
+        const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
+        const val AI_REPLY_PREFLIGHT_NO_EVIDENCE = "AI_REPLY_PREFLIGHT_NO_EVIDENCE"
     }
 
     @Transactional
@@ -529,6 +533,165 @@ class PendingMailOperationService(
             note = note
         )
     }
+
+    fun preflightEditedAiReply(
+        inboundProcessingId: Long,
+        factRuleIds: List<Long>,
+        expectedEvidenceSetVersion: String,
+        textBody: String
+    ): AiReplyPreflightResult {
+        require(textBody.isNotBlank() && textBody.length <= 20000) {
+            "textBody must be non-empty and <= 20000 characters"
+        }
+        require(factRuleIds.size <= 50 && factRuleIds.all { it > 0 } && factRuleIds.size == factRuleIds.distinct().size) {
+            "factRuleIds must be positive, deduplicated, and <= 50 items"
+        }
+        require(expectedEvidenceSetVersion.isEmpty() || expectedEvidenceSetVersion.length <= 128) {
+            "expectedEvidenceSetVersion must be <= 128 characters"
+        }
+        require(expectedEvidenceSetVersion.isEmpty() || AiReplyDraftService.PREFLIGHT_VERSION_CHARSET.matches(expectedEvidenceSetVersion)) {
+            "expectedEvidenceSetVersion contains invalid characters"
+        }
+
+        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+            .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
+        val inboundText = inboundMessageBody(record)
+        val contactId = record.expertContactId
+            ?: error("Inbound mail not bound to a contact")
+        val contact = expertContactRepository.findById(contactId)
+            .orElseThrow { error("Expert contact not found: $contactId") }
+        val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
+
+        val warningCodes = mutableListOf<String>()
+
+        val selection = if (factRuleIds.isNotEmpty()) {
+            try {
+                qaFactSelectionService.select(inboundText, factRuleIds, researchProfileSufficient)
+            } catch (ex: Exception) {
+                warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+                qaFactSelectionService.select(inboundText, null, researchProfileSufficient)
+            }
+        } else {
+            qaFactSelectionService.select(inboundText, null, researchProfileSufficient)
+        }
+
+        val canonicalFactIds = if (factRuleIds.isNotEmpty()) selection.sendQaRuleIds else emptyList()
+        val readiness = aiReplyDraftService.resolveDraftReadinessForSelection(
+            selection.requestFacts,
+            canonicalFactIds
+        )
+        val (currentEvidenceSetVersion, _, _) = aiReplyDraftService.buildEvidenceSnapshotForSelection(canonicalFactIds)
+
+        if (expectedEvidenceSetVersion.isNotBlank() && expectedEvidenceSetVersion != currentEvidenceSetVersion) {
+            if (AI_REPLY_PREFLIGHT_SOURCE_CHANGED !in warningCodes) {
+                warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+            }
+        }
+
+        if (factRuleIds.isNotEmpty()) {
+            val validCount = canonicalFactIds.size
+            val requestedCount = factRuleIds.size
+            if (validCount < requestedCount) {
+                if (AI_REPLY_PREFLIGHT_SOURCE_CHANGED !in warningCodes) {
+                    warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+                }
+            }
+
+            for (ruleId in factRuleIds) {
+                val rule = try {
+                    qaRuleRepository.findById(ruleId).orElse(null)
+                } catch (_: Exception) {
+                    null
+                }
+                if (rule == null || !rule.enabled) {
+                    if (AI_REPLY_PREFLIGHT_SOURCE_CHANGED !in warningCodes) {
+                        warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+                    }
+                    continue
+                }
+                if (rule.answerBody.isBlank()) {
+                    if (AI_REPLY_PREFLIGHT_SOURCE_CHANGED !in warningCodes) {
+                        warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+                    }
+                }
+                if (rule.replyPolicyEnum() == QaReplyPolicy.NEVER) {
+                    if (AI_REPLY_PREFLIGHT_SOURCE_CHANGED !in warningCodes) {
+                        warningCodes += AI_REPLY_PREFLIGHT_SOURCE_CHANGED
+                    }
+                }
+            }
+        } else {
+            warningCodes += AI_REPLY_PREFLIGHT_NO_EVIDENCE
+        }
+
+        val claimValidation = aiReplyHighRiskClaimValidator.validatePlainText(textBody, canonicalFactIds)
+        if (!claimValidation.valid) {
+            warningCodes += claimValidation.warningCodes
+        }
+
+        if (aiReplyHighRiskClaimValidator.containsTrustRhetoric(textBody)) {
+            warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC
+        }
+
+        val hasBlockingTrust = aiReplyDraftService.hasBlockingTrustGapForSelection(selection.requestFacts)
+        if (hasBlockingTrust && aiReplyHighRiskClaimValidator.containsConfidentialitySubstitute(textBody)) {
+            warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
+        }
+
+        for (fact in selection.requestFacts) {
+            for (intent in fact.intents) {
+                val isAgencyOrCompany = intent.intentKey.startsWith("agency.") || intent.intentKey.startsWith("company.")
+                val isEnterprise = intent.intentKey.startsWith("enterprise.")
+                if (isAgencyOrCompany || isEnterprise) {
+                    val evidenceIds = intent.evidenceRuleIds
+                    if (evidenceIds.isNotEmpty()) {
+                        val sourceText = aiReplyHighRiskClaimValidator.resolveSourceText(evidenceIds)
+                        if (sourceText != null) {
+                            if (isAgencyOrCompany) {
+                                if (aiReplyHighRiskClaimValidator.isRoleDisclosureRequired(sourceText) &&
+                                    !aiReplyHighRiskClaimValidator.containsRoleDisclosure(textBody)
+                                ) {
+                                    warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
+                                }
+                            }
+                            if (isEnterprise) {
+                                if (aiReplyHighRiskClaimValidator.isEnterpriseUncertaintyRequired(sourceText) &&
+                                    (aiReplyHighRiskClaimValidator.containsEnterpriseCertainty(textBody) ||
+                                        !aiReplyHighRiskClaimValidator.containsEnterpriseUncertainty(textBody))
+                                ) {
+                                    warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
+        val restrictedActions = AiReplyActionPolicy.restrictForTrustState(allowedActions, hasBlockingTrust)
+        val violations = AiReplyActionPolicy.findViolations(textBody, restrictedActions)
+        violations.forEach { violation ->
+            val code = violation.code
+            if (code != null && code !in warningCodes) {
+                warningCodes += code
+            }
+        }
+
+        val checkedTextHash = AiReplyDraftService.sha256Hex(textBody)
+        val distinctWarnings = warningCodes.distinct()
+
+        val status = if (distinctWarnings.isEmpty()) "PASS" else "WARNING"
+
+        return AiReplyPreflightResult(
+            status = status,
+            warningCodes = distinctWarnings,
+            canonicalFactIds = canonicalFactIds,
+            evidenceReadiness = readiness.name,
+            currentEvidenceSetVersion = currentEvidenceSetVersion,
+            checkedTextHash = checkedTextHash
+        )
+    }
 }
 
 data class PendingMailSendResult(
@@ -595,4 +758,19 @@ data class TrustWorkbenchEvaluateResult(
     val draftReadiness: String,
     val requestCoverage: List<RequestCoverageItem>,
     val gapDetected: Boolean
+)
+
+data class AiReplyPreflightRequest(
+    val factRuleIds: List<Long> = emptyList(),
+    val expectedEvidenceSetVersion: String = "",
+    val textBody: String
+)
+
+data class AiReplyPreflightResult(
+    val status: String,
+    val warningCodes: List<String>,
+    val canonicalFactIds: List<Long>,
+    val evidenceReadiness: String,
+    val currentEvidenceSetVersion: String,
+    val checkedTextHash: String
 )

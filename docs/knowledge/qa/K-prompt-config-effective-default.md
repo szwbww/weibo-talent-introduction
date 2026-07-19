@@ -2,8 +2,8 @@
 id: K-prompt-config-effective-default
 domain: qa
 created: 2026-07-02
-last_used: 2026-07-19
-hit_count: 13
+last_used: 2026-07-20
+hit_count: 15
 source: create-p:ai-training-redesign
 ---
 经验：`AiPromptConfig` 表只存自定义覆盖值，`freeFormSystemPrompt` 为空时实际生效的是 `AiReplyDraftService.buildFreeFormSystemPrompt()` 中硬编码的默认提示词。前端如需展示「当前生效」值，必须从后端获取有效值（而非前端硬编码默认值），否则前后端不一致。

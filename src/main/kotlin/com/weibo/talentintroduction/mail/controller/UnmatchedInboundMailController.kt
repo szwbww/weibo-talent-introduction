@@ -26,6 +26,8 @@ import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
 import com.weibo.talentintroduction.mail.service.ComposedReplyEvaluateRequest
 import com.weibo.talentintroduction.mail.service.TrustWorkbenchEvaluateResult
 import com.weibo.talentintroduction.mail.service.TrustWorkbenchSuggestResult
+import com.weibo.talentintroduction.mail.service.AiReplyPreflightRequest
+import com.weibo.talentintroduction.mail.service.AiReplyPreflightResult
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
@@ -246,6 +248,27 @@ class UnmatchedInboundMailController(
         return result.toResponse()
     }
 
+    @PostMapping("/unmatched-inbound/{id}/composed-reply/preflight")
+    fun preflightEditedAiReply(
+        @PathVariable id: Long,
+        @RequestBody request: AiReplyPreflightRequest
+    ): AiReplyPreflightResponse {
+        val result = pendingMailOperationService.preflightEditedAiReply(
+            inboundProcessingId = id,
+            factRuleIds = request.factRuleIds,
+            expectedEvidenceSetVersion = request.expectedEvidenceSetVersion,
+            textBody = request.textBody
+        )
+        return AiReplyPreflightResponse(
+            status = result.status,
+            warningCodes = result.warningCodes,
+            canonicalFactIds = result.canonicalFactIds,
+            evidenceReadiness = result.evidenceReadiness,
+            currentEvidenceSetVersion = result.currentEvidenceSetVersion,
+            checkedTextHash = result.checkedTextHash
+        )
+    }
+
     @PostMapping("/unmatched-inbound/{id}/composed-reply/polish")
     fun polishComposedReply(
         @PathVariable id: Long,
@@ -300,13 +323,15 @@ class UnmatchedInboundMailController(
             researchProfileSufficient = context.researchProfileSufficient
         )
 
-        if (!isContinuation) {
+        val snapshot = if (!isContinuation) {
             aiReplyReviewAuditService.recordInitialDraft(
                 inboundProcessingId = id,
                 contactId = contactId,
                 result = result,
                 operatorName = request.operatorName
             )
+        } else {
+            aiReplyReviewAuditService.buildSnapshot(result)
         }
 
         val preview = aiReplyDraftPreviewService.preview(
@@ -346,7 +371,19 @@ class UnmatchedInboundMailController(
                 )
             },
             generationState = result.generationState.name,
-            draftReadiness = result.draftReadiness.name
+            draftReadiness = result.draftReadiness.name,
+            promptVersion = result.promptVersion,
+            draftHash = snapshot.draftHash,
+            evidenceSetVersion = result.evidenceSetVersion,
+            evidenceSources = result.evidenceSources.map {
+                AiReplyEvidenceResponseItem(
+                    ruleId = it.ruleId,
+                    displayName = it.displayName,
+                    updatedAt = it.updatedAt,
+                    answerBodyHash = it.answerBodySha256,
+                    available = it.available
+                )
+            }
         )
     }
 
@@ -589,7 +626,28 @@ data class AiReplyTurnResponse(
     val selectedModel: String = com.weibo.talentintroduction.llm.service.AiReplyModel.DEEPSEEK_V4_FLASH.name,
     val requestCoverage: List<RequestCoverageItem> = emptyList(),
     val generationState: String = "FALLBACK_NO_RESPONSE",
-    val draftReadiness: String = "READY"
+    val draftReadiness: String = "READY",
+    val promptVersion: String = "",
+    val draftHash: String = "",
+    val evidenceSetVersion: String = "",
+    val evidenceSources: List<AiReplyEvidenceResponseItem> = emptyList()
+)
+
+data class AiReplyEvidenceResponseItem(
+    val ruleId: Long,
+    val displayName: String,
+    val updatedAt: String?,
+    val answerBodyHash: String,
+    val available: Boolean
+)
+
+data class AiReplyPreflightResponse(
+    val status: String,
+    val warningCodes: List<String>,
+    val canonicalFactIds: List<Long>,
+    val evidenceReadiness: String,
+    val currentEvidenceSetVersion: String,
+    val checkedTextHash: String
 )
 
 private fun InboundMailProcessing.toResponse(

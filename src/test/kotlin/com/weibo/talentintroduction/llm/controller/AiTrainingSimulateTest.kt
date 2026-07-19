@@ -129,6 +129,15 @@ class AiTrainingSimulateTest {
             .thenReturn(emptyList())
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenAnswer { invocation -> invocation.getArgument(0) }
+        Mockito.`when`(aiPromptConfigService.getEffectiveDto())
+            .thenReturn(
+                AiPromptConfigEffectiveDto(
+                    freeFormSystemPrompt = FreeFormPromptDefaults.defaultFreeFormSystemPrompt(),
+                    constraints = null,
+                    updatedAt = null,
+                    isCustom = false
+                )
+            )
         Mockito.`when`(replySnippetService.resolveManualFrame()).thenReturn(
             ManualReplyFrame(
                 salutation = "Dear Professor,",
