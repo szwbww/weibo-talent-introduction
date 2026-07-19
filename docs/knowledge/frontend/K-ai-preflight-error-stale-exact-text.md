@@ -3,7 +3,7 @@ id: K-ai-preflight-error-stale-exact-text
 domain: frontend
 created: 2026-07-20
 last_used: 2026-07-20
-hit_count: 1
+hit_count: 2
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-2
 severity: P1
 ---

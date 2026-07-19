@@ -2,8 +2,8 @@
 id: K-audit-selected-source
 domain: qa
 created: 2026-06-26
-last_used: 2026-07-19
-hit_count: 29
+last_used: 2026-07-20
+hit_count: 30
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---

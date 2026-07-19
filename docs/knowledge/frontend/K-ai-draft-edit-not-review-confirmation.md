@@ -3,7 +3,7 @@ id: K-ai-draft-edit-not-review-confirmation
 domain: frontend
 created: 2026-07-15
 last_used: 2026-07-20
-hit_count: 12
+hit_count: 13
 source: create-p:ai-reply-p0-p2
 severity: P0
 ---

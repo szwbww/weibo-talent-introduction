@@ -3,7 +3,7 @@ id: K-review-event-audit-payload-bounds
 domain: mail
 created: 2026-07-15
 last_used: 2026-07-20
-hit_count: 18
+hit_count: 19
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---

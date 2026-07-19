@@ -2,8 +2,8 @@
 id: K-operator-send-quota-paths
 domain: mail
 created: 2026-06-27
-last_used: 2026-07-06
-hit_count: 6
+last_used: 2026-07-20
+hit_count: 7
 source: create-p:manual-send-decouple-daily-quota
 severity: P2
 ---

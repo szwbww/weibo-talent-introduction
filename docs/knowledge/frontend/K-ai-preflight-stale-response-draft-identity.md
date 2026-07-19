@@ -3,7 +3,7 @@ id: K-ai-preflight-stale-response-draft-identity
 domain: frontend
 created: 2026-07-19
 last_used: 2026-07-20
-hit_count: 2
+hit_count: 3
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-1
 severity: P1
 ---
