@@ -2,8 +2,8 @@
 id: K-ai-reply-profile-absence-warning
 domain: llm
 created: 2026-07-12
-last_used: 2026-07-16
-hit_count: 10
+last_used: 2026-07-19
+hit_count: 13
 source: fix-v:ai-reply-grounded-parity-backend:fix-1
 severity: P1
 ---

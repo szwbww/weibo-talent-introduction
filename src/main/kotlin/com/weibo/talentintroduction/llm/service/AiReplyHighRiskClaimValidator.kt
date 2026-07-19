@@ -8,6 +8,14 @@ data class ClaimValidationResult(
     val warningCodes: List<String> = emptyList()
 )
 
+data class GroundedCandidateInput(
+    val validatedSections: List<ValidatedSection>,
+    val requestFacts: List<RequestFactItem>,
+    val plan: GroundedContentPlan,
+    val finalBody: String,
+    val hasBlockingTrustGap: Boolean
+)
+
 @Service
 class AiReplyHighRiskClaimValidator(
     private val qaRuleRepository: QaRuleRepository
@@ -68,6 +76,87 @@ class AiReplyHighRiskClaimValidator(
         return ClaimValidationResult(valid = valid, warningCodes = warnings.distinct())
     }
 
+    fun validateGroundedCandidate(input: GroundedCandidateInput): ClaimValidationResult {
+        val warnings = mutableListOf<String>()
+        warnings += validate(input.validatedSections, input.requestFacts).warningCodes
+
+        val body = input.finalBody
+        if (body.isNotBlank()) {
+            if (containsTrustRhetoric(body)) {
+                warnings += WARNING_CLAIM_TRUST_RHETORIC
+            }
+            if (input.hasBlockingTrustGap && containsConfidentialitySubstitute(body)) {
+                warnings += WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
+            }
+            for (section in input.validatedSections) {
+                for (answer in section.answers) {
+                    if (answer.answer.isBlank()) {
+                        continue
+                    }
+                    val sourceText = resolveSourceText(answer.sourceRuleIds)
+                    if (sourceText == null) {
+                        continue
+                    }
+                    val claimPlan = input.plan.claims.find {
+                        val key = "r${section.requestIndex}:${answer.intentKey}"
+                        it.claimKey == key
+                    }
+                    if (claimPlan != null) {
+                        val isAgencyOrCompany = claimPlan.intentKey.startsWith("agency.") ||
+                            claimPlan.intentKey.startsWith("company.")
+                        if (isAgencyOrCompany) {
+                            if (isRoleDisclosureRequired(sourceText) && !containsRoleDisclosure(answer.answer)) {
+                                warnings += WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
+                            }
+                        }
+                        if (claimPlan.intentKey.startsWith("enterprise.")) {
+                            if (isEnterpriseUncertaintyRequired(sourceText) && containsEnterpriseCertainty(answer.answer)) {
+                                warnings += WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                            }
+                            if (isEnterpriseUncertaintyRequired(sourceText) && !containsEnterpriseUncertainty(answer.answer)) {
+                                warnings += WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return ClaimValidationResult(valid = warnings.isEmpty(), warningCodes = warnings.distinct())
+    }
+
+    internal fun containsTrustRhetoric(text: String): Boolean {
+        return TRUST_RHETORIC_PHRASES.any { phrase ->
+            text.contains(phrase, ignoreCase = true)
+        }
+    }
+
+    internal fun containsConfidentialitySubstitute(text: String): Boolean {
+        return CONFIDENTIALITY_SUBSTITUTE_PHRASES.any { phrase ->
+            text.contains(phrase, ignoreCase = true)
+        }
+    }
+
+    internal fun isRoleDisclosureRequired(sourceText: String): Boolean {
+        return SERVICE_ROLE_FAMILY.any { role -> sourceText.contains(role, ignoreCase = true) }
+    }
+
+    internal fun containsRoleDisclosure(answer: String): Boolean {
+        return SERVICE_ROLE_FAMILY.any { role -> answer.contains(role, ignoreCase = true) }
+    }
+
+    internal fun isEnterpriseUncertaintyRequired(sourceText: String): Boolean {
+        return ENTERPRISE_UNCERTAINTY_FAMILY.any { phrase -> sourceText.contains(phrase, ignoreCase = true) }
+    }
+
+    internal fun containsEnterpriseCertainty(answer: String): Boolean {
+        return ENTERPRISE_CERTAINTY_FAMILY.any { phrase -> answer.contains(phrase, ignoreCase = true) }
+    }
+
+    internal fun containsEnterpriseUncertainty(answer: String): Boolean {
+        return ENTERPRISE_UNCERTAINTY_FAMILY.any { phrase -> answer.contains(phrase, ignoreCase = true) }
+    }
+
     internal fun resolveSourceText(sourceRuleIds: List<Long>): String? {
         val texts = mutableListOf<String>()
         val seen = linkedSetOf<Long>()
@@ -76,15 +165,14 @@ class AiReplyHighRiskClaimValidator(
                 continue
             }
             val rule = qaRuleRepository.findById(ruleId).orElse(null) ?: return null
+            if (!rule.enabled) {
+                return null
+            }
             val body = rule.answerBody.trim()
             if (body.isBlank()) {
                 return null
             }
-            val title = rule.displayName?.trim().orEmpty()
-            texts += listOfNotNull(
-                title.takeIf { it.isNotBlank() },
-                body
-            ).joinToString("\n")
+            texts += body
         }
         return texts.joinToString("\n")
     }
@@ -143,8 +231,6 @@ class AiReplyHighRiskClaimValidator(
             return false
         }
 
-        // Generic strong-commitment words always strengthen when source is conditional,
-        // even if the same definitive family also appears elsewhere in the source.
         if (STRENGTHENING_PHRASES.any { phrase -> wordBoundaryContains(answer, phrase) }) {
             return true
         }
@@ -155,7 +241,6 @@ class AiReplyHighRiskClaimValidator(
         if (hitFamilies.isEmpty()) {
             return false
         }
-        // Strengthened if any hit family has no same-family definitive in source
         return hitFamilies.any { family ->
             family.patterns.none { it.containsMatchIn(combinedFacts) }
         }
@@ -189,6 +274,10 @@ class AiReplyHighRiskClaimValidator(
         const val WARNING_CLAIM_MODALITY_STRENGTHENED = "AI_REPLY_CLAIM_MODALITY_STRENGTHENED"
         const val WARNING_CLAIM_HIGH_RISK_UNBACKED = "AI_REPLY_CLAIM_HIGH_RISK_UNBACKED"
         const val WARNING_CLAIM_SOURCE_UNAVAILABLE = "AI_REPLY_CLAIM_SOURCE_UNAVAILABLE"
+        const val WARNING_CLAIM_TRUST_RHETORIC = "AI_REPLY_CLAIM_TRUST_RHETORIC"
+        const val WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE = "AI_REPLY_CLAIM_CONFIDENTIALITY_SUBSTITUTE"
+        const val WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED = "AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED"
+        const val WARNING_CLAIM_ENTERPRISE_UNGROUNDED = "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
 
         private val NUMBER_TOKEN_REGEX = Regex("\\b\\d[\\d,.]*\\b", RegexOption.IGNORE_CASE)
 
@@ -262,6 +351,72 @@ class AiReplyHighRiskClaimValidator(
             "intellectual property" to listOf("intellectual property", "ip ownership", "ip rights"),
             "confidentiality" to listOf("confidentiality", "confidential information", "nda"),
             "all expenses" to listOf("all expenses", "expenses covered")
+        )
+
+        private val TRUST_RHETORIC_PHRASES = listOf(
+            "trust us",
+            "you can trust us",
+            "rest assured",
+            "我们值得信赖",
+            "请相信我们",
+            "请放心",
+            "敬请放心"
+        )
+
+        private val CONFIDENTIALITY_SUBSTITUTE_PHRASES = listOf(
+            "project sensitive",
+            "project sensitivities",
+            "项目敏感",
+            "项目保密",
+            "sensitive so",
+            "confidential so",
+            "sensitive and cannot",
+            "confidential and cannot",
+            "保密所以无法",
+            "敏感所以无法",
+            "敏感无法",
+            "保密无法"
+        )
+
+        private val SERVICE_ROLE_FAMILY = listOf(
+            "service provider",
+            "service agency",
+            "agency",
+            "intermediary",
+            "adviser",
+            "advisor",
+            "consultancy",
+            "中介",
+            "服务机构"
+        )
+
+        private val ENTERPRISE_UNCERTAINTY_FAMILY = listOf(
+            "not yet",
+            "no specific",
+            "currently matching",
+            "to be matched",
+            "to be confirmed",
+            "not yet determined",
+            "尚未确定",
+            "尚未匹配",
+            "后续匹配",
+            "待匹配",
+            "匹配后",
+            "匹配中"
+        )
+
+        private val ENTERPRISE_CERTAINTY_FAMILY = listOf(
+            "we are",
+            "our partner company",
+            "the enterprise you will work with",
+            "the company is",
+            "your matched enterprise",
+            "your partnering company",
+            "合作企业是",
+            "您的合作企业",
+            "匹配的企业是",
+            "将会合作的企业是",
+            "具体企业是"
         )
     }
 }

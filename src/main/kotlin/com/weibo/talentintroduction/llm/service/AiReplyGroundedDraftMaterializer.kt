@@ -22,16 +22,62 @@ data class MaterializedDraft(
     val warningCodes: List<String> = emptyList()
 )
 
+data class ParsedGroundedResponse(
+    val claimTexts: Map<String, String>,
+    val validatedSections: List<ValidatedSection>,
+    val missingFacts: List<Map<String, Any>>,
+    val actionType: String? = null,
+    val actionText: String? = null
+)
+
 @Service
 class AiReplyGroundedDraftMaterializer(
     private val objectMapper: ObjectMapper,
     private val composer: AiReplyPointByPointComposer
 ) {
-    fun materialize(rawResponse: String, requestFacts: List<RequestFactItem>): MaterializedDraft {
-        val sections = parseStrict(rawResponse, requestFacts)
+    fun materialize(
+        rawResponse: String,
+        requestFacts: List<RequestFactItem>,
+        plan: GroundedContentPlan
+    ): MaterializedDraft {
+        val parsed = parseUnifiedJson(rawResponse, plan)
             ?: return invalid(sections = emptyList())
-        val text = composer.composeFromSections(requestFacts, sections)
-        return MaterializedDraft(text = text, valid = true, sections = sections)
+        val text = composer.composeFromPlan(plan, parsed.claimTexts, parsed.actionText)
+        if (!validateBodyActions(text, parsed.actionType, parsed.actionText)) {
+            return invalid(sections = parsed.validatedSections)
+        }
+        return MaterializedDraft(text = text, valid = true, sections = parsed.validatedSections)
+    }
+
+    private fun validateBodyActions(
+        bodyText: String,
+        declaredActionType: String?,
+        declaredActionText: String?
+    ): Boolean {
+        if (bodyText.isBlank()) {
+            return true
+        }
+        val bodyActions = AiReplyActionPolicy.detectActions(bodyText)
+        val hasDeclaredAction = declaredActionType != null && declaredActionType != "NONE"
+
+        if (!hasDeclaredAction) {
+            return bodyActions.isEmpty()
+        }
+
+        val expectedActionSet = when (declaredActionType) {
+            "REQUEST_MATERIALS" -> setOf(AiReplyAction.REQUEST_MATERIALS)
+            "PROPOSE_MEETING" -> setOf(AiReplyAction.PROPOSE_MEETING)
+            else -> return false
+        }
+
+        if (bodyActions != expectedActionSet) {
+            return false
+        }
+
+        if (declaredActionText != null) {
+            return true
+        }
+        return false
     }
 
     internal fun invalid(
@@ -40,10 +86,10 @@ class AiReplyGroundedDraftMaterializer(
     ): MaterializedDraft =
         MaterializedDraft(text = "", valid = false, sections = sections, warningCodes = warningCodes)
 
-    private fun parseStrict(
+    private fun parseUnifiedJson(
         rawResponse: String,
-        requestFacts: List<RequestFactItem>
-    ): List<ValidatedSection>? {
+        plan: GroundedContentPlan
+    ): ParsedGroundedResponse? {
         val trimmed = rawResponse.trim()
         if (trimmed.isBlank()) {
             return null
@@ -60,148 +106,364 @@ class AiReplyGroundedDraftMaterializer(
             return null
         }
         val fieldNames = root.fieldNames().asSequence().toSet()
-        if (fieldNames != setOf("sections")) {
-            return null
-        }
-        val sectionsNode = root.get("sections")
-        if (sectionsNode == null || !sectionsNode.isArray) {
+        val expectedFields = setOf("paragraphs", "claims", "missingFacts", "proposedAction", "requiresReview")
+        if (fieldNames != expectedFields) {
             return null
         }
 
-        val factByIndex = requestFacts.associateBy { it.index }
-        val sections = mutableListOf<ValidatedSection>()
-        val seenRequestIndexes = mutableSetOf<Int>()
+        val paragraphsNode = root.get("paragraphs")
+        if (paragraphsNode == null || !paragraphsNode.isArray) {
+            return null
+        }
+        val claimsNode = root.get("claims")
+        if (claimsNode == null || !claimsNode.isArray) {
+            return null
+        }
+        val missingFactsNode = root.get("missingFacts")
+        if (missingFactsNode == null || !missingFactsNode.isArray) {
+            return null
+        }
+        val proposedActionNode = root.get("proposedAction")
+        if (proposedActionNode == null || !proposedActionNode.isObject) {
+            return null
+        }
+        val requiresReviewNode = root.get("requiresReview")
+        if (requiresReviewNode == null || !requiresReviewNode.isBoolean) {
+            return null
+        }
+        val requiresReview = requiresReviewNode.booleanValue()
+        if (requiresReview != plan.requiresReview) {
+            return null
+        }
 
-        for (sectionNode in sectionsNode) {
-            if (!sectionNode.isObject) {
+        val actionEval = evaluateProposedAction(proposedActionNode, plan.allowedActions)
+        if (actionEval == null) {
+            return null
+        }
+        val proposedActionText = actionEval.first
+
+        val claimResult = parseClaims(claimsNode, plan)
+        if (claimResult == null) {
+            return null
+        }
+        val (claimTexts, validatedSections) = claimResult
+
+        val paragraphsResult = validateParagraphs(paragraphsNode, plan, claimTexts)
+        if (paragraphsResult == null) {
+            return null
+        }
+
+        val missingFactsResult = validateMissingFacts(missingFactsNode, plan)
+        if (!missingFactsResult) {
+            return null
+        }
+
+        if (proposedActionText != null) {
+            val detectedActions = AiReplyActionPolicy.detectActions(proposedActionText)
+            val expectedAction = when (proposedActionNode.get("type").asText()) {
+                "REQUEST_MATERIALS" -> setOf(AiReplyAction.REQUEST_MATERIALS)
+                "PROPOSE_MEETING" -> setOf(AiReplyAction.PROPOSE_MEETING)
+                else -> null
+            }
+            if (expectedAction == null || detectedActions != expectedAction) {
                 return null
             }
-            val sectionFields = sectionNode.fieldNames().asSequence().toSet()
-            if (sectionFields != setOf("requestIndex", "answers")) {
+        }
+
+        val actionType = if (proposedActionText != null) proposedActionNode.get("type").asText() else "NONE"
+
+        return ParsedGroundedResponse(
+            claimTexts = claimTexts,
+            validatedSections = validatedSections,
+            missingFacts = missingFactsNode.map { node ->
+                val map = linkedMapOf<String, Any>()
+                node.fields().forEach { (key, value) ->
+                    when {
+                        value.isInt -> map[key] = value.intValue()
+                        value.isTextual -> map[key] = value.asText()
+                        value.isArray -> map[key] = value.map { it.asText() }
+                    }
+                }
+                map
+            },
+            actionType = actionType,
+            actionText = proposedActionText
+        )
+    }
+
+    private data class ActionParseResult(val type: String, val text: String?)
+
+    private fun evaluateProposedAction(
+        node: JsonNode,
+        allowedActions: Set<AiReplyAction>
+    ): Pair<String?, Boolean>? {
+        val actionFields = node.fieldNames().asSequence().toSet()
+        if (actionFields != setOf("type", "text")) {
+            return null
+        }
+        if (!node.get("type").isTextual) {
+            return null
+        }
+        val type = node.get("type").asText()
+        if (type !in setOf("NONE", "REQUEST_MATERIALS", "PROPOSE_MEETING")) {
+            return null
+        }
+
+        if (type == "NONE") {
+            if (!node.get("text").isNull) {
                 return null
             }
-            val requestIndexNode = sectionNode.get("requestIndex") ?: return null
+            return null to true
+        }
+
+        if (node.get("text").isNull) {
+            return null
+        }
+        if (!node.get("text").isTextual) {
+            return null
+        }
+        val text = node.get("text").asText()
+        if (text.isBlank()) {
+            return null
+        }
+
+        val action = when (type) {
+            "REQUEST_MATERIALS" -> AiReplyAction.REQUEST_MATERIALS
+            "PROPOSE_MEETING" -> AiReplyAction.PROPOSE_MEETING
+            else -> return null
+        }
+        if (action !in allowedActions) {
+            return null
+        }
+        return text to true
+    }
+
+    private data class ClaimParseResult(
+        val claimTexts: Map<String, String>,
+        val validatedSections: List<ValidatedSection>
+    )
+
+    private fun parseClaims(
+        claimsNode: JsonNode,
+        plan: GroundedContentPlan
+    ): ClaimParseResult? {
+        val planKeys = plan.claims.map { it.claimKey }
+        val planClaimMap = plan.claims.associateBy { it.claimKey }
+        val parsedKeys = mutableListOf<String>()
+        val claimTexts = linkedMapOf<String, String>()
+        val sectionAnswers = linkedMapOf<Int, MutableList<IntentAnswer>>()
+
+        for (claimNode in claimsNode) {
+            if (!claimNode.isObject) {
+                return null
+            }
+            val claimFields = claimNode.fieldNames().asSequence().toSet()
+            if (claimFields != setOf("claimKey", "requestIndex", "intentKey", "text", "sourceIds")) {
+                return null
+            }
+
+            if (!claimNode.get("claimKey").isTextual) {
+                return null
+            }
+            val claimKey = claimNode.get("claimKey").asText()
+
+            if (claimKey in parsedKeys) {
+                return null
+            }
+            parsedKeys += claimKey
+
+            val planClaim = planClaimMap[claimKey] ?: return null
+
+            val requestIndexNode = claimNode.get("requestIndex") ?: return null
             if (!requestIndexNode.isIntegralNumber || !requestIndexNode.canConvertToInt()) {
                 return null
             }
             val requestIndex = requestIndexNode.intValue()
-            val answersNode = sectionNode.get("answers")
-            if (answersNode == null || !answersNode.isArray) {
+            if (requestIndex != planClaim.requestIndex) {
                 return null
             }
 
-            if (!seenRequestIndexes.add(requestIndex)) {
+            if (!claimNode.get("intentKey").isTextual) {
+                return null
+            }
+            val intentKey = claimNode.get("intentKey").asText()
+            if (intentKey != planClaim.intentKey) {
                 return null
             }
 
-            val fact = factByIndex[requestIndex] ?: return null
-
-            val allowedStatuses = setOf(
-                RequestGroundingStatus.GROUNDED,
-                RequestGroundingStatus.PARTIAL
-            )
-            if (fact.status !in allowedStatuses) {
+            if (!claimNode.get("text").isTextual) {
+                return null
+            }
+            val text = claimNode.get("text").asText()
+            if (text.isBlank()) {
+                return null
+            }
+            if (containsInternalMarker(text)) {
                 return null
             }
 
-            val allowedIntentKeys = fact.intents
-                .filter { it.status == "SUPPORTED" }
-                .map { it.intentKey }
-                .toSet()
-            if (allowedIntentKeys.isEmpty()) {
+            val sourceIdsNode = claimNode.get("sourceIds")
+            if (sourceIdsNode == null || !sourceIdsNode.isArray) {
+                return null
+            }
+            if (!sourceIdsNode.asSequence().all {
+                    it.isIntegralNumber && it.canConvertToLong()
+                }
+            ) {
+                return null
+            }
+            val sourceIds = sourceIdsNode.asSequence()
+                .map { it.longValue() }
+                .toList()
+            if (sourceIds.isEmpty()) {
+                return null
+            }
+            val distinctIds = sourceIds.distinct()
+            if (distinctIds.size != sourceIds.size) {
+                return null
+            }
+            val planEvidence = planClaim.sourceIds.toSet()
+            if (sourceIds.any { it !in planEvidence }) {
                 return null
             }
 
-            val answers = mutableListOf<IntentAnswer>()
-            val seenIntentKeys = mutableSetOf<String>()
-
-            for (answerNode in answersNode) {
-                if (!answerNode.isObject) {
-                    return null
-                }
-                val answerFields = answerNode.fieldNames().asSequence().toSet()
-                if (answerFields != setOf("intentKey", "answer", "sourceRuleIds")) {
-                    return null
-                }
-                if (!answerNode.get("intentKey").isTextual) {
-                    return null
-                }
-                val intentKey = answerNode.get("intentKey").asText()
-                if (!answerNode.get("answer").isTextual) {
-                    return null
-                }
-                val answer = answerNode.get("answer").asText()
-                if (answer.isBlank()) {
-                    return null
-                }
-                if (containsInternalMarker(answer)) {
-                    return null
-                }
-                if (intentKey !in allowedIntentKeys) {
-                    return null
-                }
-                if (!seenIntentKeys.add(intentKey)) {
-                    return null
-                }
-
-                val sourceIdsNode = answerNode.get("sourceRuleIds")
-                if (sourceIdsNode == null || !sourceIdsNode.isArray) {
-                    return null
-                }
-                if (!sourceIdsNode.asSequence().all {
-                        it.isIntegralNumber && it.canConvertToLong()
-                    }
-                ) {
-                    return null
-                }
-                val sourceIds = sourceIdsNode.asSequence()
-                    .map { it.longValue() }
-                    .toList()
-                if (sourceIds.isEmpty()) {
-                    return null
-                }
-
-                val intent = fact.intents.firstOrNull { it.intentKey == intentKey } ?: return null
-                val evidenceIds = intent.evidenceRuleIds.toSet()
-                if (sourceIds.any { it !in evidenceIds }) {
-                    return null
-                }
-
-                answers += IntentAnswer(
-                    intentKey = intentKey,
-                    answer = answer,
-                    sourceRuleIds = sourceIds
-                )
-            }
-
-            if (seenIntentKeys != allowedIntentKeys) {
-                return null
-            }
-
-            if (answers.isEmpty()) {
-                return null
-            }
-
-            sections += ValidatedSection(
-                requestIndex = requestIndex,
-                answers = answers
+            claimTexts[claimKey] = text
+            sectionAnswers.getOrPut(requestIndex) { mutableListOf() } += IntentAnswer(
+                intentKey = intentKey,
+                answer = text,
+                sourceRuleIds = sourceIds
             )
         }
 
-        val expectedRequestIndexes = requestFacts
-            .filter { fact ->
-                fact.intents.any { it.status == "SUPPORTED" } &&
-                    (fact.status == RequestGroundingStatus.GROUNDED ||
-                        fact.status == RequestGroundingStatus.PARTIAL)
-            }
-            .map { it.index }
-            .toSet()
-
-        if (expectedRequestIndexes.isNotEmpty() && seenRequestIndexes != expectedRequestIndexes) {
+        if (parsedKeys != planKeys) {
             return null
         }
 
-        return sections.sortedBy { it.requestIndex }
+        val validatedSections = sectionAnswers.entries
+            .sortedBy { it.key }
+            .map { (idx, answers) -> ValidatedSection(requestIndex = idx, answers = answers) }
+
+        return ClaimParseResult(claimTexts = claimTexts, validatedSections = validatedSections)
+    }
+
+    private fun validateParagraphs(
+        paragraphsNode: JsonNode,
+        plan: GroundedContentPlan,
+        claimTexts: Map<String, String>
+    ): List<Map<String, Any>>? {
+        val parsedParagraphs = mutableListOf<Map<String, Any>>()
+        val allClaimKeysInOrder = mutableListOf<String>()
+        val seenParagraphIndexes = mutableSetOf<Int>()
+
+        for (paraNode in paragraphsNode) {
+            if (!paraNode.isObject) {
+                return null
+            }
+            val paraFields = paraNode.fieldNames().asSequence().toSet()
+            if (paraFields != setOf("paragraphIndex", "claimKeys")) {
+                return null
+            }
+
+            val paragraphIndexNode = paraNode.get("paragraphIndex") ?: return null
+            if (!paragraphIndexNode.isIntegralNumber || !paragraphIndexNode.canConvertToInt()) {
+                return null
+            }
+            val paragraphIndex = paragraphIndexNode.intValue()
+            if (!seenParagraphIndexes.add(paragraphIndex)) {
+                return null
+            }
+
+            val claimKeysNode = paraNode.get("claimKeys")
+            if (claimKeysNode == null || !claimKeysNode.isArray) {
+                return null
+            }
+            val paraKeys = mutableListOf<String>()
+            val paraSeenKeys = mutableSetOf<String>()
+            for (keyNode in claimKeysNode) {
+                if (!keyNode.isTextual) {
+                    return null
+                }
+                val key = keyNode.asText()
+                if (key !in claimTexts) {
+                    return null
+                }
+                if (!paraSeenKeys.add(key)) {
+                    return null
+                }
+                paraKeys += key
+                allClaimKeysInOrder += key
+            }
+            parsedParagraphs += mapOf<String, Any>(
+                "paragraphIndex" to paragraphIndex,
+                "claimKeys" to paraKeys
+            )
+        }
+
+        val planParagraphs = plan.paragraphs
+        if (parsedParagraphs.size != planParagraphs.size) {
+            return null
+        }
+
+        for (i in parsedParagraphs.indices) {
+            val planPara = planParagraphs[i]
+            val parsedPara = parsedParagraphs[i]
+            if (parsedPara["paragraphIndex"] as Int != planPara.paragraphIndex) {
+                return null
+            }
+            @Suppress("UNCHECKED_CAST")
+            val paraKeyList = parsedPara["claimKeys"] as List<String>
+            if (paraKeyList != planPara.claimKeys) {
+                return null
+            }
+        }
+
+        return parsedParagraphs
+    }
+
+    private fun validateMissingFacts(
+        missingFactsNode: JsonNode,
+        plan: GroundedContentPlan
+    ): Boolean {
+        val planMissingMap = plan.missingFacts
+            .sortedBy { it.requestIndex }
+            .map { mapOf("requestIndex" to it.requestIndex, "intentKeys" to it.intentKeys) }
+
+        val parsedMissing = mutableListOf<Map<String, Any>>()
+        for (node in missingFactsNode) {
+            if (!node.isObject) return false
+            val fields = node.fieldNames().asSequence().toSet()
+            if (fields != setOf("requestIndex", "intentKeys")) return false
+            val riNode = node.get("requestIndex")
+            if (riNode == null || !riNode.isIntegralNumber || !riNode.canConvertToInt()) return false
+            val ri = riNode.intValue()
+            val ikNode = node.get("intentKeys")
+            if (ikNode == null || !ikNode.isArray) return false
+            val keys = mutableListOf<String>()
+            for (kn in ikNode) {
+                if (!kn.isTextual) return false
+                keys += kn.asText()
+            }
+            parsedMissing += mapOf("requestIndex" to ri, "intentKeys" to keys)
+        }
+
+        if (parsedMissing.size != planMissingMap.size) {
+            return false
+        }
+
+        for (i in parsedMissing.indices) {
+            @Suppress("UNCHECKED_CAST")
+            val pKeys = parsedMissing[i]["intentKeys"] as? List<String> ?: return false
+            @Suppress("UNCHECKED_CAST")
+            val planKeys = planMissingMap[i]["intentKeys"] as? List<String> ?: return false
+            if (pKeys != planKeys) {
+                return false
+            }
+            if (parsedMissing[i]["requestIndex"] != planMissingMap[i]["requestIndex"]) {
+                return false
+            }
+        }
+
+        return true
     }
 
     private fun containsInternalMarker(answer: String): Boolean {
@@ -236,6 +498,9 @@ class AiReplyGroundedDraftMaterializer(
             if (RULE_ID_LABEL.containsMatchIn(text)) {
                 return true
             }
+            if (MARKETING_PHRASES.any { phrase -> text.contains(phrase, ignoreCase = true) }) {
+                return true
+            }
             return false
         }
 
@@ -249,6 +514,16 @@ class AiReplyGroundedDraftMaterializer(
         )
         private val RULE_ID_LABEL = Regex(
             """(?i)(?:\bRULE\s+\d+\b|EVIDENCE_RULE_IDS|INTENT:\s*\w+\.\w+)"""
+        )
+
+        private val MARKETING_PHRASES = listOf(
+            "trust us",
+            "rest assured",
+            "prestigious",
+            "unique opportunity",
+            "we are delighted",
+            "please find our answers below",
+            "do not hesitate"
         )
 
         private val INTERNAL_PHRASES = listOf(

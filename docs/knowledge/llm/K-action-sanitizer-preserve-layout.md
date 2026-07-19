@@ -3,7 +3,7 @@ id: K-action-sanitizer-preserve-layout
 domain: llm
 created: 2026-07-12
 last_used: 2026-07-19
-hit_count: 11
+hit_count: 24
 source: create-p:ai-reply-01-format-preservation
 severity: P1
 ---

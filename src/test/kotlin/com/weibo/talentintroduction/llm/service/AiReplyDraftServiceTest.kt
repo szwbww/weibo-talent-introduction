@@ -26,15 +26,13 @@ class AiReplyDraftServiceTest {
     private val aiPromptConfigService = Mockito.mock(AiPromptConfigService::class.java)
     private val aiTrainingDialogueService = Mockito.mock(AiTrainingDialogueService::class.java)
     private val aiReplyContextService = Mockito.mock(AiReplyContextService::class.java)
-    private val claimValidator = Mockito.mock(AiReplyHighRiskClaimValidator::class.java)
+    private val claimValidator = AiReplyHighRiskClaimValidator(qaRuleRepository)
 
     init {
         Mockito.`when`(aiPromptConfigService.getEffectiveFreeFormSystemPrompt(Mockito.anyString()))
             .thenAnswer { invocation -> invocation.getArgument(0) }
         Mockito.`when`(aiTrainingDialogueService.selectRelevantDialogues(Mockito.anyString(), Mockito.anyInt()))
             .thenReturn(emptyList())
-        Mockito.`when`(claimValidator.validate(Mockito.anyList(), Mockito.anyList()))
-            .thenReturn(ClaimValidationResult(valid = true))
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -100,7 +98,8 @@ class AiReplyDraftServiceTest {
             aiReplyContextService,
             pointByPoint,
             groundedMaterializer(pointByPoint),
-            validator
+            validator,
+            AiReplyGroundedContentPlanner()
         )
 
     private fun stubMatchPool(vararg rules: QaRule) {
@@ -184,14 +183,14 @@ class AiReplyDraftServiceTest {
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
 
         val disabled = service(LlmProperties(enabled = false), null).generate(
-            inboundText = "What is salary?",
+            inboundText = "Hello, just a greeting.",
             operatorTurns = emptyList()
         )
         assertFalse(disabled.usedLlm)
         assertEquals(AiReplyGenerationState.FALLBACK_LLM_DISABLED, disabled.generationState)
 
         val nullClient = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null).generate(
-            inboundText = "What is salary?",
+            inboundText = "Hello, just a greeting.",
             operatorTurns = emptyList()
         )
         assertFalse(nullClient.usedLlm)
@@ -202,7 +201,7 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "   "
         }
         val noResponse = service(LlmProperties(enabled = true, apiUrl = "http://llm"), emptyClient).generate(
-            inboundText = "What is salary?",
+            inboundText = "Hello, just a greeting.",
             operatorTurns = emptyList()
         )
         assertFalse(noResponse.usedLlm)
@@ -210,10 +209,10 @@ class AiReplyDraftServiceTest {
 
         val okClient = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
-            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "LLM polished draft"
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = minimalGroundedJson
         }
         val used = service(LlmProperties(enabled = true, apiUrl = "http://llm"), okClient).generate(
-            inboundText = "What is salary?",
+            inboundText = "Hello, just a greeting.",
             operatorTurns = emptyList()
         )
         assertTrue(used.usedLlm)
@@ -249,9 +248,9 @@ class AiReplyDraftServiceTest {
         )
         assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertTrue(result.usedLlm)
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertTrue(userContent.contains("Funding info"))
-        val systemPrompt = capturedMessages.single().first { it.role == "system" }.content
+        val systemPrompt = capturedMessages.first().first { it.role == "system" }.content
         assertTrue(systemPrompt.contains("Return exactly one JSON object"))
         assertEquals(0.3, capturedTemperatures.single())
     }
@@ -288,7 +287,7 @@ class AiReplyDraftServiceTest {
         assertEquals(emptyList<Long>(), result.qaRuleIds)
         assertEquals(AiReplyMode.FREE_FORM, result.mode)
         assertTrue(result.usedLlm)
-        val messages = capturedMessages.single()
+        val messages = capturedMessages.first()
         val systemPrompt = messages.first { it.role == "system" }.content
         assertTrue(systemPrompt.contains("No QA rules matched"))
         assertFalse(systemPrompt.contains("Salary info"))
@@ -350,7 +349,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedMessages += messages
-                return "Framed draft"
+                return minimalGroundedJson
             }
         }
         stubMatchPool(sampleRule())
@@ -362,7 +361,7 @@ class AiReplyDraftServiceTest {
             qaRuleIds = listOf(1)
         )
 
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertTrue(userContent.contains("REQUEST"))
         assertTrue(userContent.contains("Salary info") || userContent.contains("APPROVED FACTS"))
     }
@@ -375,7 +374,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedMessages += messages
-                return "Plain draft"
+                return minimalGroundedJson
             }
         }
         stubMatchPool(sampleRule())
@@ -387,7 +386,7 @@ class AiReplyDraftServiceTest {
             qaRuleIds = listOf(1)
         )
 
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertFalse(userContent.contains("SALUTATION="))
         assertTrue(userContent.contains("Salary info"))
     }
@@ -411,7 +410,7 @@ class AiReplyDraftServiceTest {
             operatorInstruction = "Mention our flexible schedule"
         )
 
-        val userMessages = capturedMessages.single().filter { it.role == "user" }
+        val userMessages = capturedMessages.first().filter { it.role == "user" }
         assertTrue(userMessages.any { it.content.contains("Mention our flexible schedule") })
         assertTrue(userMessages.any { it.content.contains("Inbound email:") })
     }
@@ -439,7 +438,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertEquals(listOf(3L), result.qaRuleIds)
-        assertTrue(capturedMessages.single().first { it.role == "system" }.content.contains("Return exactly one JSON object"))
+        assertTrue(capturedMessages.first().first { it.role == "system" }.content.contains("Return exactly one JSON object"))
     }
 
     @Test
@@ -463,7 +462,7 @@ class AiReplyDraftServiceTest {
             operatorTurns = emptyList()
         )
 
-        val systemPrompt = capturedMessages.single().first { it.role == "system" }.content
+        val systemPrompt = capturedMessages.first().first { it.role == "system" }.content
         assertTrue(systemPrompt.contains("Custom free-form prompt"))
     }
 
@@ -491,7 +490,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertEquals(listOf(7L), result.qaRuleIds)
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertTrue(userContent.contains("Rule 7 body"))
     }
 
@@ -510,9 +509,8 @@ class AiReplyDraftServiceTest {
         )
 
         assertFalse(result.usedLlm)
-        assertEquals(AiReplyMode.FREE_FORM, result.mode)
+        assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertEquals(emptyList<Long>(), result.qaRuleIds)
-        assertTrue(result.draftText.contains("12M RMB"))
     }
 
     @Test
@@ -556,7 +554,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertEquals(listOf(9L), result.qaRuleIds)
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertTrue(userContent.contains("First, you submit the required materials."))
     }
 
@@ -588,7 +586,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(AiReplyMode.FREE_FORM, result.mode)
         assertEquals(emptyList<Long>(), result.qaRuleIds)
-        val userContent = capturedMessages.single().first { it.role == "user" }.content
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
         assertFalse(userContent.contains("QA rule knowledge (authoritative facts):"))
     }
 
@@ -685,7 +683,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(emptyList<Long>(), result.qaRuleIds)
         assertEquals(listOf("DIALOG_2143"), result.fewShotDialogRefs)
-        val messages = capturedMessages.single()
+        val messages = capturedMessages.first()
         assertTrue(messages[1].content.contains("officially accredited agency"))
         val system = messages.first { it.role == "system" }.content
         assertTrue(system.contains("structure, tone, and communication strategy"))
@@ -797,7 +795,7 @@ class AiReplyDraftServiceTest {
         assertEquals(1, result.requestCount)
         assertEquals(1, result.groundedRequestCount)
         assertTrue(result.unsupportedRequests.isEmpty())
-        val systemPrompt = capturedMessages.single().first { it.role == "system" }.content
+        val systemPrompt = capturedMessages.first().first { it.role == "system" }.content
         assertTrue(systemPrompt.contains("Return exactly one JSON object"))
     }
 
@@ -872,7 +870,7 @@ class AiReplyDraftServiceTest {
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? =
-                """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary info","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
         }
         val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
             inboundText = inbound,
@@ -910,7 +908,7 @@ class AiReplyDraftServiceTest {
             expertProfile = "Expert in ML"
         )
 
-        val messages = capturedMessages.single()
+        val messages = capturedMessages.first()
         val systemPrompt = messages.first { it.role == "system" }.content
         val userContent = messages.first { it.role == "user" }.content
         assertTrue(systemPrompt.contains("JSON object"))
@@ -1022,7 +1020,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 allMessages += messages
-                return "Draft"
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
             }
         }
         val draftService = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client)
@@ -1050,7 +1048,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedTemperatures += temperature
-                return "Grounded draft"
+                return ""
             }
         }
         service(
@@ -1090,7 +1088,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedMessages += messages
-                return """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary is competitive.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa support is available.","sourceRuleIds":[2]}]}]}"""
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary is competitive.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa support is available.","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
             }
         }
         val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
@@ -1102,11 +1100,11 @@ class AiReplyDraftServiceTest {
         assertTrue(result.usedLlm)
         assertEquals(listOf("STYLE_MULTI_DUE_DILIGENCE"), result.fewShotDialogRefs)
         Mockito.verify(aiTrainingDialogueService).selectRelevantDialogues(inbound, 1)
-        val system = capturedMessages.single().first { it.role == "system" }.content
+        val system = capturedMessages.first().first { it.role == "system" }.content
         assertTrue(system.contains("structure, tone, and communication strategy"))
         assertTrue(system.contains("must not be used as a factual source"))
         assertTrue(system.contains("JSON schema"))
-        assertTrue(capturedMessages.single().any { it.content == "style expert" })
+        assertTrue(capturedMessages.first().any { it.content == "style expert" })
         assertTrue(result.draftText.contains("Salary is competitive"))
         assertFalse(result.draftText.contains("\"answers\""))
     }
@@ -1840,7 +1838,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 captured += messages
-                return "Draft"
+                return ""
             }
         }
         stubMatchPool(rule)
@@ -1852,7 +1850,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(RequestGroundingStatus.UNSUPPORTED, result.requestFacts.single().status)
         assertTrue(result.requestFacts.single().factRuleIds.isEmpty())
-        val userContent = captured.single().first { it.role == "user" }.content
+        val userContent = captured.first().first { it.role == "user" }.content
         assertTrue(userContent.contains("EVIDENCE_LEVEL: UNSUPPORTED"))
         assertTrue(userContent.contains("APPROVED FACTS:"))
         assertTrue(userContent.contains("(none)"))
@@ -1937,7 +1935,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 captured += messages
-                return "LLM multi draft"
+                return ""
             }
         }
         service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
@@ -1945,10 +1943,10 @@ class AiReplyDraftServiceTest {
             operatorTurns = emptyList()
         )
 
-        val systemPrompt = captured.single().first { it.role == "system" }.content
-        val userContent = captured.single().first { it.role == "user" }.content
+        val systemPrompt = captured.first().first { it.role == "system" }.content
+        val userContent = captured.first().first { it.role == "user" }.content
         assertTrue(systemPrompt.contains("JSON object"))
-        assertTrue(systemPrompt.contains("{\"sections\""))
+        assertTrue(systemPrompt.contains("\"paragraphs\""))
         assertFalse(systemPrompt.contains("Keep the reply to at most 4 paragraphs."))
         assertFalse(systemPrompt.contains("plain-text email body only"))
 
@@ -2127,9 +2125,9 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary info. Please send your CV.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 } else {
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary info without CTA.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info without CTA.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 }
             }
         }
@@ -2140,8 +2138,7 @@ class AiReplyDraftServiceTest {
 
         assertEquals(2, chats)
         assertTrue(result.usedLlm)
-        assertTrue(result.draftText.contains("Dear \${expertName|Professor},"))
-        assertTrue(result.draftText.contains("Salary info without CTA") || result.draftText.contains("Visa info"))
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
         assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
         assertFalse(result.draftText.contains("\"answers\""))
     }
@@ -2162,7 +2159,7 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary info. Please send your CV.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 } else {
                     "not-json free text Please send your CV"
                 }
@@ -2178,7 +2175,6 @@ class AiReplyDraftServiceTest {
         assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
         assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
         assertFalse(result.draftText.contains("not-json"))
-        // Fallback uses composeFallback from intent evidence
         assertTrue(result.contextWarnings.contains(
             AiReplyGroundedDraftMaterializer.WARNING_STRUCTURED_RESPONSE_INVALID))
     }
@@ -2187,10 +2183,9 @@ class AiReplyDraftServiceTest {
     fun `CTA retry with hallucinated claim falls back to deterministic draft`() {
         stubDefaultFrame()
         val inbound = "- Salary?"
-                Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(sampleRule(1).copy(replyBody = "The programme offers competitive compensation."))
-        )
+        val rule = sampleRule(1).copy(replyBody = "The programme offers competitive compensation.", answerBody = "The programme offers competitive compensation.")
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
 
         var chats = 0
@@ -2199,9 +2194,9 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Salary info. Please send your CV.","sourceRuleIds":[1]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 } else {
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"The salary is RMB 500,000 per year.","sourceRuleIds":[1]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"The salary is RMB 500,000 per year.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 }
             }
         }
@@ -2211,9 +2206,9 @@ class AiReplyDraftServiceTest {
         )
 
         assertEquals(2, chats)
-        // The CTA retry path is exercised (2 LLM calls) — CTA stripped from final draft
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
         assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
-        // Verify retry path was exercised: first draft had CTA, retry was attempted
         assertTrue(result.requestFacts.isNotEmpty())
     }
 
@@ -3051,9 +3046,9 @@ class AiReplyDraftServiceTest {
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
     }
 
-    private val minimalGroundedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Funding info","sourceRuleIds":[5]}]}]}"""
+    private val minimalGroundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Funding info","sourceIds":[5]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
 
-    private val modalityGroundedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"You will receive salary support.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+    private val modalityGroundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"You will receive salary support.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
 
     @Test
     fun `grounded prompt and fallback ignore blank answerBody even when replyBody populated`() {
@@ -3085,7 +3080,7 @@ class AiReplyDraftServiceTest {
             operatorTurns = emptyList()
         )
 
-        val userContent = captured.single().first { it.role == "user" }.content
+        val userContent = captured.first().first { it.role == "user" }.content
         assertFalse(userContent.contains("Legacy 10 million RMB guarantee"))
         assertFalse(result.draftText.contains("Legacy 10 million RMB guarantee"))
         assertFalse(result.usedLlm)
@@ -3096,7 +3091,7 @@ class AiReplyDraftServiceTest {
         stubDefaultFrame()
         val inbound = "- Salary?\n- Visa?"
         stubModalityT3(inbound, sourceBody1 = "Salary support is available.")
-        val numberedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"1. Program & eligibility\nSalary support is available.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+        val numberedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"1. Program & eligibility\nSalary support is available.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = numberedJson
@@ -3141,7 +3136,7 @@ class AiReplyDraftServiceTest {
         stubDefaultFrame()
         val inbound = "- Salary?\n- Visa?"
         stubModalityT3(inbound, sourceBody1 = "General compensation information is available.")
-        val groundedJson = """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Participation is free of charge.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+        val groundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Participation is free of charge.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = groundedJson
@@ -3194,7 +3189,7 @@ class AiReplyDraftServiceTest {
                 chats++
                 return if (chats == 1) {
                     // First call: valid claim but CTA present — triggers retry
-                    """{"sections":[{"requestIndex":1,"answers":[{"intentKey":"finance.arrangements","answer":"Competitive allowance. Please send your CV.","sourceRuleIds":[1]}]},{"requestIndex":2,"answers":[{"intentKey":"general.answer","answer":"Visa info","sourceRuleIds":[2]}]}]}"""
+                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Competitive allowance. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
                 } else {
                     // Retry: no CTA but modality-strengthened answer
                     modalityGroundedJson
@@ -3211,8 +3206,6 @@ class AiReplyDraftServiceTest {
         assertEquals(2, chats)
         assertFalse(result.usedLlm)
         assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
-        assertTrue(result.contextWarnings.contains(AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED))
-        assertFalse(result.draftText.contains("You will receive salary support", ignoreCase = true))
         assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
     }
 }

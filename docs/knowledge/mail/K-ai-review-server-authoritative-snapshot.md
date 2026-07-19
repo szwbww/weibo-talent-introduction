@@ -2,8 +2,8 @@
 id: K-ai-review-server-authoritative-snapshot
 domain: mail
 created: 2026-07-15
-last_used: 2026-07-16
-hit_count: 18
+last_used: 2026-07-19
+hit_count: 20
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 ---

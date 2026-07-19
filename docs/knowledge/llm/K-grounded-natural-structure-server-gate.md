@@ -3,7 +3,7 @@ id: K-grounded-natural-structure-server-gate
 domain: llm
 created: 2026-07-17
 last_used: 2026-07-19
-hit_count: 5
+hit_count: 9
 source: fix-v:qa-refactor-04-grounded-engine:fix-1
 severity: P1
 ---

@@ -4,15 +4,34 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.stereotype.Service
 
-/**
- * Backend-owned assembler for QA_GROUNDED drafts (LLM answers + deterministic fallback).
- * Frame and natural paragraph flow are never delegated to the model.
- */
 @Service
 class AiReplyPointByPointComposer(
     private val qaRuleRepository: QaRuleRepository,
     private val replySnippetService: ReplySnippetService
 ) {
+    fun composeFromPlan(
+        plan: GroundedContentPlan,
+        claimTexts: Map<String, String>,
+        actionText: String? = null
+    ): String {
+        val allClaimKeys = plan.claims.map { it.claimKey }.toSet()
+        if (allClaimKeys != claimTexts.keys) {
+            return ""
+        }
+        val paragraphs = plan.paragraphs.map { para ->
+            para.claimKeys.mapNotNull { claimTexts[it]?.trim() }.joinToString(" ")
+        }.toMutableList()
+        if (actionText != null && actionText.isNotBlank()) {
+            if (paragraphs.isNotEmpty()) {
+                val lastIdx = paragraphs.size - 1
+                paragraphs[lastIdx] = paragraphs[lastIdx] + " " + actionText.trim()
+            } else {
+                paragraphs += actionText.trim()
+            }
+        }
+        return assembleGroundedEmail(paragraphs)
+    }
+
     fun composeFromSections(
         requestFacts: List<RequestFactItem>,
         sections: List<ValidatedSection>
@@ -57,7 +76,7 @@ class AiReplyPointByPointComposer(
                 bodies += facts
             }
         }
-        return assembleNaturalEmail(bodies.toList())
+        return assembleGroundedEmail(bodies.toList())
     }
 
     fun composeFromAnswers(
@@ -77,6 +96,23 @@ class AiReplyPointByPointComposer(
             }
         }
         return assembleNaturalEmail(bodies.toList())
+    }
+
+    private fun assembleGroundedEmail(paragraphs: List<String>): String {
+        val frame = replySnippetService.resolveManualFrame()
+        return buildString {
+            frame.salutation?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+                appendLine()
+            }
+            paragraphs.filter { it.isNotBlank() }.forEach { paragraph ->
+                appendLine(paragraph.trim())
+                appendLine()
+            }
+            frame.closing?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+            }
+        }.trim()
     }
 
     private fun assembleNaturalEmail(paragraphs: List<String>): String {

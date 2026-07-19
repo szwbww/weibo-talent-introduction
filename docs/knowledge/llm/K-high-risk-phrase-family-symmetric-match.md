@@ -3,7 +3,7 @@ id: K-high-risk-phrase-family-symmetric-match
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-19
-hit_count: 8
+hit_count: 15
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
 severity: P1
 ---

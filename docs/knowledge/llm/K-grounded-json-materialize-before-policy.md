@@ -3,7 +3,7 @@ id: K-grounded-json-materialize-before-policy
 domain: llm
 created: 2026-07-13
 last_used: 2026-07-19
-hit_count: 18
+hit_count: 25
 source: create-p:ai-reply-03-structured-answer-materialization
 severity: P1
 ---

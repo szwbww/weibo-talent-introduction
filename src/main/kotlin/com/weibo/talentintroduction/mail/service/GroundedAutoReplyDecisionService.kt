@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.config.LlmProperties
+import com.weibo.talentintroduction.llm.service.AiReplyActionPolicy
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
@@ -95,6 +96,9 @@ class GroundedAutoReplyDecisionService(
         draft: AiReplyDraftResult,
         verifiedAutoRuleIds: List<Long>
     ): String {
+        if (hasValidationFailure(draft.contextWarnings)) {
+            return GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED
+        }
         if (draft.qaRuleIds.isEmpty()) {
             return GroundedAutoReplyReason.QA_NO_MATCH
         }
@@ -104,10 +108,10 @@ class GroundedAutoReplyDecisionService(
         if (hasGroundingGap(draft)) {
             return GroundedAutoReplyReason.QA_GROUNDING_GAP
         }
-        if (!draft.usedLlm && hasValidationFailure(draft.contextWarnings)) {
-            return GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED
-        }
         if (!draft.usedLlm || draft.generationState != AiReplyGenerationState.LLM_USED) {
+            if (draft.draftReadiness == AiReplyDraftReadiness.BLOCKED && hasValidationFailure(draft.contextWarnings)) {
+                return GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED
+            }
             return GroundedAutoReplyReason.AI_GENERATION_UNAVAILABLE
         }
         if (verifiedAutoRuleIds.isEmpty()) {
@@ -116,7 +120,13 @@ class GroundedAutoReplyDecisionService(
         if (draft.draftReadiness != AiReplyDraftReadiness.READY) {
             return when (draft.draftReadiness) {
                 AiReplyDraftReadiness.NEEDS_REVIEW -> GroundedAutoReplyReason.QA_POLICY_REVIEW
-                AiReplyDraftReadiness.BLOCKED -> GroundedAutoReplyReason.QA_GROUNDING_GAP
+                AiReplyDraftReadiness.BLOCKED -> {
+                    if (hasValidationFailure(draft.contextWarnings)) {
+                        GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED
+                    } else {
+                        GroundedAutoReplyReason.QA_GROUNDING_GAP
+                    }
+                }
                 else -> GroundedAutoReplyReason.QA_GROUNDING_GAP
             }
         }
@@ -184,6 +194,8 @@ class GroundedAutoReplyDecisionService(
             warning == AiReplyGroundedDraftMaterializer.WARNING_STRUCTURED_RESPONSE_INVALID ||
                 warning == AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE ||
                 warning == AiReplyGroundedDraftMaterializer.WARNING_CLAIM_VALIDATION_FAILED ||
-                warning.startsWith("AI_REPLY_CLAIM_")
+                warning == AiReplyDraftService.TRUST_REPAIR_EXHAUSTED ||
+                warning.startsWith("AI_REPLY_CLAIM_") ||
+                warning.startsWith("AI_REPLY_ACTION_")
         }
 }

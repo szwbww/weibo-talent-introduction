@@ -88,7 +88,8 @@ class AiReplyDraftService(
     private val aiReplyContextService: AiReplyContextService,
     private val aiReplyPointByPointComposer: AiReplyPointByPointComposer,
     private val groundedDraftMaterializer: AiReplyGroundedDraftMaterializer,
-    private val claimValidator: AiReplyHighRiskClaimValidator
+    private val claimValidator: AiReplyHighRiskClaimValidator,
+    private val contentPlanner: AiReplyGroundedContentPlanner
 ) {
     fun generate(
         inboundText: String,
@@ -111,7 +112,7 @@ class AiReplyDraftService(
             contextWarnings,
             researchProfileSufficient
         )
-        val mode = when {
+        var mode = when {
             resolved.sendQaRuleIds.isNotEmpty() ||
                 resolved.requestFacts.any { it.factRuleIds.isNotEmpty() } ||
                 resolved.requestCount >= 2 ||
@@ -120,65 +121,53 @@ class AiReplyDraftService(
             else ->
                 AiReplyMode.FREE_FORM
         }
+
         val lastDraft = operatorTurns.lastOrNull()?.assistantDraft
         val allowedActions = AiReplyActionPolicy.deriveAllowed(
             inboundText = inboundText,
             operatorInstruction = operatorInstruction,
             operatorTurns = operatorTurns
         )
+        val plan = contentPlanner.buildPlan(resolved.requestFacts, allowedActions)
+
+        if (AiReplyGroundedContentPlanner.hasTrustSensitiveNoFacts(resolved.requestFacts)) {
+            mode = AiReplyMode.QA_GROUNDED
+        }
 
         if (!properties.enabled) {
-            return enforceActionPolicy(
-                draftText = fallbackDraftText(
-                    resolved = resolved,
-                    operatorTurns = operatorTurns,
-                    lastDraft = lastDraft,
-                    inboundText = inboundText,
-                    expertProfile = expertProfile,
-                    mailHistory = mailHistory,
-                    operatorInstruction = operatorInstruction,
-                    mode = mode
-                ),
-                usedLlm = false,
-                generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED,
-                allowedActions = allowedActions,
-                messages = null,
-                client = null,
-                temperature = null,
-                providerModel = providerModel,
-                selectedModel = selectedModel.name,
+            return groundedFallbackResult(
                 resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
                 mode = mode,
-                fewShotDialogRefs = emptyList(),
-                contextWarnings = contextWarnings
+                selectedModel = selectedModel.name,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                allowedActions = allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED
             )
         }
 
         val client = llmDraftClientProvider.getIfAvailable()
         if (client == null) {
-            return enforceActionPolicy(
-                draftText = fallbackDraftText(
-                    resolved = resolved,
-                    operatorTurns = operatorTurns,
-                    lastDraft = lastDraft,
-                    inboundText = inboundText,
-                    expertProfile = expertProfile,
-                    mailHistory = mailHistory,
-                    operatorInstruction = operatorInstruction,
-                    mode = mode
-                ),
-                usedLlm = false,
-                generationState = AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE,
-                allowedActions = allowedActions,
-                messages = null,
-                client = null,
-                temperature = null,
-                providerModel = providerModel,
-                selectedModel = selectedModel.name,
+            return groundedFallbackResult(
                 resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
                 mode = mode,
-                fewShotDialogRefs = emptyList(),
-                contextWarnings = contextWarnings
+                selectedModel = selectedModel.name,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                allowedActions = allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
             )
         }
 
@@ -192,7 +181,8 @@ class AiReplyDraftService(
                     expertProfile = expertProfile,
                     mailHistory = mailHistory,
                     contextWarnings = contextWarnings,
-                    operatorInstruction = operatorInstruction
+                    operatorInstruction = operatorInstruction,
+                    plan = plan
                 )
                 fewShotDialogRefs = buildResult.fewShotDialogRefs
                 buildResult.messages
@@ -206,7 +196,8 @@ class AiReplyDraftService(
                     expertProfile = expertProfile,
                     mailHistory = mailHistory,
                     contextWarnings = contextWarnings,
-                    operatorInstruction = operatorInstruction
+                    operatorInstruction = operatorInstruction,
+                    plan = plan
                 ).messages
             }
             AiReplyMode.FREE_FORM -> {
@@ -222,11 +213,33 @@ class AiReplyDraftService(
                 buildResult.messages
             }
         }
-        val boundedMessages = withActionBoundary(messages, allowedActions)
+        val boundedMessages = withActionBoundary(messages, plan.allowedActions)
         val temperature = when (mode) {
             AiReplyMode.QA_GROUNDED, AiReplyMode.QA_MATCHED -> properties.freeFormTemperature
             AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
+
+        if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
+            return generateGrounded(
+                client = client,
+                boundedMessages = boundedMessages,
+                temperature = temperature,
+                providerModel = providerModel,
+                selectedModel = selectedModel.name,
+                resolved = resolved,
+                mode = mode,
+                fewShotDialogRefs = fewShotDialogRefs,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction
+            )
+        }
+
         val llmText = try {
             client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
         } catch (ex: Exception) {
@@ -234,123 +247,375 @@ class AiReplyDraftService(
         }
 
         return if (llmText != null) {
-            if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
-                val materialized = acceptGroundedMaterialization(
-                    groundedDraftMaterializer.materialize(llmText, resolved.requestFacts)
-                )
-                if (materialized.valid) {
-                    val claimResult = claimValidator.validate(materialized.sections, resolved.requestFacts)
-                    if (claimResult.valid) {
-                        enforceActionPolicy(
-                            draftText = materialized.text,
-                            usedLlm = true,
-                            generationState = AiReplyGenerationState.LLM_USED,
-                            allowedActions = allowedActions,
-                            messages = boundedMessages,
-                            client = client,
-                            temperature = temperature,
-                            providerModel = providerModel,
-                            selectedModel = selectedModel.name,
-                            resolved = resolved,
-                            mode = mode,
-                            fewShotDialogRefs = fewShotDialogRefs,
-                            contextWarnings = contextWarnings
-                        )
-                    } else {
-                        enforceActionPolicy(
-                            draftText = fallbackDraftText(
-                                resolved = resolved,
-                                operatorTurns = operatorTurns,
-                                lastDraft = lastDraft,
-                                inboundText = inboundText,
-                                expertProfile = expertProfile,
-                                mailHistory = mailHistory,
-                                operatorInstruction = operatorInstruction,
-                                mode = mode
-                            ),
-                            usedLlm = false,
-                            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                            allowedActions = allowedActions,
-                            messages = null,
-                            client = null,
-                            temperature = null,
-                            providerModel = providerModel,
-                            selectedModel = selectedModel.name,
-                            resolved = resolved,
-                            mode = mode,
-                            fewShotDialogRefs = emptyList(),
-                            contextWarnings = contextWarnings + claimResult.warningCodes
-                        )
-                    }
-                } else {
-                    enforceActionPolicy(
-                        draftText = fallbackDraftText(
-                            resolved = resolved,
-                            operatorTurns = operatorTurns,
-                            lastDraft = lastDraft,
-                            inboundText = inboundText,
-                            expertProfile = expertProfile,
-                            mailHistory = mailHistory,
-                            operatorInstruction = operatorInstruction,
-                            mode = mode
-                        ),
-                        usedLlm = false,
-                        generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                        allowedActions = allowedActions,
-                        messages = null,
-                        client = null,
-                        temperature = null,
-                        providerModel = providerModel,
-                        selectedModel = selectedModel.name,
-                        resolved = resolved,
-                        mode = mode,
-                        fewShotDialogRefs = emptyList(),
-                        contextWarnings = contextWarnings + materialized.warningCodes
-                    )
-                }
-            } else {
-                enforceActionPolicy(
-                    draftText = llmText,
-                    usedLlm = true,
-                    generationState = AiReplyGenerationState.LLM_USED,
-                    allowedActions = allowedActions,
-                    messages = boundedMessages,
-                    client = client,
-                    temperature = temperature,
-                    providerModel = providerModel,
-                    selectedModel = selectedModel.name,
-                    resolved = resolved,
-                    mode = mode,
-                    fewShotDialogRefs = fewShotDialogRefs,
-                    contextWarnings = contextWarnings
-                )
-            }
-        } else {
             enforceActionPolicy(
-                draftText = fallbackDraftText(
-                    resolved = resolved,
-                    operatorTurns = operatorTurns,
-                    lastDraft = lastDraft,
-                    inboundText = inboundText,
-                    expertProfile = expertProfile,
-                    mailHistory = mailHistory,
-                    operatorInstruction = operatorInstruction,
-                    mode = mode
-                ),
-                usedLlm = false,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                allowedActions = allowedActions,
-                messages = null,
-                client = null,
-                temperature = null,
+                draftText = llmText,
+                usedLlm = true,
+                generationState = AiReplyGenerationState.LLM_USED,
+                allowedActions = plan.allowedActions,
+                messages = boundedMessages,
+                client = client,
+                temperature = temperature,
                 providerModel = providerModel,
                 selectedModel = selectedModel.name,
                 resolved = resolved,
                 mode = mode,
-                fewShotDialogRefs = emptyList(),
-                contextWarnings = contextWarnings
+                fewShotDialogRefs = fewShotDialogRefs,
+                contextWarnings = contextWarnings,
+                plan = plan
+            )
+        } else {
+            groundedFallbackResult(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
+                mode = mode,
+                selectedModel = selectedModel.name,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                allowedActions = plan.allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
             )
         }
+    }
+
+    private fun generateGrounded(
+        client: LlmDraftClient,
+        boundedMessages: List<LlmChatMessage>,
+        temperature: Double,
+        providerModel: String,
+        selectedModel: String,
+        resolved: ResolvedQaRules,
+        mode: AiReplyMode,
+        fewShotDialogRefs: List<String>,
+        contextWarnings: List<String>,
+        plan: GroundedContentPlan,
+        operatorTurns: List<AiReplyTurn>,
+        lastDraft: String?,
+        inboundText: String,
+        expertProfile: String?,
+        mailHistory: String?,
+        operatorInstruction: String?
+    ): AiReplyDraftResult {
+        val llmText = try {
+            client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
+        } catch (ex: Exception) {
+            null
+        }
+
+        if (llmText == null) {
+            return groundedFallbackResult(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
+                mode = mode,
+                selectedModel = selectedModel,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                allowedActions = plan.allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            )
+        }
+
+        val blockingTrust = contentPlanner.hasBlockingTrustGap(resolved.requestFacts)
+        val firstResult = materializeAndValidateGroundedCandidate(
+            rawResponse = llmText,
+            plan = plan,
+            resolved = resolved,
+            allowedActions = plan.allowedActions,
+            hasBlockingTrustGap = blockingTrust
+        )
+
+        if (firstResult.valid) {
+            return buildGroundedResult(
+                validated = firstResult,
+                usedLlm = true,
+                generationState = AiReplyGenerationState.LLM_USED,
+                selectedModel = selectedModel,
+                resolved = resolved,
+                mode = mode,
+                fewShotDialogRefs = fewShotDialogRefs,
+                contextWarnings = contextWarnings,
+                plan = plan
+            )
+        }
+
+        val correctionMsg = buildTrustCorrectionMessage(
+            warningCodes = firstResult.allWarnings,
+            allowedActions = plan.allowedActions
+        )
+        val retryMessages = boundedMessages + LlmChatMessage(role = "user", content = correctionMsg)
+        val retryText = try {
+            client.chatWithModel(retryMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
+        } catch (ex: Exception) {
+            null
+        }
+
+        if (retryText == null) {
+            val mergedWarnings = contextWarnings.toMutableList()
+            mergedWarnings += firstResult.allWarnings
+            mergedWarnings += TRUST_REPAIR_EXHAUSTED
+            return groundedFallbackResult(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
+                mode = mode,
+                selectedModel = selectedModel,
+                contextWarnings = mergedWarnings.distinct(),
+                plan = plan,
+                allowedActions = plan.allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            )
+        }
+
+        val retryResult = materializeAndValidateGroundedCandidate(
+            rawResponse = retryText,
+            plan = plan,
+            resolved = resolved,
+            allowedActions = plan.allowedActions,
+            hasBlockingTrustGap = blockingTrust
+        )
+
+        if (retryResult.valid) {
+            return buildGroundedResult(
+                validated = retryResult,
+                usedLlm = true,
+                generationState = AiReplyGenerationState.LLM_USED,
+                selectedModel = selectedModel,
+                resolved = resolved,
+                mode = mode,
+                fewShotDialogRefs = fewShotDialogRefs,
+                contextWarnings = contextWarnings,
+                plan = plan
+            )
+        }
+
+        val mergedWarnings = contextWarnings.toMutableList()
+        mergedWarnings += firstResult.allWarnings
+        mergedWarnings += retryResult.allWarnings
+        mergedWarnings += TRUST_REPAIR_EXHAUSTED
+        return groundedFallbackResult(
+            resolved = resolved,
+            operatorTurns = operatorTurns,
+            lastDraft = lastDraft,
+            inboundText = inboundText,
+            expertProfile = expertProfile,
+            mailHistory = mailHistory,
+            operatorInstruction = operatorInstruction,
+            mode = mode,
+            selectedModel = selectedModel,
+            contextWarnings = mergedWarnings.distinct(),
+            plan = plan,
+            allowedActions = plan.allowedActions,
+            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE
+        )
+    }
+
+    private data class GroundedValidationResult(
+        val valid: Boolean,
+        val text: String,
+        val sections: List<ValidatedSection>,
+        val allWarnings: List<String>
+    )
+
+    private fun materializeAndValidateGroundedCandidate(
+        rawResponse: String,
+        plan: GroundedContentPlan,
+        resolved: ResolvedQaRules,
+        allowedActions: Set<AiReplyAction>,
+        hasBlockingTrustGap: Boolean
+    ): GroundedValidationResult {
+        val warnings = mutableListOf<String>()
+
+        val materialized = acceptGroundedMaterialization(
+            groundedDraftMaterializer.materialize(rawResponse, resolved.requestFacts, plan)
+        )
+        if (!materialized.valid) {
+            warnings += materialized.warningCodes
+            return GroundedValidationResult(
+                valid = false,
+                text = "",
+                sections = materialized.sections,
+                allWarnings = warnings.distinct()
+            )
+        }
+
+        val claimResult = claimValidator.validate(materialized.sections, resolved.requestFacts)
+        if (!claimResult.valid) {
+            warnings += claimResult.warningCodes
+        }
+
+        val trustResult = claimValidator.validateGroundedCandidate(
+            GroundedCandidateInput(
+                validatedSections = materialized.sections,
+                requestFacts = resolved.requestFacts,
+                plan = plan,
+                finalBody = materialized.text,
+                hasBlockingTrustGap = hasBlockingTrustGap
+            )
+        )
+        if (!trustResult.valid) {
+            warnings += trustResult.warningCodes
+        }
+
+        var text = materialized.text
+        val actionViolations = AiReplyActionPolicy.findViolations(text, allowedActions)
+        if (actionViolations.isNotEmpty()) {
+            actionViolations.forEach { v ->
+                val code = v.code ?: UNAUTHORIZED_ACTION_REMOVED
+                if (code !in warnings) {
+                    warnings += code
+                }
+            }
+        }
+
+        if (warnings.isNotEmpty()) {
+            return GroundedValidationResult(
+                valid = false,
+                text = text,
+                sections = materialized.sections,
+                allWarnings = warnings.distinct()
+            )
+        }
+
+        return GroundedValidationResult(
+            valid = true,
+            text = text,
+            sections = materialized.sections,
+            allWarnings = emptyList()
+        )
+    }
+
+    private fun buildGroundedResult(
+        validated: GroundedValidationResult,
+        usedLlm: Boolean,
+        generationState: AiReplyGenerationState,
+        selectedModel: String,
+        resolved: ResolvedQaRules,
+        mode: AiReplyMode,
+        fewShotDialogRefs: List<String>,
+        contextWarnings: List<String>,
+        plan: GroundedContentPlan
+    ): AiReplyDraftResult {
+        val text = validated.text
+        val finalWarnings = contextWarnings.toMutableList()
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, plan.allowedActions)
+        val finalText = if (sanitized.isNotBlank()) sanitized else text
+        if (removed) {
+            if (UNAUTHORIZED_ACTION_REMOVED !in finalWarnings) {
+                finalWarnings += UNAUTHORIZED_ACTION_REMOVED
+            }
+        }
+
+        val finalState = if (usedLlm) AiReplyGenerationState.LLM_USED else generationState
+        val readiness = if (removed) {
+            AiReplyDraftReadiness.NEEDS_REVIEW
+        } else {
+            resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
+        }
+
+        return AiReplyDraftResult(
+            draftText = finalText,
+            usedLlm = usedLlm,
+            qaRuleIds = resolved.sendQaRuleIds,
+            mode = mode,
+            fewShotDialogRefs = fewShotDialogRefs,
+            requestCount = resolved.requestCount,
+            groundedRequestCount = resolved.groundedRequestCount,
+            unsupportedRequests = resolved.unsupportedRequests,
+            contextWarnings = finalWarnings,
+            selectedModel = selectedModel,
+            requestFacts = resolved.requestFacts,
+            generationState = finalState,
+            draftReadiness = readiness
+        )
+    }
+
+    private fun groundedFallbackResult(
+        resolved: ResolvedQaRules,
+        operatorTurns: List<AiReplyTurn>,
+        lastDraft: String?,
+        inboundText: String,
+        expertProfile: String?,
+        mailHistory: String?,
+        operatorInstruction: String?,
+        mode: AiReplyMode,
+        selectedModel: String,
+        contextWarnings: List<String>,
+        plan: GroundedContentPlan,
+        allowedActions: Set<AiReplyAction>,
+        generationState: AiReplyGenerationState
+    ): AiReplyDraftResult {
+        val fallbackText = if (operatorTurns.isEmpty()) {
+            if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
+                aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
+            } else {
+                composeFreeFormDeterministicDraft(inboundText, expertProfile, mailHistory, operatorInstruction)
+            }
+        } else {
+            lastDraft.orEmpty()
+        }
+
+        val finalWarnings = contextWarnings.toMutableList()
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(fallbackText, allowedActions)
+        val finalText = if (sanitized.isNotBlank()) sanitized else fallbackText
+        if (removed && UNAUTHORIZED_ACTION_REMOVED !in finalWarnings) {
+            finalWarnings += UNAUTHORIZED_ACTION_REMOVED
+        }
+
+        val readiness = if (TRUST_REPAIR_EXHAUSTED in contextWarnings) {
+            AiReplyDraftReadiness.BLOCKED
+        } else {
+            resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
+        }
+
+        return AiReplyDraftResult(
+            draftText = finalText,
+            usedLlm = false,
+            qaRuleIds = resolved.sendQaRuleIds,
+            mode = mode,
+            fewShotDialogRefs = emptyList(),
+            requestCount = resolved.requestCount,
+            groundedRequestCount = resolved.groundedRequestCount,
+            unsupportedRequests = resolved.unsupportedRequests,
+            contextWarnings = finalWarnings,
+            selectedModel = selectedModel,
+            requestFacts = resolved.requestFacts,
+            generationState = generationState,
+            draftReadiness = readiness
+        )
+    }
+
+    private fun buildTrustCorrectionMessage(
+        warningCodes: List<String>,
+        allowedActions: Set<AiReplyAction>
+    ): String = buildString {
+        appendLine("Your previous draft violated the trust boundary and action policy rules.")
+        appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
+        appendLine("Violations:")
+        warningCodes.forEach { code ->
+            appendLine("- $code")
+        }
+        appendLine()
+        appendLine(
+            "Return the corrected reply as the same JSON object " +
+                "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
+                "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
+                "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered name is ...\",\"sourceIds\":[24]}]," +
+                "\"missingFacts\":[],\"proposedAction\":{\"type\":\"NONE\",\"text\":null},\"requiresReview\":false} only. " +
+                "No Markdown fence, no salutation, no closing, no STATUS labels."
+        )
     }
 
     private fun withActionBoundary(
@@ -369,6 +634,7 @@ class AiReplyDraftService(
                 appendLine()
                 appendLine("Allowed outbound actions for this draft: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
                 appendLine("Do not request materials or propose a meeting/call unless that action is listed above.")
+                appendLine("Never ask for passports, ID cards, work certificates, or bank statements.")
             }
         )
         return updated
@@ -387,7 +653,8 @@ class AiReplyDraftService(
         resolved: ResolvedQaRules,
         mode: AiReplyMode,
         fewShotDialogRefs: List<String>,
-        contextWarnings: List<String>
+        contextWarnings: List<String>,
+        plan: GroundedContentPlan
     ): AiReplyDraftResult {
         var text = draftText
         var used = usedLlm
@@ -395,7 +662,7 @@ class AiReplyDraftService(
 
         var violations = AiReplyActionPolicy.findViolations(text, allowedActions)
         if (violations.isNotEmpty() && client != null && messages != null) {
-            val correction = buildActionCorrectionMessage(violations, allowedActions, mode)
+            val correction = buildActionCorrectionMessage(violations, allowedActions, mode, plan)
             val retryMessages = messages + LlmChatMessage(role = "user", content = correction)
             val retryText = try {
                 client.chatWithModel(retryMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
@@ -403,62 +670,9 @@ class AiReplyDraftService(
                 null
             }
             if (retryText != null) {
-                if (mode == AiReplyMode.QA_GROUNDED) {
-                    val materialized = acceptGroundedMaterialization(
-                        groundedDraftMaterializer.materialize(retryText, resolved.requestFacts)
-                    )
-                    if (materialized.valid) {
-                        val claimResult = claimValidator.validate(materialized.sections, resolved.requestFacts)
-                        if (claimResult.valid) {
-                            text = materialized.text
-                            used = true
-                            violations = AiReplyActionPolicy.findViolations(text, allowedActions)
-                        } else {
-                            if (AiReplyGroundedDraftMaterializer.WARNING_CLAIM_VALIDATION_FAILED !in warnings) {
-                                warnings += AiReplyGroundedDraftMaterializer.WARNING_CLAIM_VALIDATION_FAILED
-                            }
-                            warnings += claimResult.warningCodes
-                            val fallbackText = aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
-                            return AiReplyDraftResult(
-                                draftText = fallbackText,
-                                usedLlm = false,
-                                qaRuleIds = resolved.sendQaRuleIds,
-                                mode = mode,
-                                fewShotDialogRefs = fewShotDialogRefs,
-                                requestCount = resolved.requestCount,
-                                groundedRequestCount = resolved.groundedRequestCount,
-                                unsupportedRequests = resolved.unsupportedRequests,
-                                contextWarnings = warnings,
-                                selectedModel = selectedModel,
-                                requestFacts = resolved.requestFacts,
-                                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                                draftReadiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
-                            )
-                        }
-                    } else {
-                        warnings += materialized.warningCodes
-                        val fallbackText = aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
-                        return AiReplyDraftResult(
-                            draftText = fallbackText,
-                            usedLlm = false,
-                            qaRuleIds = resolved.sendQaRuleIds,
-                            mode = mode,
-                            fewShotDialogRefs = fewShotDialogRefs,
-                            requestCount = resolved.requestCount,
-                            groundedRequestCount = resolved.groundedRequestCount,
-                            unsupportedRequests = resolved.unsupportedRequests,
-                            contextWarnings = warnings,
-                            selectedModel = selectedModel,
-                            requestFacts = resolved.requestFacts,
-                            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                            draftReadiness = resolveDraftReadiness(resolved.requestFacts)
-                        )
-                    }
-                } else {
-                    text = retryText
-                    used = true
-                    violations = AiReplyActionPolicy.findViolations(text, allowedActions)
-                }
+                text = retryText
+                used = true
+                violations = AiReplyActionPolicy.findViolations(text, allowedActions)
             }
         }
 
@@ -470,7 +684,6 @@ class AiReplyDraftService(
             }
         }
         if (text.isBlank()) {
-            // QA_GROUNDED empty fallback must stay blank — never inject internal marker copy (I-2/I-8).
             if (mode != AiReplyMode.QA_GROUNDED) {
                 text = INSUFFICIENT_SAFE_REPLY
             }
@@ -478,7 +691,6 @@ class AiReplyDraftService(
                 warnings += UNAUTHORIZED_ACTION_REMOVED
             }
         }
-        // Final hard gate: never return unauthorized CTAs.
         val (finalText, finalRemoved) = AiReplyActionPolicy.sanitize(text, allowedActions)
         text = if (finalText.isBlank()) {
             if (mode == AiReplyMode.QA_GROUNDED) "" else INSUFFICIENT_SAFE_REPLY
@@ -489,7 +701,6 @@ class AiReplyDraftService(
             warnings += UNAUTHORIZED_ACTION_REMOVED
         }
 
-        // Retry success stays LLM_USED; sanitize never invents fallback when used=true.
         val finalState = if (used) AiReplyGenerationState.LLM_USED else generationState
 
         val readiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
@@ -514,7 +725,8 @@ class AiReplyDraftService(
     private fun buildActionCorrectionMessage(
         violations: List<ActionViolation>,
         allowedActions: Set<AiReplyAction>,
-        mode: AiReplyMode
+        mode: AiReplyMode,
+        plan: GroundedContentPlan
     ): String = buildString {
         appendLine("Your previous draft violated the outbound action policy.")
         appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
@@ -526,9 +738,10 @@ class AiReplyDraftService(
         if (mode == AiReplyMode.QA_GROUNDED) {
             appendLine(
                 "Return the corrected reply as the same JSON object " +
-                    "{\"sections\":[{\"requestIndex\":1,\"answers\":[" +
-                    "{\"intentKey\":\"expertise.programme_fit\",\"answer\":\"...\",\"sourceRuleIds\":[24]}" +
-                    "]}]} only. " +
+                    "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
+                    "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
+                    "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered name is ...\",\"sourceIds\":[24]}]," +
+                    "\"missingFacts\":[],\"proposedAction\":{\"type\":\"NONE\",\"text\":null},\"requiresReview\":false} only. " +
                     "No Markdown fence, no salutation, no closing, no STATUS labels."
             )
         } else {
@@ -588,21 +801,56 @@ class AiReplyDraftService(
         if (requestFacts.isEmpty()) {
             return AiReplyDraftReadiness.READY
         }
-        if (requestFacts.any { it.status == RequestGroundingStatus.UNSUPPORTED }) {
+
+        val hasBlockingUnsupported = requestFacts.any { item ->
+            if (item.status == RequestGroundingStatus.UNSUPPORTED) {
+                if (item.intents.isEmpty()) {
+                    true
+                } else {
+                    item.intents.any { contentPlanner.isBlockingTrustIntent(it.intentKey) }
+                }
+            } else {
+                false
+            }
+        }
+        if (hasBlockingUnsupported) {
             return AiReplyDraftReadiness.BLOCKED
         }
+
+        val hasNonCriticalUnsupported = requestFacts.any { item ->
+            item.status == RequestGroundingStatus.UNSUPPORTED && item.intents.isNotEmpty() &&
+                item.intents.none { contentPlanner.isBlockingTrustIntent(it.intentKey) }
+        }
+        val hasUnknownUnsupported = requestFacts.any { item ->
+            item.status == RequestGroundingStatus.UNSUPPORTED && item.intents.isEmpty()
+        }
+        if (hasUnknownUnsupported) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+
         if (evidenceRuleIds.isEmpty()) {
             return AiReplyDraftReadiness.BLOCKED
         }
-        if (requestFacts.any { it.status == RequestGroundingStatus.PARTIAL }) {
-            return AiReplyDraftReadiness.NEEDS_REVIEW
-        }
+
         val policies = evidenceRuleIds.mapNotNull { ruleId ->
             qaRuleRepository.findById(ruleId).orElse(null)?.replyPolicyEnum()
         }
+        if (policies.any { it == QaReplyPolicy.NEVER }) {
+            return AiReplyDraftReadiness.BLOCKED
+        }
+
+        if (requestFacts.any { it.status == RequestGroundingStatus.PARTIAL }) {
+            return AiReplyDraftReadiness.NEEDS_REVIEW
+        }
+
+        if (hasNonCriticalUnsupported) {
+            return AiReplyDraftReadiness.NEEDS_REVIEW
+        }
+
         if (policies.any { it == QaReplyPolicy.REVIEW }) {
             return AiReplyDraftReadiness.NEEDS_REVIEW
         }
+
         return AiReplyDraftReadiness.READY
     }
 
@@ -627,7 +875,8 @@ class AiReplyDraftService(
         expertProfile: String?,
         mailHistory: String?,
         contextWarnings: List<String>,
-        operatorInstruction: String? = null
+        operatorInstruction: String? = null,
+        plan: GroundedContentPlan
     ): FreeFormBuildResult {
         val fewShots = aiTrainingDialogueService.selectRelevantDialogues(inboundText, max = 1)
         val messages = mutableListOf<LlmChatMessage>()
@@ -643,7 +892,7 @@ class AiReplyDraftService(
         }
         messages += LlmChatMessage(
             role = "user",
-            content = buildGroundedUserContent(inboundText, requestFacts, expertProfile, mailHistory, contextWarnings)
+            content = buildGroundedUserContent(inboundText, requestFacts, expertProfile, mailHistory, contextWarnings, plan)
         )
         appendFirstTurnInstruction(messages, operatorInstruction)
         appendOperatorTurns(messages, operatorTurns)
@@ -727,28 +976,27 @@ class AiReplyDraftService(
         appendLine("You answer expert inbound requests using only the approved facts provided per request and intent.")
         appendLine(
             "Return exactly one JSON object and nothing else: " +
-                "{\"sections\":[" +
-                "{\"requestIndex\":1,\"answers\":[" +
-                "{\"intentKey\":\"expertise.programme_fit\",\"answer\":\"...\"," +
-                "\"sourceRuleIds\":[24]}" +
-                "]}" +
-                "]}"
+                "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
+                "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
+                "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered company name is ...\",\"sourceIds\":[24]}]," +
+                "\"missingFacts\":[]," +
+                "\"proposedAction\":{\"type\":\"NONE\",\"text\":null}," +
+                "\"requiresReview\":false}"
         )
         appendLine("Rules:")
-        appendLine("- Include exactly one section for every request index with supported intents.")
-        appendLine("- For each request section, include exactly one answer object per supported intent, with:" +
-            " intentKey matching the allowed intent keys, answer text, and sourceRuleIds referencing" +
-            " only the evidence rule IDs listed for that intent.")
-        appendLine("- Do not include requests with no supported intents.")
-        appendLine("- Write natural prose in 2-4 short paragraphs total across all answers; do not use numbered lists, section headings, or internal labels.")
-        appendLine("- Use one brief acknowledgment only; do not repeat salutation, thanks, or closing in JSON answers.")
-        appendLine("- Do not expose intent keys, rule IDs, GROUNDED/PARTIAL/UNSUPPORTED, or coverage labels in answer text.")
-        appendLine("- Each answer uses only that intent's approved facts; do not invent or borrow across intents.")
-        appendLine("- sourceRuleIds must be a non-empty subset of the evidence rule IDs listed for that intent.")
-        appendLine(
-            "Do NOT claim to have visited or accessed any external URLs, websites, Google Scholar, Scopus, " +
-                "or any online resource."
-        )
+        appendLine("- The SERVER PLAN section specifies exactly what claims to produce, their ordering and paragraph grouping, evidence source IDs, missing facts, allowed actions, and whether review is required.")
+        appendLine("- claims: produce exactly one claim per claimKey in the server plan. No extra claims; no missing claims.")
+        appendLine("- Each claim.text must use only the approved facts listed after that claim's RULE IDs in the SERVER PLAN. Do not invent, combine across intents, or borrow facts from another claim.")
+        appendLine("- claim.sourceIds must be a non-empty subset of the evidence rule IDs listed for that claim in the SERVER PLAN.")
+        appendLine("- paragraphs: group claims exactly as specified by claimKeys. Do NOT output section headings, numbered lists, bullet points, intent keys, rule IDs, GROUNDED/PARTIAL/UNSUPPORTED or coverage labels in prose.")
+        appendLine("- missingFacts: copy exactly from the server plan. Do not add or remove entries.")
+        appendLine("- proposedAction: one of {\"type\":\"NONE\",\"text\":null}, {\"type\":\"REQUEST_MATERIALS\",\"text\":\"...\"}, {\"type\":\"PROPOSE_MEETING\",\"text\":\"...\"}. Only pick a type listed in allowed outbound actions. text must be null for NONE; non-null for others. The action text in the draft body must match this declaration exactly.")
+        appendLine("- requiresReview: copy the boolean from the server plan.")
+        appendLine("- Write each claim in 1-3 concrete, restrained sentences per claim. Use the same language as the inbound email.")
+        appendLine("- For identity/verification questions: state only confirmed identity facts and verifiable registration paths. Never claim government cooperation, official authorization, no fees, confidentiality, funding or contract guarantees unless those facts appear in your approved evidence.")
+        appendLine("- Never output: \"trust us\", \"rest assured\", \"prestigious\", \"unique opportunity\", \"we are delighted\", \"please find our answers below\", \"do not hesitate\".")
+        appendLine("- Claims must not contain salutations, fixed thank-you phrases, sign-offs, or unauthorized CTAs.")
+        appendLine("- Do NOT claim to have visited or accessed any external URLs, websites, Google Scholar, Scopus, or any online resource.")
         if (multiRequest) {
             appendLine(
                 "When multiple requests share the same facts, paraphrase once per intent without repeating identical wording."
@@ -788,7 +1036,8 @@ class AiReplyDraftService(
         requestFacts: List<RequestFactItem>,
         expertProfile: String?,
         mailHistory: String?,
-        contextWarnings: List<String>
+        contextWarnings: List<String>,
+        plan: GroundedContentPlan
     ): String = buildString {
         requestFacts.forEach { item ->
             appendLine()
@@ -861,8 +1110,47 @@ class AiReplyDraftService(
         }
 
         appendLine()
+        appendLine(buildGroundedPlanSection(plan))
+
+        appendLine()
         appendLine("Inbound email:")
         appendLine(inboundText.take(4000))
+    }
+
+    private fun buildGroundedPlanSection(plan: GroundedContentPlan): String = buildString {
+        appendLine("SERVER PLAN")
+        appendLine("requiresReview: ${plan.requiresReview}")
+        appendLine()
+        appendLine("allowedActions: ${AiReplyActionPolicy.formatAllowedLabel(plan.allowedActions)}")
+        appendLine()
+        appendLine("Paragraphs (claim keys in order):")
+        plan.paragraphs.forEach { para ->
+            appendLine("  paragraph ${para.paragraphIndex}: ${para.claimKeys.joinToString(", ")}")
+        }
+        appendLine()
+        appendLine("Claims to produce:")
+        plan.claims.forEach { claim ->
+            appendLine("  claimKey: ${claim.claimKey}")
+            appendLine("    requestIndex: ${claim.requestIndex}")
+            appendLine("    intentKey: ${claim.intentKey}")
+            appendLine("    evidence sourceIds: ${claim.sourceIds}")
+            claim.sourceIds.forEach { ruleId ->
+                qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                    val body = rule.answerBody.trim()
+                    if (body.isNotBlank()) {
+                        appendLine("    RULE $ruleId FACT: $body")
+                    }
+                }
+            }
+        }
+        if (plan.missingFacts.isNotEmpty()) {
+            appendLine()
+            appendLine("Missing facts (do not produce claims for these):")
+            plan.missingFacts.forEach { mf ->
+                val keys = if (mf.intentKeys.isEmpty()) "none" else mf.intentKeys.joinToString(", ")
+                appendLine("  requestIndex: ${mf.requestIndex}, intentKeys: [$keys]")
+            }
+        }
     }
 
     internal fun buildFreeFormUserContent(
@@ -983,6 +1271,7 @@ class AiReplyDraftService(
 
     companion object {
         const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
+        const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"
         const val INSUFFICIENT_SAFE_REPLY =
             "The available approved information is not sufficient for a reliable reply, so this item should be confirmed manually."
     }

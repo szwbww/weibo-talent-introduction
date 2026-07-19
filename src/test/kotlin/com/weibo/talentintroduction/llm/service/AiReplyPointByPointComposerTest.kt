@@ -62,10 +62,10 @@ class AiReplyPointByPointComposerTest {
         )
 
         assertTrue(text.startsWith("Dear \${expertName|Professor},"))
-        assertTrue(text.contains(QaReplyComposer.GREETING))
         assertTrue(text.contains("Salary facts"))
         assertTrue(text.contains("Visa facts"))
         assertTrue(text.contains(QaReplyComposer.CLOSING))
+        assertFalse(text.contains(QaReplyComposer.GREETING))
         assertFalse(text.contains("1. Financial arrangements"))
         assertFalse(text.contains("2. Next stages"))
         assertFalse(text.contains("Please see point"))

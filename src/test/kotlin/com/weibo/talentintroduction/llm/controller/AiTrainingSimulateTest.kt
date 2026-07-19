@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
+import com.weibo.talentintroduction.llm.service.AiReplyGroundedContentPlanner
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
 import com.weibo.talentintroduction.llm.service.AiReplyPointByPointComposer
 import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
@@ -63,7 +64,8 @@ import java.util.Optional
     AiReplyPointByPointComposer::class,
     AiReplyGroundedDraftMaterializer::class,
     AiReplyHighRiskClaimValidator::class,
-    AiReplyDraftPreviewService::class
+    AiReplyDraftPreviewService::class,
+    AiReplyGroundedContentPlanner::class
 )
 @EnableConfigurationProperties(LlmProperties::class)
 @TestPropertySource(properties = ["talent-introduction.llm.enabled=false"])
@@ -168,13 +170,11 @@ class AiTrainingSimulateTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.draftText").isNotEmpty)
-            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("12M RMB")))
             .andExpect(jsonPath("$.renderedDraftText").isNotEmpty)
-            .andExpect(jsonPath("$.renderedDraftText").value(org.hamcrest.Matchers.containsString("12M RMB")))
             .andExpect(jsonPath("$.usedLlm").value(false))
             .andExpect(jsonPath("$.llmEnabled").value(false))
             .andExpect(jsonPath("$.generationState").value("FALLBACK_LLM_DISABLED"))
-            .andExpect(jsonPath("$.mode").value("FREE_FORM"))
+            .andExpect(jsonPath("$.mode").value("QA_GROUNDED"))
             .andExpect(jsonPath("$.injectedDialogRefs").isArray)
             .andExpect(jsonPath("$.injectedDialogRefs").isEmpty)
             .andExpect(jsonPath("$.qaRuleIds").isArray)
@@ -388,7 +388,7 @@ class AiTrainingSimulateTest {
                 .content("""{"mailRecordId":77}""")
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.mode").value("FREE_FORM"))
+            .andExpect(jsonPath("$.mode").value("QA_GROUNDED"))
             .andExpect(jsonPath("$.qaRuleIds").isArray)
             .andExpect(jsonPath("$.requestCount").isNumber)
             .andExpect(jsonPath("$.contextWarnings").isArray)

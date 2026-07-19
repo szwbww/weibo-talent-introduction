@@ -100,7 +100,7 @@ class AiReplyActionPolicyTest {
         assertTrue(
             AiReplyActionPolicy.findViolations("Meetings may be arranged after selection.", none).isEmpty()
         )
-        assertTrue(
+        assertFalse(
             AiReplyActionPolicy.findViolations(
                 "Please send your CV when convenient.",
                 setOf(AiReplyAction.REQUEST_MATERIALS)
@@ -114,7 +114,7 @@ class AiReplyActionPolicyTest {
             listOf(AiReplyAction.REQUEST_MATERIALS),
             AiReplyActionPolicy.findViolations("Would you mind forwarding your résumé?", none).map { it.action }
         )
-        assertTrue(
+        assertFalse(
             AiReplyActionPolicy.findViolations(
                 "Could you share your CV?",
                 setOf(AiReplyAction.REQUEST_MATERIALS)
@@ -266,5 +266,153 @@ class AiReplyActionPolicyTest {
         // Seam: at most two CRLF blank-line separators (\r\n\r\n), no 3+ blank lines
         assertTrue(sanitized.contains("- Point one about the program.\r\n\r\n- Point two about funding."))
         assertFalse(sanitized.contains("\r\n\r\n\r\n"))
+    }
+
+    @Test
+    fun `do not need to provide passport is not a violation`() {
+        val text = "You do not need to provide a passport at this stage."
+        assertTrue(AiReplyActionPolicy.findViolations(text, emptySet()).isEmpty())
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertFalse(removed)
+        assertEquals(text, sanitized)
+    }
+
+    @Test
+    fun `do not request an ID card is not a violation`() {
+        val text = "We do not request an identity card for initial contact."
+        assertTrue(AiReplyActionPolicy.findViolations(text, emptySet()).isEmpty())
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertFalse(removed)
+        assertEquals(text, sanitized)
+    }
+
+    @Test
+    fun `chinese negative passport mention is not a violation`() {
+        val text = "此阶段不需要提供护照。"
+        assertTrue(AiReplyActionPolicy.findViolations(text, emptySet()).isEmpty())
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertFalse(removed)
+        assertEquals(text, sanitized)
+    }
+
+    @Test
+    fun `negation with subsequent positive CTA still flags the positive part`() {
+        val text = "We do not request an ID card, but please send your passport."
+        val violations = AiReplyActionPolicy.findViolations(text, emptySet())
+        assertFalse(violations.isEmpty())
+        assertEquals(AiReplyAction.REQUEST_MATERIALS, violations.first().action)
+        assertEquals(AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL, violations.first().code)
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("passport", ignoreCase = true))
+        assertTrue(sanitized.contains("do not request an ID card"))
+    }
+
+    @Test
+    fun `ID card positive request is blocked and fully removed`() {
+        val text = "Please send your ID card."
+        val violations = AiReplyActionPolicy.findViolations(text, emptySet())
+        assertFalse(violations.isEmpty())
+        assertEquals(AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL, violations.first().code)
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertTrue(removed)
+        assertEquals("", sanitized)
+    }
+
+    @Test
+    fun `do not request ID card is not a violation`() {
+        val text = "We do not request an ID card."
+        assertTrue(AiReplyActionPolicy.findViolations(text, emptySet()).isEmpty())
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertFalse(removed)
+        assertEquals(text, sanitized)
+    }
+
+    @Test
+    fun `positive passport CTA still blocked`() {
+        val text = "Could you send your passport?"
+        val violations = AiReplyActionPolicy.findViolations(text, emptySet())
+        assertFalse(violations.isEmpty())
+        assertEquals(AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL, violations.first().code)
+
+        val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+        assertTrue(removed)
+        assertFalse(sanitized.contains("passport", ignoreCase = true))
+    }
+
+    @Test
+    fun `please send work certificate still blocked`() {
+        val text = "请发送您的工作证明。"
+        val violations = AiReplyActionPolicy.findViolations(text, emptySet())
+        assertFalse(violations.isEmpty())
+        assertEquals(AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL, violations.first().code)
+    }
+
+    @Test
+    fun `sensitive CTA action scope follows the closed 5A final matrix`() {
+        val cases = listOf(
+            Triple(
+                "We do not request an ID card.",
+                false,
+                "We do not request an ID card."
+            ),
+            Triple(
+                "We do not request an ID card, but please send your passport.",
+                true,
+                "We do not request an ID card"
+            ),
+            Triple(
+                "Please send your passport and bank statement.",
+                true,
+                ""
+            ),
+            Triple(
+                "Please send your passport, ID card, and bank statement.",
+                true,
+                ""
+            ),
+            Triple(
+                "We do not request a passport and bank statement.",
+                false,
+                "We do not request a passport and bank statement."
+            ),
+            Triple(
+                "We do not request a passport and please send your bank statement.",
+                true,
+                "We do not request a passport"
+            ),
+            Triple(
+                "此阶段不需要提供护照和银行证明。",
+                false,
+                "此阶段不需要提供护照和银行证明。"
+            ),
+            Triple(
+                "此阶段不需要提供护照，但请发送银行证明。",
+                true,
+                "此阶段不需要提供护照"
+            )
+        )
+
+        cases.forEach { (text, expectedViolation, expectedSanitized) ->
+            val violations = AiReplyActionPolicy.findViolations(text, emptySet())
+            assertEquals(if (expectedViolation) 1 else 0, violations.size, text)
+            if (expectedViolation) {
+                assertEquals(
+                    AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL,
+                    violations.single().code,
+                    text
+                )
+            }
+
+            val (sanitized, removed) = AiReplyActionPolicy.sanitize(text, emptySet())
+            assertEquals(expectedViolation, removed, text)
+            assertEquals(expectedSanitized, sanitized, text)
+        }
     }
 }

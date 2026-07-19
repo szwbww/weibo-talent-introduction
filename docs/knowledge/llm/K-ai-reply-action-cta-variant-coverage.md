@@ -3,7 +3,7 @@ id: K-ai-reply-action-cta-variant-coverage
 domain: llm
 created: 2026-07-12
 last_used: 2026-07-19
-hit_count: 13
+hit_count: 26
 source: fix-v:ai-reply-action-policy-runtime:fix-1
 severity: P1
 ---

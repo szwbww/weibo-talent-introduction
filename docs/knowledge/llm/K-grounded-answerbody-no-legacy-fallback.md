@@ -2,8 +2,8 @@
 id: K-grounded-answerbody-no-legacy-fallback
 domain: llm
 created: 2026-07-17
-last_used: 2026-07-17
-hit_count: 4
+last_used: 2026-07-19
+hit_count: 8
 source: fix-v:qa-refactor-04-grounded-engine:fix-1
 severity: P1
 ---
