@@ -44,6 +44,7 @@ data class MailboxExpertGroupResponse(
     val expertOrcidId: String,
     val operatorStatus: String,
     val expertIndexLevel: String,
+    val mailCount: Long,
     val pendingCount: Long,
     val mails: List<MailboxItemResponse>
 )
@@ -109,17 +110,27 @@ class MailboxController(private val mailboxService: MailboxService) {
         )
     }
 
-    @GetMapping("/pending-by-expert")
-    fun listPendingByExpert(
+    @GetMapping("/by-expert")
+    fun listByExpert(
+        @RequestParam(required = false) direction: String?,
         @RequestParam(required = false) accountCode: String?,
         @RequestParam(required = false) keyword: String?,
         @RequestParam(required = false) recipientEmail: String?,
+        @RequestParam(required = false) startDate: String?,
+        @RequestParam(required = false) endDate: String?,
+        @RequestParam(defaultValue = "false") pending: Boolean,
+        @RequestParam(required = false) tag: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
-    ): MailboxExpertGroupListResponse = mailboxService.listPendingByExpert(
+    ): MailboxExpertGroupListResponse = mailboxService.listByExpert(
+        direction = direction,
         accountCode = accountCode,
         keyword = keyword,
         recipientEmail = recipientEmail,
+        startTime = startDate?.let { LocalDate.parse(it).atStartOfDay() },
+        endTime = endDate?.let { LocalDate.parse(it).plusDays(1).atStartOfDay() },
+        pending = pending,
+        tag = tag,
         page = page,
         size = size.coerceIn(1, 100)
     )

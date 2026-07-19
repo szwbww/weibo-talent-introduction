@@ -81,10 +81,15 @@ class MailboxService(
         return MailboxListResponse(items, total)
     }
 
-    fun listPendingByExpert(
+    fun listByExpert(
+        direction: String?,
         accountCode: String?,
         keyword: String?,
         recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?,
+        pending: Boolean,
+        tag: String?,
         page: Int,
         size: Int
     ): MailboxExpertGroupListResponse {
@@ -99,21 +104,32 @@ class MailboxService(
         }
 
         val offset = page.toLong() * size
-        val total = mailRecordRepository.countPendingExperts(
+        val onlyPending = if (pending) 1 else 0
+        val total = mailRecordRepository.countMailboxExperts(
             accountCodes = activeCodes,
+            direction = direction,
             accountCode = accountCode,
             keyword = keyword,
-            recipientEmail = recipientEmail
+            recipientEmail = recipientEmail,
+            startTime = startTime,
+            endTime = endTime,
+            onlyPending = onlyPending,
+            tag = tag
         )
         if (total == 0L) {
             return MailboxExpertGroupListResponse(emptyList(), 0)
         }
 
-        val summaries = mailRecordRepository.listPendingExpertSummaries(
+        val summaries = mailRecordRepository.listMailboxExpertSummaries(
             accountCodes = activeCodes,
+            direction = direction,
             accountCode = accountCode,
             keyword = keyword,
             recipientEmail = recipientEmail,
+            startTime = startTime,
+            endTime = endTime,
+            onlyPending = onlyPending,
+            tag = tag,
             limit = size,
             offset = offset
         )
@@ -122,12 +138,17 @@ class MailboxService(
         }
 
         val expertContactIds = summaries.map { it.expertContactId }
-        val mailRows = mailRecordRepository.listPendingMailsByExpertContactIds(
+        val mailRows = mailRecordRepository.listMailboxByExpertContactIds(
             expertContactIds = expertContactIds,
             accountCodes = activeCodes,
+            direction = direction,
             accountCode = accountCode,
             keyword = keyword,
-            recipientEmail = recipientEmail
+            recipientEmail = recipientEmail,
+            startTime = startTime,
+            endTime = endTime,
+            onlyPending = onlyPending,
+            tag = tag
         )
         val inboundIds = mailRows.mapNotNull { it.inboundProcessingId }
         val inboundTagsById = inboundMailTagService.listTagsBatch(inboundIds)
@@ -143,6 +164,7 @@ class MailboxService(
                 expertOrcidId = summary.orcidId,
                 operatorStatus = summary.operatorStatus,
                 expertIndexLevel = summary.currentIndexLevel,
+                mailCount = summary.mailCount,
                 pendingCount = summary.pendingCount,
                 mails = mailsByExpert[summary.expertContactId] ?: emptyList()
             )

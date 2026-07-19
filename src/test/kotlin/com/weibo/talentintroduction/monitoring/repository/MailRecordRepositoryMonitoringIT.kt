@@ -179,7 +179,7 @@ class MailRecordRepositoryMonitoringIT {
     }
 
     @Test
-    fun `countPendingExperts excludes unmatched manual review and processed inbound`() {
+    fun `expert aggregation combines all mail and pending remains an independent scope`() {
         seedBaseContact()
         seedSecondExpertContact()
         val receivedAt = LocalDate.now(shanghaiZone).atStartOfDay().plusHours(8)
@@ -211,12 +211,34 @@ class MailRecordRepositoryMonitoringIT {
             receivedAt.minusHours(3), receivedAt.minusHours(3)
         )
 
-        assertEquals(1L, mailRecordRepository.countPendingExperts(
+        assertEquals(1L, mailRecordRepository.countMailboxExperts(
             accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = null,
-            recipientEmail = null
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 0,
+            tag = null
         ))
+
+        val allSummary = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            limit = 10, offset = 0L
+        ).single()
+        assertEquals(3L, allSummary.mailCount)
+        assertEquals(1L, allSummary.pendingCount)
+
+        val pendingMails = mailRecordRepository.listMailboxByExpertContactIds(
+            expertContactIds = listOf(1L), accountCodes = listOf("sender"), direction = null,
+            accountCode = null, keyword = null, recipientEmail = null, startTime = null, endTime = null,
+            onlyPending = 1, tag = null
+        )
+        assertEquals(1, pendingMails.size)
+        assertEquals("INBOUND_PROCESSING", pendingMails.single().source)
+        assertEquals("MANUAL_REVIEW", pendingMails.single().processStatus)
     }
 
     @Test
@@ -239,26 +261,41 @@ class MailRecordRepositoryMonitoringIT {
             base.minusHours(3), base.minusHours(2), base.minusHours(1), base
         )
 
-        assertEquals(2L, mailRecordRepository.countPendingExperts(
+        assertEquals(2L, mailRecordRepository.countMailboxExperts(
             accountCodes = listOf("sender"),
-            accountCode = null,
-            keyword = null,
-            recipientEmail = null
-        ))
-
-        val page0 = mailRecordRepository.listPendingExpertSummaries(
-            accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = null,
             recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null
+        ))
+
+        val page0 = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"),
+            direction = null,
+            accountCode = null,
+            keyword = null,
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null,
             limit = 1,
             offset = 0L
         )
-        val page1 = mailRecordRepository.listPendingExpertSummaries(
+        val page1 = mailRecordRepository.listMailboxExpertSummaries(
             accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = null,
             recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null,
             limit = 1,
             offset = 1L
         )
@@ -269,12 +306,17 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals(1L, page1[0].expertContactId)
         assertEquals(3L, page1[0].pendingCount)
 
-        val mails = mailRecordRepository.listPendingMailsByExpertContactIds(
+        val mails = mailRecordRepository.listMailboxByExpertContactIds(
             expertContactIds = listOf(page1[0].expertContactId),
             accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = null,
-            recipientEmail = null
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null
         )
         assertEquals(3, mails.size)
         assertTrue(mails.all { it.expertContactId == 1L })
@@ -300,18 +342,28 @@ class MailRecordRepositoryMonitoringIT {
         )
 
         val keyword = "材料"
-        assertEquals(1L, mailRecordRepository.countPendingExperts(
+        assertEquals(1L, mailRecordRepository.countMailboxExperts(
             accountCodes = listOf("sender"),
-            accountCode = null,
-            keyword = keyword,
-            recipientEmail = null
-        ))
-
-        val summaries = mailRecordRepository.listPendingExpertSummaries(
-            accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = keyword,
             recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null
+        ))
+
+        val summaries = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"),
+            direction = null,
+            accountCode = null,
+            keyword = keyword,
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null,
             limit = 10,
             offset = 0L
         )
@@ -319,12 +371,17 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals(1L, summaries[0].expertContactId)
         assertEquals(2L, summaries[0].pendingCount)
 
-        val mails = mailRecordRepository.listPendingMailsByExpertContactIds(
+        val mails = mailRecordRepository.listMailboxByExpertContactIds(
             expertContactIds = listOf(1L),
             accountCodes = listOf("sender"),
+            direction = null,
             accountCode = null,
             keyword = keyword,
-            recipientEmail = null
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            onlyPending = 1,
+            tag = null
         )
         assertEquals(2, mails.size)
         assertTrue(mails.all { it.subject?.contains("材料") == true })

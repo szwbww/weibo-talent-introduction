@@ -608,16 +608,13 @@ class MailboxServiceTest {
     }
 
     @Test
-    fun `listPendingByExpert returns empty when no active accounts`() {
+    fun `listByExpert returns empty when no real accounts`() {
         Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
             .thenReturn(emptyList())
 
-        val response = mailboxService.listPendingByExpert(
-            accountCode = null,
-            keyword = null,
-            recipientEmail = null,
-            page = 0,
-            size = 20
+        val response = mailboxService.listByExpert(
+            direction = null, accountCode = null, keyword = null, recipientEmail = null,
+            startTime = null, endTime = null, pending = false, tag = null, page = 0, size = 20
         )
 
         assertEquals(0L, response.totalCount)
@@ -626,184 +623,117 @@ class MailboxServiceTest {
     }
 
     @Test
-    fun `listPendingByExpert returns empty when filtered account is not active`() {
-        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
-            .thenReturn(listOf(activeAccount))
-
-        val response = mailboxService.listPendingByExpert(
-            accountCode = "inactive_acc",
-            keyword = null,
-            recipientEmail = null,
-            page = 0,
-            size = 20
-        )
-
-        assertEquals(0L, response.totalCount)
-        assertTrue(response.groups.isEmpty())
-        Mockito.verify(mailRecordRepository, never()).listPendingExpertSummaries(
-            Mockito.anyList(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.anyInt(),
-            Mockito.anyLong()
-        )
-    }
-
-    @Test
-    fun `listPendingByExpert skips sub mail query when expert page is empty`() {
+    fun `listByExpert skips sub mail query when expert page is empty`() {
         Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
             .thenReturn(listOf(activeAccount))
         Mockito.`when`(
-            mailRecordRepository.countPendingExperts(
-                accountCodes = listOf("active_acc"),
-                accountCode = null,
-                keyword = null,
-                recipientEmail = null
+            mailRecordRepository.countMailboxExperts(
+                accountCodes = listOf("active_acc"), direction = null, accountCode = null,
+                keyword = null, recipientEmail = null, startTime = null, endTime = null,
+                onlyPending = 0, tag = null
             )
         ).thenReturn(0L)
 
-        val response = mailboxService.listPendingByExpert(
-            accountCode = null,
-            keyword = null,
-            recipientEmail = null,
-            page = 0,
-            size = 20
+        val response = mailboxService.listByExpert(
+            direction = null, accountCode = null, keyword = null, recipientEmail = null,
+            startTime = null, endTime = null, pending = false, tag = null, page = 0, size = 20
         )
 
         assertEquals(0L, response.totalCount)
         assertTrue(response.groups.isEmpty())
-        Mockito.verify(mailRecordRepository, never()).listPendingMailsByExpertContactIds(
-            Mockito.anyList(),
-            Mockito.anyList(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull()
+        Mockito.verify(mailRecordRepository, never()).listMailboxByExpertContactIds(
+            Mockito.anyList(), Mockito.anyList(), Mockito.isNull(), Mockito.isNull(), Mockito.isNull(),
+            Mockito.isNull(), Mockito.isNull(), Mockito.isNull(), Mockito.anyInt(), Mockito.isNull()
         )
     }
 
     @Test
-    fun `listPendingByExpert assembles nested mails with tags in summary order`() {
+    fun `listByExpert assembles all outbound and inbound mails with pending count`() {
         Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
             .thenReturn(listOf(activeAccount))
         Mockito.`when`(
-            mailRecordRepository.countPendingExperts(
-                accountCodes = listOf("active_acc"),
-                accountCode = null,
-                keyword = null,
-                recipientEmail = null
+            mailRecordRepository.countMailboxExperts(
+                accountCodes = listOf("active_acc"), direction = null, accountCode = null,
+                keyword = null, recipientEmail = null, startTime = null, endTime = null,
+                onlyPending = 0, tag = null
             )
-        ).thenReturn(2L)
+        ).thenReturn(1L)
 
-        val summaryA = MailboxExpertSummaryRow(
+        val summary = MailboxExpertSummaryRow(
             expertContactId = 200L,
             expertName = "Expert A",
             expertEmail = "a@example.com",
             orcidId = "0000-0001",
             operatorStatus = "REPLIED",
             currentIndexLevel = "APPLICATION",
+            mailCount = 2L,
             pendingCount = 1L,
-            latestReceivedAt = LocalDateTime.of(2026, 7, 18, 12, 0)
-        )
-        val summaryB = MailboxExpertSummaryRow(
-            expertContactId = 100L,
-            expertName = "Expert B",
-            expertEmail = "b@example.com",
-            orcidId = "0000-0002",
-            operatorStatus = "CONTACTED",
-            currentIndexLevel = "CANDIDATE",
-            pendingCount = 2L,
-            latestReceivedAt = LocalDateTime.of(2026, 7, 18, 10, 0)
+            latestEventAt = LocalDateTime.of(2026, 7, 18, 12, 0)
         )
         Mockito.`when`(
-            mailRecordRepository.listPendingExpertSummaries(
-                accountCodes = listOf("active_acc"),
-                accountCode = null,
-                keyword = null,
-                recipientEmail = null,
-                limit = 20,
-                offset = 0L
+            mailRecordRepository.listMailboxExpertSummaries(
+                accountCodes = listOf("active_acc"), direction = null, accountCode = null,
+                keyword = null, recipientEmail = null, startTime = null, endTime = null,
+                onlyPending = 0, tag = null, limit = 20, offset = 0L
             )
-        ).thenReturn(listOf(summaryA, summaryB))
+        ).thenReturn(listOf(summary))
 
-        val mailRowA = MailboxRow(
-            source = "INBOUND_PROCESSING",
-            id = 30L,
-            expertContactId = 200L,
-            direction = "INBOUND",
-            mailType = "REPLY",
-            senderAccountCode = "active_acc",
-            triggeredBy = null,
-            matchedQaRuleId = null,
-            subject = "A mail",
-            bodyPreview = "A body",
-            sendStatus = null,
-            sentAt = null,
-            receivedAt = LocalDateTime.of(2026, 7, 18, 12, 0),
-            processStatus = "MANUAL_REVIEW",
-            reasonType = null,
-            expertEmail = "a@example.com",
-            expertName = "Expert A",
-            hasAttachment = 0L,
-            inboundProcessingId = 30L
+        val outbound = MailboxRow(
+            source = "MAIL_RECORD", id = 40L, expertContactId = 200L, direction = "OUTBOUND",
+            mailType = "INTRODUCTION", senderAccountCode = "active_acc", triggeredBy = "OPERATOR",
+            matchedQaRuleId = null, subject = "Introduction", bodyPreview = "Hello", sendStatus = "SENT",
+            sentAt = LocalDateTime.of(2026, 7, 18, 11, 0), receivedAt = null, processStatus = null,
+            reasonType = null, expertEmail = "a@example.com", expertName = "Expert A",
+            hasAttachment = 0L, inboundProcessingId = null
         )
-        val mailRowB = MailboxRow(
-            source = "INBOUND_PROCESSING",
-            id = 20L,
-            expertContactId = 100L,
-            direction = "INBOUND",
-            mailType = "REPLY",
-            senderAccountCode = "active_acc",
-            triggeredBy = null,
-            matchedQaRuleId = null,
-            subject = "B mail",
-            bodyPreview = "B body",
-            sendStatus = null,
-            sentAt = null,
-            receivedAt = LocalDateTime.of(2026, 7, 18, 10, 0),
-            processStatus = "MANUAL_REVIEW",
-            reasonType = null,
-            expertEmail = "b@example.com",
-            expertName = "Expert B",
-            hasAttachment = 0L,
-            inboundProcessingId = 20L
+        val inbound = MailboxRow(
+            source = "INBOUND_PROCESSING", id = 30L, expertContactId = 200L, direction = "INBOUND",
+            mailType = "REPLY", senderAccountCode = "active_acc", triggeredBy = null,
+            matchedQaRuleId = null, subject = "Reply", bodyPreview = "Body", sendStatus = null,
+            sentAt = null, receivedAt = LocalDateTime.of(2026, 7, 18, 12, 0),
+            processStatus = "MANUAL_REVIEW", reasonType = null, expertEmail = "a@example.com",
+            expertName = "Expert A", hasAttachment = 0L, inboundProcessingId = 30L
         )
         Mockito.`when`(
-            mailRecordRepository.listPendingMailsByExpertContactIds(
-                expertContactIds = listOf(200L, 100L),
-                accountCodes = listOf("active_acc"),
-                accountCode = null,
-                keyword = null,
-                recipientEmail = null
+            mailRecordRepository.listMailboxByExpertContactIds(
+                expertContactIds = listOf(200L), accountCodes = listOf("active_acc"), direction = null,
+                accountCode = null, keyword = null, recipientEmail = null, startTime = null, endTime = null,
+                onlyPending = 0, tag = null
             )
-        ).thenReturn(listOf(mailRowA, mailRowB))
-        val tagView = TagView(
-            tagId = 1L,
-            tagType = "QA",
-            qaRuleId = 5L,
-            label = "薪资",
-            source = "AUTO",
-            active = true
-        )
-        Mockito.`when`(inboundMailTagService.listTagsBatch(listOf(30L, 20L)))
-            .thenReturn(mapOf(20L to listOf(tagView)))
+        ).thenReturn(listOf(inbound, outbound))
 
-        val response = mailboxService.listPendingByExpert(
-            accountCode = null,
-            keyword = null,
-            recipientEmail = null,
-            page = 0,
-            size = 20
+        val response = mailboxService.listByExpert(
+            direction = null, accountCode = null, keyword = null, recipientEmail = null,
+            startTime = null, endTime = null, pending = false, tag = null, page = 0, size = 20
         )
 
-        assertEquals(2L, response.totalCount)
-        assertEquals(2, response.groups.size)
-        assertEquals(200L, response.groups[0].expertContactId)
-        assertEquals(100L, response.groups[1].expertContactId)
-        assertEquals(1, response.groups[0].mails.size)
-        assertEquals("INBOUND_PROCESSING", response.groups[0].mails[0].source)
-        assertEquals(30L, response.groups[0].mails[0].id)
-        assertEquals(1, response.groups[1].mails.size)
-        assertEquals(listOf(tagView), response.groups[1].mails[0].inboundTags)
+        assertEquals(1L, response.totalCount)
+        assertEquals(2L, response.groups.single().mailCount)
+        assertEquals(1L, response.groups.single().pendingCount)
+        assertEquals(listOf("INBOUND_PROCESSING", "MAIL_RECORD"), response.groups.single().mails.map { it.source })
+    }
+
+    @Test
+    fun `listByExpert forwards pending scope independently of expert view`() {
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
+            .thenReturn(listOf(activeAccount))
+        Mockito.`when`(
+            mailRecordRepository.countMailboxExperts(
+                accountCodes = listOf("active_acc"), direction = null, accountCode = null,
+                keyword = null, recipientEmail = null, startTime = null, endTime = null,
+                onlyPending = 1, tag = null
+            )
+        ).thenReturn(0L)
+
+        mailboxService.listByExpert(
+            direction = null, accountCode = null, keyword = null, recipientEmail = null,
+            startTime = null, endTime = null, pending = true, tag = null, page = 0, size = 20
+        )
+
+        Mockito.verify(mailRecordRepository).countMailboxExperts(
+            accountCodes = listOf("active_acc"), direction = null, accountCode = null,
+            keyword = null, recipientEmail = null, startTime = null, endTime = null,
+            onlyPending = 1, tag = null
+        )
     }
 }

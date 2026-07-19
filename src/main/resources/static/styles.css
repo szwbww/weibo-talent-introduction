@@ -331,7 +331,14 @@ p {
     min-height: 32px;
 }
 
-.mailbox-view-mode {
+.mailbox-view-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.mailbox-segmented-control {
     display: inline-flex;
     align-items: center;
     gap: 2px;
@@ -341,7 +348,7 @@ p {
     background: var(--surface);
 }
 
-.mailbox-view-mode label {
+.mailbox-segmented-control label {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -356,7 +363,7 @@ p {
     user-select: none;
 }
 
-.mailbox-view-mode input {
+.mailbox-segmented-control input {
     position: absolute;
     width: 1px;
     min-width: 0;
@@ -366,25 +373,40 @@ p {
     pointer-events: none;
 }
 
-.mailbox-view-mode label:hover {
+.mailbox-segmented-control label:hover {
     color: var(--text-main);
     background: rgba(var(--primary-rgb), 0.06);
 }
 
-.mailbox-view-mode label:has(input:checked) {
+.mailbox-segmented-control label:has(input:checked) {
     color: var(--primary);
     background: var(--primary-light);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
-.mailbox-view-mode label:has(input:focus-visible) {
+.mailbox-segmented-control label:has(input:focus-visible) {
     outline: 2px solid rgba(var(--primary-rgb), 0.35);
     outline-offset: 1px;
 }
 
-.mailbox-view-mode label:has(input:disabled) {
+.mailbox-segmented-control label:has(input:disabled) {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .mailbox-view-controls {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .mailbox-segmented-control {
+        flex: 1 1 240px;
+    }
+
+    .mailbox-segmented-control label {
+        flex: 1 1 0;
+    }
 }
 
 /* Toolbar groups: filters vs actions */

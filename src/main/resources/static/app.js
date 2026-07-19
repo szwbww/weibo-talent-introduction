@@ -10046,8 +10046,7 @@ function bindMonitoringEvents() {
         }
         if (target.dataset.action === "view-unmatched" || target.dataset.action === "open-pending") {
             setView("mailbox");
-            $("#mailboxFilterOnlyPending").checked = true;
-            state.mailbox.onlyPending = true;
+            setMailboxPendingOnly(true);
             state.mailbox.page = 0;
             await loadMailbox();
             await showUnmatchedDetail(target.dataset.id);
@@ -10658,8 +10657,7 @@ function bindEvents() {
         if (action === "goto-manual-queue") {
             event.preventDefault();
             setView("mailbox");
-            $("#mailboxFilterOnlyPending").checked = true;
-            state.mailbox.onlyPending = true;
+            setMailboxPendingOnly(true);
             state.mailbox.page = 0;
             loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
@@ -10969,22 +10967,28 @@ function initBulkAutoReply() {
         const value = event.target.value;
         state.mailbox.tagFilter = value;
         if (value === "待处理") {
-            $("#mailboxFilterOnlyPending").checked = true;
-            state.mailbox.onlyPending = true;
+            setMailboxPendingOnly(true);
+            state.mailbox.page = 0;
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+            return;
+        }
+        if (mailboxViewMode() === "EXPERT") {
             state.mailbox.page = 0;
             loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
         }
         renderMailboxTable();
     });
-    $("#mailboxFilterOnlyPending").addEventListener("change", (event) => {
-        state.mailbox.onlyPending = event.target.checked;
-        state.mailbox.page = 0;
-        if (!state.mailbox.onlyPending && state.mailbox.tagFilter === "待处理") {
-            state.mailbox.tagFilter = "";
-            $("#mailboxFilterTag").value = "";
-        }
-        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    document.querySelectorAll('input[name="mailboxMailScope"]').forEach((input) => {
+        input.addEventListener("change", () => {
+            state.mailbox.onlyPending = mailboxPendingOnly();
+            state.mailbox.page = 0;
+            if (!state.mailbox.onlyPending && state.mailbox.tagFilter === "待处理") {
+                state.mailbox.tagFilter = "";
+                $("#mailboxFilterTag").value = "";
+            }
+            loadMailbox().catch((e) => showStatus(e.message, "error"));
+        });
     });
     document.querySelectorAll('input[name="mailboxViewMode"]').forEach((input) => {
         input.addEventListener("change", () => {
@@ -11315,15 +11319,20 @@ function mailboxViewMode() {
     return checked?.value === "EXPERT" ? "EXPERT" : "MAIL";
 }
 
+function mailboxPendingOnly() {
+    return document.querySelector('input[name="mailboxMailScope"]:checked')?.value === "PENDING";
+}
+
+function setMailboxPendingOnly(pending) {
+    const value = pending ? "PENDING" : "ALL";
+    const input = document.querySelector(`input[name="mailboxMailScope"][value="${value}"]`);
+    if (input) input.checked = true;
+    state.mailbox.onlyPending = pending;
+}
+
 function syncMailboxViewModeControls() {
     const expertMode = mailboxViewMode() === "EXPERT";
     state.mailbox.viewMode = expertMode ? "EXPERT" : "MAIL";
-    ["#mailboxFilterDirection", "#mailboxFilterTag", "#mailboxFilterOnlyPending", "#mailboxFilterStartDate", "#mailboxFilterEndDate"].forEach((sel) => {
-        const el = $(sel);
-        if (!el) return;
-        el.disabled = expertMode;
-        el.classList.toggle("input-disabled", expertMode);
-    });
 }
 
 async function loadMailboxAccounts() {
@@ -11346,18 +11355,18 @@ async function loadMailbox() {
     syncMailboxViewModeControls();
 
     const expertMode = state.mailbox.viewMode === "EXPERT";
-    state.mailbox.onlyPending = $("#mailboxFilterOnlyPending")?.checked || false;
+    state.mailbox.onlyPending = mailboxPendingOnly();
     state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
 
     const startInput = $("#mailboxFilterStartDate");
     const endInput = $("#mailboxFilterEndDate");
-    const disabled = expertMode || state.mailbox.onlyPending;
+    const disabled = state.mailbox.onlyPending;
     startInput.disabled = disabled;
     endInput.disabled = disabled;
     startInput.classList.toggle("input-disabled", disabled);
     endInput.classList.toggle("input-disabled", disabled);
 
-    if (!expertMode && !state.mailbox.onlyPending) {
+    if (!state.mailbox.onlyPending) {
         if (!state.mailbox.dateDefaultsApplied && !startInput.value && !endInput.value) {
             const weekAgo = new Date();
             weekAgo.setDate(weekAgo.getDate() - 7);
@@ -11376,24 +11385,23 @@ async function loadMailbox() {
     if (recipientEmail) params.set("recipientEmail", recipientEmail);
     if (keyword) params.set("keyword", keyword);
 
-    if (!expertMode) {
-        const direction = $("#mailboxFilterDirection").value;
-        const startDate = startInput.value;
-        const endDate = endInput.value;
-        if (direction) params.set("direction", direction);
-        if (!state.mailbox.onlyPending) {
-            if (startDate) params.set("startDate", startDate);
-            if (endDate) params.set("endDate", endDate);
-        }
-        if (state.mailbox.onlyPending) params.set("pending", "true");
+    const direction = $("#mailboxFilterDirection").value;
+    const startDate = startInput.value;
+    const endDate = endInput.value;
+    if (direction) params.set("direction", direction);
+    if (!state.mailbox.onlyPending) {
+        if (startDate) params.set("startDate", startDate);
+        if (endDate) params.set("endDate", endDate);
     }
+    if (state.mailbox.onlyPending) params.set("pending", "true");
+    if (expertMode && state.mailbox.tagFilter) params.set("tag", state.mailbox.tagFilter);
 
     params.set("page", state.mailbox.page);
     params.set("size", state.mailbox.pageSize);
 
     try {
         if (expertMode) {
-            const data = await api(`/api/mail/mailbox/pending-by-expert?${params}`);
+            const data = await api(`/api/mail/mailbox/by-expert?${params}`);
             state.mailbox.groups = data.groups || [];
             state.mailbox.items = [];
             state.mailbox.totalCount = data.totalCount || 0;
@@ -11469,7 +11477,7 @@ function renderMailboxExpertGroups() {
     const groups = state.mailbox.groups || [];
 
     if (groups.length === 0) {
-        list.innerHTML = `<div class="mailbox-empty muted">暂无待处理专家</div>`;
+        list.innerHTML = `<div class="mailbox-empty muted">${state.mailbox.onlyPending ? "暂无待处理专家" : "暂无关联专家邮件"}</div>`;
         return;
     }
 
@@ -11481,13 +11489,16 @@ function renderMailboxExpertGroups() {
         const levelBadge = badge(indexLevelLabels[group.expertIndexLevel] || group.expertIndexLevel || "?", "");
         const emailLine = `${escapeHtml(group.expertEmail || "-")} · ${escapeHtml(group.expertOrcidId || "-")}`;
         const mailCards = (group.mails || []).map((row) => renderMailboxCard(row)).join("");
+        const countText = state.mailbox.onlyPending
+            ? `${group.pendingCount} 封待处理`
+            : `共 ${group.mailCount} 封${group.pendingCount > 0 ? ` · 待处理 ${group.pendingCount} 封` : ""}`;
 
         return `
             <details class="inbound-expert-group">
                 <summary class="inbound-expert-group-header">
                     <span class="inbound-expert-group-name">${nameLink} ${statusBadge} ${levelBadge}</span>
                     <span class="inbound-expert-group-email">${emailLine}</span>
-                    <span class="inbound-expert-group-count">${escapeHtml(group.pendingCount)} 封待处理</span>
+                    <span class="inbound-expert-group-count">${escapeHtml(countText)}</span>
                 </summary>
                 <div class="inbound-expert-group-mails">${mailCards}</div>
             </details>

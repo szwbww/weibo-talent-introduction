@@ -26,6 +26,7 @@ function shanghaiWeekAgoString() {
 
 function createMailboxSandbox() {
     const store = new Map();
+    let mailScope = "ALL";
     function el(id) {
         if (!store.has(id)) {
             store.set(id, {
@@ -49,6 +50,9 @@ function createMailboxSandbox() {
             querySelector: (selector) => {
                 if (selector === 'input[name="mailboxViewMode"]:checked') {
                     return { value: "MAIL" };
+                }
+                if (selector === 'input[name="mailboxMailScope"]:checked') {
+                    return { value: mailScope };
                 }
                 return null;
             },
@@ -77,10 +81,12 @@ function createMailboxSandbox() {
     vm.createContext(sandbox);
     vm.runInContext(extractFn("monitoringToday"), sandbox);
     vm.runInContext(extractFn("mailboxViewMode"), sandbox);
+    vm.runInContext(extractFn("mailboxPendingOnly"), sandbox);
     vm.runInContext(extractFn("syncMailboxViewModeControls"), sandbox);
     vm.runInContext("async function loadMailboxAccounts() {}", sandbox);
     vm.runInContext(extractFn("loadMailbox"), sandbox);
     sandbox.__store = store;
+    sandbox.__setMailScope = (value) => { mailScope = value; };
     return sandbox;
 }
 
@@ -93,13 +99,13 @@ describe("mailbox date default", () => {
         );
         assert.match(
             appJsSource,
-            /if\s*\(!expertMode\s*&&\s*!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
-            "loadMailbox should only apply defaults when not pending-only and not expert mode"
+            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?!state\.mailbox\.dateDefaultsApplied\s*&&\s*!startInput\.value\s*&&\s*!endInput\.value/,
+            "loadMailbox should apply defaults whenever pending-only is off"
         );
         assert.match(
             appJsSource,
-            /if\s*\(!expertMode\s*&&\s*!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
-            "loadMailbox should mark date defaults applied only outside pending-only and expert mode"
+            /if\s*\(!state\.mailbox\.onlyPending\)\s*\{[\s\S]*?state\.mailbox\.dateDefaultsApplied\s*=\s*true/,
+            "loadMailbox should mark date defaults applied whenever pending-only is off"
         );
     });
 
@@ -158,7 +164,7 @@ describe("mailbox date default", () => {
             return { items: [], totalCount: 0 };
         };
 
-        sb.$("#mailboxFilterOnlyPending").checked = true;
+        sb.__setMailScope("PENDING");
         await sb.loadMailbox();
 
         const startInput = sb.$("#mailboxFilterStartDate");
@@ -182,11 +188,11 @@ describe("mailbox date default", () => {
             return { items: [], totalCount: 0 };
         };
 
-        sb.$("#mailboxFilterOnlyPending").checked = true;
+        sb.__setMailScope("PENDING");
         await sb.loadMailbox();
         assert.equal(sb.state.mailbox.dateDefaultsApplied, false);
 
-        sb.$("#mailboxFilterOnlyPending").checked = false;
+        sb.__setMailScope("ALL");
         await sb.loadMailbox();
 
         const startInput = sb.$("#mailboxFilterStartDate");

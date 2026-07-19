@@ -21,6 +21,7 @@ function extractFn(name) {
 function createMailboxSandbox(options = {}) {
     const store = new Map();
     const viewMode = options.viewMode || "MAIL";
+    const mailScope = options.mailScope || "ALL";
 
     function el(id) {
         if (!store.has(id)) {
@@ -45,6 +46,9 @@ function createMailboxSandbox(options = {}) {
             querySelector: (selector) => {
                 if (selector === 'input[name="mailboxViewMode"]:checked') {
                     return { value: viewMode };
+                }
+                if (selector === 'input[name="mailboxMailScope"]:checked') {
+                    return { value: mailScope };
                 }
                 return null;
             },
@@ -83,6 +87,7 @@ function createMailboxSandbox(options = {}) {
     vm.createContext(sandbox);
     vm.runInContext(extractFn("monitoringToday"), sandbox);
     vm.runInContext(extractFn("mailboxViewMode"), sandbox);
+    vm.runInContext(extractFn("mailboxPendingOnly"), sandbox);
     vm.runInContext(extractFn("syncMailboxViewModeControls"), sandbox);
     vm.runInContext("async function loadMailboxAccounts() {}", sandbox);
     vm.runInContext(extractFn("renderMailboxCard"), sandbox);
@@ -94,18 +99,22 @@ function createMailboxSandbox(options = {}) {
 }
 
 describe("mailbox expert grouping", () => {
-    it("index.html includes mailbox view mode radio group", () => {
-        assert.match(indexSource, /class="mailbox-view-mode"/);
+    it("index.html places view and scope segmented controls together", () => {
+        assert.match(indexSource, /class="mailbox-view-controls"/);
         assert.match(indexSource, /name="mailboxViewMode" value="MAIL"/);
         assert.match(indexSource, /name="mailboxViewMode" value="EXPERT"/);
+        assert.match(indexSource, /name="mailboxMailScope" value="ALL"/);
+        assert.match(indexSource, /name="mailboxMailScope" value="PENDING"/);
+        assert.doesNotMatch(indexSource, /id="mailboxFilterOnlyPending"/);
     });
 
-    it("styles.css includes mailbox-view-mode contract rules", () => {
-        assert.match(stylesSource, /\.mailbox-view-mode label:has\(input:checked\)/);
+    it("styles.css renders both controls as one compact cluster", () => {
+        assert.match(stylesSource, /\.mailbox-view-controls\s*\{[\s\S]*?gap:\s*8px/);
+        assert.match(stylesSource, /\.mailbox-segmented-control label:has\(input:checked\)/);
         assert.match(stylesSource, /outline: 2px solid rgba\(var\(--primary-rgb\), 0\.35\)/);
     });
 
-    it("EXPERT mode calls pending-by-expert without direction tag or date params", async () => {
+    it("EXPERT plus ALL calls by-expert with normal filters and no pending flag", async () => {
         const sb = createMailboxSandbox({ viewMode: "EXPERT" });
         let requestUrl = "";
 
@@ -115,7 +124,7 @@ describe("mailbox expert grouping", () => {
         };
 
         sb.$("#mailboxFilterDirection").value = "INBOUND";
-        sb.$("#mailboxFilterTag").value = "待处理";
+        sb.$("#mailboxFilterTag").value = "收件";
         sb.$("#mailboxFilterStartDate").value = "2026-07-01";
         sb.$("#mailboxFilterEndDate").value = "2026-07-18";
         sb.$("#mailboxFilterAccountCode").value = "acc1";
@@ -124,27 +133,38 @@ describe("mailbox expert grouping", () => {
 
         await sb.loadMailbox();
 
-        assert.ok(requestUrl.startsWith("/api/mail/mailbox/pending-by-expert?"));
+        assert.ok(requestUrl.startsWith("/api/mail/mailbox/by-expert?"));
         const query = new URLSearchParams(requestUrl.split("?")[1] || "");
         assert.equal(query.get("accountCode"), "acc1");
         assert.equal(query.get("recipientEmail"), "expert@example.com");
         assert.equal(query.get("keyword"), "材料");
-        assert.equal(query.get("direction"), null);
+        assert.equal(query.get("direction"), "INBOUND");
         assert.equal(query.get("pending"), null);
-        assert.equal(query.get("startDate"), null);
-        assert.equal(query.get("endDate"), null);
+        assert.equal(query.get("tag"), "收件");
+        assert.equal(query.get("startDate"), "2026-07-01");
+        assert.equal(query.get("endDate"), "2026-07-18");
         assert.equal(sb.state.mailbox.viewMode, "EXPERT");
     });
 
-    it("syncMailboxViewModeControls disables mail-only filters in EXPERT mode", () => {
-        const sb = createMailboxSandbox({ viewMode: "EXPERT" });
-        sb.syncMailboxViewModeControls();
+    it("EXPERT plus PENDING keeps the pending scope independent", async () => {
+        const sb = createMailboxSandbox({ viewMode: "EXPERT", mailScope: "PENDING" });
+        let requestUrl = "";
+        sb.api = async (url) => {
+            requestUrl = url;
+            return { groups: [], totalCount: 0 };
+        };
+        sb.$("#mailboxFilterStartDate").value = "2026-07-01";
+        sb.$("#mailboxFilterEndDate").value = "2026-07-18";
 
-        assert.equal(sb.$("#mailboxFilterDirection").disabled, true);
-        assert.equal(sb.$("#mailboxFilterTag").disabled, true);
-        assert.equal(sb.$("#mailboxFilterOnlyPending").disabled, true);
+        await sb.loadMailbox();
+
+        const query = new URLSearchParams(requestUrl.split("?")[1] || "");
+        assert.equal(query.get("pending"), "true");
+        assert.equal(query.get("startDate"), null);
+        assert.equal(query.get("endDate"), null);
+        assert.equal(sb.$("#mailboxFilterDirection").disabled, false);
+        assert.equal(sb.$("#mailboxFilterTag").disabled, false);
         assert.equal(sb.$("#mailboxFilterStartDate").disabled, true);
-        assert.equal(sb.$("#mailboxFilterEndDate").disabled, true);
     });
 
     it("renderMailboxExpertGroups outputs nested expert group and mailbox card actions", () => {
@@ -156,6 +176,7 @@ describe("mailbox expert grouping", () => {
             expertOrcidId: "0000-0001-0002-0003",
             operatorStatus: "REPLIED",
             expertIndexLevel: "APPLICATION",
+            mailCount: 3,
             pendingCount: 1,
             mails: [{
                 id: 10,
@@ -178,7 +199,7 @@ describe("mailbox expert grouping", () => {
 
         assert.match(html, /class="inbound-expert-group"/);
         assert.match(html, /data-action="open-monitoring-contact" data-id="100"/);
-        assert.match(html, /1 封待处理/);
+        assert.match(html, /共 3 封 · 待处理 1 封/);
         assert.match(html, /class="mailbox-card" data-source="INBOUND_PROCESSING" data-id="10"/);
         assert.match(html, /data-action="open-pending" data-id="10"/);
     });

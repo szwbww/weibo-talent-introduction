@@ -679,9 +679,15 @@
         <section class="view" id="view-mailbox">
             <div class="toolbar">
                 <button class="button primary" id="mailboxRefreshBtn">刷新</button>
-                <div class="mailbox-view-mode" role="radiogroup" aria-label="收发件箱展示方式">
-                    <label><input type="radio" name="mailboxViewMode" value="MAIL" checked><span>按邮件</span></label>
-                    <label><input type="radio" name="mailboxViewMode" value="EXPERT"><span>按专家聚合</span></label>
+                <div class="mailbox-view-controls">
+                    <div class="mailbox-segmented-control mailbox-view-mode" role="radiogroup" aria-label="收发件箱展示方式">
+                        <label><input type="radio" name="mailboxViewMode" value="MAIL" checked><span>按邮件</span></label>
+                        <label><input type="radio" name="mailboxViewMode" value="EXPERT"><span>按专家聚合</span></label>
+                    </div>
+                    <div class="mailbox-segmented-control mailbox-scope-mode" role="radiogroup" aria-label="收发件箱邮件范围">
+                        <label><input type="radio" name="mailboxMailScope" value="ALL" checked><span>全部邮件</span></label>
+                        <label><input type="radio" name="mailboxMailScope" value="PENDING"><span>仅待处理</span></label>
+                    </div>
                 </div>
                 <select id="mailboxFilterAccountCode">
                     <option value="">全部邮箱账号</option>
@@ -702,7 +708,6 @@
                     <option value="收件">收件</option>
                     <option value="发件">发件</option>
                 </select>
-                <label class="checkbox-row"><input type="checkbox" id="mailboxFilterOnlyPending"> 仅待处理</label>
                 <input id="mailboxFilterRecipient" placeholder="过滤收件人邮箱" style="width: 180px;">
                 <input id="mailboxFilterKeyword" placeholder="过滤主题/内容关键词" style="width: 200px;">
                 <input type="date" id="mailboxFilterStartDate" style="width: 130px;">

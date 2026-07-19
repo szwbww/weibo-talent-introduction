@@ -115,7 +115,7 @@ class MailboxControllerTest {
     }
 
     @Test
-    fun `list pending by expert maps query params and returns nested DTO`() {
+    fun `list by expert maps combined view and scope params and returns nested DTO`() {
         val testResponse = MailboxExpertGroupListResponse(
             groups = listOf(
                 MailboxExpertGroupResponse(
@@ -125,6 +125,7 @@ class MailboxControllerTest {
                     expertOrcidId = "0000-0001-0002-0003",
                     operatorStatus = "REPLIED",
                     expertIndexLevel = "APPLICATION",
+                    mailCount = 3L,
                     pendingCount = 2L,
                     mails = listOf(
                         MailboxItemResponse(
@@ -155,26 +156,37 @@ class MailboxControllerTest {
         )
 
         Mockito.`when`(
-            mailboxService.listPendingByExpert(
+            mailboxService.listByExpert(
+                direction = "INBOUND",
                 accountCode = "account1",
                 keyword = "Question",
                 recipientEmail = "zhang@example.com",
+                startTime = LocalDateTime.of(2026, 7, 1, 0, 0),
+                endTime = LocalDateTime.of(2026, 7, 19, 0, 0),
+                pending = false,
+                tag = "收件",
                 page = 0,
                 size = 20
             )
         ).thenReturn(testResponse)
 
         mockMvc.perform(
-            get("/api/mail/mailbox/pending-by-expert")
+            get("/api/mail/mailbox/by-expert")
+                .param("direction", "INBOUND")
                 .param("accountCode", "account1")
                 .param("keyword", "Question")
                 .param("recipientEmail", "zhang@example.com")
+                .param("startDate", "2026-07-01")
+                .param("endDate", "2026-07-18")
+                .param("pending", "false")
+                .param("tag", "收件")
                 .param("page", "0")
                 .param("size", "20")
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.totalCount").value(1))
             .andExpect(jsonPath("$.groups[0].expertContactId").value(100))
+            .andExpect(jsonPath("$.groups[0].mailCount").value(3))
             .andExpect(jsonPath("$.groups[0].pendingCount").value(2))
             .andExpect(jsonPath("$.groups[0].mails[0].source").value("INBOUND_PROCESSING"))
             .andExpect(jsonPath("$.groups[0].mails[0].id").value(10))
@@ -182,27 +194,37 @@ class MailboxControllerTest {
     }
 
     @Test
-    fun `list pending by expert coerces size to max 100`() {
+    fun `list by expert coerces size to max 100`() {
         Mockito.`when`(
-            mailboxService.listPendingByExpert(
+            mailboxService.listByExpert(
+                direction = null,
                 accountCode = null,
                 keyword = null,
                 recipientEmail = null,
+                startTime = null,
+                endTime = null,
+                pending = false,
+                tag = null,
                 page = 0,
                 size = 100
             )
         ).thenReturn(MailboxExpertGroupListResponse(emptyList(), 0))
 
         mockMvc.perform(
-            get("/api/mail/mailbox/pending-by-expert")
+            get("/api/mail/mailbox/by-expert")
                 .param("size", "500")
         )
             .andExpect(status().isOk)
 
-        Mockito.verify(mailboxService).listPendingByExpert(
+        Mockito.verify(mailboxService).listByExpert(
+            direction = null,
             accountCode = null,
             keyword = null,
             recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            pending = false,
+            tag = null,
             page = 0,
             size = 100
         )

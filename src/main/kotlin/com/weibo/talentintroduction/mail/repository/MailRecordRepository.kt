@@ -530,101 +530,224 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     @Query(
         """
-        SELECT imp.expert_contact_id AS expert_contact_id,
+        SELECT u.expert_contact_id AS expert_contact_id,
                ec.expert_name AS expert_name,
                ec.expert_email AS expert_email,
                ec.orcid_id AS orcid_id,
                ec.operator_status AS operator_status,
                ec.current_index_level AS current_index_level,
-               COUNT(*) AS pending_count,
-               MAX(imp.received_at) AS latest_received_at
-          FROM inbound_mail_processing imp
-         INNER JOIN expert_contact ec ON imp.expert_contact_id = ec.id
-         WHERE imp.process_status = 'MANUAL_REVIEW'
-           AND imp.expert_contact_id IS NOT NULL
-           AND imp.sender_account_code IN (:accountCodes)
-           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
-           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
-                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
-           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
-         GROUP BY imp.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id,
+               COUNT(*) AS mail_count,
+               SUM(u.pending_flag) AS pending_count,
+               MAX(u.event_at) AS latest_event_at
+          FROM (
+              SELECT mr.expert_contact_id, COALESCE(mr.sent_at, mr.created_at) AS event_at,
+                     0 AS pending_flag
+                FROM mail_record mr
+                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+               WHERE mr.direction = 'OUTBOUND'
+                 AND mr.expert_contact_id IS NOT NULL
+                 AND mr.sender_account_code IN (:accountCodes)
+                 AND (:direction IS NULL OR :direction = 'OUTBOUND')
+                 AND (:onlyPending = 0)
+                 AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+                 AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                        OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+                 AND (:recipientEmail IS NULL OR ec1.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+                 AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) >= :startTime)
+                 AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) < :endTime)
+                 AND (:tag IS NULL OR :tag = '专家' OR :tag = '发件'
+                      OR (:tag = '自动回复' AND (mr.triggered_by = 'SYSTEM'
+                          OR mr.matched_qa_rule_id IS NOT NULL
+                          OR mr.mail_type IN ('QA_REPLY', 'MEETING_INVITATION', 'MEETING_CONFIRMATION')))
+                      OR (:tag = '手动回复' AND (mr.triggered_by IN ('OPERATOR', 'MANUAL')
+                          OR mr.mail_type = 'MANUAL_QA_REPLY'))
+                      OR (:tag = '首发' AND mr.mail_type = 'INTRODUCTION'))
+              UNION ALL
+              SELECT imp.expert_contact_id, imp.received_at AS event_at,
+                     CASE WHEN imp.process_status = 'MANUAL_REVIEW' THEN 1 ELSE 0 END AS pending_flag
+                FROM inbound_mail_processing imp
+                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+               WHERE imp.expert_contact_id IS NOT NULL
+                 AND imp.sender_account_code IN (:accountCodes)
+                 AND (:direction IS NULL OR :direction = 'INBOUND')
+                 AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
+                 AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+                 AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                        OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+                 AND (:recipientEmail IS NULL OR COALESCE(ec2.expert_email, imp.from_email) LIKE CONCAT('%', :recipientEmail, '%'))
+                 AND (:startTime IS NULL OR imp.received_at >= :startTime)
+                 AND (:endTime IS NULL OR imp.received_at < :endTime)
+                 AND (:tag IS NULL OR :tag = '专家' OR :tag = '收件'
+                      OR (:tag = '待处理' AND imp.process_status = 'MANUAL_REVIEW'))
+          ) u
+          JOIN expert_contact ec ON u.expert_contact_id = ec.id
+         GROUP BY u.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id,
                   ec.operator_status, ec.current_index_level
-         ORDER BY latest_received_at DESC, imp.expert_contact_id DESC
+         ORDER BY latest_event_at DESC, u.expert_contact_id DESC
          LIMIT :limit OFFSET :offset
         """
     )
-    fun listPendingExpertSummaries(
+    fun listMailboxExpertSummaries(
         accountCodes: List<String>,
+        direction: String?,
         accountCode: String?,
         keyword: String?,
         recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?,
+        onlyPending: Int,
+        tag: String?,
         limit: Int,
         offset: Long
     ): List<MailboxExpertSummaryRow>
 
     @Query(
         """
-        SELECT COUNT(DISTINCT imp.expert_contact_id)
-          FROM inbound_mail_processing imp
-         INNER JOIN expert_contact ec ON imp.expert_contact_id = ec.id
-         WHERE imp.process_status = 'MANUAL_REVIEW'
-           AND imp.expert_contact_id IS NOT NULL
-           AND imp.sender_account_code IN (:accountCodes)
-           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
-           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
-                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
-           AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+        SELECT COUNT(DISTINCT u.expert_contact_id)
+          FROM (
+              SELECT mr.expert_contact_id
+                FROM mail_record mr
+                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+               WHERE mr.direction = 'OUTBOUND'
+                 AND mr.expert_contact_id IS NOT NULL
+                 AND mr.sender_account_code IN (:accountCodes)
+                 AND (:direction IS NULL OR :direction = 'OUTBOUND')
+                 AND (:onlyPending = 0)
+                 AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+                 AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                        OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+                 AND (:recipientEmail IS NULL OR ec1.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+                 AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) >= :startTime)
+                 AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) < :endTime)
+                 AND (:tag IS NULL OR :tag = '专家' OR :tag = '发件'
+                      OR (:tag = '自动回复' AND (mr.triggered_by = 'SYSTEM'
+                          OR mr.matched_qa_rule_id IS NOT NULL
+                          OR mr.mail_type IN ('QA_REPLY', 'MEETING_INVITATION', 'MEETING_CONFIRMATION')))
+                      OR (:tag = '手动回复' AND (mr.triggered_by IN ('OPERATOR', 'MANUAL')
+                          OR mr.mail_type = 'MANUAL_QA_REPLY'))
+                      OR (:tag = '首发' AND mr.mail_type = 'INTRODUCTION'))
+              UNION ALL
+              SELECT imp.expert_contact_id
+                FROM inbound_mail_processing imp
+                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+               WHERE imp.expert_contact_id IS NOT NULL
+                 AND imp.sender_account_code IN (:accountCodes)
+                 AND (:direction IS NULL OR :direction = 'INBOUND')
+                 AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
+                 AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+                 AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                        OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+                 AND (:recipientEmail IS NULL OR COALESCE(ec2.expert_email, imp.from_email) LIKE CONCAT('%', :recipientEmail, '%'))
+                 AND (:startTime IS NULL OR imp.received_at >= :startTime)
+                 AND (:endTime IS NULL OR imp.received_at < :endTime)
+                 AND (:tag IS NULL OR :tag = '专家' OR :tag = '收件'
+                      OR (:tag = '待处理' AND imp.process_status = 'MANUAL_REVIEW'))
+          ) u
         """
     )
-    fun countPendingExperts(
+    fun countMailboxExperts(
         accountCodes: List<String>,
+        direction: String?,
         accountCode: String?,
         keyword: String?,
-        recipientEmail: String?
+        recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?,
+        onlyPending: Int,
+        tag: String?
     ): Long
 
     @Query(
         """
-        SELECT CONVERT('INBOUND_PROCESSING' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
-               imp.id AS id, imp.expert_contact_id,
-               CONVERT('INBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
-               CONVERT('REPLY' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
-               CONVERT(imp.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
-               CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
-               CAST(NULL AS SIGNED) AS matched_qa_rule_id,
-               CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
-               CONVERT(imp.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
-               CONVERT(SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
-               CAST(NULL AS DATETIME) AS sent_at, imp.received_at,
-               CONVERT(imp.process_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
-               CONVERT(imp.reason_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
-               CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
-               CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
-               CAST(EXISTS(
-                 SELECT 1 FROM mail_attachment ma
-                   JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
-                  WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
-               ) AS SIGNED) AS has_attachment,
-               imp.id AS inbound_processing_id
-          FROM inbound_mail_processing imp
-          LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
-         WHERE imp.process_status = 'MANUAL_REVIEW'
-           AND imp.expert_contact_id IS NOT NULL
-           AND imp.expert_contact_id IN (:expertContactIds)
-           AND imp.sender_account_code IN (:accountCodes)
-           AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
-           AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
-                                  OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
-           AND (:recipientEmail IS NULL OR ec2.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
-         ORDER BY imp.expert_contact_id DESC, imp.received_at DESC
+        SELECT * FROM (
+          SELECT CONVERT('MAIL_RECORD' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+                 mr.id AS id, mr.expert_contact_id,
+                 CONVERT(mr.direction USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+                 CONVERT(mr.mail_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
+                 CONVERT(mr.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
+                 CONVERT(mr.triggered_by USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
+                 mr.matched_qa_rule_id,
+                 CONVERT(mr.send_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+                 CONVERT(mr.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+                 CONVERT(SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
+                 COALESCE(mr.sent_at, mr.created_at) AS sent_at, CAST(NULL AS DATETIME) AS received_at,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
+                 CONVERT(ec1.expert_email USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
+                 CONVERT(ec1.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
+                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+                 CAST(NULL AS SIGNED) AS inbound_processing_id
+            FROM mail_record mr
+            JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+           WHERE mr.direction = 'OUTBOUND'
+             AND mr.expert_contact_id IN (:expertContactIds)
+             AND mr.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'OUTBOUND')
+             AND (:onlyPending = 0)
+             AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR mr.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(mr.cleaned_body, mr.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR ec1.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) >= :startTime)
+             AND (:endTime IS NULL OR COALESCE(mr.sent_at, mr.created_at) < :endTime)
+             AND (:tag IS NULL OR :tag = '专家' OR :tag = '发件'
+                  OR (:tag = '自动回复' AND (mr.triggered_by = 'SYSTEM'
+                      OR mr.matched_qa_rule_id IS NOT NULL
+                      OR mr.mail_type IN ('QA_REPLY', 'MEETING_INVITATION', 'MEETING_CONFIRMATION')))
+                  OR (:tag = '手动回复' AND (mr.triggered_by IN ('OPERATOR', 'MANUAL')
+                      OR mr.mail_type = 'MANUAL_QA_REPLY'))
+                  OR (:tag = '首发' AND mr.mail_type = 'INTRODUCTION'))
+          UNION ALL
+          SELECT CONVERT('INBOUND_PROCESSING' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+                 imp.id AS id, imp.expert_contact_id,
+                 CONVERT('INBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+                 CONVERT('REPLY' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS mail_type,
+                 CONVERT(imp.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS sender_account_code,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS triggered_by,
+                 CAST(NULL AS SIGNED) AS matched_qa_rule_id,
+                 CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+                 CONVERT(imp.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+                 CONVERT(SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body_preview,
+                 CAST(NULL AS DATETIME) AS sent_at, imp.received_at,
+                 CONVERT(imp.process_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+                 CONVERT(imp.reason_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
+                 CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
+                 CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
+                 CAST(EXISTS(
+                   SELECT 1 FROM mail_attachment ma
+                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+                    WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+                 ) AS SIGNED) AS has_attachment,
+                 imp.id AS inbound_processing_id
+            FROM inbound_mail_processing imp
+            JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+           WHERE imp.expert_contact_id IN (:expertContactIds)
+             AND imp.sender_account_code IN (:accountCodes)
+             AND (:direction IS NULL OR :direction = 'INBOUND')
+             AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
+             AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+             AND (:keyword IS NULL OR imp.subject LIKE CONCAT('%', :keyword, '%')
+                                    OR COALESCE(imp.cleaned_body, imp.body) LIKE CONCAT('%', :keyword, '%'))
+             AND (:recipientEmail IS NULL OR COALESCE(ec2.expert_email, imp.from_email) LIKE CONCAT('%', :recipientEmail, '%'))
+             AND (:startTime IS NULL OR imp.received_at >= :startTime)
+             AND (:endTime IS NULL OR imp.received_at < :endTime)
+             AND (:tag IS NULL OR :tag = '专家' OR :tag = '收件'
+                  OR (:tag = '待处理' AND imp.process_status = 'MANUAL_REVIEW'))
+        ) u
+        ORDER BY u.expert_contact_id DESC, COALESCE(u.sent_at, u.received_at) DESC, u.id DESC
         """
     )
-    fun listPendingMailsByExpertContactIds(
+    fun listMailboxByExpertContactIds(
         expertContactIds: List<Long>,
         accountCodes: List<String>,
+        direction: String?,
         accountCode: String?,
         keyword: String?,
-        recipientEmail: String?
+        recipientEmail: String?,
+        startTime: LocalDateTime?,
+        endTime: LocalDateTime?,
+        onlyPending: Int,
+        tag: String?
     ): List<MailboxRow>
 }
 
@@ -635,8 +758,9 @@ data class MailboxExpertSummaryRow(
     val orcidId: String,
     val operatorStatus: String,
     val currentIndexLevel: String,
+    val mailCount: Long,
     val pendingCount: Long,
-    val latestReceivedAt: LocalDateTime
+    val latestEventAt: LocalDateTime
 )
 
 data class MailboxRow(
