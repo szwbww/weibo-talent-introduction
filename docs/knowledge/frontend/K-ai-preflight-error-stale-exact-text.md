@@ -3,8 +3,9 @@ id: K-ai-preflight-error-stale-exact-text
 domain: frontend
 created: 2026-07-20
 last_used: 2026-07-20
-hit_count: 2
+hit_count: 3
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-2
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：异步校验若成功路径做 text/draft stale guard、异常路径只看请求序号，debounce 尚未发起新请求时旧失败仍会显示到新正文。

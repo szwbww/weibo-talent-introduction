@@ -33,11 +33,10 @@ import com.weibo.talentintroduction.variant.service.ContentVariantService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
-import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -72,6 +71,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         )
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
+    private val manualReplySendAttemptService = Mockito.mock(ManualReplySendAttemptService::class.java)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -90,7 +90,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         AiReplyHighRiskClaimValidator(qaRuleRepository),
         MailBodyCleaner(),
         MailContentService(),
-        mailVariableService
+        mailVariableService,
+        manualReplySendAttemptService
     )
 
     private val contact = ExpertContact(
@@ -178,7 +179,31 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     }
 
     @Test
-    fun `sendManualRichReply rejects unbacked high risk claim in final text`() {
+    fun `sendManualRichReply blocks on QA facts all invalid`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = emptyList(),
+                    promptRuleIds = emptyList(),
+                    requestFacts = emptyList()
+                )
+            )
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply blocks on high risk content in final validation text`() {
         val rule = qaRule(10L)
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
         Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
@@ -192,283 +217,312 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 )
             )
 
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
             service.sendManualRichReply(
-                inboundProcessingId = 100L,
-                senderAccountCode = null,
+                inboundProcessingId = 100L, senderAccountCode = null,
                 subject = "Re: Test",
                 htmlBody = "<p>We guarantee 10 million RMB with no fees.</p>",
                 textBody = "We guarantee 10 million RMB with no fees.",
-                operatorName = "op",
-                qaRuleIds = listOf(10L),
-                suggestedRuleIds = listOf(99L)
+                operatorName = "op", qaRuleIds = listOf(10L)
+            )
+        }
+        Mockito.verifyNoInteractions(mailDeliveryService, manualReplySendAttemptService)
+    }
+
+    @Test
+    fun `sendManualRichReply allows pure manual text without QA facts`() {
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = emptyList(),
+                    promptRuleIds = emptyList(),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Hello",
+            htmlBody = "<p>Thank you for your patience.</p>",
+            textBody = "Thank you for your patience.",
+            operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `sendManualRichReply succeeds with QA facts and returns SENT`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op",
+            qaRuleIds = listOf(10L)
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-abc@weibo.com>", result.messageId)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+        Mockito.verify(manualReplySendAttemptService).recordSendAudit(
+            Mockito.eq(100L), Mockito.eq(1L), Mockito.eq(500L),
+            eqValue(listOf(10L)), Mockito.eq(true),
+            anyValue(DeliveredMail("", "")), eqValue("Re: Test"),
+            Mockito.anyString(), eqValue("op"), anyValue(inbound()),
+            anyValue(emptyList<Long>()), anyValue(false), anyValue("")
+        )
+    }
+
+    @Test
+    fun `sendManualRichReply dedups same payload and returns SENT without SMTP`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.DEDUP_SENT
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op",
+            qaRuleIds = listOf(10L)
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-abc@weibo.com>", result.messageId)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply throws 409 for delivery unknown`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.UNKNOWN
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertEquals(409, ex.status.value())
+        assertTrue(ex.reason!!.contains("请勿重复发送"))
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply throws 409 for in progress`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.IN_PROGRESS
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertEquals(409, ex.status.value())
+        assertTrue(ex.reason!!.contains("请勿重复发送"))
+    }
+
+    @Test
+    fun `sendManualRichReply throws 422 for permanent failure attempt`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.PERMANENT_FAILED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertEquals(422, ex.status.value())
+    }
+
+    @Test
+    fun `sendManualRichReply throws 503 for safe retry delivery failure`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(
+            DeliveredMail(
+                messageId = "<manual-rich-abc@weibo.com>",
+                status = "FAILED",
+                errorCategory = com.weibo.talentintroduction.mail.domain.SmtpErrorCategory.TRANSIENT,
+                smtpResponseCode = 451,
+                errorDetail = "try later"
+            )
+        )
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), Mockito.anyString(), Mockito.anyString(), Mockito.any()
+            )
+        ).thenReturn(501L)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertEquals(503, ex.status.value())
+    }
+
+    @Test
+    fun `sendManualRichReply blocks on subject length over 255`() {
+        val longSubject = "A".repeat(256)
+        Mockito.`when`(qaRuleRepository.findById(Mockito.anyLong())).thenReturn(Optional.of(qaRule(10L)))
+        Mockito.`when`(qaFactSelectionService.select(Mockito.anyString(), Mockito.any(), Mockito.anyBoolean()))
+            .thenReturn(
+                ResolvedQaRules(sendQaRuleIds = listOf(10L), promptRuleIds = listOf(10L), requestFacts = emptyList())
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = longSubject, htmlBody = "<p>Test</p>",
+                textBody = "Test", operatorName = "op", qaRuleIds = listOf(10L)
             )
         }
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
     @Test
-    fun `sendManualRichReply writes canonical fact audit not client suggested ids`() {
+    fun `sendManualRichReply blocks on validation text over 20000 chars`() {
         val rule = qaRule(10L)
         Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+        Mockito.`when`(qaFactSelectionService.select(Mockito.anyString(), Mockito.any(), Mockito.anyBoolean()))
             .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
+                ResolvedQaRules(sendQaRuleIds = listOf(10L), promptRuleIds = listOf(10L), requestFacts = emptyList())
             )
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
+        val longText = "A".repeat(20001)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>$longText</p>",
+                textBody = longText, operatorName = "op", qaRuleIds = listOf(10L)
             )
-        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer {
-            it.getArgument<MailRecord>(0).copy(id = 500L)
         }
-        Mockito.`when`(
-            mailDeliveryService.send(
-                anyValue(senderAccount()),
-                anyValue(ComposedMail("", "", ""))
-            )
-        ).thenReturn(DeliveredMail(messageId = "out-1", status = "SUCCESS"))
-
-        service.sendManualRichReply(
-            inboundProcessingId = 100L,
-            senderAccountCode = null,
-            subject = "Re: Test",
-            htmlBody = "<p>Remote work is possible.</p>",
-            textBody = "Remote work is possible.",
-            operatorName = "op",
-            qaRuleIds = listOf(10L),
-            suggestedRuleIds = listOf(99L)
-        )
-
-        val logCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any?>>
-        Mockito.verify(operatorActionLogService).record(
-            eqValue("INBOUND_MAIL_PROCESSING"),
-            eqValue(100L),
-            eqValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
-            eqValue(1L),
-            eqValue(100L),
-            anyValue(null),
-            logCaptor.capture(),
-            eqValue("op"),
-            anyValue(""),
-            anyValue(null)
-        )
-        assertEquals(listOf(10L), logCaptor.value!!["canonicalFactIds"])
-        assertEquals(listOf(10L), logCaptor.value!!["serverSuggestedFactIds"])
-    }
-
-    @Test
-    fun `sendManualRichReply defers audit until transaction afterCommit when synchronization active`() {
-        val rule = qaRule(10L)
-        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer {
-            it.getArgument<MailRecord>(0).copy(id = 500L)
-        }
-        Mockito.`when`(
-            mailDeliveryService.send(
-                anyValue(senderAccount()),
-                anyValue(ComposedMail("", "", ""))
-            )
-        ).thenReturn(DeliveredMail(messageId = "out-1", status = "SUCCESS"))
-
-        TransactionSynchronizationManager.initSynchronization()
-        try {
-            val result = service.sendManualRichReply(
-                inboundProcessingId = 100L,
-                senderAccountCode = null,
-                subject = "Re: Test",
-                htmlBody = "<p>Remote work is possible.</p>",
-                textBody = "Remote work is possible.",
-                operatorName = "op",
-                qaRuleIds = listOf(10L)
-            )
-
-            assertEquals("SUCCESS", result.sendStatus)
-            Mockito.verifyNoInteractions(operatorActionLogService)
-            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
-            Mockito.verify(operatorActionLogService).record(
-                eqValue("INBOUND_MAIL_PROCESSING"),
-                eqValue(100L),
-                eqValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
-                eqValue(1L),
-                eqValue(100L),
-                anyValue(null),
-                anyValue(null),
-                eqValue("op"),
-                anyValue(""),
-                anyValue(null)
-            )
-        } finally {
-            TransactionSynchronizationManager.clear()
-        }
-    }
-
-    @Test
-    fun `sendManualRichReply succeeds when audit logging fails`() {
-        val rule = qaRule(10L)
-        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer {
-            it.getArgument<MailRecord>(0).copy(id = 500L)
-        }
-        Mockito.`when`(
-            mailDeliveryService.send(
-                anyValue(senderAccount()),
-                anyValue(ComposedMail("", "", ""))
-            )
-        ).thenReturn(DeliveredMail(messageId = "out-1", status = "SUCCESS"))
-        Mockito.doThrow(RuntimeException("audit down"))
-            .`when`(operatorActionLogService)
-            .record(
-                eqValue("INBOUND_MAIL_PROCESSING"),
-                eqValue(100L),
-                eqValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
-                eqValue(1L),
-                eqValue(100L),
-                anyValue(null),
-                anyValue(null),
-                eqValue("op"),
-                anyValue(""),
-                anyValue(null)
-            )
-
-        val result = service.sendManualRichReply(
-            inboundProcessingId = 100L,
-            senderAccountCode = null,
-            subject = "Re: Test",
-            htmlBody = "<p>Remote work is possible.</p>",
-            textBody = "Remote work is possible.",
-            operatorName = "op",
-            qaRuleIds = listOf(10L)
-        )
-
-        assertEquals("SUCCESS", result.sendStatus)
-        Mockito.verify(mailDeliveryService).send(
-            anyValue(senderAccount()),
-            anyValue(ComposedMail("", "", ""))
-        )
-        Mockito.verify(mailRecordRepository).save(Mockito.any(MailRecord::class.java))
-        Mockito.verify(mailRecordQaRuleRepository).save(Mockito.any())
-        Mockito.verify(operatorActionLogService).record(
-            eqValue("INBOUND_MAIL_PROCESSING"),
-            eqValue(100L),
-            eqValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
-            eqValue(1L),
-            eqValue(100L),
-            anyValue(null),
-            anyValue(null),
-            eqValue("op"),
-            anyValue(""),
-            anyValue(null)
-        )
-    }
-
-    @Test
-    fun `sendManualRichReply succeeds when deferred audit logging fails after commit`() {
-        val rule = qaRule(10L)
-        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
-            .thenReturn(
-                ResolvedQaRules(
-                    sendQaRuleIds = listOf(10L),
-                    promptRuleIds = listOf(10L),
-                    requestFacts = emptyList()
-                )
-            )
-        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer {
-            it.getArgument<MailRecord>(0).copy(id = 500L)
-        }
-        Mockito.`when`(
-            mailDeliveryService.send(
-                anyValue(senderAccount()),
-                anyValue(ComposedMail("", "", ""))
-            )
-        ).thenReturn(DeliveredMail(messageId = "out-1", status = "SUCCESS"))
-        Mockito.doThrow(RuntimeException("audit down"))
-            .`when`(operatorActionLogService)
-            .record(
-                eqValue("INBOUND_MAIL_PROCESSING"),
-                eqValue(100L),
-                eqValue(OperatorActionType.SEND_MANUAL_COMPOSED_REPLY),
-                eqValue(1L),
-                eqValue(100L),
-                anyValue(null),
-                anyValue(null),
-                eqValue("op"),
-                anyValue(""),
-                anyValue(null)
-            )
-
-        TransactionSynchronizationManager.initSynchronization()
-        try {
-            val result = service.sendManualRichReply(
-                inboundProcessingId = 100L,
-                senderAccountCode = null,
-                subject = "Re: Test",
-                htmlBody = "<p>Remote work is possible.</p>",
-                textBody = "Remote work is possible.",
-                operatorName = "op",
-                qaRuleIds = listOf(10L)
-            )
-
-            assertEquals("SUCCESS", result.sendStatus)
-            Mockito.verify(mailDeliveryService).send(
-                anyValue(senderAccount()),
-                anyValue(ComposedMail("", "", ""))
-            )
-            Mockito.verify(mailRecordRepository).save(Mockito.any(MailRecord::class.java))
-            Mockito.verify(mailRecordQaRuleRepository).save(Mockito.any())
-            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
-        } finally {
-            TransactionSynchronizationManager.clear()
-        }
+        Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
     private fun inbound() = InboundMailProcessing(
@@ -505,7 +559,31 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         enabled = true
     )
 
+    private fun sendPayload() = ManualReplySendAttemptService.SendPayload(
+        orcidId = contact.orcidId,
+        contactId = requireNotNull(contact.id),
+        inboundProcessingId = 100L,
+        accountCode = "sender-1",
+        normalizedRecipient = contact.expertEmail,
+        subject = "Re: Test",
+        finalText = "Test",
+        finalHtml = "<p>Test</p>",
+        inReplyTo = "in-1",
+        canonicalQaRuleIds = emptyList(),
+        primaryRuleId = null
+    )
+
+    private fun composedMail() = ComposedMail(
+        to = contact.expertEmail,
+        subject = "Re: Test",
+        body = "<p>Test</p>",
+        html = true,
+        text = "Test",
+        messageId = "<manual-rich-abc@weibo.com>"
+    )
+
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
 }

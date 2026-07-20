@@ -71,6 +71,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 回复 frame（问候、致谢、结束语）的现存消费者集中在 `AiReplyPointByPointComposer` Grounded 组装及 `AiReplyDraftService` matched/FREE_FORM prompt/fallback；改 Grounded frame 只改前者，改全局 snippet 前重新 grep 全部 `resolveManualFrame/resolveAck`。(K-manual-frame-three-consumers)
 - AI 草稿生成有训练模拟、收发件箱工作台、Grounded 自动 decision 三个生产入口；跨入口 prompt/结构/claim/action gate 必须收口在 `AiReplyDraftService.generate()`，deterministic fallback 与自动 fail-closed 门禁仍是独立边界。(K-ai-generate-single-freeform-seam)
 - AI 初稿 `READY/NEEDS_REVIEW/BLOCKED` 仅用于质量展示与自动发送决策；人工采用后直接发送不得读取该历史状态作为审批条件。(K-ai-generation-observability-not-send-gate)
+- 人工采用后的最终发送只依据当前服务端事实、最终正文与当前发送上下文；不得以历史草稿、readiness、draftHash 或前端 preflight 作为发送 authority。(K-ai-adopt-direct-send-no-residual-gates)
 - 若未来重新启用 AI 草稿审核发送闸门，authority 必须以服务端 current identity/readiness/canonical snapshot 为准；当前“采用后直接人工发送”不以 identity、readiness 或审计记录决定外发。(K-ai-review-server-authoritative-snapshot)
 - 多请求 grounded LLM 首轮与动作重试都必须先按严格 request-index JSON materialize，再做 claim/action policy；无效结构统一 fallback，raw JSON 不得进入 response。(K-grounded-json-materialize-before-policy)
 - LLM JSON 协议的所有标识必须是可转换范围内的 integral number；拒绝浮点、溢出和截断后才能比对 request/rule 矩阵。(K-ai-reply-json-integral-identifiers, K-ai-reply-json-integral-range)

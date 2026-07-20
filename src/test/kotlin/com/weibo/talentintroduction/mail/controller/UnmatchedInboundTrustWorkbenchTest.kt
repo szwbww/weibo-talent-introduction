@@ -210,4 +210,115 @@ class UnmatchedInboundTrustWorkbenchTest {
 
         assertEquals("SUCCESS", result.sendStatus)
     }
+
+    @Test
+    fun `manual rich reply propagates 422 for blocking content`() {
+        Mockito.`when`(
+            pendingMailOperationService.sendManualRichReply(
+                Mockito.anyLong(), Mockito.isNull(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any(), Mockito.any()
+            )
+        ).thenThrow(
+            ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "\u6240\u9009\u7684QA\u4e8b\u5b9e\u5df2\u5168\u90e8\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9"
+            )
+        )
+        val req = PendingManualRichReplyRequest(
+            senderAccountCode = null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op", qaRuleIds = listOf(10L)
+        )
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            controller.sendManualRichReply(5L, req)
+        }
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.status)
+    }
+
+    @Test
+    fun `manual rich reply propagates 503 for safe retry`() {
+        Mockito.`when`(
+            pendingMailOperationService.sendManualRichReply(
+                Mockito.anyLong(), Mockito.isNull(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any(), Mockito.any()
+            )
+        ).thenThrow(
+            ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "\u53d1\u9001\u6682\u65f6\u5931\u8d25\uff0c\u53ef\u5b89\u5168\u91cd\u8bd5")
+        )
+        val req = PendingManualRichReplyRequest(
+            senderAccountCode = null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op"
+        )
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            controller.sendManualRichReply(5L, req)
+        }
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.status)
+    }
+
+    @Test
+    fun `manual rich reply propagates 409 for delivery unknown`() {
+        Mockito.`when`(
+            pendingMailOperationService.sendManualRichReply(
+                Mockito.anyLong(), Mockito.isNull(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any(), Mockito.any()
+            )
+        ).thenThrow(
+            ResponseStatusException(HttpStatus.CONFLICT, "\u53d1\u9001\u72b6\u6001\u672a\u77e5\uff0c\u8bf7\u52ff\u91cd\u590d\u53d1\u9001 (Message-ID: <test@weibo.com>)")
+        )
+        val req = PendingManualRichReplyRequest(
+            senderAccountCode = null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op"
+        )
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            controller.sendManualRichReply(5L, req)
+        }
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        assertTrue(ex.reason!!.contains("\u8bf7\u52ff\u91cd\u590d\u53d1\u9001"))
+    }
+
+    @Test
+    fun `manual rich reply request DTO has no idempotency key field`() {
+        val request = PendingManualRichReplyRequest(
+            senderAccountCode = null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op"
+        )
+        val fields = PendingManualRichReplyRequest::class.java.declaredFields.map { it.name }
+        assertTrue("idempotencyKey" !in fields, "Request DTO must not have idempotencyKey field")
+        assertTrue("draftHash" !in fields, "Request DTO must not have draftHash field")
+        assertTrue("readiness" !in fields, "Request DTO must not have readiness field")
+    }
+
+    @Test
+    fun `manual rich reply with dedup returns SENT without service exception`() {
+        Mockito.`when`(
+            pendingMailOperationService.sendManualRichReply(
+                Mockito.anyLong(), Mockito.isNull(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any(), Mockito.any()
+            )
+        ).thenReturn(
+            PendingMailSendResult(
+                contactId = 1L, senderAccountCode = "sender-1",
+                mailType = "MANUAL_RICH_REPLY", subject = "Re: Test",
+                sendStatus = "SENT", messageId = "<manual-rich-dedup@weibo.com>"
+            )
+        )
+        val req = PendingManualRichReplyRequest(
+            senderAccountCode = null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op"
+        )
+        val result = controller.sendManualRichReply(5L, req)
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-dedup@weibo.com>", result.messageId)
+    }
 }

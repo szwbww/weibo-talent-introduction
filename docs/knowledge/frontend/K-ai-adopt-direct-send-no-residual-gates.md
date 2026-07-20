@@ -3,8 +3,9 @@ id: K-ai-adopt-direct-send-no-residual-gates
 domain: frontend
 created: 2026-07-16
 last_used: 2026-07-20
-hit_count: 8
+hit_count: 11
 source: fix-v:ai-adopt-direct-manual-send:fix-1
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：把 AI 审核改为“采用后直接人工发送”时，只删除 modal、identity 和 review-event 不够；任何依赖 adopted draft 的 readiness、requestCount、缺口或编号完整性来阻止 manual-rich API 的 guard，仍会让运营看到“点击发送即可”流程失败。

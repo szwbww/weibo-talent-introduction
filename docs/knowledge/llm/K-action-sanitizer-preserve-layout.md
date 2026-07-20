@@ -3,8 +3,9 @@ id: K-action-sanitizer-preserve-layout
 domain: llm
 created: 2026-07-12
 last_used: 2026-07-20
-hit_count: 27
+hit_count: 28
 source: create-p:ai-reply-01-format-preservation
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：动作安全 sanitizer 若把句子 `joinToString(" ")` 并全局压缩空白，即使没有违规也会摧毁邮件换行、编号和签名；前端 `white-space:pre-wrap` 无法恢复服务端丢失的布局。

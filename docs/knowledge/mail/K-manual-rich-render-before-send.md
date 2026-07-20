@@ -3,8 +3,9 @@ id: K-manual-rich-render-before-send
 domain: mail
 created: 2026-07-13
 last_used: 2026-07-20
-hit_count: 16
+hit_count: 20
 source: fix-v:ai-reply-06-rich-send-variable-rendering:fix-1
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：manual rich 外发若仅在前端标记为“未编辑的 AI 草稿”时才校验和渲染模板，普通/API 调用或已编辑草稿中的 `${unknownKey}` 会绕过校验而被字面外发，已知变量也不会使用最终 sender/contact 重渲染。

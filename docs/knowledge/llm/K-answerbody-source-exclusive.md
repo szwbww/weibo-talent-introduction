@@ -3,8 +3,9 @@ id: K-answerbody-source-exclusive
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-20
-hit_count: 5
+hit_count: 7
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-2
+last_source: create-p:ai-reply-final-send-identity-scope-repair
 severity: P1
 ---
 经验：Grounded claim 校验若把规则 displayName 混入批准事实，会让标题中的数字、URL 或高风险措辞替 answerBody 背书，破坏事实正文单一来源。

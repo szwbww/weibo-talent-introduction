@@ -3,8 +3,9 @@ id: K-ai-review-server-authoritative-snapshot
 domain: mail
 created: 2026-07-15
 last_used: 2026-07-20
-hit_count: 24
+hit_count: 25
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 适用范围：仅当产品启用“AI 草稿审核”作为发送闸门时。

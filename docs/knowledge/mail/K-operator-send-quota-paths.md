@@ -3,8 +3,9 @@ id: K-operator-send-quota-paths
 domain: mail
 created: 2026-06-27
 last_used: 2026-07-20
-hit_count: 7
+hit_count: 10
 source: create-p:manual-send-decouple-daily-quota
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P2
 ---
 经验：`mail_sender_account.todaySentCount` 有多条独立写路径，改"配额"前必须全部列清，否则漏改导致行为不一致。

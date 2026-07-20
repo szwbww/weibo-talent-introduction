@@ -3,8 +3,9 @@ id: K-readiness-evidence-revalidation
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-20
-hit_count: 7
+hit_count: 10
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-3
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：readiness 在读取 evidence rule 时静默丢弃不存在、禁用或无事实正文的规则，会把残缺证据集误算为 READY。

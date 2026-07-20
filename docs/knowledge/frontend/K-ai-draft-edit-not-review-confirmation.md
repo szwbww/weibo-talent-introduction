@@ -3,8 +3,9 @@ id: K-ai-draft-edit-not-review-confirmation
 domain: frontend
 created: 2026-07-15
 last_used: 2026-07-20
-hit_count: 13
+hit_count: 14
 source: create-p:ai-reply-p0-p2
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P0
 ---
 经验：以“editor text/html 已不同于 AI baseline”作为缺口解除条件，只能证明发生过编辑，不能证明每个 unsupported/partial intent 已被补充或核验；加空格、改粗体即可绕过。

@@ -3,8 +3,9 @@ id: K-audit-selected-source
 domain: qa
 created: 2026-06-26
 last_used: 2026-07-20
-hit_count: 30
+hit_count: 31
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：审计报表的“人工选用规则集”必须以实际外发关联表为准；日志字段适合记录操作上下文，但不能替代业务事实表。

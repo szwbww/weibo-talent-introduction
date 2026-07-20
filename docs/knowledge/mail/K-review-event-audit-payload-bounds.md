@@ -3,8 +3,9 @@ id: K-review-event-audit-payload-bounds
 domain: mail
 created: 2026-07-15
 last_used: 2026-07-20
-hit_count: 19
+hit_count: 20
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1
 ---
 经验：面向操作端的审计事件若原样保存客户端列表/字符串，可被超长或超量 payload 膨胀，并把不应留存的内容复制进日志。

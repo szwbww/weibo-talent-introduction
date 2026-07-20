@@ -3,8 +3,9 @@ id: K-renderText-all-callers
 domain: template
 created: 2026-07-06
 last_used: 2026-07-20
-hit_count: 15
+hit_count: 16
 source: create-p:template-expert-variables-and-fallback
+last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 ---
 
 `MailComposeTemplateService.renderText()` 是所有模板变量替换的唯一实现点。任何对其行为的修改影响以下全部调用链：

@@ -3,11 +3,13 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
@@ -31,10 +33,10 @@ import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.GapItem
 import com.weibo.talentintroduction.qa.service.SuggestQaRule
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.support.TransactionSynchronization
-import org.springframework.transaction.support.TransactionSynchronizationManager
+import org.springframework.web.server.ResponseStatusException
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 
@@ -57,12 +59,17 @@ class PendingMailOperationService(
     private val aiReplyHighRiskClaimValidator: AiReplyHighRiskClaimValidator,
     private val mailBodyCleaner: MailBodyCleaner,
     private val mailContentService: MailContentService,
-    private val mailVariableService: MailVariableService
+    private val mailVariableService: MailVariableService,
+    private val manualReplySendAttemptService: ManualReplySendAttemptService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
         const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
         const val AI_REPLY_PREFLIGHT_NO_EVIDENCE = "AI_REPLY_PREFLIGHT_NO_EVIDENCE"
+        private val HREF_EXTRACTOR = Regex(
+            """href\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>"']+))""",
+            RegexOption.IGNORE_CASE
+        )
     }
 
     @Transactional
@@ -105,7 +112,6 @@ class PendingMailOperationService(
         )
     }
 
-    @Transactional
     fun sendManualRichReply(
         inboundProcessingId: Long,
         senderAccountCode: String?,
@@ -131,6 +137,8 @@ class PendingMailOperationService(
 
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
+        val trimmedSubject = subject.trim()
+        require(trimmedSubject.length <= 255) { "Subject exceeds 255 characters" }
 
         val inboundText = inboundMessageBody(record)
         val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
@@ -147,7 +155,19 @@ class PendingMailOperationService(
         }
         val primaryRuleId = canonicalFactIds.firstOrNull()
 
+        if (carriesQa && canonicalFactIds.isEmpty()) {
+            throw ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "所选的QA事实已全部失效，请重新选择"
+            )
+        }
+
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
+
+        mailVariableService.requireValidPlaceholders(trimmedSubject)
+        val renderedSubject = mailVariableService.renderForContact(trimmedSubject, account, contact)
+        require(renderedSubject.isNotBlank()) { "Rendered subject is empty" }
+        require(renderedSubject.length <= 255) { "Rendered subject exceeds 255 characters: ${renderedSubject.length}" }
 
         val rawText = templateTextBody?.takeIf { it.isNotBlank() }
             ?: textBody?.takeIf { it.isNotBlank() }
@@ -158,13 +178,6 @@ class PendingMailOperationService(
             mailVariableService.requireValidPlaceholders(rawHtmlFromTemplate)
         } else if (templateTextBody.isNullOrBlank()) {
             mailVariableService.requireValidPlaceholders(htmlBody)
-        }
-
-        if (carriesQa) {
-            val validation = aiReplyHighRiskClaimValidator.validatePlainText(rawText, canonicalFactIds)
-            if (!validation.valid) {
-                throw IllegalArgumentException("AI_REPLY_FACT_VALIDATION_FAILED")
-            }
         }
 
         val renderedText = mailVariableService.renderForContact(rawText, account, contact)
@@ -178,95 +191,201 @@ class PendingMailOperationService(
                 mailVariableService.renderHtmlForContact(htmlBody, account, contact)
         }
 
-        val mail = ComposedMail(
-            to = contact.expertEmail,
-            subject = subject,
-            body = finalHtmlBody,
-            html = true,
-            text = finalTextBody
+        val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
+        require(finalValidationText.isNotBlank()) { "Final validation text is empty after rendering" }
+        require(finalValidationText.length <= 20000) {
+            "Final validation text exceeds 20,000 characters (${finalValidationText.length})"
+        }
+        mailVariableService.requireValidPlaceholders(finalTextBody)
+        mailVariableService.requireValidPlaceholders(finalHtmlBody)
+
+        val blockingCode = performFinalBlockingCheck(
+            verificationText = finalValidationText,
+            carriesQa = carriesQa,
+            canonicalFactIds = canonicalFactIds,
+            contact = contact,
+            inboundText = inboundText,
+            researchProfileSufficient = researchProfileSufficient
         )
-        val delivered = mailDeliveryService.send(account, mail)
-        val now = LocalDateTime.now()
-
-        val saved = mailRecordRepository.save(
-            MailRecord(
-                expertContactId = contactId,
-                direction = "OUTBOUND",
-                mailType = "MANUAL_RICH_REPLY",
-                senderAccountCode = account.accountCode,
-                triggeredBy = TriggeredBy.OPERATOR,
-                sourceInboundId = null,
-                messageId = delivered.messageId,
-                inReplyTo = record.messageId,
-                subject = mail.subject,
-                body = finalTextBody ?: finalHtmlBody,
-                matchedQaRuleId = primaryRuleId,
-                sendStatus = delivered.status,
-                receivedAt = null,
-                sentAt = now,
-                createdAt = now
-            )
-        )
-
-        val bodyPreviewText = (finalTextBody?.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
-            ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
-        val mailRecordId = saved.id ?: error("Mail record id is required")
-
-        if (carriesQa) {
-            canonicalFactIds.forEachIndexed { ordinal, qaRuleId ->
-                mailRecordQaRuleRepository.save(
-                    MailRecordQaRule(
-                        mailRecordId = mailRecordId,
-                        qaRuleId = qaRuleId,
-                        ordinal = ordinal
-                    )
-                )
-            }
-            scheduleManualRichReplyAudit(
-                inboundProcessingId = inboundProcessingId,
-                contactId = contactId,
-                mailRecordId = mailRecordId,
-                actionType = OperatorActionType.SEND_MANUAL_COMPOSED_REPLY,
-                after = mapOf(
-                    "mailRecordId" to mailRecordId,
-                    "canonicalFactIds" to canonicalFactIds,
-                    "serverSuggestedFactIds" to serverSuggestedFactIds,
-                    "qaRuleIds" to canonicalFactIds,
-                    "suggestedRuleIds" to serverSuggestedFactIds,
-                    "draftGenerationState" to null,
-                    "edited" to (edited ?: false),
-                    "sendStatus" to delivered.status,
-                    "subject" to mail.subject,
-                    "bodyPreviewText" to bodyPreviewText
-                ),
-                operatorName = operatorName,
-                note = "Manual rich reply with QA facts sent for inbound processing $inboundProcessingId"
-            )
-        } else {
-            scheduleManualRichReplyAudit(
-                inboundProcessingId = inboundProcessingId,
-                contactId = contactId,
-                mailRecordId = mailRecordId,
-                actionType = OperatorActionType.SEND_MANUAL_RICH_REPLY,
-                after = mapOf(
-                    "mailRecordId" to mailRecordId,
-                    "sendStatus" to delivered.status,
-                    "subject" to mail.subject,
-                    "bodyPreviewText" to bodyPreviewText
-                ),
-                operatorName = operatorName,
-                note = "Manual rich reply sent for inbound processing $inboundProcessingId"
+        if (blockingCode != null) {
+            throw ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "发送内容安全校验未通过: $blockingCode"
             )
         }
 
-        return PendingMailSendResult(
+        val payload = ManualReplySendAttemptService.SendPayload(
+            orcidId = contact.orcidId,
             contactId = contactId,
-            senderAccountCode = account.accountCode,
-            mailType = "MANUAL_RICH_REPLY",
-            subject = mail.subject,
-            sendStatus = delivered.status,
-            messageId = delivered.messageId
+            inboundProcessingId = inboundProcessingId,
+            accountCode = account.accountCode,
+            normalizedRecipient = contact.expertEmail.lowercase().trim(),
+            subject = renderedSubject,
+            finalText = finalTextBody,
+            finalHtml = finalHtmlBody,
+            inReplyTo = record.messageId,
+            canonicalQaRuleIds = canonicalFactIds,
+            primaryRuleId = primaryRuleId
         )
+
+        val inReplyTo = record.messageId
+        if (inReplyTo != null && inReplyTo.length > 255) {
+            throw ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "inReplyTo exceeds 255 characters"
+            )
+        }
+
+        val claim = manualReplySendAttemptService.prepareAndClaim(payload)
+
+        return when (claim.result) {
+            ManualReplySendAttemptService.ClaimResult.CLAIMED,
+            ManualReplySendAttemptService.ClaimResult.SAFE_RETRY_CLAIMED -> {
+                val mail = ComposedMail(
+                    to = contact.expertEmail,
+                    subject = renderedSubject,
+                    body = finalHtmlBody,
+                    html = true,
+                    text = finalTextBody,
+                    messageId = claim.messageId
+                )
+                val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
+                    .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
+
+                try {
+                    val delivered = mailDeliveryService.send(account, mail)
+                    val classification = classifyDelivery(delivered)
+
+                    if (classification.isSent) {
+                        try {
+                            val mailRecordId = manualReplySendAttemptService.finalizeSuccess(
+                                payload = payload,
+                                attemptId = claim.attemptId,
+                                messageId = claim.messageId
+                            )
+                            manualReplySendAttemptService.recordSendAudit(
+                                inboundProcessingId = inboundProcessingId,
+                                contactId = contactId,
+                                mailRecordId = mailRecordId,
+                                canonicalFactIds = canonicalFactIds,
+                                carriesQa = carriesQa,
+                                delivered = delivered,
+                                sendSubject = renderedSubject,
+                                bodyPreviewText = bodyPreviewText,
+                                operatorName = operatorName,
+                                inboundRecord = record,
+                                serverSuggestedFactIds = serverSuggestedFactIds,
+                                edited = edited,
+                                note = "Manual rich reply sent for inbound processing $inboundProcessingId"
+                            )
+                        } catch (finalizeEx: Exception) {
+                            log.warn("finalizeSuccess failed for attempt {}: {}", claim.attemptId, finalizeEx.message)
+                            try {
+                                manualReplySendAttemptService.finalizeFailure(
+                                    payload = payload,
+                                    attemptId = claim.attemptId,
+                                    messageId = claim.messageId,
+                                    resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
+                                    errorSummary = "finalize_failure:${finalizeEx.message?.take(400).orEmpty()}"
+                                )
+                            } catch (finalizeFailEx: Exception) {
+                                log.error("finalizeFailure to UNKNOWN also failed for attempt {}: {}",
+                                    claim.attemptId, finalizeFailEx.message)
+                            }
+                            throw ResponseStatusException(
+                                HttpStatus.CONFLICT,
+                                "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
+                            )
+                        }
+                        PendingMailSendResult(
+                            contactId = contactId,
+                            senderAccountCode = account.accountCode,
+                            mailType = "MANUAL_RICH_REPLY",
+                            subject = renderedSubject,
+                            sendStatus = "SENT",
+                            messageId = claim.messageId
+                        )
+                    } else {
+                        manualReplySendAttemptService.finalizeFailure(
+                            payload = payload,
+                            attemptId = claim.attemptId,
+                            messageId = claim.messageId,
+                            resultStatus = classification.attemptStatus,
+                            errorSummary = classification.errorSummary
+                        )
+                        if (classification.isUnknown) {
+                            throw ResponseStatusException(
+                                HttpStatus.CONFLICT,
+                                "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
+                            )
+                        }
+                        if (classification.isSafeRetry) {
+                            throw ResponseStatusException(
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                "发送暂时失败，可安全重试"
+                            )
+                        }
+                        throw ResponseStatusException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "发送失败，请修改内容后重试"
+                        )
+                    }
+                } catch (deliveryEx: Exception) {
+                    when (deliveryEx) {
+                        is ResponseStatusException -> throw deliveryEx
+                        else -> {
+                            log.warn("Unchecked delivery error for attempt {}: {}", claim.attemptId, deliveryEx.message)
+                            try {
+                                manualReplySendAttemptService.finalizeFailure(
+                                    payload = payload,
+                                    attemptId = claim.attemptId,
+                                    messageId = claim.messageId,
+                                    resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
+                                    errorSummary = "delivery_error:${deliveryEx.message?.take(400).orEmpty()}"
+                                )
+                            } catch (finalizeEx: Exception) {
+                                log.error("finalizeFailure to UNKNOWN failed for attempt {}: {}",
+                                    claim.attemptId, finalizeEx.message)
+                            }
+                            throw ResponseStatusException(
+                                HttpStatus.CONFLICT,
+                                "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
+                            )
+                        }
+                    }
+                }
+            }
+
+            ManualReplySendAttemptService.ClaimResult.DEDUP_SENT -> {
+                val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+                PendingMailSendResult(
+                    contactId = contactId,
+                    senderAccountCode = payload.accountCode,
+                    mailType = "MANUAL_RICH_REPLY",
+                    subject = renderedSubject,
+                    sendStatus = "SENT",
+                    messageId = existingRecord?.messageId ?: claim.messageId
+                )
+            }
+
+            ManualReplySendAttemptService.ClaimResult.IN_PROGRESS ->
+                throw ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
+                )
+
+            ManualReplySendAttemptService.ClaimResult.UNKNOWN ->
+                throw ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
+                )
+
+            ManualReplySendAttemptService.ClaimResult.PERMANENT_FAILED ->
+                throw ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "该内容已发送失败，请修改内容后重试"
+                )
+        }
     }
 
     fun suggestComposedReply(inboundProcessingId: Long): TrustWorkbenchSuggestResult {
@@ -412,66 +531,151 @@ class PendingMailOperationService(
         requestedAccountCode?.takeIf { it.isNotBlank() } ?: inboundSenderAccountCode
     )
 
-    private fun scheduleManualRichReplyAudit(
-        inboundProcessingId: Long,
-        contactId: Long,
-        mailRecordId: Long,
-        actionType: OperatorActionType,
-        after: Map<String, Any?>,
-        operatorName: String?,
-        note: String
-    ) {
-        val auditTask = {
-            recordManualRichReplyAudit(
-                inboundProcessingId = inboundProcessingId,
-                contactId = contactId,
-                mailRecordId = mailRecordId,
-                actionType = actionType,
-                after = after,
-                operatorName = operatorName,
-                note = note
-            )
-        }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
-                override fun afterCommit() {
-                    auditTask()
-                }
-            })
-        } else {
-            auditTask()
-        }
+    internal data class ManualReplyDeliveryClassification(
+        val attemptStatus: String,
+        val isSent: Boolean,
+        val isSafeRetry: Boolean,
+        val isUnknown: Boolean,
+        val errorSummary: String?
+    )
+
+    private fun buildFinalValidationText(subject: String, finalText: String, finalHtml: String): String {
+        val htmlPlain = mailContentService.htmlToPlainText(finalHtml)
+        val hrefs = HREF_EXTRACTOR.findAll(finalHtml).map { m ->
+            m.groupValues[1].takeIf { it.isNotEmpty() }
+                ?: m.groupValues[2].takeIf { it.isNotEmpty() }
+                ?: m.groupValues[3]
+        }.toList()
+        return listOfNotNull(
+            subject.takeIf { it.isNotBlank() },
+            finalText.takeIf { it.isNotBlank() },
+            htmlPlain.takeIf { it.isNotBlank() },
+            hrefs.takeIf { it.isNotEmpty() }?.joinToString(" ")
+        ).joinToString(" ")
     }
 
-    private fun recordManualRichReplyAudit(
-        inboundProcessingId: Long,
-        contactId: Long,
-        mailRecordId: Long,
-        actionType: OperatorActionType,
-        after: Map<String, Any?>,
-        operatorName: String?,
-        note: String
-    ) {
-        try {
-            operatorActionLogService.record(
-                targetType = "INBOUND_MAIL_PROCESSING",
-                targetId = inboundProcessingId,
-                actionType = actionType,
-                expertContactId = contactId,
-                inboundProcessingId = inboundProcessingId,
-                before = mapOf("inboundProcessingId" to inboundProcessingId),
-                after = after,
-                operatorName = operatorName,
-                note = note
+    private fun performFinalBlockingCheck(
+        verificationText: String,
+        carriesQa: Boolean,
+        canonicalFactIds: List<Long>,
+        contact: ExpertContact,
+        inboundText: String,
+        researchProfileSufficient: Boolean
+    ): String? {
+        if (carriesQa && canonicalFactIds.isNotEmpty()) {
+            val claimValidation = aiReplyHighRiskClaimValidator.validatePlainText(
+                verificationText, canonicalFactIds
             )
-        } catch (ex: Exception) {
-            log.warn(
-                "Failed to record manual rich reply audit for inbound {} mailRecord {}: {}",
-                inboundProcessingId,
-                mailRecordId,
-                ex.message,
-                ex
-            )
+            if (!claimValidation.valid) {
+                return claimValidation.warningCodes.firstOrNull() ?: "CLAIM_VALIDATION_FAILED"
+            }
+        } else if (carriesQa && canonicalFactIds.isEmpty()) {
+            return "QA_FACTS_ALL_INVALID"
+        } else {
+            if (aiReplyHighRiskClaimValidator.containsHallucinatedNumberOrUrl(verificationText, "")) {
+                return AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT
+            }
+            if (aiReplyHighRiskClaimValidator.containsUnbackedHighRiskDeclarations(verificationText, "")) {
+                return AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED
+            }
+        }
+
+        if (aiReplyHighRiskClaimValidator.containsTrustRhetoric(verificationText)) {
+            return AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC
+        }
+
+        val selection = if (canonicalFactIds.isNotEmpty()) {
+            qaFactSelectionService.select(inboundText, canonicalFactIds, researchProfileSufficient)
+        } else {
+            qaFactSelectionService.select(inboundText, null, researchProfileSufficient)
+        }
+        val hasBlockingTrust = aiReplyDraftService.hasBlockingTrustGapForSelection(selection.requestFacts)
+        if (hasBlockingTrust &&
+            aiReplyHighRiskClaimValidator.containsConfidentialitySubstitute(verificationText)
+        ) {
+            return AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
+        }
+
+        for (fact in selection.requestFacts) {
+            for (intent in fact.intents) {
+                val isAgencyOrCompany = intent.intentKey.startsWith("agency.") ||
+                    intent.intentKey.startsWith("company.")
+                val isEnterprise = intent.intentKey.startsWith("enterprise.")
+                if (isAgencyOrCompany || isEnterprise) {
+                    val evidenceIds = intent.evidenceRuleIds
+                    if (evidenceIds.isNotEmpty()) {
+                        val sourceText = aiReplyHighRiskClaimValidator.resolveSourceText(evidenceIds)
+                        if (sourceText != null) {
+                            if (isAgencyOrCompany) {
+                                if (aiReplyHighRiskClaimValidator.isRoleDisclosureRequired(sourceText) &&
+                                    !aiReplyHighRiskClaimValidator.containsRoleDisclosure(verificationText)
+                                ) {
+                                    return AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
+                                }
+                            }
+                            if (isEnterprise) {
+                                if (aiReplyHighRiskClaimValidator.isEnterpriseUncertaintyRequired(sourceText) &&
+                                    (aiReplyHighRiskClaimValidator.containsEnterpriseCertainty(verificationText) ||
+                                        !aiReplyHighRiskClaimValidator.containsEnterpriseUncertainty(verificationText))
+                                ) {
+                                    return AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val restrictedActions = AiReplyActionPolicy.restrictForTrustState(
+            AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList()),
+            hasBlockingTrust
+        )
+        val violations = AiReplyActionPolicy.findViolations(verificationText, restrictedActions)
+        if (violations.isNotEmpty()) {
+            return violations.first().code ?: "ACTION_VIOLATION"
+        }
+
+        return null
+    }
+
+    private fun classifyDelivery(delivered: DeliveredMail): ManualReplyDeliveryClassification {
+        return when {
+            delivered.status == "SENT" && delivered.errorCategory == SmtpErrorCategory.SUCCESS ->
+                ManualReplyDeliveryClassification(
+                    attemptStatus = MailSendAttemptStatus.SENT,
+                    isSent = true, isSafeRetry = false, isUnknown = false,
+                    errorSummary = null
+                )
+            delivered.errorCategory == SmtpErrorCategory.TRANSIENT &&
+                delivered.smtpResponseCode != null &&
+                delivered.smtpResponseCode in 400..499 ->
+                ManualReplyDeliveryClassification(
+                    attemptStatus = MailSendAttemptStatus.FAILED_SAFE_TO_RETRY,
+                    isSent = false, isSafeRetry = true, isUnknown = false,
+                    errorSummary = delivered.errorDetail
+                )
+            delivered.errorCategory == SmtpErrorCategory.PERMANENT &&
+                delivered.smtpResponseCode != null &&
+                delivered.smtpResponseCode in 500..599 ->
+                ManualReplyDeliveryClassification(
+                    attemptStatus = MailSendAttemptStatus.FAILED,
+                    isSent = false, isSafeRetry = false, isUnknown = false,
+                    errorSummary = delivered.errorDetail
+                )
+            delivered.errorCategory == SmtpErrorCategory.INFRASTRUCTURE &&
+                delivered.errorDetail?.startsWith("AUTH_FAILED:") == true ->
+                ManualReplyDeliveryClassification(
+                    attemptStatus = MailSendAttemptStatus.FAILED_SAFE_TO_RETRY,
+                    isSent = false, isSafeRetry = true, isUnknown = false,
+                    errorSummary = delivered.errorDetail
+                )
+            else ->
+                ManualReplyDeliveryClassification(
+                    attemptStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
+                    isSent = false, isSafeRetry = false, isUnknown = true,
+                    errorSummary = delivered.errorDetail
+                )
         }
     }
 
