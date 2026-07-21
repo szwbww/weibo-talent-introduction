@@ -309,7 +309,7 @@ class UnmatchedInboundMailController(
         val isContinuation = request.turns.isNotEmpty()
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
         val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
-        val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
+        val context = aiReplyContextService.build(contact, records, inboundText, knowledge, detail.messageId)
 
         val result = aiReplyDraftService.generate(
             inboundText = inboundText,

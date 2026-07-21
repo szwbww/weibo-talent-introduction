@@ -3,8 +3,9 @@ id: K-grounded-natural-structure-server-gate
 domain: llm
 created: 2026-07-17
 last_used: 2026-07-21
-hit_count: 10
+hit_count: 12
 source: fix-v:qa-refactor-04-grounded-engine:fix-1
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：只在 prompt 中要求自然段，模型仍可在 JSON answer 内塞入编号或章节标题，后端直接拼装会把模板化结构外发。

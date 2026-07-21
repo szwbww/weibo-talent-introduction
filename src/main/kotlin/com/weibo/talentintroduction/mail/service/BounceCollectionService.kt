@@ -124,7 +124,7 @@ class BounceCollectionService(
         receivedAt: LocalDateTime
     ): String {
         if (!bounceMessageId.isNullOrBlank()) {
-            return bounceDetector.normalizeMessageId(bounceMessageId)
+            return MailMessageIdNormalizer.normalize(bounceMessageId)
         }
         val input = "${from.orEmpty()}|${subject.orEmpty()}|$receivedAt"
         val digest = MessageDigest.getInstance("SHA-1").digest(input.toByteArray(Charsets.UTF_8))

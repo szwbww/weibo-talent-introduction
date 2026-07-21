@@ -3,8 +3,9 @@ id: K-compound-request-coverage-intent-atomic
 domain: llm
 created: 2026-07-15
 last_used: 2026-07-21
-hit_count: 20
+hit_count: 22
 source: create-p:ai-reply-p0-p2
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P0
 ---
 经验：request 级“有一条 QA 规则”不能证明复合问题已完整回答；`selection + matching`、`responsibilities + deliverables`、`contract + finance + IP` 任一子意图有据都会掩盖其他缺口。

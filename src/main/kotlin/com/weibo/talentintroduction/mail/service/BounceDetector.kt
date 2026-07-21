@@ -134,9 +134,9 @@ class BounceDetector {
             .firstOrNull { it.startsWith("Original-Message-ID:", ignoreCase = true) }
             ?.substringAfter(":")
             ?.trim()
-            ?.let { return normalizeMessageId(it) }
+            ?.let { return MailMessageIdNormalizer.normalize(it) }
         MESSAGE_ID_HEADER_PATTERN.find(body)?.groupValues?.getOrNull(1)?.let {
-            return normalizeMessageId(it)
+            return MailMessageIdNormalizer.normalize(it)
         }
         return null
     }
@@ -179,16 +179,18 @@ class BounceDetector {
     }
 
     private fun extractOriginalMessageId(message: Message): String? {
-        findEmbeddedRfc822Message(message)?.getHeader("Message-ID")?.firstOrNull()?.let { return normalizeMessageId(it) }
+        findEmbeddedRfc822Message(message)?.getHeader("Message-ID")?.firstOrNull()?.let {
+            return MailMessageIdNormalizer.normalize(it)
+        }
         findDeliveryStatusBody(message)?.let { body ->
             body.lineSequence()
                 .map { it.trim() }
                 .firstOrNull { it.startsWith("Original-Message-ID:", ignoreCase = true) }
                 ?.substringAfter(":")
                 ?.trim()
-                ?.let { return normalizeMessageId(it) }
+                ?.let { return MailMessageIdNormalizer.normalize(it) }
         }
-        message.getHeader("In-Reply-To")?.firstOrNull()?.let { return normalizeMessageId(it) }
+        message.getHeader("In-Reply-To")?.firstOrNull()?.let { return MailMessageIdNormalizer.normalize(it) }
         return null
     }
 
@@ -222,9 +224,6 @@ class BounceDetector {
         }
         return null
     }
-
-    fun normalizeMessageId(messageId: String): String =
-        messageId.trim().removePrefix("<").removeSuffix(">")
 
     companion object {
         private val STATUS_PATTERN = Regex("""\d\.\d\.\d""")

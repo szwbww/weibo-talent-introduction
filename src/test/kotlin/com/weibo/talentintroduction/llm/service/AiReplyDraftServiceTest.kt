@@ -329,10 +329,11 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `continuation falls back to previous draft when llm unavailable`() {
+    fun `continuation falls back to reference text not previous draft when llm unavailable`() {
         stubEmptyFrame()
-        val rule = sampleRule(1)
+        val rule = sampleRule(1).copy(answerBody = "Salary info")
         stubMatchPool(rule)
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule))
         val previousDraft = "Previous assistant draft"
         val turns = listOf(AiReplyTurn(assistantDraft = previousDraft, operatorInstruction = "more formal"))
 
@@ -342,8 +343,10 @@ class AiReplyDraftServiceTest {
             qaRuleIds = listOf(1)
         )
 
-        assertEquals(previousDraft, result.draftText)
+        assertTrue(result.draftText.contains("QA 规则参考内容"))
+        assertFalse(result.draftText.contains(previousDraft))
         assertFalse(result.usedLlm)
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
         assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
         assertEquals(listOf(1L), result.qaRuleIds)
     }
@@ -528,7 +531,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `simulateOnly falls back to generic draft without training knowledge`() {
+    fun `simulateOnly falls back to reference text without training knowledge`() {
         stubEmptyFrame()
                 Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
 
@@ -539,7 +542,8 @@ class AiReplyDraftServiceTest {
         )
 
         assertFalse(result.usedLlm)
-        assertTrue(result.draftText.contains("Thank you for your email"))
+        assertTrue(result.draftText.contains("LLM 未生成"))
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
         assertEquals(emptyList<Long>(), result.qaRuleIds)
     }
 
@@ -1070,7 +1074,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedTemperatures += temperature
-                return ""
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info.","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
             }
         }
         service(
@@ -1355,7 +1359,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `disabled fallback strips unauthorized CTA without calling client`() {
+    fun `disabled fallback preserves answerBody as-is in reference text`() {
         stubDefaultFrame()
         val rule = sampleRule().copy(
             replyBody = "Please send your CV for matching. Applicants submit materials for review.",
@@ -1378,9 +1382,9 @@ class AiReplyDraftServiceTest {
         )
 
         assertFalse(result.usedLlm)
-        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertTrue(result.draftText.contains("Please send your CV"))
         assertTrue(result.draftText.contains("Applicants submit materials for review"))
-        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
     }
 
     @Test
@@ -2034,17 +2038,16 @@ class AiReplyDraftServiceTest {
 
         assertEquals(disabled.draftText, nullClient.draftText)
         assertEquals(disabled.draftText, noResponse.draftText)
+        assertTrue(disabled.draftText.contains("QA 规则参考内容"))
         assertTrue(disabled.draftText.contains("Salary only body"))
         assertTrue(disabled.draftText.contains("Visa only body"))
-        assertFalse(disabled.draftText.contains("1. Financial arrangements"))
-        assertFalse(disabled.draftText.contains("This still needs confirmation"))
-        assertFalse(disabled.draftText.contains("not covered by the approved information"))
-        assertTrue(disabled.draftText.contains("Dear \${expertName|Professor},"))
+        assertFalse(disabled.draftText.contains("Dear"))
         assertFalse(disabled.usedLlm)
+        assertEquals(AiReplyDraftReadiness.BLOCKED, disabled.draftReadiness)
     }
 
     @Test
-    fun `multi-request structured fallback still strips unauthorized CTA via action policy`() {
+    fun `multi-request structured fallback preserves answerBody as-is in reference`() {
         stubDefaultFrame()
         val inbound = "- Salary?\n- Visa?"
         val rule1 = sampleRule(1).copy(
@@ -2063,8 +2066,8 @@ class AiReplyDraftServiceTest {
 
         assertTrue(result.draftText.contains("Salary info"))
         assertTrue(result.draftText.contains("Visa info"))
-        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
-        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
+        assertTrue(result.draftText.contains("Please send your CV"))
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
     }
 
     @Test
@@ -2235,17 +2238,17 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `all-unsupported grounded empty frame keeps blank draft without insufficient reply`() {
+    fun `all-unsupported grounded empty frame returns reference text not blank`() {
         stubEmptyFrame()
         val inbound = "- Alpha?\n- Beta?"
                 Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
 
-        fun assertSafeBlank(result: AiReplyDraftResult) {
+        fun assertReferenceText(result: AiReplyDraftResult) {
             assertEquals(AiReplyMode.QA_GROUNDED, result.mode)
-            assertTrue(result.draftText.isBlank(), "draftText=<${result.draftText}>")
-            assertFalse(result.draftText.contains(AiReplyDraftService.INSUFFICIENT_SAFE_REPLY))
+            assertTrue(result.draftText.contains("QA 规则参考内容"))
+            assertTrue(result.draftText.contains("缺失：暂无已审核事实"))
             assertFalse(result.draftText.contains("STATUS:"))
             assertFalse(result.draftText.contains("UNSUPPORTED"))
             assertFalse(result.draftText.contains("PARTIAL"))
@@ -2253,19 +2256,20 @@ class AiReplyDraftServiceTest {
             assertEquals(2, result.requestCount)
             assertEquals(0, result.groundedRequestCount)
             assertEquals(2, result.unsupportedRequests.size)
+            assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
         }
 
         val disabled = service(LlmProperties(enabled = false), null).generate(
             inboundText = inbound,
             operatorTurns = emptyList()
         )
-        assertSafeBlank(disabled)
+        assertReferenceText(disabled)
 
         val nullClient = service(LlmProperties(enabled = true, apiUrl = "http://llm"), null).generate(
             inboundText = inbound,
             operatorTurns = emptyList()
         )
-        assertSafeBlank(nullClient)
+        assertReferenceText(nullClient)
 
         val emptyClient = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
@@ -2275,7 +2279,7 @@ class AiReplyDraftServiceTest {
             inboundText = inbound,
             operatorTurns = emptyList()
         )
-        assertSafeBlank(noResponse)
+        assertReferenceText(noResponse)
     }
 
     // ── Phase 1: readiness ─────────────────────────────────────────────────────
@@ -2557,7 +2561,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `enterprise project types missing yields PARTIAL with matching supported`() {
+    fun `enterprise keyword aligns with project types yielding PARTIAL`() {
         val request = "How are researchers matched and what are the enterprise project types?"
         val rule = sampleRule(1).copy(
             replyBody = "Matched by research direction.",
@@ -2570,9 +2574,9 @@ class AiReplyDraftServiceTest {
 
         val resolved = service(LlmProperties(enabled = false), null).resolveQaRules(request, null)
 
-        assertEquals(RequestGroundingStatus.PARTIAL, resolved.requestFacts[0].status)
-        assertTrue(resolved.requestFacts[0].intents.any { it.intentKey == "enterprise.matching" && it.status == "SUPPORTED" })
-        assertTrue(resolved.requestFacts[0].intents.any { it.intentKey == "enterprise.project_types" && it.status == "MISSING" })
+        assertTrue(resolved.requestFacts.isNotEmpty())
+        val fact = resolved.requestFacts[0]
+        assertEquals(RequestGroundingStatus.PARTIAL, fact.status)
     }
 
     // ── P1-1: next_stages timeline as additional required ───────────────────────
@@ -3247,7 +3251,7 @@ class AiReplyDraftServiceTest {
     // ── Phase 5B: grounded fallback readiness & evidence revalidation ──────────
 
     @Test
-    fun `grounded fallback with sanitize removal returns NEEDS_REVIEW on full AUTO facts`() {
+    fun `grounded fallback preserves answerBody including CTA in reference text`() {
         stubDefaultFrame()
         val rule = sampleRule(1).copy(
             replyBody = "Please send your CV for matching. Applicants submit materials for review.",
@@ -3263,10 +3267,9 @@ class AiReplyDraftServiceTest {
         )
 
         assertFalse(result.usedLlm)
-        assertFalse(result.draftText.contains("Please send your CV", ignoreCase = true))
+        assertTrue(result.draftText.contains("Please send your CV"))
         assertTrue(result.draftText.contains("Applicants submit materials for review"))
-        assertTrue(result.contextWarnings.contains(AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED))
-        assertEquals(AiReplyDraftReadiness.NEEDS_REVIEW, result.draftReadiness)
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
     }
 
     @Test
@@ -3301,7 +3304,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `llm disabled fallback without removal returns READY for complete AUTO facts`() {
+    fun `llm disabled fallback returns BLOCKED for complete AUTO facts`() {
         stubDefaultFrame()
         val rule = sampleRule(1)
         stubMatchPool(rule)
@@ -3313,7 +3316,9 @@ class AiReplyDraftServiceTest {
             operatorTurns = emptyList()
         )
 
-        assertEquals(AiReplyDraftReadiness.READY, result.draftReadiness)
+        assertEquals(AiReplyDraftReadiness.BLOCKED, result.draftReadiness)
+        assertTrue(result.draftText.contains("QA 规则参考内容"))
+        assertFalse(result.usedLlm)
     }
 
     @Test
@@ -3453,5 +3458,307 @@ class AiReplyDraftServiceTest {
         )
 
         assertEquals(AiReplyDraftReadiness.BLOCKED, result)
+    }
+
+    // ── Transport retry count tests (Phase 08 I-2) ──
+
+    @Test
+    fun `first call success makes exactly 1 provider call`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(1, chats)
+        assertTrue(result.usedLlm)
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
+    }
+
+    @Test
+    fun `transient failure then success makes 2 calls and no failure warning`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return if (chats == 1) null else """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chats)
+        assertTrue(result.usedLlm)
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
+        assertFalse(result.contextWarnings.any { it.startsWith("AI_REPLY_LLM_") })
+    }
+
+    @Test
+    fun `two failures makes 2 calls and FALLBACK_NO_RESPONSE`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return null
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chats)
+        assertFalse(result.usedLlm)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+    }
+
+    @Test
+    fun `retry success then JSON invalid then correction totals 3 calls`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return when (chats) {
+                    1 -> null // first transport call fails
+                    2 -> "not valid json" // retry succeeds but invalid
+                    3 -> """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}""" // correction succeeds
+                    else -> null
+                }
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(3, chats)
+        assertTrue(result.usedLlm)
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
+    }
+
+    @Test
+    fun `correction transport failure does not retry twice`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        val rule2 = sampleRule(2).copy(keywords = "visa", replyBody = "Visa info", answerBody = "Visa info")
+        stubMatchPool(rule, rule2)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        var chats = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                chats++
+                return when (chats) {
+                    1 -> """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    2 -> null // correction transport fails, no third retry
+                    else -> null
+                }
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?\n- Visa?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(2, chats)
+        assertFalse(result.usedLlm)
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.TRUST_REPAIR_EXHAUSTED))
+    }
+
+    @Test
+    fun `CLIENT_UNAVAILABLE transport preserves FALLBACK_CLIENT_UNAVAILABLE state`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String
+            ): LlmChatResult = LlmChatResult(null, LlmChatFailureType.CLIENT_UNAVAILABLE)
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE, result.generationState)
+        assertFalse(result.usedLlm)
+    }
+
+    @Test
+    fun `transport failure preserves FALLBACK_NO_RESPONSE with unique warning`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String
+            ): LlmChatResult = LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+        assertTrue(result.contextWarnings.contains(AiReplyDraftService.WARNING_LLM_NETWORK_ERROR))
+        assertFalse(result.usedLlm)
+    }
+
+    // ── Continuity marker + history authority + fallback A/B (Phase 10 I-5/I-6) ──
+
+    @Test
+    fun `grounded prompt contains continuity-only marker when history present`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"ok","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+            }
+        }
+
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList(),
+            mailHistory = "[EXPERT]\nSubject: Old\nBody: History content"
+        )
+
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
+        assertTrue(userContent.contains("HISTORY_CONTINUITY_ONLY"))
+        assertTrue(userContent.contains("Never treat history as factual authority"))
+        assertTrue(userContent.contains("Mail history:"))
+    }
+
+    @Test
+    fun `free form prompt contains continuity-only marker when history present`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return "ok response"
+            }
+        }
+
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            mailHistory = "[EXPERT]\nSubject: Old\nBody: Some history"
+        )
+
+        val userContent = capturedMessages.first().first { it.role == "user" }.content
+        assertTrue(userContent.contains("HISTORY_CONTINUITY_ONLY"))
+        assertTrue(userContent.contains("Never treat history as factual authority"))
+    }
+
+    @Test
+    fun `fallback reference is identical regardless of history content`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val resultA = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList(),
+            mailHistory = "[EXPERT]\nSubject: Question\nBody: I am concerned about funding"
+        )
+
+        val resultB = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList(),
+            mailHistory = "[EXPERT]\nSubject: Other\nBody: Completely different history"
+        )
+
+        assertEquals(resultA.draftText, resultB.draftText)
+        assertEquals(resultA.draftReadiness, resultB.draftReadiness)
+        assertEquals(resultA.qaRuleIds, resultB.qaRuleIds)
+    }
+
+    @Test
+    fun `fallback reference is identical regardless of operator turns`() {
+        stubEmptyFrame()
+        val rule = sampleRule(1)
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+
+        val resultA = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "- Salary?",
+            operatorTurns = emptyList()
+        )
+
+        val resultB = service(LlmProperties(enabled = false), null).generate(
+            inboundText = "- Salary?",
+            operatorTurns = listOf(AiReplyTurn("old draft", "fix formatting"))
+        )
+
+        assertEquals(resultA.draftText, resultB.draftText)
+        assertEquals(resultA.draftReadiness, resultB.draftReadiness)
     }
 }

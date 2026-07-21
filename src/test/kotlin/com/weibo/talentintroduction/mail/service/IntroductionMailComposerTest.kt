@@ -37,7 +37,15 @@ class IntroductionMailComposerTest {
     private fun expertVariables(
         expert: ExpertProfile
     ) = mapOf(
-        "expertName" to expert.displayName,
+        "expertName" to buildString {
+            val given = expert.givenNames?.trim().orEmpty()
+            val family = expert.familyNames?.trim().orEmpty()
+            if (given.isNotBlank()) append(given)
+            if (family.isNotBlank()) {
+                if (isNotEmpty()) append(" ")
+                append(family)
+            }
+        }.trim(),
         "expertFamilyName" to expert.familyNames.orEmpty(),
         "researchFields" to expert.researchFields.orEmpty(),
         "institution" to expert.institution.orEmpty(),
@@ -256,7 +264,7 @@ class IntroductionMailComposerTest {
         assertEquals(expert.orcidId.hashCode(), seedCaptor.value)
         assertEquals("", expectedVariables["researchFields"])
         assertEquals("", expectedVariables["institution"])
-        assertEquals("0000-0002", expectedVariables["expertName"])
+        assertEquals("", expectedVariables["expertName"])
     }
 
     @Test

@@ -16,6 +16,8 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
 import com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
 import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
+import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
+import com.weibo.talentintroduction.llm.service.AiReplyMode
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedContentPlanner
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
@@ -26,6 +28,8 @@ import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -45,6 +49,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.boot.test.mock.mockito.MockBean
+import org.springframework.boot.test.mock.mockito.SpyBean
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.test.context.TestPropertySource
@@ -85,6 +90,9 @@ class AiTrainingSimulateTest {
 
     @MockBean
     private lateinit var aiReplyContextService: AiReplyContextService
+
+    @SpyBean
+    private lateinit var aiReplyDraftService: AiReplyDraftService
 
     @MockBean
     private lateinit var expertContactRepository: ExpertContactRepository
@@ -331,7 +339,7 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.requestCoverage[1].requiresResearchContext").doesNotExist())
             .andExpect(jsonPath("$.requestCoverage[1].intents").isArray)
             .andExpect(jsonPath("$.groundedRequestCount").value(2))
-            .andExpect(jsonPath("$.draftReadiness").value("READY"))
+            .andExpect(jsonPath("$.draftReadiness").value("BLOCKED"))
             .andExpect(jsonPath("$.unsupportedRequests").isEmpty)
 
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
@@ -366,13 +374,14 @@ class AiTrainingSimulateTest {
                 .content("""{"expertContactId":10}""")
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("Standard reply")))
+            .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.containsString("LLM 未生成")))
             .andExpect(jsonPath("$.draftText").value(org.hamcrest.Matchers.not(
                 org.hamcrest.Matchers.containsString("transparent disbursement")
             )))
             .andExpect(jsonPath("$.usedLlm").value(false))
             .andExpect(jsonPath("$.qaRuleIds").isArray)
             .andExpect(jsonPath("$.qaRuleIds").isEmpty)
+            .andExpect(jsonPath("$.draftReadiness").value("BLOCKED"))
 
         Mockito.verifyNoInteractions(aiTrainingDialogueService)
     }
@@ -806,7 +815,8 @@ class AiTrainingSimulateTest {
         id: Long = 99L,
         contactId: Long = 10L,
         subject: String = "Question",
-        body: String = "What is the funding?"
+        body: String = "What is the funding?",
+        messageId: String? = null
     ) = MailRecord(
         id = id,
         expertContactId = contactId,
@@ -815,11 +825,121 @@ class AiTrainingSimulateTest {
         subject = subject,
         body = body,
         cleanedBody = body,
-        messageId = null,
+        messageId = messageId,
         inReplyTo = null,
         matchedQaRuleId = null,
         sendStatus = null,
         receivedAt = null,
         sentAt = null
     )
+
+    @Test
+    fun `simulate passes current inbound messageId to context service`() {
+        val contact = sampleContact()
+        val inbound = sampleInbound(
+            id = 77L,
+            body = "Funding?",
+            messageId = "<train-msg-id@example.com>"
+        )
+        Mockito.`when`(mailRecordRepository.findById(77L)).thenReturn(Optional.of(inbound))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(listOf(inbound))
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Funding?")).thenReturn("")
+
+        var capturedMessageId: String? = "unset"
+        Mockito.doAnswer { invocation ->
+            capturedMessageId = invocation.getArgument(4) as String?
+            AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList())
+        }.`when`(aiReplyContextService).build(
+            contact, listOf(inbound), "Funding?", "", "<train-msg-id@example.com>"
+        )
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":77}""")
+        )
+            .andExpect(status().isOk)
+
+        assertEquals("<train-msg-id@example.com>", capturedMessageId)
+    }
+
+    @Test
+    fun `simulate passes final filtered history to draft service`() {
+        val contact = sampleContact()
+        val current = sampleInbound(
+            id = 88L,
+            body = "TRAIN_CURRENT_EXCLUDED",
+            messageId = " <TRAIN-CURRENT@example.com> "
+        )
+        val oldInbound = sampleInbound(
+            id = 86L,
+            body = "TRAIN_OLD_INCLUDED",
+            messageId = "train-old@example.com"
+        )
+        val sentOutbound = MailRecord(
+            id = 87L,
+            expertContactId = 10L,
+            direction = "OUTBOUND",
+            mailType = "REPLY",
+            messageId = "train-sent@example.com",
+            inReplyTo = null,
+            subject = "Sent",
+            body = "TRAIN_SENT_INCLUDED",
+            cleanedBody = "TRAIN_SENT_INCLUDED",
+            matchedQaRuleId = null,
+            sendStatus = "SENT",
+            receivedAt = null,
+            sentAt = null
+        )
+        val failedOutbound = sentOutbound.copy(
+            id = 89L,
+            messageId = "train-failed@example.com",
+            body = "TRAIN_FAILED_EXCLUDED",
+            cleanedBody = "TRAIN_FAILED_EXCLUDED",
+            sendStatus = "FAILED"
+        )
+        val pendingOutbound = sentOutbound.copy(
+            id = 90L,
+            messageId = "train-pending@example.com",
+            body = "TRAIN_PENDING_EXCLUDED",
+            cleanedBody = "TRAIN_PENDING_EXCLUDED",
+            sendStatus = "PENDING"
+        )
+        val records = listOf(oldInbound, sentOutbound, failedOutbound, pendingOutbound, current)
+        Mockito.`when`(mailRecordRepository.findById(88L)).thenReturn(Optional.of(current))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(records)
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("TRAIN_CURRENT_EXCLUDED")).thenReturn("")
+        Mockito.doAnswer { invocation ->
+            val history = AiReplyContextBuilder().buildMailHistory(records, invocation.getArgument(4))
+            AiReplyContext(profileText = "Name: Dr. Test", mailHistory = history, contextWarnings = emptyList())
+        }.`when`(aiReplyContextService).build(
+            contact, records, "TRAIN_CURRENT_EXCLUDED", "", " <TRAIN-CURRENT@example.com> "
+        )
+        var capturedHistory: String? = null
+        Mockito.doAnswer { invocation ->
+            capturedHistory = invocation.getArgument(5)
+            AiReplyDraftResult("draft", true, emptyList(), AiReplyMode.FREE_FORM)
+        }.`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
+        )
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mailRecordId":88}""")
+        ).andExpect(status().isOk)
+
+        assertTrue(capturedHistory!!.contains("TRAIN_OLD_INCLUDED"))
+        assertTrue(capturedHistory!!.contains("TRAIN_SENT_INCLUDED"))
+        assertTrue(!capturedHistory!!.contains("TRAIN_FAILED_EXCLUDED"))
+        assertTrue(!capturedHistory!!.contains("TRAIN_PENDING_EXCLUDED"))
+        assertTrue(!capturedHistory!!.contains("TRAIN_CURRENT_EXCLUDED"))
+    }
 }

@@ -22,6 +22,7 @@ import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
 import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
@@ -698,5 +699,133 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
 
         assertEquals("draft v3", response.draftText)
         assertEquals("BLOCKED", response.draftReadiness)
+    }
+
+    // ── MessageId passthrough (Phase 10 I-2) ──
+
+    @Test
+    fun `aiReplyTurn passes current inbound messageId to context service`() {
+        val detail = InboundMailProcessing(
+            id = 1L,
+            senderAccountCode = "a1",
+            imapUid = 1L,
+            messageId = "<msg-test-001@example.com>",
+            fromEmail = "expert@test.com",
+            subject = "Question",
+            body = "Hello",
+            cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(1L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("Hello")).thenReturn("")
+
+        var capturedMessageId: String? = "unset"
+        Mockito.doAnswer { invocation ->
+            capturedMessageId = invocation.getArgument(4) as String?
+            AiReplyContext(profileText = "Name: Dr. Test", mailHistory = "", contextWarnings = emptyList())
+        }.`when`(aiReplyContextService).build(
+            contact, emptyList(), "Hello", "", "<msg-test-001@example.com>"
+        )
+
+        Mockito.doReturn(
+            AiReplyDraftResult(
+                draftText = "draft",
+                usedLlm = true,
+                qaRuleIds = emptyList(),
+                mode = AiReplyMode.FREE_FORM
+            )
+        ).`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
+        )
+
+        controller.aiReplyTurn(1L, AiReplyTurnRequest())
+
+        assertEquals("<msg-test-001@example.com>", capturedMessageId)
+    }
+
+    @Test
+    fun `aiReplyTurn passes final filtered history to draft service`() {
+        val now = LocalDateTime.now()
+        val detail = InboundMailProcessing(
+            id = 81L,
+            senderAccountCode = "a1",
+            imapUid = 81L,
+            messageId = " <CURRENT@example.com> ",
+            fromEmail = "expert@test.com",
+            subject = "Current question",
+            body = "CURRENT_BODY_MUST_BE_EXCLUDED",
+            cleanedBody = "CURRENT_BODY_MUST_BE_EXCLUDED",
+            receivedAt = now,
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        fun record(
+            id: Long,
+            direction: String,
+            messageId: String?,
+            body: String,
+            sendStatus: String?,
+            time: LocalDateTime
+        ) = MailRecord(
+            id = id,
+            expertContactId = 10L,
+            direction = direction,
+            mailType = "REPLY",
+            messageId = messageId,
+            inReplyTo = null,
+            subject = "subject-$id",
+            body = body,
+            cleanedBody = body,
+            matchedQaRuleId = null,
+            sendStatus = sendStatus,
+            receivedAt = if (direction == "INBOUND") time else null,
+            sentAt = if (direction == "OUTBOUND") time else null,
+            createdAt = time
+        )
+        val records = listOf(
+            record(1L, "INBOUND", "old@example.com", "OLD_INBOUND_INCLUDED", null, now.minusDays(3)),
+            record(2L, "OUTBOUND", "sent@example.com", "SENT_OUTBOUND_INCLUDED", "SENT", now.minusDays(2)),
+            record(3L, "OUTBOUND", "failed@example.com", "FAILED_OUTBOUND_EXCLUDED", "FAILED", now.minusDays(1)),
+            record(4L, "OUTBOUND", "pending@example.com", "PENDING_OUTBOUND_EXCLUDED", "PENDING", now.minusHours(12)),
+            record(5L, "INBOUND", "current@example.com", "CURRENT_BODY_MUST_BE_EXCLUDED", null, now)
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(81L)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(records)
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext("CURRENT_BODY_MUST_BE_EXCLUDED")).thenReturn("")
+        Mockito.doAnswer { invocation ->
+            val history = aiReplyContextBuilder.buildMailHistory(records, invocation.getArgument(4))
+            AiReplyContext(profileText = "Name: Dr. Test", mailHistory = history, contextWarnings = emptyList())
+        }.`when`(aiReplyContextService).build(
+            contact, records, "CURRENT_BODY_MUST_BE_EXCLUDED", "", " <CURRENT@example.com> "
+        )
+
+        var capturedHistory: String? = null
+        Mockito.doAnswer { invocation ->
+            capturedHistory = invocation.getArgument(5)
+            AiReplyDraftResult("draft", true, emptyList(), AiReplyMode.FREE_FORM)
+        }.`when`(aiReplyDraftService).generate(
+            Mockito.anyString(), Mockito.anyList(), Mockito.any(), Mockito.any(),
+            Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyList(), Mockito.any(),
+            Mockito.anyBoolean()
+        )
+
+        controller.aiReplyTurn(81L, AiReplyTurnRequest())
+
+        assertTrue(capturedHistory!!.contains("OLD_INBOUND_INCLUDED"))
+        assertTrue(capturedHistory!!.contains("SENT_OUTBOUND_INCLUDED"))
+        assertTrue(!capturedHistory!!.contains("FAILED_OUTBOUND_EXCLUDED"))
+        assertTrue(!capturedHistory!!.contains("PENDING_OUTBOUND_EXCLUDED"))
+        assertTrue(!capturedHistory!!.contains("CURRENT_BODY_MUST_BE_EXCLUDED"))
     }
 }

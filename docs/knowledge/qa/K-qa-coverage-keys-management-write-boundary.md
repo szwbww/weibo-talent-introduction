@@ -3,8 +3,9 @@ id: K-qa-coverage-keys-management-write-boundary
 domain: qa
 created: 2026-07-19
 last_used: 2026-07-21
-hit_count: 1
+hit_count: 3
 source: create-p:ai-reply-05-trust-boundary-readiness-plan
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：`qa_rule.coverage_keys` 当前主要由 Flyway 回填；`QaRuleManagementService.createRule()` 强制写空，`updateRule()` 不更新该字段，即使 command 带 `coverageKeys` 也不会落库。

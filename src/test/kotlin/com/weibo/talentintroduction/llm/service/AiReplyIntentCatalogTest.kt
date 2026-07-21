@@ -185,4 +185,55 @@ class AiReplyIntentCatalogTest {
             AiReplyIntentCatalog.resolveGroupTitle(listOf("application.next_stages"), "")
         )
     }
+
+    // ── Seven due-diligence question exact intent matrix (Phase 09 I-2) ──
+
+    private val q1 = "Before I submit my CV for the preliminary assessment, I would appreciate some additional information regarding the collaboration: Is the research advisory role compensated?"
+    private val q2 = "If so, could you please provide information about the remuneration structure?"
+    private val q3 = "What is the expected time commitment and typical duration of advisory projects?"
+    private val q4 = "Could you share examples of the types of Chinese enterprises or institutions involved in the program?"
+    private val q5 = "How are intellectual property rights, publication authorship, and research confidentiality managed?"
+    private val q6 = "Will a formal agreement or contract be provided before any collaboration begins?"
+    private val q7 = "Are there any costs or obligations for participants at any stage of the process?"
+
+    private fun assertExactKeys(question: String, vararg expected: String) {
+        val keys = AiReplyIntentCatalog.matchIntents(question).map { it.key }
+        assertEquals(expected.toSet(), keys.toSet())
+        assertEquals(expected.size, keys.size, "intent keys must contain no extras or duplicates")
+    }
+
+    @Test
+    fun `Q1 compensation existence matches finance dot arrangements`() {
+        assertExactKeys(q1, "finance.arrangements")
+    }
+
+    @Test
+    fun `Q2 remuneration structure matches finance intents`() {
+        assertExactKeys(q2, "finance.compensation_structure", "finance.arrangements")
+    }
+
+    @Test
+    fun `Q3 time commitment and duration matches work intents`() {
+        assertExactKeys(q3, "work.time_commitment", "work.advisory_duration")
+    }
+
+    @Test
+    fun `Q4 Chinese enterprise types matches enterprise dot project_types`() {
+        assertExactKeys(q4, "enterprise.project_types")
+    }
+
+    @Test
+    fun `Q5 IP publication confidentiality matches ip dot arrangements`() {
+        assertExactKeys(q5, "ip.arrangements")
+    }
+
+    @Test
+    fun `Q6 formal agreement matches contract dot terms`() {
+        assertExactKeys(q6, "contract.terms")
+    }
+
+    @Test
+    fun `Q7 costs obligations matches finance dot arrangements`() {
+        assertExactKeys(q7, "finance.arrangements")
+    }
 }

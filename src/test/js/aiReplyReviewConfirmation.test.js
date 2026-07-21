@@ -78,6 +78,18 @@ describe("adopt-direct-send UI contracts", function () {
         if (!panelFn.includes("完整率 (READY)")) throw new Error("ready rate should remain");
     });
 
+    it("send-manual-rich-reply does not gate on generationState or usedLlm", function () {
+        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+        if (sendIdx < 0) throw new Error("missing send handler");
+        const sendBlock = app.slice(sendIdx, sendIdx + 1200);
+        if (sendBlock.includes("generationState"))
+            throw new Error("send should not gate on generationState");
+        if (sendBlock.includes("usedLlm"))
+            throw new Error("send should not gate on usedLlm");
+        if (sendBlock.includes("isAiReplyGenerationSuccess"))
+            throw new Error("send should not call isAiReplyGenerationSuccess");
+    });
+
     it("existing handler structure preserved", function () {
         if (!app.includes('"send-manual-rich-reply"')) throw new Error("send handler missing");
         if (!app.includes('"trust-adopt-draft"')) throw new Error("trust adopt handler missing");

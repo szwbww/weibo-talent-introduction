@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -20,12 +21,13 @@ class QaFactSelectionServiceTest {
         keywords: String,
         answerBody: String,
         priority: Int = 100,
-        replyPolicy: String = QaReplyPolicy.AUTO.name
+        replyPolicy: String = QaReplyPolicy.AUTO.name,
+        replySubject: String? = null
     ) = QaRule(
         id = id,
         categoryId = 1,
         keywords = keywords,
-        replySubject = null,
+        replySubject = replySubject,
         replyBody = answerBody,
         answerBody = answerBody,
         priority = priority,
@@ -185,4 +187,153 @@ class QaFactSelectionServiceTest {
 
         assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
     }
+
+    // ── Seven due-diligence question 4/1/2 matrix (Phase 09 I-2) ──
+
+    private val q1Due = "Before I submit my CV for the preliminary assessment, I would appreciate some additional information regarding the collaboration: Is the research advisory role compensated?"
+    private val q2Due = "If so, could you please provide information about the remuneration structure?"
+    private val q3Due = "What is the expected time commitment and typical duration of advisory projects?"
+    private val q4Due = "Could you share examples of the types of Chinese enterprises or institutions involved in the program?"
+    private val q5Due = "How are intellectual property rights, publication authorship, and research confidentiality managed?"
+    private val q6Due = "Will a formal agreement or contract be provided before any collaboration begins?"
+    private val q7Due = "Are there any costs or obligations for participants at any stage of the process?"
+
+    private val allDueDiligence = """
+        $q1Due
+        $q2Due
+        $q3Due
+        $q4Due
+        $q5Due
+        $q6Due
+        $q7Due
+    """.trimIndent()
+
+    @Test
+    fun `seven due diligence questions yield exact 4 GROUNDED 1 PARTIAL 2 UNSUPPORTED`() {
+        val fundingRule = rule(
+            id = 1, keywords = "compensated,advisory role compensated",
+            answerBody = "The advisory role is compensated through a government-funded stipend.",
+            replySubject = "Funding support"
+        )
+        val durationRule = rule(
+            id = 3, keywords = "typical duration,advisory project duration,duration of advisory projects",
+            answerBody = "Advisory projects typically last 2-3 years.",
+            replySubject = "Program overview"
+        )
+        val ipRule = rule(
+            id = 5, keywords = "intellectual property,ip rights,ownership,publication,authorship,confidentiality",
+            answerBody = "IP rights are negotiated per project; researchers typically retain publication rights.",
+            replySubject = "IP arrangements"
+        )
+        val contractRule = rule(
+            id = 6, keywords = "formal agreement,formal contract,contract,before any collaboration begins",
+            answerBody = "A formal agreement is signed before collaboration begins.",
+            replySubject = "Contract and IP arrangements"
+        )
+        val costRule = rule(
+            id = 7, keywords = "costs,obligations,fee,expense",
+            answerBody = "There are no costs or fees for participants at any stage.",
+            replySubject = "Costs"
+        )
+
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(
+            listOf(fundingRule, durationRule, ipRule, contractRule, costRule)
+        )
+
+        val resolved = service.select(
+            inboundText = allDueDiligence,
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(7, resolved.requestFacts.size)
+        val statuses = resolved.requestFacts.map { it.status }
+        assertEquals(
+            listOf(
+                RequestGroundingStatus.GROUNDED,
+                RequestGroundingStatus.UNSUPPORTED,
+                RequestGroundingStatus.PARTIAL,
+                RequestGroundingStatus.UNSUPPORTED,
+                RequestGroundingStatus.GROUNDED,
+                RequestGroundingStatus.GROUNDED,
+                RequestGroundingStatus.GROUNDED
+            ),
+            statuses
+        )
+
+        val grounded = reqFactStatusCount(resolved, RequestGroundingStatus.GROUNDED)
+        val partial = reqFactStatusCount(resolved, RequestGroundingStatus.PARTIAL)
+        val unsupported = reqFactStatusCount(resolved, RequestGroundingStatus.UNSUPPORTED)
+        assertEquals(4, grounded)
+        assertEquals(1, partial)
+        assertEquals(2, unsupported)
+    }
+
+    @Test
+    fun `compensation availability does not support compensation structure`() {
+        val fundingRule = rule(
+            id = 1, keywords = "compensated,advisory role compensated",
+            answerBody = "The advisory role is compensated.",
+            replySubject = "Funding support"
+        )
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(fundingRule))
+
+        val resolved = service.select(
+            inboundText = "$q1Due\n$q2Due",
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        val q1Fact = resolved.requestFacts.find { it.requestText.contains("advisory role compensated") }
+        val q2Fact = resolved.requestFacts.find { it.requestText.contains("remuneration structure") }
+        assertNotNull(q1Fact)
+        assertNotNull(q2Fact)
+        assertEquals(RequestGroundingStatus.GROUNDED, q1Fact!!.status)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, q2Fact!!.status)
+    }
+
+    @Test
+    fun `duration facts do not support time commitment`() {
+        val durationRule = rule(
+            id = 3, keywords = "typical duration,advisory project duration",
+            answerBody = "Advisory projects typically last 2-3 years.",
+            replySubject = "Program overview"
+        )
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(durationRule))
+
+        val resolved = service.select(
+            inboundText = q3Due,
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        val fact = resolved.requestFacts[0]
+        assertEquals(RequestGroundingStatus.PARTIAL, fact.status)
+        val supportedIntents = fact.intents.filter { it.status == "SUPPORTED" }.map { it.intentKey }
+        val missingIntents = fact.intents.filter { it.status == "MISSING" }.map { it.intentKey }
+        assertTrue(supportedIntents.contains("work.advisory_duration"))
+        assertTrue(missingIntents.contains("work.time_commitment"))
+    }
+
+    @Test
+    fun `matching facts do not support enterprise examples`() {
+        val matchingRule = rule(
+            id = 4, keywords = "matching,partner enterprise,how are researchers matched",
+            answerBody = "Researchers are matched with partner enterprises.",
+            replySubject = "Enterprise matching"
+        )
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(matchingRule))
+
+        val resolved = service.select(
+            inboundText = q4Due,
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        val fact = resolved.requestFacts[0]
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, fact.status)
+    }
+
+    private fun reqFactStatusCount(resolved: ResolvedQaRules, status: RequestGroundingStatus): Int =
+        resolved.requestFacts.count { it.status == status }
 }

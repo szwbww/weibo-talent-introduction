@@ -3,9 +3,9 @@ id: K-ai-generation-observability-not-send-gate
 domain: mail
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 18
+hit_count: 20
 source: create-p:ai-adopt-direct-manual-send
-last_source: create-p:ai-reply-08-llm-failure-workbench-contract
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：AI 生成状态不是纯人工邮件的历史发送审批，但产品可以在“采用 AI 结果”边界明确拒绝未经过 LLM 的 fallback；两种门禁不能混为一谈。

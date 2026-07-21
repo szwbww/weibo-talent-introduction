@@ -3,8 +3,9 @@ id: K-qa-migration-preserve-auto-updated-timestamp
 domain: qa
 created: 2026-07-17
 last_used: 2026-07-21
-hit_count: 4
+hit_count: 6
 source: fix-v:qa-refactor-02-fact-card-foundation:fix-1
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：对带 `ON UPDATE CURRENT_TIMESTAMP` 的业务表做仅回填新列的迁移时，未显式保留时间戳会把全量历史记录误标为运营更新。

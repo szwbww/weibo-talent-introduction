@@ -203,7 +203,7 @@ class AiTrainingController(
         val inboundText = inboundMail.cleanedBody?.takeIf { it.isNotBlank() } ?: inboundMail.body.orEmpty()
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
         val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
-        val context = aiReplyContextService.build(contact, records, inboundText, knowledge)
+        val context = aiReplyContextService.build(contact, records, inboundText, knowledge, inboundMail.messageId)
 
         val result = aiReplyDraftService.generate(
             inboundText = inboundText,

@@ -5998,6 +5998,38 @@ tr td {
     line-height: 1.5;
 }
 
+.ai-reply-failure-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--error-border);
+    border-left: 3px solid var(--error);
+    border-radius: var(--radius-sm);
+    background: var(--error-bg);
+    color: var(--error);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.ai-reply-failure-banner strong {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.ai-reply-failure-banner span {
+    color: var(--text-main);
+}
+
+.compose-draft-actions .button:disabled,
+.compose-draft-actions .button:disabled:hover,
+.compose-draft-actions .button:disabled:active {
+    cursor: not-allowed;
+    opacity: 0.45;
+    transform: none;
+    box-shadow: none;
+}
+
 .ai-chat-messages {
     display: flex;
     flex-direction: column;

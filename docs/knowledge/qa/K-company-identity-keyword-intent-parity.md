@@ -3,8 +3,9 @@ id: K-company-identity-keyword-intent-parity
 domain: qa
 created: 2026-07-16
 last_used: 2026-07-21
-hit_count: 3
+hit_count: 5
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：intent catalog 能识别公司法定名称，不代表 QA matcher 一定能提供该事实；迁移 keywords 与 intent aliases 漂移时，已审核事实会被误判缺失。

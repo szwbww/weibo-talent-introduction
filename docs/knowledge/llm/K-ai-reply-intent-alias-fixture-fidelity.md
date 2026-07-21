@@ -3,8 +3,9 @@ id: K-ai-reply-intent-alias-fixture-fidelity
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-21
-hit_count: 15
+hit_count: 17
 source: fix-v:ai-reply-06-p1-intent-coverage-matrix:stop-after-fix-3
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：intent catalog 只覆盖测试改写后的问法，会让真实验收邮件退化为 `general.answer` 或漏掉复合子意图；英美拼写、连字符及词序差异都可能静默改变 readiness。

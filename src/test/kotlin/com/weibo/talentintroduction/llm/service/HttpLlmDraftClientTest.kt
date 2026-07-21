@@ -4,13 +4,21 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.config.LlmProperties
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.http.HttpEntity
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 
 class HttpLlmDraftClientTest {
     private val objectMapper = ObjectMapper()
@@ -25,12 +33,14 @@ class HttpLlmDraftClientTest {
         replyProModel = "provider-pro-id"
     )
 
-    private fun stubResponse(content: String) {
+    private fun stubResponse(content: String?) {
         val root = objectMapper.createObjectNode()
         val choices = objectMapper.createArrayNode()
         val choice = objectMapper.createObjectNode()
         val message = objectMapper.createObjectNode()
-        message.put("content", content)
+        if (content != null) {
+            message.put("content", content)
+        }
         choice.set<ObjectNode>("message", message)
         choices.add(choice)
         root.set<ObjectNode>("choices", choices)
@@ -78,5 +88,162 @@ class HttpLlmDraftClientTest {
         val props = properties()
         assertEquals("provider-flash-id", AiReplyModel.DEEPSEEK_V4_FLASH.resolveProviderModel(props))
         assertEquals("provider-pro-id", AiReplyModel.DEEPSEEK_V4_PRO.resolveProviderModel(props))
+    }
+
+    // ── Transport classification (Phase 08 I-1) ──
+
+    @Test
+    fun `observed seam returns SUCCESS for valid content`() {
+        stubResponse("Hello world")
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.SUCCESS, result.failureType)
+        assertEquals("Hello world", result.content)
+    }
+
+    @Test
+    fun `observed seam returns EMPTY_RESPONSE for blank content`() {
+        stubResponse("   ")
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.EMPTY_RESPONSE, result.failureType)
+        assertNull(result.content)
+    }
+
+    @Test
+    fun `observed seam returns EMPTY_RESPONSE for null content`() {
+        stubResponse(null)
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.EMPTY_RESPONSE, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns TIMEOUT for read timeout`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out")))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.TIMEOUT, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns NETWORK_ERROR for generic ConnectException regardless of message`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(ResourceAccessException("Connection timed out", ConnectException("Connection timed out")))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.NETWORK_ERROR, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns NETWORK_ERROR for connection refused`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(ResourceAccessException("Connection refused"))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.NETWORK_ERROR, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns RATE_LIMITED for HTTP 429`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests"))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.RATE_LIMITED, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns PROVIDER_ERROR for HTTP 5xx`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Error"))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.PROVIDER_ERROR, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns PROVIDER_ERROR for HTTP 400`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.BAD_REQUEST, "Bad Request"))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.PROVIDER_ERROR, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns NETWORK_ERROR for generic exception`() {
+        Mockito.`when`(
+            restTemplate.postForEntity(
+                Mockito.anyString(), Mockito.any(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("unknown"))
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.NETWORK_ERROR, result.failureType)
+    }
+
+    @Test
+    fun `observed seam returns CLIENT_UNAVAILABLE for blank apiUrl`() {
+        val props = properties().copy(apiUrl = "")
+        val client = HttpLlmDraftClient(props, restTemplate, objectMapper)
+        val result = client.chatWithModelObserved(
+            listOf(LlmChatMessage("user", "hello")), null, "provider-flash-id"
+        )
+        assertEquals(LlmChatFailureType.CLIENT_UNAVAILABLE, result.failureType)
+    }
+
+    @Test
+    fun `old chat delegates to observed seam`() {
+        stubResponse("delegated")
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val result = client.chat(listOf(LlmChatMessage("user", "hello")), null)
+        assertEquals("delegated", result)
     }
 }

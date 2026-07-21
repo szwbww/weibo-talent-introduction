@@ -3,8 +3,9 @@ id: K-ai-research-profile-authority-parity
 domain: llm
 created: 2026-07-16
 last_used: 2026-07-21
-hit_count: 6
+hit_count: 8
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：intent catalog 与 context service 各维护研究短语时，新 alias 可能命中 `requiresProfile` intent，却不产生画像不足 warning，随后被误判为画像充分。

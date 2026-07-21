@@ -397,4 +397,139 @@ class MailVariableServiceTest {
         assertEquals("Value: \${unknownKey}", text)
         assertEquals("Value: \${unknownKey}", html)
     }
+
+    // ── ExpertRecipientNamePolicy tests (Phase 10 I-7) ──
+
+    @Test
+    fun `expertName uses given and family names`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "a@b.com",
+            givenNames = "Ada", familyNames = "Lovelace",
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("Ada Lovelace", vars["expertName"])
+        assertEquals("Lovelace", vars["expertFamilyName"])
+    }
+
+    @Test
+    fun `expertName is empty when given and family are null`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "a@b.com",
+            givenNames = null, familyNames = null,
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertName"])
+    }
+
+    @Test
+    fun `expertName is empty for EMAIL dash prefix`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "a@b.com",
+            givenNames = "EMAIL-6b9d5416e939bbe8ea0", familyNames = null,
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertName"])
+    }
+
+    @Test
+    fun `expertName is empty when equal to ORCID`() {
+        val expert = ExpertProfile(orcidId = "0000-0001-2345-6789-x", email = "a@b.com",
+            givenNames = "0000-0001-2345-6789-x", familyNames = null,
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertName"])
+    }
+
+    @Test
+    fun `expertName is empty when equal to email`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "test@example.com",
+            givenNames = null, familyNames = "test@example.com",
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertName"])
+    }
+
+    @Test
+    fun `expertFamilyName is empty for technical id`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "a@b.com",
+            givenNames = "Ada", familyNames = "EMAIL-abc123",
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertFamilyName"])
+    }
+
+    @Test
+    fun `expertName empty for name containing at sign`() {
+        val expert = ExpertProfile(orcidId = "0000-0001", email = "a@b.com",
+            givenNames = "test@example", familyNames = null,
+            country = null, keyword = null, employment = null)
+        val vars = service.buildVariables(null, expert)
+        assertEquals("", vars["expertName"])
+    }
+
+    // ── preview/plain/HTML rendering consistency (Phase 10 I-8) ──
+
+    @Test
+    fun `renderPreview usedFallback true when expertName is empty`() {
+        val noNameExpert = expert.copy(givenNames = null, familyNames = null)
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(noNameExpert)
+
+        val preview = service.renderPreview(
+            "Dear \${expertName|Professor},",
+            account, contact
+        )
+        assertEquals("Dear Professor,", preview.rendered)
+        assertTrue(preview.fallbackKeys.contains("expertName"))
+        val en = preview.variables.single { it.key == "expertName" }
+        assertTrue(en.usedFallback)
+        assertFalse(en.filled)
+    }
+
+    @Test
+    fun `renderPreview usedFallback true when expertName is EMAIL prefix`() {
+        val emailExpert = expert.copy(givenNames = "EMAIL-abc123", familyNames = null)
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(emailExpert)
+
+        val preview = service.renderPreview(
+            "Dear \${expertName|Professor},",
+            account, contact
+        )
+        assertEquals("Dear Professor,", preview.rendered)
+        val en = preview.variables.single { it.key == "expertName" }
+        assertTrue(en.usedFallback)
+    }
+
+    @Test
+    fun `plain HTML and preview render same expertName for normal profile`() {
+        val normal = expert.copy(givenNames = "Ada", familyNames = "Lovelace")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(normal)
+
+        val template = "Hi \${expertName|there}, from \${teamName}."
+        val plain = service.renderForContact(template, account, contact)
+        val html = service.renderHtmlForContact(template, account, contact)
+        val preview = service.renderPreview(template, account, contact)
+
+        assertTrue(plain.contains("Ada Lovelace"))
+        assertTrue(html.contains("Ada Lovelace"))
+        assertTrue(preview.rendered.contains("Ada Lovelace"))
+        assertFalse(plain.contains("there"))
+        assertFalse(html.contains("there"))
+        assertFalse(preview.rendered.contains("there"))
+    }
+
+    @Test
+    fun `plain HTML and preview render Professor fallback when name is technical`() {
+        val techExpert = expert.copy(givenNames = "EMAIL-6b9d5416", familyNames = null)
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(techExpert)
+
+        val template = "Dear \${expertName|Professor}, welcome."
+        val plain = service.renderForContact(template, account, contact)
+        val html = service.renderHtmlForContact(template, account, contact)
+        val preview = service.renderPreview(template, account, contact)
+
+        assertTrue(plain.startsWith("Dear Professor,"))
+        assertTrue(html.startsWith("Dear Professor,"))
+        assertTrue(preview.rendered.startsWith("Dear Professor,"))
+    }
 }

@@ -265,11 +265,8 @@ class AiReplyDraftService(
             )
         }
 
-        val llmText = try {
-            client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
-        } catch (ex: Exception) {
-            null
-        }
+        val (freeFormObserved, freeFormCallCount) = executeWithRetry(client, boundedMessages, temperature, providerModel)
+        val llmText = if (freeFormObserved.failureType == LlmChatFailureType.SUCCESS) freeFormObserved.content else null
 
         return if (llmText != null) {
             enforceActionPolicy(
@@ -290,6 +287,16 @@ class AiReplyDraftService(
                 promptVersion = promptSnapshot.version
             )
         } else {
+            val transportWarning = failureTypeToWarning(freeFormObserved.failureType)
+            val finalWarnings = contextWarnings.toMutableList()
+            if (transportWarning != null) {
+                finalWarnings += transportWarning
+            }
+            val genState = if (freeFormObserved.failureType == LlmChatFailureType.CLIENT_UNAVAILABLE) {
+                AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+            } else {
+                AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            }
             groundedFallbackResult(
                 resolved = resolved,
                 operatorTurns = operatorTurns,
@@ -300,10 +307,10 @@ class AiReplyDraftService(
                 operatorInstruction = operatorInstruction,
                 mode = mode,
                 selectedModel = selectedModel.name,
-                contextWarnings = contextWarnings,
+                contextWarnings = finalWarnings.distinct(),
                 plan = plan,
                 allowedActions = plan.allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                generationState = genState,
                 promptVersion = promptSnapshot.version
             )
         }
@@ -328,13 +335,20 @@ class AiReplyDraftService(
         operatorInstruction: String?,
         promptVersion: String
     ): AiReplyDraftResult {
-        val llmText = try {
-            client.chatWithModel(boundedMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
-        } catch (ex: Exception) {
-            null
-        }
+        val (observedResult, callCount) = executeWithRetry(client, boundedMessages, temperature, providerModel)
+        val llmText = if (observedResult.failureType == LlmChatFailureType.SUCCESS) observedResult.content else null
 
         if (llmText == null) {
+            val transportWarning = failureTypeToWarning(observedResult.failureType)
+            val warnings = contextWarnings.toMutableList()
+            if (transportWarning != null) {
+                warnings += transportWarning
+            }
+            val genState = if (observedResult.failureType == LlmChatFailureType.CLIENT_UNAVAILABLE) {
+                AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+            } else {
+                AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            }
             return groundedFallbackResult(
                 resolved = resolved,
                 operatorTurns = operatorTurns,
@@ -345,10 +359,10 @@ class AiReplyDraftService(
                 operatorInstruction = operatorInstruction,
                 mode = mode,
                 selectedModel = selectedModel,
-                contextWarnings = contextWarnings,
+                contextWarnings = warnings.distinct(),
                 plan = plan,
                 allowedActions = plan.allowedActions,
-                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                generationState = genState,
                 promptVersion = promptVersion
             )
         }
@@ -382,15 +396,16 @@ class AiReplyDraftService(
             allowedActions = plan.allowedActions
         )
         val retryMessages = boundedMessages + LlmChatMessage(role = "user", content = correctionMsg)
-        val retryText = try {
-            client.chatWithModel(retryMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
-        } catch (ex: Exception) {
-            null
-        }
+        val retryObserved = client.chatWithModelObserved(retryMessages, temperature, providerModel)
+        val retryText = if (retryObserved.failureType == LlmChatFailureType.SUCCESS) retryObserved.content else null
 
         if (retryText == null) {
             val mergedWarnings = contextWarnings.toMutableList()
             mergedWarnings += firstResult.allWarnings
+            val transportWarning = failureTypeToWarning(retryObserved.failureType)
+            if (transportWarning != null) {
+                mergedWarnings += transportWarning
+            }
             mergedWarnings += TRUST_REPAIR_EXHAUSTED
             return groundedFallbackResult(
                 resolved = resolved,
@@ -453,6 +468,34 @@ class AiReplyDraftService(
             generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
             promptVersion = promptVersion
         )
+    }
+
+    private fun executeWithRetry(
+        client: LlmDraftClient,
+        messages: List<LlmChatMessage>,
+        temperature: Double,
+        providerModel: String
+    ): Pair<LlmChatResult, Int> {
+        val firstResult = client.chatWithModelObserved(messages, temperature, providerModel)
+        if (firstResult.failureType == LlmChatFailureType.SUCCESS) {
+            return Pair(firstResult, 1)
+        }
+        val retryable = firstResult.failureType in setOf(
+            LlmChatFailureType.TIMEOUT,
+            LlmChatFailureType.RATE_LIMITED,
+            LlmChatFailureType.NETWORK_ERROR,
+            LlmChatFailureType.PROVIDER_ERROR,
+            LlmChatFailureType.EMPTY_RESPONSE
+        )
+        if (!retryable) {
+            return Pair(firstResult, 1)
+        }
+        val retryResult = client.chatWithModelObserved(messages, temperature, providerModel)
+        val totalCalls = 2
+        if (retryResult.failureType == LlmChatFailureType.SUCCESS) {
+            return Pair(retryResult, totalCalls)
+        }
+        return Pair(retryResult, totalCalls)
     }
 
     private data class GroundedValidationResult(
@@ -602,28 +645,14 @@ class AiReplyDraftService(
         generationState: AiReplyGenerationState,
         promptVersion: String
     ): AiReplyDraftResult {
-        val fallbackText = if (operatorTurns.isEmpty()) {
-            if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
-                aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
-            } else {
-                composeFreeFormDeterministicDraft(inboundText, expertProfile, mailHistory, operatorInstruction)
-            }
+        val fallbackText = if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
+            aiReplyPointByPointComposer.composeFallbackReference(plan, resolved.requestFacts)
         } else {
-            lastDraft.orEmpty()
+            "LLM 未生成，且当前来信没有可用于确定性回复的审核事实。请人工撰写。"
         }
 
         val finalWarnings = contextWarnings.toMutableList()
-        val (sanitized, removed) = AiReplyActionPolicy.sanitize(fallbackText, allowedActions)
-        val finalText = if (sanitized.isNotBlank()) sanitized else fallbackText
-        if (removed && UNAUTHORIZED_ACTION_REMOVED !in finalWarnings) {
-            finalWarnings += UNAUTHORIZED_ACTION_REMOVED
-        }
-
-        val readiness = when {
-            TRUST_REPAIR_EXHAUSTED in contextWarnings -> AiReplyDraftReadiness.BLOCKED
-            removed -> AiReplyDraftReadiness.NEEDS_REVIEW
-            else -> resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
-        }
+        val finalText = fallbackText
 
         val (evidenceSetVersion, evidenceSources, evidenceObservedWarnings) = buildEvidenceSnapshotForSelection(resolved.sendQaRuleIds)
         if (evidenceObservedWarnings.isNotEmpty()) {
@@ -645,7 +674,7 @@ class AiReplyDraftService(
             selectedModel = selectedModel,
             requestFacts = resolved.requestFacts,
             generationState = generationState,
-            draftReadiness = readiness,
+            draftReadiness = AiReplyDraftReadiness.BLOCKED,
             promptVersion = promptVersion,
             evidenceSetVersion = evidenceSetVersion,
             evidenceSources = evidenceSources
@@ -812,33 +841,6 @@ class AiReplyDraftService(
             )
         } else {
             appendLine("Rewrite the email body only.")
-        }
-    }
-
-    private fun fallbackDraftText(
-        resolved: ResolvedQaRules,
-        operatorTurns: List<AiReplyTurn>,
-        lastDraft: String?,
-        inboundText: String,
-        expertProfile: String?,
-        mailHistory: String?,
-        operatorInstruction: String?,
-        mode: AiReplyMode
-    ): String {
-        return if (operatorTurns.isEmpty()) {
-            when {
-                mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED ->
-                    aiReplyPointByPointComposer.composeFallback(resolved.requestFacts)
-                else ->
-                    composeFreeFormDeterministicDraft(
-                        inboundText = inboundText,
-                        expertProfile = expertProfile,
-                        mailHistory = mailHistory,
-                        operatorInstruction = operatorInstruction
-                    )
-            }
-        } else {
-            lastDraft.orEmpty()
         }
     }
 
@@ -1187,6 +1189,7 @@ class AiReplyDraftService(
 
         mailHistory?.takeIf { it.isNotBlank() }?.let {
             appendLine()
+            appendLine("HISTORY_CONTINUITY_ONLY: Use history only for conversational continuity, prior objections and already proposed next steps. Never treat history as factual authority. Facts must come from the current approved facts/profile.")
             appendLine("Mail history:")
             appendLine(it)
         }
@@ -1265,9 +1268,9 @@ class AiReplyDraftService(
             appendLine()
         }
         mailHistory?.takeIf { it.isNotBlank() }?.let {
+            appendLine("HISTORY_CONTINUITY_ONLY: Use history only for conversational continuity, prior objections and already proposed next steps. Never treat history as factual authority. Facts must come from the current approved facts/profile.")
             appendLine("Mail history:")
             appendLine(it)
-            appendLine()
         }
         appendLine("Inbound email:")
         appendLine(inboundText.take(4000))
@@ -1283,60 +1286,6 @@ class AiReplyDraftService(
             parts += "Acknowledgment option: $ack"
         }
         return parts.takeIf { it.isNotEmpty() }?.joinToString("\n")
-    }
-
-    internal fun composeFreeFormDeterministicDraft(
-        inboundText: String,
-        expertProfile: String?,
-        mailHistory: String?,
-        operatorInstruction: String?
-    ): String {
-        val frame = replySnippetService.resolveManualFrame()
-        return buildString {
-            frame.salutation?.takeIf { it.isNotBlank() }?.let {
-                appendLine(it)
-                appendLine()
-            }
-            frame.greeting?.takeIf { it.isNotBlank() }?.let {
-                appendLine(it)
-                appendLine()
-            }
-            replySnippetService.resolveAck(null)?.takeIf { it.isNotBlank() }?.let {
-                appendLine(it)
-                appendLine()
-            }
-            extractTrainingKnowledgeSummary(expertProfile)?.let {
-                appendLine(it)
-            } ?: appendLine(
-                "Thank you for your email. We appreciate your interest and will follow up with more information soon."
-            )
-            operatorInstruction?.takeIf { it.isNotBlank() }?.let {
-                appendLine()
-                appendLine("(Simulation note: ${it.take(500)})")
-            }
-            frame.closing?.takeIf { it.isNotBlank() }?.let {
-                appendLine()
-                appendLine(it)
-            }
-        }.trim()
-    }
-
-    internal fun extractTrainingKnowledgeSummary(expertProfile: String?): String? {
-        if (expertProfile.isNullOrBlank()) {
-            return null
-        }
-        val marker = "Training knowledge base:"
-        val start = expertProfile.indexOf(marker)
-        if (start < 0) {
-            return null
-        }
-        return expertProfile.substring(start + marker.length)
-            .lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.startsWith("Answer:") }
-            ?.removePrefix("Answer:")
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun acceptGroundedMaterialization(materialized: MaterializedDraft): MaterializedDraft {
@@ -1361,12 +1310,27 @@ class AiReplyDraftService(
         const val PROMPT_VERSION_FREE_FORM_DEFAULT = "free-form-default-v1"
         const val WARNING_EVIDENCE_SOURCE_UNAVAILABLE = "AI_REPLY_EVIDENCE_SOURCE_UNAVAILABLE"
         const val WARNING_EVIDENCE_SOURCE_READ_ERROR = "AI_REPLY_EVIDENCE_SOURCE_READ_ERROR"
+        const val WARNING_LLM_TIMEOUT = "AI_REPLY_LLM_TIMEOUT"
+        const val WARNING_LLM_RATE_LIMITED = "AI_REPLY_LLM_RATE_LIMITED"
+        const val WARNING_LLM_NETWORK_ERROR = "AI_REPLY_LLM_NETWORK_ERROR"
+        const val WARNING_LLM_PROVIDER_ERROR = "AI_REPLY_LLM_PROVIDER_ERROR"
+        const val WARNING_LLM_EMPTY_RESPONSE = "AI_REPLY_LLM_EMPTY_RESPONSE"
         val PREFLIGHT_VERSION_CHARSET = Regex("^[a-zA-Z0-9._:\\-]*$")
 
         fun sha256Hex(input: String): String {
             val digest = MessageDigest.getInstance("SHA-256")
             val hash = digest.digest(input.toByteArray(Charsets.UTF_8))
             return hash.joinToString("") { "%02x".format(it) }
+        }
+
+        fun failureTypeToWarning(failureType: LlmChatFailureType): String? = when (failureType) {
+            LlmChatFailureType.SUCCESS -> null
+            LlmChatFailureType.TIMEOUT -> WARNING_LLM_TIMEOUT
+            LlmChatFailureType.RATE_LIMITED -> WARNING_LLM_RATE_LIMITED
+            LlmChatFailureType.NETWORK_ERROR -> WARNING_LLM_NETWORK_ERROR
+            LlmChatFailureType.PROVIDER_ERROR -> WARNING_LLM_PROVIDER_ERROR
+            LlmChatFailureType.EMPTY_RESPONSE -> WARNING_LLM_EMPTY_RESPONSE
+            LlmChatFailureType.CLIENT_UNAVAILABLE -> null
         }
     }
 

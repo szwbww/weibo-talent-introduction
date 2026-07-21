@@ -3,9 +3,9 @@ id: K-ai-evidence-ui-no-rule-id-fallback
 domain: frontend
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 3
+hit_count: 5
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-1
-last_source: create-p:ai-reply-08-llm-failure-workbench-contract
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：来源元数据缺失时回退输出 rule ID，会把内部实现标识暴露给运营，并造成“该事实支持该问题”的假象。

@@ -3,9 +3,9 @@ id: K-ai-draft-review-state-per-draft
 domain: frontend
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 23
+hit_count: 25
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
-last_source: create-p:ai-reply-08-llm-failure-workbench-contract
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：AI 聊天可同时保留多个历史草稿，若只存“最后一次 response”，采用旧草稿时会错误继承新草稿的状态。

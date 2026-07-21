@@ -3,8 +3,9 @@ id: K-request-facts-not-flat-pool
 domain: qa
 created: 2026-07-12
 last_used: 2026-07-21
-hit_count: 28
+hit_count: 30
 source: create-p:ai-reply-02-request-fact-matrix
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：多问题 AI 回复只传“扁平 QA 事实池 + request checklist”，模型和 deterministic fallback 都无法可靠知道哪条事实回答哪个问题，容易错配、重复或按 rule 顺序堆叠。

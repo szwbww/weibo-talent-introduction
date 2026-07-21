@@ -29,7 +29,8 @@ class AiReplyContextService(
         contact: ExpertContact,
         records: List<MailRecord>,
         inboundText: String,
-        trainingKnowledge: String
+        trainingKnowledge: String,
+        currentInboundMessageId: String? = null
     ): AiReplyContext {
         val warnings = mutableListOf<String>()
 
@@ -40,7 +41,7 @@ class AiReplyContextService(
             contextBuilder.buildExpertProfile(contact, profile),
             trainingKnowledge
         )
-        val mailHistory = contextBuilder.buildMailHistory(records)
+        val mailHistory = contextBuilder.buildMailHistory(records, currentInboundMessageId)
 
         if (requiresResearchContext(inboundText) && !researchProfileSufficient) {
             warnings.add("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")

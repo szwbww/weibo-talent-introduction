@@ -2,9 +2,11 @@
 id: K-introduction-compose-callers
 domain: template
 created: 2026-07-06
-last_used: 2026-07-09
-hit_count: 11
+last_used: 2026-07-21
+hit_count: 12
 source: create-p:template-expert-variables-and-fallback
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
+severity: P1
 ---
 
 `IntroductionMailComposer.compose()` 有且仅有 2 个调用方：

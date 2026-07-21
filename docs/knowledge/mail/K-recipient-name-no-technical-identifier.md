@@ -3,8 +3,9 @@ id: K-recipient-name-no-technical-identifier
 domain: mail
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 0
+hit_count: 2
 source: create-p:ai-reply-10-history-context-recipient-identity
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：索引层 `displayName` 可以合理 fallback 到 ORCID/EMAIL 主键，但邮件收件人称呼不能复用该语义，否则会渲染 `Dear EMAIL-*`。

@@ -3,9 +3,9 @@ id: K-llm-timeout-fallback
 domain: qa
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 18
+hit_count: 20
 source: fix-v:qa-rules-phase3:fix-1
-last_source: create-p:ai-reply-08-llm-failure-workbench-contract
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：LLM 超时不能只坍缩成 nullable 空响应并静默显示 fallback；运营必须知道是 timeout、限流、网络、服务异常还是空响应，且失败结果不能伪装成可采用草稿。

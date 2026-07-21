@@ -142,8 +142,6 @@ const composedReplyState = {
     evaluateSeq: 0
 };
 
-const UNNAMED_FACT_LABEL = "未命名事实";
-
 function sameFactIdSet(left, right) {
     const a = [...(left || [])].sort((x, y) => x - y);
     const b = [...(right || [])].sort((x, y) => x - y);
@@ -3754,6 +3752,93 @@ function aiReplyGenerationStateLabel(state) {
     }
 }
 
+const AI_REPLY_FAILURE_WARNING_CODES = new Set([
+    "AI_REPLY_LLM_TIMEOUT",
+    "AI_REPLY_LLM_RATE_LIMITED",
+    "AI_REPLY_LLM_NETWORK_ERROR",
+    "AI_REPLY_LLM_PROVIDER_ERROR",
+    "AI_REPLY_LLM_EMPTY_RESPONSE",
+    "AI_REPLY_TRUST_REPAIR_EXHAUSTED"
+]);
+
+function isAiReplyGenerationSuccess(result) {
+    if (!result) return false;
+    return result.usedLlm === true && result.generationState === "LLM_USED";
+}
+
+function aiReplyFailureReasonLabel(code) {
+    switch (code) {
+        case "AI_REPLY_LLM_TIMEOUT":
+            return "DeepSeek 请求超时";
+        case "AI_REPLY_LLM_RATE_LIMITED":
+            return "DeepSeek 请求过于频繁";
+        case "AI_REPLY_LLM_NETWORK_ERROR":
+            return "无法连接 DeepSeek";
+        case "AI_REPLY_LLM_PROVIDER_ERROR":
+            return "DeepSeek 服务异常";
+        case "AI_REPLY_LLM_EMPTY_RESPONSE":
+            return "DeepSeek 返回空内容";
+        case "AI_REPLY_TRUST_REPAIR_EXHAUSTED":
+            return "DeepSeek 返回内容未通过结构与可信边界校验";
+        default:
+            return "DeepSeek 未返回有效内容";
+    }
+}
+
+function resolveAiReplyFailureReason(contextWarnings) {
+    if (!Array.isArray(contextWarnings)) return null;
+    var priority = [
+        "AI_REPLY_LLM_TIMEOUT",
+        "AI_REPLY_LLM_RATE_LIMITED",
+        "AI_REPLY_LLM_NETWORK_ERROR",
+        "AI_REPLY_LLM_PROVIDER_ERROR",
+        "AI_REPLY_LLM_EMPTY_RESPONSE",
+        "AI_REPLY_TRUST_REPAIR_EXHAUSTED"
+    ];
+    for (var i = 0; i < priority.length; i++) {
+        var code = priority[i];
+        if (AI_REPLY_FAILURE_WARNING_CODES.has(code) && contextWarnings.includes(code)) {
+            return code;
+        }
+    }
+    return null;
+}
+
+function resolveAiReplyFailureReasonFromResult(result) {
+    if (!result) return null;
+    var warnings = Array.isArray(result.contextWarnings) ? result.contextWarnings : [];
+    var warnReason = resolveAiReplyFailureReason(warnings);
+    if (warnReason) return warnReason;
+    if (!result.usedLlm || result.generationState !== "LLM_USED") {
+        if (result.generationState === "FALLBACK_LLM_DISABLED") return "FALLBACK_LLM_DISABLED";
+        if (result.generationState === "FALLBACK_CLIENT_UNAVAILABLE") return "FALLBACK_CLIENT_UNAVAILABLE";
+        if (result.generationState === "FALLBACK_NO_RESPONSE") return "FALLBACK_NO_RESPONSE";
+    }
+    return null;
+}
+
+function resolveFactDisplayName(ruleId, evidenceSources, suggest) {
+    if (evidenceSources && evidenceSources.length) {
+        const evidence = evidenceSources.find(function(es) { return es && Number(es.ruleId) === Number(ruleId); });
+        if (evidence) {
+            const name = (evidence.displayName || "").trim();
+            if (name && name !== "未命名事实") return name;
+        }
+    }
+    if (suggest) {
+        const rule = findSuggestRule(suggest, ruleId);
+        if (rule) {
+            const name = (rule.displayName || "").trim();
+            if (name && name !== "未命名事实") return name;
+            const section = (rule.sectionTitle || "").trim();
+            if (section && section !== "未命名事实") return section;
+            const subject = (rule.replySubject || "").trim();
+            if (subject && subject !== "未命名事实") return subject;
+        }
+    }
+    return "事实名称缺失";
+}
+
 function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…") {
     if (!panel) return;
     panel.setAttribute("aria-busy", loading ? "true" : "false");
@@ -3882,7 +3967,28 @@ function renderAiReplyFeedback(container, result, error = null) {
         ? summarizeAiReplyCoverage(result.requestCoverage)
         : null;
     const readiness = resolveAiDraftReadiness(result, coverageSummary);
+    const failureCode = resolveAiReplyFailureReasonFromResult(result);
+    const remainingWarnings = failureCode
+        ? warnings.filter(function(w) { return !AI_REPLY_FAILURE_WARNING_CODES.has(w) && w !== failureCode; })
+        : warnings;
     const parts = [];
+
+    if (failureCode) {
+        const failureText = failureCode === "FALLBACK_LLM_DISABLED"
+            ? "LLM 功能未启用"
+            : failureCode === "FALLBACK_CLIENT_UNAVAILABLE"
+                ? "LLM 客户端不可用"
+                : aiReplyFailureReasonLabel(failureCode);
+        parts.push(
+            `<div class="ai-reply-failure-banner" role="alert">` +
+                `<strong>LLM 生成失败：${escapeHtml(failureText)}</strong>` +
+                `<span>当前显示的是 QA 规则参考内容，未经过 LLM 自然化；不可直接采用或发送。</span>` +
+            `</div>`
+        );
+        const heading = document.getElementById("trustDraftHeading");
+        if (heading) heading.textContent = "QA 规则参考内容";
+    }
+
     if (readiness === "READY") {
         parts.push(`<div class="ai-reply-coverage">草稿状态：依据完整</div>`);
     } else if (readiness === "NEEDS_REVIEW") {
@@ -3890,14 +3996,16 @@ function renderAiReplyFeedback(container, result, error = null) {
     } else if (readiness === "BLOCKED") {
         parts.push(`<div class="ai-reply-warning">草稿状态：存在缺少审核依据的问题，不可原样发送</div>`);
     }
-    if (result.generationState === "LLM_USED") {
-        parts.push(
-            `<div class="ai-reply-coverage">${escapeHtml(aiReplyGenerationStateLabel(result.generationState))}</div>`
-        );
-    } else if (result.generationState) {
-        const stateLabel = aiReplyGenerationStateLabel(result.generationState);
-        if (stateLabel) {
-            parts.push(`<div class="ai-reply-warning">${escapeHtml(stateLabel)}</div>`);
+    if (!failureCode) {
+        if (result.generationState === "LLM_USED") {
+            parts.push(
+                `<div class="ai-reply-coverage">${escapeHtml(aiReplyGenerationStateLabel(result.generationState))}</div>`
+            );
+        } else if (result.generationState) {
+            const stateLabel = aiReplyGenerationStateLabel(result.generationState);
+            if (stateLabel) {
+                parts.push(`<div class="ai-reply-warning">${escapeHtml(stateLabel)}</div>`);
+            }
         }
     }
     if (coverageSummary && coverageSummary.hasCoverage) {
@@ -3925,7 +4033,7 @@ function renderAiReplyFeedback(container, result, error = null) {
             parts.push(`<div class="ai-reply-warning">${escapeHtml(unsupportedText)}</div>`);
         }
     }
-    warnings.forEach((code) => {
+    remainingWarnings.forEach((code) => {
         const label = AI_REPLY_WARNING_LABELS[code] || String(code || "");
         if (!label) return;
         parts.push(`<div class="ai-reply-warning">${escapeHtml(label)}</div>`);
@@ -8342,7 +8450,8 @@ function findSuggestRule(suggest, ruleId) {
             return { ...rule, categoryId: category.categoryId, composeOrder: category.composeOrder };
         }
     }
-    return null;
+    const suggested = (suggest.suggestedRules || []).find((item) => item.id === ruleId);
+    return suggested || null;
 }
 
 function requestCoverageBadgeClass(status) {
@@ -8464,14 +8573,7 @@ function renderComposedGapList() {
         let factHint = "";
         if (hasFacts) {
             const names = factRuleIds.map((ruleId) => {
-                const evidence = evidenceById[ruleId];
-                if (evidence) {
-                    const name = escapeHtml(evidence.displayName || UNNAMED_FACT_LABEL);
-                    const shortHash = (evidence.answerBodyHash || "").substring(0, 8);
-                    const updatedAt = evidence.updatedAt ? evidence.updatedAt.substring(0, 10) : "";
-                    return `${name}（${updatedAt} · ${shortHash}）`;
-                }
-                return escapeHtml(UNNAMED_FACT_LABEL);
+                return escapeHtml(resolveFactDisplayName(ruleId, evidenceSources, composedReplyState.suggest));
             });
             factHint = `<span class="gap-no-rules-hint">依据：${names.join("；")}</span>`;
         }
@@ -8497,7 +8599,7 @@ function renderComposedSelectedList() {
         : (confirmedCanonicalFactIds() || composedReplyState.selectedFactIds);
     list.innerHTML = factIds.map((ruleId) => {
         const rule = findSuggestRule(composedReplyState.suggest, ruleId);
-        const label = rule?.displayName || rule?.sectionTitle || UNNAMED_FACT_LABEL;
+        const label = resolveFactDisplayName(ruleId, composedReplyState.draft?.result?.evidenceSources, composedReplyState.suggest);
         return `<li data-rule-id="${ruleId}"><span>${escapeHtml(label)}</span></li>`;
     }).join("") || `<li class="text-muted">未选择事实</li>`;
 }
@@ -8522,19 +8624,39 @@ function renderComposedDraftPreview() {
 function updateTrustWorkbenchButtons() {
     const generateBtn = $("#trustGenerateDraftBtn");
     const adoptBtn = $("#trustAdoptDraftBtn");
+    const heading = document.getElementById("trustDraftHeading");
     const hasConfirmedFacts = (confirmedCanonicalFactIds() || []).length > 0;
     const canGenerateContinuation = aiReplyState.firstTurnDone && !!composedReplyState.lockedFactIds?.length;
+    const draftResult = composedReplyState.draft?.result;
+    const generationFailed = !!composedReplyState.draft?.rendered
+        && !isAiReplyGenerationSuccess(draftResult);
+    const failureCode = generationFailed ? resolveAiReplyFailureReasonFromResult(draftResult) : null;
+
     if (generateBtn) {
         generateBtn.textContent = aiReplyState.firstTurnDone ? "重新生成表达" : "生成可信草稿";
         generateBtn.disabled = composedReplyState.suggest?.llmEnabled === false
             || aiReplyState.inFlight
             || composedReplyState.evaluationPending
             || (!canGenerateContinuation && !hasConfirmedFacts);
+        if (generationFailed) {
+            generateBtn.textContent = "重试生成";
+        }
     }
     if (adoptBtn) {
-        adoptBtn.disabled = !composedReplyState.draft?.rendered
-            || composedReplyState.evaluationPending
-            || !(composedReplyState.lockedFactIds?.length || hasConfirmedFacts);
+        if (generationFailed) {
+            adoptBtn.disabled = true;
+            adoptBtn.setAttribute("aria-disabled", "true");
+            adoptBtn.title = "LLM 生成失败，当前 QA 规则参考内容不可采用";
+        } else {
+            adoptBtn.disabled = !composedReplyState.draft?.rendered
+                || composedReplyState.evaluationPending
+                || !(composedReplyState.lockedFactIds?.length || hasConfirmedFacts);
+            adoptBtn.removeAttribute("aria-disabled");
+            adoptBtn.removeAttribute("title");
+        }
+    }
+    if (heading) {
+        heading.textContent = generationFailed ? "QA 规则参考内容" : "可信草稿";
     }
 }
 
@@ -8719,7 +8841,13 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     const checked = suggestedSet.has(rule.id) ? "checked" : "";
                     const suggested = suggestedSet.has(rule.id)
                         ? `<span class="badge ok">建议</span>` : "";
-                    const label = rule.displayName || rule.sectionTitle || UNNAMED_FACT_LABEL;
+                    const label = (rule.displayName && rule.displayName.trim() && rule.displayName !== "未命名事实")
+                        ? rule.displayName
+                        : (rule.sectionTitle && rule.sectionTitle.trim() && rule.sectionTitle !== "未命名事实")
+                            ? rule.sectionTitle
+                            : (rule.replySubject && rule.replySubject.trim() && rule.replySubject !== "未命名事实")
+                                ? rule.replySubject
+                                : "事实名称缺失";
                     return `
                         <label class="compose-rule-item">
                             <input type="checkbox" class="compose-rule-checkbox" data-rule-id="${rule.id}" ${checked}>
@@ -8748,7 +8876,7 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                     ${categoriesHtml || "<p class='text-muted'>暂无可用事实</p>"}
                 </div>
                 <div class="compose-panel compose-draft ai-chat-panel">
-                    <h4>可信草稿</h4>
+                    <h4 id="trustDraftHeading">可信草稿</h4>
                     <div class="ai-reply-model-row">
                         <label>生成模型
                             <select id="trustReplyModel" class="ai-reply-model-select"${llmDisabled ? " disabled" : ""}>
@@ -8809,10 +8937,17 @@ function appendAiChatDraftBubble(rawText, renderedText, result) {
     const requestCoverage = (result && result.requestCoverage) || [];
     const coverageSummary = summarizeAiReplyCoverage(requestCoverage);
     const readiness = resolveAiDraftReadiness(result, coverageSummary);
+    const generationFailed = !isAiReplyGenerationSuccess(result);
     let label = "AI 草稿";
-    if (readiness === "NEEDS_REVIEW") label = "AI 草稿 — 需补充";
-    else if (readiness === "BLOCKED") label = "AI 草稿 — 缺依据";
+    if (generationFailed) {
+        label = "QA 规则参考（AI 未生成）";
+    } else if (readiness === "NEEDS_REVIEW") {
+        label = "AI 草稿 — 需补充";
+    } else if (readiness === "BLOCKED") {
+        label = "AI 草稿 — 缺依据";
+    }
     let adoptLabel = "采用此草稿";
+    const adoptDisabledAttr = generationFailed ? " disabled title=\"LLM 生成失败，当前 QA 规则参考内容不可采用\"" : "";
     aiReplyState.drafts[draftId] = {
         raw: rawText || "",
         rendered,
@@ -8826,7 +8961,9 @@ function appendAiChatDraftBubble(rawText, renderedText, result) {
         evidenceSources: (result && result.evidenceSources) || [],
         evidenceSetVersion: (result && result.evidenceSetVersion) || "",
         promptVersion: (result && result.promptVersion) || "",
-        draftHash: (result && result.draftHash) || ""
+        draftHash: (result && result.draftHash) || "",
+        usedLlm: (result && result.usedLlm) === true,
+        generationState: (result && result.generationState) || ""
     };
     const bubble = document.createElement("div");
     bubble.className = "ai-chat-bubble ai-chat-assistant";
@@ -8834,7 +8971,7 @@ function appendAiChatDraftBubble(rawText, renderedText, result) {
         <div class="ai-chat-label">${escapeHtml(label)}</div>
         ${translatableBody(rendered)}
         <div class="ai-chat-draft-actions">
-            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}">${escapeHtml(adoptLabel)}</button>
+            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}"${adoptDisabledAttr}>${escapeHtml(adoptLabel)}</button>
         </div>`;
     container.appendChild(bubble);
     container.scrollTop = container.scrollHeight;
@@ -9455,25 +9592,28 @@ async function handleUnmatchedAction(element) {
             }
             const rawDraft = result.draftText || "";
             const renderedDraft = result.renderedDraftText || rawDraft;
-            if (isFirstTurn) {
-                composedReplyState.lockedFactIds = [...factIds];
-            } else if (instruction) {
-                aiReplyState.turns.push({
-                    assistantDraft: aiReplyState.lastDraftTemplate,
-                    operatorInstruction: instruction
-                });
+            const isSuccess = isAiReplyGenerationSuccess(result);
+            if (isSuccess) {
+                if (isFirstTurn) {
+                    composedReplyState.lockedFactIds = [...factIds];
+                } else if (instruction) {
+                    aiReplyState.turns.push({
+                        assistantDraft: aiReplyState.lastDraftTemplate,
+                        operatorInstruction: instruction
+                    });
+                }
+                aiReplyState.lastDraftTemplate = rawDraft;
+                aiReplyState.lastRenderedDraft = renderedDraft;
+                aiReplyState.lastQaRuleIds = [...factIds];
+                aiReplyState.firstTurnDone = true;
+                if (!isFirstTurn && instruction) {
+                    $("#composedOperatorInstruction").value = "";
+                }
             }
-            aiReplyState.lastDraftTemplate = rawDraft;
-            aiReplyState.lastRenderedDraft = renderedDraft;
-            aiReplyState.lastQaRuleIds = [...factIds];
-            aiReplyState.firstTurnDone = true;
             composedReplyState.draft = { raw: rawDraft, rendered: renderedDraft, result };
             renderComposedDraftPreview();
             renderAiReplyFeedback(feedback, result);
-            if (!isFirstTurn && instruction) {
-                $("#composedOperatorInstruction").value = "";
-            }
-            showStatus(aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "可信草稿已生成" : "结构化草稿已生成"));
+            showStatus(aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "可信草稿已生成" : "LLM 生成失败，QA 规则参考内容"));
         } catch (e) {
             const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
@@ -9504,6 +9644,11 @@ async function handleUnmatchedAction(element) {
         const raw = draft?.raw || "";
         if (!rendered) {
             showStatus("请先生成可信草稿", "error");
+            return;
+        }
+        const draftResult = draft?.result;
+        if (!draftResult || !isAiReplyGenerationSuccess(draftResult)) {
+            showStatus("当前为 QA 规则参考内容，不可直接采用或发送。请重试生成或人工撰写。", "error");
             return;
         }
         if (composedReplyState.evaluationPending) {
@@ -9605,32 +9750,40 @@ async function handleUnmatchedAction(element) {
             }
             if (!isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
-                aiReplyState.turns.push({
-                    assistantDraft: aiReplyState.lastDraftTemplate,
-                    operatorInstruction: instruction
-                });
             } else if (isFirstTurn && instruction) {
                 appendAiChatOperatorBubble(instruction);
             }
             const rawDraft = result.draftText || "";
             const renderedDraft = result.renderedDraftText || rawDraft;
             appendAiChatDraftBubble(rawDraft, renderedDraft, result);
-            aiReplyState.lastDraftTemplate = rawDraft;
-            aiReplyState.lastRenderedDraft = renderedDraft;
-            aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
-            if (isFirstTurn) {
-                aiReplyState.mode = result.mode || null;
-                aiReplyState.firstTurnDone = true;
+            if (isAiReplyGenerationSuccess(result)) {
+                if (!isFirstTurn && instruction) {
+                    aiReplyState.turns.push({
+                        assistantDraft: aiReplyState.lastDraftTemplate,
+                        operatorInstruction: instruction
+                    });
+                }
+                aiReplyState.lastDraftTemplate = rawDraft;
+                aiReplyState.lastRenderedDraft = renderedDraft;
+                aiReplyState.lastQaRuleIds = result.qaRuleIds || [];
+                if (isFirstTurn) {
+                    aiReplyState.mode = result.mode || null;
+                    aiReplyState.firstTurnDone = true;
+                }
             }
             renderAiReplyFeedback(feedback, result);
-            if (input) input.value = "";
+            if (input && isAiReplyGenerationSuccess(result)) input.value = "";
+            const successLabel = aiReplyGenerationStateLabel(result.generationState);
+            const showLabel = result.usedLlm
+                ? (successLabel || "AI 生成完成")
+                : "LLM 生成失败，QA 规则参考内容";
             const qaCount = (result.qaRuleIds || []).length;
             const modeHint = result.mode === "QA_MATCHED"
                 ? `已匹配 QA 规则（${qaCount} 条），按规则拼接`
                 : result.mode === "QA_GROUNDED"
                     ? `已基于 ${qaCount} 条 QA 事实综合多项请求`
                     : "未匹配 QA 规则，依据历史邮件/专家画像自由生成";
-            showStatus(`${aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "AI 生成完成" : "结构化规则草稿")} — ${modeHint}`);
+            showStatus(`${showLabel} — ${modeHint}`);
         } catch (e) {
             const currentModel = readAiReplyModelSelection("#aiMailboxReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
@@ -9661,6 +9814,14 @@ async function handleUnmatchedAction(element) {
         const raw = entry?.raw ?? aiReplyState.lastDraftTemplate;
         if (!rendered) {
             showStatus("草稿为空", "error");
+            return;
+        }
+        if (!entry) {
+            showStatus("草稿不存在或已过期", "error");
+            return;
+        }
+        if (entry.usedLlm !== true || entry.generationState !== "LLM_USED") {
+            showStatus("当前草稿由 LLM 失败回退生成，不可采用。请使用成功的 AI 草稿或人工撰写。", "error");
             return;
         }
         const qaIds = entry?.qaRuleIds ?? aiReplyState.lastQaRuleIds;

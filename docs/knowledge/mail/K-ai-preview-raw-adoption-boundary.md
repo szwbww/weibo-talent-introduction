@@ -3,9 +3,9 @@ id: K-ai-preview-raw-adoption-boundary
 domain: mail
 created: 2026-07-13
 last_used: 2026-07-21
-hit_count: 21
+hit_count: 23
 source: fix-v:ai-reply-05-rendered-preview:fix-1
-last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：双表示草稿的 preview/采用边界不能只把 rendered 文本放入人工编辑器；否则 raw 模板在最终发送前丢失，切换 sender account 或 preview 缺账号时无法按最终权威数据渲染。只比对 `innerText` 也不够：加粗、链接等富文本编辑不改文字却会被 raw 重渲染吞掉。

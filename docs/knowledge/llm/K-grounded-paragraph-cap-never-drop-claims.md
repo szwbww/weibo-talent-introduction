@@ -3,8 +3,9 @@ id: K-grounded-paragraph-cap-never-drop-claims
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-21
-hit_count: 7
+hit_count: 9
 source: create-p:ai-reply-04-grounded-trust-content-plan
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：Grounded 回复限制正文段落数时，不能在 composer 末端对 answer/paragraph 做 `take(N)`；复合问题超过 N 项时会静默丢失后续已取证 claim，而 readiness 仍可能保持 READY。

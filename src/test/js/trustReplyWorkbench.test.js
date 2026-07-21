@@ -146,7 +146,11 @@ describe("trust reply workbench (from app.js)", () => {
 
     it("updateTrustWorkbenchButtons disables generate while evaluation is pending", () => {
         const generateBtn = { textContent: "", disabled: false };
-        const adoptBtn = { textContent: "", disabled: false };
+        const adoptBtn = {
+            textContent: "", disabled: false,
+            setAttribute: () => {}, removeAttribute: () => {}
+        };
+        const headingEl = { textContent: "" };
         const sandbox = {
             composedReplyState: {
                 suggest: { llmEnabled: true },
@@ -157,6 +161,14 @@ describe("trust reply workbench (from app.js)", () => {
                 lockedFactIds: null
             },
             aiReplyState: { firstTurnDone: false, inFlight: false },
+            document: {
+                getElementById: (id) => {
+                    if (id === "trustDraftHeading") return headingEl;
+                    return null;
+                }
+            },
+            isAiReplyGenerationSuccess: () => false,
+            resolveAiReplyFailureReason: () => null,
             $: (selector) => {
                 if (selector === "#trustGenerateDraftBtn") return generateBtn;
                 if (selector === "#trustAdoptDraftBtn") return adoptBtn;
@@ -169,10 +181,11 @@ describe("trust reply workbench (from app.js)", () => {
         assert.strictEqual(generateBtn.disabled, true);
     });
 
-    it("fact labels use unnamed fallback instead of rule ids", () => {
-        assert.ok(appJsSource.includes('const UNNAMED_FACT_LABEL = "未命名事实"'));
+    it("fact labels fall back to displayName/sectionTitle/replySubject/事实名称缺失 instead of rule ids", () => {
         assert.ok(!appJsSource.includes('`规则 #${ruleId}`'));
         assert.ok(!appJsSource.includes('`规则 #${rule.id}`'));
+        assert.ok(appJsSource.includes("事实名称缺失"));
+        assert.ok(!appJsSource.includes('const UNNAMED_FACT_LABEL'));
 
         const selectedList = { innerHTML: "" };
         const sandbox = {
@@ -182,16 +195,30 @@ describe("trust reply workbench (from app.js)", () => {
                 selectedFactIds: [42],
                 suggest: {
                     suggestedRules: [],
-                    rulesByCategory: [{ rules: [{ id: 42, displayName: "", sectionTitle: "" }] }]
-                }
+                    rulesByCategory: [{ rules: [{ id: 42, displayName: "", sectionTitle: "", replySubject: "" }] }]
+                },
+                draft: { result: { evidenceSources: [] } }
             },
-            UNNAMED_FACT_LABEL: "未命名事实",
             findSuggestRule: (suggest, ruleId) => {
                 for (const category of suggest.rulesByCategory || []) {
                     const rule = (category.rules || []).find((item) => item.id === ruleId);
                     if (rule) return rule;
                 }
                 return (suggest.suggestedRules || []).find((item) => item.id === ruleId) || null;
+            },
+            resolveFactDisplayName: (ruleId, evidenceSources, suggest) => {
+                if (suggest) {
+                    const rule = sandbox.findSuggestRule(suggest, ruleId);
+                    if (rule) {
+                        const name = (rule.displayName || "").trim();
+                        if (name && name !== "未命名事实") return name;
+                        const section = (rule.sectionTitle || "").trim();
+                        if (section && section !== "未命名事实") return section;
+                        const subject = (rule.replySubject || "").trim();
+                        if (subject && subject !== "未命名事实") return subject;
+                    }
+                }
+                return "事实名称缺失";
             },
             escapeHtml: (value) => String(value),
             $: (selector) => {
@@ -204,8 +231,131 @@ describe("trust reply workbench (from app.js)", () => {
         vm.createContext(sandbox);
         loadWorkbenchFns(sandbox, "sameFactIdSet", "confirmedCanonicalFactIds", "renderComposedSelectedList");
         sandbox.renderComposedSelectedList();
-        assert.ok(selectedList.innerHTML.includes("未命名事实"));
+        assert.ok(selectedList.innerHTML.includes("事实名称缺失"));
         assert.ok(!selectedList.innerHTML.includes("#42"));
         assert.ok(!selectedList.innerHTML.includes("规则 #"));
+        assert.ok(!selectedList.innerHTML.includes("未命名事实"));
+    });
+
+    // ── Button attribute / input retention / send independence (Phase 08 I-4/I-5) ──
+
+    it("adopt button is disabled with aria and title on generation failure", () => {
+        const generateBtn = { textContent: "", disabled: false };
+        const adoptBtn = {
+            textContent: "", disabled: false, _title: "", _aria: null,
+            setAttribute: (k, v) => { if (k === "aria-disabled") adoptBtn._aria = v; },
+            removeAttribute: () => { adoptBtn._aria = null; adoptBtn._title = ""; },
+            getAttribute: (k) => k === "aria-disabled" ? adoptBtn._aria : null,
+            get title() { return adoptBtn._title; },
+            set title(v) { adoptBtn._title = v; }
+        };
+        const headingEl = { textContent: "" };
+        const sandbox = {
+            composedReplyState: {
+                suggest: { llmEnabled: true },
+                evaluationPending: false,
+                selectedFactIds: [1],
+                confirmedEvaluation: { canonicalFactIds: [1] },
+                lockedFactIds: [1],
+                draft: {
+                    rendered: "ref text",
+                    result: { usedLlm: false, generationState: "FALLBACK_NO_RESPONSE", contextWarnings: [] }
+                }
+            },
+            aiReplyState: { firstTurnDone: true, inFlight: false },
+            document: { getElementById: (id) => id === "trustDraftHeading" ? headingEl : null },
+            isAiReplyGenerationSuccess: () => false,
+            resolveAiReplyFailureReasonFromResult: () => "FALLBACK_NO_RESPONSE",
+            confirmedCanonicalFactIds: () => [1],
+            $: (sel) => {
+                if (sel === "#trustGenerateDraftBtn") return generateBtn;
+                if (sel === "#trustAdoptDraftBtn") return adoptBtn;
+                return null;
+            }
+        };
+        vm.createContext(sandbox);
+        loadWorkbenchFns(sandbox, "sameFactIdSet", "confirmedCanonicalFactIds", "updateTrustWorkbenchButtons");
+        sandbox.updateTrustWorkbenchButtons();
+        assert.strictEqual(adoptBtn.disabled, true);
+        assert.strictEqual(adoptBtn._aria, "true");
+        assert.match(adoptBtn.title, /LLM 生成失败/);
+        assert.strictEqual(generateBtn.textContent, "重试生成");
+        assert.strictEqual(headingEl.textContent, "QA 规则参考内容");
+    });
+
+    it("adopt button fails closed when rendered draft has no result", () => {
+        const generateBtn = { textContent: "", disabled: false };
+        const adoptBtn = {
+            disabled: false, _title: "", _aria: null,
+            setAttribute: (k, v) => { if (k === "aria-disabled") adoptBtn._aria = v; },
+            removeAttribute: () => { adoptBtn._aria = null; adoptBtn._title = ""; },
+            get title() { return adoptBtn._title; },
+            set title(v) { adoptBtn._title = v; }
+        };
+        const headingEl = { textContent: "" };
+        const sandbox = {
+            composedReplyState: {
+                suggest: { llmEnabled: true }, evaluationPending: false,
+                selectedFactIds: [1], confirmedEvaluation: { canonicalFactIds: [1] },
+                lockedFactIds: [1], draft: { rendered: "ref text", result: null }
+            },
+            aiReplyState: { firstTurnDone: true, inFlight: false },
+            document: { getElementById: () => headingEl },
+            isAiReplyGenerationSuccess: () => false,
+            resolveAiReplyFailureReasonFromResult: () => "FALLBACK_NO_RESPONSE",
+            confirmedCanonicalFactIds: () => [1],
+            $: (sel) => sel === "#trustGenerateDraftBtn" ? generateBtn
+                : sel === "#trustAdoptDraftBtn" ? adoptBtn : null
+        };
+        vm.createContext(sandbox);
+        loadWorkbenchFns(sandbox, "sameFactIdSet", "confirmedCanonicalFactIds", "updateTrustWorkbenchButtons");
+        sandbox.updateTrustWorkbenchButtons();
+        assert.strictEqual(adoptBtn.disabled, true);
+        assert.strictEqual(adoptBtn._aria, "true");
+        assert.match(adoptBtn.title, /LLM 生成失败/);
+        assert.strictEqual(headingEl.textContent, "QA 规则参考内容");
+    });
+
+    it("adopt button enabled and heading restored on LLM success", () => {
+        const generateBtn = { textContent: "", disabled: false };
+        const adoptBtn = {
+            textContent: "", disabled: true, _title: "old", _aria: "true",
+            setAttribute: (k, v) => { if (k === "aria-disabled") adoptBtn._aria = v; },
+            removeAttribute: () => { adoptBtn._aria = null; adoptBtn._title = ""; },
+            getAttribute: (k) => k === "aria-disabled" ? adoptBtn._aria : null,
+            get title() { return adoptBtn._title; },
+            set title(v) { adoptBtn._title = v; }
+        };
+        const headingEl = { textContent: "QA 规则参考内容" };
+        const sandbox = {
+            composedReplyState: {
+                suggest: { llmEnabled: true },
+                evaluationPending: false,
+                selectedFactIds: [1],
+                confirmedEvaluation: { canonicalFactIds: [1] },
+                lockedFactIds: [1],
+                draft: {
+                    rendered: "draft",
+                    result: { usedLlm: true, generationState: "LLM_USED", contextWarnings: [] }
+                }
+            },
+            aiReplyState: { firstTurnDone: false, inFlight: false },
+            document: { getElementById: () => headingEl },
+            isAiReplyGenerationSuccess: () => true,
+            resolveAiReplyFailureReasonFromResult: () => null,
+            confirmedCanonicalFactIds: () => [1],
+            $: (sel) => {
+                if (sel === "#trustGenerateDraftBtn") return generateBtn;
+                if (sel === "#trustAdoptDraftBtn") return adoptBtn;
+                return null;
+            }
+        };
+        vm.createContext(sandbox);
+        loadWorkbenchFns(sandbox, "sameFactIdSet", "confirmedCanonicalFactIds", "updateTrustWorkbenchButtons");
+        sandbox.updateTrustWorkbenchButtons();
+        assert.strictEqual(adoptBtn.disabled, false);
+        assert.strictEqual(adoptBtn._aria, null);
+        assert.strictEqual(adoptBtn.title, "");
+        assert.strictEqual(headingEl.textContent, "可信草稿");
     });
 });

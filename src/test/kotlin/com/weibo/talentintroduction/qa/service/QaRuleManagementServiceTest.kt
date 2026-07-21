@@ -27,6 +27,8 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicLong
+import java.nio.file.Files
+import java.nio.file.Paths
 
 class QaRuleManagementServiceTest {
     private val categoryRepository = Mockito.mock(QaCategoryRepository::class.java)
@@ -904,4 +906,89 @@ class QaRuleManagementServiceTest {
             handoffRequired = handoffRequired,
             enabled = enabled
         )
+
+    // ── V81 migration static contract (Phase 09 I-4) ──
+
+    @Test
+    fun `V81 migration has three UPDATEs with idempotent keyword parity`() {
+        val sql = Files.readString(
+            Paths.get("src/main/resources/db/migration/V81__ai_reply_due_diligence_keyword_parity.sql")
+        )
+        val updateStmts = sql.split(";").map { it.trim() }
+            .filter { it.isNotBlank() && it.contains("UPDATE qa_rule", ignoreCase = true) }
+        assertEquals(3, updateStmts.size, "V81 must have exactly 3 UPDATE statements")
+
+        val subjects = listOf("Funding support", "Program overview", "Contract and IP arrangements")
+        for (subject in subjects) {
+            assertTrue(
+                updateStmts.any { it.contains("reply_subject = '$subject'") },
+                "V81 must have UPDATE for reply_subject='$subject'"
+            )
+        }
+
+        for (stmt in updateStmts) {
+            val setPart = stmt.substringAfter("SET keywords = ").substringBefore("updated_at = updated_at")
+            assertTrue(setPart.contains("CONCAT(keywords,"), "must use CONCAT")
+            assertTrue(setPart.contains("CASE WHEN LOWER(keywords) NOT LIKE"), "must use idempotent NOT LIKE")
+            assertTrue(stmt.contains("updated_at = updated_at"), "must preserve updated_at")
+            val assignedColumns = Regex("(?m)^\\s*([a-z_]+)\\s*=", RegexOption.IGNORE_CASE)
+                .findAll(stmt.substringAfter("SET ").substringBefore("WHERE"))
+                .map { it.groupValues[1].lowercase() }
+                .toSet()
+            assertEquals(setOf("keywords", "updated_at"), assignedColumns, "V81 may only assign keywords")
+        }
+
+        val actionPart = sql.replace(Regex("--[^\n]*"), "").replace("\n", " ")
+        assertFalse(actionPart.contains("answer_body "), "SQL must not update answer_body")
+        assertFalse(actionPart.contains("display_name "), "SQL must not update display_name")
+        assertFalse(actionPart.contains("reply_policy "), "SQL must not update reply_policy")
+        assertFalse(actionPart.contains("enabled "), "SQL must not update enabled")
+        assertFalse(actionPart.contains("priority "), "SQL must not update priority")
+    }
+
+    @Test
+    fun `V81 does not contain unsupported keywords`() {
+        val sql = Files.readString(
+            Paths.get("src/main/resources/db/migration/V81__ai_reply_due_diligence_keyword_parity.sql")
+        ).lowercase()
+        assertFalse(sql.contains("remuneration structure"), "must not add remuneration structure keyword")
+        assertFalse(sql.contains("time commitment"), "must not add time commitment keyword")
+        assertFalse(
+            sql.contains("examples of enterprise") ||
+                sql.contains("enterprise examples"),
+            "must not add enterprise examples keyword"
+        )
+    }
+
+    @Test
+    fun `V81 each phrase has independent CASE NOT LIKE guard`() {
+        val sql = Files.readString(
+            Paths.get("src/main/resources/db/migration/V81__ai_reply_due_diligence_keyword_parity.sql")
+        )
+
+        val expectedPhrases = listOf(
+            "advisory role compensated",
+            "is the advisory role compensated",
+            "typical duration",
+            "duration of advisory projects",
+            "advisory project duration",
+            "formal agreement",
+            "formal contract",
+            "before any collaboration begins"
+        )
+
+        for (phrase in expectedPhrases) {
+            val escaped = Regex.escape(phrase)
+            assertTrue(
+                Regex("CASE WHEN LOWER\\(keywords\\) NOT LIKE '%$escaped%'", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(sql),
+                "V81 must have independent CASE/NOT LIKE for: $phrase"
+            )
+            assertTrue(
+                Regex("THEN ',$escaped'", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(sql),
+                "V81 must append phrase: $phrase"
+            )
+        }
+    }
 }

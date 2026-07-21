@@ -132,14 +132,14 @@ class QaFactSelectionService(
         val allMissing = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "MISSING" }
         val anySupported = intentCoverages.any { it.status == "SUPPORTED" }
         val allSupported = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "SUPPORTED" }
+        val anyPartial = intentCoverages.any { it.status == "PARTIAL" }
 
         val status = when {
             researchWarned && !anySupported -> RequestGroundingStatus.UNSUPPORTED
-            candidateRules.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
-            intentCoverages.isEmpty() && candidateRules.isNotEmpty() -> RequestGroundingStatus.GROUNDED
+            intentCoverages.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
             allSupported -> RequestGroundingStatus.GROUNDED
             allMissing -> RequestGroundingStatus.UNSUPPORTED
-            anySupported -> RequestGroundingStatus.PARTIAL
+            anySupported || anyPartial -> RequestGroundingStatus.PARTIAL
             else -> RequestGroundingStatus.UNSUPPORTED
         }
 

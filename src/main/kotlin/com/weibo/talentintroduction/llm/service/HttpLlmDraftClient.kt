@@ -7,9 +7,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
 
 data class LlmChatMessage(
@@ -40,6 +44,21 @@ enum class AiReplyModel {
     }
 }
 
+enum class LlmChatFailureType {
+    SUCCESS,
+    TIMEOUT,
+    RATE_LIMITED,
+    NETWORK_ERROR,
+    PROVIDER_ERROR,
+    EMPTY_RESPONSE,
+    CLIENT_UNAVAILABLE
+}
+
+data class LlmChatResult(
+    val content: String?,
+    val failureType: LlmChatFailureType = LlmChatFailureType.SUCCESS
+)
+
 interface LlmDraftClient {
     fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String?
 
@@ -50,6 +69,23 @@ interface LlmDraftClient {
         temperature: Double? = null,
         providerModel: String
     ): String? = chat(messages, temperature)
+
+    fun chatWithModelObserved(
+        messages: List<LlmChatMessage>,
+        temperature: Double? = null,
+        providerModel: String
+    ): LlmChatResult {
+        return try {
+            val content = chatWithModel(messages, temperature, providerModel)
+            if (!content.isNullOrBlank()) {
+                LlmChatResult(content)
+            } else {
+                LlmChatResult(null, LlmChatFailureType.EMPTY_RESPONSE)
+            }
+        } catch (_: Exception) {
+            LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
+        }
+    }
 }
 
 @Component
@@ -90,13 +126,19 @@ class HttpLlmDraftClient(
         providerModel: String
     ): String? = executeChat(messages, temperature, providerModel)
 
-    private fun executeChat(
+    override fun chatWithModelObserved(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String
+    ): LlmChatResult = executeChatObserved(messages, temperature, providerModel)
+
+    private fun executeChatObserved(
         messages: List<LlmChatMessage>,
         temperature: Double?,
         model: String
-    ): String? {
+    ): LlmChatResult {
         if (properties.apiUrl.isBlank()) {
-            return null
+            return LlmChatResult(null, LlmChatFailureType.CLIENT_UNAVAILABLE)
         }
         val headers = HttpHeaders().apply {
             contentType = MediaType.APPLICATION_JSON
@@ -109,16 +151,59 @@ class HttpLlmDraftClient(
             "messages" to messages.map { mapOf("role" to it.role, "content" to it.content) },
             "temperature" to (temperature ?: properties.temperature)
         )
+        val startMs = System.currentTimeMillis()
         return try {
             val response = restTemplate.postForEntity(
                 properties.apiUrl,
                 HttpEntity(objectMapper.writeValueAsString(body), headers),
                 JsonNode::class.java
-            ).body ?: return null
-            response.path("choices").path(0).path("message").path("content").asText(null)
+            )
+            val elapsedMs = System.currentTimeMillis() - startMs
+            val responseBody = response.body
+            val content = responseBody?.path("choices")?.path(0)?.path("message")?.path("content")?.asText(null)
+            if (content.isNullOrBlank()) {
+                log.warn("LLM chat returned empty content model={} messageCount={} elapsedMs={}",
+                    model, messages.size, elapsedMs)
+                LlmChatResult(null, LlmChatFailureType.EMPTY_RESPONSE)
+            } else {
+                log.info("LLM chat success model={} messageCount={} contentChars={} elapsedMs={}",
+                    model, messages.size, content.length, elapsedMs)
+                LlmChatResult(content)
+            }
+        } catch (ex: ResourceAccessException) {
+            val elapsedMs = System.currentTimeMillis() - startMs
+            val cause = ex.cause
+            val isTimeout = cause is java.net.SocketTimeoutException
+            val failureType = if (isTimeout) LlmChatFailureType.TIMEOUT else LlmChatFailureType.NETWORK_ERROR
+            log.warn("LLM chat failed model={} messageCount={} failureType={} elapsedMs={}",
+                model, messages.size, failureType, elapsedMs)
+            LlmChatResult(null, failureType)
+        } catch (ex: HttpClientErrorException) {
+            val elapsedMs = System.currentTimeMillis() - startMs
+            val failureType = if (ex.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
+                LlmChatFailureType.RATE_LIMITED
+            } else {
+                LlmChatFailureType.PROVIDER_ERROR
+            }
+            log.warn("LLM chat failed model={} messageCount={} failureType={} elapsedMs={}",
+                model, messages.size, failureType, elapsedMs)
+            LlmChatResult(null, failureType)
+        } catch (ex: HttpServerErrorException) {
+            val elapsedMs = System.currentTimeMillis() - startMs
+            log.warn("LLM chat failed model={} messageCount={} failureType=PROVIDER_ERROR elapsedMs={}",
+                model, messages.size, elapsedMs)
+            LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
         } catch (ex: Exception) {
-            log.warn("LLM chat failed, caller should fall back: {}", ex.message)
-            null
+            val elapsedMs = System.currentTimeMillis() - startMs
+            log.warn("LLM chat failed model={} messageCount={} failureType=NETWORK_ERROR elapsedMs={}",
+                model, messages.size, elapsedMs)
+            LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
         }
     }
+
+    private fun executeChat(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        model: String
+    ): String? = executeChatObserved(messages, temperature, model).content
 }

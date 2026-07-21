@@ -3,8 +3,9 @@ id: K-ai-reply-history-continuity-not-authority
 domain: llm
 created: 2026-07-21
 last_used: 2026-07-21
-hit_count: 0
+hit_count: 2
 source: create-p:ai-reply-10-history-context-recipient-identity
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：历史邮件能提升回复连续性，但旧出站内容可能过时、失败或未经审核，不能升级成当前事实来源。

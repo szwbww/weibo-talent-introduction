@@ -34,11 +34,17 @@ function createSandbox() {
             .replaceAll("<", "&lt;")
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#039;")
+            .replaceAll("'", "&#039;"),
+        UNNAMED_FACT_LABEL: "未命名事实",
+        findSuggestRule: () => null,
+        document: {
+            getElementById: () => ({ textContent: "" })
+        }
     };
     vm.createContext(sandbox);
     vm.runInContext(extractConst("AI_REPLY_WARNING_LABELS"), sandbox);
     vm.runInContext("this.AI_REPLY_WARNING_LABELS = AI_REPLY_WARNING_LABELS;", sandbox);
+    vm.runInContext("this.AI_REPLY_FAILURE_WARNING_CODES = new Set([\"AI_REPLY_LLM_TIMEOUT\",\"AI_REPLY_LLM_RATE_LIMITED\",\"AI_REPLY_LLM_NETWORK_ERROR\",\"AI_REPLY_LLM_PROVIDER_ERROR\",\"AI_REPLY_LLM_EMPTY_RESPONSE\",\"AI_REPLY_TRUST_REPAIR_EXHAUSTED\"]);", sandbox);
     vm.runInContext(extractFn("aiReplyModelLabel"), sandbox);
     vm.runInContext(extractFn("aiReplyGenerationStateLabel"), sandbox);
     vm.runInContext(extractFn("formatUnsupportedRequests"), sandbox);
@@ -46,6 +52,11 @@ function createSandbox() {
     vm.runInContext(extractFn("summarizeAiReplyCoverage"), sandbox);
     vm.runInContext(extractFn("formatAiReplyReviewWarnings"), sandbox);
     vm.runInContext(extractFn("resolveAiDraftReadiness"), sandbox);
+    vm.runInContext(extractFn("isAiReplyGenerationSuccess"), sandbox);
+    vm.runInContext(extractFn("resolveAiReplyFailureReason"), sandbox);
+    vm.runInContext(extractFn("resolveAiReplyFailureReasonFromResult"), sandbox);
+    vm.runInContext(extractFn("aiReplyFailureReasonLabel"), sandbox);
+    vm.runInContext(extractFn("resolveFactDisplayName"), sandbox);
     vm.runInContext(extractFn("renderAiReplyFeedback"), sandbox);
     return sandbox;
 }
@@ -99,24 +110,32 @@ describe("renderAiReplyFeedback generationState", () => {
 
         sandbox.renderAiReplyFeedback(container, {
             generationState: "FALLBACK_LLM_DISABLED",
+            usedLlm: false,
             requestCount: 0,
             groundedRequestCount: 0,
             contextWarnings: [],
             unsupportedRequests: []
         });
-        assert.match(container.innerHTML, /class="ai-reply-warning"/);
-        assert.match(container.innerHTML, /LLM 已关闭—结构化规则草稿/);
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /LLM 生成失败/);
         assert.doesNotMatch(container.innerHTML, /class="pre"/);
     });
 
-    it("keeps generationState out of draft/adopt payload surfaces in app.js", () => {
+    it("draft bubble and adopt handler include generationState for failure guard", () => {
         const draftBubble = extractFn("appendAiChatDraftBubble");
-        assert.doesNotMatch(draftBubble, /generationState/);
+        assert.match(draftBubble, /generationState/);
 
         const adoptIdx = appJsSource.indexOf('if (action === "ai-adopt-draft")');
         assert.ok(adoptIdx > 0);
-        const adoptBlock = appJsSource.slice(adoptIdx, adoptIdx + 1200);
-        assert.doesNotMatch(adoptBlock, /generationState/);
+        const adoptBlock = appJsSource.slice(adoptIdx, adoptIdx + 1500);
+        assert.match(adoptBlock, /generationState/);
+        assert.match(adoptBlock, /usedLlm/);
+        assert.match(adoptBlock, /不可采用/);
+        assert.match(
+            adoptBlock,
+            /entry\.usedLlm !== true \|\| entry\.generationState !== "LLM_USED"/,
+            "legacy adopt must fail closed when either success field is missing"
+        );
 
         const turnPayloadIdx = appJsSource.indexOf("turns: turnsToSend");
         assert.ok(turnPayloadIdx > 0);
@@ -476,5 +495,146 @@ describe("draft readiness resolution and feedback", () => {
             unsupportedRequests: []
         });
         assert.match(container.innerHTML, /草稿状态：存在缺少审核依据的问题/);
+    });
+
+    // ── Failure behavior matrix (Phase 08 I-3/I-4/I-6) ──
+
+    const transportWarnings = [
+        { code: "AI_REPLY_LLM_TIMEOUT", text: "DeepSeek 请求超时" },
+        { code: "AI_REPLY_LLM_RATE_LIMITED", text: "DeepSeek 请求过于频繁" },
+        { code: "AI_REPLY_LLM_NETWORK_ERROR", text: "无法连接 DeepSeek" },
+        { code: "AI_REPLY_LLM_PROVIDER_ERROR", text: "DeepSeek 服务异常" },
+        { code: "AI_REPLY_LLM_EMPTY_RESPONSE", text: "DeepSeek 返回空内容" }
+    ];
+
+    transportWarnings.forEach(function(w) {
+        it("shows failure banner for " + w.code, function() {
+            var sandbox = createSandbox();
+            var container = { hidden: true, innerHTML: "" };
+            sandbox.renderAiReplyFeedback(container, {
+                generationState: "FALLBACK_NO_RESPONSE",
+                usedLlm: false,
+                requestCount: 1,
+                groundedRequestCount: 0,
+                contextWarnings: [w.code],
+                unsupportedRequests: []
+            });
+            assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+            assert.match(container.innerHTML, new RegExp(w.text));
+            assert.match(container.innerHTML, /不可直接采用或发送/);
+        });
+    });
+
+    it("shows failure banner for TRUST_REPAIR_EXHAUSTED", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_NO_RESPONSE",
+            usedLlm: false,
+            requestCount: 1,
+            groundedRequestCount: 0,
+            contextWarnings: ["AI_REPLY_TRUST_REPAIR_EXHAUSTED"],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /结构与可信边界校验/);
+    });
+
+    it("uses fixed transport-before-trust warning priority regardless of input order", function() {
+        var sandbox = createSandbox();
+        assert.strictEqual(
+            sandbox.resolveAiReplyFailureReasonFromResult({
+                generationState: "FALLBACK_NO_RESPONSE",
+                usedLlm: false,
+                contextWarnings: ["AI_REPLY_TRUST_REPAIR_EXHAUSTED", "AI_REPLY_LLM_TIMEOUT"]
+            }),
+            "AI_REPLY_LLM_TIMEOUT"
+        );
+    });
+
+    it("shows failure banner for FALLBACK_LLM_DISABLED without transport warning", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_LLM_DISABLED",
+            usedLlm: false,
+            requestCount: 1,
+            groundedRequestCount: 0,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /LLM 生成失败.*LLM 功能未启用/);
+    });
+
+    it("shows failure banner for FALLBACK_CLIENT_UNAVAILABLE without transport warning", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_CLIENT_UNAVAILABLE",
+            usedLlm: false,
+            requestCount: 1,
+            groundedRequestCount: 0,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /LLM 生成失败.*客户端不可用/);
+    });
+
+    it("shows failure banner for FALLBACK_NO_RESPONSE with no warnings", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_NO_RESPONSE",
+            usedLlm: false,
+            requestCount: 1,
+            groundedRequestCount: 0,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /LLM 生成失败.*未返回有效内容/);
+    });
+
+    it("LLM_USED shows no failure banner and shows success label", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "LLM_USED",
+            usedLlm: true,
+            requestCount: 1,
+            groundedRequestCount: 1,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.doesNotMatch(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.doesNotMatch(container.innerHTML, /LLM 生成失败/);
+        assert.match(container.innerHTML, /模型已生成/);
+    });
+
+    it("success after failure clears banner", function() {
+        var sandbox = createSandbox();
+        var container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_NO_RESPONSE",
+            usedLlm: false,
+            requestCount: 1,
+            groundedRequestCount: 0,
+            contextWarnings: ["AI_REPLY_LLM_TIMEOUT"],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /class="ai-reply-failure-banner"/);
+
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "LLM_USED",
+            usedLlm: true,
+            requestCount: 1,
+            groundedRequestCount: 1,
+            contextWarnings: [],
+            unsupportedRequests: []
+        });
+        assert.doesNotMatch(container.innerHTML, /class="ai-reply-failure-banner"/);
+        assert.match(container.innerHTML, /模型已生成/);
     });
 });

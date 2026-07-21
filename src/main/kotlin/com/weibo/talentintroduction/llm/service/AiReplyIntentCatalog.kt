@@ -50,12 +50,12 @@ object AiReplyIntentCatalog {
             title = "Responsibilities and deliverables"
         ),
         IntentGroupTitle(
-            intentKeys = setOf("contract.terms", "finance.arrangements", "ip.arrangements"),
+            intentKeys = setOf("contract.terms", "finance.arrangements", "finance.compensation_structure", "ip.arrangements"),
             title = "Contractual, financial and IP arrangements"
         ),
         IntentGroupTitle(
-            intentKeys = setOf("application.next_stages"),
-            title = "Next stages"
+            intentKeys = setOf("application.next_stages", "work.time_commitment", "work.advisory_duration"),
+            title = "Commitment, duration and next stages"
         )
     )
 
@@ -104,7 +104,14 @@ object AiReplyIntentCatalog {
         RequestIntentDefinition(
             key = "enterprise.project_types",
             title = "Enterprise project types",
-            requestAliases = listOf("enterprise projects", "enterprise project", "types of projects", "types of enterprise", "project type", "project types"),
+            requestAliases = listOf(
+                "enterprise projects", "enterprise project", "types of projects", "types of enterprise",
+                "project type", "project types",
+                "types of chinese enterprises", "types of chinese companies",
+                "examples of enterprise", "examples of enterprises",
+                "what enterprise", "what enterprises",
+                "chinese enterprises involved", "chinese companies involved"
+            ),
             requiredCoverageKeys = listOf("enterprise.project_types")
         ),
         RequestIntentDefinition(
@@ -165,16 +172,39 @@ object AiReplyIntentCatalog {
         RequestIntentDefinition(
             key = "contract.terms",
             title = "Contractual arrangements",
-            requestAliases = listOf("contract terms", "contractual", "contract arrangement", "labor contract"),
+            requestAliases = listOf(
+                "contract terms", "contractual", "contract arrangement", "labor contract",
+                "formal agreement", "formal contract", "before any collaboration begins",
+                "before collaboration", "before cooperation", "sign a contract",
+                "contract signing", "will there be a contract"
+            ),
             requiredCoverageKeys = listOf("contract.terms"),
             alternativeCoverageKeys = listOf("contract.party")
         ),
         RequestIntentDefinition(
             key = "finance.arrangements",
             title = "Financial arrangements",
-            requestAliases = listOf("financial", "compensation", "salary", "funding", "payment", "how much"),
+            requestAliases = listOf(
+                "financial", "compensation", "salary", "funding", "payment", "how much",
+                "advisory role compensated", "is the advisory role compensated",
+                "compensated", "paid", "remuneration", "stipend", "honorarium",
+                "whether this is a paid role", "is this a paid position",
+                "costs", "obligations", "cost", "any costs", "any fees"
+            ),
             requiredCoverageKeys = listOf("finance.government_funding"),
             alternativeCoverageKeys = listOf("finance.enterprise_compensation")
+        ),
+        RequestIntentDefinition(
+            key = "finance.compensation_structure",
+            title = "Compensation structure",
+            requestAliases = listOf(
+                "compensation structure", "salary structure",
+                "remuneration structure", "how is the compensation structured",
+                "compensation breakdown", "amount breakdown",
+                "how is the salary", "payment structure",
+                "what is the compensation", "compensation details"
+            ),
+            requiredCoverageKeys = listOf("finance.compensation_structure")
         ),
         RequestIntentDefinition(
             key = "ip.arrangements",
@@ -187,13 +217,43 @@ object AiReplyIntentCatalog {
             title = "Next stages",
             requestAliases = listOf("next stages", "next steps", "what happens next", "application process", "timeline"),
             requiredCoverageKeys = listOf("application.steps")
+        ),
+        RequestIntentDefinition(
+            key = "work.time_commitment",
+            title = "Time commitment",
+            requestAliases = listOf(
+                "time commitment", "time requirement", "how much time",
+                "weekly hours", "monthly hours", "hours per week",
+                "hours per month", "level of involvement",
+                "how many hours", "time involved", "how involved"
+            ),
+            requiredCoverageKeys = listOf("work.time_commitment")
+        ),
+        RequestIntentDefinition(
+            key = "work.advisory_duration",
+            title = "Advisory project duration",
+            requestAliases = listOf(
+                "typical duration", "duration of advisory projects",
+                "advisory project duration", "how long advisory project",
+                "project duration", "how long do projects last",
+                "length of advisory", "how long is a typical project"
+            ),
+            requiredCoverageKeys = listOf("work.advisory_duration")
         )
     )
 
     private val timingAliases = listOf("timeline", "when", "how long", "duration", "dates", "deadline", "time frame")
+    private val advisoryDurationAliases = listOf(
+        "typical duration", "duration of advisory projects", "advisory project duration",
+        "how long advisory project", "project duration", "how long do projects last",
+        "length of advisory", "how long is a typical project"
+    )
     /** Explicit project-type ask phrases — keep enterprise.project_types even alongside selection/matching. */
     private val explicitProjectTypeAliases = listOf(
-        "types of projects", "types of enterprise", "project type", "project types"
+        "types of projects", "types of enterprise", "project type", "project types",
+        "types of chinese enterprises", "types of chinese companies",
+        "examples of enterprise", "examples of enterprises",
+        "what enterprise", "what enterprises"
     )
     private val urlPattern = Regex("""https?://\S+|[?&]\w+=\S+""", RegexOption.IGNORE_CASE)
     private val dashPattern = Regex("""[\u002D\u2013\u2014\u2015]+""")
@@ -215,6 +275,12 @@ object AiReplyIntentCatalog {
         }
         val disambiguated = disambiguateSelectionMatchingProjectTypes(canonical, matched)
         val asksTiming = timingAliases.any { wordBoundaryContains(canonical, it) }
+        val asksAdvisoryDuration = advisoryDurationAliases.any { alias ->
+            wordBoundaryContains(canonical, canonicalize(alias))
+        }
+        val hasWorkIntents = disambiguated.any {
+            it.key == "work.time_commitment" || it.key == "work.advisory_duration"
+        }
 
         val result = if (disambiguated.isEmpty()) {
             listOf(
@@ -227,10 +293,11 @@ object AiReplyIntentCatalog {
             )
         } else {
             disambiguated.map { def ->
-                if (def.key == "application.next_stages" && asksTiming) {
-                    def.copy(requiredCoverageKeys = listOf("application.steps", "application.timeline"))
-                } else {
-                    def
+                when {
+                    def.key == "application.next_stages" && asksTiming && !hasWorkIntents -> {
+                        def.copy(requiredCoverageKeys = listOf("application.steps", "application.timeline"))
+                    }
+                    else -> def
                 }
             }
         }

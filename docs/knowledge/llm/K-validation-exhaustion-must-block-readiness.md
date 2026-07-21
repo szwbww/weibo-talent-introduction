@@ -3,9 +3,9 @@ id: K-validation-exhaustion-must-block-readiness
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-21
-hit_count: 11
+hit_count: 13
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-1
-last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
+last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1
 ---
 经验：fallback 若只从事实覆盖重算 readiness，会丢失“两次模型校验失败”这一确定性安全状态，完整事实可被误标 READY。

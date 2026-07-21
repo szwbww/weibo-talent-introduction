@@ -47,119 +47,6 @@ class AiReplyPointByPointComposerTest {
         RequestIntentCoverage(key, title, emptyList(), evidenceIds, "SUPPORTED", emptyList())
 
     @Test
-    fun `composeFallback emits natural paragraphs without numbered headings`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary facts")))
-        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Visa facts")))
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(1, "- What is salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
-                RequestFactItem(2, "- Visa process?", listOf(2L), RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("application.next_stages", "Next stages", listOf(2L))))
-            )
-        )
-
-        assertTrue(text.startsWith("Dear \${expertName|Professor},"))
-        assertTrue(text.contains("Salary facts"))
-        assertTrue(text.contains("Visa facts"))
-        assertTrue(text.contains(QaReplyComposer.CLOSING))
-        assertFalse(text.contains(QaReplyComposer.GREETING))
-        assertFalse(text.contains("1. Financial arrangements"))
-        assertFalse(text.contains("2. Next stages"))
-        assertFalse(text.contains("Please see point"))
-    }
-
-    @Test
-    fun `unsupported items are omitted from fallback body`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Salary only")))
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(1, "- Salary?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))),
-                RequestFactItem(2, "- Research match?", listOf(7L), RequestGroundingStatus.GROUNDED,
-                    requiresResearchContext = true,
-                    intents = listOf(RequestIntentCoverage("expertise.programme_fit", "Research fit", emptyList(), listOf(7L), "SUPPORTED", emptyList(), requiresResearchContext = true))),
-                RequestFactItem(3, "- Unknown?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            )
-        )
-
-        assertTrue(text.contains("Salary only"))
-        assertFalse(text.contains("Research match"))
-        assertFalse(text.contains("Unknown"))
-        assertFalse(text.contains("UNSUPPORTED", ignoreCase = true))
-        assertFalse(text.contains("This still needs confirmation"))
-    }
-
-    @Test
-    fun `partial has facts without confirmation trailer`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Partial facts")))
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(1, "Deliverables details?", listOf(1L), RequestGroundingStatus.PARTIAL,
-                    intents = listOf(supportedIntent("role.deliverables", "Deliverables", listOf(1L))))
-            )
-        )
-
-        assertTrue(text.contains("Partial facts"))
-        assertFalse(text.contains("This still needs confirmation"))
-    }
-
-    @Test
-    fun `identical fact bodies are deduplicated without cross references`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(rule(1, "Shared enterprise matching facts"))
-        )
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(3, "- Matching?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("enterprise.matching", "Enterprise matching", listOf(1L)))),
-                RequestFactItem(7, "- Enterprise projects?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("enterprise.project_types", "Enterprise project types", listOf(1L))))
-            )
-        )
-
-        assertTrue(text.contains("Shared enterprise matching facts"))
-        assertFalse(text.contains("Please see point"))
-        assertEquals(1, Regex("Shared enterprise matching facts").findAll(text).count())
-    }
-
-    @Test
-    fun `composeFallback skips blank answerBody and does not read replyBody`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(
-                rule(1, "Visible salary facts").copy(
-                    answerBody = "",
-                    replyBody = "Legacy 10 million RMB guarantee"
-                )
-            )
-        )
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(
-                    1,
-                    "Salary?",
-                    listOf(1L),
-                    RequestGroundingStatus.GROUNDED,
-                    intents = listOf(supportedIntent("finance.arrangements", "Financial arrangements", listOf(1L)))
-                )
-            )
-        )
-
-        assertFalse(text.contains("Legacy 10 million RMB guarantee"))
-        assertFalse(text.contains("Visible salary facts"))
-    }
-
-    @Test
     fun `composeFromSections deduplicates identical answers`() {
         stubFrame()
         val text = composer.composeFromSections(
@@ -218,23 +105,6 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
-    fun `all omitted items return frame only`() {
-        stubFrame()
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(1, "- Research?", emptyList(), RequestGroundingStatus.UNSUPPORTED,
-                    requiresResearchContext = true,
-                    intents = listOf(RequestIntentCoverage("expertise.programme_fit", "Research fit and enterprise projects", emptyList(), emptyList(), "MISSING", emptyList())))
-            )
-        )
-        assertTrue(text.contains("Dear \${expertName|Professor},"))
-        assertTrue(text.contains(QaReplyComposer.CLOSING))
-        assertFalse(text.contains("1. Research fit"))
-        assertFalse(text.contains("confirmation", ignoreCase = true))
-        assertFalse(text.contains("insufficient", ignoreCase = true))
-    }
-
-    @Test
     fun `resolveGroupTitle merges company intents into company details`() {
         val title = AiReplyIntentCatalog.resolveGroupTitle(
             listOf("company.legal_name", "company.registered_location"),
@@ -261,65 +131,114 @@ class AiReplyPointByPointComposerTest {
         assertEquals("Some question text", title)
     }
 
-    @Test
-    fun `research intent fallback consumes supported evidence`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(rule(1, "Programme scope includes ML, NLP, and computer vision."))
+    // ── composeFallbackReference tests (Phase 09 I-5/I-6) ──
+
+    private fun plan(vararg claimTuples: Triple<Int, String, List<Long>>, missing: List<Pair<Int, List<String>>> = emptyList()) =
+        GroundedContentPlan(
+            claims = claimTuples.map { GroundedClaimPlan(it.first.toString(), it.first, it.second, it.third) },
+            paragraphs = claimTuples.mapIndexed { idx, t ->
+                GroundedParagraphPlan(idx + 1, listOf(t.first.toString()))
+            },
+            missingFacts = missing.map { GroundedMissingFactPlan(it.first, it.second) },
+            allowedActions = emptySet(),
+            requiresReview = false
         )
 
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(
-                    1, "- Research fit?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    requiresResearchContext = true,
-                    intents = listOf(
-                        RequestIntentCoverage(
-                            "expertise.programme_fit",
-                            "Research fit and enterprise projects",
-                            emptyList(),
-                            listOf(1L),
-                            "SUPPORTED",
-                            emptyList(),
-                            requiresResearchContext = true
-                        )
-                    )
-                )
+    @Test
+    fun `reference shows facts from plan sourceIds in request index order`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Fact A")))
+        Mockito.`when`(qaRuleRepository.findById(2L)).thenReturn(Optional.of(rule(2, "Fact B")))
+
+        val text = composer.composeFallbackReference(
+            plan = plan(
+                Triple(2, "intentB", listOf(2L)),
+                Triple(1, "intentA", listOf(1L))
+            ),
+            requestFacts = listOf(
+                RequestFactItem(1, "Q-A?", emptyList(), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(2, "Q-B?", emptyList(), RequestGroundingStatus.GROUNDED)
             )
         )
-
-        assertTrue(text.contains("Programme scope includes ML, NLP, and computer vision."))
-        assertFalse(text.contains("Research fit and enterprise projects"))
-        assertFalse(text.contains("This still needs confirmation"))
+        assertTrue(text.contains("QA 规则参考内容"))
+        assertTrue(text.contains("Fact A"))
+        assertTrue(text.contains("Fact B"))
+        val posA = text.indexOf("Fact A")
+        val posB = text.indexOf("Fact B")
+        assertTrue(posA < posB, "request index order: Q-A (1) before Q-B (2)")
     }
 
     @Test
-    fun `research fallback does not dump profile text`() {
-        stubFrame()
-        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(
-            Optional.of(rule(1, "Expert profile: Dr. Smith, PhD in ML."))
-        )
-
-        val text = composer.composeFallback(
-            listOf(
-                RequestFactItem(
-                    1, "- Research fit?", listOf(1L), RequestGroundingStatus.GROUNDED,
-                    requiresResearchContext = true,
-                    intents = listOf(
-                        RequestIntentCoverage(
-                            "expertise.programme_fit",
-                            "Research fit and enterprise projects",
-                            emptyList(),
-                            listOf(1L),
-                            "SUPPORTED",
-                            emptyList(),
-                            requiresResearchContext = true
-                        )
-                    )
-                )
+    fun `reference shows missing requests from plan missingFacts`() {
+        val text = composer.composeFallbackReference(
+            plan = plan(
+                Triple(1, "intentA", listOf(1L)),
+                missing = listOf(2 to listOf("MissingIntent"))
+            ),
+            requestFacts = listOf(
+                RequestFactItem(1, "Q-A?", listOf(1L), RequestGroundingStatus.GROUNDED,
+                    intents = listOf(RequestIntentCoverage("intentA", "Fact A title", emptyList(), listOf(1L), "SUPPORTED", emptyList()))),
+                RequestFactItem(2, "Q-B?", emptyList(), RequestGroundingStatus.UNSUPPORTED,
+                    intents = listOf(RequestIntentCoverage("MissingIntent", "MissingIntent title", emptyList(), emptyList(), "MISSING", emptyList())))
             )
         )
+        assertTrue(text.contains("缺失：暂无已审核事实"))
+        assertTrue(text.contains("MissingIntent title"))
+    }
 
-        assertTrue(text.contains("Expert profile: Dr. Smith, PhD in ML."))
+    @Test
+    fun `reference with only missing facts still shows all requests`() {
+        val text = composer.composeFallbackReference(
+            plan = plan(
+                missing = listOf(1 to listOf("A"), 2 to listOf("B"))
+            ),
+            requestFacts = listOf(
+                RequestFactItem(1, "Q-A?", emptyList(), RequestGroundingStatus.UNSUPPORTED),
+                RequestFactItem(2, "Q-B?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            )
+        )
+        assertTrue(text.contains("问题 1"))
+        assertTrue(text.contains("问题 2"))
+        assertTrue(text.contains("缺失：暂无已审核事实"))
+    }
+
+    @Test
+    fun `reference deduplicates sourceIds across requests globally`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Shared fact")))
+        val text = composer.composeFallbackReference(
+            plan = plan(
+                Triple(1, "a", listOf(1L)),
+                Triple(2, "b", listOf(1L))
+            ),
+            requestFacts = listOf(
+                RequestFactItem(1, "Q-A?", emptyList(), RequestGroundingStatus.GROUNDED),
+                RequestFactItem(2, "Q-B?", emptyList(), RequestGroundingStatus.GROUNDED)
+            )
+        )
+        assertEquals(1, Regex("Shared fact").findAll(text).count(), "shared fact appears once")
+    }
+
+    @Test
+    fun `reference has no salutation greeting closing or CTA`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Please send your CV")))
+        val text = composer.composeFallbackReference(
+            plan = plan(Triple(1, "a", listOf(1L))),
+            requestFacts = listOf(RequestFactItem(1, "Q?", emptyList(), RequestGroundingStatus.GROUNDED))
+        )
+        assertFalse(text.contains("Dear"))
+        assertFalse(text.contains("Best regards"))
+        assertFalse(text.contains("Thank you"))
+        assertTrue(text.startsWith("QA 规则参考内容"))
+    }
+
+    @Test
+    fun `reference does not contain intent keys or internal IDs`() {
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "fact")))
+        val text = composer.composeFallbackReference(
+            plan = plan(Triple(1, "intentKey_x", listOf(1L))),
+            requestFacts = listOf(RequestFactItem(1, "Q?", emptyList(), RequestGroundingStatus.GROUNDED))
+        )
+        assertFalse(text.contains("intentKey_x"))
+        assertFalse(text.contains("claimKey"))
+        assertFalse(text.contains("sourceIds"))
     }
 }
