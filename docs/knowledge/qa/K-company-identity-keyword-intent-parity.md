@@ -2,8 +2,8 @@
 id: K-company-identity-keyword-intent-parity
 domain: qa
 created: 2026-07-16
-last_used: 2026-07-16
-hit_count: 2
+last_used: 2026-07-21
+hit_count: 3
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
 severity: P1
 ---

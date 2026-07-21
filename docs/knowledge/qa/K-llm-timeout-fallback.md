@@ -1,12 +1,13 @@
 ---
 id: K-llm-timeout-fallback
 domain: qa
-created: 2026-06-26
-last_used: 2026-07-19
-hit_count: 17
+created: 2026-07-21
+last_used: 2026-07-21
+hit_count: 18
 source: fix-v:qa-rules-phase3:fix-1
+last_source: create-p:ai-reply-08-llm-failure-workbench-contract
 severity: P1
 ---
-经验：可选 LLM 链路声明“超时回退”时，不能只 catch 异常；HTTP client 必须实际配置连接/读取超时，否则慢请求会阻塞人工工作台。
-正确做法：为 LLM client 使用专用 `RestTemplate`/HTTP client，并把 `talent-introduction.llm.timeout-ms` 接到 connect/read timeout；超时异常返回 null，由确定性组装兜底。
-反例：历史版本曾只在 `LlmProperties` 定义 `timeoutMs`，但 LLM HTTP client 未接 connect/read timeout；当前版本已由专用 `llmRestTemplate` 接入 timeout，后续新增 LLM client 时不得回退到无 timeout 的通用 `RestTemplate`。
+经验：LLM 超时不能只坍缩成 nullable 空响应并静默显示 fallback；运营必须知道是 timeout、限流、网络、服务异常还是空响应，且失败结果不能伪装成可采用草稿。
+正确做法：专用 HTTP client 必须接 connect/read timeout；回复专用 observed seam 返回稳定失败分类，服务层做一次有界 transient retry，并把最终稳定 warning 传到页面和审计。旧 nullable seam 只保留给兼容 caller。最终失败 fallback 只能是明确标记的内部参考，禁止采用和自动发送。
+反例：HTTP client catch 所有异常返回 null，DraftService 统一写 `FALLBACK_NO_RESPONSE`，页面只显示“模型无有效响应”。

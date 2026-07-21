@@ -2,8 +2,8 @@
 id: K-ai-generate-single-freeform-seam
 domain: qa
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 16
+last_used: 2026-07-21
+hit_count: 17
 source: create-p:ai-reply-04-grounded-trust-content-plan
 ---
 经验：`AiReplyDraftService.generate()` 当前有三个生产入口：`UnmatchedInboundMailController.aiReplyTurn`（人工工作台）、`AiTrainingController.simulate`（训练模拟）和 `GroundedAutoReplyDecisionService.decide`（自动实发/预览共享 decision）。任何生成 prompt、结构协议、claim/action gate 改动必须收口在 service 内，不能在 controller 或自动服务各复制一份。

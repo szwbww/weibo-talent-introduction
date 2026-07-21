@@ -2,8 +2,8 @@
 id: K-request-facts-not-flat-pool
 domain: qa
 created: 2026-07-12
-last_used: 2026-07-19
-hit_count: 27
+last_used: 2026-07-21
+hit_count: 28
 source: create-p:ai-reply-02-request-fact-matrix
 severity: P1
 ---

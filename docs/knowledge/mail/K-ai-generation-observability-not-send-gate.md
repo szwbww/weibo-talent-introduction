@@ -1,11 +1,12 @@
 ---
 id: K-ai-generation-observability-not-send-gate
 domain: mail
-created: 2026-07-16
-last_used: 2026-07-20
-hit_count: 17
+created: 2026-07-21
+last_used: 2026-07-21
+hit_count: 18
 source: create-p:ai-adopt-direct-manual-send
-last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
+last_source: create-p:ai-reply-08-llm-failure-workbench-contract
 severity: P1
 ---
-经验：当产品明确将 AI 草稿定位为人工写作辅助、而非发送审批时，初稿 quality/audit 写入只能用于观测；不得让历史 READY/NEEDS_REVIEW/BLOCKED、draft identity 或日志写失败影响人工富文本外发。采用操作只负责把对应草稿复制进编辑器并保留 raw/rendered 边界，最终外发仍走统一变量渲染与 QA 关联链。
+经验：AI 生成状态不是纯人工邮件的历史发送审批，但产品可以在“采用 AI 结果”边界明确拒绝未经过 LLM 的 fallback；两种门禁不能混为一谈。
+正确做法：采用入口按当前草稿自身 `usedLlm/generationState` 决定能否复制到编辑器；LLM 失败参考不可采用。运营自行撰写的编辑器正文仍不读取历史 READY/NEEDS_REVIEW/BLOCKED、draft identity 或审计结果，最终外发只走当前变量渲染、事实复验与发送链。

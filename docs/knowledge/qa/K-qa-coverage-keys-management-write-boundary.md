@@ -2,8 +2,8 @@
 id: K-qa-coverage-keys-management-write-boundary
 domain: qa
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 0
+last_used: 2026-07-21
+hit_count: 1
 source: create-p:ai-reply-05-trust-boundary-readiness-plan
 severity: P1
 ---

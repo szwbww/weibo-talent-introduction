@@ -2,8 +2,8 @@
 id: K-qa-outbound-render-seams
 domain: qa
 created: 2026-07-12
-last_used: 2026-07-20
-hit_count: 14
+last_used: 2026-07-21
+hit_count: 15
 source: create-p:qa-reply-personalization-backend
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 ---

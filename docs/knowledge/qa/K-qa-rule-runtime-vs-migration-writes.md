@@ -2,8 +2,8 @@
 id: K-qa-rule-runtime-vs-migration-writes
 domain: qa
 created: 2026-07-11
-last_used: 2026-07-17
-hit_count: 15
+last_used: 2026-07-21
+hit_count: 16
 source: create-p:qa-keyword-gap-v68
 ---
 经验：`qa_rule` 有两类写路径——Flyway 迁移（V3/V38/V52/V57/V63/V65/V68…批量修订）和 `QaRuleManagementService`（运营 UI 运行时改 keywords/reply_body/enabled）。迁移中的 `UPDATE qa_rule SET keywords/reply_body` 会无条件覆盖运营的运行时改动。

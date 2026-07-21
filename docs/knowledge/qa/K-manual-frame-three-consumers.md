@@ -2,8 +2,8 @@
 id: K-manual-frame-three-consumers
 domain: qa
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 16
+last_used: 2026-07-21
+hit_count: 17
 source: create-p:ai-reply-04-grounded-trust-content-plan
 severity: P1
 ---

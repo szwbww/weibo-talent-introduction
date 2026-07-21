@@ -2,8 +2,8 @@
 id: K-answerbody-source-exclusive
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-20
-hit_count: 7
+last_used: 2026-07-21
+hit_count: 8
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-2
 last_source: create-p:ai-reply-final-send-identity-scope-repair
 severity: P1
