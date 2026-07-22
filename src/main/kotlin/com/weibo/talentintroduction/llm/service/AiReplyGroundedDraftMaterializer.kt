@@ -510,7 +510,10 @@ class AiReplyGroundedDraftMaterializer(
             RegexOption.IGNORE_CASE
         )
         private val INTERNAL_INTENT_LABEL = Regex(
-            """(?<![A-Za-z0-9_.])[a-z]+\.[a-z_]+(?:\.[a-z_]+)?(?![A-Za-z0-9_.])"""
+            "(?<![A-Za-z0-9_.])(?:" +
+                (AiReplyIntentCatalog.definitions.map { it.key } + "general.answer")
+                    .joinToString("|") { Regex.escape(it) } +
+                ")(?![A-Za-z0-9_.])"
         )
         private val RULE_ID_LABEL = Regex(
             """(?i)(?:\bRULE\s+\d+\b|EVIDENCE_RULE_IDS|INTENT:\s*\w+\.\w+)"""

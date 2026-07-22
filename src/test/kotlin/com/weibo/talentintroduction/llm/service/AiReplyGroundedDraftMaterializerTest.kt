@@ -284,4 +284,28 @@ class AiReplyGroundedDraftMaterializerTest {
             )
         )
     }
+
+    @Test
+    fun `natural structure gate allows website domains in configured closing`() {
+        val closing = """
+            Website: http://www.qingfeitalent.com/
+            LinkedIn: http://www.linkedin.com/in/yuyun-chou-48899a392
+        """.trimIndent()
+
+        assertFalse(AiReplyGroundedDraftMaterializer.containsNonNaturalGroundedStructure(closing))
+    }
+
+    @Test
+    fun `natural structure gate still catches known internal intent labels`() {
+        assertTrue(
+            AiReplyGroundedDraftMaterializer.containsNonNaturalGroundedStructure(
+                "Internal routing: finance.arrangements"
+            )
+        )
+        assertTrue(
+            AiReplyGroundedDraftMaterializer.containsNonNaturalGroundedStructure(
+                "Internal routing: general.answer"
+            )
+        )
+    }
 }
