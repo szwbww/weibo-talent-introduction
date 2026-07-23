@@ -175,6 +175,32 @@ class AiReplyHighRiskClaimValidatorTest {
     }
 
     @Test
+    fun `hyphenated high-risk source supports space-separated paraphrase`() {
+        val answer = "Intellectual property and compensation terms are set out in the agreement."
+        val sourceVariants = listOf(
+            "intellectual-property",
+            "intellectual‐property",
+            "intellectual‑property",
+            "intellectual–property",
+            "intellectual—property"
+        )
+
+        sourceVariants.forEach { source ->
+            assertFalse(
+                validator.containsUnbackedHighRiskDeclarations(answer, "Approved terms cover $source."),
+                "must accept punctuation variant: $source"
+            )
+        }
+        assertTrue(
+            validator.containsUnbackedHighRiskDeclarations(
+                "Confidentiality terms are set out in the agreement.",
+                "Approved terms cover intellectual-property."
+            ),
+            "must still reject a different unsupported high-risk family"
+        )
+    }
+
+    @Test
     fun `multiple validation failures return all distinct warning codes`() {
         Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(rule(1, "Participants may receive a small allowance.")))
 

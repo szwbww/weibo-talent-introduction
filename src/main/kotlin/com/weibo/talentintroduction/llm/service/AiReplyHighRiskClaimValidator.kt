@@ -247,15 +247,17 @@ class AiReplyHighRiskClaimValidator(
     }
 
     internal fun containsUnbackedHighRiskDeclarations(answer: String, combinedFacts: String): Boolean {
+        val normalizedAnswer = normalizeHighRiskText(answer)
+        val normalizedFacts = normalizeHighRiskText(combinedFacts)
         for (entry in HIGH_RISK_PHRASE_FAMILIES) {
             val answerHas = entry.value.any { phrase ->
-                wordBoundaryContains(answer, phrase)
+                wordBoundaryContains(normalizedAnswer, normalizeHighRiskText(phrase))
             }
             if (!answerHas) {
                 continue
             }
             val factsHave = entry.value.any { phrase ->
-                wordBoundaryContains(combinedFacts, phrase)
+                wordBoundaryContains(normalizedFacts, normalizeHighRiskText(phrase))
             }
             if (!factsHave) {
                 return true
@@ -263,6 +265,12 @@ class AiReplyHighRiskClaimValidator(
         }
         return false
     }
+
+    private fun normalizeHighRiskText(text: String): String =
+        text
+            .replace(HIGH_RISK_SEPARATOR_REGEX, " ")
+            .replace(WHITESPACE_REGEX, " ")
+            .trim()
 
     internal fun wordBoundaryContains(text: String, phrase: String): Boolean {
         val escaped = Regex.escape(phrase)
@@ -278,6 +286,9 @@ class AiReplyHighRiskClaimValidator(
         const val WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE = "AI_REPLY_CLAIM_CONFIDENTIALITY_SUBSTITUTE"
         const val WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED = "AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED"
         const val WARNING_CLAIM_ENTERPRISE_UNGROUNDED = "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
+
+        private val HIGH_RISK_SEPARATOR_REGEX = Regex("[\\p{Pd}\\u2212]+")
+        private val WHITESPACE_REGEX = Regex("\\s+")
 
         private val NUMBER_TOKEN_REGEX = Regex("\\b\\d[\\d,.]*\\b", RegexOption.IGNORE_CASE)
 
