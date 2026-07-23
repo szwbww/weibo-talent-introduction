@@ -198,6 +198,7 @@ class AiReplyGroundedContentPlanner {
             "confidentiality.",
             "contract.",
             "ip.",
+            "publication.",
             "fees."
         )
 

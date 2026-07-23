@@ -159,6 +159,7 @@ class AiReplyHighRiskClaimValidatorTest {
             "The programme is free of charge" to "no fees",
             "There is an employment contract" to "labor contract",
             "IP ownership is defined" to "intellectual property",
+            "Publication authorship is agreed per project" to "publication rights",
             "An NDA is required" to "confidentiality"
         )
 

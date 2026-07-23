@@ -50,7 +50,14 @@ object AiReplyIntentCatalog {
             title = "Responsibilities and deliverables"
         ),
         IntentGroupTitle(
-            intentKeys = setOf("contract.terms", "finance.arrangements", "finance.compensation_structure", "ip.arrangements"),
+            intentKeys = setOf(
+                "contract.terms",
+                "finance.arrangements",
+                "finance.compensation_structure",
+                "ip.arrangements",
+                "publication.authorship",
+                "confidentiality.research"
+            ),
             title = "Contractual, financial and IP arrangements"
         ),
         IntentGroupTitle(
@@ -211,6 +218,24 @@ object AiReplyIntentCatalog {
             title = "IP arrangements",
             requestAliases = listOf("intellectual property", "ip rights", "ip arrangements", "patent", "who owns", "ownership"),
             requiredCoverageKeys = listOf("ip.arrangements")
+        ),
+        RequestIntentDefinition(
+            key = "publication.authorship",
+            title = "Publication authorship",
+            requestAliases = listOf(
+                "publication authorship", "publication rights", "authorship",
+                "author order", "publishing rights", "right to publish"
+            ),
+            requiredCoverageKeys = listOf("publication.authorship")
+        ),
+        RequestIntentDefinition(
+            key = "confidentiality.research",
+            title = "Research confidentiality",
+            requestAliases = listOf(
+                "research confidentiality", "confidentiality arrangements",
+                "confidentiality managed", "confidentiality policy", "research data confidentiality"
+            ),
+            requiredCoverageKeys = listOf("confidentiality.research")
         ),
         RequestIntentDefinition(
             key = "application.next_stages",

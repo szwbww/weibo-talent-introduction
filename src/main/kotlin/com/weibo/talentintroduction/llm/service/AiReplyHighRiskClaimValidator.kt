@@ -360,6 +360,10 @@ class AiReplyHighRiskClaimValidator(
             "no fees" to listOf("no fees", "free of charge", "at no cost", "no cost"),
             "labor contract" to listOf("labor contract", "employment contract"),
             "intellectual property" to listOf("intellectual property", "ip ownership", "ip rights"),
+            "publication authorship" to listOf(
+                "publication authorship", "publication rights", "publishing rights",
+                "right to publish", "authorship"
+            ),
             "confidentiality" to listOf("confidentiality", "confidential information", "nda"),
             "all expenses" to listOf("all expenses", "expenses covered")
         )

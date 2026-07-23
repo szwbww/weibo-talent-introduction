@@ -335,7 +335,13 @@ class AiReplyDraftService(
         operatorInstruction: String?,
         promptVersion: String
     ): AiReplyDraftResult {
-        val (observedResult, callCount) = executeWithRetry(client, boundedMessages, temperature, providerModel)
+        val (observedResult, callCount) = executeWithRetry(
+            client,
+            boundedMessages,
+            temperature,
+            providerModel,
+            jsonOutput = true
+        )
         val llmText = if (observedResult.failureType == LlmChatFailureType.SUCCESS) observedResult.content else null
 
         if (llmText == null) {
@@ -393,10 +399,10 @@ class AiReplyDraftService(
 
         val correctionMsg = buildTrustCorrectionMessage(
             warningCodes = firstResult.allWarnings,
-            allowedActions = plan.allowedActions
+            plan = plan
         )
         val retryMessages = boundedMessages + LlmChatMessage(role = "user", content = correctionMsg)
-        val retryObserved = client.chatWithModelObserved(retryMessages, temperature, providerModel)
+        val retryObserved = client.chatWithModelObservedJson(retryMessages, temperature, providerModel)
         val retryText = if (retryObserved.failureType == LlmChatFailureType.SUCCESS) retryObserved.content else null
 
         if (retryText == null) {
@@ -474,9 +480,14 @@ class AiReplyDraftService(
         client: LlmDraftClient,
         messages: List<LlmChatMessage>,
         temperature: Double,
-        providerModel: String
+        providerModel: String,
+        jsonOutput: Boolean = false
     ): Pair<LlmChatResult, Int> {
-        val firstResult = client.chatWithModelObserved(messages, temperature, providerModel)
+        val firstResult = if (jsonOutput) {
+            client.chatWithModelObservedJson(messages, temperature, providerModel)
+        } else {
+            client.chatWithModelObserved(messages, temperature, providerModel)
+        }
         if (firstResult.failureType == LlmChatFailureType.SUCCESS) {
             return Pair(firstResult, 1)
         }
@@ -490,7 +501,11 @@ class AiReplyDraftService(
         if (!retryable) {
             return Pair(firstResult, 1)
         }
-        val retryResult = client.chatWithModelObserved(messages, temperature, providerModel)
+        val retryResult = if (jsonOutput) {
+            client.chatWithModelObservedJson(messages, temperature, providerModel)
+        } else {
+            client.chatWithModelObserved(messages, temperature, providerModel)
+        }
         val totalCalls = 2
         if (retryResult.failureType == LlmChatFailureType.SUCCESS) {
             return Pair(retryResult, totalCalls)
@@ -683,23 +698,28 @@ class AiReplyDraftService(
 
     private fun buildTrustCorrectionMessage(
         warningCodes: List<String>,
-        allowedActions: Set<AiReplyAction>
+        plan: GroundedContentPlan
     ): String = buildString {
         appendLine("Your previous draft violated the trust boundary and action policy rules.")
-        appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(allowedActions)}.")
+        appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(plan.allowedActions)}.")
         appendLine("Violations:")
         warningCodes.forEach { code ->
             appendLine("- $code")
         }
+        if (AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED in warningCodes) {
+            appendLine(
+                "Remove every high-risk statement that is absent from that claim's RULE FACT. " +
+                    "Do not mention or answer any intent listed under Missing facts, including as an assurance."
+            )
+        }
         appendLine()
         appendLine(
-            "Return the corrected reply as the same JSON object " +
-                "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
-                "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
-                "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered name is ...\",\"sourceIds\":[24]}]," +
-                "\"missingFacts\":[],\"proposedAction\":{\"type\":\"NONE\",\"text\":null},\"requiresReview\":false} only. " +
+            "Return one corrected JSON object only. Reuse the exact claim keys, paragraph grouping, " +
+                "missing facts and requiresReview value from the SERVER PLAN below. " +
                 "No Markdown fence, no salutation, no closing, no STATUS labels."
         )
+        appendLine()
+        append(buildGroundedPlanSection(plan))
     }
 
     private fun withActionBoundary(

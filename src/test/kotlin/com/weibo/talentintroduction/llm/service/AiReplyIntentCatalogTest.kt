@@ -223,8 +223,8 @@ class AiReplyIntentCatalogTest {
     }
 
     @Test
-    fun `Q5 IP publication confidentiality matches ip dot arrangements`() {
-        assertExactKeys(q5, "ip.arrangements")
+    fun `Q5 splits IP publication and confidentiality into separate intents`() {
+        assertExactKeys(q5, "ip.arrangements", "publication.authorship", "confidentiality.research")
     }
 
     @Test

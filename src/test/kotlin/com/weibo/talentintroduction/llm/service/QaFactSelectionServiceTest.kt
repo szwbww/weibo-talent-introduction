@@ -209,7 +209,7 @@ class QaFactSelectionServiceTest {
     """.trimIndent()
 
     @Test
-    fun `seven due diligence questions yield exact 4 GROUNDED 1 PARTIAL 2 UNSUPPORTED`() {
+    fun `seven due diligence questions keep unsupported publication and confidentiality facts separate`() {
         val fundingRule = rule(
             id = 1, keywords = "compensated,advisory role compensated",
             answerBody = "The advisory role is compensated through a government-funded stipend.",
@@ -221,8 +221,8 @@ class QaFactSelectionServiceTest {
             replySubject = "Program overview"
         )
         val ipRule = rule(
-            id = 5, keywords = "intellectual property,ip rights,ownership,publication,authorship,confidentiality",
-            answerBody = "IP rights are negotiated per project; researchers typically retain publication rights.",
+            id = 5, keywords = "intellectual property,ip rights,ownership",
+            answerBody = "IP rights are negotiated per project.",
             replySubject = "IP arrangements"
         )
         val contractRule = rule(
@@ -254,7 +254,7 @@ class QaFactSelectionServiceTest {
                 RequestGroundingStatus.UNSUPPORTED,
                 RequestGroundingStatus.PARTIAL,
                 RequestGroundingStatus.UNSUPPORTED,
-                RequestGroundingStatus.GROUNDED,
+                RequestGroundingStatus.PARTIAL,
                 RequestGroundingStatus.GROUNDED,
                 RequestGroundingStatus.GROUNDED
             ),
@@ -264,9 +264,24 @@ class QaFactSelectionServiceTest {
         val grounded = reqFactStatusCount(resolved, RequestGroundingStatus.GROUNDED)
         val partial = reqFactStatusCount(resolved, RequestGroundingStatus.PARTIAL)
         val unsupported = reqFactStatusCount(resolved, RequestGroundingStatus.UNSUPPORTED)
-        assertEquals(4, grounded)
-        assertEquals(1, partial)
+        assertEquals(3, grounded)
+        assertEquals(2, partial)
         assertEquals(2, unsupported)
+
+        val ipFact = resolved.requestFacts.find { it.requestText.contains("publication authorship") }
+        assertNotNull(ipFact)
+        assertEquals(
+            "SUPPORTED",
+            ipFact!!.intents.single { it.intentKey == "ip.arrangements" }.status
+        )
+        assertEquals(
+            "MISSING",
+            ipFact.intents.single { it.intentKey == "publication.authorship" }.status
+        )
+        assertEquals(
+            "MISSING",
+            ipFact.intents.single { it.intentKey == "confidentiality.research" }.status
+        )
     }
 
     @Test
@@ -290,6 +305,22 @@ class QaFactSelectionServiceTest {
         assertNotNull(q2Fact)
         assertEquals(RequestGroundingStatus.GROUNDED, q1Fact!!.status)
         assertEquals(RequestGroundingStatus.UNSUPPORTED, q2Fact!!.status)
+    }
+
+    @Test
+    fun `publication authorship without an approved fact remains grounded missing`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val resolved = service.select(
+            inboundText = "How is publication authorship managed?",
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        val fact = resolved.requestFacts.single()
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, fact.status)
+        assertEquals("publication.authorship", fact.intents.single().intentKey)
+        assertTrue(AiReplyGroundedContentPlanner.hasTrustSensitiveNoFacts(resolved.requestFacts))
     }
 
     @Test

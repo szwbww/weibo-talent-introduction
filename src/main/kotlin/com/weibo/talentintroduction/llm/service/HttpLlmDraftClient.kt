@@ -86,6 +86,12 @@ interface LlmDraftClient {
             LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
         }
     }
+
+    fun chatWithModelObservedJson(
+        messages: List<LlmChatMessage>,
+        temperature: Double? = null,
+        providerModel: String
+    ): LlmChatResult = chatWithModelObserved(messages, temperature, providerModel)
 }
 
 @Component
@@ -132,10 +138,17 @@ class HttpLlmDraftClient(
         providerModel: String
     ): LlmChatResult = executeChatObserved(messages, temperature, providerModel)
 
+    override fun chatWithModelObservedJson(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String
+    ): LlmChatResult = executeChatObserved(messages, temperature, providerModel, jsonOutput = true)
+
     private fun executeChatObserved(
         messages: List<LlmChatMessage>,
         temperature: Double?,
-        model: String
+        model: String,
+        jsonOutput: Boolean = false
     ): LlmChatResult {
         if (properties.apiUrl.isBlank()) {
             return LlmChatResult(null, LlmChatFailureType.CLIENT_UNAVAILABLE)
@@ -146,11 +159,14 @@ class HttpLlmDraftClient(
                 setBearerAuth(properties.apiKey)
             }
         }
-        val body = mapOf(
+        val body = linkedMapOf<String, Any>(
             "model" to model,
             "messages" to messages.map { mapOf("role" to it.role, "content" to it.content) },
             "temperature" to (temperature ?: properties.temperature)
         )
+        if (jsonOutput) {
+            body["response_format"] = mapOf("type" to "json_object")
+        }
         val startMs = System.currentTimeMillis()
         return try {
             val response = restTemplate.postForEntity(

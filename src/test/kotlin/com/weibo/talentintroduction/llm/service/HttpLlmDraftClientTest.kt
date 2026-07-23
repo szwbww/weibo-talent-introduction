@@ -78,6 +78,28 @@ class HttpLlmDraftClientTest {
     }
 
     @Test
+    fun `json observed chat requests provider JSON output without changing plain chat`() {
+        stubResponse("{}")
+        val client = HttpLlmDraftClient(properties(), restTemplate, objectMapper)
+        val messages = listOf(LlmChatMessage("user", "return json"))
+        val captor = ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        client.chatWithModelObserved(messages, 0.2, properties().replyFlashModel)
+        client.chatWithModelObservedJson(messages, 0.2, properties().replyFlashModel)
+
+        Mockito.verify(restTemplate, Mockito.times(2)).postForEntity(
+            Mockito.eq("http://llm.local/v1/chat/completions"),
+            captor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val requests = captor.allValues.map { entity ->
+            objectMapper.readTree(entity.body as String)
+        }
+        assertFalse(requests[0].has("response_format"))
+        assertEquals("json_object", requests[1].path("response_format").path("type").asText())
+    }
+
+    @Test
     fun `AiReplyModel maps null to flash and rejects unknown`() {
         assertEquals(AiReplyModel.DEEPSEEK_V4_FLASH, AiReplyModel.fromNullable(null))
         assertEquals(AiReplyModel.DEEPSEEK_V4_FLASH, AiReplyModel.fromNullable("  "))
