@@ -1129,8 +1129,9 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             ).body as SseEmitter
             val capture = captureEmitterChunks(emitter)
             assertTrue(ready.await(1, TimeUnit.SECONDS))
+            eventually("first endpoint progress") { progressEventCount(capture) >= 1 }
             releasePhase.countDown()
-            eventually("phase endpoint progress") { progressEventCount(capture) >= 1 }
+            eventually("phase endpoint progress") { progressEventCount(capture) >= 2 }
             assertEquals(2, progressEventCount(capture), "endpoint phase change must preempt delayed progress")
             releaseResult.countDown()
         } finally {
@@ -1149,6 +1150,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         val generationId = UUID.randomUUID().toString()
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
+        val progressSendEntered = CountDownLatch(1)
+        val releaseFailedSend = CountDownLatch(1)
         try {
             stubEndpointContext(id)
             Mockito.doAnswer { invocation ->
@@ -1156,9 +1159,11 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 entered.countDown()
                 release.await(1, TimeUnit.SECONDS)
                 reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                progressSendEntered.await(1, TimeUnit.SECONDS)
                 val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
                 sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
                 sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
+                releaseFailedSend.countDown()
                 runtimeResult()
             }.`when`(aiReplyDraftService).generate(
                 Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
@@ -1170,15 +1175,21 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 id,
                 AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
             ).body as SseEmitter
-            val capture = captureEmitterChunks(emitter, failOnEvent = "event:progress")
+            val capture = captureEmitterChunks(
+                emitter,
+                failOnEvent = "event:progress",
+                failureEntered = progressSendEntered,
+                releaseFailure = releaseFailedSend
+            )
             assertTrue(entered.await(1, TimeUnit.SECONDS))
             release.countDown()
             eventually("send failure cleanup") {
                 endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
             }
-            assertEquals(2, capture.sendAttempts.get(), "endpoint send failure must not retry pending progress")
+            assertEquals(1, capture.failedEventAttempts.get(), "endpoint send failure must not retry pending progress")
         } finally {
             release.countDown()
+            releaseFailedSend.countDown()
             executor.shutdownNow()
             scheduler.shutdownNow()
         }
@@ -1235,17 +1246,21 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         val chunks: MutableList<Any?>,
         val timeoutCallbacks: MutableList<Runnable>,
         val completionCallbacks: MutableList<Runnable>,
-        val sendAttempts: AtomicInteger
+        val sendAttempts: AtomicInteger,
+        val failedEventAttempts: AtomicInteger
     )
 
     private fun captureEmitterChunks(
         emitter: SseEmitter,
-        failOnEvent: String? = null
+        failOnEvent: String? = null,
+        failureEntered: CountDownLatch? = null,
+        releaseFailure: CountDownLatch? = null
     ): CapturedEmitter {
         val chunks = java.util.Collections.synchronizedList(mutableListOf<Any?>())
         val timeoutCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
         val completionCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
         val sendAttempts = AtomicInteger()
+        val failedEventAttempts = AtomicInteger()
         val handlerType = Class.forName(
             "org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter\$Handler"
         )
@@ -1258,6 +1273,9 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                     sendAttempts.incrementAndGet()
                     val data = args?.get(0)
                     if (failOnEvent != null && data?.toString()?.contains(failOnEvent) == true) {
+                        failedEventAttempts.incrementAndGet()
+                        failureEntered?.countDown()
+                        releaseFailure?.await(1, TimeUnit.SECONDS)
                         throw java.io.IOException("test emitter disconnected")
                     }
                     chunks += data
@@ -1272,7 +1290,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         val initialize = emitter.javaClass.superclass.getDeclaredMethod("initialize", handlerType)
         initialize.isAccessible = true
         initialize.invoke(emitter, handler)
-        return CapturedEmitter(chunks, timeoutCallbacks, completionCallbacks, sendAttempts)
+        return CapturedEmitter(chunks, timeoutCallbacks, completionCallbacks, sendAttempts, failedEventAttempts)
     }
 
     @Test

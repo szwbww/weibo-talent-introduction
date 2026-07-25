@@ -158,6 +158,7 @@ class AiReplyProgressTracker(
     private var progressSeq = 0L
     private var providerCallIndex = 0
     private var providerCallStartedAt: Long? = null
+    private var providerCallElapsedMillis = 0L
     private var latestProviderActivityAt = clock()
     private var eventCount = 0
     private var contentChars = 0
@@ -188,6 +189,7 @@ class AiReplyProgressTracker(
             transitionLocked(phase)
             providerCallIndex = if (providerCallIndex == Int.MAX_VALUE) Int.MAX_VALUE else providerCallIndex + 1
             providerCallStartedAt = clock()
+            providerCallElapsedMillis = 0L
             currentAttemptTimeoutMillis = timeoutMillis.coerceAtLeast(0L)
             activity = AiReplyProviderActivity.WAITING
             latestProviderActivityAt = clock()
@@ -220,6 +222,10 @@ class AiReplyProgressTracker(
 
     override fun endProviderCall() {
         synchronized(lock) {
+            providerCallStartedAt?.let {
+                providerCallElapsedMillis = ((clock() - it) / 1_000_000L).coerceAtLeast(0L)
+            }
+            providerCallStartedAt = null
             activity = AiReplyProviderActivity.IDLE
             publishLocked()
         }
@@ -241,7 +247,9 @@ class AiReplyProgressTracker(
         val totalElapsed = if (currentBudget == null) 0L else {
             ((now - (currentBudget.totalDeadlineNanos - totalTimeoutSeconds * 1_000_000_000L)) / 1_000_000L).coerceAtLeast(0L)
         }
-        val attemptElapsed = providerCallStartedAt?.let { ((now - it) / 1_000_000L).coerceAtLeast(0L) } ?: 0L
+        val attemptElapsed = providerCallStartedAt?.let {
+            ((now - it) / 1_000_000L).coerceAtLeast(0L)
+        } ?: providerCallElapsedMillis
         return AiReplyProgressSnapshot(
             generationId = generationId,
             progressSeq = ++progressSeq,

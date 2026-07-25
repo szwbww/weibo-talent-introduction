@@ -470,7 +470,7 @@ class UnmatchedInboundMailController(
         val generationId = request.generationId?.trim()
             ?: throw IllegalArgumentException("generationId is required for streaming AI reply")
         val parsedGenerationId = runCatching { UUID.fromString(generationId) }.getOrNull()
-        require(parsedGenerationId != null && parsedGenerationId.toString() == generationId.lowercase()) {
+        require(parsedGenerationId != null && parsedGenerationId.toString() == generationId) {
             "generationId must be a canonical UUID"
         }
         val policy = AiReplyTimeoutPolicy.resolve(
@@ -602,10 +602,12 @@ private class GenerationControl(
     @Volatile
     private var status: GenerationStatus = GenerationStatus.REGISTERED
     private val terminalSent = AtomicBoolean(false)
+    private val cleanupDone = AtomicBoolean(false)
     private val sendLock = Any()
     private val progressStateLock = Any()
     private var pendingProgress: AiReplyProgressSnapshot? = null
     private var progressFlushFuture: ScheduledFuture<*>? = null
+    private var progressSendInFlight = false
     private var lastProgressSentAt = Long.MIN_VALUE
     private var lastProgressPhase: AiReplyProgressPhase? = null
 
@@ -622,52 +624,60 @@ private class GenerationControl(
     }
 
     fun publishProgress(snapshot: AiReplyProgressSnapshot) {
-        if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) return
         synchronized(progressStateLock) {
-            if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) return
+            if (!isProgressActive()) return
             pendingProgress = snapshot
-            if (progressFlushFuture == null || progressFlushFuture?.isDone == true) {
-                val phaseChanged = lastProgressPhase != snapshot.phase
-                val elapsed = System.nanoTime() - lastProgressSentAt
-                val delay = if (phaseChanged || lastProgressSentAt == Long.MIN_VALUE) {
-                    0L
-                } else {
-                    (1_000_000_000L - elapsed).coerceAtLeast(0L)
-                }
-                progressFlushFuture = progressScheduler.schedule(
-                    { flushProgress() }, delay, TimeUnit.NANOSECONDS
-                )
+            if (progressSendInFlight) return
+            val delay = progressDelayNanos(snapshot)
+            if (progressFlushFuture != null && progressFlushFuture?.isDone != true) {
+                if (delay != 0L) return
+                progressFlushFuture?.cancel(false)
             }
+            scheduleProgressFlushLocked(delay)
         }
     }
 
     private fun flushProgress() {
         val snapshot = synchronized(progressStateLock) {
             progressFlushFuture = null
-            if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) {
+            if (!isProgressActive()) {
                 pendingProgress = null
                 null
             } else {
-                pendingProgress.also { pendingProgress = null }
+                pendingProgress.also {
+                    pendingProgress = null
+                    progressSendInFlight = it != null
+                }
             }
         } ?: return
-        synchronized(sendLock) {
-            if (status == GenerationStatus.RUNNING || status == GenerationStatus.REGISTERED) {
-                sendLocked("progress", progressMap(snapshot))
-            }
+        val sent = synchronized(sendLock) {
+            isProgressActive() && sendLocked("progress", progressMap(snapshot))
         }
         synchronized(progressStateLock) {
-            lastProgressSentAt = System.nanoTime()
-            lastProgressPhase = snapshot.phase
-            if (pendingProgress != null && progressFlushFuture == null &&
-                (status == GenerationStatus.RUNNING || status == GenerationStatus.REGISTERED)
-            ) {
-                progressFlushFuture = progressScheduler.schedule(
-                    { flushProgress() }, 0L, TimeUnit.NANOSECONDS
-                )
+            progressSendInFlight = false
+            if (sent) {
+                lastProgressSentAt = System.nanoTime()
+                lastProgressPhase = snapshot.phase
+            }
+            pendingProgress?.takeIf { sent && isProgressActive() }?.let {
+                scheduleProgressFlushLocked(progressDelayNanos(it))
             }
         }
     }
+
+    private fun progressDelayNanos(snapshot: AiReplyProgressSnapshot): Long {
+        if (lastProgressPhase != snapshot.phase || lastProgressSentAt == Long.MIN_VALUE) return 0L
+        return (1_000_000_000L - (System.nanoTime() - lastProgressSentAt)).coerceAtLeast(0L)
+    }
+
+    private fun scheduleProgressFlushLocked(delayNanos: Long) {
+        progressFlushFuture = progressScheduler.schedule(
+            { flushProgress() }, delayNanos, TimeUnit.NANOSECONDS
+        )
+    }
+
+    private fun isProgressActive(): Boolean =
+        status == GenerationStatus.RUNNING || status == GenerationStatus.REGISTERED
 
     fun sendHeartbeat(snapshot: AiReplyProgressSnapshot?) {
         if (snapshot == null) return
@@ -713,6 +723,10 @@ private class GenerationControl(
     }
 
     fun disconnect() {
+        synchronized(sendLock) {
+            status = GenerationStatus.FINISHED
+            terminalSent.set(true)
+        }
         token.cancel()
         workerFuture?.cancel(true)
         heartbeatFuture?.cancel(false)
@@ -720,24 +734,30 @@ private class GenerationControl(
     }
 
     fun cleanup() {
+        if (!cleanupDone.compareAndSet(false, true)) return
         heartbeatFuture?.cancel(false)
         synchronized(progressStateLock) {
             progressFlushFuture?.cancel(false)
             progressFlushFuture = null
             pendingProgress = null
+            progressSendInFlight = false
         }
         onCleanup?.invoke()
     }
 
-    private fun sendLocked(name: String, data: Any) {
-        if (terminalSent.get() && name != "result" && name != "cancelled" && name != "error") return
-        try {
+    private fun sendLocked(name: String, data: Any): Boolean {
+        if (terminalSent.get() && name != "result" && name != "cancelled" && name != "error") return false
+        return try {
             emitter.send(SseEmitter.event().name(name).data(data))
+            true
         } catch (_: Exception) {
+            status = GenerationStatus.FINISHED
+            terminalSent.set(true)
             token.cancel()
             workerFuture?.cancel(true)
             heartbeatFuture?.cancel(false)
-            onCleanup?.invoke()
+            cleanup()
+            false
         }
     }
 

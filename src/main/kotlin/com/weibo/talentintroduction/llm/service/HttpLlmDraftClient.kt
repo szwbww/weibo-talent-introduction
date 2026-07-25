@@ -263,7 +263,7 @@ class HttpLlmDraftClient(
                     LlmChatFailureType.PROVIDER_ERROR
                 })
             }
-            if (!contentType.lowercase().startsWith("text/event-stream")) {
+            if (!contentType.substringBefore(';').trim().equals("text/event-stream", ignoreCase = true)) {
                 return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
             }
             input = response.body()
@@ -336,8 +336,8 @@ class HttpLlmDraftClient(
             }
             val text = content.toString()
             if (text.isBlank()) return LlmChatResult(null, LlmChatFailureType.EMPTY_RESPONSE)
-            log.info("LLM stream success model={} messageCount={} eventCount={} contentChars={} finishReason={} elapsedMs={}",
-                providerModel, messages.size, eventCount, contentChars, finishReason,
+            log.info("LLM stream success model={} eventCount={} contentChars={} finishReason={} elapsedMs={}",
+                providerModel, eventCount, contentChars, finishReason,
                 (System.nanoTime() - started) / 1_000_000)
             LlmChatResult(text)
         } catch (_: AiReplyGenerationCancelledException) {
@@ -372,8 +372,8 @@ class HttpLlmDraftClient(
     ) {
         try {
             sink.onActivity(activity, eventCount, contentChars)
-        } catch (ex: Exception) {
-            log.debug("LLM stream progress callback ignored type={}", ex.javaClass.simpleName)
+        } catch (_: Exception) {
+            log.debug("Progress callback ignored")
             if (token.isCancelled()) throw AiReplyGenerationCancelledException()
         }
     }

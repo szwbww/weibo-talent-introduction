@@ -401,8 +401,8 @@ function startAiReplyProgressTicker() {
         const next = { ...snapshot, totalElapsedSeconds: Math.min(snapshot.totalTimeoutSeconds, snapshot.totalElapsedSeconds + elapsed) };
         if (snapshot.providerActivity !== "IDLE") {
             next.attemptElapsedSeconds = Math.min(snapshot.attemptTimeoutSeconds, snapshot.attemptElapsedSeconds + elapsed);
-            next.secondsSinceProviderActivity = Math.min(2147483647, snapshot.secondsSinceProviderActivity + elapsed);
         }
+        next.secondsSinceProviderActivity = Math.min(2147483647, snapshot.secondsSinceProviderActivity + elapsed);
         renderAiReplyProgress(next);
     }, 1000);
 }
