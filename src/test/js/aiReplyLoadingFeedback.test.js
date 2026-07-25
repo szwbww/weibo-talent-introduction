@@ -23,6 +23,13 @@ function extractConst(name) {
     return match[0];
 }
 
+function extractHandler(name, nextFunction) {
+    const start = appJsSource.indexOf(`async function ${name}(`);
+    const end = appJsSource.indexOf(`\n}\n\nfunction ${nextFunction}`, start);
+    if (start < 0 || end < 0) throw new Error("Could not find handler " + name);
+    return appJsSource.slice(start, end + 2);
+}
+
 function createSandbox() {
     const sandbox = {
         AI_REPLY_MODEL_LABELS: {
@@ -146,7 +153,8 @@ describe("renderAiReplyFeedback generationState", () => {
     it("does not require new CSS classes or index.html markup for generationState", () => {
         const styles = fs.readFileSync(stylesCssPath, "utf-8");
         const indexHtml = fs.readFileSync(indexHtmlPath, "utf-8");
-        assert.doesNotMatch(styles, /generationState|ai-reply-generation/);
+        assert.match(styles, /\.ai-reply-generation-controls/);
+        assert.doesNotMatch(styles, /generationState/);
         assert.doesNotMatch(indexHtml, /generationState|ai-reply-generation/);
         assert.match(styles, /\.ai-reply-coverage/);
         assert.match(styles, /\.ai-reply-warning/);
@@ -157,6 +165,647 @@ describe("renderAiReplyFeedback generationState", () => {
         assert.doesNotMatch(appJsSource, /DeepSeek 不可用/);
         assert.match(appJsSource, /aiReplyGenerationStateLabel\(result\.generationState\)/);
         assert.match(appJsSource, /模型已生成/);
+    });
+
+    it("shows a distinct warning for total TTL exhaustion", () => {
+        const sandbox = createSandbox();
+        const container = { hidden: true, innerHTML: "" };
+        sandbox.renderAiReplyFeedback(container, {
+            generationState: "FALLBACK_NO_RESPONSE",
+            usedLlm: false,
+            requestCount: 0,
+            groundedRequestCount: 0,
+            contextWarnings: ["AI_REPLY_LLM_TOTAL_TIMEOUT"],
+            unsupportedRequests: []
+        });
+        assert.match(container.innerHTML, /DeepSeek 生成总时限已用尽/);
+        assert.match(appJsSource, /AI_REPLY_LLM_TOTAL_TIMEOUT/);
+    });
+
+    it("parses split and multi-frame SSE payloads without losing event order", () => {
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("parseAiReplySseFrames"), sandbox);
+        const first = sandbox.parseAiReplySseFrames("event: ready\ndata: {\"ok\":1}\n\nevent: pro");
+        assert.strictEqual(JSON.stringify(first.events), JSON.stringify([{ event: "ready", data: { ok: 1 } }]));
+        const second = sandbox.parseAiReplySseFrames(
+            first.remainder + "gress\ndata: {\"seq\":2}\n\nevent: result\ndata: {\"ok\":true}\n\n",
+            true
+        );
+        assert.strictEqual(JSON.stringify(second.events), JSON.stringify([
+            { event: "progress", data: { seq: 2 } },
+            { event: "result", data: { ok: true } }
+        ]));
+    });
+
+    it("resolves attempt and total TTL with auto and custom validation", () => {
+        const sandbox = {
+            aiReplyState: {
+                attemptTimeoutMode: "60",
+                attemptCustomSeconds: 30,
+                totalTimeoutMode: "auto",
+                totalCustomSeconds: 300,
+                attemptTimeoutSeconds: 30,
+                totalTimeoutSeconds: 300
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("integerSeconds"), sandbox);
+        vm.runInContext(extractFn("resolveAiReplyTimeoutSelection"), sandbox);
+        assert.strictEqual(JSON.stringify(sandbox.resolveAiReplyTimeoutSelection()), JSON.stringify({
+            attemptTimeoutSeconds: 60,
+            totalTimeoutSeconds: 600,
+            totalPayload: null
+        }));
+        sandbox.aiReplyState.totalTimeoutMode = "custom";
+        sandbox.aiReplyState.totalCustomSeconds = 59;
+        assert.throws(() => sandbox.resolveAiReplyTimeoutSelection(), /总 TTL/);
+    });
+
+    it("accepts timeout endpoints and emits custom total TTL in payload selection", () => {
+        const sandbox = {
+            aiReplyState: {
+                attemptTimeoutMode: "custom", attemptCustomSeconds: 10,
+                totalTimeoutMode: "custom", totalCustomSeconds: 10
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("integerSeconds"), sandbox);
+        vm.runInContext(extractFn("resolveAiReplyTimeoutSelection"), sandbox);
+        for (const [attempt, total] of [[10, 10], [600, 600], [60, 601], [600, 7200]]) {
+            sandbox.aiReplyState.attemptCustomSeconds = attempt;
+            sandbox.aiReplyState.totalCustomSeconds = total;
+            const selection = sandbox.resolveAiReplyTimeoutSelection();
+            assert.strictEqual(selection.attemptTimeoutSeconds, attempt);
+            assert.strictEqual(selection.totalTimeoutSeconds, total);
+            assert.strictEqual(selection.totalPayload, total);
+        }
+        sandbox.aiReplyState.attemptCustomSeconds = 601;
+        assert.throws(() => sandbox.resolveAiReplyTimeoutSelection(), /10–600/);
+        sandbox.aiReplyState.attemptCustomSeconds = 60;
+        sandbox.aiReplyState.totalCustomSeconds = 7201;
+        assert.throws(() => sandbox.resolveAiReplyTimeoutSelection(), /7200/);
+    });
+
+    it("syncs timeout DOM controls, automatic total text, and custom validation", () => {
+        const auto = { textContent: "" };
+        const attemptSelect = { value: "custom" };
+        const totalSelect = {
+            value: "custom",
+            querySelector: (selector) => selector === "option[value='auto']" ? auto : null
+        };
+        const attemptCustom = { value: "45" };
+        const totalCustom = { value: "450" };
+        const attemptWrap = { hidden: false };
+        const totalWrap = { hidden: false };
+        const elements = {
+            "#trustReplyAttemptTimeout": attemptSelect,
+            "#trustReplyTotalTimeout": totalSelect,
+            "#trustReplyAttemptTimeoutCustom": attemptCustom,
+            "#trustReplyTotalTimeoutCustom": totalCustom,
+            "#trustReplyAttemptTimeoutCustomWrap": attemptWrap,
+            "#trustReplyTotalTimeoutCustomWrap": totalWrap
+        };
+        const sandbox = {
+            aiReplyState: {
+                attemptTimeoutMode: "custom", totalTimeoutMode: "custom",
+                attemptCustomSeconds: 45, totalCustomSeconds: 450
+            },
+            $: (selector) => elements[selector]
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("integerSeconds"), sandbox);
+        vm.runInContext(extractFn("resolveAiReplyTimeoutSelection"), sandbox);
+        vm.runInContext(extractFn("syncAiReplyTimeoutControls"), sandbox);
+        sandbox.syncAiReplyTimeoutControls();
+        assert.strictEqual(auto.textContent, "自动（450 秒）");
+        assert.strictEqual(JSON.stringify(sandbox.resolveAiReplyTimeoutSelection()), JSON.stringify({
+            attemptTimeoutSeconds: 45, totalTimeoutSeconds: 450, totalPayload: 450
+        }));
+        sandbox.aiReplyState.attemptCustomSeconds = "bad";
+        assert.throws(() => sandbox.resolveAiReplyTimeoutSelection(), /10–600/);
+    });
+
+    it("renders phase, activity, total TTL bar and accessible title", () => {
+        let progress;
+        const children = {
+            ".ai-reply-progress-phase": { textContent: "" },
+            ".ai-reply-progress-detail": { textContent: "" },
+            ".ai-reply-progress-activity": { textContent: "" },
+            ".ai-reply-progress-track": {
+                value: 0,
+                attrs: new Map(),
+                setAttribute(name, value) { this.attrs.set(name, value); }
+            }
+        };
+        const sandbox = {
+            AI_REPLY_PROGRESS_PHASE_LABELS: { CALLING: "调用中" },
+            AI_REPLY_PROVIDER_ACTIVITY_LABELS: { WRITING: "输出中" },
+            $: () => progress,
+            integerSeconds: (value) => Number.isInteger(Number(value)) ? Number(value) : null
+        };
+        progress = { querySelector: (selector) => children[selector] };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("renderAiReplyProgress"), sandbox);
+        sandbox.renderAiReplyProgress({
+            phase: "CALLING", providerActivity: "WRITING", providerCallIndex: 1,
+            attemptElapsedSeconds: 3, attemptTimeoutSeconds: 30,
+            totalElapsedSeconds: 150, totalTimeoutSeconds: 300,
+            providerEventCount: 4, contentChars: 12, secondsSinceProviderActivity: 2
+        });
+        assert.strictEqual(children[".ai-reply-progress-phase"].textContent, "调用中");
+        assert.match(children[".ai-reply-progress-detail"].textContent, /本次 3\/30 秒/);
+        assert.match(children[".ai-reply-progress-activity"].textContent, /输出中/);
+        assert.strictEqual(children[".ai-reply-progress-track"].value, 50);
+        assert.strictEqual(children[".ai-reply-progress-track"].attrs.get("aria-valuenow"), "50");
+        assert.match(children[".ai-reply-progress-track"].title, /150\/300/);
+    });
+
+    it("creates a generation id through the UUID seam", () => {
+        const sandbox = { crypto: { randomUUID: () => "uuid-from-browser" } };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("createAiReplyGenerationId"), sandbox);
+        assert.strictEqual(sandbox.createAiReplyGenerationId(), "uuid-from-browser");
+    });
+
+    it("loading overlay creates a stoppable control and restores controls on cleanup", () => {
+        const control = {
+            disabled: false,
+            attrs: new Map(),
+            hasAttribute(name) { return this.attrs.has(name); },
+            setAttribute(name, value) { this.attrs.set(name, value); },
+            getAttribute(name) { return this.attrs.get(name); },
+            removeAttribute(name) { this.attrs.delete(name); }
+        };
+        const text = { textContent: "" };
+        const stop = { disabled: true };
+        const overlay = {
+            attrs: new Map(),
+            innerHTML: "",
+            remove() { panel.overlay = null; },
+            setAttribute(name, value) { this.attrs.set(name, value); },
+            insertAdjacentHTML(_position, html) {
+                this.hasProgress = true;
+                this.hasStop = true;
+            },
+            querySelector(selector) {
+                if (selector === ".ai-reply-loading-text") return text;
+                if (selector === "[data-action='ai-reply-stop']") return this.hasStop ? stop : null;
+                return null;
+            }
+        };
+        const panel = {
+            attrs: new Map(),
+            overlay: null,
+            setAttribute(name, value) { this.attrs.set(name, value); },
+            querySelectorAll() { return [control]; },
+            querySelector(selector) { return selector.startsWith(":scope") ? this.overlay : null; },
+            appendChild(value) { this.overlay = value; },
+        };
+        const sandbox = {
+            aiReplyState: { latestProgress: null },
+            document: {
+                createElement: () => {
+                    overlay.hasStop = false;
+                    overlay.hasProgress = false;
+                    return overlay;
+                }
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("setAiReplyLoading"), sandbox);
+        sandbox.setAiReplyLoading(panel, true, "生成中", { stoppable: true, totalTimeoutSeconds: 600 });
+        assert.strictEqual(panel.attrs.get("aria-busy"), "true");
+        assert.strictEqual(control.disabled, true);
+        assert.strictEqual(text.textContent, "生成中");
+        assert.strictEqual(stop.disabled, false);
+        sandbox.setAiReplyLoading(panel, false);
+        assert.strictEqual(panel.attrs.get("aria-busy"), "false");
+        assert.strictEqual(control.disabled, false);
+        sandbox.setAiReplyLoading(panel, true, "训练中");
+        assert.strictEqual(panel.overlay.hasProgress, false);
+        assert.strictEqual(panel.overlay.hasStop, false);
+        sandbox.setAiReplyLoading(panel, false);
+    });
+
+    it("posts generation id and both TTL values, then consumes terminal SSE", async () => {
+        let request;
+        let terminal;
+        const sandbox = {
+            contextPath: "",
+            aiReplyState: { activeGeneration: { generationId: "generation-1" } },
+            AbortController: class {
+                constructor() { this.signal = {}; this.aborted = false; }
+                abort() { this.aborted = true; }
+            },
+            setTimeout: () => 1,
+            clearTimeout: () => {},
+            TextDecoder,
+            TextEncoder,
+            handleAuthResponse: async () => {},
+            fetch: async (url, options) => {
+                request = { url, options };
+                let index = 0;
+                const chunks = [
+                    new TextEncoder().encode('event: ready\ndata: {"generationId":"generation-1"}\n\n'),
+                    new TextEncoder().encode('event: result\ndata: {"draftText":"done"}\n\n')
+                ];
+                return {
+                    ok: true,
+                    body: {
+                        getReader() {
+                            return {
+                                async read() {
+                                    if (index < chunks.length) return { done: false, value: chunks[index++] };
+                                    return { done: true, value: new Uint8Array() };
+                                },
+                                async cancel() {}
+                            };
+                        }
+                    }
+                };
+            },
+            acceptAiReplyProgressSnapshot: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("parseAiReplySseFrames"), sandbox);
+        vm.runInContext(extractFn("postAiReplySse"), sandbox);
+        await sandbox.postAiReplySse(7, {
+            generationId: "generation-1",
+            llmAttemptTimeoutSeconds: 60,
+            llmTotalTimeoutSeconds: 600,
+            _resolvedTotalTimeoutSeconds: 600
+        }, {
+            onTerminal: (event, data) => { terminal = { event, data }; }
+        });
+        assert.match(request.url, /\/api\/mail\/unmatched-inbound\/7\/ai-reply\/turn-stream$/);
+        assert.strictEqual(request.options.method, "POST");
+        assert.strictEqual(request.options.headers.Accept, "text/event-stream");
+        const body = JSON.parse(request.options.body);
+        assert.strictEqual(body.generationId, "generation-1");
+        assert.strictEqual(body.llmAttemptTimeoutSeconds, 60);
+        assert.strictEqual(body.llmTotalTimeoutSeconds, 600);
+        assert.strictEqual(Object.hasOwn(body, "_resolvedTotalTimeoutSeconds"), false);
+        assert.strictEqual(terminal.event, "result");
+        assert.strictEqual(terminal.data.draftText, "done");
+    });
+
+    it("consumes result, cancelled, and error terminal events and always cancels the reader", async () => {
+        for (const event of ["result", "cancelled", "error"]) {
+            let cancelled = 0;
+            let terminal;
+            const sandbox = {
+                contextPath: "",
+                aiReplyState: { activeGeneration: { generationId: "generation-1" } },
+                AbortController: class { constructor() { this.signal = {}; } abort() {} },
+                TextDecoder,
+                TextEncoder,
+                setTimeout: () => 1,
+                clearTimeout: () => {},
+                handleAuthResponse: async () => {},
+                fetch: async () => ({
+                    ok: true,
+                    body: {
+                        getReader() {
+                            let read = false;
+                            return {
+                                async read() {
+                                    if (read) return { done: true, value: new Uint8Array() };
+                                    read = true;
+                                    return {
+                                        done: false,
+                                        value: new TextEncoder().encode(`event: ${event}\ndata: {"generationId":"generation-1"}\n\n`)
+                                    };
+                                },
+                                async cancel() { cancelled += 1; }
+                            };
+                        }
+                    }
+                }),
+                acceptAiReplyProgressSnapshot: () => {}
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(extractFn("parseAiReplySseFrames"), sandbox);
+            vm.runInContext(extractFn("postAiReplySse"), sandbox);
+            await sandbox.postAiReplySse(7, { generationId: "generation-1" }, {
+                onTerminal: (name, data) => { terminal = { name, data }; }
+            });
+            assert.strictEqual(terminal.name, event);
+            assert.strictEqual(cancelled, 1);
+        }
+    });
+
+    it("stop route cancels the active generation and clears progress state", async () => {
+        let cancelledUrl;
+        let aborted = false;
+        let cleared = false;
+        const sandbox = {
+            aiReplyState: {
+                activeGeneration: {
+                    recordId: 7,
+                    generationId: "generation-1",
+                    controller: { abort: () => { aborted = true; } }
+                },
+                latestProgress: { progressSeq: 1 },
+                progressTimerId: 1
+            },
+            api: async (url) => { cancelledUrl = url; return { status: "CANCEL_REQUESTED" }; },
+            clearInterval: () => { cleared = true; }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("stopAiReplyProgressTicker"), sandbox);
+        vm.runInContext(extractFn("requestAiReplyCancellation"), sandbox);
+        vm.runInContext(extractFn("cancelActiveAiReplyGeneration"), sandbox);
+        const result = await sandbox.cancelActiveAiReplyGeneration();
+        assert.strictEqual(result.status, "CANCEL_REQUESTED");
+        assert.match(cancelledUrl, /generations\/generation-1\/cancel$/);
+        assert.strictEqual(aborted, true);
+        assert.strictEqual(cleared, true);
+        assert.strictEqual(sandbox.aiReplyState.activeGeneration, null);
+        assert.strictEqual(sandbox.aiReplyState.latestProgress, null);
+    });
+
+    it("reset clears active generation, progress, draft entry, and adopt context through module cancel", () => {
+        let cancelled = 0;
+        let stopped = 0;
+        const sandbox = {
+            aiReplyState: {
+                activeGeneration: { generationId: "g" }, latestProgress: { progressSeq: 3 },
+                progressTimerId: 1, requestSeq: 2, recordId: 7, turns: [{ assistantDraft: "x" }],
+                lastDraftTemplate: "raw", lastRenderedDraft: "rendered", lastQaRuleIds: [1],
+                mode: "FREE_FORM", firstTurnDone: true, drafts: { 1: { raw: "x" } },
+                nextDraftId: 1, adoptContext: { rawTemplate: "x" }, inFlight: true,
+                progressReceivedAt: 10
+            },
+            cancelActiveAiReplyGeneration: () => { cancelled += 1; return Promise.resolve(); },
+            stopAiReplyProgressTicker: () => { stopped += 1; },
+            resetPreflightState: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("resetAiReplyState"), sandbox);
+        sandbox.resetAiReplyState(9);
+        assert.strictEqual(cancelled, 1);
+        assert.strictEqual(stopped, 1);
+        assert.strictEqual(sandbox.aiReplyState.recordId, 9);
+        assert.strictEqual(sandbox.aiReplyState.activeGeneration, null);
+        assert.strictEqual(sandbox.aiReplyState.latestProgress, null);
+        assert.strictEqual(JSON.stringify(sandbox.aiReplyState.drafts), "{}");
+        assert.strictEqual(sandbox.aiReplyState.adoptContext, null);
+        assert.strictEqual(sandbox.aiReplyState.inFlight, false);
+    });
+
+    it("cancel state takeover preserves the newer generation and TOO_LATE preserves the current stream", async () => {
+        let resolveCancel;
+        let aborted = 0;
+        const sandbox = {
+            aiReplyState: {
+                activeGeneration: { recordId: 7, generationId: "old", controller: { abort: () => { aborted += 1; } } },
+                latestProgress: { progressSeq: 1 },
+                progressTimerId: 1,
+                drafts: { 1: { raw: "old" } },
+                adoptContext: { rawTemplate: "old" }
+            },
+            api: () => new Promise((resolve) => { resolveCancel = resolve; }),
+            clearInterval: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("stopAiReplyProgressTicker"), sandbox);
+        vm.runInContext(extractFn("requestAiReplyCancellation"), sandbox);
+        vm.runInContext(extractFn("cancelActiveAiReplyGeneration"), sandbox);
+        const pending = sandbox.cancelActiveAiReplyGeneration();
+        sandbox.aiReplyState.activeGeneration = {
+            recordId: 8, generationId: "new", controller: { abort: () => { aborted += 1; } }
+        };
+        sandbox.aiReplyState.latestProgress = { progressSeq: 9 };
+        const draftsBeforeTakeover = JSON.stringify(sandbox.aiReplyState.drafts);
+        const adoptBeforeTakeover = JSON.stringify(sandbox.aiReplyState.adoptContext);
+        resolveCancel({ status: "CANCEL_REQUESTED" });
+        await pending;
+        assert.strictEqual(sandbox.aiReplyState.activeGeneration.generationId, "new");
+        assert.strictEqual(JSON.stringify(sandbox.aiReplyState.drafts), draftsBeforeTakeover);
+        assert.strictEqual(JSON.stringify(sandbox.aiReplyState.adoptContext), adoptBeforeTakeover);
+        assert.strictEqual(aborted, 1);
+
+        const tooLate = createSandbox();
+        let tooLateAborts = 0;
+        tooLate.aiReplyState = {
+            activeGeneration: { recordId: 7, generationId: "current", controller: { abort: () => { tooLateAborts += 1; } } },
+            latestProgress: { progressSeq: 2 },
+            progressTimerId: 1
+        };
+        tooLate.api = async () => ({ status: "TOO_LATE" });
+        tooLate.clearInterval = () => {};
+        vm.runInContext(extractFn("stopAiReplyProgressTicker"), tooLate);
+        vm.runInContext(extractFn("requestAiReplyCancellation"), tooLate);
+        vm.runInContext(extractFn("cancelActiveAiReplyGeneration"), tooLate);
+        const result = await tooLate.cancelActiveAiReplyGeneration();
+        assert.strictEqual(result.status, "TOO_LATE");
+        assert.strictEqual(tooLate.aiReplyState.activeGeneration.generationId, "current");
+        assert.deepStrictEqual(tooLate.aiReplyState.latestProgress, { progressSeq: 2 });
+        assert.strictEqual(tooLateAborts, 0);
+    });
+
+    it("renders exact timeout controls and accessibility attributes into the workbench", () => {
+        const sandbox = {
+            escapeHtml: (value) => String(value ?? "")
+                .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
+            sortCategoryRulesForDisplay: (rules) => rules
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("renderComposedReplyWorkbenchHtml"), sandbox);
+        const html = sandbox.renderComposedReplyWorkbenchHtml({
+            suggestedRuleIds: [],
+            rulesByCategory: [],
+            llmEnabled: true
+        }, 7);
+        const optionValues = [...html.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)]
+            .map((match) => [match[1], match[2]]);
+        assert.deepStrictEqual(optionValues, [
+            ["DEEPSEEK_V4_FLASH", "DeepSeek V4 Flash"], ["DEEPSEEK_V4_PRO", "DeepSeek V4 Pro"],
+            ["30", "30 秒（默认）"], ["60", "60 秒"], ["90", "90 秒"], ["180", "180 秒"], ["custom", "自定义"],
+            ["auto", "自动（300 秒）"], ["300", "300 秒"], ["600", "600 秒"], ["900", "900 秒"], ["1800", "1800 秒"], ["custom", "自定义"]
+        ]);
+        assert.match(html, /id="trustReplyAttemptTimeoutCustom"[^>]*min="10"[^>]*max="600"[^>]*step="1"/);
+        assert.match(html, /id="trustReplyTotalTimeoutCustom"[^>]*min="10"[^>]*max="7200"[^>]*step="1"/);
+        assert.match(html, /data-action="trust-generate-draft"/);
+        assert.doesNotMatch(html, /完成率|百分比/);
+    });
+
+    it("syncs timeout inputs and rejects invalid custom values before any request", () => {
+        const autoOption = { textContent: "" };
+        const elements = {
+            "#trustReplyAttemptTimeout": { value: "custom" },
+            "#trustReplyTotalTimeout": { value: "auto", querySelector: () => autoOption },
+            "#trustReplyAttemptTimeoutCustom": { value: "45" },
+            "#trustReplyTotalTimeoutCustom": { value: "300" },
+            "#trustReplyAttemptTimeoutCustomWrap": { hidden: true },
+            "#trustReplyTotalTimeoutCustomWrap": { hidden: true }
+        };
+        const sandbox = {
+            aiReplyState: {
+                attemptTimeoutMode: "custom", attemptCustomSeconds: 45,
+                totalTimeoutMode: "auto", totalCustomSeconds: 300
+            },
+            integerSeconds: (value) => Number.isInteger(Number(value)) ? Number(value) : null,
+            $: (selector) => elements[selector]
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("syncAiReplyTimeoutControls"), sandbox);
+        vm.runInContext(extractFn("resolveAiReplyTimeoutSelection"), sandbox);
+        sandbox.syncAiReplyTimeoutControls();
+        assert.strictEqual(elements["#trustReplyAttemptTimeoutCustomWrap"].hidden, false);
+        assert.strictEqual(autoOption.textContent, "自动（450 秒）");
+        const resolved = sandbox.resolveAiReplyTimeoutSelection();
+        assert.strictEqual(resolved.attemptTimeoutSeconds, 45);
+        assert.strictEqual(resolved.totalTimeoutSeconds, 450);
+        assert.strictEqual(resolved.totalPayload, null);
+        sandbox.aiReplyState.attemptCustomSeconds = 9;
+        assert.throws(() => sandbox.resolveAiReplyTimeoutSelection(), /10–600/);
+    });
+
+    it("executes stop action and preserves TOO_LATE stream state", async () => {
+        const stopButton = { dataset: { action: "ai-reply-stop" }, disabled: false, textContent: "停止生成" };
+        const panel = {};
+        let loadingReset = 0;
+        let status;
+        const sandbox = {
+            aiReplyState: { activeGeneration: { generationId: "g" }, inFlight: true },
+            $: () => panel,
+            cancelActiveAiReplyGeneration: async () => ({ status: "TOO_LATE" }),
+            setAiReplyLoading: () => { loadingReset += 1; },
+            updateAiReplyLoadingMessage: (message) => { status = message; },
+            showStatus: (message) => { status = message; }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractHandler("handleUnmatchedAction", "renderEmailAliasSection"), sandbox);
+        await sandbox.handleUnmatchedAction(stopButton);
+        assert.strictEqual(stopButton.disabled, false);
+        assert.strictEqual(stopButton.textContent, "停止生成");
+        assert.strictEqual(loadingReset, 0);
+        assert.strictEqual(status, "生成已进入完成阶段，无法停止");
+    });
+
+    it("executes close-detail action against the actual detail panel state", async () => {
+        const panel = { hidden: false };
+        const sandbox = {
+            state: { mailbox: { detailContext: { id: 7 } } },
+            $: () => panel
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractHandler("handleUnmatchedAction", "renderEmailAliasSection"), sandbox);
+        await sandbox.handleUnmatchedAction({ dataset: { action: "close-unmatched-detail" } });
+        assert.strictEqual(panel.hidden, true);
+        assert.strictEqual(sandbox.state.mailbox.detailContext, null);
+    });
+
+    it("parses every terminal SSE event without collapsing event names", () => {
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("parseAiReplySseFrames"), sandbox);
+        const result = sandbox.parseAiReplySseFrames([
+            ["ready", { generationId: "g" }],
+            ["progress", { progressSeq: 1 }],
+            ["heartbeat", { generationId: "g" }],
+            ["result", { draftText: "done" }],
+            ["error", { message: "failed" }],
+            ["cancelled", { generationId: "g" }]
+        ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(""), true);
+        assert.strictEqual(
+            [...result.events].map((item) => item.event).join(","),
+            "ready,progress,heartbeat,result,error,cancelled"
+        );
+    });
+
+    it("extrapolates recent activity while attempt elapsed stays idle", () => {
+        let rendered;
+        const sandbox = {
+            aiReplyState: {
+                latestProgress: {
+                    generationId: "g",
+                    progressSeq: 1,
+                    phase: "VALIDATING",
+                    providerActivity: "IDLE",
+                    providerCallIndex: 1,
+                    attemptElapsedSeconds: 3,
+                    attemptTimeoutSeconds: 30,
+                    totalElapsedSeconds: 4,
+                    totalTimeoutSeconds: 300,
+                    providerEventCount: 2,
+                    contentChars: 8,
+                    secondsSinceProviderActivity: 5
+                },
+                progressReceivedAt: 1000,
+                progressTimerId: null
+            },
+            performance: { now: () => 4000 },
+            setInterval: (callback) => {
+                sandbox.tick = callback;
+                return 1;
+            },
+            clearInterval: () => {},
+            renderAiReplyProgress: (snapshot) => { rendered = snapshot; }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("stopAiReplyProgressTicker"), sandbox);
+        vm.runInContext(extractFn("startAiReplyProgressTicker"), sandbox);
+        sandbox.startAiReplyProgressTicker();
+        sandbox.tick();
+        assert.strictEqual(rendered.attemptElapsedSeconds, 3);
+        assert.strictEqual(rendered.secondsSinceProviderActivity, 8);
+        assert.strictEqual(rendered.totalElapsedSeconds, 7);
+    });
+
+    it("rejects stale or foreign progress while accepting the active sequence", () => {
+        let renders = 0;
+        const sandbox = {
+            aiReplyState: {
+                activeGeneration: { generationId: "active" },
+                lastProgressSeq: 0,
+                latestProgress: null,
+                progressReceivedAt: 0
+            },
+            AI_REPLY_PROGRESS_PHASE_LABELS: { CALLING: "calling" },
+            AI_REPLY_PROVIDER_ACTIVITY_LABELS: { WAITING: "waiting" },
+            performance: { now: () => 1000 },
+            renderAiReplyProgress: () => { renders += 1; }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("integerSeconds"), sandbox);
+        vm.runInContext(extractFn("normalizeAiReplyProgressSnapshot"), sandbox);
+        vm.runInContext(extractFn("acceptAiReplyProgressSnapshot"), sandbox);
+        const snapshot = {
+            generationId: "active", progressSeq: 1, phase: "CALLING", providerActivity: "WAITING",
+            providerCallIndex: 1, attemptElapsedSeconds: 1, attemptTimeoutSeconds: 30,
+            totalElapsedSeconds: 1, totalTimeoutSeconds: 300, providerEventCount: 1,
+            contentChars: 2, secondsSinceProviderActivity: 0
+        };
+        assert.strictEqual(sandbox.acceptAiReplyProgressSnapshot(snapshot), true);
+        assert.strictEqual(sandbox.acceptAiReplyProgressSnapshot({ ...snapshot, progressSeq: 1 }), false);
+        assert.strictEqual(sandbox.acceptAiReplyProgressSnapshot({ ...snapshot, progressSeq: 2, generationId: "stale" }), false);
+        assert.strictEqual(renders, 1);
+    });
+
+    it("restores pre-existing disabled state when loading ends", () => {
+        const button = {
+            disabled: true,
+            attrs: new Map([["data-ai-reply-was-disabled", "true"]]),
+            hasAttribute(name) { return this.attrs.has(name); },
+            getAttribute(name) { return this.attrs.get(name); },
+            removeAttribute(name) { this.attrs.delete(name); }
+        };
+        const panel = {
+            attrs: new Map(),
+            setAttribute(name, value) { this.attrs.set(name, value); },
+            querySelectorAll() { return [button]; },
+            querySelector() { return null; }
+        };
+        const sandbox = { document: {} };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("setAiReplyLoading"), sandbox);
+        sandbox.setAiReplyLoading(panel, false);
+        assert.strictEqual(panel.attrs.get("aria-busy"), "false");
+        assert.strictEqual(button.disabled, true);
+        assert.strictEqual(button.hasAttribute("data-ai-reply-was-disabled"), false);
     });
 });
 
@@ -264,6 +913,12 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(/\.ai-reply-section \.ai-chat-panel \{[\s\S]*?position:\s*relative;/.test(stylesSource));
         assert.ok(appJsSource.includes("compose-workbench-section"));
         assert.ok(appJsSource.includes("compose-draft ai-chat-panel"));
+        assert.strictEqual((stylesSource.match(/\.ai-reply-loading-overlay\s*\{/g) || []).length, 1);
+        assert.strictEqual((stylesSource.match(/\.ai-reply-progress-track\s*\{/g) || []).length, 1);
+        assert.strictEqual((stylesSource.match(/\.ai-reply-stop-button\s*\{/g) || []).length, 1);
+        assert.match(stylesSource, /\.ai-reply-loading-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
+        assert.match(stylesSource, /\.ai-reply-progress-track\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?background:/);
+        assert.match(stylesSource, /\.ai-reply-stop-button\s*\{[\s\S]*?margin-top:\s*2px;/);
     });
 });
 

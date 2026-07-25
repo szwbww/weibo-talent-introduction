@@ -5898,6 +5898,41 @@ tr td {
     margin-bottom: 10px;
 }
 
+.ai-reply-generation-controls {
+    flex-wrap: wrap;
+}
+
+.ai-reply-timeout-select {
+    min-width: 154px;
+}
+
+.ai-reply-timeout-custom-wrap[hidden] {
+    display: none;
+}
+
+.ai-reply-timeout-custom-input {
+    width: 84px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    color: var(--text-main);
+    font: inherit;
+}
+
+.ai-reply-timeout-custom-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.12);
+}
+
+.ai-reply-timeout-custom-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    background: #f8fafc;
+}
+
 .ai-reply-model-row label {
     display: flex;
     align-items: center;
@@ -5945,6 +5980,64 @@ tr td {
     font-size: 13px;
     font-weight: 600;
     backdrop-filter: blur(2px);
+}
+
+.ai-reply-stop-button {
+    margin-top: 2px;
+}
+
+.ai-reply-stop-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    transform: none;
+    box-shadow: none;
+}
+
+.ai-reply-progress {
+    width: min(360px, calc(100% - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ai-reply-progress-phase {
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.ai-reply-progress-detail,
+.ai-reply-progress-activity {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.ai-reply-progress-track {
+    width: 100%;
+    height: 6px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    appearance: none;
+    background: rgba(var(--primary-rgb), 0.12);
+}
+
+.ai-reply-progress-track::-webkit-progress-bar {
+    border-radius: 999px;
+    background: rgba(var(--primary-rgb), 0.12);
+}
+
+.ai-reply-progress-track::-webkit-progress-value {
+    border-radius: 999px;
+    background: var(--primary);
+}
+
+.ai-reply-progress-track::-moz-progress-bar {
+    border-radius: 999px;
+    background: var(--primary);
 }
 
 .ai-reply-loading-spinner {

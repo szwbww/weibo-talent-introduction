@@ -16,6 +16,11 @@ import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
 import com.weibo.talentintroduction.llm.service.AiReplyMode
 import com.weibo.talentintroduction.llm.service.AiReplyModel
+import com.weibo.talentintroduction.llm.service.AiReplyProgressPhase
+import com.weibo.talentintroduction.llm.service.AiReplyProgressReporter
+import com.weibo.talentintroduction.llm.service.AiReplyProgressSnapshot
+import com.weibo.talentintroduction.llm.service.AiReplyProviderActivity
+import com.weibo.talentintroduction.llm.service.AiReplyTimeoutPolicy
 import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
@@ -33,8 +38,20 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.LocalDateTime
 import java.util.Optional
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.lang.reflect.Proxy
 
 class UnmatchedInboundAiReplyTurnKnowledgeTest {
     private val unmatchedInboundMailService = Mockito.mock(UnmatchedInboundMailService::class.java)
@@ -347,6 +364,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         assertEquals(sourceResult.fewShotDialogRefs, response.injectedDialogRefs)
         assertEquals(sourceResult.selectedModel, response.selectedModel)
         assertEquals(sourceResult.generationState.name, response.generationState)
+        assertEquals(30, response.appliedLlmAttemptTimeoutSeconds)
+        assertEquals(300, response.appliedLlmTotalTimeoutSeconds)
         assertEquals("BLOCKED", response.draftReadiness)
         assertEquals(
             sourceResult.requestFacts.map {
@@ -363,6 +382,1038 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 .toSet()
         )
         Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `stream endpoint validates canonical generation id and TTL bounds before work`() {
+        val generationId = UUID.randomUUID().toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurnStream(1L, AiReplyTurnRequest())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurnStream(
+                1L,
+                AiReplyTurnRequest(
+                    generationId = generationId,
+                    llmAttemptTimeoutSeconds = 9
+                )
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurnStream(
+                1L,
+                AiReplyTurnRequest(
+                    generationId = generationId.uppercase(),
+                    llmAttemptTimeoutSeconds = 30,
+                    llmTotalTimeoutSeconds = 300
+                )
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            controller.aiReplyTurnStream(
+                1L,
+                AiReplyTurnRequest(
+                    generationId = generationId.uppercase(),
+                    llmAttemptTimeoutSeconds = 30,
+                    llmTotalTimeoutSeconds = 20
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `stream response disables proxy buffering and echoes an emitter`() {
+        val response = controller.aiReplyTurnStream(
+            1L,
+            AiReplyTurnRequest(
+                generationId = UUID.randomUUID().toString(),
+                llmAttemptTimeoutSeconds = 30,
+                llmTotalTimeoutSeconds = 300
+            )
+        )
+        assertTrue(response.body is SseEmitter)
+        assertEquals("no-cache, no-transform", response.headers.cacheControl)
+        assertEquals("no", response.headers.getFirst("X-Accel-Buffering"))
+    }
+
+    @Test
+    fun `active generation rejects duplicate UUID through the endpoint`() {
+        val generationId = UUID.randomUUID().toString()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        Mockito.doAnswer {
+            entered.countDown()
+            release.await(2, TimeUnit.SECONDS)
+            null
+        }.`when`(unmatchedInboundMailService).getDetail(1L)
+        try {
+            controller.aiReplyTurnStream(
+                1L,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            )
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            assertThrows(ResponseStatusException::class.java) {
+                controller.aiReplyTurnStream(
+                    1L,
+                    AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+                )
+            }
+        } finally {
+            release.countDown()
+            controller.cancelAiReplyGeneration(1L, generationId)
+        }
+    }
+
+    @Test
+    fun `generation control cancel and committing states are linearized`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        try {
+            val token = com.weibo.talentintroduction.llm.service.AiReplyCancellationToken()
+            val emitter = Mockito.mock(SseEmitter::class.java)
+            val control = newGenerationControl(token, emitter, scheduler)
+            invoke(control, "markRunning")
+            assertEquals("CANCEL_REQUESTED", invoke(control, "requestCancel"))
+            assertTrue(token.isCancelled())
+
+            val commitToken = com.weibo.talentintroduction.llm.service.AiReplyCancellationToken()
+            val commitControl = newGenerationControl(commitToken, emitter, scheduler)
+            invoke(commitControl, "markRunning")
+            assertEquals(true, invoke(commitControl, "tryBeginCommit"))
+            assertEquals("TOO_LATE", invoke(commitControl, "requestCancel"))
+            assertTrue(!commitToken.isCancelled())
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `queued progress echoes applied TTL and allowlisted fields`() {
+        val payload = invoke(
+            controller,
+            "queuedProgress",
+            arrayOf(String::class.java, AiReplyTimeoutPolicy::class.java),
+            arrayOf<Any>("generation-queued", AiReplyTimeoutPolicy(60, 601))
+        ) as Map<*, *>
+        assertEquals("generation-queued", payload["generationId"])
+        assertEquals(60, payload["attemptTimeoutSeconds"])
+        assertEquals(601, payload["totalTimeoutSeconds"])
+        assertEquals(
+            setOf(
+                "generationId", "progressSeq", "phase", "providerActivity", "providerCallIndex",
+                "attemptElapsedSeconds", "attemptTimeoutSeconds", "totalElapsedSeconds",
+                "totalTimeoutSeconds", "providerEventCount", "contentChars", "secondsSinceProviderActivity"
+            ),
+            payload.keys
+        )
+    }
+
+    @Test
+    fun `terminal event is sent once and heartbeat stays silent until running`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val sends = AtomicInteger()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            sends.incrementAndGet()
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            val snapshot = progressSnapshot(1)
+            invoke(control, "sendHeartbeat", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(snapshot))
+            assertEquals(0, sends.get())
+            invoke(control, "markRunning")
+            invoke(control, "sendHeartbeat", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(snapshot))
+            invoke(control, "sendTerminal", arrayOf(String::class.java, Any::class.java), arrayOf<Any>("result", mapOf("draft" to "ok")))
+            invoke(control, "sendTerminal", arrayOf(String::class.java, Any::class.java), arrayOf<Any>("result", mapOf("draft" to "duplicate")))
+            assertEquals(2, sends.get())
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `active cancel cancels worker heartbeat and token`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        val worker = Mockito.mock(Future::class.java) as Future<*>
+        val heartbeat = Mockito.mock(ScheduledFuture::class.java) as ScheduledFuture<*>
+        try {
+            val token = com.weibo.talentintroduction.llm.service.AiReplyCancellationToken()
+            val control = newGenerationControl(token, emitter, scheduler)
+            setField(control, "workerFuture", worker)
+            setField(control, "heartbeatFuture", heartbeat)
+            invoke(control, "markRunning")
+
+            assertEquals("CANCEL_REQUESTED", invoke(control, "requestCancel"))
+            assertTrue(token.isCancelled())
+            Mockito.verify(worker).cancel(true)
+            Mockito.verify(heartbeat, Mockito.atLeastOnce()).cancel(false)
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `terminal event prevents later progress`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val sends = AtomicInteger()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            sends.incrementAndGet()
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            invoke(control, "markRunning")
+            invoke(control, "sendTerminal", arrayOf(String::class.java, Any::class.java), arrayOf<Any>("result", mapOf("draft" to "ok")))
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(2)))
+            Thread.sleep(100)
+            assertEquals(1, sends.get())
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `cancel route reports not active for wrong generation or record`() {
+        val generationId = UUID.randomUUID().toString()
+        val response = controller.cancelAiReplyGeneration(999L, generationId)
+        assertEquals(generationId, response["generationId"])
+        assertEquals("NOT_ACTIVE", response["status"])
+    }
+
+    @Test
+    fun `progress callback does not wait for a blocked emitter send`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            entered.countDown()
+            release.await(2, TimeUnit.SECONDS)
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val token = com.weibo.talentintroduction.llm.service.AiReplyCancellationToken()
+            val control = newGenerationControl(token, emitter, scheduler)
+            invoke(control, "markRunning")
+            val snapshot = AiReplyProgressSnapshot(
+                generationId = "generation-1",
+                progressSeq = 1,
+                phase = AiReplyProgressPhase.CALLING,
+                providerActivity = AiReplyProviderActivity.WAITING,
+                providerCallIndex = 1,
+                attemptElapsedSeconds = 0,
+                attemptTimeoutSeconds = 30,
+                totalElapsedSeconds = 0,
+                totalTimeoutSeconds = 300,
+                providerEventCount = 1,
+                contentChars = 0,
+                secondsSinceProviderActivity = 0
+            )
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(snapshot))
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            val started = System.nanoTime()
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(snapshot.copy(progressSeq = 2)))
+            assertTrue(System.nanoTime() - started < 200_000_000L)
+            release.countDown()
+        } finally {
+            release.countDown()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `slow emitter keeps pending same phase progress at one hertz`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val sends = AtomicInteger()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            if (sends.incrementAndGet() == 1) {
+                entered.countDown()
+                release.await(2, TimeUnit.SECONDS)
+            }
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            invoke(control, "markRunning")
+            val first = progressSnapshot(1)
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(first))
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            invoke(
+                control,
+                "publishProgress",
+                arrayOf(AiReplyProgressSnapshot::class.java),
+                arrayOf<Any>(progressSnapshot(2))
+            )
+            release.countDown()
+            Thread.sleep(150)
+            assertEquals(1, sends.get(), "same phase pending flush must wait for the 1 Hz window")
+        } finally {
+            release.countDown()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `phase change preempts delayed same phase progress flush`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val firstSent = CountDownLatch(1)
+        val sends = AtomicInteger()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            sends.incrementAndGet()
+            firstSent.countDown()
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            invoke(control, "markRunning")
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(1)))
+            assertTrue(firstSent.await(1, TimeUnit.SECONDS))
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(2)))
+            invoke(
+                control,
+                "publishProgress",
+                arrayOf(AiReplyProgressSnapshot::class.java),
+                arrayOf<Any>(progressSnapshot(3, AiReplyProgressPhase.VALIDATING))
+            )
+            Thread.sleep(150)
+            assertEquals(2, sends.get(), "phase change must flush immediately")
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `send failure cleans pending progress and prevents a second send`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val sends = AtomicInteger()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        Mockito.doAnswer {
+            if (sends.incrementAndGet() == 1) {
+                entered.countDown()
+                release.await(2, TimeUnit.SECONDS)
+                throw IllegalStateException("disconnected")
+            }
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            invoke(control, "markRunning")
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(1)))
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(2)))
+            release.countDown()
+            Thread.sleep(150)
+            assertEquals(1, sends.get(), "send failure must cancel pending progress flush")
+        } finally {
+            release.countDown()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `disconnect is terminal for concurrent progress callbacks`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val emitter = Mockito.mock(SseEmitter::class.java)
+        val sends = AtomicInteger()
+        Mockito.doAnswer {
+            sends.incrementAndGet()
+            null
+        }.`when`(emitter).send(Mockito.any(SseEmitter.SseEventBuilder::class.java))
+        try {
+            val control = newGenerationControl(
+                com.weibo.talentintroduction.llm.service.AiReplyCancellationToken(), emitter, scheduler
+            )
+            invoke(control, "markRunning")
+            invoke(control, "disconnect")
+            invoke(control, "publishProgress", arrayOf(AiReplyProgressSnapshot::class.java), arrayOf<Any>(progressSnapshot(1)))
+            Thread.sleep(150)
+            assertEquals(0, sends.get())
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    private fun newGenerationControl(
+        token: com.weibo.talentintroduction.llm.service.AiReplyCancellationToken,
+        emitter: SseEmitter,
+        scheduler: java.util.concurrent.ScheduledExecutorService
+    ): Any {
+        val type = Class.forName("com.weibo.talentintroduction.mail.controller.GenerationControl")
+        val constructor = type.declaredConstructors.single().apply { isAccessible = true }
+        return constructor.newInstance(1L, UUID.randomUUID().toString(), token, emitter, scheduler)
+    }
+
+    private fun invoke(control: Any, name: String, types: Array<Class<*>> = emptyArray(), args: Array<Any> = emptyArray()): Any? {
+        val method = control.javaClass.getDeclaredMethod(name, *types).apply { isAccessible = true }
+        return method.invoke(control, *args)
+    }
+
+    private fun setField(target: Any, name: String, value: Any?) {
+        target.javaClass.getDeclaredField(name).apply {
+            isAccessible = true
+            set(target, value)
+        }
+    }
+
+    private fun progressSnapshot(
+        sequence: Long,
+        phase: AiReplyProgressPhase = AiReplyProgressPhase.CALLING
+    ) = AiReplyProgressSnapshot(
+        generationId = "generation-1",
+        progressSeq = sequence,
+        phase = phase,
+        providerActivity = AiReplyProviderActivity.WAITING,
+        providerCallIndex = 1,
+        attemptElapsedSeconds = 0,
+        attemptTimeoutSeconds = 30,
+        totalElapsedSeconds = 0,
+        totalTimeoutSeconds = 300,
+        providerEventCount = sequence.toInt(),
+        contentChars = 0,
+        secondsSinceProviderActivity = 0
+    )
+
+    private fun endpointController(
+        executor: ExecutorService,
+        scheduler: ScheduledExecutorService
+    ) = UnmatchedInboundMailController(
+        unmatchedInboundMailService,
+        expertEmailAliasService,
+        expertContactRepository,
+        pendingMailOperationService,
+        operatorActionLogService,
+        llmProperties,
+        autoReplyPreviewService,
+        aiReplyDraftService,
+        aiReplyDraftPreviewService,
+        aiReplyContextBuilder,
+        aiTrainingQaService,
+        mailRecordRepository,
+        aiReplyContextService,
+        aiReplyReviewAuditService,
+        executor,
+        scheduler
+    )
+
+    private fun stubEndpointContext(id: Long, text: String = "Hello") {
+        val detail = InboundMailProcessing(
+            id = id,
+            senderAccountCode = "a1",
+            imapUid = id,
+            messageId = "message-$id",
+            fromEmail = "expert@test.com",
+            subject = "Question",
+            body = text,
+            cleanedBody = text,
+            receivedAt = LocalDateTime.now(),
+            processStatus = "PENDING",
+            processReason = "UNMATCHED",
+            expertContactId = 10L
+        )
+        Mockito.`when`(unmatchedInboundMailService.getDetail(id)).thenReturn(detail)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+            .thenReturn(emptyList())
+        Mockito.`when`(aiTrainingQaService.buildKnowledgeContext(text)).thenReturn("")
+        Mockito.`when`(aiReplyContextService.build(contact, emptyList(), text, "", "message-$id"))
+            .thenReturn(AiReplyContext("Name: Dr. Test", "", emptyList()))
+    }
+
+    private fun runtimeResult(text: String = "runtime draft") = AiReplyDraftResult(
+        draftText = text,
+        usedLlm = true,
+        qaRuleIds = emptyList(),
+        mode = AiReplyMode.FREE_FORM,
+        generationState = AiReplyGenerationState.LLM_USED
+    )
+
+    @Test
+    fun `real stream endpoint emits one result and removes generation after completion`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 101L
+        val generationId = UUID.randomUUID().toString()
+        try {
+            stubEndpointContext(id)
+            val reporterPhases = mutableListOf<AiReplyProgressPhase>()
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                reporter.transition(AiReplyProgressPhase.PREPARING)
+                reporterPhases += AiReplyProgressPhase.PREPARING
+                reporter.transition(AiReplyProgressPhase.CALLING)
+                reporterPhases += AiReplyProgressPhase.CALLING
+                reporter.transition(AiReplyProgressPhase.VALIDATING)
+                reporterPhases += AiReplyProgressPhase.VALIDATING
+                reporter.transition(AiReplyProgressPhase.FINALIZING)
+                reporterPhases += AiReplyProgressPhase.FINALIZING
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+
+            val endpoint = endpointController(executor, scheduler)
+            val response = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(
+                    generationId = generationId,
+                    llmAttemptTimeoutSeconds = 30,
+                    llmTotalTimeoutSeconds = 300
+                )
+            )
+            assertTrue(response.body is SseEmitter)
+            assertEquals("no-cache, no-transform", response.headers.cacheControl)
+            assertEquals("no", response.headers.getFirst("X-Accel-Buffering"))
+            eventually("runtime phase trace") { reporterPhases.size == 4 }
+            assertEquals(
+                listOf(
+                    AiReplyProgressPhase.PREPARING,
+                    AiReplyProgressPhase.CALLING,
+                    AiReplyProgressPhase.VALIDATING,
+                    AiReplyProgressPhase.FINALIZING
+                ),
+                reporterPhases
+            )
+            Mockito.verify(aiReplyReviewAuditService).recordInitialDraft(
+                inboundProcessingId = id,
+                contactId = 10L,
+                result = runtimeResult(),
+                operatorName = null
+            )
+            eventually("terminal cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+        } finally {
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real stream endpoint emits ready progress and one result with bounded payload`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 106L
+        val generationId = UUID.randomUUID().toString()
+        val providerEntered = CountDownLatch(1)
+        val releaseProvider = CountDownLatch(1)
+        val allowResult = CountDownLatch(1)
+        lateinit var chunks: MutableList<Any?>
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                providerEntered.countDown()
+                releaseProvider.await(1, TimeUnit.SECONDS)
+                reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                reporter.transition(AiReplyProgressPhase.PREPARING)
+                allowResult.await(1, TimeUnit.SECONDS)
+                runtimeResult("serialized draft")
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val response = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(
+                    generationId = generationId,
+                    llmAttemptTimeoutSeconds = 30,
+                    llmTotalTimeoutSeconds = 300
+                )
+            )
+            chunks = captureEmitterChunks(response.body as SseEmitter).chunks
+            assertTrue(providerEntered.await(1, TimeUnit.SECONDS))
+            releaseProvider.countDown()
+            eventually("captured progress") {
+                chunks.filterIsInstance<String>().any { it.contains("event:progress") }
+            }
+            allowResult.countDown()
+            eventually("captured result") { chunks.any { it is AiReplyTurnResponse } }
+            val eventHeaders = chunks.filterIsInstance<String>()
+            assertTrue(eventHeaders.any { it.contains("event:ready") })
+            assertTrue(eventHeaders.any { it.contains("event:progress") })
+            assertTrue(eventHeaders.count { it.contains("event:result") } == 1)
+            val ready = chunks.filterIsInstance<Map<*, *>>().first { it["generationId"] == generationId }
+            assertEquals(30, ready["appliedLlmAttemptTimeoutSeconds"])
+            assertEquals(300, ready["appliedLlmTotalTimeoutSeconds"])
+            val result = chunks.filterIsInstance<AiReplyTurnResponse>().single()
+            assertEquals("serialized draft", result.draftText)
+            assertTrue(chunks.filterNot { it is AiReplyTurnResponse }
+                .none { it.toString().contains("prompt") || it.toString().contains("reasoning") || it.toString().contains("delta") })
+            eventually("real endpoint cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+        } finally {
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint emitter completion cleans active generation`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 107L
+        val generationId = UUID.randomUUID().toString()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                entered.countDown()
+                release.await(1, TimeUnit.SECONDS)
+                invocation.getArgument<com.weibo.talentintroduction.llm.service.AiReplyCancellationToken>(12)
+                    .throwIfCancelled()
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter)
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            emitter.complete()
+            eventually("completion cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+            assertTrue(capture.completionCallbacks.isNotEmpty())
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint emitter timeout cleans active generation`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 108L
+        val generationId = UUID.randomUUID().toString()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                entered.countDown()
+                release.await(1, TimeUnit.SECONDS)
+                invocation.getArgument<com.weibo.talentintroduction.llm.service.AiReplyCancellationToken>(12)
+                    .throwIfCancelled()
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter)
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            assertTrue(capture.timeoutCallbacks.isNotEmpty())
+            capture.timeoutCallbacks.single().run()
+            eventually("timeout cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint keeps same phase progress at one hertz`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 109L
+        val generationId = UUID.randomUUID().toString()
+        val firstPublished = CountDownLatch(1)
+        val releaseSecond = CountDownLatch(1)
+        val releaseResult = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
+                firstPublished.countDown()
+                releaseSecond.await(1, TimeUnit.SECONDS)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
+                releaseResult.await(1, TimeUnit.SECONDS)
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter)
+            assertTrue(firstPublished.await(1, TimeUnit.SECONDS))
+            releaseSecond.countDown()
+            eventually("first endpoint progress") { progressEventCount(capture) >= 1 }
+            assertEquals(1, progressEventCount(capture), "endpoint same phase progress must wait for the 1 Hz window")
+            releaseResult.countDown()
+        } finally {
+            releaseSecond.countDown()
+            releaseResult.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint phase change preempts delayed progress flush`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 110L
+        val generationId = UUID.randomUUID().toString()
+        val ready = CountDownLatch(1)
+        val releasePhase = CountDownLatch(1)
+        val releaseResult = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
+                ready.countDown()
+                releasePhase.await(1, TimeUnit.SECONDS)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
+                reporter.transition(AiReplyProgressPhase.VALIDATING)
+                releaseResult.await(1, TimeUnit.SECONDS)
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter)
+            assertTrue(ready.await(1, TimeUnit.SECONDS))
+            releasePhase.countDown()
+            eventually("phase endpoint progress") { progressEventCount(capture) >= 1 }
+            assertEquals(2, progressEventCount(capture), "endpoint phase change must preempt delayed progress")
+            releaseResult.countDown()
+        } finally {
+            releasePhase.countDown()
+            releaseResult.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint send failure cancels pending progress flush`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 111L
+        val generationId = UUID.randomUUID().toString()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                entered.countDown()
+                release.await(1, TimeUnit.SECONDS)
+                reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
+                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter, failOnEvent = "event:progress")
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            release.countDown()
+            eventually("send failure cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+            assertEquals(2, capture.sendAttempts.get(), "endpoint send failure must not retry pending progress")
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint disconnect is terminal for later reporter callbacks`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 112L
+        val generationId = UUID.randomUUID().toString()
+        val entered = CountDownLatch(1)
+        val allowCallback = CountDownLatch(1)
+        val releaseResult = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
+                entered.countDown()
+                allowCallback.await(1, TimeUnit.SECONDS)
+                reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
+                reporter.transition(AiReplyProgressPhase.CALLING)
+                releaseResult.await(1, TimeUnit.SECONDS)
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            val emitter = endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            ).body as SseEmitter
+            val capture = captureEmitterChunks(emitter)
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            emitter.complete()
+            allowCallback.countDown()
+            eventually("disconnect callback") { capture.sendAttempts.get() >= 1 }
+            assertEquals(0, progressEventCount(capture), "disconnect must prevent later endpoint progress")
+            releaseResult.countDown()
+        } finally {
+            allowCallback.countDown()
+            releaseResult.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    private fun progressEventCount(capture: CapturedEmitter): Int =
+        capture.chunks.filterIsInstance<String>().count { it.contains("event:progress") }
+
+    private data class CapturedEmitter(
+        val chunks: MutableList<Any?>,
+        val timeoutCallbacks: MutableList<Runnable>,
+        val completionCallbacks: MutableList<Runnable>,
+        val sendAttempts: AtomicInteger
+    )
+
+    private fun captureEmitterChunks(
+        emitter: SseEmitter,
+        failOnEvent: String? = null
+    ): CapturedEmitter {
+        val chunks = java.util.Collections.synchronizedList(mutableListOf<Any?>())
+        val timeoutCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
+        val completionCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
+        val sendAttempts = AtomicInteger()
+        val handlerType = Class.forName(
+            "org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter\$Handler"
+        )
+        val handler = Proxy.newProxyInstance(
+            handlerType.classLoader,
+            arrayOf(handlerType)
+        ) { _, method, args ->
+            when (method.name) {
+                "send" -> {
+                    sendAttempts.incrementAndGet()
+                    val data = args?.get(0)
+                    if (failOnEvent != null && data?.toString()?.contains(failOnEvent) == true) {
+                        throw java.io.IOException("test emitter disconnected")
+                    }
+                    chunks += data
+                }
+                "onTimeout" -> timeoutCallbacks += args?.get(0) as Runnable
+                "onCompletion" -> completionCallbacks += args?.get(0) as Runnable
+                "onError" -> Unit
+                "complete", "completeWithError" -> completionCallbacks.toList().forEach { it.run() }
+            }
+            null
+        }
+        val initialize = emitter.javaClass.superclass.getDeclaredMethod("initialize", handlerType)
+        initialize.isAccessible = true
+        initialize.invoke(emitter, handler)
+        return CapturedEmitter(chunks, timeoutCallbacks, completionCallbacks, sendAttempts)
+    }
+
+    @Test
+    fun `real endpoint cancel first skips audit and cleans registry`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 102L
+        val generationId = UUID.randomUUID().toString()
+        val providerEntered = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doAnswer { invocation ->
+                providerEntered.countDown()
+                val token = invocation.getArgument<com.weibo.talentintroduction.llm.service.AiReplyCancellationToken>(12)
+                try {
+                    Thread.sleep(2_000)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                token.throwIfCancelled()
+                runtimeResult()
+            }.`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            val endpoint = endpointController(executor, scheduler)
+            endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            )
+            assertTrue(providerEntered.await(1, TimeUnit.SECONDS))
+            assertEquals("CANCEL_REQUESTED", endpoint.cancelAiReplyGeneration(id, generationId)["status"])
+            eventually("cancel cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+            Mockito.verify(aiReplyReviewAuditService, Mockito.never()).recordInitialDraft(
+                Mockito.anyLong(), Mockito.anyLong(), anyNonNull(runtimeResult()), anyNullable()
+            )
+        } finally {
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint commit first returns too late and audits once`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val id = 103L
+        val generationId = UUID.randomUUID().toString()
+        val auditEntered = CountDownLatch(1)
+        val releaseAudit = CountDownLatch(1)
+        try {
+            stubEndpointContext(id)
+            Mockito.doReturn(runtimeResult()).`when`(aiReplyDraftService).generate(
+                Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+            )
+            Mockito.doAnswer { invocation ->
+                auditEntered.countDown()
+                releaseAudit.await(1, TimeUnit.SECONDS)
+                val result = invocation.getArgument<AiReplyDraftResult>(2)
+                com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService(operatorActionLogService)
+                    .buildSnapshot(result)
+            }.`when`(aiReplyReviewAuditService).recordInitialDraft(
+                Mockito.anyLong(), Mockito.anyLong(), anyNonNull(runtimeResult()), anyNullable()
+            )
+            val endpoint = endpointController(executor, scheduler)
+            endpoint.aiReplyTurnStream(
+                id,
+                AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            )
+            assertTrue(auditEntered.await(1, TimeUnit.SECONDS))
+            assertEquals("TOO_LATE", endpoint.cancelAiReplyGeneration(id, generationId)["status"])
+            releaseAudit.countDown()
+            eventually("commit cleanup") {
+                endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
+            }
+            Mockito.verify(aiReplyReviewAuditService).recordInitialDraft(
+                Mockito.anyLong(), Mockito.anyLong(), anyNonNull(runtimeResult()), anyNullable()
+            )
+        } finally {
+            releaseAudit.countDown()
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `real endpoint provider error and rejected executor both cleanup`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        try {
+            val errorExecutor = Executors.newSingleThreadExecutor()
+            val errorId = 104L
+            val errorGenerationId = UUID.randomUUID().toString()
+            try {
+                stubEndpointContext(errorId)
+                Mockito.doAnswer { throw IllegalStateException("provider failed") }.`when`(aiReplyDraftService).generate(
+                    Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
+                    Mockito.anyBoolean(), Mockito.anyList(), anyNullable(), Mockito.anyBoolean(),
+                    anyNullable(), anyNullable(), anyNullable(), anyNonNull(AiReplyProgressReporter.NOOP)
+                )
+                val endpoint = endpointController(errorExecutor, scheduler)
+                endpoint.aiReplyTurnStream(
+                    errorId,
+                    AiReplyTurnRequest(generationId = errorGenerationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+                )
+                eventually("error cleanup") {
+                    endpoint.cancelAiReplyGeneration(errorId, errorGenerationId)["status"] == "NOT_ACTIVE"
+                }
+            } finally {
+                errorExecutor.shutdownNow()
+            }
+
+            val rejectedExecutor = Executors.newSingleThreadExecutor()
+            rejectedExecutor.shutdownNow()
+            val rejectedId = 105L
+            val rejectedGenerationId = UUID.randomUUID().toString()
+            stubEndpointContext(rejectedId)
+            val endpoint = endpointController(rejectedExecutor, scheduler)
+            endpoint.aiReplyTurnStream(
+                rejectedId,
+                AiReplyTurnRequest(generationId = rejectedGenerationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
+            )
+            eventually("rejected cleanup") {
+                endpoint.cancelAiReplyGeneration(rejectedId, rejectedGenerationId)["status"] == "NOT_ACTIVE"
+            }
+        } finally {
+            scheduler.shutdownNow()
+        }
+    }
+
+    private fun eventually(label: String, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (System.nanoTime() < deadline) {
+            if (condition()) return
+            Thread.sleep(10)
+        }
+        assertTrue(condition(), label)
     }
 
     @Test

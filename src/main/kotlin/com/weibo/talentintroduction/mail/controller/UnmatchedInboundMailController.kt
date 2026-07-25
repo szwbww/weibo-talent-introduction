@@ -29,6 +29,9 @@ import com.weibo.talentintroduction.mail.service.TrustWorkbenchSuggestResult
 import com.weibo.talentintroduction.mail.service.AiReplyPreflightRequest
 import com.weibo.talentintroduction.mail.service.AiReplyPreflightResult
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.web.server.ResponseStatusException
 import com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -39,7 +42,25 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.LocalDateTime
+import java.util.UUID
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Future
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import com.weibo.talentintroduction.llm.service.AiReplyCancellationToken
+import com.weibo.talentintroduction.llm.service.AiReplyGenerationCancelledException
+import com.weibo.talentintroduction.llm.service.AiReplyProgressPhase
+import com.weibo.talentintroduction.llm.service.AiReplyProgressReporter
+import com.weibo.talentintroduction.llm.service.AiReplyProgressSnapshot
+import com.weibo.talentintroduction.llm.service.AiReplyProgressTracker
+import com.weibo.talentintroduction.llm.service.AiReplyTimeoutPolicy
 
 @RestController
 @RequestMapping("/api/mail")
@@ -57,8 +78,13 @@ class UnmatchedInboundMailController(
     private val aiTrainingQaService: com.weibo.talentintroduction.llm.service.AiTrainingQaService,
     private val mailRecordRepository: MailRecordRepository,
     private val aiReplyContextService: com.weibo.talentintroduction.llm.service.AiReplyContextService,
-    private val aiReplyReviewAuditService: com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
+    private val aiReplyReviewAuditService: com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService,
+    @Qualifier("aiReplyStreamExecutor") private val aiReplyStreamExecutor: ExecutorService =
+        Executors.newFixedThreadPool(2),
+    @Qualifier("aiReplyStreamScheduler") private val aiReplyStreamScheduler: ScheduledExecutorService =
+        Executors.newScheduledThreadPool(2)
 ) {
+    private val generations = ConcurrentHashMap<String, GenerationControl>()
     @GetMapping("/unmatched-inbound")
     fun list(
         @RequestParam(required = false) reasonType: String?,
@@ -293,6 +319,14 @@ class UnmatchedInboundMailController(
     fun aiReplyTurn(
         @PathVariable id: Long,
         @RequestBody request: AiReplyTurnRequest
+    ): AiReplyTurnResponse = executeAiReplyTurn(id, request)
+
+    private fun executeAiReplyTurn(
+        id: Long,
+        request: AiReplyTurnRequest,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP,
+        beforeCommit: (() -> Boolean)? = null
     ): AiReplyTurnResponse {
         val detail = unmatchedInboundMailService.getDetail(id)
         val inboundText = detail.cleanedBody?.takeIf { it.isNotBlank() } ?: detail.body.orEmpty()
@@ -311,17 +345,42 @@ class UnmatchedInboundMailController(
         val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
         val context = aiReplyContextService.build(contact, records, inboundText, knowledge, detail.messageId)
 
-        val result = aiReplyDraftService.generate(
-            inboundText = inboundText,
-            operatorTurns = turns,
-            qaRuleIds = request.qaRuleIds,
-            operatorInstruction = request.operatorInstruction,
-            expertProfile = context.profileText,
-            mailHistory = context.mailHistory,
-            contextWarnings = context.contextWarnings,
-            replyModel = request.model,
-            researchProfileSufficient = context.researchProfileSufficient
-        )
+        val result = if (request.llmAttemptTimeoutSeconds == null && request.llmTotalTimeoutSeconds == null &&
+            cancellationToken == null && progressReporter === AiReplyProgressReporter.NOOP
+        ) {
+            aiReplyDraftService.generate(
+                inboundText = inboundText,
+                operatorTurns = turns,
+                qaRuleIds = request.qaRuleIds,
+                operatorInstruction = request.operatorInstruction,
+                expertProfile = context.profileText,
+                mailHistory = context.mailHistory,
+                contextWarnings = context.contextWarnings,
+                replyModel = request.model,
+                researchProfileSufficient = context.researchProfileSufficient
+            )
+        } else {
+            aiReplyDraftService.generate(
+                inboundText = inboundText,
+                operatorTurns = turns,
+                qaRuleIds = request.qaRuleIds,
+                operatorInstruction = request.operatorInstruction,
+                expertProfile = context.profileText,
+                mailHistory = context.mailHistory,
+                contextWarnings = context.contextWarnings,
+                replyModel = request.model,
+                researchProfileSufficient = context.researchProfileSufficient,
+                llmAttemptTimeoutSeconds = request.llmAttemptTimeoutSeconds,
+                llmTotalTimeoutSeconds = request.llmTotalTimeoutSeconds,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            )
+        }
+
+        cancellationToken?.throwIfCancelled()
+        if (beforeCommit != null && !beforeCommit()) {
+            throw AiReplyGenerationCancelledException()
+        }
 
         val snapshot = if (!isContinuation) {
             aiReplyReviewAuditService.recordInitialDraft(
@@ -375,6 +434,14 @@ class UnmatchedInboundMailController(
             promptVersion = result.promptVersion,
             draftHash = snapshot.draftHash,
             evidenceSetVersion = result.evidenceSetVersion,
+            appliedLlmAttemptTimeoutSeconds = AiReplyTimeoutPolicy.resolve(
+                request.llmAttemptTimeoutSeconds,
+                request.llmTotalTimeoutSeconds
+            ).attemptTimeoutSeconds,
+            appliedLlmTotalTimeoutSeconds = AiReplyTimeoutPolicy.resolve(
+                request.llmAttemptTimeoutSeconds,
+                request.llmTotalTimeoutSeconds
+            ).totalTimeoutSeconds,
             evidenceSources = result.evidenceSources.map {
                 AiReplyEvidenceResponseItem(
                     ruleId = it.ruleId,
@@ -391,6 +458,303 @@ class UnmatchedInboundMailController(
         val seen = linkedSetOf<String>()
         return (existing + extra).filter { seen.add(it) }
     }
+
+    @PostMapping(
+        "/unmatched-inbound/{id}/ai-reply/turn-stream",
+        produces = [MediaType.TEXT_EVENT_STREAM_VALUE]
+    )
+    fun aiReplyTurnStream(
+        @PathVariable id: Long,
+        @RequestBody request: AiReplyTurnRequest
+    ): ResponseEntity<SseEmitter> {
+        val generationId = request.generationId?.trim()
+            ?: throw IllegalArgumentException("generationId is required for streaming AI reply")
+        val parsedGenerationId = runCatching { UUID.fromString(generationId) }.getOrNull()
+        require(parsedGenerationId != null && parsedGenerationId.toString() == generationId.lowercase()) {
+            "generationId must be a canonical UUID"
+        }
+        val policy = AiReplyTimeoutPolicy.resolve(
+            request.llmAttemptTimeoutSeconds,
+            request.llmTotalTimeoutSeconds
+        )
+        val emitter = SseEmitter(policy.totalTimeoutSeconds * 1000L + 30_000L)
+        val token = AiReplyCancellationToken()
+        val control = GenerationControl(id, generationId, token, emitter, aiReplyStreamScheduler)
+        synchronized(generations) {
+            if (generations.size >= MAX_ACTIVE_GENERATIONS) {
+                throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "AI generation queue is full")
+            }
+            if (generations.putIfAbsent(generationId, control) != null) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "generationId is already active")
+            }
+        }
+        val tracker = AiReplyProgressTracker(
+            generationId = generationId,
+            attemptTimeoutSeconds = policy.attemptTimeoutSeconds,
+            totalTimeoutSeconds = policy.totalTimeoutSeconds,
+            sink = { snapshot -> control.publishProgress(snapshot) }
+        )
+        control.onCleanup = { generations.remove(generationId, control) }
+        emitter.onTimeout { control.disconnect() }
+        emitter.onCompletion { control.disconnect() }
+        emitter.onError { control.disconnect() }
+        control.sendEvent(
+            "ready",
+            mapOf(
+                "generationId" to generationId,
+                "appliedLlmAttemptTimeoutSeconds" to policy.attemptTimeoutSeconds,
+                "appliedLlmTotalTimeoutSeconds" to policy.totalTimeoutSeconds,
+                "progress" to queuedProgress(generationId, policy)
+            )
+        )
+        control.heartbeatFuture = aiReplyStreamScheduler.scheduleAtFixedRate({
+            control.sendHeartbeat(tracker.snapshotNow())
+        }, 10L, 10L, TimeUnit.SECONDS)
+        try {
+            control.workerFuture = aiReplyStreamExecutor.submit {
+                control.markRunning()
+                try {
+                    val response = executeAiReplyTurn(
+                        id = id,
+                        request = request,
+                        cancellationToken = token,
+                        progressReporter = tracker,
+                        beforeCommit = { control.tryBeginCommit() }
+                    )
+                    control.sendTerminal("result", response)
+                } catch (_: AiReplyGenerationCancelledException) {
+                    control.sendTerminal("cancelled", mapOf("generationId" to generationId))
+                } catch (_: Exception) {
+                    control.sendTerminal(
+                        "error",
+                        mapOf("generationId" to generationId, "message" to "AI generation failed")
+                    )
+                } finally {
+                    control.cleanup()
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            control.sendTerminal(
+                "error",
+                mapOf("generationId" to generationId, "message" to "AI generation queue is full")
+            )
+            control.cleanup()
+        }
+        val headers = org.springframework.http.HttpHeaders().apply {
+            cacheControl = "no-cache, no-transform"
+            set("X-Accel-Buffering", "no")
+        }
+        return ResponseEntity.ok().headers(headers).body(emitter)
+    }
+
+    @PostMapping("/unmatched-inbound/{id}/ai-reply/generations/{generationId}/cancel")
+    fun cancelAiReplyGeneration(
+        @PathVariable id: Long,
+        @PathVariable generationId: String
+    ): Map<String, String> {
+        val control = generations[generationId]
+        val status = if (control == null || control.inboundProcessingId != id) {
+            "NOT_ACTIVE"
+        } else {
+            control.requestCancel()
+        }
+        return mapOf("generationId" to generationId, "status" to status)
+    }
+
+    private fun queuedProgress(
+        generationId: String,
+        policy: AiReplyTimeoutPolicy
+    ): Map<String, Any> = mapOf(
+        "generationId" to generationId,
+        "progressSeq" to 0,
+        "phase" to AiReplyProgressPhase.QUEUED.name,
+        "providerActivity" to "IDLE",
+        "providerCallIndex" to 0,
+        "attemptElapsedSeconds" to 0,
+        "attemptTimeoutSeconds" to policy.attemptTimeoutSeconds,
+        "totalElapsedSeconds" to 0,
+        "totalTimeoutSeconds" to policy.totalTimeoutSeconds,
+        "providerEventCount" to 0,
+        "contentChars" to 0,
+        "secondsSinceProviderActivity" to 0
+    )
+
+    companion object {
+        private const val MAX_ACTIVE_GENERATIONS = 40
+    }
+}
+
+private enum class GenerationStatus { REGISTERED, RUNNING, COMMITTING, CANCEL_REQUESTED, FINISHED }
+
+private class GenerationControl(
+    val inboundProcessingId: Long,
+    val generationId: String,
+    val token: AiReplyCancellationToken,
+    private val emitter: SseEmitter,
+    private val progressScheduler: ScheduledExecutorService
+) {
+    @Volatile
+    var workerFuture: Future<*>? = null
+    @Volatile
+    var heartbeatFuture: ScheduledFuture<*>? = null
+    @Volatile
+    var onCleanup: (() -> Unit)? = null
+    @Volatile
+    private var status: GenerationStatus = GenerationStatus.REGISTERED
+    private val terminalSent = AtomicBoolean(false)
+    private val sendLock = Any()
+    private val progressStateLock = Any()
+    private var pendingProgress: AiReplyProgressSnapshot? = null
+    private var progressFlushFuture: ScheduledFuture<*>? = null
+    private var lastProgressSentAt = Long.MIN_VALUE
+    private var lastProgressPhase: AiReplyProgressPhase? = null
+
+    fun markRunning() {
+        synchronized(sendLock) {
+            if (status == GenerationStatus.REGISTERED) status = GenerationStatus.RUNNING
+        }
+    }
+
+    fun tryBeginCommit(): Boolean = synchronized(sendLock) {
+        if (status != GenerationStatus.RUNNING) return@synchronized false
+        status = GenerationStatus.COMMITTING
+        true
+    }
+
+    fun publishProgress(snapshot: AiReplyProgressSnapshot) {
+        if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) return
+        synchronized(progressStateLock) {
+            if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) return
+            pendingProgress = snapshot
+            if (progressFlushFuture == null || progressFlushFuture?.isDone == true) {
+                val phaseChanged = lastProgressPhase != snapshot.phase
+                val elapsed = System.nanoTime() - lastProgressSentAt
+                val delay = if (phaseChanged || lastProgressSentAt == Long.MIN_VALUE) {
+                    0L
+                } else {
+                    (1_000_000_000L - elapsed).coerceAtLeast(0L)
+                }
+                progressFlushFuture = progressScheduler.schedule(
+                    { flushProgress() }, delay, TimeUnit.NANOSECONDS
+                )
+            }
+        }
+    }
+
+    private fun flushProgress() {
+        val snapshot = synchronized(progressStateLock) {
+            progressFlushFuture = null
+            if (status != GenerationStatus.RUNNING && status != GenerationStatus.REGISTERED) {
+                pendingProgress = null
+                null
+            } else {
+                pendingProgress.also { pendingProgress = null }
+            }
+        } ?: return
+        synchronized(sendLock) {
+            if (status == GenerationStatus.RUNNING || status == GenerationStatus.REGISTERED) {
+                sendLocked("progress", progressMap(snapshot))
+            }
+        }
+        synchronized(progressStateLock) {
+            lastProgressSentAt = System.nanoTime()
+            lastProgressPhase = snapshot.phase
+            if (pendingProgress != null && progressFlushFuture == null &&
+                (status == GenerationStatus.RUNNING || status == GenerationStatus.REGISTERED)
+            ) {
+                progressFlushFuture = progressScheduler.schedule(
+                    { flushProgress() }, 0L, TimeUnit.NANOSECONDS
+                )
+            }
+        }
+    }
+
+    fun sendHeartbeat(snapshot: AiReplyProgressSnapshot?) {
+        if (snapshot == null) return
+        synchronized(sendLock) {
+            if (status != GenerationStatus.RUNNING) return
+            sendLocked("heartbeat", mapOf("generationId" to generationId, "progress" to progressMap(snapshot)))
+        }
+    }
+
+    fun sendEvent(name: String, data: Any) {
+        synchronized(sendLock) { sendLocked(name, data) }
+    }
+
+    fun sendTerminal(name: String, data: Any) {
+        if (!terminalSent.compareAndSet(false, true)) return
+        synchronized(sendLock) {
+            status = GenerationStatus.FINISHED
+            sendLocked(name, data)
+            runCatching { emitter.complete() }
+        }
+    }
+
+    fun requestCancel(): String {
+        val active = synchronized(sendLock) {
+            when (status) {
+                GenerationStatus.REGISTERED, GenerationStatus.RUNNING -> {
+                    status = GenerationStatus.CANCEL_REQUESTED
+                    true
+                }
+                GenerationStatus.COMMITTING -> return "TOO_LATE"
+                GenerationStatus.CANCEL_REQUESTED, GenerationStatus.FINISHED -> return "NOT_ACTIVE"
+            }
+        }
+        if (active) {
+            token.cancel()
+            workerFuture?.cancel(true)
+            heartbeatFuture?.cancel(false)
+            sendTerminal("cancelled", mapOf("generationId" to generationId))
+            cleanup()
+            return "CANCEL_REQUESTED"
+        }
+        return "NOT_ACTIVE"
+    }
+
+    fun disconnect() {
+        token.cancel()
+        workerFuture?.cancel(true)
+        heartbeatFuture?.cancel(false)
+        cleanup()
+    }
+
+    fun cleanup() {
+        heartbeatFuture?.cancel(false)
+        synchronized(progressStateLock) {
+            progressFlushFuture?.cancel(false)
+            progressFlushFuture = null
+            pendingProgress = null
+        }
+        onCleanup?.invoke()
+    }
+
+    private fun sendLocked(name: String, data: Any) {
+        if (terminalSent.get() && name != "result" && name != "cancelled" && name != "error") return
+        try {
+            emitter.send(SseEmitter.event().name(name).data(data))
+        } catch (_: Exception) {
+            token.cancel()
+            workerFuture?.cancel(true)
+            heartbeatFuture?.cancel(false)
+            onCleanup?.invoke()
+        }
+    }
+
+    private fun progressMap(snapshot: AiReplyProgressSnapshot): Map<String, Any> = mapOf(
+        "generationId" to snapshot.generationId,
+        "progressSeq" to snapshot.progressSeq,
+        "phase" to snapshot.phase.name,
+        "providerActivity" to snapshot.providerActivity.name,
+        "providerCallIndex" to snapshot.providerCallIndex,
+        "attemptElapsedSeconds" to snapshot.attemptElapsedSeconds,
+        "attemptTimeoutSeconds" to snapshot.attemptTimeoutSeconds,
+        "totalElapsedSeconds" to snapshot.totalElapsedSeconds,
+        "totalTimeoutSeconds" to snapshot.totalTimeoutSeconds,
+        "providerEventCount" to snapshot.providerEventCount,
+        "contentChars" to snapshot.contentChars,
+        "secondsSinceProviderActivity" to snapshot.secondsSinceProviderActivity
+    )
 }
 
 @RestController
@@ -420,6 +784,7 @@ class ExpertEmailAliasController(
     ) {
         expertEmailAliasService.deleteAlias(aliasId)
     }
+
 }
 
 data class InboundMailProcessingListResponse(
@@ -608,7 +973,10 @@ data class AiReplyTurnRequest(
     val sessionId: String? = null,
     val operatorInstruction: String? = null,
     val operatorName: String? = null,
-    val model: String? = null
+    val model: String? = null,
+    val generationId: String? = null,
+    val llmAttemptTimeoutSeconds: Int? = null,
+    val llmTotalTimeoutSeconds: Int? = null
 )
 
 data class AiReplyTurnResponse(
@@ -630,6 +998,8 @@ data class AiReplyTurnResponse(
     val promptVersion: String = "",
     val draftHash: String = "",
     val evidenceSetVersion: String = "",
+    val appliedLlmAttemptTimeoutSeconds: Int = 30,
+    val appliedLlmTotalTimeoutSeconds: Int = 300,
     val evidenceSources: List<AiReplyEvidenceResponseItem> = emptyList()
 )
 

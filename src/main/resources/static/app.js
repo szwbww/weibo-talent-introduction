@@ -208,13 +208,280 @@ const aiReplyState = {
     adoptContext: null,
     requestSeq: 0,
     inFlight: false,
-    selectedModel: "DEEPSEEK_V4_FLASH"
+    selectedModel: "DEEPSEEK_V4_FLASH",
+    attemptTimeoutMode: "30",
+    attemptTimeoutSeconds: 30,
+    attemptCustomSeconds: 30,
+    totalTimeoutMode: "auto",
+    totalTimeoutSeconds: 300,
+    totalCustomSeconds: 300,
+    activeGeneration: null,
+    latestProgress: null,
+    lastProgressSeq: -1,
+    progressReceivedAt: 0,
+    progressTimerId: null
 };
 
 const AI_REPLY_MODEL_LABELS = {
     DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
     DEEPSEEK_V4_PRO: "DeepSeek V4 Pro"
 };
+
+const AI_REPLY_PROGRESS_PHASE_LABELS = {
+    QUEUED: "排队等待生成",
+    PREPARING: "正在准备生成上下文",
+    CALLING: "正在调用 DeepSeek",
+    VALIDATING: "正在校验结构与事实",
+    REPAIRING: "正在修复未通过的输出",
+    FINALIZING: "正在生成最终结果"
+};
+
+const AI_REPLY_PROVIDER_ACTIVITY_LABELS = {
+    IDLE: "等待服务端活动",
+    WAITING: "等待 DeepSeek 数据",
+    REASONING: "DeepSeek 思考中",
+    WRITING: "DeepSeek 正在输出回复"
+};
+
+function integerSeconds(value) {
+    const number = Number(value);
+    return Number.isInteger(number) ? number : null;
+}
+
+function resolveAiReplyTimeoutSelection() {
+    const attemptMode = aiReplyState.attemptTimeoutMode;
+    const attempt = attemptMode === "custom"
+        ? integerSeconds(aiReplyState.attemptCustomSeconds)
+        : integerSeconds(attemptMode);
+    if (attempt == null || attempt < 10 || attempt > 600) {
+        throw new Error("自定义单次 TTL 需为 10–600 的整数秒");
+    }
+    const total = aiReplyState.totalTimeoutMode === "auto"
+        ? attempt * 10
+        : aiReplyState.totalTimeoutMode === "custom"
+            ? integerSeconds(aiReplyState.totalCustomSeconds)
+            : integerSeconds(aiReplyState.totalTimeoutMode);
+    if (total != null && total < attempt) throw new Error("总 TTL 必须大于或等于单次 TTL");
+    if (total == null || total > 7200) {
+        throw new Error("自定义总 TTL 需为单次 TTL 至 7200 秒的整数");
+    }
+    aiReplyState.attemptTimeoutSeconds = attempt;
+    aiReplyState.totalTimeoutSeconds = total;
+    return {
+        attemptTimeoutSeconds: attempt,
+        totalTimeoutSeconds: total,
+        totalPayload: aiReplyState.totalTimeoutMode === "auto" ? null : total
+    };
+}
+
+function syncAiReplyTimeoutControls() {
+    const attemptSelect = $("#trustReplyAttemptTimeout");
+    const totalSelect = $("#trustReplyTotalTimeout");
+    const attemptCustom = $("#trustReplyAttemptTimeoutCustom");
+    const totalCustom = $("#trustReplyTotalTimeoutCustom");
+    const attemptWrap = $("#trustReplyAttemptTimeoutCustomWrap");
+    const totalWrap = $("#trustReplyTotalTimeoutCustomWrap");
+    if (attemptSelect) attemptSelect.value = aiReplyState.attemptTimeoutMode;
+    if (totalSelect) totalSelect.value = aiReplyState.totalTimeoutMode;
+    if (attemptCustom) attemptCustom.value = aiReplyState.attemptCustomSeconds;
+    if (totalCustom) totalCustom.value = aiReplyState.totalCustomSeconds;
+    if (attemptWrap) attemptWrap.hidden = aiReplyState.attemptTimeoutMode !== "custom";
+    if (totalWrap) totalWrap.hidden = aiReplyState.totalTimeoutMode !== "custom";
+    const auto = totalSelect?.querySelector("option[value='auto']");
+    const attemptForLabel = aiReplyState.attemptTimeoutMode === "custom"
+        ? (integerSeconds(aiReplyState.attemptCustomSeconds) || 30)
+        : (integerSeconds(aiReplyState.attemptTimeoutMode) || 30);
+    if (auto) auto.textContent = `自动（${attemptForLabel * 10} 秒）`;
+}
+
+function createAiReplyGenerationId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function parseAiReplySseFrames(buffer, flush = false) {
+    const events = [];
+    let remainder = String(buffer || "");
+    const parts = remainder.split(/\r?\n\r?\n/);
+    remainder = flush ? "" : (parts.pop() || "");
+    parts.forEach((frame) => {
+        let event = "message";
+        const data = [];
+        frame.split(/\r?\n/).forEach((line) => {
+            if (line.startsWith("event:")) event = line.slice(6).trim() || "message";
+            if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+        });
+        if (data.length) {
+            try {
+                events.push({ event, data: JSON.parse(data.join("\n")) });
+            } catch {
+                events.push({ event, data: null, invalid: true });
+            }
+        }
+    });
+    return { events, remainder };
+}
+
+function normalizeAiReplyProgressSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return null;
+    const phases = Object.keys(AI_REPLY_PROGRESS_PHASE_LABELS);
+    const activities = Object.keys(AI_REPLY_PROVIDER_ACTIVITY_LABELS);
+    const numericFields = [
+        "progressSeq", "providerCallIndex", "attemptElapsedSeconds", "attemptTimeoutSeconds",
+        "totalElapsedSeconds", "totalTimeoutSeconds", "providerEventCount", "contentChars",
+        "secondsSinceProviderActivity"
+    ];
+    if (typeof snapshot.generationId !== "string" || !phases.includes(snapshot.phase)
+        || !activities.includes(snapshot.providerActivity)) return null;
+    const normalized = { ...snapshot };
+    for (const field of numericFields) {
+        const value = integerSeconds(snapshot[field]);
+        if (value == null || value < 0 || value > 2147483647) return null;
+        normalized[field] = value;
+    }
+    if (normalized.totalTimeoutSeconds <= 0 || normalized.attemptTimeoutSeconds <= 0
+        || normalized.providerCallIndex > 2147483647) return null;
+    normalized.attemptElapsedSeconds = Math.min(normalized.attemptElapsedSeconds, normalized.attemptTimeoutSeconds);
+    normalized.totalElapsedSeconds = Math.min(normalized.totalElapsedSeconds, normalized.totalTimeoutSeconds);
+    return normalized;
+}
+
+function acceptAiReplyProgressSnapshot(snapshot) {
+    const active = aiReplyState.activeGeneration;
+    const normalized = normalizeAiReplyProgressSnapshot(snapshot);
+    if (!active || !normalized || normalized.generationId !== active.generationId
+        || normalized.progressSeq <= aiReplyState.lastProgressSeq) return false;
+    aiReplyState.latestProgress = normalized;
+    aiReplyState.lastProgressSeq = normalized.progressSeq;
+    aiReplyState.progressReceivedAt = performance.now();
+    renderAiReplyProgress(normalized);
+    return true;
+}
+
+function renderAiReplyProgress(snapshot) {
+    const overlay = $(".compose-draft.ai-chat-panel .ai-reply-loading-overlay");
+    if (!overlay || !snapshot) return;
+    const phase = overlay.querySelector(".ai-reply-progress-phase");
+    const detail = overlay.querySelector(".ai-reply-progress-detail");
+    const activity = overlay.querySelector(".ai-reply-progress-activity");
+    const track = overlay.querySelector(".ai-reply-progress-track");
+    if (phase) phase.textContent = AI_REPLY_PROGRESS_PHASE_LABELS[snapshot.phase];
+    const call = snapshot.providerCallIndex === 0
+        ? `尚未调用模型 · 总计 ${snapshot.totalElapsedSeconds}/${snapshot.totalTimeoutSeconds} 秒`
+        : `第 ${snapshot.providerCallIndex} 次模型调用 · 本次 ${snapshot.attemptElapsedSeconds}/${snapshot.attemptTimeoutSeconds} 秒 · 总计 ${snapshot.totalElapsedSeconds}/${snapshot.totalTimeoutSeconds} 秒`;
+    if (detail) detail.textContent = call;
+    if (activity) {
+        const chars = snapshot.providerActivity === "WRITING" ? ` · 已接收 ${snapshot.contentChars} 字符` : "";
+        activity.textContent = `${AI_REPLY_PROVIDER_ACTIVITY_LABELS[snapshot.providerActivity]} · 最近活动 ${snapshot.secondsSinceProviderActivity} 秒前 · 已接收 ${snapshot.providerEventCount} 个流事件${chars}`;
+    }
+    const value = Math.max(0, Math.min(100, snapshot.totalElapsedSeconds / snapshot.totalTimeoutSeconds * 100));
+    if (track) {
+        track.value = value;
+        track.setAttribute("aria-valuenow", String(value));
+        track.title = `已使用总 TTL ${snapshot.totalElapsedSeconds}/${snapshot.totalTimeoutSeconds} 秒`;
+    }
+}
+
+function updateAiReplyLoadingMessage(message) {
+    const text = $(".compose-draft.ai-chat-panel .ai-reply-loading-text");
+    if (text) text.textContent = message;
+}
+
+function startAiReplyProgressTicker() {
+    stopAiReplyProgressTicker();
+    aiReplyState.progressTimerId = setInterval(() => {
+        const snapshot = aiReplyState.latestProgress;
+        if (!snapshot || !aiReplyState.progressReceivedAt) return;
+        const elapsed = Math.max(0, Math.floor((performance.now() - aiReplyState.progressReceivedAt) / 1000));
+        const next = { ...snapshot, totalElapsedSeconds: Math.min(snapshot.totalTimeoutSeconds, snapshot.totalElapsedSeconds + elapsed) };
+        if (snapshot.providerActivity !== "IDLE") {
+            next.attemptElapsedSeconds = Math.min(snapshot.attemptTimeoutSeconds, snapshot.attemptElapsedSeconds + elapsed);
+            next.secondsSinceProviderActivity = Math.min(2147483647, snapshot.secondsSinceProviderActivity + elapsed);
+        }
+        renderAiReplyProgress(next);
+    }, 1000);
+}
+
+function stopAiReplyProgressTicker() {
+    if (aiReplyState.progressTimerId) clearInterval(aiReplyState.progressTimerId);
+    aiReplyState.progressTimerId = null;
+}
+
+async function requestAiReplyCancellation(recordId, generationId) {
+    if (!recordId || !generationId) return { status: "NOT_ACTIVE" };
+    return api(`/api/mail/unmatched-inbound/${recordId}/ai-reply/generations/${generationId}/cancel`, { method: "POST" });
+}
+
+async function cancelActiveAiReplyGeneration({ abort = true } = {}) {
+    const active = aiReplyState.activeGeneration;
+    if (!active) return { status: "NOT_ACTIVE" };
+    let result;
+    try {
+        result = await requestAiReplyCancellation(active.recordId, active.generationId);
+    } catch {
+        result = { status: "NOT_ACTIVE" };
+    }
+    if (result.status === "TOO_LATE") return result;
+    if (abort) active.controller?.abort();
+    if (aiReplyState.activeGeneration?.generationId === active.generationId) aiReplyState.activeGeneration = null;
+    stopAiReplyProgressTicker();
+    aiReplyState.latestProgress = null;
+    return result;
+}
+
+async function postAiReplySse(recordId, body, handlers = {}) {
+    const controller = new AbortController();
+    if (aiReplyState.activeGeneration?.generationId === body.generationId) {
+        aiReplyState.activeGeneration.controller = controller;
+    }
+    const total = Number(body._resolvedTotalTimeoutSeconds || 300);
+    const timer = setTimeout(() => controller.abort(), (total + 35) * 1000);
+    const response = await fetch(`${contextPath}/api/mail/unmatched-inbound/${recordId}/ai-reply/turn-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify(Object.fromEntries(Object.entries(body).filter(([key]) => !key.startsWith("_")))),
+        signal: controller.signal
+    });
+    await handleAuthResponse(response);
+    if (!response.ok || !response.body) throw new Error(`SSE ${response.status} ${response.statusText}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let terminal = false;
+    try {
+        while (true) {
+            const chunk = await reader.read();
+            buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
+            const parsed = parseAiReplySseFrames(buffer, chunk.done);
+            buffer = parsed.remainder;
+            for (const item of parsed.events) {
+                if (item.invalid) throw new Error("SSE 数据格式无效");
+                if (item.event === "ready") {
+                    handlers.onReady?.(item.data);
+                    acceptAiReplyProgressSnapshot(item.data?.progress);
+                } else if (item.event === "progress") {
+                    acceptAiReplyProgressSnapshot(item.data);
+                    handlers.onProgress?.(item.data);
+                } else if (item.event === "heartbeat") {
+                    acceptAiReplyProgressSnapshot(item.data?.progress);
+                } else if (["result", "cancelled", "error"].includes(item.event)) {
+                    terminal = true;
+                    handlers.onTerminal?.(item.event, item.data);
+                }
+            }
+            if (chunk.done) break;
+        }
+        if (!terminal) throw new Error("SSE 在收到终态前断开");
+    } finally {
+        clearTimeout(timer);
+        reader.cancel().catch(() => {});
+    }
+}
 
 function aiReplyModelLabel(model) {
     return AI_REPLY_MODEL_LABELS[model] || AI_REPLY_MODEL_LABELS.DEEPSEEK_V4_FLASH;
@@ -3715,6 +3982,7 @@ const AI_REPLY_WARNING_LABELS = {
     AI_REPLY_PREVIEW_ACCOUNT_NOT_FOUND: "无法确定回信账号，变量预览未完全渲染",
     AI_REPLY_PREVIEW_INVALID_PLACEHOLDER: "草稿含未知变量占位符，已保留原文",
     AI_REPLY_STRUCTURED_RESPONSE_INVALID: "模型返回格式无效，已使用审核依据生成结构化草稿。",
+    AI_REPLY_LLM_TOTAL_TIMEOUT: "DeepSeek 生成总时限已用尽，已回退为人工审核草稿。",
     AI_REPLY_CLAIM_HALLUCINATED_FACT: "文本含未经审核的数字或链接，请依据 QA 事实手动核对。",
     AI_REPLY_CLAIM_MODALITY_STRENGTHENED: "承诺语气超出依据——原文含条件性表述（如 may/can），但正文强化为保证性表述。",
     AI_REPLY_CLAIM_HIGH_RISK_UNBACKED: "正文含高风险声明，但依据中不含该声明。",
@@ -3754,6 +4022,7 @@ function aiReplyGenerationStateLabel(state) {
 
 const AI_REPLY_FAILURE_WARNING_CODES = new Set([
     "AI_REPLY_LLM_TIMEOUT",
+    "AI_REPLY_LLM_TOTAL_TIMEOUT",
     "AI_REPLY_LLM_RATE_LIMITED",
     "AI_REPLY_LLM_NETWORK_ERROR",
     "AI_REPLY_LLM_PROVIDER_ERROR",
@@ -3770,6 +4039,8 @@ function aiReplyFailureReasonLabel(code) {
     switch (code) {
         case "AI_REPLY_LLM_TIMEOUT":
             return "DeepSeek 请求超时";
+        case "AI_REPLY_LLM_TOTAL_TIMEOUT":
+            return "DeepSeek 生成总时限已用尽";
         case "AI_REPLY_LLM_RATE_LIMITED":
             return "DeepSeek 请求过于频繁";
         case "AI_REPLY_LLM_NETWORK_ERROR":
@@ -3788,6 +4059,7 @@ function aiReplyFailureReasonLabel(code) {
 function resolveAiReplyFailureReason(contextWarnings) {
     if (!Array.isArray(contextWarnings)) return null;
     var priority = [
+        "AI_REPLY_LLM_TOTAL_TIMEOUT",
         "AI_REPLY_LLM_TIMEOUT",
         "AI_REPLY_LLM_RATE_LIMITED",
         "AI_REPLY_LLM_NETWORK_ERROR",
@@ -3839,10 +4111,10 @@ function resolveFactDisplayName(ruleId, evidenceSources, suggest) {
     return "事实名称缺失";
 }
 
-function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…") {
+function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…", { stoppable = false, generationId = null, attemptTimeoutSeconds = 30, totalTimeoutSeconds = 300 } = {}) {
     if (!panel) return;
     panel.setAttribute("aria-busy", loading ? "true" : "false");
-    panel.querySelectorAll("button, textarea, select").forEach((el) => {
+    panel.querySelectorAll("button, textarea, select, input").forEach((el) => {
         if (loading) {
             if (!el.hasAttribute("data-ai-reply-was-disabled")) {
                 el.setAttribute("data-ai-reply-was-disabled", el.disabled ? "true" : "false");
@@ -3863,10 +4135,23 @@ function setAiReplyLoading(panel, loading, message = "AI 正在生成回复…")
             overlay.innerHTML =
                 `<span class="ai-reply-loading-spinner" aria-hidden="true"></span>` +
                 `<span class="ai-reply-loading-text"></span>`;
+            if (stoppable) {
+                overlay.insertAdjacentHTML("beforeend", `
+                    <div class="ai-reply-progress" role="group" aria-label="AI 生成进度">
+                        <div class="ai-reply-progress-phase">正在准备生成上下文</div>
+                        <progress class="ai-reply-progress-track" aria-label="总 TTL 使用进度" max="100" value="0" aria-valuenow="0" title="已使用总 TTL 0/${totalTimeoutSeconds} 秒"></progress>
+                        <div class="ai-reply-progress-detail">尚未调用模型 · 总计 0/${totalTimeoutSeconds} 秒</div>
+                        <div class="ai-reply-progress-activity">等待服务端活动…</div>
+                    </div>
+                    <button type="button" class="button secondary small ai-reply-stop-button" data-action="ai-reply-stop">停止生成</button>`);
+            }
             panel.appendChild(overlay);
         }
         const textEl = overlay.querySelector(".ai-reply-loading-text");
         if (textEl) textEl.textContent = message;
+        const stop = overlay.querySelector("[data-action='ai-reply-stop']");
+        if (stop) stop.disabled = false;
+        if (stoppable && aiReplyState.latestProgress) renderAiReplyProgress(aiReplyState.latestProgress);
     } else if (overlay) {
         overlay.remove();
     }
@@ -8877,12 +9162,28 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
                 </div>
                 <div class="compose-panel compose-draft ai-chat-panel">
                     <h4 id="trustDraftHeading">可信草稿</h4>
-                    <div class="ai-reply-model-row">
+                    <div class="ai-reply-model-row ai-reply-generation-controls">
                         <label>生成模型
                             <select id="trustReplyModel" class="ai-reply-model-select"${llmDisabled ? " disabled" : ""}>
                                 <option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>
                                 <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
                             </select>
+                        </label>
+                        <label>单次 TTL
+                            <select id="trustReplyAttemptTimeout" class="ai-reply-model-select ai-reply-timeout-select">
+                                <option value="30">30 秒（默认）</option><option value="60">60 秒</option><option value="90">90 秒</option><option value="180">180 秒</option><option value="custom">自定义</option>
+                            </select>
+                        </label>
+                        <label id="trustReplyAttemptTimeoutCustomWrap" class="ai-reply-timeout-custom-wrap" hidden>
+                            <input id="trustReplyAttemptTimeoutCustom" class="ai-reply-timeout-custom-input" type="number" min="10" max="600" step="1" value="30" aria-label="自定义单次生成超时秒数"><span>秒</span>
+                        </label>
+                        <label>总 TTL
+                            <select id="trustReplyTotalTimeout" class="ai-reply-model-select ai-reply-timeout-select">
+                                <option value="auto">自动（300 秒）</option><option value="300">300 秒</option><option value="600">600 秒</option><option value="900">900 秒</option><option value="1800">1800 秒</option><option value="custom">自定义</option>
+                            </select>
+                        </label>
+                        <label id="trustReplyTotalTimeoutCustomWrap" class="ai-reply-timeout-custom-wrap" hidden>
+                            <input id="trustReplyTotalTimeoutCustom" class="ai-reply-timeout-custom-input" type="number" min="10" max="7200" step="1" value="300" aria-label="自定义生成总超时秒数"><span>秒</span>
                         </label>
                     </div>
                     <div id="trustReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
@@ -8904,6 +9205,8 @@ function renderComposedReplyWorkbenchHtml(suggest, recordId) {
 }
 
 function resetAiReplyState(recordId) {
+    if (aiReplyState.activeGeneration) void cancelActiveAiReplyGeneration();
+    stopAiReplyProgressTicker();
     aiReplyState.requestSeq += 1;
     aiReplyState.recordId = recordId;
     aiReplyState.turns = [];
@@ -8916,6 +9219,10 @@ function resetAiReplyState(recordId) {
     aiReplyState.nextDraftId = 0;
     aiReplyState.adoptContext = null;
     aiReplyState.inFlight = false;
+    aiReplyState.activeGeneration = null;
+    aiReplyState.latestProgress = null;
+    aiReplyState.lastProgressSeq = -1;
+    aiReplyState.progressReceivedAt = 0;
     resetPreflightState();
 }
 
@@ -8985,6 +9292,7 @@ function initAiReplyWorkbench(recordId) {
     if (modelSelect) {
         modelSelect.value = aiReplyState.selectedModel || "DEEPSEEK_V4_FLASH";
     }
+    syncAiReplyTimeoutControls();
 }
 
 function schedulePreflightCheck() {
@@ -9526,6 +9834,28 @@ async function handleUnmatchedAction(element) {
         await mailboxRemoveTag(Number(element.dataset.tagId));
         return;
     }
+    if (action === "ai-reply-stop") {
+        if (!aiReplyState.activeGeneration) return;
+        element.disabled = true;
+        element.textContent = "正在停止…";
+        try {
+            const result = await cancelActiveAiReplyGeneration({ abort: true });
+            if (result.status === "TOO_LATE") {
+                element.disabled = false;
+                element.textContent = "停止生成";
+                updateAiReplyLoadingMessage("生成已进入完成阶段，无法停止");
+                return;
+            }
+            setAiReplyLoading($(".compose-draft.ai-chat-panel"), false);
+            aiReplyState.inFlight = false;
+            showStatus("已停止生成", "ok");
+        } catch (error) {
+            element.disabled = false;
+            element.textContent = "停止生成";
+            showStatus(`停止失败：${error.message || "未知错误"}`, "error");
+        }
+        return;
+    }
     if (action === "trust-generate-draft") {
         if (aiReplyState.inFlight) {
             return;
@@ -9556,10 +9886,22 @@ async function handleUnmatchedAction(element) {
         }
         const expectedModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
         aiReplyState.selectedModel = expectedModel;
+        let timeoutSelection;
+        try {
+            timeoutSelection = resolveAiReplyTimeoutSelection();
+        } catch (error) {
+            showStatus(error.message, "error");
+            return;
+        }
+        const generationId = createAiReplyGenerationId();
         const body = {
             turns: turnsToSend,
             qaRuleIds: factIds,
-            model: expectedModel
+            model: expectedModel,
+            generationId,
+            llmAttemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
+            llmTotalTimeoutSeconds: timeoutSelection.totalPayload,
+            _resolvedTotalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds
         };
         if (isFirstTurn && instruction) {
             body.operatorInstruction = instruction;
@@ -9570,19 +9912,50 @@ async function handleUnmatchedAction(element) {
         const expectedRecordId = composedReplyState.recordId;
         const detailId = Number(id);
         aiReplyState.inFlight = true;
+        aiReplyState.activeGeneration = {
+            generationId,
+            recordId: detailId,
+            requestSeq,
+            model: expectedModel,
+            attemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
+            totalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds,
+            controller: null
+        };
+        aiReplyState.latestProgress = null;
+        aiReplyState.lastProgressSeq = -1;
         renderAiReplyFeedback(feedback, null);
-        setAiReplyLoading(panel, true);
+        setAiReplyLoading(panel, true, "AI 正在生成回复…", {
+            stoppable: true,
+            generationId,
+            attemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
+            totalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds
+        });
+        startAiReplyProgressTicker();
         updateTrustWorkbenchButtons();
         try {
-            const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
-                method: "POST",
-                body: JSON.stringify(body)
+            let result = null;
+            let terminal = null;
+            await postAiReplySse(id, body, {
+                onTerminal: (event, data) => {
+                    terminal = event;
+                    if (event === "result") result = data;
+                    if (event === "error") throw new Error(data?.message || "AI 生成失败");
+                }
             });
+            if (terminal === "cancelled") {
+                showStatus("已停止生成", "ok");
+                return;
+            }
+            if (!result) throw new Error("SSE 未返回完整结果");
             const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
                 && expectedRecordId === composedReplyState.recordId
                 && detailId === Number(state.mailbox.detailContext?.id)
-                && expectedModel === currentModel;
+                && expectedModel === currentModel
+                && aiReplyState.activeGeneration?.model === expectedModel
+                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
+                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
+                && aiReplyState.activeGeneration?.generationId === generationId;
             if (!stillCurrent) {
                 return;
             }
@@ -9619,19 +9992,33 @@ async function handleUnmatchedAction(element) {
             const stillCurrent = requestSeq === aiReplyState.requestSeq
                 && expectedRecordId === composedReplyState.recordId
                 && detailId === Number(state.mailbox.detailContext?.id)
-                && expectedModel === currentModel;
+                && expectedModel === currentModel
+                && aiReplyState.activeGeneration?.model === expectedModel
+                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
+                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
+                && aiReplyState.activeGeneration?.generationId === generationId;
             if (stillCurrent) {
                 renderAiReplyFeedback(feedback, null, e.message || "未知错误");
+                showStatus(`生成失败：${e.message || "未知错误"}`, "error");
             }
-            showStatus(`生成失败：${e.message || "未知错误"}`, "error");
         } finally {
             const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
             const stillCurrent = requestSeq === aiReplyState.requestSeq
                 && expectedRecordId === composedReplyState.recordId
-                && expectedModel === currentModel;
+                && detailId === Number(state.mailbox.detailContext?.id)
+                && expectedModel === currentModel
+                && aiReplyState.activeGeneration?.model === expectedModel
+                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
+                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
+                && aiReplyState.activeGeneration?.generationId === generationId;
             if (stillCurrent) {
                 setAiReplyLoading(panel, false);
                 aiReplyState.inFlight = false;
+                if (aiReplyState.activeGeneration?.generationId === generationId) {
+                    aiReplyState.activeGeneration = null;
+                }
+                stopAiReplyProgressTicker();
+                aiReplyState.latestProgress = null;
                 updateTrustWorkbenchButtons();
             }
         }
@@ -10906,6 +11293,24 @@ function bindEvents() {
         }
         if (event.target?.id === "aiMailboxReplyModel") {
             aiReplyState.selectedModel = readAiReplyModelSelection("#aiMailboxReplyModel", event.target.value);
+        }
+        if (event.target?.id === "trustReplyAttemptTimeout") {
+            aiReplyState.attemptTimeoutMode = event.target.value;
+            syncAiReplyTimeoutControls();
+        }
+        if (event.target?.id === "trustReplyTotalTimeout") {
+            aiReplyState.totalTimeoutMode = event.target.value;
+            syncAiReplyTimeoutControls();
+        }
+    });
+    document.addEventListener("input", (event) => {
+        if (event.target?.id === "trustReplyAttemptTimeoutCustom") {
+            aiReplyState.attemptCustomSeconds = event.target.value;
+            syncAiReplyTimeoutControls();
+        }
+        if (event.target?.id === "trustReplyTotalTimeoutCustom") {
+            aiReplyState.totalCustomSeconds = event.target.value;
+            syncAiReplyTimeoutControls();
         }
     });
     $("#aiTrainingSimulateMessages")?.addEventListener("click", async (event) => {

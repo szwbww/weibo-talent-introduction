@@ -9,10 +9,13 @@ import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.mail.service.GroundedAutoReplyDecisionService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
@@ -117,6 +120,643 @@ class AiReplyDraftServiceTest {
                 Mockito.`when`(qaRuleRepository.findById(id)).thenReturn(Optional.of(rule))
             }
         }
+    }
+
+    @Test
+    fun `timeout policy resolves defaults and rejects invalid boundaries`() {
+        assertEquals(
+            AiReplyTimeoutPolicy(30, 300),
+            AiReplyTimeoutPolicy.resolve(null, null)
+        )
+        assertEquals(
+            AiReplyTimeoutPolicy(60, 60),
+            AiReplyTimeoutPolicy.resolve(60, 60)
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            AiReplyTimeoutPolicy.resolve(9, null)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AiReplyTimeoutPolicy.resolve(60, 59)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AiReplyTimeoutPolicy.resolve(600, 7201)
+        }
+    }
+
+    @Test
+    fun `timeout policy accepts every documented endpoint`() {
+        assertEquals(AiReplyTimeoutPolicy(10, 10), AiReplyTimeoutPolicy.resolve(10, 10))
+        assertEquals(AiReplyTimeoutPolicy(600, 600), AiReplyTimeoutPolicy.resolve(600, 600))
+        assertEquals(AiReplyTimeoutPolicy(60, 601), AiReplyTimeoutPolicy.resolve(60, 601))
+        assertEquals(AiReplyTimeoutPolicy(600, 7200), AiReplyTimeoutPolicy.resolve(600, 7200))
+        assertThrows(IllegalArgumentException::class.java) {
+            AiReplyTimeoutPolicy.resolve(601, null)
+        }
+    }
+
+    @Test
+    fun `generation budget clamps each attempt to remaining total`() {
+        var now = 0L
+        val budget = AiReplyTimeoutPolicy(600, 7200).budget { now }
+        assertEquals(600_000L, budget.nextAttemptMillis())
+        now = 6_950_000_000_000L
+        assertEquals(250_000L, budget.nextAttemptMillis())
+        now = 7_200_000_000_000L
+        assertEquals(0L, budget.nextAttemptMillis())
+    }
+
+    @Test
+    fun `cancellation listener failure does not prevent later listeners`() {
+        val token = AiReplyCancellationToken()
+        var laterCalled = false
+        token.onCancel { throw IllegalStateException("listener") }
+        token.onCancel { laterCalled = true }
+
+        token.cancel()
+
+        assertTrue(token.isCancelled())
+        assertTrue(laterCalled)
+    }
+
+    @Test
+    fun `noop progress reporter preserves no snapshot and no-op sink`() {
+        val reporter = AiReplyProgressReporter.NOOP
+        reporter.startBudget(AiReplyTimeoutPolicy(30, 300).budget { 0L })
+        reporter.transition(AiReplyProgressPhase.CALLING)
+        reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+            .onActivity(LlmStreamActivity.WRITING, 1, 1)
+        reporter.endProviderCall()
+
+        assertNull(reporter.snapshotNow())
+    }
+
+    @Test
+    fun `progress tracker accumulates local stream deltas across provider calls`() {
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-1",
+            attemptTimeoutSeconds = 30,
+            totalTimeoutSeconds = 300,
+            clock = { 1_000_000_000L },
+            sink = snapshots::add
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(30, 300).budget { 1_000_000_000L })
+        val first = tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+        first.onActivity(LlmStreamActivity.WRITING, 4, 7)
+        tracker.endProviderCall()
+        val second = tracker.beginProviderCall(AiReplyProgressPhase.REPAIRING, 30_000)
+        second.onActivity(LlmStreamActivity.WRITING, 3, 5)
+
+        val latest = tracker.snapshotNow()!!
+        assertEquals(7, latest.providerEventCount)
+        assertEquals(12, latest.contentChars)
+        assertEquals(2, latest.providerCallIndex)
+        assertTrue(snapshots.isNotEmpty())
+    }
+
+    @Test
+    fun `ending provider call freezes attempt elapsed time`() {
+        var now = 1_000_000_000L
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-freeze",
+            attemptTimeoutSeconds = 30,
+            totalTimeoutSeconds = 300,
+            clock = { now },
+            sink = {}
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(30, 300).budget { now })
+        tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+
+        now = 4_000_000_000L
+        tracker.endProviderCall()
+        now = 9_000_000_000L
+
+        val snapshot = tracker.snapshotNow()!!
+        assertEquals(AiReplyProviderActivity.IDLE, snapshot.providerActivity)
+        assertEquals(3, snapshot.attemptElapsedSeconds)
+    }
+
+    @Test
+    fun `progress tracker saturates accumulated counters`() {
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-2",
+            attemptTimeoutSeconds = 30,
+            totalTimeoutSeconds = 300,
+            clock = { 1_000_000_000L },
+            sink = {}
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(30, 300).budget { 1_000_000_000L })
+        val first = tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+        first.onActivity(LlmStreamActivity.WRITING, Int.MAX_VALUE, Int.MAX_VALUE)
+        tracker.endProviderCall()
+        val second = tracker.beginProviderCall(AiReplyProgressPhase.REPAIRING, 30_000)
+        second.onActivity(LlmStreamActivity.WRITING, Int.MAX_VALUE, Int.MAX_VALUE)
+
+        val latest = tracker.snapshotNow()!!
+        assertEquals(Int.MAX_VALUE, latest.providerEventCount)
+        assertEquals(Int.MAX_VALUE, latest.contentChars)
+    }
+
+    @Test
+    fun `progress tracker publishes phase order and repair attempt index`() {
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-phases",
+            attemptTimeoutSeconds = 30,
+            totalTimeoutSeconds = 300,
+            clock = { 1_000_000_000L },
+            sink = snapshots::add
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(30, 300).budget { 1_000_000_000L })
+        tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+        tracker.endProviderCall()
+        tracker.transition(AiReplyProgressPhase.VALIDATING)
+        tracker.beginProviderCall(AiReplyProgressPhase.REPAIRING, 30_000)
+        tracker.endProviderCall()
+
+        assertEquals(
+            listOf(AiReplyProgressPhase.PREPARING, AiReplyProgressPhase.CALLING,
+                AiReplyProgressPhase.VALIDATING, AiReplyProgressPhase.REPAIRING),
+            snapshots.map { it.phase }.distinct()
+        )
+        assertEquals(2, snapshots.last().providerCallIndex)
+    }
+
+    @Test
+    fun `progress tracker reports exact total attempt and activity elapsed`() {
+        var now = 1_000_000_000L
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-clock",
+            attemptTimeoutSeconds = 30,
+            totalTimeoutSeconds = 300,
+            clock = { now },
+            sink = {}
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(30, 300).budget { now })
+        val sink = tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000)
+        now = 3_000_000_000L
+        sink.onActivity(LlmStreamActivity.WRITING, 1, 2)
+        now = 6_000_000_000L
+
+        val snapshot = tracker.snapshotNow()!!
+        assertEquals(5, snapshot.attemptElapsedSeconds)
+        assertEquals(5, snapshot.totalElapsedSeconds)
+        assertEquals(3, snapshot.secondsSinceProviderActivity)
+    }
+
+    @Test
+    fun `fake monotonic snapshots never regress and clamp to both TTLs`() {
+        var now = 0L
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        val tracker = AiReplyProgressTracker(
+            generationId = "generation-monotonic",
+            attemptTimeoutSeconds = 10,
+            totalTimeoutSeconds = 20,
+            clock = { now },
+            sink = snapshots::add
+        )
+        tracker.startBudget(AiReplyTimeoutPolicy(10, 20).budget { now })
+        val stream = tracker.beginProviderCall(AiReplyProgressPhase.CALLING, 10_000)
+        now = 2_000_000_000L
+        stream.onActivity(LlmStreamActivity.WRITING, 1, 2)
+        now = 5_000_000_000L
+        tracker.snapshotNow()
+        now = 12_000_000_000L
+        tracker.snapshotNow()
+        now = 25_000_000_000L
+        tracker.snapshotNow()
+
+        val published = snapshots.map { it.attemptElapsedSeconds }
+        assertEquals(published.sorted(), published)
+        assertTrue(snapshots.zipWithNext().all { (a, b) ->
+            b.totalElapsedSeconds >= a.totalElapsedSeconds &&
+                b.secondsSinceProviderActivity >= a.secondsSinceProviderActivity
+        })
+        assertTrue(snapshots.all { it.attemptElapsedSeconds <= 10 && it.totalElapsedSeconds <= 20 })
+    }
+
+    @Test
+    fun `cancellation prevents retry after the first provider failure`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val token = AiReplyCancellationToken()
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                cancellationToken.cancel()
+                return LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
+            }
+        }
+
+        assertThrows(AiReplyGenerationCancelledException::class.java) {
+            service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+                inboundText = "Hello",
+                operatorTurns = emptyList(),
+                llmAttemptTimeoutSeconds = 30,
+                llmTotalTimeoutSeconds = 300,
+                cancellationToken = token
+            )
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `retry ceiling is two provider calls for retryable failure`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                return LlmChatResult(null, LlmChatFailureType.NETWORK_ERROR)
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello",
+            operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 30,
+            llmTotalTimeoutSeconds = 300
+        )
+
+        assertEquals(2, calls)
+        assertTrue(result.contextWarnings.contains("AI_REPLY_LLM_NETWORK_ERROR"))
+        assertTrue(result.draftText.isNotBlank())
+    }
+
+    @Test
+    fun `retry ceiling is two provider calls for attempt timeout`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                return LlmChatResult(null, LlmChatFailureType.TIMEOUT)
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 10, llmTotalTimeoutSeconds = 300
+        )
+        assertEquals(2, calls)
+        assertTrue(result.contextWarnings.contains("AI_REPLY_LLM_TIMEOUT"))
+    }
+
+    @Test
+    fun `total exhaustion prevents second provider call and emits total warning`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                java.util.concurrent.locks.LockSupport.parkNanos(10_050_000_000L)
+                return LlmChatResult(null, LlmChatFailureType.TIMEOUT)
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 10, llmTotalTimeoutSeconds = 10
+        )
+        assertEquals(1, calls)
+        assertTrue(result.contextWarnings.contains("AI_REPLY_LLM_TOTAL_TIMEOUT"))
+        assertFalse(result.usedLlm)
+    }
+
+    @Test
+    fun `provider success after total deadline falls back before materialization`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                java.util.concurrent.locks.LockSupport.parkNanos(10_050_000_000L)
+                return LlmChatResult("provider draft")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 10, llmTotalTimeoutSeconds = 10
+        )
+        assertEquals(1, calls)
+        assertTrue(result.contextWarnings.contains("AI_REPLY_LLM_TOTAL_TIMEOUT"))
+        assertFalse(result.usedLlm)
+    }
+
+    @Test
+    fun `generate reports real phase sequence and provider attempt index`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        val tracker = AiReplyProgressTracker("generation-real", 30, 300, sink = snapshots::add)
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "legacy"
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult = LlmChatResult("provider draft")
+        }
+
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300,
+            progressReporter = tracker
+        )
+        assertEquals(
+            listOf(AiReplyProgressPhase.PREPARING, AiReplyProgressPhase.CALLING,
+                AiReplyProgressPhase.VALIDATING, AiReplyProgressPhase.FINALIZING),
+            snapshots.map { it.phase }.distinct()
+        )
+        assertEquals(1, snapshots.maxOf { it.providerCallIndex })
+    }
+
+    @Test
+    fun `cancellation blocks trust correction before second provider call`() {
+        stubEmptyFrame()
+        val rule = sampleRule(5).copy(keywords = "funding", coverageKeys = "finance.arrangements")
+        stubMatchPool(rule)
+        val token = AiReplyCancellationToken()
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                cancellationToken.cancel()
+                return LlmChatResult("not-json")
+            }
+        }
+
+        assertThrows(AiReplyGenerationCancelledException::class.java) {
+            service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+                inboundText = "Funding?", operatorTurns = emptyList(), qaRuleIds = listOf(5L),
+                llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300,
+                cancellationToken = token
+            )
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `cancellation blocks action correction before second provider call`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val token = AiReplyCancellationToken()
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                cancellationToken.cancel()
+                return LlmChatResult("Please send your CV.")
+            }
+        }
+
+        assertThrows(AiReplyGenerationCancelledException::class.java) {
+            service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+                inboundText = freeFormActionPolicyInbound,
+                operatorTurns = emptyList(),
+                llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300,
+                cancellationToken = token
+            )
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `runtime-enabled generate uses stream while legacy generate uses observed seam`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var observedCalls = 0
+        var streamCalls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "legacy draft"
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String
+            ): LlmChatResult {
+                observedCalls++
+                return LlmChatResult("legacy draft")
+            }
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                streamCalls++
+                return LlmChatResult("stream draft")
+            }
+        }
+        val legacy = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList()
+        )
+        val runtime = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300
+        )
+        assertEquals(1, observedCalls)
+        assertEquals(1, streamCalls)
+        assertEquals("legacy draft", legacy.draftText)
+        assertEquals("stream draft", runtime.draftText)
+    }
+
+    @Test
+    fun `explicit all-null noop runtime path matches legacy result`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = "same draft"
+        }
+        val legacy = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList()
+        )
+        val explicit = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Hello", operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = null, llmTotalTimeoutSeconds = null,
+            cancellationToken = null, progressReporter = AiReplyProgressReporter.NOOP
+        )
+        assertEquals(legacy, explicit)
+    }
+
+    @Test
+    fun `training simulate entrypoint remains on observed seam`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var observedCalls = 0
+        var streamCalls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String
+            ): LlmChatResult {
+                observedCalls++
+                return LlmChatResult("training draft")
+            }
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                streamCalls++
+                return LlmChatResult("unexpected stream")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Training question", operatorTurns = emptyList(), simulateOnly = true
+        )
+
+        assertEquals("training draft", result.draftText)
+        assertEquals(1, observedCalls)
+        assertEquals(0, streamCalls)
+    }
+
+    @Test
+    fun `grounded auto reply entrypoint remains on legacy seam`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        var observedCalls = 0
+        var streamCalls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String
+            ): LlmChatResult {
+                observedCalls++
+                return LlmChatResult("auto draft")
+            }
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                streamCalls++
+                return LlmChatResult("unexpected stream")
+            }
+        }
+        val props = LlmProperties(enabled = true, apiUrl = "http://llm", autoReplyEnabled = true)
+        val decision = GroundedAutoReplyDecisionService(
+            props,
+            service(props, client),
+            qaRuleRepository
+        ).decide("Auto question", "Subject")
+
+        assertEquals("Re: Subject", decision.subject)
+        assertEquals(1, observedCalls)
+        assertEquals(0, streamCalls)
+    }
+
+    @Test
+    fun `trust repair uses real stream call index and repairing phase`() {
+        stubEmptyFrame()
+        stubMatchPool(sampleRule(5).copy(keywords = "funding", coverageKeys = "finance.arrangements"))
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                return LlmChatResult(if (calls == 1) "not-json" else "still-invalid")
+            }
+        }
+        service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = "Funding?", operatorTurns = emptyList(), qaRuleIds = listOf(5L),
+            llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300,
+            progressReporter = AiReplyProgressTracker("trust-repair", 30, 300, sink = snapshots::add)
+        )
+        assertEquals(2, calls)
+        assertTrue(snapshots.any { it.phase == AiReplyProgressPhase.REPAIRING && it.providerCallIndex == 2 })
+    }
+
+    @Test
+    fun `action repair uses real stream call index and repairing phase`() {
+        stubEmptyFrame()
+        Mockito.`when`(qaRuleRepository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val snapshots = mutableListOf<AiReplyProgressSnapshot>()
+        var calls = 0
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>, temperature: Double?, providerModel: String,
+                timeoutMillis: Long, jsonOutput: Boolean, cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                calls++
+                return LlmChatResult(if (calls == 1) "Please send your CV." else "I will provide approved information.")
+            }
+        }
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
+            inboundText = freeFormActionPolicyInbound, operatorTurns = emptyList(),
+            llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300,
+            progressReporter = AiReplyProgressTracker("action-repair", 30, 300, sink = snapshots::add)
+        )
+        assertTrue(result.usedLlm)
+        assertEquals(2, calls)
+        assertTrue(snapshots.any { it.phase == AiReplyProgressPhase.REPAIRING && it.providerCallIndex == 2 })
     }
 
     private fun sampleRule(

@@ -9,6 +9,10 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.min
 
 enum class AiReplyMode {
     QA_MATCHED,
@@ -27,6 +31,236 @@ enum class AiReplyDraftReadiness {
     READY,
     NEEDS_REVIEW,
     BLOCKED
+}
+
+data class AiReplyTimeoutPolicy(
+    val attemptTimeoutSeconds: Int,
+    val totalTimeoutSeconds: Int
+) {
+    companion object {
+        const val DEFAULT_ATTEMPT_SECONDS = 30
+        const val DEFAULT_TOTAL_SECONDS = 300
+
+        fun resolve(attemptSeconds: Int?, totalSeconds: Int?): AiReplyTimeoutPolicy {
+            val attempt = attemptSeconds ?: DEFAULT_ATTEMPT_SECONDS
+            require(attempt in 10..600) { "llmAttemptTimeoutSeconds must be an integer from 10 to 600" }
+            val total = totalSeconds ?: attempt * 10
+            require(total in attempt..7200) {
+                "llmTotalTimeoutSeconds must be an integer from llmAttemptTimeoutSeconds to 7200"
+            }
+            return AiReplyTimeoutPolicy(attempt, total)
+        }
+    }
+
+    fun budget(nowNanos: () -> Long = System::nanoTime): AiReplyGenerationBudget {
+        val now = nowNanos()
+        return AiReplyGenerationBudget(attemptTimeoutSeconds * 1000L, now + totalTimeoutSeconds * 1_000_000_000L, nowNanos)
+    }
+}
+
+class AiReplyGenerationBudget(
+    val attemptMillis: Long,
+    val totalDeadlineNanos: Long,
+    private val nowNanos: () -> Long = System::nanoTime
+) {
+    fun remainingTotalMillis(now: Long = nowNanos()): Long =
+        ((totalDeadlineNanos - now).coerceAtLeast(0L)) / 1_000_000L
+
+    fun nextAttemptMillis(now: Long = nowNanos()): Long =
+        min(attemptMillis, remainingTotalMillis(now))
+}
+
+class AiReplyCancellationToken {
+    private val cancelled = AtomicBoolean(false)
+    private val listenerIds = AtomicLong()
+    private val listeners = ConcurrentHashMap<Long, () -> Unit>()
+
+    fun cancel() {
+        if (!cancelled.compareAndSet(false, true)) return
+        listeners.values.toList().forEach { listener ->
+            runCatching { listener() }
+        }
+        listeners.clear()
+    }
+
+    fun isCancelled(): Boolean = cancelled.get()
+
+    fun onCancel(listener: () -> Unit): AutoCloseable {
+        if (isCancelled()) {
+            runCatching { listener() }
+            return AutoCloseable { }
+        }
+        val id = listenerIds.incrementAndGet()
+        listeners[id] = listener
+        if (isCancelled() && listeners.remove(id) != null) {
+            runCatching { listener() }
+        }
+        return AutoCloseable { listeners.remove(id) }
+    }
+
+    fun throwIfCancelled() {
+        if (isCancelled() || Thread.currentThread().isInterrupted) {
+            throw AiReplyGenerationCancelledException()
+        }
+    }
+}
+
+class AiReplyGenerationCancelledException : RuntimeException()
+
+enum class AiReplyProgressPhase { QUEUED, PREPARING, CALLING, VALIDATING, REPAIRING, FINALIZING }
+
+enum class AiReplyProviderActivity { IDLE, WAITING, REASONING, WRITING }
+
+data class AiReplyProgressSnapshot(
+    val generationId: String,
+    val progressSeq: Long,
+    val phase: AiReplyProgressPhase,
+    val providerActivity: AiReplyProviderActivity,
+    val providerCallIndex: Int,
+    val attemptElapsedSeconds: Int,
+    val attemptTimeoutSeconds: Int,
+    val totalElapsedSeconds: Int,
+    val totalTimeoutSeconds: Int,
+    val providerEventCount: Int,
+    val contentChars: Int,
+    val secondsSinceProviderActivity: Int
+)
+
+interface AiReplyProgressReporter {
+    fun transition(phase: AiReplyProgressPhase)
+    fun startBudget(budget: AiReplyGenerationBudget)
+    fun beginProviderCall(phase: AiReplyProgressPhase, timeoutMillis: Long): LlmStreamProgressSink
+    fun endProviderCall()
+    fun snapshotNow(): AiReplyProgressSnapshot?
+
+    companion object {
+        val NOOP = object : AiReplyProgressReporter {
+            override fun transition(phase: AiReplyProgressPhase) = Unit
+            override fun startBudget(budget: AiReplyGenerationBudget) = Unit
+            override fun beginProviderCall(phase: AiReplyProgressPhase, timeoutMillis: Long): LlmStreamProgressSink =
+                LlmStreamProgressSink.NOOP
+            override fun endProviderCall() = Unit
+            override fun snapshotNow(): AiReplyProgressSnapshot? = null
+        }
+    }
+}
+
+class AiReplyProgressTracker(
+    private val generationId: String,
+    private val attemptTimeoutSeconds: Int,
+    private val totalTimeoutSeconds: Int,
+    private val clock: () -> Long = System::nanoTime,
+    private val sink: (AiReplyProgressSnapshot) -> Unit
+) : AiReplyProgressReporter {
+    private var budget: AiReplyGenerationBudget? = null
+    private var phase = AiReplyProgressPhase.QUEUED
+    private var activity = AiReplyProviderActivity.IDLE
+    private var progressSeq = 0L
+    private var providerCallIndex = 0
+    private var providerCallStartedAt: Long? = null
+    private var latestProviderActivityAt = clock()
+    private var eventCount = 0
+    private var contentChars = 0
+    private var lastStreamEventCount = 0
+    private var lastStreamContentChars = 0
+    private var currentAttemptTimeoutMillis = attemptTimeoutSeconds * 1000L
+    private var lastPublishedAt = Long.MIN_VALUE
+    private val lock = Any()
+
+    override fun startBudget(budget: AiReplyGenerationBudget) {
+        synchronized(lock) {
+            this.budget = budget
+            transitionLocked(AiReplyProgressPhase.PREPARING)
+        }
+    }
+
+    override fun transition(phase: AiReplyProgressPhase) {
+        synchronized(lock) { transitionLocked(phase) }
+    }
+
+    private fun transitionLocked(next: AiReplyProgressPhase) {
+        phase = next
+        publishLocked()
+    }
+
+    override fun beginProviderCall(phase: AiReplyProgressPhase, timeoutMillis: Long): LlmStreamProgressSink {
+        synchronized(lock) {
+            transitionLocked(phase)
+            providerCallIndex = if (providerCallIndex == Int.MAX_VALUE) Int.MAX_VALUE else providerCallIndex + 1
+            providerCallStartedAt = clock()
+            currentAttemptTimeoutMillis = timeoutMillis.coerceAtLeast(0L)
+            activity = AiReplyProviderActivity.WAITING
+            latestProviderActivityAt = clock()
+            lastStreamEventCount = 0
+            lastStreamContentChars = 0
+            publishLocked()
+        }
+        return LlmStreamProgressSink { streamActivity, events, chars ->
+            synchronized(lock) {
+                activity = when (streamActivity) {
+                    LlmStreamActivity.WAITING -> if (activity == AiReplyProviderActivity.IDLE) {
+                        AiReplyProviderActivity.WAITING
+                    } else activity
+                    LlmStreamActivity.REASONING -> AiReplyProviderActivity.REASONING
+                    LlmStreamActivity.WRITING -> AiReplyProviderActivity.WRITING
+                }
+                val normalizedEvents = events.coerceAtLeast(0)
+                val normalizedChars = chars.coerceAtLeast(0)
+                val eventDelta = (normalizedEvents - lastStreamEventCount).coerceAtLeast(0)
+                val contentDelta = (normalizedChars - lastStreamContentChars).coerceAtLeast(0)
+                lastStreamEventCount = maxOf(lastStreamEventCount, normalizedEvents)
+                lastStreamContentChars = maxOf(lastStreamContentChars, normalizedChars)
+                eventCount = addSaturated(eventCount, eventDelta)
+                contentChars = addSaturated(contentChars, contentDelta)
+                latestProviderActivityAt = clock()
+                publishLocked(clock() - lastPublishedAt >= 1_000_000_000L)
+            }
+        }
+    }
+
+    override fun endProviderCall() {
+        synchronized(lock) {
+            activity = AiReplyProviderActivity.IDLE
+            publishLocked()
+        }
+    }
+
+    override fun snapshotNow(): AiReplyProgressSnapshot? = synchronized(lock) {
+        if (budget == null) null else snapshotLocked()
+    }
+
+    private fun publishLocked(force: Boolean = true) {
+        if (!force || budget == null) return
+        lastPublishedAt = clock()
+        sink(snapshotLocked())
+    }
+
+    private fun snapshotLocked(): AiReplyProgressSnapshot {
+        val now = clock()
+        val currentBudget = budget
+        val totalElapsed = if (currentBudget == null) 0L else {
+            ((now - (currentBudget.totalDeadlineNanos - totalTimeoutSeconds * 1_000_000_000L)) / 1_000_000L).coerceAtLeast(0L)
+        }
+        val attemptElapsed = providerCallStartedAt?.let { ((now - it) / 1_000_000L).coerceAtLeast(0L) } ?: 0L
+        return AiReplyProgressSnapshot(
+            generationId = generationId,
+            progressSeq = ++progressSeq,
+            phase = phase,
+            providerActivity = activity,
+            providerCallIndex = providerCallIndex,
+            attemptElapsedSeconds = (attemptElapsed / 1000L).coerceIn(0L, currentAttemptTimeoutMillis / 1000L).toInt(),
+            attemptTimeoutSeconds = (currentAttemptTimeoutMillis / 1000L).coerceAtMost(600L).toInt(),
+            totalElapsedSeconds = (totalElapsed / 1000L).coerceIn(0L, totalTimeoutSeconds.toLong()).toInt(),
+            totalTimeoutSeconds = totalTimeoutSeconds,
+            providerEventCount = eventCount,
+            contentChars = contentChars,
+            secondsSinceProviderActivity = ((now - latestProviderActivityAt) / 1_000_000_000L).coerceAtLeast(0L)
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        )
+    }
+
+    private fun addSaturated(current: Int, delta: Int): Int =
+        (current.toLong() + delta.toLong()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
 data class AiReplyTurn(
@@ -117,12 +351,43 @@ class AiReplyDraftService(
         operatorInstruction: String? = null,
         expertProfile: String? = null,
         mailHistory: String? = null,
-        simulateOnly: Boolean = false, // deprecated: has no effect; do not read
+        simulateOnly: Boolean = false,
         contextWarnings: List<String> = emptyList(),
         replyModel: String? = null,
         researchProfileSufficient: Boolean =
             !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT")
+    ): AiReplyDraftResult = generate(
+        inboundText, operatorTurns, qaRuleIds, operatorInstruction, expertProfile, mailHistory,
+        simulateOnly, contextWarnings, replyModel, researchProfileSufficient,
+        null, null, null, AiReplyProgressReporter.NOOP
+    )
+
+    fun generate(
+        inboundText: String,
+        operatorTurns: List<AiReplyTurn>,
+        qaRuleIds: List<Long>? = null,
+        operatorInstruction: String? = null,
+        expertProfile: String? = null,
+        mailHistory: String? = null,
+        simulateOnly: Boolean = false, // deprecated: has no effect; do not read
+        contextWarnings: List<String> = emptyList(),
+        replyModel: String? = null,
+        researchProfileSufficient: Boolean =
+            !contextWarnings.contains("EXPERT_RESEARCH_CONTEXT_INSUFFICIENT"),
+        llmAttemptTimeoutSeconds: Int? = null,
+        llmTotalTimeoutSeconds: Int? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
     ): AiReplyDraftResult {
+        val runtimeEnabled = llmAttemptTimeoutSeconds != null || llmTotalTimeoutSeconds != null ||
+            cancellationToken != null || progressReporter !== AiReplyProgressReporter.NOOP
+        val token = if (runtimeEnabled) cancellationToken ?: AiReplyCancellationToken() else null
+        val timeoutPolicy = if (runtimeEnabled) {
+            AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
+        } else null
+        val budget = timeoutPolicy?.budget()
+        if (budget != null) progressReporter.startBudget(budget)
+        token?.throwIfCancelled()
         val selectedModel = AiReplyModel.fromNullable(replyModel)
         val providerModel = selectedModel.resolveProviderModel(properties)
         val resolved = resolveQaRules(
@@ -242,9 +507,28 @@ class AiReplyDraftService(
             AiReplyMode.QA_GROUNDED, AiReplyMode.QA_MATCHED -> properties.freeFormTemperature
             AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
+        val totalTimeoutFallback = {
+            groundedFallbackResult(
+                resolved = resolved,
+                operatorTurns = operatorTurns,
+                lastDraft = lastDraft,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = operatorInstruction,
+                mode = mode,
+                selectedModel = selectedModel.name,
+                contextWarnings = (contextWarnings + WARNING_LLM_TOTAL_TIMEOUT).distinct(),
+                plan = plan,
+                allowedActions = plan.allowedActions,
+                generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+                promptVersion = promptSnapshot.version
+            )
+        }
 
         if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
-            return generateGrounded(
+            return finalizeRuntimeResult(
+                generateGrounded(
                 client = client,
                 boundedMessages = boundedMessages,
                 temperature = temperature,
@@ -261,14 +545,27 @@ class AiReplyDraftService(
                 expertProfile = expertProfile,
                 mailHistory = mailHistory,
                 operatorInstruction = operatorInstruction,
-                promptVersion = promptSnapshot.version
+                promptVersion = promptSnapshot.version,
+                budget = budget,
+                cancellationToken = token,
+                progressReporter = progressReporter
+                ),
+                budget = budget,
+                cancellationToken = token,
+                fallback = totalTimeoutFallback
             )
         }
 
-        val (freeFormObserved, freeFormCallCount) = executeWithRetry(client, boundedMessages, temperature, providerModel)
+        val (freeFormObserved, freeFormCallCount) = executeWithRetry(
+            client, boundedMessages, temperature, providerModel,
+            budget = budget,
+            cancellationToken = token,
+            progressReporter = progressReporter
+        )
         val llmText = if (freeFormObserved.failureType == LlmChatFailureType.SUCCESS) freeFormObserved.content else null
 
-        return if (llmText != null) {
+        return finalizeRuntimeResult(if (llmText != null) {
+            progressReporter.transition(AiReplyProgressPhase.VALIDATING)
             enforceActionPolicy(
                 draftText = llmText,
                 usedLlm = true,
@@ -284,7 +581,10 @@ class AiReplyDraftService(
                 fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings,
                 plan = plan,
-                promptVersion = promptSnapshot.version
+                promptVersion = promptSnapshot.version,
+                budget = budget,
+                cancellationToken = token,
+                progressReporter = progressReporter
             )
         } else {
             val transportWarning = failureTypeToWarning(freeFormObserved.failureType)
@@ -313,7 +613,17 @@ class AiReplyDraftService(
                 generationState = genState,
                 promptVersion = promptSnapshot.version
             )
-        }
+        }, budget, token, totalTimeoutFallback)
+    }
+
+    private fun finalizeRuntimeResult(
+        result: AiReplyDraftResult,
+        budget: AiReplyGenerationBudget?,
+        cancellationToken: AiReplyCancellationToken?,
+        fallback: () -> AiReplyDraftResult
+    ): AiReplyDraftResult {
+        cancellationToken?.throwIfCancelled()
+        return if (budget != null && budget.remainingTotalMillis() <= 0L) fallback() else result
     }
 
     private fun generateGrounded(
@@ -333,14 +643,20 @@ class AiReplyDraftService(
         expertProfile: String?,
         mailHistory: String?,
         operatorInstruction: String?,
-        promptVersion: String
+        promptVersion: String,
+        budget: AiReplyGenerationBudget? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
     ): AiReplyDraftResult {
         val (observedResult, callCount) = executeWithRetry(
             client,
             boundedMessages,
             temperature,
             providerModel,
-            jsonOutput = true
+            jsonOutput = true,
+            budget = budget,
+            cancellationToken = cancellationToken,
+            progressReporter = progressReporter
         )
         val llmText = if (observedResult.failureType == LlmChatFailureType.SUCCESS) observedResult.content else null
 
@@ -373,6 +689,8 @@ class AiReplyDraftService(
             )
         }
 
+        progressReporter.transition(AiReplyProgressPhase.VALIDATING)
+
         val blockingTrust = contentPlanner.hasBlockingTrustGap(resolved.requestFacts)
         val firstResult = materializeAndValidateGroundedCandidate(
             rawResponse = llmText,
@@ -383,6 +701,7 @@ class AiReplyDraftService(
         )
 
         if (firstResult.valid) {
+            progressReporter.transition(AiReplyProgressPhase.FINALIZING)
             return buildGroundedResult(
                 validated = firstResult,
                 usedLlm = true,
@@ -402,7 +721,17 @@ class AiReplyDraftService(
             plan = plan
         )
         val retryMessages = boundedMessages + LlmChatMessage(role = "user", content = correctionMsg)
-        val retryObserved = client.chatWithModelObservedJson(retryMessages, temperature, providerModel)
+        val retryObserved = executeProviderCall(
+            client = client,
+            messages = retryMessages,
+            temperature = temperature,
+            providerModel = providerModel,
+            jsonOutput = true,
+            phase = AiReplyProgressPhase.REPAIRING,
+            budget = budget,
+            cancellationToken = cancellationToken,
+            progressReporter = progressReporter
+        )
         val retryText = if (retryObserved.failureType == LlmChatFailureType.SUCCESS) retryObserved.content else null
 
         if (retryText == null) {
@@ -440,6 +769,7 @@ class AiReplyDraftService(
         )
 
         if (retryResult.valid) {
+            progressReporter.transition(AiReplyProgressPhase.FINALIZING)
             return buildGroundedResult(
                 validated = retryResult,
                 usedLlm = true,
@@ -481,13 +811,16 @@ class AiReplyDraftService(
         messages: List<LlmChatMessage>,
         temperature: Double,
         providerModel: String,
-        jsonOutput: Boolean = false
+        jsonOutput: Boolean = false,
+        budget: AiReplyGenerationBudget? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP,
+        phase: AiReplyProgressPhase = AiReplyProgressPhase.CALLING
     ): Pair<LlmChatResult, Int> {
-        val firstResult = if (jsonOutput) {
-            client.chatWithModelObservedJson(messages, temperature, providerModel)
-        } else {
-            client.chatWithModelObserved(messages, temperature, providerModel)
-        }
+        val firstResult = executeProviderCall(
+            client, messages, temperature, providerModel, jsonOutput, phase,
+            budget, cancellationToken, progressReporter
+        )
         if (firstResult.failureType == LlmChatFailureType.SUCCESS) {
             return Pair(firstResult, 1)
         }
@@ -501,16 +834,67 @@ class AiReplyDraftService(
         if (!retryable) {
             return Pair(firstResult, 1)
         }
-        val retryResult = if (jsonOutput) {
-            client.chatWithModelObservedJson(messages, temperature, providerModel)
-        } else {
-            client.chatWithModelObserved(messages, temperature, providerModel)
-        }
+        cancellationToken?.throwIfCancelled()
+        val retryResult = executeProviderCall(
+            client, messages, temperature, providerModel, jsonOutput, phase,
+            budget, cancellationToken, progressReporter
+        )
         val totalCalls = 2
         if (retryResult.failureType == LlmChatFailureType.SUCCESS) {
             return Pair(retryResult, totalCalls)
         }
         return Pair(retryResult, totalCalls)
+    }
+
+    private fun executeProviderCall(
+        client: LlmDraftClient,
+        messages: List<LlmChatMessage>,
+        temperature: Double,
+        providerModel: String,
+        jsonOutput: Boolean,
+        phase: AiReplyProgressPhase,
+        budget: AiReplyGenerationBudget?,
+        cancellationToken: AiReplyCancellationToken?,
+        progressReporter: AiReplyProgressReporter
+    ): LlmChatResult {
+        cancellationToken?.throwIfCancelled()
+        val timeoutMillis = budget?.nextAttemptMillis() ?: 0L
+        if (budget != null && timeoutMillis <= 0L) {
+            return LlmChatResult(null, LlmChatFailureType.TOTAL_TIMEOUT)
+        }
+        val streamToken = cancellationToken ?: AiReplyCancellationToken()
+        val streamSink = if (budget != null) {
+            progressReporter.beginProviderCall(phase, timeoutMillis)
+        } else {
+            LlmStreamProgressSink.NOOP
+        }
+        return try {
+            val result = if (budget != null) {
+                client.chatWithModelObservedStream(
+                    messages = messages,
+                    temperature = temperature,
+                    providerModel = providerModel,
+                    timeoutMillis = timeoutMillis,
+                    jsonOutput = jsonOutput,
+                    cancellationToken = streamToken,
+                    progressSink = streamSink
+                )
+            } else if (jsonOutput) {
+                client.chatWithModelObservedJson(messages, temperature, providerModel)
+            } else {
+                client.chatWithModelObserved(messages, temperature, providerModel)
+            }
+            if (result.failureType == LlmChatFailureType.CANCELLED) {
+                throw AiReplyGenerationCancelledException()
+            }
+            if (budget != null && budget.remainingTotalMillis() <= 0L && result.failureType != LlmChatFailureType.SUCCESS) {
+                LlmChatResult(null, LlmChatFailureType.TOTAL_TIMEOUT)
+            } else {
+                result
+            }
+        } finally {
+            if (budget != null) progressReporter.endProviderCall()
+        }
     }
 
     private data class GroundedValidationResult(
@@ -598,7 +982,10 @@ class AiReplyDraftService(
         fewShotDialogRefs: List<String>,
         contextWarnings: List<String>,
         plan: GroundedContentPlan,
-        promptVersion: String
+        promptVersion: String,
+        budget: AiReplyGenerationBudget? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
     ): AiReplyDraftResult {
         val text = validated.text
         val finalWarnings = contextWarnings.toMutableList()
@@ -759,7 +1146,10 @@ class AiReplyDraftService(
         fewShotDialogRefs: List<String>,
         contextWarnings: List<String>,
         plan: GroundedContentPlan,
-        promptVersion: String
+        promptVersion: String,
+        budget: AiReplyGenerationBudget? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
     ): AiReplyDraftResult {
         var text = draftText
         var used = usedLlm
@@ -769,11 +1159,18 @@ class AiReplyDraftService(
         if (violations.isNotEmpty() && client != null && messages != null) {
             val correction = buildActionCorrectionMessage(violations, allowedActions, mode, plan)
             val retryMessages = messages + LlmChatMessage(role = "user", content = correction)
-            val retryText = try {
-                client.chatWithModel(retryMessages, temperature, providerModel)?.takeIf { it.isNotBlank() }
-            } catch (_: Exception) {
-                null
-            }
+            val retryText = executeProviderCall(
+                client = client,
+                messages = retryMessages,
+                temperature = temperature ?: 0.0,
+                providerModel = providerModel,
+                jsonOutput = mode == AiReplyMode.QA_GROUNDED,
+                phase = AiReplyProgressPhase.REPAIRING,
+                budget = budget,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            ).takeIf { it.failureType == LlmChatFailureType.SUCCESS }
+                ?.content?.takeIf { it.isNotBlank() }
             if (retryText != null) {
                 text = retryText
                 used = true
@@ -807,6 +1204,8 @@ class AiReplyDraftService(
         }
 
         val finalState = if (used) AiReplyGenerationState.LLM_USED else generationState
+
+        progressReporter.transition(AiReplyProgressPhase.FINALIZING)
 
         val readiness = resolveDraftReadiness(resolved.requestFacts, resolved.sendQaRuleIds)
 
@@ -1331,6 +1730,7 @@ class AiReplyDraftService(
         const val WARNING_EVIDENCE_SOURCE_UNAVAILABLE = "AI_REPLY_EVIDENCE_SOURCE_UNAVAILABLE"
         const val WARNING_EVIDENCE_SOURCE_READ_ERROR = "AI_REPLY_EVIDENCE_SOURCE_READ_ERROR"
         const val WARNING_LLM_TIMEOUT = "AI_REPLY_LLM_TIMEOUT"
+        const val WARNING_LLM_TOTAL_TIMEOUT = "AI_REPLY_LLM_TOTAL_TIMEOUT"
         const val WARNING_LLM_RATE_LIMITED = "AI_REPLY_LLM_RATE_LIMITED"
         const val WARNING_LLM_NETWORK_ERROR = "AI_REPLY_LLM_NETWORK_ERROR"
         const val WARNING_LLM_PROVIDER_ERROR = "AI_REPLY_LLM_PROVIDER_ERROR"
@@ -1346,11 +1746,13 @@ class AiReplyDraftService(
         fun failureTypeToWarning(failureType: LlmChatFailureType): String? = when (failureType) {
             LlmChatFailureType.SUCCESS -> null
             LlmChatFailureType.TIMEOUT -> WARNING_LLM_TIMEOUT
+            LlmChatFailureType.TOTAL_TIMEOUT -> WARNING_LLM_TOTAL_TIMEOUT
             LlmChatFailureType.RATE_LIMITED -> WARNING_LLM_RATE_LIMITED
             LlmChatFailureType.NETWORK_ERROR -> WARNING_LLM_NETWORK_ERROR
             LlmChatFailureType.PROVIDER_ERROR -> WARNING_LLM_PROVIDER_ERROR
             LlmChatFailureType.EMPTY_RESPONSE -> WARNING_LLM_EMPTY_RESPONSE
             LlmChatFailureType.CLIENT_UNAVAILABLE -> null
+            LlmChatFailureType.CANCELLED -> null
         }
     }
 

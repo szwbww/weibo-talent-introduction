@@ -9,12 +9,25 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import org.springframework.beans.factory.annotation.Qualifier
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 data class LlmChatMessage(
     val role: String,
@@ -51,13 +64,25 @@ enum class LlmChatFailureType {
     NETWORK_ERROR,
     PROVIDER_ERROR,
     EMPTY_RESPONSE,
-    CLIENT_UNAVAILABLE
+    CLIENT_UNAVAILABLE,
+    CANCELLED,
+    TOTAL_TIMEOUT
 }
 
 data class LlmChatResult(
     val content: String?,
     val failureType: LlmChatFailureType = LlmChatFailureType.SUCCESS
 )
+
+enum class LlmStreamActivity { WAITING, REASONING, WRITING }
+
+fun interface LlmStreamProgressSink {
+    fun onActivity(activity: LlmStreamActivity, eventCount: Int, contentChars: Int)
+
+    companion object {
+        val NOOP = LlmStreamProgressSink { _, _, _ -> }
+    }
+}
 
 interface LlmDraftClient {
     fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String?
@@ -92,6 +117,25 @@ interface LlmDraftClient {
         temperature: Double? = null,
         providerModel: String
     ): LlmChatResult = chatWithModelObserved(messages, temperature, providerModel)
+
+    fun chatWithModelObservedStream(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String,
+        timeoutMillis: Long,
+        jsonOutput: Boolean,
+        cancellationToken: AiReplyCancellationToken,
+        progressSink: LlmStreamProgressSink = LlmStreamProgressSink.NOOP
+    ): LlmChatResult {
+        cancellationToken.throwIfCancelled()
+        val result = if (jsonOutput) {
+            chatWithModelObservedJson(messages, temperature, providerModel)
+        } else {
+            chatWithModelObserved(messages, temperature, providerModel)
+        }
+        cancellationToken.throwIfCancelled()
+        return result
+    }
 }
 
 @Component
@@ -99,7 +143,13 @@ interface LlmDraftClient {
 class HttpLlmDraftClient(
     private val properties: LlmProperties,
     @Qualifier("llmRestTemplate") private val restTemplate: RestTemplate,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Qualifier("aiReplySseHttpClient") private val streamingHttpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .version(HttpClient.Version.HTTP_1_1)
+        .build(),
+    @Qualifier("aiReplyStreamScheduler") private val streamScheduler: ScheduledExecutorService =
+        java.util.concurrent.Executors.newScheduledThreadPool(1)
 ) : LlmDraftClient {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -143,6 +193,200 @@ class HttpLlmDraftClient(
         temperature: Double?,
         providerModel: String
     ): LlmChatResult = executeChatObserved(messages, temperature, providerModel, jsonOutput = true)
+
+    override fun chatWithModelObservedStream(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String,
+        timeoutMillis: Long,
+        jsonOutput: Boolean,
+        cancellationToken: AiReplyCancellationToken,
+        progressSink: LlmStreamProgressSink
+    ): LlmChatResult {
+        if (properties.apiUrl.isBlank()) {
+            return LlmChatResult(null, LlmChatFailureType.CLIENT_UNAVAILABLE)
+        }
+        if (timeoutMillis <= 0L) {
+            return LlmChatResult(null, LlmChatFailureType.TOTAL_TIMEOUT)
+        }
+        cancellationToken.throwIfCancelled()
+        val body = linkedMapOf<String, Any>(
+            "model" to providerModel,
+            "messages" to messages.map { mapOf("role" to it.role, "content" to it.content) },
+            "temperature" to (temperature ?: properties.temperature),
+            "stream" to true,
+            "stream_options" to mapOf("include_usage" to true)
+        )
+        if (jsonOutput) {
+            body["response_format"] = mapOf("type" to "json_object")
+        }
+        val requestBuilder = HttpRequest.newBuilder()
+            .uri(URI.create(properties.apiUrl))
+            .timeout(Duration.ofMillis(timeoutMillis))
+            .headers("Accept", "text/event-stream", "Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+        if (properties.apiKey.isNotBlank()) {
+            requestBuilder.header("Authorization", "Bearer ${properties.apiKey}")
+        }
+        val started = System.nanoTime()
+        val streamRef = AtomicReference<InputStream?>()
+        val responseFuture = streamingHttpClient.sendAsync(
+            requestBuilder.build(),
+            HttpResponse.BodyHandlers.ofInputStream()
+        )
+        val cancellationRegistration = cancellationToken.onCancel {
+            responseFuture.cancel(true)
+            streamRef.get()?.closeQuietly()
+        }
+        val deadlineReached = AtomicBoolean(false)
+        val deadlineTask = streamScheduler.schedule({
+            deadlineReached.set(true)
+            responseFuture.cancel(true)
+            streamRef.get()?.closeQuietly()
+        }, timeoutMillis, TimeUnit.MILLISECONDS)
+        var input: InputStream? = null
+        return try {
+            val response = try {
+                responseFuture.get(timeoutMillis, TimeUnit.MILLISECONDS)
+            } catch (_: TimeoutException) {
+                responseFuture.cancel(true)
+                return LlmChatResult(null, LlmChatFailureType.TIMEOUT)
+            }
+            if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted) {
+                return LlmChatResult(null, LlmChatFailureType.CANCELLED)
+            }
+            val contentType = response.headers().firstValue("Content-Type").orElse("")
+            if (response.statusCode() !in 200..299) {
+                return LlmChatResult(null, if (response.statusCode() == 429) {
+                    LlmChatFailureType.RATE_LIMITED
+                } else {
+                    LlmChatFailureType.PROVIDER_ERROR
+                })
+            }
+            if (!contentType.lowercase().startsWith("text/event-stream")) {
+                return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
+            }
+            input = response.body()
+            streamRef.set(input)
+            val reader = BufferedReader(InputStreamReader(input, Charsets.UTF_8))
+            var eventCount = 0
+            var contentChars = 0
+            var activity = LlmStreamActivity.WAITING
+            var sawDone = false
+            var sawContent = false
+            var finishReason: String? = null
+            val content = StringBuilder()
+            reportStreamActivity(progressSink, activity, ++eventCount, contentChars, cancellationToken)
+            while (true) {
+                cancellationToken.throwIfCancelled()
+                if (Thread.currentThread().isInterrupted) {
+                    return LlmChatResult(null, LlmChatFailureType.CANCELLED)
+                }
+                val line = reader.readLine() ?: break
+                if (line.isBlank()) continue
+                if (line.startsWith(":")) {
+                    eventCount = saturatingIncrement(eventCount)
+                    reportStreamActivity(progressSink, activity, eventCount, contentChars, cancellationToken)
+                    continue
+                }
+                if (!line.startsWith("data:")) {
+                    return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
+                }
+                val data = line.removePrefix("data:").trim()
+                if (data.isEmpty()) continue
+                if (data == "[DONE]") {
+                    sawDone = true
+                    break
+                }
+                val node = try {
+                    objectMapper.readTree(data)
+                } catch (_: Exception) {
+                    return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
+                }
+                eventCount = saturatingIncrement(eventCount)
+                val choice = node.path("choices").firstOrNull()
+                if (choice == null || choice.isMissingNode || choice.isNull) {
+                    reportStreamActivity(progressSink, activity, eventCount, contentChars, cancellationToken)
+                    continue
+                }
+                val reason = choice.path("finish_reason").asText(null)
+                if (reason != null) finishReason = reason
+                val delta = choice.path("delta")
+                if (delta.isMissingNode || delta.isNull) {
+                    reportStreamActivity(progressSink, activity, eventCount, contentChars, cancellationToken)
+                    continue
+                }
+                if (delta.has("reasoning_content")) {
+                    activity = LlmStreamActivity.REASONING
+                }
+                val fragment = delta.path("content").asText(null)
+                if (!fragment.isNullOrEmpty()) {
+                    if (contentChars > 65536 - fragment.length) {
+                        return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
+                    }
+                    content.append(fragment)
+                    contentChars += fragment.length
+                    sawContent = true
+                    activity = LlmStreamActivity.WRITING
+                }
+                reportStreamActivity(progressSink, activity, eventCount, contentChars, cancellationToken)
+            }
+            if (!sawDone || !sawContent || finishReason != "stop") {
+                return LlmChatResult(null, LlmChatFailureType.PROVIDER_ERROR)
+            }
+            val text = content.toString()
+            if (text.isBlank()) return LlmChatResult(null, LlmChatFailureType.EMPTY_RESPONSE)
+            log.info("LLM stream success model={} messageCount={} eventCount={} contentChars={} finishReason={} elapsedMs={}",
+                providerModel, messages.size, eventCount, contentChars, finishReason,
+                (System.nanoTime() - started) / 1_000_000)
+            LlmChatResult(text)
+        } catch (_: AiReplyGenerationCancelledException) {
+            LlmChatResult(null, LlmChatFailureType.CANCELLED)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            LlmChatResult(null, LlmChatFailureType.CANCELLED)
+        } catch (_: java.util.concurrent.CancellationException) {
+            LlmChatResult(null, if (cancellationToken.isCancelled()) LlmChatFailureType.CANCELLED else LlmChatFailureType.TIMEOUT)
+        } catch (_: Exception) {
+            LlmChatResult(null, if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted) {
+                LlmChatFailureType.CANCELLED
+            } else if (deadlineReached.get()) {
+                LlmChatFailureType.TIMEOUT
+            } else {
+                LlmChatFailureType.NETWORK_ERROR
+            })
+        } finally {
+            cancellationRegistration.close()
+            deadlineTask.cancel(false)
+            streamRef.get()?.closeQuietly()
+            input?.closeQuietly()
+        }
+    }
+
+    private fun reportStreamActivity(
+        sink: LlmStreamProgressSink,
+        activity: LlmStreamActivity,
+        eventCount: Int,
+        contentChars: Int,
+        token: AiReplyCancellationToken
+    ) {
+        try {
+            sink.onActivity(activity, eventCount, contentChars)
+        } catch (ex: Exception) {
+            log.debug("LLM stream progress callback ignored type={}", ex.javaClass.simpleName)
+            if (token.isCancelled()) throw AiReplyGenerationCancelledException()
+        }
+    }
+
+    private fun saturatingIncrement(value: Int): Int = if (value == Int.MAX_VALUE) value else value + 1
+
+    private fun InputStream?.closeQuietly() {
+        try {
+            this?.close()
+        } catch (_: Exception) {
+            // Best effort close during cancellation/deadline.
+        }
+    }
 
     private fun executeChatObserved(
         messages: List<LlmChatMessage>,
