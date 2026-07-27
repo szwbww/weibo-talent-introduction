@@ -2,8 +2,8 @@
 id: K-grounded-trust-family-route
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 6
+last_used: 2026-07-27
+hit_count: 7
 source: fix-v:ai-reply-04-grounded-trust-content-plan:fix-1
 severity: P1
 ---

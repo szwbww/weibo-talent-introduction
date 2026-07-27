@@ -2,8 +2,8 @@
 id: K-grounded-sanitize-removal-readiness
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 5
+last_used: 2026-07-27
+hit_count: 6
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-3
 severity: P1
 ---

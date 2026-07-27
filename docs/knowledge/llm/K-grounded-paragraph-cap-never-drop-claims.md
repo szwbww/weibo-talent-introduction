@@ -2,8 +2,8 @@
 id: K-grounded-paragraph-cap-never-drop-claims
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-21
-hit_count: 9
+last_used: 2026-07-27
+hit_count: 10
 source: create-p:ai-reply-04-grounded-trust-content-plan
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

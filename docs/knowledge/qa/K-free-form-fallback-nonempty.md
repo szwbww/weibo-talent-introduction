@@ -2,8 +2,8 @@
 id: K-free-form-fallback-nonempty
 domain: qa
 created: 2026-07-01
-last_used: 2026-07-25
-hit_count: 27
+last_used: 2026-07-27
+hit_count: 28
 source: fix-v:04-frontend-tab:fix-1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

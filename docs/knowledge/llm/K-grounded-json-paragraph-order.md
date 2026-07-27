@@ -1,12 +1,12 @@
 ---
 id: K-grounded-json-paragraph-order
 domain: llm
-created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 4
-source: fix-v:ai-reply-04-grounded-trust-content-plan:fix-2
+created: 2026-07-27
+last_used: 2026-07-27
+hit_count: 5
+source: create-p:ai-reply-grounded-server-owned-envelope-plan
+last_source: create-p:ai-reply-grounded-server-owned-envelope-plan
 severity: P1
 ---
-经验：Grounded JSON 用 set/map 校验 paragraph 时会接受对象数组重排，虽然后续 composer 可能按服务端 plan 输出，仍违反严格协议并掩盖模型未遵守的计划。
-正确做法：claims、paragraphs、paragraph claimKeys 和 missingFacts 都逐项按 array 顺序、值和次数与 immutable plan 比较；任意重排或重复一律 invalid/fallback。
-反例：AiReplyGroundedDraftMaterializer.kt:368-380 仅按 paragraphIndex 映射比较，接受 `[p2,p1]`。
+经验：让模型复制 paragraphs 与其数组顺序，会把服务端已经确定的展示顺序变成无业务价值的结构失败点；但把 claims 简单转成 map 又可能吞掉重复或缺失。
+正确做法：paragraph grouping/order、missingFacts 与 review 元数据只由 immutable server plan 持有；模型仅返回 claimKey→text。服务端先验证 claimKey 唯一且集合精确相等，再按 plan 顺序绑定和组装；模型数组顺序不具 authority，duplicate/missing/unknown key 一律 invalid/fallback。

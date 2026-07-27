@@ -2,8 +2,8 @@
 id: K-reply-model-stable-enum-mapping
 domain: llm
 created: 2026-07-12
-last_used: 2026-07-25
-hit_count: 20
+last_used: 2026-07-27
+hit_count: 21
 source: create-p:ai-reply-model-selection-backend
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 ---

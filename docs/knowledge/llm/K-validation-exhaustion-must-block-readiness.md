@@ -2,8 +2,8 @@
 id: K-validation-exhaustion-must-block-readiness
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-25
-hit_count: 24
+last_used: 2026-07-27
+hit_count: 25
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

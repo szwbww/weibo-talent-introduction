@@ -2,8 +2,8 @@
 id: K-ai-reply-prompt-content-version-single-snapshot
 domain: llm
 created: 2026-07-19
-last_used: 2026-07-20
-hit_count: 2
+last_used: 2026-07-27
+hit_count: 3
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-1
 severity: P1
 ---
