@@ -32,7 +32,8 @@ data class AiReplyAuditSnapshot(
     val warningTruncated: Boolean,
     val fewShotRefs: List<String>,
     val fewShotTotal: Int,
-    val fewShotTruncated: Boolean
+    val fewShotTruncated: Boolean,
+    val validationDiagnostics: Map<String, Any?>
 )
 
 @Service
@@ -77,6 +78,18 @@ class AiReplyReviewAuditService(
         val allFewShot = result.fewShotDialogRefs
         val fewShotTruncated = allFewShot.size > maxFewShot
         val fewShotRefs = allFewShot.take(maxFewShot).map { it.take(200) }
+        val validationDiagnostics = mapOf(
+            "items" to result.validationDiagnostics.items.take(AiReplyValidationDiagnostics.MAX_ITEMS).map {
+                mapOf(
+                    "attempt" to it.attempt.name,
+                    "stage" to it.stage.name,
+                    "code" to it.code.take(200),
+                    "claimKey" to it.claimKey?.take(AiReplyValidationDiagnostics.MAX_CLAIM_KEY_LENGTH)
+                )
+            },
+            "total" to result.validationDiagnostics.total,
+            "truncated" to result.validationDiagnostics.truncated
+        )
 
         return AiReplyAuditSnapshot(
             schemaVersion = AI_REPLY_DRAFT_AUDIT_SCHEMA_VERSION,
@@ -102,7 +115,8 @@ class AiReplyReviewAuditService(
             warningTruncated = warningTruncated,
             fewShotRefs = fewShotRefs,
             fewShotTotal = allFewShot.size,
-            fewShotTruncated = fewShotTruncated
+            fewShotTruncated = fewShotTruncated,
+            validationDiagnostics = validationDiagnostics
         )
     }
 
@@ -144,7 +158,8 @@ class AiReplyReviewAuditService(
                 "warningTruncated" to snapshot.warningTruncated,
                 "fewShotRefs" to snapshot.fewShotRefs,
                 "fewShotTotal" to snapshot.fewShotTotal,
-                "fewShotTruncated" to snapshot.fewShotTruncated
+                "fewShotTruncated" to snapshot.fewShotTruncated,
+                "validationDiagnostics" to snapshot.validationDiagnostics
             )
 
             operatorActionLogService.record(
@@ -166,6 +181,6 @@ class AiReplyReviewAuditService(
     private val logger = LoggerFactory.getLogger(AiReplyReviewAuditService::class.java)
 
     companion object {
-        const val AI_REPLY_DRAFT_AUDIT_SCHEMA_VERSION = "ai-reply-draft-audit-v1"
+        const val AI_REPLY_DRAFT_AUDIT_SCHEMA_VERSION = "ai-reply-draft-audit-v2"
     }
 }

@@ -8,6 +8,10 @@ import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
 import com.weibo.talentintroduction.llm.service.AiReplyMode
+import com.weibo.talentintroduction.llm.service.AiReplyValidationAttempt
+import com.weibo.talentintroduction.llm.service.AiReplyValidationDiagnostics
+import com.weibo.talentintroduction.llm.service.AiReplyValidationDiagnostic
+import com.weibo.talentintroduction.llm.service.AiReplyValidationStage
 import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
@@ -108,6 +112,43 @@ class GroundedAutoReplyDecisionServiceTest {
         assertEquals("Re: Question", decision.subject)
         assertEquals("Grounded reply", decision.rawDraftText)
         assertEquals(listOf(1L), decision.qaRuleIds)
+    }
+
+    @Test
+    fun `initial diagnostics do not independently block a ready decision`() {
+        stubGenerate(readyDraft().copy(
+            validationDiagnostics = AiReplyValidationDiagnostics.from(listOf(
+                AiReplyValidationDiagnostic(AiReplyValidationAttempt.INITIAL, AiReplyValidationStage.STRUCTURE, "CODE", "r1:key")
+            ))
+        ))
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertTrue(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.QA_AUTO_REPLIED, decision.reason)
+    }
+
+    @Test
+    fun `repair exhausted aggregate warning remains fail closed`() {
+        stubGenerate(readyDraft().copy(
+            usedLlm = false,
+            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+            draftReadiness = AiReplyDraftReadiness.BLOCKED,
+            contextWarnings = listOf(
+                AiReplyGroundedDraftMaterializer.WARNING_STRUCTURED_RESPONSE_INVALID,
+                AiReplyDraftService.TRUST_REPAIR_EXHAUSTED
+            ),
+            validationDiagnostics = AiReplyValidationDiagnostics.from(listOf(
+                AiReplyValidationDiagnostic(AiReplyValidationAttempt.INITIAL, AiReplyValidationStage.STRUCTURE, "CODE"),
+                AiReplyValidationDiagnostic(AiReplyValidationAttempt.REPAIR, AiReplyValidationStage.CLAIM, "CODE_2", "r1:key")
+            ))
+        ))
+
+        val decision = service().decide("Salary?", "Question")
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_REPLY_VALIDATION_FAILED, decision.reason)
     }
 
     @Test

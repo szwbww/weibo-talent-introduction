@@ -221,6 +221,31 @@ class AiReplyHighRiskClaimValidatorTest {
     }
 
     @Test
+    fun `claim issues carry claim key and trust validation does not repeat claim validation`() {
+        val source = rule(1, "Participants may receive travel support.")
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(source))
+        val sections = listOf(ValidatedSection(1, listOf(
+            IntentAnswer("finance.arrangements", "Participants will definitely receive RMB 500,000.", listOf(1L))
+        )))
+        val facts = listOf(RequestFactItem(
+            1, "Travel?", listOf(1L), RequestGroundingStatus.GROUNDED,
+            intents = listOf(RequestIntentCoverage("finance.arrangements", "Travel", emptyList(), listOf(1L), "SUPPORTED", emptyList()))
+        ))
+        val claim = validator.validate(sections, facts)
+        assertTrue(claim.issues.any { it.stage == AiReplyValidationStage.CLAIM && it.claimKey == "r1:finance.arrangements" })
+        val trust = validator.validateGroundedCandidate(GroundedCandidateInput(
+            validatedSections = sections,
+            requestFacts = facts,
+            plan = AiReplyGroundedContentPlanner().buildPlan(facts, emptySet()),
+            finalBody = "Trust us, this is reliable.",
+            hasBlockingTrustGap = false,
+            sourceTextsByClaim = claim.sourceTextsByClaim
+        ))
+        assertFalse(trust.valid)
+        Mockito.verify(qaRuleRepository, Mockito.times(1)).findById(1L)
+    }
+
+    @Test
     fun `empty sections pass validation`() {
         val result = validator.validate(emptyList(), emptyList())
         assertTrue(result.valid)

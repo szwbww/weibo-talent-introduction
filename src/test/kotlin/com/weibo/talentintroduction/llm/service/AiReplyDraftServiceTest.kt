@@ -778,6 +778,176 @@ class AiReplyDraftServiceTest {
     )
 
     @Test
+    fun `grounded repair uses exact diagnostics skeleton and preserves initial lineage`() {
+        stubEmptyFrame()
+        val rule = sampleRule()
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        val responses = ArrayDeque(listOf(
+            "{\"claims\":[],\"actionText\":null}",
+            "{\"claims\":[{\"claimKey\":\"r1:finance.arrangements\",\"text\":\"Salary info\"}],\"actionText\":null}"
+        ))
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val temperatures = mutableListOf<Double?>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                temperatures += temperature
+                return responses.removeFirst()
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm", temperature = 0.3), client).generate(
+            inboundText = "What is salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertTrue(result.usedLlm)
+        assertEquals(AiReplyGenerationState.LLM_USED, result.generationState)
+        assertEquals(listOf(0.3, 0.0), temperatures)
+        assertEquals(AiReplyValidationAttempt.INITIAL, result.validationDiagnostics.items.single().attempt)
+        assertEquals(AiReplyValidationCodes.CLAIM_SET_MISMATCH, result.validationDiagnostics.items.single().code)
+        val repair = capturedMessages[1].last().content
+        assertTrue(repair.contains("AI_REPLY_STRUCTURE_CLAIM_SET_MISMATCH"))
+        assertTrue(repair.contains("r1:finance.arrangements"))
+        assertTrue(repair.contains("Return only the exact minimal JSON protocol"))
+        assertFalse(repair.contains("{\"claims\":[],\"actionText\":null}"))
+        assertTrue(capturedMessages[0].last().content.contains("CURRENT SERVER PLAN"))
+        assertTrue(capturedMessages[0].last().content.contains("Allowed actions:"))
+    }
+
+    @Test
+    fun `grounded repair rejects invalid actionText and keeps one repair`() {
+        stubEmptyFrame()
+        val rule = sampleRule()
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        val responses = ArrayDeque(listOf(
+            "{\"claims\":[{\"claimKey\":\"r1:finance.arrangements\",\"text\":\"Salary info\"}],\"actionText\":1}",
+            "{\"claims\":[{\"claimKey\":\"r1:finance.arrangements\",\"text\":\"Salary info\"}],\"actionText\":null}"
+        ))
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val temperatures = mutableListOf<Double?>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                temperatures += temperature
+                return responses.removeFirst()
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm", temperature = 0.3), client).generate(
+            inboundText = "What is salary?",
+            operatorTurns = emptyList()
+        )
+
+        assertTrue(result.usedLlm)
+        assertEquals(2, capturedMessages.size)
+        assertEquals(listOf(0.3, 0.0), temperatures)
+        assertEquals(AiReplyValidationCodes.ACTION_TEXT_INVALID, result.validationDiagnostics.items.single().code)
+        val repair = capturedMessages[1].last().content
+        assertTrue(repair.contains("AI_REPLY_ACTION_TEXT_INVALID"))
+        assertTrue(repair.contains("actionText to null or a nonblank string containing exactly one detected allowed action"))
+        assertTrue(repair.contains("{\"claims\":[{"))
+        assertFalse(repair.contains("Salary info"))
+    }
+
+    @Test
+    fun `grounded repair orders claim trust and action diagnostics and explains each stage`() {
+        stubEmptyFrame()
+        val rule = sampleRule(
+            replyBody = "The enterprise is not yet determined.",
+            answerBody = "The enterprise is not yet determined.",
+            keywords = "enterprise projects,types",
+            coverageKeys = "enterprise.project_types"
+        )
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        val responses = ArrayDeque(listOf(
+            "{\"claims\":[{\"claimKey\":\"r1:enterprise.project_types\",\"text\":\"Government support applies; the company is definitely established.\"}],\"actionText\":\"Please send your CV.\"}",
+            "{\"claims\":[{\"claimKey\":\"r1:enterprise.project_types\",\"text\":\"The enterprise is not yet determined.\"}],\"actionText\":null}"
+        ))
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
+                capturedMessages += messages
+                return responses.removeFirst()
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm", temperature = 0.3), client).generate(
+            inboundText = "What are the enterprise project types?",
+            operatorTurns = emptyList()
+        )
+
+        assertEquals(
+            listOf(AiReplyValidationStage.CLAIM, AiReplyValidationStage.TRUST, AiReplyValidationStage.ACTION),
+            result.validationDiagnostics.items.take(3).map { it.stage }
+        )
+        val repair = capturedMessages[1].last().content
+        val claimCode = "AI_REPLY_CLAIM_HIGH_RISK_UNBACKED"
+        val trustCode = "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
+        val actionCode = "AI_REPLY_ACTION_NOT_ALLOWED"
+        assertTrue(repair.contains(claimCode))
+        assertTrue(repair.contains(trustCode))
+        assertTrue(repair.contains(actionCode))
+        assertTrue(repair.contains("Remove each high-risk declaration unless the same claim's bound rule fact explicitly supports it"))
+        assertTrue(repair.contains("Keep enterprise identity uncertain when the bound fact says it is not yet determined or matched"))
+        assertTrue(repair.contains("Remove the unauthorized action or use actionText only for one action listed as allowed by the plan"))
+        assertTrue(repair.contains("{\"claims\":[{"))
+        assertFalse(repair.contains("Government support"))
+        assertFalse(repair.contains("company is definitely"))
+    }
+
+    @Test
+    fun `every stable grounded diagnostic has distinct body free repair guidance`() {
+        val cases = listOf(
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.JSON_INVALID,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.TOP_LEVEL_FIELDS_INVALID,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIMS_INVALID,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIM_FIELDS_INVALID,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIM_KEY_DUPLICATE,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIM_KEY_UNKNOWN,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIM_SET_MISMATCH,
+            AiReplyValidationStage.STRUCTURE to AiReplyValidationCodes.CLAIM_TEXT_INVALID,
+            AiReplyValidationStage.STRUCTURE to AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE,
+            AiReplyValidationStage.CLAIM to AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE,
+            AiReplyValidationStage.CLAIM to AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT,
+            AiReplyValidationStage.CLAIM to AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED,
+            AiReplyValidationStage.CLAIM to AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED,
+            AiReplyValidationStage.TRUST to AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC,
+            AiReplyValidationStage.TRUST to AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE,
+            AiReplyValidationStage.TRUST to AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED,
+            AiReplyValidationStage.TRUST to AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED,
+            AiReplyValidationStage.ACTION to AiReplyValidationCodes.ACTION_TEXT_INVALID,
+            AiReplyValidationStage.ACTION to AiReplyValidationCodes.ACTION_NOT_ALLOWED,
+            AiReplyValidationStage.ACTION to AiReplyValidationCodes.ACTION_BODY_MISMATCH,
+            AiReplyValidationStage.ACTION to AiReplyDraftService.UNAUTHORIZED_ACTION_REMOVED,
+            AiReplyValidationStage.ACTION to AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL,
+            AiReplyValidationStage.ACTION to AiReplyActionPolicy.CODE_ACTION_CV_PURPOSE_MISSING,
+            AiReplyValidationStage.ACTION to AiReplyActionPolicy.CODE_ACTION_CV_OPTIONALITY_MISSING
+        )
+        val draftService = service(LlmProperties(enabled = false), null)
+        val instructions = cases.map { (stage, code) ->
+            code to draftService.repairInstruction(AiReplyValidationIssue(stage, code, "r1:key"))
+        }
+
+        assertEquals(cases.size, instructions.map { it.second }.distinct().size)
+        instructions.forEach { (code, instruction) ->
+            assertTrue(instruction.isNotBlank(), code)
+            assertFalse(instruction.contains("Salary info"), code)
+            assertFalse(instruction.contains("Government support"), code)
+            assertFalse(instruction.contains("answerBody"), code)
+        }
+    }
+
+    @Test
     fun `returns deterministic draft when llm disabled`() {
         val rule = sampleRule()
         stubDefaultFrame()
@@ -1536,7 +1706,7 @@ class AiReplyDraftServiceTest {
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? =
-                """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info"},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
         }
         val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
             inboundText = inbound,
@@ -1686,7 +1856,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 allMessages += messages
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info"}],"actionText":null}"""
             }
         }
         val draftService = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client)
@@ -1700,7 +1870,7 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `QA_GROUNDED uses freeFormTemperature`() {
+    fun `QA_GROUNDED uses grounded temperature`() {
         stubEmptyFrame()
         val inbound = "- What is salary?\n- What is visa?"
         val rule1 = sampleRule(1)
@@ -1714,7 +1884,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedTemperatures += temperature
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info.","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info."},{"claimKey":"r2:general.answer","text":"Visa info."}],"actionText":null}"""
             }
         }
         service(
@@ -1725,7 +1895,7 @@ class AiReplyDraftServiceTest {
             operatorTurns = emptyList()
         )
 
-        assertEquals(0.7, capturedTemperatures.single())
+        assertEquals(0.3, capturedTemperatures.single())
     }
 
     @Test
@@ -1754,7 +1924,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedMessages += messages
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary is competitive.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa support is available.","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary is competitive."},{"claimKey":"r2:general.answer","text":"Visa support is available."}],"actionText":null}"""
             }
         }
         val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generate(
@@ -2612,7 +2782,8 @@ class AiReplyDraftServiceTest {
         val systemPrompt = captured.first().first { it.role == "system" }.content
         val userContent = captured.first().first { it.role == "user" }.content
         assertTrue(systemPrompt.contains("JSON object"))
-        assertTrue(systemPrompt.contains("\"paragraphs\""))
+        assertTrue(systemPrompt.contains("\"claims\""))
+        assertFalse(systemPrompt.contains("\"paragraphs\""))
         assertFalse(systemPrompt.contains("Keep the reply to at most 4 paragraphs."))
         assertFalse(systemPrompt.contains("plain-text email body only"))
 
@@ -2790,9 +2961,9 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
                 } else {
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info without CTA.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info without CTA."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
                 }
             }
         }
@@ -2824,7 +2995,7 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
                 } else {
                     "not-json free text Please send your CV"
                 }
@@ -2859,9 +3030,9 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return if (chats == 1) {
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV."}],"actionText":null}"""
                 } else {
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"The salary is RMB 500,000 per year.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"The salary is RMB 500,000 per year."}],"actionText":null}"""
                 }
             }
         }
@@ -3725,9 +3896,9 @@ class AiReplyDraftServiceTest {
         Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
     }
 
-    private val minimalGroundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Funding info","sourceIds":[5]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+    private val minimalGroundedJson = """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Funding info"}],"actionText":null}"""
 
-    private val modalityGroundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"You will receive salary support.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+    private val modalityGroundedJson = """{"claims":[{"claimKey":"r1:finance.arrangements","text":"You will receive salary support."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
 
     @Test
     fun `grounded prompt and fallback ignore blank answerBody even when replyBody populated`() {
@@ -3770,7 +3941,7 @@ class AiReplyDraftServiceTest {
         stubDefaultFrame()
         val inbound = "- Salary?\n- Visa?"
         stubModalityT3(inbound, sourceBody1 = "Salary support is available.")
-        val numberedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"1. Program & eligibility\nSalary support is available.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+        val numberedJson = """{"claims":[{"claimKey":"r1:finance.arrangements","text":"1. Program & eligibility\nSalary support is available."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = numberedJson
@@ -3815,7 +3986,7 @@ class AiReplyDraftServiceTest {
         stubDefaultFrame()
         val inbound = "- Salary?\n- Visa?"
         stubModalityT3(inbound, sourceBody1 = "General compensation information is available.")
-        val groundedJson = """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Participation is free of charge.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+        val groundedJson = """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Participation is free of charge."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
         val client = object : LlmDraftClient {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = groundedJson
@@ -3868,7 +4039,7 @@ class AiReplyDraftServiceTest {
                 chats++
                 return if (chats == 1) {
                     // First call: valid claim but CTA present — triggers retry
-                    """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Competitive allowance. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Competitive allowance. Please send your CV."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
                 } else {
                     // Retry: no CTA but modality-strengthened answer
                     modalityGroundedJson
@@ -3929,7 +4100,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
             }
         }
 
@@ -4115,7 +4286,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info."}],"actionText":null}"""
             }
         }
 
@@ -4142,7 +4313,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
-                return if (chats == 1) null else """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return if (chats == 1) null else """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info."}],"actionText":null}"""
             }
         }
 
@@ -4200,7 +4371,7 @@ class AiReplyDraftServiceTest {
                 return when (chats) {
                     1 -> null // first transport call fails
                     2 -> "not valid json" // retry succeeds but invalid
-                    3 -> """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info.","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}""" // correction succeeds
+                    3 -> """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info."}],"actionText":null}""" // correction succeeds
                     else -> null
                 }
             }
@@ -4231,7 +4402,7 @@ class AiReplyDraftServiceTest {
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 chats++
                 return when (chats) {
-                    1 -> """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]},{"paragraphIndex":2,"claimKeys":["r2:general.answer"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"Salary info. Please send your CV.","sourceIds":[1]},{"claimKey":"r2:general.answer","requestIndex":2,"intentKey":"general.answer","text":"Visa info","sourceIds":[2]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                    1 -> """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV."},{"claimKey":"r2:general.answer","text":"Visa info"}],"actionText":null}"""
                     2 -> null // correction transport fails, no third retry
                     else -> null
                 }
@@ -4314,7 +4485,7 @@ class AiReplyDraftServiceTest {
             override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
             override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? {
                 capturedMessages += messages
-                return """{"paragraphs":[{"paragraphIndex":1,"claimKeys":["r1:finance.arrangements"]}],"claims":[{"claimKey":"r1:finance.arrangements","requestIndex":1,"intentKey":"finance.arrangements","text":"ok","sourceIds":[1]}],"missingFacts":[],"proposedAction":{"type":"NONE","text":null},"requiresReview":false}"""
+                return """{"claims":[{"claimKey":"r1:finance.arrangements","text":"ok"}],"actionText":null}"""
             }
         }
 

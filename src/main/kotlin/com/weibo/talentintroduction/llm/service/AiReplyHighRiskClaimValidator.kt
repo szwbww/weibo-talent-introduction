@@ -5,7 +5,9 @@ import org.springframework.stereotype.Service
 
 data class ClaimValidationResult(
     val valid: Boolean,
-    val warningCodes: List<String> = emptyList()
+    val warningCodes: List<String> = emptyList(),
+    val issues: List<AiReplyValidationIssue> = emptyList(),
+    internal val sourceTextsByClaim: Map<String, String> = emptyMap()
 )
 
 data class GroundedCandidateInput(
@@ -13,7 +15,8 @@ data class GroundedCandidateInput(
     val requestFacts: List<RequestFactItem>,
     val plan: GroundedContentPlan,
     val finalBody: String,
-    val hasBlockingTrustGap: Boolean
+    val hasBlockingTrustGap: Boolean,
+    val sourceTextsByClaim: Map<String, String> = emptyMap()
 )
 
 @Service
@@ -49,57 +52,69 @@ class AiReplyHighRiskClaimValidator(
         requestFacts: List<RequestFactItem>
     ): ClaimValidationResult {
         val warnings = mutableListOf<String>()
+        val issues = mutableListOf<AiReplyValidationIssue>()
+        val sourceTextsByClaim = linkedMapOf<String, String>()
 
         for (section in sections) {
             for (answer in section.answers) {
                 if (answer.answer.isBlank()) {
                     continue
                 }
+                val claimKey = "r${section.requestIndex}:${answer.intentKey}"
                 val sourceText = resolveSourceText(answer.sourceRuleIds)
                 if (sourceText == null) {
                     warnings += WARNING_CLAIM_SOURCE_UNAVAILABLE
+                    issues += claimIssue(WARNING_CLAIM_SOURCE_UNAVAILABLE, claimKey)
                     continue
                 }
+                sourceTextsByClaim[claimKey] = sourceText
 
                 if (containsHallucinatedNumberOrUrl(answer.answer, sourceText)) {
                     warnings += WARNING_CLAIM_HALLUCINATED_FACT
+                    issues += claimIssue(WARNING_CLAIM_HALLUCINATED_FACT, claimKey)
                 }
                 if (detectsModalityStrengthening(answer.answer, sourceText)) {
                     warnings += WARNING_CLAIM_MODALITY_STRENGTHENED
+                    issues += claimIssue(WARNING_CLAIM_MODALITY_STRENGTHENED, claimKey)
                 }
                 if (containsUnbackedHighRiskDeclarations(answer.answer, sourceText)) {
                     warnings += WARNING_CLAIM_HIGH_RISK_UNBACKED
+                    issues += claimIssue(WARNING_CLAIM_HIGH_RISK_UNBACKED, claimKey)
                 }
             }
         }
         val valid = warnings.isEmpty()
-        return ClaimValidationResult(valid = valid, warningCodes = warnings.distinct())
+        return ClaimValidationResult(
+            valid = valid,
+            warningCodes = warnings.distinct(),
+            issues = issues.distinct(),
+            sourceTextsByClaim = sourceTextsByClaim
+        )
     }
 
     fun validateGroundedCandidate(input: GroundedCandidateInput): ClaimValidationResult {
         val warnings = mutableListOf<String>()
-        warnings += validate(input.validatedSections, input.requestFacts).warningCodes
+        val issues = mutableListOf<AiReplyValidationIssue>()
 
         val body = input.finalBody
         if (body.isNotBlank()) {
             if (containsTrustRhetoric(body)) {
                 warnings += WARNING_CLAIM_TRUST_RHETORIC
+                issues += trustIssue(WARNING_CLAIM_TRUST_RHETORIC)
             }
             if (input.hasBlockingTrustGap && containsConfidentialitySubstitute(body)) {
                 warnings += WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
+                issues += trustIssue(WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE)
             }
             for (section in input.validatedSections) {
                 for (answer in section.answers) {
                     if (answer.answer.isBlank()) {
                         continue
                     }
-                    val sourceText = resolveSourceText(answer.sourceRuleIds)
-                    if (sourceText == null) {
-                        continue
-                    }
+                    val claimKey = "r${section.requestIndex}:${answer.intentKey}"
+                    val sourceText = input.sourceTextsByClaim[claimKey] ?: continue
                     val claimPlan = input.plan.claims.find {
-                        val key = "r${section.requestIndex}:${answer.intentKey}"
-                        it.claimKey == key
+                        it.claimKey == claimKey
                     }
                     if (claimPlan != null) {
                         val isAgencyOrCompany = claimPlan.intentKey.startsWith("agency.") ||
@@ -107,14 +122,17 @@ class AiReplyHighRiskClaimValidator(
                         if (isAgencyOrCompany) {
                             if (isRoleDisclosureRequired(sourceText) && !containsRoleDisclosure(answer.answer)) {
                                 warnings += WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
+                                issues += trustIssue(WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED, claimKey)
                             }
                         }
                         if (claimPlan.intentKey.startsWith("enterprise.")) {
                             if (isEnterpriseUncertaintyRequired(sourceText) && containsEnterpriseCertainty(answer.answer)) {
                                 warnings += WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                                issues += trustIssue(WARNING_CLAIM_ENTERPRISE_UNGROUNDED, claimKey)
                             }
                             if (isEnterpriseUncertaintyRequired(sourceText) && !containsEnterpriseUncertainty(answer.answer)) {
                                 warnings += WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                                issues += trustIssue(WARNING_CLAIM_ENTERPRISE_UNGROUNDED, claimKey)
                             }
                         }
                     }
@@ -122,8 +140,20 @@ class AiReplyHighRiskClaimValidator(
             }
         }
 
-        return ClaimValidationResult(valid = warnings.isEmpty(), warningCodes = warnings.distinct())
+        return ClaimValidationResult(
+            valid = warnings.isEmpty(),
+            warningCodes = warnings.distinct(),
+            issues = issues.distinct()
+        )
     }
+
+    private fun claimIssue(code: String, claimKey: String) = AiReplyValidationIssue(
+        AiReplyValidationStage.CLAIM, code, claimKey
+    )
+
+    private fun trustIssue(code: String, claimKey: String? = null) = AiReplyValidationIssue(
+        AiReplyValidationStage.TRUST, code, claimKey
+    )
 
     internal fun containsTrustRhetoric(text: String): Boolean {
         return TRUST_RHETORIC_PHRASES.any { phrase ->

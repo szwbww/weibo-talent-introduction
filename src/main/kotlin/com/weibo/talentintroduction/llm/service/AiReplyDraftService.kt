@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
+import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -305,7 +306,8 @@ data class AiReplyDraftResult(
     val draftReadiness: AiReplyDraftReadiness = AiReplyDraftReadiness.READY,
     val promptVersion: String = "",
     val evidenceSetVersion: String = "",
-    val evidenceSources: List<AiReplyEvidenceSnapshot> = emptyList()
+    val evidenceSources: List<AiReplyEvidenceSnapshot> = emptyList(),
+    val validationDiagnostics: AiReplyValidationDiagnostics = AiReplyValidationDiagnostics()
 )
 
 internal data class FreeFormBuildResult(
@@ -352,6 +354,8 @@ class AiReplyDraftService(
     private val claimValidator: AiReplyHighRiskClaimValidator,
     private val contentPlanner: AiReplyGroundedContentPlanner
 ) {
+    private val logger = LoggerFactory.getLogger(AiReplyDraftService::class.java)
+
     fun generate(
         inboundText: String,
         operatorTurns: List<AiReplyTurn>,
@@ -512,7 +516,7 @@ class AiReplyDraftService(
         }
         val boundedMessages = withActionBoundary(messages, plan.allowedActions)
         val temperature = when (mode) {
-            AiReplyMode.QA_GROUNDED, AiReplyMode.QA_MATCHED -> properties.freeFormTemperature
+            AiReplyMode.QA_GROUNDED, AiReplyMode.QA_MATCHED -> properties.temperature
             AiReplyMode.FREE_FORM -> properties.freeFormTemperature
         }
         val totalTimeoutFallback = {
@@ -724,15 +728,17 @@ class AiReplyDraftService(
             )
         }
 
+        val initialDiagnostics = diagnosticsFor(AiReplyValidationAttempt.INITIAL, firstResult.issues)
+        logValidationFailure(selectedModel, mode, AiReplyValidationAttempt.INITIAL, initialDiagnostics)
         val correctionMsg = buildTrustCorrectionMessage(
-            warningCodes = firstResult.allWarnings,
+            issues = firstResult.issues,
             plan = plan
         )
         val retryMessages = boundedMessages + LlmChatMessage(role = "user", content = correctionMsg)
         val retryObserved = executeProviderCall(
             client = client,
             messages = retryMessages,
-            temperature = temperature,
+            temperature = GROUNDED_REPAIR_TEMPERATURE,
             providerModel = providerModel,
             jsonOutput = true,
             phase = AiReplyProgressPhase.REPAIRING,
@@ -764,7 +770,8 @@ class AiReplyDraftService(
                 plan = plan,
                 allowedActions = plan.allowedActions,
                 generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-                promptVersion = promptVersion
+                promptVersion = promptVersion,
+                validationDiagnostics = AiReplyValidationDiagnostics.from(initialDiagnostics)
             )
         }
 
@@ -776,6 +783,7 @@ class AiReplyDraftService(
             hasBlockingTrustGap = blockingTrust
         )
 
+        val repairDiagnostics = diagnosticsFor(AiReplyValidationAttempt.REPAIR, retryResult.issues)
         if (retryResult.valid) {
             progressReporter.transition(AiReplyProgressPhase.FINALIZING)
             return buildGroundedResult(
@@ -788,10 +796,12 @@ class AiReplyDraftService(
                 fewShotDialogRefs = fewShotDialogRefs,
                 contextWarnings = contextWarnings,
                 plan = plan,
-                promptVersion = promptVersion
+                promptVersion = promptVersion,
+                validationDiagnostics = AiReplyValidationDiagnostics.from(initialDiagnostics)
             )
         }
 
+        logValidationFailure(selectedModel, mode, AiReplyValidationAttempt.REPAIR, repairDiagnostics)
         val mergedWarnings = contextWarnings.toMutableList()
         mergedWarnings += firstResult.allWarnings
         mergedWarnings += retryResult.allWarnings
@@ -810,7 +820,8 @@ class AiReplyDraftService(
             plan = plan,
             allowedActions = plan.allowedActions,
             generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
-            promptVersion = promptVersion
+            promptVersion = promptVersion,
+            validationDiagnostics = AiReplyValidationDiagnostics.from(initialDiagnostics, repairDiagnostics)
         )
     }
 
@@ -909,7 +920,8 @@ class AiReplyDraftService(
         val valid: Boolean,
         val text: String,
         val sections: List<ValidatedSection>,
-        val allWarnings: List<String>
+        val allWarnings: List<String>,
+        val issues: List<AiReplyValidationIssue> = emptyList()
     )
 
     private fun materializeAndValidateGroundedCandidate(
@@ -930,7 +942,8 @@ class AiReplyDraftService(
                 valid = false,
                 text = "",
                 sections = materialized.sections,
-                allWarnings = warnings.distinct()
+                allWarnings = warnings.distinct(),
+                issues = materialized.issues
             )
         }
 
@@ -945,30 +958,81 @@ class AiReplyDraftService(
                 requestFacts = resolved.requestFacts,
                 plan = plan,
                 finalBody = materialized.text,
-                hasBlockingTrustGap = hasBlockingTrustGap
+                hasBlockingTrustGap = hasBlockingTrustGap,
+                sourceTextsByClaim = claimResult.sourceTextsByClaim
             )
         )
         if (!trustResult.valid) {
             warnings += trustResult.warningCodes
         }
 
-        var text = materialized.text
-        val actionViolations = AiReplyActionPolicy.findViolations(text, allowedActions)
+        val issues = (claimResult.issues + trustResult.issues).toMutableList()
+        val actionIssues = mutableListOf<AiReplyValidationIssue>()
+        materialized.sections.forEach { section ->
+            section.answers.forEach { answer ->
+                val claimViolations = AiReplyActionPolicy.findViolations(answer.answer, allowedActions)
+                if (AiReplyActionPolicy.detectActions(answer.answer).isNotEmpty() || claimViolations.isNotEmpty()) {
+                    actionIssues += AiReplyValidationIssue(
+                        AiReplyValidationStage.ACTION,
+                        AiReplyValidationCodes.ACTION_TEXT_INVALID,
+                        "r${section.requestIndex}:${answer.intentKey}"
+                    )
+                }
+            }
+        }
+
+        val actionText = materialized.actionText
+        val declaredActions = actionText?.let { AiReplyActionPolicy.detectActions(it) }.orEmpty()
+        if (!materialized.actionTextValid) {
+            actionIssues += AiReplyValidationIssue(
+                AiReplyValidationStage.ACTION,
+                AiReplyValidationCodes.ACTION_TEXT_INVALID
+            )
+        } else if (actionText != null && declaredActions.size != 1) {
+            actionIssues += AiReplyValidationIssue(
+                AiReplyValidationStage.ACTION,
+                AiReplyValidationCodes.ACTION_TEXT_INVALID
+            )
+        } else if (declaredActions.singleOrNull() !in allowedActions && declaredActions.isNotEmpty()) {
+            actionIssues += AiReplyValidationIssue(
+                AiReplyValidationStage.ACTION,
+                AiReplyValidationCodes.ACTION_NOT_ALLOWED
+            )
+        }
+
+        val bodyActions = AiReplyActionPolicy.detectActions(materialized.text)
+        if (bodyActions != declaredActions) {
+            actionIssues += AiReplyValidationIssue(
+                AiReplyValidationStage.ACTION,
+                AiReplyValidationCodes.ACTION_BODY_MISMATCH
+            )
+        }
+
+        val actionViolations = AiReplyActionPolicy.findViolations(materialized.text, allowedActions)
         if (actionViolations.isNotEmpty()) {
             actionViolations.forEach { v ->
                 val code = v.code ?: UNAUTHORIZED_ACTION_REMOVED
                 if (code !in warnings) {
                     warnings += code
                 }
+                actionIssues += AiReplyValidationIssue(AiReplyValidationStage.ACTION, code)
             }
         }
+        actionIssues.forEach { issue ->
+            if (issue.code !in warnings) {
+                warnings += issue.code
+            }
+        }
+        issues += actionIssues
+        val text = materialized.text
 
         if (warnings.isNotEmpty()) {
             return GroundedValidationResult(
                 valid = false,
-                text = text,
+                text = "",
                 sections = materialized.sections,
-                allWarnings = warnings.distinct()
+                allWarnings = warnings.distinct(),
+                issues = issues.distinct()
             )
         }
 
@@ -991,6 +1055,7 @@ class AiReplyDraftService(
         contextWarnings: List<String>,
         plan: GroundedContentPlan,
         promptVersion: String,
+        validationDiagnostics: AiReplyValidationDiagnostics = AiReplyValidationDiagnostics(),
         budget: AiReplyGenerationBudget? = null,
         cancellationToken: AiReplyCancellationToken? = null,
         progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
@@ -1035,7 +1100,8 @@ class AiReplyDraftService(
             draftReadiness = readiness,
             promptVersion = promptVersion,
             evidenceSetVersion = evidenceSetVersion,
-            evidenceSources = evidenceSources
+            evidenceSources = evidenceSources,
+            validationDiagnostics = validationDiagnostics
         )
     }
 
@@ -1053,7 +1119,8 @@ class AiReplyDraftService(
         plan: GroundedContentPlan,
         allowedActions: Set<AiReplyAction>,
         generationState: AiReplyGenerationState,
-        promptVersion: String
+        promptVersion: String,
+        validationDiagnostics: AiReplyValidationDiagnostics = AiReplyValidationDiagnostics()
     ): AiReplyDraftResult {
         val fallbackText = if (mode == AiReplyMode.QA_GROUNDED || mode == AiReplyMode.QA_MATCHED) {
             aiReplyPointByPointComposer.composeFallbackReference(plan, resolved.requestFacts)
@@ -1087,34 +1154,114 @@ class AiReplyDraftService(
             draftReadiness = AiReplyDraftReadiness.BLOCKED,
             promptVersion = promptVersion,
             evidenceSetVersion = evidenceSetVersion,
-            evidenceSources = evidenceSources
+            evidenceSources = evidenceSources,
+            validationDiagnostics = validationDiagnostics
+        )
+    }
+
+    private fun diagnosticsFor(
+        attempt: AiReplyValidationAttempt,
+        issues: List<AiReplyValidationIssue>
+    ): List<AiReplyValidationDiagnostic> = issues.map {
+        AiReplyValidationDiagnostic(attempt, it.stage, it.code, it.claimKey)
+    }
+
+    private fun logValidationFailure(
+        selectedModel: String,
+        mode: AiReplyMode,
+        attempt: AiReplyValidationAttempt,
+        diagnostics: List<AiReplyValidationDiagnostic>
+    ) {
+        logger.warn(
+            "AI grounded validation failed model={} mode={} attempt={} diagnostics={} truncated={}",
+            selectedModel,
+            mode,
+            attempt,
+            diagnostics.map { "${it.stage.name}/${it.code}/${it.claimKey?.take(120)}" },
+            diagnostics.size > AiReplyValidationDiagnostics.MAX_ITEMS
         )
     }
 
     private fun buildTrustCorrectionMessage(
-        warningCodes: List<String>,
+        issues: List<AiReplyValidationIssue>,
         plan: GroundedContentPlan
     ): String = buildString {
-        appendLine("Your previous draft violated the trust boundary and action policy rules.")
+        appendLine("Correct only the reported validation failures. Do not repeat the previous response.")
         appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(plan.allowedActions)}.")
-        appendLine("Violations:")
-        warningCodes.forEach { code ->
-            appendLine("- $code")
-        }
-        if (AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED in warningCodes) {
-            appendLine(
-                "Remove every high-risk statement that is absent from that claim's RULE FACT. " +
-                    "Do not mention or answer any intent listed under Missing facts, including as an assurance."
-            )
+        appendLine("Diagnostics:")
+        issues.forEach { issue ->
+            appendLine("- stage=${issue.stage.name}; code=${issue.code}; claimKey=${issue.claimKey ?: "null"}")
+            appendLine("  repair: ${repairInstruction(issue)}")
         }
         appendLine()
         appendLine(
-            "Return one corrected JSON object only. Reuse the exact claim keys, paragraph grouping, " +
-                "missing facts and requiresReview value from the SERVER PLAN below. " +
-                "No Markdown fence, no salutation, no closing, no STATUS labels."
+            "Return only the exact minimal JSON protocol. Every plan claimKey appears exactly once; " +
+                "rewrite only text values. actionText is null unless one allowed action is necessary. " +
+                "No Markdown fence, no extra fields, no status labels."
         )
         appendLine()
-        append(buildGroundedPlanSection(plan))
+        appendLine("{\"claims\":[${plan.claims.joinToString(",") { "{\"claimKey\":\"${it.claimKey}\",\"text\":\"\"}" }}],\"actionText\":null}")
+    }
+
+    internal fun repairInstruction(issue: AiReplyValidationIssue): String = when (issue.code) {
+        AiReplyValidationCodes.JSON_INVALID ->
+            "Return one valid JSON object only; remove Markdown fences and all prose outside the object."
+        AiReplyValidationCodes.TOP_LEVEL_FIELDS_INVALID ->
+            "Use exactly the top-level fields claims and actionText, with no deterministic envelope fields."
+        AiReplyValidationCodes.CLAIMS_INVALID ->
+            "Set claims to an array containing one claim object for each current server-plan claimKey."
+        AiReplyValidationCodes.CLAIM_FIELDS_INVALID ->
+            "Give every claim exactly the fields claimKey and text, with a nonblank text value."
+        AiReplyValidationCodes.CLAIM_KEY_DUPLICATE ->
+            "Remove duplicate claim entries so each current server-plan claimKey appears once."
+        AiReplyValidationCodes.CLAIM_KEY_UNKNOWN ->
+            "Use only claimKey values supplied by the current server plan; do not invent identifiers."
+        AiReplyValidationCodes.CLAIM_SET_MISMATCH ->
+            "Return the complete server-plan claimKey set exactly once, preserving no missing or extra key."
+        AiReplyValidationCodes.CLAIM_TEXT_INVALID ->
+            "Replace the claim with natural nonblank answer text and remove status labels or internal markers."
+        AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE ->
+            "Rewrite the answer as natural email prose without numbered sections, fixed headings, or internal labels."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_SOURCE_UNAVAILABLE ->
+            "Remove the claim unless its bound QA rule has an available nonblank authoritative fact."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT ->
+            "Remove every number, URL, or compound fact that is absent from the bound authoritative rule fact."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED ->
+            "Preserve the source fact's conditional or uncertain modality; remove stronger commitments."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED ->
+            "Remove each high-risk declaration unless the same claim's bound rule fact explicitly supports it."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC ->
+            "Remove trust rhetoric and replace unsupported reassurance with a direct fact-based answer."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE ->
+            "Do not use confidentiality language as a substitute for an answer or an unsupported assurance."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED ->
+            "State the required service or agency role using only the bound fact's supported wording."
+        AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED ->
+            "Keep enterprise identity uncertain when the bound fact says it is not yet determined or matched."
+        AiReplyValidationCodes.ACTION_TEXT_INVALID ->
+            "Set actionText to null or a nonblank string containing exactly one detected allowed action."
+        AiReplyValidationCodes.ACTION_NOT_ALLOWED ->
+            "Remove the unauthorized action or use actionText only for one action listed as allowed by the plan."
+        AiReplyValidationCodes.ACTION_BODY_MISMATCH ->
+            "Make the final composed body contain exactly the action set declared by actionText."
+        UNAUTHORIZED_ACTION_REMOVED ->
+            "Remove every outbound request not authorized by the current plan and keep claims informational."
+        AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL ->
+            "Do not request passports, identity documents, employment certificates, or bank statements."
+        AiReplyActionPolicy.CODE_ACTION_CV_PURPOSE_MISSING ->
+            "If requesting a CV, state its qualification or research-match review purpose."
+        AiReplyActionPolicy.CODE_ACTION_CV_OPTIONALITY_MISSING ->
+            "If requesting a CV, make the request explicitly optional and pressure-free."
+        else -> when (issue.stage) {
+            AiReplyValidationStage.STRUCTURE ->
+                "Return only the exact minimal JSON protocol and preserve every server-plan claimKey exactly once."
+            AiReplyValidationStage.CLAIM ->
+                "Use only the bound authoritative RULE FACT and remove unsupported claim content."
+            AiReplyValidationStage.TRUST ->
+                "Answer only from validated facts and remove unsupported trust or certainty language."
+            AiReplyValidationStage.ACTION ->
+                "Use actionText only for one allowed outbound action and keep claim text free of requests."
+        }
     }
 
     private fun withActionBoundary(
@@ -1170,7 +1317,11 @@ class AiReplyDraftService(
             val retryText = executeProviderCall(
                 client = client,
                 messages = retryMessages,
-                temperature = temperature ?: 0.0,
+                temperature = if (mode == AiReplyMode.QA_GROUNDED) {
+                    GROUNDED_REPAIR_TEMPERATURE
+                } else {
+                    temperature ?: 0.0
+                },
                 providerModel = providerModel,
                 jsonOutput = mode == AiReplyMode.QA_GROUNDED,
                 phase = AiReplyProgressPhase.REPAIRING,
@@ -1259,12 +1410,8 @@ class AiReplyDraftService(
         appendLine("Do not add materials requests or meeting proposals unless they are in the allowed set.")
         if (mode == AiReplyMode.QA_GROUNDED) {
             appendLine(
-                "Return the corrected reply as the same JSON object " +
-                    "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
-                    "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
-                    "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered name is ...\",\"sourceIds\":[24]}]," +
-                    "\"missingFacts\":[],\"proposedAction\":{\"type\":\"NONE\",\"text\":null},\"requiresReview\":false} only. " +
-                    "No Markdown fence, no salutation, no closing, no STATUS labels."
+                "Return exactly the minimal JSON protocol {\"claims\":[{\"claimKey\":\"...\",\"text\":\"...\"}],\"actionText\":null}. " +
+                    "Use every claimKey from the current server plan exactly once. No extra fields, Markdown fence, or STATUS labels."
             )
         } else {
             appendLine("Rewrite the email body only.")
@@ -1401,10 +1548,11 @@ class AiReplyDraftService(
         }
         messages += LlmChatMessage(
             role = "user",
-            content = buildGroundedUserContent(inboundText, requestFacts, expertProfile, mailHistory, contextWarnings, plan)
+            content = buildGroundedUserContent(inboundText, requestFacts, expertProfile, mailHistory, contextWarnings)
         )
         appendFirstTurnInstruction(messages, operatorInstruction)
         appendOperatorTurns(messages, operatorTurns)
+        messages += LlmChatMessage(role = "user", content = buildGroundedProtocolMessage(plan))
         return FreeFormBuildResult(
             messages = messages,
             fewShotDialogRefs = fewShots.map { it.sourceRef }
@@ -1487,22 +1635,14 @@ class AiReplyDraftService(
         appendLine("You answer expert inbound requests using only the approved facts provided per request and intent.")
         appendLine(
             "Return exactly one JSON object and nothing else: " +
-                "{\"paragraphs\":[{\"paragraphIndex\":1,\"claimKeys\":[\"r1:company.legal_name\"]}]," +
-                "\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"requestIndex\":1," +
-                "\"intentKey\":\"company.legal_name\",\"text\":\"Our registered company name is ...\",\"sourceIds\":[24]}]," +
-                "\"missingFacts\":[]," +
-                "\"proposedAction\":{\"type\":\"NONE\",\"text\":null}," +
-                "\"requiresReview\":false}"
+                "{\"claims\":[{\"claimKey\":\"r1:company.legal_name\",\"text\":\"...\"}]," +
+                "\"actionText\":null}"
         )
         appendLine("Rules:")
-        appendLine("- The SERVER PLAN section specifies exactly what claims to produce, their ordering and paragraph grouping, evidence source IDs, missing facts, allowed actions, and whether review is required.")
-        appendLine("- claims: produce exactly one claim per claimKey in the server plan. No extra claims; no missing claims.")
-        appendLine("- Each claim.text must use only the approved facts listed after that claim's RULE IDs in the SERVER PLAN. Do not invent, combine across intents, or borrow facts from another claim.")
-        appendLine("- claim.sourceIds must be a non-empty subset of the evidence rule IDs listed for that claim in the SERVER PLAN.")
-        appendLine("- paragraphs: group claims exactly as specified by claimKeys. Do NOT output section headings, numbered lists, bullet points, intent keys, rule IDs, GROUNDED/PARTIAL/UNSUPPORTED or coverage labels in prose.")
-        appendLine("- missingFacts: copy exactly from the server plan. Do not add or remove entries.")
-        appendLine("- proposedAction: one of {\"type\":\"NONE\",\"text\":null}, {\"type\":\"REQUEST_MATERIALS\",\"text\":\"...\"}, {\"type\":\"PROPOSE_MEETING\",\"text\":\"...\"}. Only pick a type listed in allowed outbound actions. text must be null for NONE; non-null for others. The action text in the draft body must match this declaration exactly.")
-        appendLine("- requiresReview: copy the boolean from the server plan.")
+        appendLine("- Top-level fields must be exactly claims and actionText. Each claim must have exactly claimKey and text.")
+        appendLine("- Produce exactly one claim for every server-plan claimKey. Claim array order is arbitrary; the server owns final order.")
+        appendLine("- Do not output requestIndex, intentKey, sourceIds, paragraphs, missingFacts, requiresReview, proposedAction, status, explanation, or any other field.")
+        appendLine("- actionText must be null or one independently authorized action. Never put an outbound action in claim text.")
         appendLine("- Write each claim in 1-3 concrete, restrained sentences per claim. Use the same language as the inbound email.")
         appendLine("- For identity/verification questions: state only confirmed identity facts and verifiable registration paths. Never claim government cooperation, official authorization, no fees, confidentiality, funding or contract guarantees unless those facts appear in your approved evidence.")
         appendLine("- Never output: \"trust us\", \"rest assured\", \"prestigious\", \"unique opportunity\", \"we are delighted\", \"please find our answers below\", \"do not hesitate\".")
@@ -1547,8 +1687,7 @@ class AiReplyDraftService(
         requestFacts: List<RequestFactItem>,
         expertProfile: String?,
         mailHistory: String?,
-        contextWarnings: List<String>,
-        plan: GroundedContentPlan
+        contextWarnings: List<String>
     ): String = buildString {
         requestFacts.forEach { item ->
             appendLine()
@@ -1622,11 +1761,17 @@ class AiReplyDraftService(
         }
 
         appendLine()
-        appendLine(buildGroundedPlanSection(plan))
-
-        appendLine()
         appendLine("Inbound email:")
         appendLine(inboundText.take(4000))
+    }
+
+    private fun buildGroundedProtocolMessage(plan: GroundedContentPlan): String = buildString {
+        appendLine("CURRENT SERVER PLAN — authoritative deterministic envelope")
+        appendLine("Return only the minimal claims/actionText JSON protocol described in the system message.")
+        appendLine("Allowed actions: ${AiReplyActionPolicy.formatAllowedLabel(plan.allowedActions)}")
+        appendLine("The server owns request/intent/source metadata, missing facts, review state, paragraph grouping, and final order. Do not copy those fields into JSON.")
+        appendLine()
+        append(buildGroundedPlanSection(plan))
     }
 
     private fun buildGroundedPlanSection(plan: GroundedContentPlan): String = buildString {
@@ -1721,13 +1866,18 @@ class AiReplyDraftService(
         }
         if (AiReplyGroundedDraftMaterializer.containsNonNaturalGroundedStructure(materialized.text)) {
             return groundedDraftMaterializer.invalid(
-                warningCodes = listOf(AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE)
+                warningCodes = listOf(AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE),
+                issues = listOf(AiReplyValidationIssue(
+                    AiReplyValidationStage.STRUCTURE,
+                    AiReplyGroundedDraftMaterializer.WARNING_UNNATURAL_GROUNDED_STRUCTURE
+                ))
             )
         }
         return materialized
     }
 
     companion object {
+        private const val GROUNDED_REPAIR_TEMPERATURE = 0.0
         const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
         const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"
         const val INSUFFICIENT_SAFE_REPLY =
