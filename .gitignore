@@ -3,7 +3,6 @@ target/
 *.iml
 .antigravitycli/
 docs/multi-ai-runs/
-docs/plans/
 docs/reviews/
 cache/
 .DS_Store
