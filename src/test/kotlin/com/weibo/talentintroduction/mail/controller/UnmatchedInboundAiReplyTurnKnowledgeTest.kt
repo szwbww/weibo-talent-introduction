@@ -1131,8 +1131,15 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             assertTrue(ready.await(1, TimeUnit.SECONDS))
             eventually("first endpoint progress") { progressEventCount(capture) >= 1 }
             releasePhase.countDown()
-            eventually("phase endpoint progress") { progressEventCount(capture) >= 2 }
-            assertEquals(2, progressEventCount(capture), "endpoint phase change must preempt delayed progress")
+            eventually("validating endpoint progress") {
+                progressEventPhases(capture).lastOrNull() == AiReplyProgressPhase.VALIDATING.name
+            }
+            val phases = progressEventPhases(capture)
+            assertEquals(
+                1,
+                phases.count { it == AiReplyProgressPhase.VALIDATING.name },
+                "endpoint phase change must emit one validating progress event"
+            )
             releaseResult.countDown()
         } finally {
             releasePhase.countDown()
@@ -1239,8 +1246,30 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         }
     }
 
+    private fun progressEvents(capture: CapturedEmitter): List<String> =
+        synchronized(capture.chunks) {
+            capture.chunks.filterIsInstance<String>().filter { it.contains("event:progress") }
+        }
+
     private fun progressEventCount(capture: CapturedEmitter): Int =
-        capture.chunks.filterIsInstance<String>().count { it.contains("event:progress") }
+        progressEvents(capture).size
+
+    private fun progressEventPhases(capture: CapturedEmitter): List<String> =
+        synchronized(capture.chunks) {
+            val phases = mutableListOf<String>()
+            var awaitingPayload = false
+            capture.chunks.forEach { chunk ->
+                when {
+                    chunk is String && chunk.contains("event:progress") -> awaitingPayload = true
+                    awaitingPayload && chunk is Map<*, *> -> {
+                        chunk["phase"]?.toString()?.let(phases::add)
+                        awaitingPayload = false
+                    }
+                    awaitingPayload && chunk is String && chunk.startsWith("event:") -> awaitingPayload = false
+                }
+            }
+            phases
+        }
 
     private data class CapturedEmitter(
         val chunks: MutableList<Any?>,

@@ -8,6 +8,12 @@ import com.weibo.talentintroduction.llm.service.TrustReplyBootstrapResponse
 import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
 import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchService
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
+import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
+import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
@@ -108,5 +114,113 @@ class TrustReplyWorkbenchControllerTest {
                 .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":1},"expectedSourceVersion":"v"}""")
         )
             .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `assemble returns raw rendered hash and canonical facts`() {
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L)
+        val response = TrustReplyAssembleResponse(
+            source = source,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            rawDraftText = "raw {{expert.name}}",
+            renderedDraftText = "raw Test",
+            draftHash = "hash",
+            canonicalFactIds = listOf(9L),
+            itemVersions = listOf(
+                TrustReplyItemVersion(
+                    versionId = "v1",
+                    requestKey = "k".repeat(32),
+                    handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                    answerText = "answer",
+                    claims = emptyList(),
+                    model = "DEEPSEEK_V4_FLASH",
+                    generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                    evidenceSetVersion = "e1",
+                    sourceVersion = "s1"
+                )
+            )
+        )
+        Mockito.`when`(
+            service.assemble(
+                Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+                    source = source,
+                    expectedSourceVersion = "s1",
+                    expectedEvidenceSetVersion = "e1",
+                    lockedItems = emptyList()
+                )
+            )
+        ).thenReturn(response)
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"e1","lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.rawDraftText").value("raw {{expert.name}}"))
+            .andExpect(jsonPath("$.renderedDraftText").value("raw Test"))
+            .andExpect(jsonPath("$.draftHash").value("hash"))
+            .andExpect(jsonPath("$.canonicalFactIds[0]").value(9))
+    }
+
+    @Test
+    fun `synchronous item adjustment endpoint is unavailable`() {
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/items/adjust")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"e1","requestKey":"k","handling":"OMIT"}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `invalid operation maps to stable 422 code`() {
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/generations/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","generationId":"00000000-0000-0000-0000-000000000004","operation":"UNKNOWN"}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_OPERATION_INVALID"))
+    }
+
+    @Test
+    fun `assemble maps stale source to stable 409 error DTO`() {
+        Mockito.`when`(
+            service.assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+                expectedSourceVersion = "stale",
+                expectedEvidenceSetVersion = "e1",
+                lockedItems = emptyList()
+            ))
+        ).thenThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.CONFLICT,
+            "TRUST_REPLY_SOURCE_STALE"
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"stale","expectedEvidenceSetVersion":"e1","lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_SOURCE_STALE"))
     }
 }

@@ -290,6 +290,30 @@ data class AiReplyEvidenceSnapshot(
     val available: Boolean
 )
 
+data class AiReplyItemClaim(
+    val intentKey: String,
+    val text: String,
+    val sourceRuleIds: List<Long>
+)
+
+data class AiReplyItemAnswer(
+    val requestIndex: Int,
+    val requestText: String,
+    val status: RequestGroundingStatus,
+    val answerText: String,
+    val claims: List<AiReplyItemClaim>
+)
+
+data class AiReplyItemGenerationResult(
+    val itemAnswer: AiReplyItemAnswer?,
+    val handling: TrustReplyItemHandling,
+    val generationKind: TrustReplyItemGenerationKind?,
+    val generationState: AiReplyGenerationState,
+    val usedLlm: Boolean,
+    val lockable: Boolean,
+    val warningCodes: List<String> = emptyList()
+)
+
 data class AiReplyDraftResult(
     val draftText: String,
     val usedLlm: Boolean,
@@ -307,7 +331,8 @@ data class AiReplyDraftResult(
     val promptVersion: String = "",
     val evidenceSetVersion: String = "",
     val evidenceSources: List<AiReplyEvidenceSnapshot> = emptyList(),
-    val validationDiagnostics: AiReplyValidationDiagnostics = AiReplyValidationDiagnostics()
+    val validationDiagnostics: AiReplyValidationDiagnostics = AiReplyValidationDiagnostics(),
+    val itemAnswers: List<AiReplyItemAnswer> = emptyList()
 )
 
 internal data class FreeFormBuildResult(
@@ -355,6 +380,261 @@ class AiReplyDraftService(
     private val contentPlanner: AiReplyGroundedContentPlanner
 ) {
     private val logger = LoggerFactory.getLogger(AiReplyDraftService::class.java)
+
+    fun generateItem(
+        inboundText: String,
+        requestFact: RequestFactItem,
+        handling: TrustReplyItemHandling,
+        requestKey: String? = null,
+        operatorInstruction: String? = null,
+        expertProfile: String? = null,
+        mailHistory: String? = null,
+        contextWarnings: List<String> = emptyList(),
+        replyModel: String? = null,
+        researchProfileSufficient: Boolean = true,
+        llmAttemptTimeoutSeconds: Int? = null,
+        llmTotalTimeoutSeconds: Int? = null,
+        cancellationToken: AiReplyCancellationToken? = null,
+        progressReporter: AiReplyProgressReporter = AiReplyProgressReporter.NOOP
+    ): AiReplyItemGenerationResult {
+        val instruction = operatorInstruction?.trim()?.takeIf { it.isNotEmpty() }
+        require(instruction == null || instruction.length <= 500) { "operatorInstruction must not exceed 500 characters" }
+        validateItemHandling(requestFact.status, handling)
+        if (handling == TrustReplyItemHandling.OMIT) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = handling,
+                generationKind = TrustReplyItemGenerationKind.OMITTED,
+                generationState = AiReplyGenerationState.LLM_USED,
+                usedLlm = false,
+                lockable = true
+            )
+        }
+
+        if (handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING) {
+            return generatePendingAcknowledgement(
+                inboundText = inboundText,
+                requestFact = requestFact,
+                requestKey = requestKey,
+                operatorInstruction = instruction,
+                replyModel = replyModel,
+                llmAttemptTimeoutSeconds = llmAttemptTimeoutSeconds,
+                llmTotalTimeoutSeconds = llmTotalTimeoutSeconds,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            )
+        }
+
+        val token = cancellationToken ?: AiReplyCancellationToken()
+        val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
+        val budget = policy.budget()
+        progressReporter.startBudget(budget)
+        val selectedModel = AiReplyModel.fromNullable(replyModel)
+        val client = llmDraftClientProvider.getIfAvailable()
+        if (!properties.enabled || client == null) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = handling,
+                generationKind = null,
+                generationState = if (!properties.enabled) {
+                    AiReplyGenerationState.FALLBACK_LLM_DISABLED
+                } else {
+                    AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                },
+                usedLlm = false,
+                lockable = false
+            )
+        }
+
+        val resolved = ResolvedQaRules(
+            sendQaRuleIds = requestFact.factRuleIds.distinct(),
+            promptRuleIds = requestFact.factRuleIds.distinct(),
+            requestFacts = listOf(requestFact),
+            requestCount = 1,
+            groundedRequestCount = if (requestFact.status == RequestGroundingStatus.UNSUPPORTED) 0 else 1
+        )
+        val plan = contentPlanner.buildPlan(
+            listOf(requestFact),
+            AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
+        )
+        val build = buildGroundedMessages(
+            inboundText = inboundText,
+            operatorTurns = emptyList(),
+            requestFacts = listOf(requestFact),
+            expertProfile = expertProfile,
+            mailHistory = mailHistory,
+            contextWarnings = contextWarnings,
+            operatorInstruction = instruction,
+            plan = plan
+        )
+        val targetMessage = LlmChatMessage(
+            role = "user",
+            content = "Only process requestKey=${requestKey ?: requestFact.index}. Do not answer any other request."
+        )
+        val result = try {
+            generateGrounded(
+                client = client,
+                boundedMessages = withActionBoundary(build.messages + targetMessage, plan.allowedActions),
+                temperature = properties.temperature,
+                providerModel = selectedModel.resolveProviderModel(properties),
+                selectedModel = selectedModel.name,
+                resolved = resolved,
+                mode = AiReplyMode.QA_GROUNDED,
+                fewShotDialogRefs = build.fewShotDialogRefs,
+                contextWarnings = contextWarnings,
+                plan = plan,
+                operatorTurns = emptyList(),
+                lastDraft = null,
+                inboundText = inboundText,
+                expertProfile = expertProfile,
+                mailHistory = mailHistory,
+                operatorInstruction = instruction,
+                promptVersion = resolvePromptSnapshot(AiReplyMode.QA_GROUNDED).version,
+                budget = budget,
+                cancellationToken = token,
+                progressReporter = progressReporter
+            )
+        } finally {
+            progressReporter.endProviderCall()
+        }
+        val answer = result.itemAnswers.singleOrNull()
+        return if (result.usedLlm && result.generationState == AiReplyGenerationState.LLM_USED && answer != null) {
+            AiReplyItemGenerationResult(
+                itemAnswer = answer,
+                handling = handling,
+                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                generationState = result.generationState,
+                usedLlm = true,
+                lockable = true,
+                warningCodes = result.contextWarnings
+            )
+        } else {
+            AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = handling,
+                generationKind = null,
+                generationState = result.generationState,
+                usedLlm = result.usedLlm,
+                lockable = false,
+                warningCodes = result.contextWarnings
+            )
+        }
+    }
+
+    private fun generatePendingAcknowledgement(
+        inboundText: String,
+        requestFact: RequestFactItem,
+        requestKey: String?,
+        operatorInstruction: String?,
+        replyModel: String?,
+        llmAttemptTimeoutSeconds: Int?,
+        llmTotalTimeoutSeconds: Int?,
+        cancellationToken: AiReplyCancellationToken?,
+        progressReporter: AiReplyProgressReporter
+    ): AiReplyItemGenerationResult {
+        val safeText = AiReplyHighRiskClaimValidator.safeAcknowledgementFor(inboundText)
+        val selectedModel = AiReplyModel.fromNullable(replyModel)
+        val client = llmDraftClientProvider.getIfAvailable()
+        if (!properties.enabled || client == null) {
+            return safeAcknowledgementResult(requestFact, safeText, AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE)
+        }
+        val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
+        val budget = policy.budget()
+        progressReporter.startBudget(budget)
+        val instructionLine = operatorInstruction?.let { "Operator style instruction (expression only): $it" }.orEmpty()
+        val messages = listOf(
+            LlmChatMessage(
+                role = "system",
+                content = "Return one short single-paragraph acknowledgement. Confirm only that the point is pending verification. " +
+                    "Do not add facts, numbers, dates, URLs, identities, contracts, funding, actions, lists, internal labels, or promises with a deadline."
+            ),
+            LlmChatMessage(
+                role = "user",
+                content = "requestKey=${requestKey ?: requestFact.index}\nInbound request:\n$inboundText\n$instructionLine"
+            )
+        )
+        val observed = try {
+            executeWithRetry(
+                client = client,
+                messages = messages,
+                temperature = properties.temperature,
+                providerModel = selectedModel.resolveProviderModel(properties),
+                budget = budget,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            ).first
+        } finally {
+            progressReporter.endProviderCall()
+        }
+        val candidate = observed.content?.trim()
+        val validation = candidate?.let { claimValidator.validateNoEvidenceAcknowledgement(it) }
+        if (candidate != null && validation?.valid == true) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = AiReplyItemAnswer(
+                    requestIndex = requestFact.index,
+                    requestText = requestFact.requestText,
+                    status = requestFact.status,
+                    answerText = candidate,
+                    claims = emptyList()
+                ),
+                handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                generationState = AiReplyGenerationState.LLM_USED,
+                usedLlm = true,
+                lockable = true
+            )
+        }
+        return safeAcknowledgementResult(
+            requestFact,
+            safeText,
+            if (observed.failureType == LlmChatFailureType.CLIENT_UNAVAILABLE) {
+                AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+            } else {
+                AiReplyGenerationState.FALLBACK_NO_RESPONSE
+            },
+            validation?.warningCodes.orEmpty()
+        )
+    }
+
+    private fun safeAcknowledgementResult(
+        requestFact: RequestFactItem,
+        text: String,
+        state: AiReplyGenerationState,
+        warnings: List<String> = emptyList()
+    ) = AiReplyItemGenerationResult(
+        itemAnswer = AiReplyItemAnswer(
+            requestIndex = requestFact.index,
+            requestText = requestFact.requestText,
+            status = requestFact.status,
+            answerText = text,
+            claims = emptyList()
+        ),
+        handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+        generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE,
+        generationState = state,
+        usedLlm = false,
+        lockable = true,
+        warningCodes = warnings
+    )
+
+    private fun validateItemHandling(status: RequestGroundingStatus, handling: TrustReplyItemHandling) {
+        val allowed = when (status) {
+            RequestGroundingStatus.GROUNDED -> setOf(
+                TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                TrustReplyItemHandling.OMIT
+            )
+            RequestGroundingStatus.PARTIAL -> setOf(
+                TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                TrustReplyItemHandling.OMIT
+            )
+            RequestGroundingStatus.UNSUPPORTED -> setOf(
+                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                TrustReplyItemHandling.OMIT
+            )
+        }
+        require(handling in allowed) { "handling is not allowed for request status" }
+    }
 
     fun generate(
         inboundText: String,
@@ -1101,7 +1381,23 @@ class AiReplyDraftService(
             promptVersion = promptVersion,
             evidenceSetVersion = evidenceSetVersion,
             evidenceSources = evidenceSources,
-            validationDiagnostics = validationDiagnostics
+            validationDiagnostics = validationDiagnostics,
+            itemAnswers = validated.sections.map { section ->
+                val request = resolved.requestFacts.firstOrNull { it.index == section.requestIndex }
+                AiReplyItemAnswer(
+                    requestIndex = section.requestIndex,
+                    requestText = request?.requestText.orEmpty(),
+                    status = request?.status ?: RequestGroundingStatus.GROUNDED,
+                    answerText = section.answers.joinToString(" ") { it.answer },
+                    claims = section.answers.map { answer ->
+                        AiReplyItemClaim(
+                            intentKey = answer.intentKey,
+                            text = answer.answer,
+                            sourceRuleIds = answer.sourceRuleIds
+                        )
+                    }
+                )
+            }
         )
     }
 

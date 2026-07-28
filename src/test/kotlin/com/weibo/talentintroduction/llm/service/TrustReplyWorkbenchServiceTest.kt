@@ -32,6 +32,8 @@ class TrustReplyWorkbenchServiceTest {
     private val draftService = Mockito.mock(AiReplyDraftService::class.java)
     private val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
     private val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+    private val pointByPointComposer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+    private val claimValidator = Mockito.mock(AiReplyHighRiskClaimValidator::class.java)
 
     private lateinit var service: TrustReplyWorkbenchService
 
@@ -48,7 +50,9 @@ class TrustReplyWorkbenchServiceTest {
             aiReplyDraftService = draftService,
             aiReplyDraftPreviewService = previewService,
             aiReplyReviewAuditService = auditService,
-            llmProperties = LlmProperties(enabled = true)
+            llmProperties = LlmProperties(enabled = true),
+            aiReplyPointByPointComposer = pointByPointComposer,
+            claimValidator = claimValidator
         )
         Mockito.`when`(trainingQa.buildKnowledgeContext(Mockito.anyString())).thenReturn("")
         Mockito.`when`(

@@ -23,6 +23,36 @@ data class GroundedCandidateInput(
 class AiReplyHighRiskClaimValidator(
     private val qaRuleRepository: QaRuleRepository
 ) {
+    fun validateNoEvidenceAcknowledgement(text: String): ClaimValidationResult {
+        val warnings = mutableListOf<String>()
+        val normalized = text.trim()
+        if (normalized.length !in 1..600 || normalized.contains('\n') || normalized.contains('\r')) {
+            warnings += WARNING_ACKNOWLEDGEMENT_SHAPE_INVALID
+        }
+        if (!PENDING_ACKNOWLEDGEMENT_SEMANTICS.any { it.containsMatchIn(normalized) }) {
+            warnings += WARNING_ACKNOWLEDGEMENT_PENDING_SEMANTICS_MISSING
+        }
+        if (
+            containsHallucinatedNumberOrUrl(normalized, "") ||
+            EXTRACT_URL.containsMatchIn(normalized) ||
+            ACKNOWLEDGEMENT_TIME_COMMITMENT.any { it.containsMatchIn(normalized) }
+        ) {
+            warnings += WARNING_CLAIM_HALLUCINATED_FACT
+        }
+        if (containsUnbackedHighRiskDeclarations(normalized, "") || NO_EVIDENCE_HIGH_RISK_ASSERTIONS.any {
+                it.containsMatchIn(normalized)
+            }) {
+            warnings += WARNING_CLAIM_HIGH_RISK_UNBACKED
+        }
+        if (AiReplyActionPolicy.findViolations(normalized, emptySet()).isNotEmpty()) {
+            warnings += WARNING_ACKNOWLEDGEMENT_ACTION_INVALID
+        }
+        if (ACKNOWLEDGEMENT_LIST_MARKER.containsMatchIn(normalized) || INTERNAL_ACK_MARKER.containsMatchIn(normalized)) {
+            warnings += WARNING_ACKNOWLEDGEMENT_INTERNAL_OR_LIST
+        }
+        return ClaimValidationResult(valid = warnings.isEmpty(), warningCodes = warnings.distinct())
+    }
+
     fun validatePlainText(finalRawText: String, factRuleIds: List<Long>): ClaimValidationResult {
         if (factRuleIds.isEmpty()) {
             return ClaimValidationResult(valid = true)
@@ -316,6 +346,22 @@ class AiReplyHighRiskClaimValidator(
         const val WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE = "AI_REPLY_CLAIM_CONFIDENTIALITY_SUBSTITUTE"
         const val WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED = "AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED"
         const val WARNING_CLAIM_ENTERPRISE_UNGROUNDED = "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
+        const val WARNING_ACKNOWLEDGEMENT_SHAPE_INVALID = "AI_REPLY_ACKNOWLEDGEMENT_SHAPE_INVALID"
+        const val WARNING_ACKNOWLEDGEMENT_PENDING_SEMANTICS_MISSING = "AI_REPLY_ACKNOWLEDGEMENT_PENDING_SEMANTICS_MISSING"
+        const val WARNING_ACKNOWLEDGEMENT_ACTION_INVALID = "AI_REPLY_ACKNOWLEDGEMENT_ACTION_INVALID"
+        const val WARNING_ACKNOWLEDGEMENT_INTERNAL_OR_LIST = "AI_REPLY_ACKNOWLEDGEMENT_INTERNAL_OR_LIST"
+
+        const val SAFE_ACKNOWLEDGEMENT_ENGLISH =
+            "Thank you for raising this point. I do not have verified information to confirm it yet, so I will check and follow up."
+        const val SAFE_ACKNOWLEDGEMENT_CHINESE =
+            "感谢您提出这一点。目前没有已核验的信息可以确认，我会核实后再回复。"
+
+        fun safeAcknowledgementFor(inboundText: String): String =
+            if (CHINESE_TEXT_MARKER.containsMatchIn(inboundText)) {
+                SAFE_ACKNOWLEDGEMENT_CHINESE
+            } else {
+                SAFE_ACKNOWLEDGEMENT_ENGLISH
+            }
 
         private val HIGH_RISK_SEPARATOR_REGEX = Regex("[\\p{Pd}\\u2212]+")
         private val WHITESPACE_REGEX = Regex("\\s+")
@@ -323,6 +369,39 @@ class AiReplyHighRiskClaimValidator(
         private val NUMBER_TOKEN_REGEX = Regex("\\b\\d[\\d,.]*\\b", RegexOption.IGNORE_CASE)
 
         private val EXTRACT_URL = Regex("https?://\\S+")
+
+        private val PENDING_ACKNOWLEDGEMENT_SEMANTICS = listOf(
+            Regex("(?i)\\b(?:do not|don't) have (?:verified|confirmed) information\\b"),
+            Regex("(?i)\\b(?:not yet|still needs) (?:be )?confirm(?:ed|ation)\\b"),
+            Regex("(?i)\\b(?:check|verify) and follow up\\b"),
+            Regex("尚待确认|尚未核实|没有已核验的信息|没有已确认的信息|核实后再回复|确认后再回复")
+        )
+
+        private val ACKNOWLEDGEMENT_LIST_MARKER = Regex("(?m)^\\s*(?:[-*•]|\\d+[.)])\\s+")
+        private val INTERNAL_ACK_MARKER = Regex(
+            "(?i)(?:AI_REPLY_[A-Z0-9_]+|\\b(?:GROUNDED|PARTIAL|UNSUPPORTED)\\b|\\b(?:requestKey|sourceVersion|evidenceSetVersion)\\b)"
+        )
+        private val ACKNOWLEDGEMENT_TIME_COMMITMENT = listOf(
+            Regex(
+                "(?i)\\b(?:within|in|by|before|after)\\s+(?:the\\s+)?(?:(?:next|last|past)\\s+)?" +
+                    "(?:(?:\\d+|[a-z]+(?:[-\\s][a-z]+){0,3})(?:\\s+of)?\\s+)?(?:business\\s+)?" +
+                    "(?:minutes?|hours?|days?|weeks?|months?|years?)\\b"
+            ),
+            Regex("(?i)\\b(?:by|before|on)\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b"),
+            Regex("(?i)\\b(?:today|tomorrow|tonight|next\\s+(?:week|month|year))\\b"),
+            Regex("(?i)\\b(?:will|shall|promise|guarantee|expect)\\b.{0,40}\\b(?:soon|shortly|promptly|immediately|asap|as\\s+soon\\s+as\\s+possible)\\b"),
+            Regex("(?:\\d+|[零〇一二三四五六七八九十百千万两]+)\\s*(?:个)?(?:工作)?(?:分钟|小时|天|日|周|星期|月|个月|季度|年)(?:内|之内|后|前)"),
+            Regex("(?:截至|截止|最迟|最晚|不晚于|在)\\s*(?:(?:\\d+|[零〇一二三四五六七八九十百千万两]+)\\s*)?(?:个)?(?:工作)?(?:分钟|小时|天|日|周|星期|月|个月|季度|年)(?:内|之内|后|前)?"),
+            Regex("(?:今天|明天|后天|本周|下周|本月|下月|今年|明年|下周[一二三四五六日天])"),
+            Regex("(?:会|将|承诺|保证|预计).{0,20}(?:尽快|马上|很快|稍后|及时)")
+        )
+        private val NO_EVIDENCE_HIGH_RISK_ASSERTIONS = listOf(
+            Regex("(?i)\\b(?:the|our|this)\\s+(?:company|agency|institution|organization)\\s+is\\b"),
+            Regex("(?i)\\b(?:official|government[- ]backed|government[- ]approved|guaranteed funding)\\b"),
+            Regex("(?i)\\b(?:contract|employment|funding|financial support|salary|compensation)\\b.{0,40}\\b(?:will|shall|is guaranteed|guaranteed)\\b"),
+            Regex("机构(?:身份|资质)已确认|合同已确认|资金已确认|保证提供|一定提供")
+        )
+        private val CHINESE_TEXT_MARKER = Regex("[\\u3400-\\u9fff]")
 
         private val AMOUNT_REGEX = Regex(
             "\\b\\d[\\d,.]*\\s*(RMB|CNY|USD|EUR|GBP|yuan|dollars?|euros?)\\b|" +

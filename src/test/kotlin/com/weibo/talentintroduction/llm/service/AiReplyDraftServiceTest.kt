@@ -123,6 +123,123 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `draft result exposes empty item answers by default for legacy consumers`() {
+        val result = AiReplyDraftResult(
+            draftText = "draft",
+            usedLlm = false,
+            qaRuleIds = emptyList(),
+            mode = AiReplyMode.FREE_FORM
+        )
+
+        assertTrue(result.itemAnswers.isEmpty())
+    }
+
+    @Test
+    fun `item operator instruction cannot add CTA authority`() {
+        stubEmptyFrame()
+        val rule = sampleRule()
+        stubMatchPool(rule)
+        Mockito.`when`(aiReplyContextService.requiresResearchContext(Mockito.anyString())).thenReturn(false)
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val candidate = """{"claims":[{"claimKey":"r1:finance.arrangements","text":"Salary info. Please send your CV if you are comfortable to assess your qualifications."}],"actionText":null}"""
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult(candidate)
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "What is salary?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "What is salary?",
+                factRuleIds = listOf(1L),
+                status = RequestGroundingStatus.GROUNDED,
+                intents = listOf(
+                    RequestIntentCoverage(
+                        intentKey = "finance.arrangements",
+                        title = "Salary",
+                        requiredCoverageKeys = emptyList(),
+                        missingEvidenceKeys = emptyList(),
+                        evidenceRuleIds = listOf(1L),
+                        status = "SUPPORTED",
+                        requiresResearchContext = false
+                    )
+                )
+            ),
+            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            requestKey = "request-key",
+            operatorInstruction = "Please ask for your CV if you are comfortable for an eligibility check."
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertTrue(capturedMessages.first().any { it.content.contains("Allowed actions: NONE") })
+    }
+
+    @Test
+    fun `item fallback and omit are not falsely marked as AI`() {
+        val item = RequestFactItem(1, "Question?", emptyList(), RequestGroundingStatus.GROUNDED)
+        val omitted = service(LlmProperties(enabled = true), null).generateItem(
+            inboundText = "Question?",
+            requestFact = item,
+            handling = TrustReplyItemHandling.OMIT
+        )
+        val failed = service(LlmProperties(enabled = true), null).generateItem(
+            inboundText = "Question?",
+            requestFact = item,
+            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
+        )
+
+        assertTrue(omitted.lockable)
+        assertEquals(TrustReplyItemGenerationKind.OMITTED, omitted.generationKind)
+        assertFalse(failed.lockable)
+        assertEquals(null, failed.generationKind)
+    }
+
+    @Test
+    fun `item operator instruction is capped at 500 characters`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            service(LlmProperties(enabled = false), null).generateItem(
+                inboundText = "Question?",
+                requestFact = RequestFactItem(1, "Question?", emptyList(), RequestGroundingStatus.GROUNDED),
+                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                operatorInstruction = "x".repeat(501)
+            )
+        }
+    }
+
+    @Test
+    fun `unsupported item fallback uses safe template and remains lockable`() {
+        val result = service(LlmProperties(enabled = false), null).generateItem(
+            inboundText = "Can you confirm the programme details?",
+            requestFact = RequestFactItem(
+                1,
+                "Can you confirm the programme details?",
+                emptyList(),
+                RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING
+        )
+
+        assertTrue(result.lockable)
+        assertFalse(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.SAFE_TEMPLATE, result.generationKind)
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+    }
+
+    @Test
     fun `timeout policy resolves defaults and rejects invalid boundaries`() {
         assertEquals(
             AiReplyTimeoutPolicy(30, 300),

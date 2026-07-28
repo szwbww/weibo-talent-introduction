@@ -67,6 +67,44 @@ class AiReplyPointByPointComposerTest {
     }
 
     @Test
+    fun `composeLockedItems preserves every answer byte order and duplicate`() {
+        stubFrame(salutation = "SALUTATION", greeting = "GREETING", closing = "CLOSING")
+        val answers = listOf(
+            "answer-1",
+            "same answer",
+            "answer-3\nwith two lines",
+            "answer-4 {{expert.name}}",
+            "same answer",
+            "answer-6"
+        )
+
+        val text = composer.composeLockedItems(answers)
+
+        assertTrue(text.startsWith("SALUTATION\n\nGREETING"))
+        assertTrue(text.endsWith("CLOSING"))
+        assertEquals(1, Regex("answer-1").findAll(text).count())
+        assertEquals(1, Regex("answer-3\\nwith two lines").findAll(text).count())
+        assertEquals(1, Regex("answer-4 \\{\\{expert\\.name\\}\\}").findAll(text).count())
+        assertEquals(1, Regex("answer-6").findAll(text).count())
+        assertEquals(2, Regex("same answer").findAll(text).count())
+        assertTrue(text.indexOf("answer-1") < text.indexOf("same answer"))
+        assertTrue(text.indexOf("same answer", text.indexOf("same answer") + 1) < text.indexOf("answer-6"))
+        assertTrue(text.contains("answer-3\nwith two lines"))
+        assertTrue(text.contains("answer-4 {{expert.name}}"))
+    }
+
+    @Test
+    fun `composeLockedItems keeps ordered answers when frame is empty`() {
+        stubFrame(salutation = null, greeting = null, closing = null)
+
+        val text = composer.composeLockedItems(listOf("first", "second", "first"))
+
+        assertEquals("first\n\nsecond\n\nfirst", text)
+        assertTrue(text.indexOf("first") < text.indexOf("second"))
+        assertFalse(text.isBlank())
+    }
+
+    @Test
     fun `composeFromSections includes supported answers only`() {
         stubFrame()
         val text = composer.composeFromSections(

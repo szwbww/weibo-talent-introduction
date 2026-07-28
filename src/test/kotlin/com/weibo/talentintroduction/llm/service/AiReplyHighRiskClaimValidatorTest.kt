@@ -796,4 +796,36 @@ class AiReplyHighRiskClaimValidatorTest {
         val result = validator.validatePlainText("Any text with 10 million RMB.", emptyList())
         assertTrue(result.valid)
     }
+
+    @Test
+    fun `no evidence acknowledgement accepts only bounded pending language`() {
+        assertTrue(
+            validator.validateNoEvidenceAcknowledgement(
+                "Thank you for raising this point. I do not have verified information to confirm it yet, so I will check and follow up."
+            ).valid
+        )
+        assertTrue(
+            validator.validateNoEvidenceAcknowledgement(
+                "感谢您提出这一点。目前没有已核验的信息可以确认，我会核实后再回复。"
+            ).valid
+        )
+    }
+
+    @Test
+    fun `no evidence acknowledgement rejects facts promises urls actions and lists`() {
+        val invalid = listOf(
+            "I do not have verified information yet, but I will confirm 3 days.",
+            "I do not have verified information yet, but I will check and follow up within three days.",
+            "目前没有已核验的信息可以确认，我会在三天内核实后再回复。",
+            "I do not have verified information yet; see https://example.com.",
+            "I do not have verified information yet. Please send your CV.",
+            "1. I do not have verified information yet.",
+            "I do not have verified information yet, and the contract is guaranteed.",
+            "AI_REPLY_INTERNAL_TOKEN: I will check and follow up."
+        )
+
+        invalid.forEach { text ->
+            assertFalse(validator.validateNoEvidenceAcknowledgement(text).valid, text)
+        }
+    }
 }

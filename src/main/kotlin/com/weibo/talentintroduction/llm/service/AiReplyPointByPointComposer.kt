@@ -10,6 +10,18 @@ class AiReplyPointByPointComposer(
     private val qaRuleRepository: QaRuleRepository,
     private val replySnippetService: ReplySnippetService
 ) {
+    fun composeLockedItems(orderedAnswers: List<String>): String {
+        require(orderedAnswers.all { it.isNotBlank() }) { "locked answers must be non-empty" }
+        val frame = replySnippetService.resolveManualFrame()
+        val blocks = buildList {
+            frame.salutation?.takeIf { it.isNotBlank() }?.let(::add)
+            frame.greeting?.takeIf { it.isNotBlank() }?.let(::add)
+            addAll(orderedAnswers)
+            frame.closing?.takeIf { it.isNotBlank() }?.let(::add)
+        }
+        return blocks.joinToString("\n\n")
+    }
+
     fun composeFromPlan(
         plan: GroundedContentPlan,
         claimTexts: Map<String, String>,
