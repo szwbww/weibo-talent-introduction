@@ -6,6 +6,10 @@ const { describe, it } = require("node:test");
 
 const componentPath = path.join(__dirname, "..", "..", "main", "resources", "static", "trust-reply-workbench.js");
 const source = fs.readFileSync(componentPath, "utf-8");
+const indexPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+const indexSource = fs.readFileSync(indexPath, "utf-8");
+const appPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
+const appSource = fs.readFileSync(appPath, "utf-8");
 
 class FakeElement {
     constructor(ownerDocument) {
@@ -147,6 +151,22 @@ const bootstrap = (sourceType, sourceId) => ({
 });
 
 describe("shared trust reply workbench mount contract", () => {
+    it("loads the runtime relative to the deployed context and guards both host mounts", () => {
+        assert.doesNotMatch(indexSource, /src="\/trust-reply-workbench\.js/);
+        const runtimeMatch = indexSource.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
+        const appMatch = indexSource.match(/src="app\.js\?v=([^"]+)"/);
+        const stylesMatch = indexSource.match(/href="styles\.css\?v=([^"]+)"/);
+        assert.ok(runtimeMatch, "shared runtime must use a context-relative cache-busted URL");
+        assert.ok(appMatch, "app.js must have a cache key");
+        assert.ok(stylesMatch, "styles.css must have a cache key");
+        assert.strictEqual(runtimeMatch[1], appMatch[1]);
+        assert.strictEqual(runtimeMatch[1], stylesMatch[1]);
+        assert.ok(indexSource.indexOf(runtimeMatch[0]) < indexSource.indexOf(appMatch[0]));
+        assert.match(appSource, /function requireTrustReplyWorkbenchRuntime\(host\)/);
+        assert.strictEqual((appSource.match(/requireTrustReplyWorkbenchRuntime\(host\)/g) || []).length, 3);
+        assert.match(appSource, /可信回复工作台资源加载失败，请刷新页面后重试/);
+    });
+
     it("exports one idempotent namespace and uses a fixed internal role tree", async () => {
         const pendingTraining = deferred();
         const pendingLive = deferred();

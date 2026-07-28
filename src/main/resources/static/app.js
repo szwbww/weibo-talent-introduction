@@ -156,6 +156,17 @@ function trustReplyUnauthorized(response) {
     return undefined;
 }
 
+function requireTrustReplyWorkbenchRuntime(host) {
+    const runtime = window.TrustReplyWorkbench;
+    if (runtime && typeof runtime.mount === "function") return runtime;
+    const message = "可信回复工作台资源加载失败，请刷新页面后重试";
+    if (host) {
+        host.innerHTML = `<div class="ai-reply-error" role="alert">${message}</div>`;
+    }
+    showStatus(message, "error");
+    return null;
+}
+
 let manualReplyQaContext = null;
 
 const preflightState = {
@@ -3285,8 +3296,10 @@ function mountAiTrainingTrustReply(mail) {
     unmountAiTrainingTrustReply();
     const host = $("#aiTrainingTrustReplyHost");
     if (!host || !mail || mail.mailRecordId == null) return;
+    const runtime = requireTrustReplyWorkbenchRuntime(host);
+    if (!runtime) return;
     const token = {};
-    const instance = window.TrustReplyWorkbench.mount(host, {
+    const instance = runtime.mount(host, {
         mode: "SIMULATION",
         source: { sourceType: "TRAINING_MAIL", sourceId: Number(mail.mailRecordId) },
         contextPath,
@@ -9047,8 +9060,10 @@ function mountLiveTrustReply(recordId) {
     unmountLiveTrustReply();
     const host = document.querySelector("[data-trust-reply-live-host]");
     if (!host) return;
+    const runtime = requireTrustReplyWorkbenchRuntime(host);
+    if (!runtime) return;
     const token = {};
-    liveTrustReplyInstance = window.TrustReplyWorkbench.mount(host, {
+    liveTrustReplyInstance = runtime.mount(host, {
         mode: "LIVE",
         source: { sourceType: "LIVE_INBOUND", sourceId: Number(recordId) },
         contextPath,
