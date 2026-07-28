@@ -7147,124 +7147,283 @@ tr td {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 14px;
 }
 
+/* 工具栏：白卡三段（模式条 / 模型行 / 事实 chips） */
 .trust-reply-toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .trust-reply-toolbar .ai-reply-model-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.trust-reply-toolbar .ai-reply-model-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.trust-reply-toolbar .ai-reply-model-row .ai-reply-model-select { min-height: 32px; }
+
+.trust-reply-toolbar .ai-reply-model-row [data-action="generate-all"],
+.trust-reply-toolbar .ai-reply-model-row [data-action="cancel-generation"] { margin-left: auto; }
+
+.trust-reply-toolbar .compose-rule-list[data-role="facts"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  border: none;
+  background: none;
+}
+
+.trust-reply-toolbar .compose-rule-list[data-role="facts"] > .muted {
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .trust-reply-mode-note {
-  max-width: 560px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: none;
   margin: 0;
+  padding: 9px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.5;
 }
 
+.trust-reply-mode-note::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex: none;
+}
+
+/* 事实 chip：单行药丸，隐藏原生 checkbox */
 .trust-reply-fact-option {
+  position: relative;
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
-  gap: 6px;
+  white-space: nowrap;
+  gap: 5px;
   min-width: 0;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--text-main);
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-bg);
+  color: var(--text-sidebar);
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
+  user-select: none;
+  transition: border-color .15s ease, background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.trust-reply-fact-option:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .trust-reply-fact-option input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
   margin: 0;
-  accent-color: var(--primary);
+}
+
+.trust-reply-fact-option::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  transition: all .15s ease;
 }
 
 .trust-reply-fact-option:has(input:checked) {
   border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 6%, #fff);
+  background: var(--primary-light);
+  color: var(--primary);
 }
 
+.trust-reply-fact-option:has(input:checked)::before {
+  border-color: var(--primary);
+  background: var(--primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.5l2.2 2.2 4.8-5.2' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 10px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.trust-reply-fact-option:has(input:focus-visible) {
+  outline: 2px solid var(--primary-tint);
+  outline-offset: 1px;
+}
+
+/* 状态条：信息蓝细条 + 呼吸圆点 */
+.trust-reply-workbench .ai-reply-feedback .ai-reply-coverage,
+.trust-reply-workbench .ai-reply-feedback .ai-reply-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.trust-reply-workbench .ai-reply-feedback .ai-reply-coverage {
+  background: var(--info-bg);
+  color: #0369a1;
+  border: 1px solid var(--info-border);
+}
+
+.trust-reply-workbench .ai-reply-feedback .ai-reply-coverage::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--info);
+  flex: none;
+  animation: trustReplyPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes trustReplyPulse { 50% { opacity: .35; } }
+
+/* 布局 A：单列满宽，摘要横条置顶 */
 .trust-reply-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.75fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .trust-reply-item-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .trust-reply-item {
   border: 1px solid var(--panel-border);
   border-left: 3px solid var(--text-muted);
-  border-radius: 12px;
-  padding: 14px;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
   background: #fff;
-  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
 }
 
 .trust-reply-item[data-coverage="GROUNDED"] { border-left-color: var(--success); }
 .trust-reply-item[data-coverage="PARTIAL"] { border-left-color: var(--warning); }
 .trust-reply-item[data-coverage="UNSUPPORTED"] { border-left-color: var(--error); }
 
+.trust-reply-item[data-locked="false"]:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--panel-border));
+}
+
 .trust-reply-item[data-locked="true"] {
-  border-color: color-mix(in srgb, var(--success) 42%, var(--panel-border));
-  background: color-mix(in srgb, var(--success) 5%, #fff);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 10%, transparent);
+  border-color: var(--success-border);
+  border-left-color: var(--success);
+  background: linear-gradient(to right, color-mix(in srgb, var(--success) 4%, #fff), #fff 30%);
+  box-shadow: none;
 }
 
 .trust-reply-item-head {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
 }
 
 .trust-reply-item-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--primary-light), color-mix(in srgb, var(--primary) 16%, #fff));
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .trust-reply-item-title { min-width: 0; }
-.trust-reply-item-title strong,
-.trust-reply-item-title small { display: block; }
+.trust-reply-item-title strong { display: block; }
 .trust-reply-item-title strong {
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.trust-reply-item-title small {
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.45;
+
+/* coverage 语义药丸 */
+.trust-reply-coverage {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.trust-reply-coverage[data-coverage="GROUNDED"] { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.trust-reply-coverage[data-coverage="PARTIAL"] { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.trust-reply-coverage[data-coverage="UNSUPPORTED"] { background: var(--error-bg); color: var(--error); border: 1px solid var(--error-border); }
+
+/* 待处理 badge：琥珀语义色 */
+.trust-reply-item .badge:not(.ok) {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
 }
 
 .trust-reply-item-controls {
   display: grid;
-  grid-template-columns: minmax(160px, 0.45fr) minmax(0, 1.55fr);
+  grid-template-columns: minmax(150px, 0.4fr) minmax(0, 1.6fr);
   gap: 10px;
   margin-top: 12px;
 }
@@ -7272,7 +7431,7 @@ tr td {
 .trust-reply-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   color: var(--text-muted);
   font-size: 11px;
@@ -7291,8 +7450,26 @@ tr td {
 }
 
 .trust-reply-field select,
-.trust-reply-version-select { min-height: 36px; padding: 7px 30px 7px 9px; }
-.trust-reply-field textarea { min-height: 68px; padding: 9px 10px; line-height: 1.5; resize: vertical; }
+.trust-reply-version-select {
+  min-height: 34px;
+  padding: 7px 30px 7px 9px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.trust-reply-field select:not(:disabled):hover,
+.trust-reply-version-select:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--line));
+}
+.trust-reply-field textarea {
+  min-height: 52px;
+  padding: 9px 10px;
+  line-height: 1.5;
+  resize: vertical;
+  background: var(--surface);
+  border-color: transparent;
+  transition: background .15s ease, border-color .15s ease;
+}
+.trust-reply-field textarea:focus { background: #fff; border-color: var(--primary); }
 .trust-reply-field select:focus,
 .trust-reply-field textarea:focus,
 .trust-reply-version-select:focus {
@@ -7306,9 +7483,9 @@ tr td {
 
 .trust-reply-answer {
   margin-top: 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   overflow: hidden;
 }
 .trust-reply-answer-head {
@@ -7316,17 +7493,34 @@ tr td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
+  padding: 0 2px;
+  border-bottom: none;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
 }
+.trust-reply-answer-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.trust-reply-answer-head span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
+}
 .trust-reply-version-select { width: auto; max-width: 220px; min-height: 30px; padding-top: 4px; padding-bottom: 4px; font-size: 11px; }
 .trust-reply-answer-body {
-  min-height: 72px;
+  min-height: 0;
+  margin-top: 8px;
   padding: 10px 12px;
   background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid color-mix(in srgb, var(--primary) 45%, var(--line));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
   color: var(--text-main);
   font-size: 12px;
   line-height: 1.65;
@@ -7334,13 +7528,61 @@ tr td {
   overflow-wrap: anywhere;
 }
 .trust-reply-answer-body:empty::before { content: "尚无版本"; color: var(--text-muted); }
-.trust-reply-item-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
-.trust-reply-summary { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 10px; }
-.trust-reply-summary h4 { margin-bottom: 0; }
+.trust-reply-item .ai-reply-error {
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.trust-reply-item-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* 摘要横条：白卡全宽一行 */
+.trust-reply-summary {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.trust-reply-summary h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+.trust-reply-progress {
+  flex: 1;
+  min-width: 140px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+.trust-reply-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--info));
+  transition: width .25s ease;
+}
 .trust-reply-assembly {
-  min-height: 180px;
-  max-height: 420px;
+  flex-basis: 100%;
+  order: 5;
+  min-height: 120px;
+  max-height: 280px;
   overflow: auto;
   padding: 12px;
   border: 1px solid var(--line);
@@ -7353,8 +7595,16 @@ tr td {
   overflow-wrap: anywhere;
 }
 .trust-reply-assembly:empty::before { content: "锁定所有需回复条目后生成整合预览"; color: var(--text-muted); }
-.trust-reply-lock-hint { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-.trust-reply-final-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.trust-reply-lock-hint { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; white-space: nowrap; }
+.trust-reply-final-actions { display: flex; gap: 8px; margin-left: auto; padding: 0; border: none; }
+
+/* 主按钮微质感 */
+.trust-reply-workbench .button { transition: box-shadow .15s ease, transform .15s ease, background .15s ease; }
+.trust-reply-workbench .button.primary:not(:disabled) { box-shadow: 0 1px 2px rgba(var(--primary-rgb), .35); }
+.trust-reply-workbench .button.primary:not(:disabled):hover {
+  box-shadow: 0 3px 8px rgba(var(--primary-rgb), .3);
+  transform: translateY(-0.5px);
+}
 
 .trust-training-evaluation { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .trust-training-evaluation[hidden] { display: none; }
@@ -7372,23 +7622,20 @@ tr td {
 .trust-training-evaluation-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .trust-training-evaluation-status { min-height: 18px; color: var(--text-muted); font-size: 11px; }
 
-@media (max-width: 960px) {
-  .trust-reply-layout { grid-template-columns: minmax(0, 1fr); }
-  .trust-reply-summary { position: static; }
-}
-
 @media (max-width: 640px) {
-  .trust-reply-toolbar { align-items: stretch; }
   .trust-reply-toolbar .ai-reply-model-row { justify-content: flex-start; }
-  .trust-reply-item-head { grid-template-columns: 28px minmax(0, 1fr); }
+  .trust-reply-item-head { grid-template-columns: 22px minmax(0, 1fr); }
   .trust-reply-item-head > .badge { grid-column: 2; justify-self: start; }
   .trust-reply-item-controls,
   .trust-training-rating-grid { grid-template-columns: minmax(0, 1fr); }
   .trust-reply-answer-head { align-items: stretch; flex-direction: column; }
   .trust-reply-version-select { width: 100%; max-width: none; }
+  .trust-reply-summary { align-items: flex-start; }
+  .trust-reply-summary .trust-reply-lock-hint { white-space: normal; }
   .trust-reply-item-actions,
   .trust-reply-final-actions,
   .trust-training-evaluation-actions { align-items: stretch; flex-direction: column; }
+  .trust-reply-final-actions { width: 100%; margin-left: 0; }
   .trust-reply-item-actions .button,
   .trust-reply-final-actions .button,
   .trust-training-evaluation-actions .button { width: 100%; }
