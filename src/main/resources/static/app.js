@@ -104,12 +104,8 @@ const state = {
         simulateMailsTotal: 0,
         simulateMailsPage: 0,
         simulateMailsSize: 20,
-        selectedSimulateMailContactId: null,
         selectedSimulateMailRecordId: null,
         selectedSimulateMail: null,
-        simulateRequestSeq: 0,
-        simulateResult: null,
-        simulateModel: "DEEPSEEK_V4_FLASH"
     },
     variableMeta: null,
     variableMetaLoaded: false,
@@ -127,46 +123,37 @@ const state = {
     }
 };
 
-const composedReplyState = {
-    recordId: null,
-    contactId: null,
-    contactOrcid: null,
-    suggest: null,
-    selectedFactIds: [],
-    evaluation: null,
-    confirmedEvaluation: null,
-    evaluationPending: false,
-    lockedFactIds: null,
-    draft: null,
-    evaluateTimer: null,
-    evaluateSeq: 0
-};
+let aiTrainingTrustReplyInstance = null;
+let liveTrustReplyInstance = null;
+let liveTrustReplyToken = null;
+let liveDetailLoadSeq = 0;
+let aiTrainingEvaluationContext = null;
 
-function sameFactIdSet(left, right) {
-    const a = [...(left || [])].sort((x, y) => x - y);
-    const b = [...(right || [])].sort((x, y) => x - y);
-    if (a.length !== b.length) {
-        return false;
+function unmountAiTrainingTrustReply() {
+    aiTrainingTrustReplyInstance?.unmount();
+    aiTrainingTrustReplyInstance = null;
+    aiTrainingEvaluationContext = null;
+    const host = $("#aiTrainingTrustReplyHost");
+    if (host) host.innerHTML = "";
+    const panel = $("#aiTrainingEvaluationPanel");
+    if (panel) {
+        panel.hidden = true;
+        panel.innerHTML = "";
     }
-    return a.every((value, index) => value === b[index]);
 }
 
-function confirmedCanonicalFactIds() {
-    if (composedReplyState.evaluationPending || !composedReplyState.confirmedEvaluation) {
-        return null;
-    }
-    const canonical = composedReplyState.confirmedEvaluation.canonicalFactIds || [];
-    if (!sameFactIdSet(canonical, composedReplyState.selectedFactIds)) {
-        return null;
-    }
-    return [...canonical];
+function unmountLiveTrustReply() {
+    liveDetailLoadSeq += 1;
+    liveTrustReplyInstance?.unmount();
+    liveTrustReplyInstance = null;
+    liveTrustReplyToken = null;
 }
 
-function markComposedEvaluationPending() {
-    composedReplyState.evaluationPending = true;
-    composedReplyState.confirmedEvaluation = null;
-    composedReplyState.evaluation = null;
-    clearComposedDraftSession();
+function trustReplyUnauthorized(response) {
+    if (typeof handleAuthResponse === "function") {
+        return handleAuthResponse(response);
+    }
+    return undefined;
 }
 
 let manualReplyQaContext = null;
@@ -1611,6 +1598,8 @@ function numberValue(value, fallback = 0) {
 }
 
 function setView(view) {
+    if (view !== "ai-training") unmountAiTrainingTrustReply();
+    if (view !== "mailbox") unmountLiveTrustReply();
     if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
         clearTimeout(state.monitoring.autoRefreshTimer);
         state.monitoring.autoRefreshTimer = null;
@@ -3169,7 +3158,7 @@ function renderAiTrainingMailList() {
         return;
     }
     container.innerHTML = mails.map((mail) => {
-        const selected = state.aiTraining.selectedSimulateMailContactId === mail.expertContactId ? " selected" : "";
+        const selected = state.aiTraining.selectedSimulateMailRecordId === mail.mailRecordId ? " selected" : "";
         const timeStr = mail.receivedAt ? String(mail.receivedAt).replace("T", " ").slice(0, 19) : "-";
         const expertTags = (mail.expertTags || []).map((tag) =>
             `<span class="ai-training-tag-chip small">${escapeHtml(expertTagLabels[tag] || tag)}</span>`
@@ -3178,7 +3167,7 @@ function renderAiTrainingMailList() {
             `<span class="ai-training-tag-chip small inbound">${escapeHtml(tag.label)}</span>`
         ).join("");
         return `
-            <button type="button" class="ai-training-mail-item${selected}" data-contact-id="${mail.expertContactId}">
+            <button type="button" class="ai-training-mail-item${selected}" data-mail-record-id="${mail.mailRecordId}">
                 <div class="ai-training-mail-item-head">
                     <strong>${escapeHtml(mail.expertName || mail.expertEmail || "专家")}</strong>
                     <span class="muted">${escapeHtml(timeStr)}</span>
@@ -3231,19 +3220,102 @@ function renderAiTrainingMailDetail(mail) {
     `;
 }
 
+function renderAiTrainingEvaluationPanel(assembly, token) {
+    const panel = $("#aiTrainingEvaluationPanel");
+    if (!panel || !aiTrainingEvaluationContext || aiTrainingEvaluationContext.token !== token) return;
+    aiTrainingEvaluationContext.assembly = assembly;
+    aiTrainingEvaluationContext.saved = false;
+    panel.hidden = false;
+    panel.innerHTML = `
+        <h4>训练评估</h4>
+        <p class="muted">工作台结果已整合。评估只保存摘要、哈希与评分，不保存正文。</p>
+        <div class="trust-training-rating-grid">
+            <label class="trust-training-rating-option"><input type="radio" name="aiTrainingEvaluationRating" value="MEETS_EXPECTATION"><span><strong>符合预期</strong><small>结构与依据可直接作为训练范例</small></span></label>
+            <label class="trust-training-rating-option"><input type="radio" name="aiTrainingEvaluationRating" value="NEEDS_IMPROVEMENT"><span><strong>需要改进</strong><small>方向基本正确，但表达或覆盖需调整</small></span></label>
+            <label class="trust-training-rating-option"><input type="radio" name="aiTrainingEvaluationRating" value="UNUSABLE"><span><strong>不可用</strong><small>不适合作为训练结果</small></span></label>
+        </div>
+        <textarea class="compose-free-text" data-role="training-evaluation-note" maxlength="1000" placeholder="可选备注，最多 1000 字"></textarea>
+        <div class="trust-training-evaluation-actions"><span class="trust-training-evaluation-status" data-role="training-evaluation-status"></span><button type="button" class="button primary" data-action="save-training-evaluation">保存评估</button></div>`;
+    panel.onclick = (event) => {
+        const button = event.target.closest("[data-action='save-training-evaluation']");
+        if (button) saveAiTrainingEvaluation(token).catch((error) => showStatus(error.message, "error"));
+    };
+}
+
+async function saveAiTrainingEvaluation(token) {
+    const context = aiTrainingEvaluationContext;
+    const panel = $("#aiTrainingEvaluationPanel");
+    if (!context || context.token !== token || !context.assembly || context.saved || !panel) return;
+    const rating = panel.querySelector("input[name='aiTrainingEvaluationRating']:checked")?.value;
+    if (!rating) {
+        showStatus("请选择训练评估", "warn");
+        return;
+    }
+    const note = panel.querySelector("[data-role='training-evaluation-note']")?.value?.trim() || null;
+    const status = panel.querySelector("[data-role='training-evaluation-status']");
+    const button = panel.querySelector("[data-action='save-training-evaluation']");
+    if (button) button.disabled = true;
+    if (status) status.textContent = "保存中…";
+    const assembly = context.assembly;
+    const result = await api("/api/ai-training/simulate/evaluations", {
+        method: "POST",
+        body: JSON.stringify({
+            source: assembly.source,
+            expectedSourceVersion: assembly.sourceVersion,
+            expectedEvidenceSetVersion: assembly.evidenceSetVersion,
+            requestedFactIds: assembly.requestedFactIds || assembly.canonicalFactIds,
+            lockedItems: assembly.itemVersions,
+            rating,
+            note,
+            operatorName: window.localStorage.getItem("operatorName") || "console"
+        })
+    });
+    if (!aiTrainingEvaluationContext || aiTrainingEvaluationContext.token !== token
+        || aiTrainingEvaluationContext.assembly !== assembly) return;
+    context.saved = true;
+    if (status) status.textContent = `已保存评估 #${result.evaluationId}${result.createdAt ? ` · ${result.createdAt}` : ""}`;
+    if (button) {
+        button.disabled = true;
+        button.textContent = "已保存";
+    }
+    showStatus("训练评估已保存", "ok");
+}
+
+function mountAiTrainingTrustReply(mail) {
+    unmountAiTrainingTrustReply();
+    const host = $("#aiTrainingTrustReplyHost");
+    if (!host || !mail || mail.mailRecordId == null) return;
+    const token = {};
+    const instance = window.TrustReplyWorkbench.mount(host, {
+        mode: "SIMULATION",
+        source: { sourceType: "TRAINING_MAIL", sourceId: Number(mail.mailRecordId) },
+        contextPath,
+        onUnauthorized: trustReplyUnauthorized,
+        onChange: () => {
+            if (aiTrainingEvaluationContext?.token !== token) return;
+            aiTrainingEvaluationContext.assembly = null;
+            const panel = $("#aiTrainingEvaluationPanel");
+            if (panel) {
+                panel.hidden = true;
+                panel.innerHTML = "";
+            }
+        },
+        onComplete: async (assembly) => {
+            if (aiTrainingEvaluationContext?.token !== token) return;
+            if (aiTrainingEvaluationContext.assembly === assembly) return;
+            renderAiTrainingEvaluationPanel(assembly, token);
+        }
+    });
+    aiTrainingTrustReplyInstance = instance;
+    aiTrainingEvaluationContext = { token, mailRecordId: Number(mail.mailRecordId), assembly: null, saved: false };
+}
+
 function selectSimulateMail(mail) {
-    state.aiTraining.selectedSimulateMailContactId = mail.expertContactId;
     state.aiTraining.selectedSimulateMailRecordId = mail.mailRecordId ?? null;
     state.aiTraining.selectedSimulateMail = mail;
-    state.aiTraining.simulateResult = null;
-    state.aiTraining.simulateRequestSeq += 1;
-    const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
-    setAiReplyLoading(panel, false);
     renderAiTrainingMailList();
     renderAiTrainingMailDetail(mail);
-    $("#aiTrainingSimulateMessages").innerHTML = "";
-    $("#aiTrainingSimulateMeta").innerHTML = "";
-    renderAiReplyFeedback($("#aiTrainingSimulateFeedback"), null);
+    mountAiTrainingTrustReply(mail);
 }
 
 async function loadAiTrainingSimulateMails() {
@@ -3259,135 +3331,16 @@ async function loadAiTrainingSimulateMails() {
     const data = await api(`/api/ai-training/simulate/mails?${params}`);
     state.aiTraining.simulateMails = data.items || [];
     state.aiTraining.simulateMailsTotal = data.total ?? state.aiTraining.simulateMails.length;
-    const selectedId = state.aiTraining.selectedSimulateMailContactId;
+    const selectedId = state.aiTraining.selectedSimulateMailRecordId;
     const stillSelected = selectedId
-        && state.aiTraining.simulateMails.some((mail) => mail.expertContactId === selectedId);
+        && state.aiTraining.simulateMails.some((mail) => mail.mailRecordId === selectedId);
     if (!stillSelected) {
-        state.aiTraining.selectedSimulateMailContactId = null;
         state.aiTraining.selectedSimulateMailRecordId = null;
         state.aiTraining.selectedSimulateMail = null;
-        state.aiTraining.simulateResult = null;
-        state.aiTraining.simulateRequestSeq += 1;
-        const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
-        setAiReplyLoading(panel, false);
         renderAiTrainingMailDetail(null);
-        $("#aiTrainingSimulateMessages").innerHTML = "";
-        $("#aiTrainingSimulateMeta").innerHTML = "";
-        renderAiReplyFeedback($("#aiTrainingSimulateFeedback"), null);
+        unmountAiTrainingTrustReply();
     }
     renderAiTrainingMailList();
-}
-
-function renderAiTrainingSimulateResult(result) {
-    state.aiTraining.simulateResult = result;
-    const messages = $("#aiTrainingSimulateMessages");
-    const meta = $("#aiTrainingSimulateMeta");
-    const feedback = $("#aiTrainingSimulateFeedback");
-    if (!result) {
-        if (messages) messages.innerHTML = "";
-        if (meta) meta.innerHTML = "";
-        renderAiReplyFeedback(feedback, null);
-        return;
-    }
-    renderAiReplyFeedback(feedback, result);
-    if (messages) {
-        messages.innerHTML = `
-            <div class="ai-chat-bubble ai-chat-assistant ai-draft-bubble">
-                <div class="ai-draft-head">
-                    <span class="ai-draft-title">
-                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg>
-                        AI 模拟草稿
-                    </span>
-                    <span class="ai-draft-badge">只读 · 不外发</span>
-                    <button type="button" class="ai-draft-copy" data-action="copy-ai-draft" title="复制草稿">复制</button>
-                </div>
-                ${translatableBody(result.renderedDraftText || result.draftText || "(空草稿)")}
-            </div>`;
-        messages.scrollTop = 0;
-    }
-    if (meta) {
-        const chips = [
-            `模式 ${result.mode || "-"}`,
-            result.generationState
-                ? aiReplyGenerationStateLabel(result.generationState)
-                : `LLM ${result.llmEnabled ? (result.usedLlm ? "已使用" : "未使用") : "已关闭"}`,
-            `模型：${aiReplyModelLabel(result.selectedModel)}`
-        ];
-        const requestCount = Number(result.requestCount) || 0;
-        if (requestCount > 0) {
-            chips.push(`事实覆盖 ${Number(result.groundedRequestCount) || 0}/${requestCount}`);
-        }
-        const refBadges = (result.injectedDialogRefs || []).map((ref) => badge(`注入范例 ${ref}`, "info")).join(" ");
-        meta.innerHTML = chips.map((chip) => `<span class="ai-meta-chip">${escapeHtml(chip)}</span>`).join("")
-            + (refBadges ? ` ${refBadges}` : "");
-    }
-}
-
-async function runAiTrainingSimulate() {
-    const contactId = state.aiTraining.selectedSimulateMailContactId;
-    if (!contactId) {
-        showStatus("请先选择邮件", "warn");
-        return;
-    }
-    const panel = $("#aiTrainingSimulateMessages")?.closest(".ai-chat-panel");
-    if (!panel || panel.getAttribute("aria-busy") === "true") {
-        return;
-    }
-    const promptOverride = $("#aiTrainingPromptOverride").value.trim();
-    const mailRecordId = state.aiTraining.selectedSimulateMailRecordId;
-    const requestSeq = state.aiTraining.simulateRequestSeq;
-    const expectedModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
-    state.aiTraining.simulateModel = expectedModel;
-    const feedback = $("#aiTrainingSimulateFeedback");
-    renderAiReplyFeedback(feedback, null);
-    setAiReplyLoading(panel, true);
-    try {
-        const body = {
-            expertContactId: contactId,
-            promptOverride: promptOverride || null,
-            model: expectedModel
-        };
-        if (mailRecordId != null) {
-            body.mailRecordId = mailRecordId;
-        }
-        const result = await api("/api/ai-training/simulate", {
-            method: "POST",
-            body: JSON.stringify(body)
-        });
-        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
-        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
-            && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
-            && expectedModel === currentModel;
-        if (!stillCurrent) {
-            return;
-        }
-        if (result.selectedModel !== expectedModel) {
-            renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
-            return;
-        }
-        renderAiTrainingSimulateResult(result);
-        showStatus("模拟回复已生成（未外发）", "ok");
-    } catch (error) {
-        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
-        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
-            && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
-            && expectedModel === currentModel;
-        if (stillCurrent) {
-            renderAiReplyFeedback(feedback, null, error.message || "未知错误");
-        }
-        throw error;
-    } finally {
-        const currentModel = readAiReplyModelSelection("#aiTrainingReplyModel", state.aiTraining.simulateModel);
-        const stillCurrent = requestSeq === state.aiTraining.simulateRequestSeq
-            && contactId === state.aiTraining.selectedSimulateMailContactId
-            && mailRecordId === state.aiTraining.selectedSimulateMailRecordId
-            && expectedModel === currentModel;
-        if (stillCurrent) {
-            setAiReplyLoading(panel, false);
-        }
-    }
 }
 
 async function saveAiTrainingPromptConfig(event) {
@@ -8771,244 +8724,6 @@ function requestCoverageBadgeLabel(status) {
     }
 }
 
-function activeComposedRequestCoverage() {
-    return composedReplyState.evaluation?.requestCoverage
-        || composedReplyState.suggest?.requestCoverage
-        || [];
-}
-
-function clearComposedDraftSession() {
-    composedReplyState.draft = null;
-    composedReplyState.lockedFactIds = null;
-    if (composedReplyState.recordId != null) {
-        resetAiReplyState(composedReplyState.recordId);
-    }
-    renderComposedDraftPreview();
-    updateTrustWorkbenchButtons();
-}
-
-function syncComposeFactCheckboxes() {
-    const selected = new Set(composedReplyState.selectedFactIds);
-    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
-        checkbox.checked = selected.has(Number(checkbox.dataset.ruleId));
-    });
-}
-
-function debouncedEvaluateComposedFacts() {
-    if (composedReplyState.evaluateTimer) {
-        clearTimeout(composedReplyState.evaluateTimer);
-    }
-    composedReplyState.evaluateTimer = setTimeout(() => {
-        composedReplyState.evaluateTimer = null;
-        evaluateComposedFacts().catch((error) => showStatus(error.message, "error"));
-    }, 300);
-}
-
-async function evaluateComposedFacts() {
-    const recordId = composedReplyState.recordId;
-    if (!recordId) return;
-    const seq = ++composedReplyState.evaluateSeq;
-    const requestedFactIds = [...composedReplyState.selectedFactIds];
-    composedReplyState.evaluationPending = true;
-    composedReplyState.confirmedEvaluation = null;
-    try {
-        const evaluation = await api(`/api/mail/unmatched-inbound/${recordId}/composed-reply/evaluate`, {
-            method: "POST",
-            body: JSON.stringify({ factRuleIds: requestedFactIds })
-        });
-        if (seq !== composedReplyState.evaluateSeq) return;
-        if (!sameFactIdSet(requestedFactIds, composedReplyState.selectedFactIds)) return;
-        composedReplyState.evaluation = evaluation;
-        composedReplyState.confirmedEvaluation = evaluation;
-        composedReplyState.evaluationPending = false;
-        composedReplyState.selectedFactIds = [...(evaluation.canonicalFactIds || [])];
-        syncComposeFactCheckboxes();
-        refreshComposedWorkbenchUI();
-    } catch (error) {
-        if (seq === composedReplyState.evaluateSeq) {
-            composedReplyState.evaluationPending = false;
-            refreshComposedWorkbenchUI();
-        }
-        throw error;
-    }
-}
-
-function renderComposedGapList() {
-    const list = $("#composedGapList");
-    if (!list || !composedReplyState.suggest) return;
-    const requestCoverage = activeComposedRequestCoverage();
-    const countEl = $("#composedGapCount");
-    if (!requestCoverage.length) {
-        list.innerHTML = `<li class="text-muted">暂无问题项</li>`;
-        if (countEl) countEl.textContent = "";
-        return;
-    }
-    const evidenceSources = composedReplyState.draft?.result?.evidenceSources || [];
-    const evidenceById = {};
-    evidenceSources.forEach(es => {
-        if (es && es.ruleId) evidenceById[es.ruleId] = es;
-    });
-    const groundedCount = requestCoverage.filter((item) => item.status === "GROUNDED").length;
-    if (countEl) countEl.textContent = `${groundedCount}/${requestCoverage.length}`;
-    list.innerHTML = requestCoverage.map((item) => {
-        const status = String(item.status || "");
-        const factRuleIds = item.factRuleIds || [];
-        const symbol = status === "GROUNDED" ? "✓" : "○";
-        const hasFacts = factRuleIds.length > 0;
-        let factHint = "";
-        if (hasFacts) {
-            const names = factRuleIds.map((ruleId) => {
-                return escapeHtml(resolveFactDisplayName(ruleId, evidenceSources, composedReplyState.suggest));
-            });
-            factHint = `<span class="gap-no-rules-hint">依据：${names.join("；")}</span>`;
-        }
-        const noRuleHint = hasFacts ? factHint : `<span class="gap-no-rules-hint">暂无可核验事实</span>`;
-        const statusBadge = badge(
-            requestCoverageBadgeLabel(status),
-            requestCoverageBadgeClass(status)
-        );
-        return `
-        <li>
-            <span>${symbol}</span>
-            <span>${escapeHtml(item.requestText || "")}${noRuleHint}</span>
-            ${statusBadge}
-        </li>`;
-    }).join("");
-}
-
-function renderComposedSelectedList() {
-    const list = $("#composedSelectedList");
-    if (!list || !composedReplyState.suggest) return;
-    const factIds = composedReplyState.evaluationPending
-        ? composedReplyState.selectedFactIds
-        : (confirmedCanonicalFactIds() || composedReplyState.selectedFactIds);
-    list.innerHTML = factIds.map((ruleId) => {
-        const rule = findSuggestRule(composedReplyState.suggest, ruleId);
-        const label = resolveFactDisplayName(ruleId, composedReplyState.draft?.result?.evidenceSources, composedReplyState.suggest);
-        return `<li data-rule-id="${ruleId}"><span>${escapeHtml(label)}</span></li>`;
-    }).join("") || `<li class="text-muted">未选择事实</li>`;
-}
-
-function renderComposedDraftPreview() {
-    const container = $("#composedRenderedPreview");
-    const feedback = $("#trustReplyFeedback");
-    if (!container) return;
-    const draft = composedReplyState.draft;
-    if (!draft?.rendered) {
-        container.textContent = "";
-        if (feedback) {
-            feedback.hidden = true;
-            feedback.innerHTML = "";
-        }
-        return;
-    }
-    container.textContent = draft.rendered;
-    renderAiReplyFeedback(feedback, draft.result || null);
-}
-
-function updateTrustWorkbenchButtons() {
-    const generateBtn = $("#trustGenerateDraftBtn");
-    const adoptBtn = $("#trustAdoptDraftBtn");
-    const heading = document.getElementById("trustDraftHeading");
-    const hasConfirmedFacts = (confirmedCanonicalFactIds() || []).length > 0;
-    const canGenerateContinuation = aiReplyState.firstTurnDone && !!composedReplyState.lockedFactIds?.length;
-    const draftResult = composedReplyState.draft?.result;
-    const generationFailed = !!composedReplyState.draft?.rendered
-        && !isAiReplyGenerationSuccess(draftResult);
-    const failureCode = generationFailed ? resolveAiReplyFailureReasonFromResult(draftResult) : null;
-
-    if (generateBtn) {
-        generateBtn.textContent = aiReplyState.firstTurnDone ? "重新生成表达" : "生成可信草稿";
-        generateBtn.disabled = composedReplyState.suggest?.llmEnabled === false
-            || aiReplyState.inFlight
-            || composedReplyState.evaluationPending
-            || (!canGenerateContinuation && !hasConfirmedFacts);
-        if (generationFailed) {
-            generateBtn.textContent = "重试生成";
-        }
-    }
-    if (adoptBtn) {
-        if (generationFailed) {
-            adoptBtn.disabled = true;
-            adoptBtn.setAttribute("aria-disabled", "true");
-            adoptBtn.title = "LLM 生成失败，当前 QA 规则参考内容不可采用";
-        } else {
-            adoptBtn.disabled = !composedReplyState.draft?.rendered
-                || composedReplyState.evaluationPending
-                || !(composedReplyState.lockedFactIds?.length || hasConfirmedFacts);
-            adoptBtn.removeAttribute("aria-disabled");
-            adoptBtn.removeAttribute("title");
-        }
-    }
-    if (heading) {
-        heading.textContent = generationFailed ? "QA 规则参考内容" : "可信草稿";
-    }
-}
-
-function refreshComposedWorkbenchUI() {
-    renderComposedSelectedList();
-    renderComposedGapList();
-    renderComposedDraftPreview();
-    updateTrustWorkbenchButtons();
-}
-
-function sortCategoryRulesForDisplay(rules, suggestedSet) {
-    const suggested = [];
-    const others = [];
-    rules.forEach((rule) => {
-        if (suggestedSet.has(rule.id)) {
-            suggested.push(rule);
-        } else {
-            others.push(rule);
-        }
-    });
-    return [...suggested, ...others];
-}
-
-function initComposedReplyWorkbench(recordId, suggest) {
-    manualReplyQaContext = null;
-    composedReplyState.recordId = recordId;
-    composedReplyState.suggest = suggest;
-    composedReplyState.selectedFactIds = [...(suggest.suggestedRuleIds || [])];
-    const initialEvaluation = {
-        canonicalFactIds: [...(suggest.suggestedRuleIds || [])],
-        suggestedFactIds: [...(suggest.suggestedRuleIds || [])],
-        draftReadiness: suggest.draftReadiness || "READY",
-        requestCoverage: suggest.requestCoverage || [],
-        gapDetected: !!suggest.gapDetected
-    };
-    composedReplyState.evaluation = initialEvaluation;
-    composedReplyState.confirmedEvaluation = initialEvaluation;
-    composedReplyState.evaluationPending = false;
-    composedReplyState.lockedFactIds = null;
-    composedReplyState.draft = null;
-    composedReplyState.evaluateSeq = 0;
-    resetAiReplyState(recordId);
-
-    document.querySelectorAll(".compose-rule-checkbox").forEach((checkbox) => {
-        checkbox.addEventListener("change", () => {
-            const ruleId = Number(checkbox.dataset.ruleId);
-            if (checkbox.checked) {
-                if (!composedReplyState.selectedFactIds.includes(ruleId)) {
-                    composedReplyState.selectedFactIds.push(ruleId);
-                }
-            } else {
-                composedReplyState.selectedFactIds = composedReplyState.selectedFactIds.filter((id) => id !== ruleId);
-            }
-            markComposedEvaluationPending();
-            debouncedEvaluateComposedFacts();
-        });
-    });
-
-    const modelSelect = $("#trustReplyModel");
-    if (modelSelect) {
-        modelSelect.value = aiReplyState.selectedModel || "DEEPSEEK_V4_FLASH";
-    }
-
-    refreshComposedWorkbenchUI();
-    evaluateComposedFacts().catch((error) => showStatus(error.message, "error"));
-}
-
 const autoReplyPreviewKindLabels = {
     QA_AUTO_REPLIED: { text: "QA 自动回复", badge: "ok" },
     QA_NO_MATCH: { text: "QA 未命中", badge: "warn" },
@@ -9114,94 +8829,6 @@ async function loadAutoReplyPreview(recordId) {
         if (metaEl) metaEl.textContent = error.message || "请稍后重试";
         throw error;
     }
-}
-
-function renderComposedReplyWorkbenchHtml(suggest, recordId) {
-    const suggestedSet = new Set(suggest.suggestedRuleIds || []);
-    const categoriesHtml = (suggest.rulesByCategory || []).map((category) => `
-        <details class="compose-category-panel" open>
-            <summary>${escapeHtml(category.categoryName)}</summary>
-            <div class="compose-rule-list">
-                ${sortCategoryRulesForDisplay(category.rules, suggestedSet).map((rule) => {
-                    const checked = suggestedSet.has(rule.id) ? "checked" : "";
-                    const suggested = suggestedSet.has(rule.id)
-                        ? `<span class="badge ok">建议</span>` : "";
-                    const label = (rule.displayName && rule.displayName.trim() && rule.displayName !== "未命名事实")
-                        ? rule.displayName
-                        : (rule.sectionTitle && rule.sectionTitle.trim() && rule.sectionTitle !== "未命名事实")
-                            ? rule.sectionTitle
-                            : (rule.replySubject && rule.replySubject.trim() && rule.replySubject !== "未命名事实")
-                                ? rule.replySubject
-                                : "事实名称缺失";
-                    return `
-                        <label class="compose-rule-item">
-                            <input type="checkbox" class="compose-rule-checkbox" data-rule-id="${rule.id}" ${checked}>
-                            <span>${escapeHtml(label)}</span>
-                            ${suggested}
-                        </label>`;
-                }).join("")}
-            </div>
-        </details>
-    `).join("");
-
-    const llmDisabled = suggest.llmEnabled === false;
-
-    return `
-        <details class="detail-section reply-workflow-detail compose-workbench-section">
-            <summary class="reply-workflow-summary">
-                <span class="reply-workflow-icon" aria-hidden="true">⌘</span>
-                <span class="reply-workflow-title"><strong>可信回复工作台</strong><small>选择事实、生成草稿、采用后人工发送</small></span>
-                <span class="reply-workflow-status">已匹配 ${suggest.suggestedRuleIds?.length || 0} 条</span>
-                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
-            </summary>
-            <div class="reply-workflow-content">
-            <div class="compose-workbench">
-                <div class="compose-panel compose-fragments">
-                    <h4>可用事实</h4>
-                    ${categoriesHtml || "<p class='text-muted'>暂无可用事实</p>"}
-                </div>
-                <div class="compose-panel compose-draft ai-chat-panel">
-                    <h4 id="trustDraftHeading">可信草稿</h4>
-                    <div class="ai-reply-model-row ai-reply-generation-controls">
-                        <label>生成模型
-                            <select id="trustReplyModel" class="ai-reply-model-select"${llmDisabled ? " disabled" : ""}>
-                                <option value="DEEPSEEK_V4_FLASH">DeepSeek V4 Flash</option>
-                                <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
-                            </select>
-                        </label>
-                        <label>单次 TTL
-                            <select id="trustReplyAttemptTimeout" class="ai-reply-model-select ai-reply-timeout-select">
-                                <option value="30">30 秒（默认）</option><option value="60">60 秒</option><option value="90">90 秒</option><option value="180">180 秒</option><option value="custom">自定义</option>
-                            </select>
-                        </label>
-                        <label id="trustReplyAttemptTimeoutCustomWrap" class="ai-reply-timeout-custom-wrap" hidden>
-                            <input id="trustReplyAttemptTimeoutCustom" class="ai-reply-timeout-custom-input" type="number" min="10" max="600" step="1" value="30" aria-label="自定义单次生成超时秒数"><span>秒</span>
-                        </label>
-                        <label>总 TTL
-                            <select id="trustReplyTotalTimeout" class="ai-reply-model-select ai-reply-timeout-select">
-                                <option value="auto">自动（300 秒）</option><option value="300">300 秒</option><option value="600">600 秒</option><option value="900">900 秒</option><option value="1800">1800 秒</option><option value="custom">自定义</option>
-                            </select>
-                        </label>
-                        <label id="trustReplyTotalTimeoutCustomWrap" class="ai-reply-timeout-custom-wrap" hidden>
-                            <input id="trustReplyTotalTimeoutCustom" class="ai-reply-timeout-custom-input" type="number" min="10" max="7200" step="1" value="300" aria-label="自定义生成总超时秒数"><span>秒</span>
-                        </label>
-                    </div>
-                    <div id="trustReplyFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
-                    <ul id="composedSelectedList" class="compose-selected-list"></ul>
-                    <textarea id="composedOperatorInstruction" class="compose-free-text" placeholder="可选：语气、长度、结构要求（不会作为事实写入正文）"${llmDisabled ? " disabled" : ""}></textarea>
-                    <div id="composedRenderedPreview" class="compose-rendered-preview pre"></div>
-                    <div class="compose-draft-actions">
-                        <button type="button" class="button primary" id="trustGenerateDraftBtn" data-action="trust-generate-draft" data-record-id="${recordId}"${llmDisabled ? " disabled" : ""}>生成可信草稿</button>
-                        <button type="button" class="button secondary" id="trustAdoptDraftBtn" data-action="trust-adopt-draft" data-record-id="${recordId}" disabled>采用到人工回复</button>
-                    </div>
-                </div>
-                <div class="compose-panel compose-gaps">
-                    <h4>问题与依据<span class="compose-count" id="composedGapCount"></span></h4>
-                    <ul id="composedGapList" class="compose-gap-list"></ul>
-                </div>
-            </div>
-            </div>
-        </details>`;
 }
 
 function resetAiReplyState(recordId) {
@@ -9388,6 +9015,51 @@ async function doPreflightCheck(recordId, capturedDraftId) {
     }
 }
 
+function adoptTrustReplyAssembly(recordId, assembly) {
+    const editor = $("#manualRichReplyEditor");
+    const rendered = assembly.renderedDraftText || assembly.rawDraftText || "";
+    if (editor) editor.innerText = rendered;
+    aiReplyState.adoptContext = {
+        rawTemplate: assembly.rawDraftText || "",
+        renderedBaseline: editor ? editor.innerText : rendered,
+        renderedBaselineHtml: editor ? editor.innerHTML : "",
+        recordId: Number(recordId),
+        draftId: -1,
+        needsGroundingReview: false,
+        reviewItems: [],
+        draftReadiness: "READY",
+        requestCount: (assembly.itemVersions || []).length,
+        mode: "TRUST_REPLY_WORKBENCH",
+        qaRuleIds: [...(assembly.canonicalFactIds || [])],
+        evidenceSetVersion: assembly.evidenceSetVersion,
+        draftHash: assembly.draftHash
+    };
+    manualReplyQaContext = {
+        qaRuleIds: [...(assembly.canonicalFactIds || [])],
+        baselineText: rendered
+    };
+    showStatus("草稿已采用到人工回复区，请确认后发送", "ok");
+    editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
+    schedulePreflightCheck();
+}
+
+function mountLiveTrustReply(recordId) {
+    unmountLiveTrustReply();
+    const host = document.querySelector("[data-trust-reply-live-host]");
+    if (!host) return;
+    const token = {};
+    liveTrustReplyInstance = window.TrustReplyWorkbench.mount(host, {
+        mode: "LIVE",
+        source: { sourceType: "LIVE_INBOUND", sourceId: Number(recordId) },
+        contextPath,
+        onUnauthorized: trustReplyUnauthorized,
+        onComplete: async (assembly) => {
+            if (liveTrustReplyInstance && liveTrustReplyToken === token) adoptTrustReplyAssembly(recordId, assembly);
+        }
+    });
+    liveTrustReplyToken = token;
+}
+
 function arraysEqual(a, b) {
     if (!a || !b) return (!a || a?.length === 0) && (!b || b?.length === 0);
     if (a.length !== b.length) return false;
@@ -9417,6 +9089,8 @@ function renderPreflightResult(result, container) {
 }
 
 async function showUnmatchedDetail(id) {
+    unmountLiveTrustReply();
+    const detailLoadSeq = liveDetailLoadSeq;
     manualReplyQaContext = null;
     aiReplyState.adoptContext = null;
     resetPreflightState();
@@ -9431,11 +9105,9 @@ async function showUnmatchedDetail(id) {
         api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
         api(`/api/inbound-summary/mails/${id}/thread`).catch(() => ({ tags: [] }))
     ]);
+    if (detailLoadSeq !== liveDetailLoadSeq) return;
     const inboundTags = threadData.tags || [];
     const record = data.record;
-    const suggest = record.expertContactId
-        ? await api(`/api/mail/unmatched-inbound/${id}/composed-reply/suggest`).catch(() => null)
-        : null;
     const history = record.expertContactId
         ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
         : null;
@@ -9449,6 +9121,7 @@ async function showUnmatchedDetail(id) {
         processingExpertTags,
         "mailboxProcessingExpertTagEditor"
     );
+    if (detailLoadSeq !== liveDetailLoadSeq) return;
     const panel = $("#unmatchedDetailPanel");
     panel.hidden = false;
 
@@ -9516,7 +9189,9 @@ async function showUnmatchedDetail(id) {
         </div>
     `;
 
-    const composeWorkbenchHtml = suggest ? renderComposedReplyWorkbenchHtml(suggest, id) : "";
+    const composeWorkbenchHtml = record.expertContactId
+        ? `<div class="detail-section reply-workflow-detail compose-workbench-section" data-trust-reply-live-host></div>`
+        : "";
 
     const historyMails = (history && history.mails) || [];
     const historyTimes = historyMails.map(formatMailTime).filter(Boolean).sort();
@@ -9644,12 +9319,7 @@ async function showUnmatchedDetail(id) {
         </div>
     `;
 
-    if (suggest) {
-        composedReplyState.recordId = id;
-        composedReplyState.contactId = record.expertContactId || null;
-        composedReplyState.contactOrcid = contact?.orcidId || null;
-        initComposedReplyWorkbench(id, suggest);
-    }
+    if (record.expertContactId) mountLiveTrustReply(Number(id));
 
     loadAutoReplyPreview(id).catch(() => {});
 
@@ -9665,6 +9335,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "close-unmatched-detail") {
+        unmountLiveTrustReply();
         $("#unmatchedDetailPanel").hidden = true;
         state.mailbox.detailContext = null;
         return;
@@ -9689,6 +9360,7 @@ async function handleUnmatchedAction(element) {
             body: JSON.stringify(payload)
         });
         showStatus("已标记为处理完成");
+        unmountLiveTrustReply();
         await refreshMailboxAfterPendingAction();
         return;
     }
@@ -9702,6 +9374,7 @@ async function handleUnmatchedAction(element) {
             body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication })
         });
         showStatus("已绑定并添加别名");
+        unmountLiveTrustReply();
         $("#unmatchedDetailPanel").hidden = true;
         await refreshMailboxAfterPendingAction();
         return;
@@ -9742,6 +9415,7 @@ async function handleUnmatchedAction(element) {
             body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication: promote })
         });
         showStatus("已绑定并添加别名");
+        unmountLiveTrustReply();
         $("#unmatchedDetailPanel").hidden = true;
         await refreshMailboxAfterPendingAction();
         return;
@@ -9854,232 +9528,6 @@ async function handleUnmatchedAction(element) {
             element.textContent = "停止生成";
             showStatus(`停止失败：${error.message || "未知错误"}`, "error");
         }
-        return;
-    }
-    if (action === "trust-generate-draft") {
-        if (aiReplyState.inFlight) {
-            return;
-        }
-        const isFirstTurn = !composedReplyState.lockedFactIds;
-        const factIds = isFirstTurn
-            ? (confirmedCanonicalFactIds() || [])
-            : [...composedReplyState.lockedFactIds];
-        if (composedReplyState.evaluationPending) {
-            showStatus("事实校验中，请稍候", "error");
-            return;
-        }
-        if (!factIds.length) {
-            showStatus("请至少选择一条事实", "error");
-            return;
-        }
-        const instruction = $("#composedOperatorInstruction")?.value?.trim() || "";
-        const turnsToSend = isFirstTurn ? [] : [...aiReplyState.turns];
-        if (!isFirstTurn && !instruction) {
-            showStatus("请输入修改要求", "error");
-            return;
-        }
-        if (!isFirstTurn && instruction) {
-            turnsToSend.push({
-                assistantDraft: aiReplyState.lastDraftTemplate,
-                operatorInstruction: instruction
-            });
-        }
-        const expectedModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
-        aiReplyState.selectedModel = expectedModel;
-        let timeoutSelection;
-        try {
-            timeoutSelection = resolveAiReplyTimeoutSelection();
-        } catch (error) {
-            showStatus(error.message, "error");
-            return;
-        }
-        const generationId = createAiReplyGenerationId();
-        const body = {
-            turns: turnsToSend,
-            qaRuleIds: factIds,
-            model: expectedModel,
-            generationId,
-            llmAttemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
-            llmTotalTimeoutSeconds: timeoutSelection.totalPayload,
-            _resolvedTotalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds
-        };
-        if (isFirstTurn && instruction) {
-            body.operatorInstruction = instruction;
-        }
-        const panel = $(".compose-draft.ai-chat-panel");
-        const feedback = $("#trustReplyFeedback");
-        const requestSeq = aiReplyState.requestSeq;
-        const expectedRecordId = composedReplyState.recordId;
-        const detailId = Number(id);
-        aiReplyState.inFlight = true;
-        aiReplyState.activeGeneration = {
-            generationId,
-            recordId: detailId,
-            requestSeq,
-            model: expectedModel,
-            attemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
-            totalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds,
-            controller: null
-        };
-        aiReplyState.latestProgress = null;
-        aiReplyState.lastProgressSeq = -1;
-        renderAiReplyFeedback(feedback, null);
-        setAiReplyLoading(panel, true, "AI 正在生成回复…", {
-            stoppable: true,
-            generationId,
-            attemptTimeoutSeconds: timeoutSelection.attemptTimeoutSeconds,
-            totalTimeoutSeconds: timeoutSelection.totalTimeoutSeconds
-        });
-        startAiReplyProgressTicker();
-        updateTrustWorkbenchButtons();
-        try {
-            let result = null;
-            let terminal = null;
-            await postAiReplySse(id, body, {
-                onTerminal: (event, data) => {
-                    terminal = event;
-                    if (event === "result") result = data;
-                    if (event === "error") throw new Error(data?.message || "AI 生成失败");
-                }
-            });
-            if (terminal === "cancelled") {
-                showStatus("已停止生成", "ok");
-                return;
-            }
-            if (!result) throw new Error("SSE 未返回完整结果");
-            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
-            const stillCurrent = requestSeq === aiReplyState.requestSeq
-                && expectedRecordId === composedReplyState.recordId
-                && detailId === Number(state.mailbox.detailContext?.id)
-                && expectedModel === currentModel
-                && aiReplyState.activeGeneration?.model === expectedModel
-                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
-                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
-                && aiReplyState.activeGeneration?.generationId === generationId;
-            if (!stillCurrent) {
-                return;
-            }
-            if (result.selectedModel !== expectedModel) {
-                renderAiReplyFeedback(feedback, null, "模型响应与当前选择不一致，请重新生成");
-                return;
-            }
-            const rawDraft = result.draftText || "";
-            const renderedDraft = result.renderedDraftText || rawDraft;
-            const isSuccess = isAiReplyGenerationSuccess(result);
-            if (isSuccess) {
-                if (isFirstTurn) {
-                    composedReplyState.lockedFactIds = [...factIds];
-                } else if (instruction) {
-                    aiReplyState.turns.push({
-                        assistantDraft: aiReplyState.lastDraftTemplate,
-                        operatorInstruction: instruction
-                    });
-                }
-                aiReplyState.lastDraftTemplate = rawDraft;
-                aiReplyState.lastRenderedDraft = renderedDraft;
-                aiReplyState.lastQaRuleIds = [...factIds];
-                aiReplyState.firstTurnDone = true;
-                if (!isFirstTurn && instruction) {
-                    $("#composedOperatorInstruction").value = "";
-                }
-            }
-            composedReplyState.draft = { raw: rawDraft, rendered: renderedDraft, result };
-            renderComposedDraftPreview();
-            renderAiReplyFeedback(feedback, result);
-            showStatus(aiReplyGenerationStateLabel(result.generationState) || (result.usedLlm ? "可信草稿已生成" : "LLM 生成失败，QA 规则参考内容"));
-        } catch (e) {
-            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
-            const stillCurrent = requestSeq === aiReplyState.requestSeq
-                && expectedRecordId === composedReplyState.recordId
-                && detailId === Number(state.mailbox.detailContext?.id)
-                && expectedModel === currentModel
-                && aiReplyState.activeGeneration?.model === expectedModel
-                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
-                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
-                && aiReplyState.activeGeneration?.generationId === generationId;
-            if (stillCurrent) {
-                renderAiReplyFeedback(feedback, null, e.message || "未知错误");
-                showStatus(`生成失败：${e.message || "未知错误"}`, "error");
-            }
-        } finally {
-            const currentModel = readAiReplyModelSelection("#trustReplyModel", aiReplyState.selectedModel);
-            const stillCurrent = requestSeq === aiReplyState.requestSeq
-                && expectedRecordId === composedReplyState.recordId
-                && detailId === Number(state.mailbox.detailContext?.id)
-                && expectedModel === currentModel
-                && aiReplyState.activeGeneration?.model === expectedModel
-                && aiReplyState.activeGeneration?.attemptTimeoutSeconds === timeoutSelection.attemptTimeoutSeconds
-                && aiReplyState.activeGeneration?.totalTimeoutSeconds === timeoutSelection.totalTimeoutSeconds
-                && aiReplyState.activeGeneration?.generationId === generationId;
-            if (stillCurrent) {
-                setAiReplyLoading(panel, false);
-                aiReplyState.inFlight = false;
-                if (aiReplyState.activeGeneration?.generationId === generationId) {
-                    aiReplyState.activeGeneration = null;
-                }
-                stopAiReplyProgressTicker();
-                aiReplyState.latestProgress = null;
-                updateTrustWorkbenchButtons();
-            }
-        }
-        return;
-    }
-    if (action === "trust-adopt-draft") {
-        resetPreflightState();
-        const draft = composedReplyState.draft;
-        const rendered = draft?.rendered || "";
-        const raw = draft?.raw || "";
-        if (!rendered) {
-            showStatus("请先生成可信草稿", "error");
-            return;
-        }
-        const draftResult = draft?.result;
-        if (!draftResult || !isAiReplyGenerationSuccess(draftResult)) {
-            showStatus("当前为 QA 规则参考内容，不可直接采用或发送。请重试生成或人工撰写。", "error");
-            return;
-        }
-        if (composedReplyState.evaluationPending) {
-            showStatus("事实校验中，请稍候", "error");
-            return;
-        }
-        const factIds = composedReplyState.lockedFactIds
-            || confirmedCanonicalFactIds()
-            || [];
-        if (!factIds.length) {
-            showStatus("当前事实集合未确认，请重新选择事实", "error");
-            return;
-        }
-        const draftEvidenceSetVersion = draft?.result?.evidenceSetVersion ?? "";
-        const editor = $("#manualRichReplyEditor");
-        if (editor) {
-            editor.innerText = rendered;
-        }
-        aiReplyState.adoptContext = {
-            rawTemplate: raw,
-            renderedBaseline: editor ? editor.innerText : rendered,
-            renderedBaselineHtml: editor ? editor.innerHTML : "",
-            recordId: Number(id),
-            draftId: -1,
-            needsGroundingReview: false,
-            reviewItems: [],
-            draftReadiness: draft?.result?.draftReadiness || composedReplyState.evaluation?.draftReadiness || "READY",
-            requestCount: Number(draft?.result?.requestCount) || 0,
-            mode: draft?.result?.mode || "",
-            qaRuleIds: [...factIds],
-            evidenceSetVersion: draftEvidenceSetVersion
-        };
-        if (factIds.length > 0) {
-            manualReplyQaContext = {
-                qaRuleIds: [...factIds],
-                baselineText: rendered
-            };
-            showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
-        } else {
-            manualReplyQaContext = null;
-            showStatus("草稿已填入人工富文本回复区，请填写主题后发送");
-        }
-        editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
-        schedulePreflightCheck();
         return;
     }
     if (action === "ai-reply-turn") {
@@ -11265,8 +10713,8 @@ function bindEvents() {
     $("#aiSimulateMailList")?.addEventListener("click", (event) => {
         const item = event.target.closest(".ai-training-mail-item");
         if (!item) return;
-        const contactId = Number(item.dataset.contactId);
-        const mail = (state.aiTraining.simulateMails || []).find((row) => row.expertContactId === contactId);
+        const mailRecordId = Number(item.dataset.mailRecordId);
+        const mail = (state.aiTraining.simulateMails || []).find((row) => row.mailRecordId === mailRecordId);
         if (mail) {
             selectSimulateMail(mail);
         }
@@ -11280,12 +10728,6 @@ function bindEvents() {
     $("#aiSimulateMailNextPage")?.addEventListener("click", () => {
         state.aiTraining.simulateMailsPage += 1;
         loadAiTrainingSimulateMails().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingSimulateBtn")?.addEventListener("click", () => {
-        runAiTrainingSimulate().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingReplyModel")?.addEventListener("change", (event) => {
-        state.aiTraining.simulateModel = readAiReplyModelSelection("#aiTrainingReplyModel", event.target.value);
     });
     document.addEventListener("change", (event) => {
         if (event.target?.id === "trustReplyModel") {
@@ -11313,18 +10755,6 @@ function bindEvents() {
             syncAiReplyTimeoutControls();
         }
     });
-    $("#aiTrainingSimulateMessages")?.addEventListener("click", async (event) => {
-        const btn = event.target.closest("[data-action='copy-ai-draft']");
-        if (!btn) return;
-        const sim = state.aiTraining.simulateResult;
-        const text = sim?.renderedDraftText || sim?.draftText || "";
-        try {
-            await navigator.clipboard.writeText(text);
-            showStatus("草稿已复制到剪贴板", "ok");
-        } catch {
-            showStatus("复制失败，请手动选择文本复制", "error");
-        }
-    });
     $("#loadTasksBtn").addEventListener("click", loadTasks);
     document.addEventListener("submit", (event) => {
         const form = event.target.closest("#meetingScheduleForm");
@@ -11349,6 +10779,7 @@ function bindEvents() {
         }
     });
     $("#closeUnmatchedDetailBtn")?.addEventListener("click", () => {
+        unmountLiveTrustReply();
         $("#unmatchedDetailPanel").hidden = true;
         state.mailbox.detailContext = null;
     });

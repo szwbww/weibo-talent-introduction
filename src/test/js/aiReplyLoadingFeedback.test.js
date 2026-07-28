@@ -8,6 +8,8 @@ const appJsPath = path.join(__dirname, "..", "..", "main", "resources", "static"
 const stylesCssPath = path.join(__dirname, "..", "..", "main", "resources", "static", "styles.css");
 const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
+const workbenchJsPath = path.join(__dirname, "..", "..", "main", "resources", "static", "trust-reply-workbench.js");
+const workbenchJsSource = fs.readFileSync(workbenchJsPath, "utf-8");
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
@@ -605,30 +607,12 @@ describe("renderAiReplyFeedback generationState", () => {
         assert.strictEqual(tooLateAborts, 0);
     });
 
-    it("renders exact timeout controls and accessibility attributes into the workbench", () => {
-        const sandbox = {
-            escapeHtml: (value) => String(value ?? "")
-                .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-            sortCategoryRulesForDisplay: (rules) => rules
-        };
-        vm.createContext(sandbox);
-        vm.runInContext(extractFn("renderComposedReplyWorkbenchHtml"), sandbox);
-        const html = sandbox.renderComposedReplyWorkbenchHtml({
-            suggestedRuleIds: [],
-            rulesByCategory: [],
-            llmEnabled: true
-        }, 7);
-        const optionValues = [...html.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)]
-            .map((match) => [match[1], match[2]]);
-        assert.deepStrictEqual(optionValues, [
-            ["DEEPSEEK_V4_FLASH", "DeepSeek V4 Flash"], ["DEEPSEEK_V4_PRO", "DeepSeek V4 Pro"],
-            ["30", "30 秒（默认）"], ["60", "60 秒"], ["90", "90 秒"], ["180", "180 秒"], ["custom", "自定义"],
-            ["auto", "自动（300 秒）"], ["300", "300 秒"], ["600", "600 秒"], ["900", "900 秒"], ["1800", "1800 秒"], ["custom", "自定义"]
-        ]);
-        assert.match(html, /id="trustReplyAttemptTimeoutCustom"[^>]*min="10"[^>]*max="600"[^>]*step="1"/);
-        assert.match(html, /id="trustReplyTotalTimeoutCustom"[^>]*min="10"[^>]*max="7200"[^>]*step="1"/);
-        assert.match(html, /data-action="trust-generate-draft"/);
-        assert.doesNotMatch(html, /完成率|百分比/);
+    it("shared workbench owns timeout controls, SSE status, and fixed completion actions", () => {
+        assert.match(workbenchJsSource, /data-role=\"attempt-timeout\"/);
+        assert.match(workbenchJsSource, /data-role=\"total-timeout\"/);
+        assert.match(workbenchJsSource, /data-action=\"generate-all\"/);
+        assert.match(workbenchJsSource, /data-action=\"complete\"/);
+        assert.doesNotMatch(workbenchJsSource, /完成率|百分比/);
     });
 
     it("syncs timeout inputs and rejects invalid custom values before any request", () => {
@@ -689,7 +673,8 @@ describe("renderAiReplyFeedback generationState", () => {
         const panel = { hidden: false };
         const sandbox = {
             state: { mailbox: { detailContext: { id: 7 } } },
-            $: () => panel
+            $: () => panel,
+            unmountLiveTrustReply: () => {}
         };
         vm.createContext(sandbox);
         vm.runInContext(extractHandler("handleUnmatchedAction", "renderEmailAliasSection"), sandbox);
@@ -814,21 +799,21 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(appJsSource.includes("function setAiReplyLoading(panel, loading"));
         assert.ok(appJsSource.includes("data-ai-reply-was-disabled"));
         assert.ok(appJsSource.includes("setAiReplyLoading(panel, true)"));
-        const simulateFn = appJsSource.match(/async function runAiTrainingSimulate\(\) \{[\s\S]*?\nasync function /)?.[0] || "";
-        assert.ok(simulateFn.includes("setAiReplyLoading"));
-        assert.ok(!simulateFn.includes("setTagEditorLoading"));
-        const mailboxUsesHelper = /action === "trust-generate-draft"[\s\S]*?setAiReplyLoading\(panel, true\)/.test(appJsSource);
-        assert.ok(mailboxUsesHelper);
+        assert.ok(workbenchJsSource.includes("正在加载工作台"));
+        assert.ok(workbenchJsSource.includes("requestSse"));
+        assert.ok(workbenchJsSource.includes('aria-live="polite"'));
+        assert.ok(workbenchJsSource.includes("state.generation.pending = true"));
     });
 
     it("keeps feedback and draft text isolated", () => {
         assert.ok(appJsSource.includes("function renderAiReplyFeedback("));
         assert.ok(appJsSource.includes("依据覆盖：完整"));
         assert.ok(!/已回答\s*\$\{/.test(appJsSource) && !appJsSource.includes("已回答 "));
-        assert.ok(appJsSource.includes("composedReplyState.draft = { raw: rawDraft, rendered: renderedDraft, result }"));
-        assert.ok(appJsSource.includes('id="composedRenderedPreview"'));
-        assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingSimulateFeedback"'));
-        assert.ok(appJsSource.includes('id="trustReplyFeedback"'));
+        assert.ok(workbenchJsSource.includes("rawDraftText"));
+        assert.ok(workbenchJsSource.includes('data-role="raw-preview"'));
+        assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingTrustReplyHost"'));
+        assert.ok(fs.readFileSync(indexHtmlPath, "utf-8").includes('id="aiTrainingEvaluationPanel"'));
+        assert.ok(appJsSource.includes("mountAiTrainingTrustReply"));
     });
 
     it("routes display/copy/adopt to rendered and turns to raw template", () => {
@@ -837,11 +822,7 @@ describe("ai reply loading helpers source contracts", () => {
         assert.doesNotMatch(appJsSource, /lastDraft:\s*""/);
         assert.match(
             appJsSource,
-            /translatableBody\(result\.renderedDraftText \|\| result\.draftText/
-        );
-        assert.match(
-            appJsSource,
-            /sim\?\.renderedDraftText \|\| sim\?\.draftText/
+            /renderedDraftText \|\| assembly\.rawDraftText/
         );
         assert.match(appJsSource, /assistantDraft:\s*aiReplyState\.lastDraftTemplate/);
         assert.match(appJsSource, /aiReplyState\.lastDraftTemplate\s*=\s*rawDraft/);
@@ -896,9 +877,9 @@ describe("ai reply loading helpers source contracts", () => {
 
     it("sends mailRecordId with expertContactId when available", () => {
         assert.ok(appJsSource.includes("selectedSimulateMailRecordId"));
-        assert.ok(appJsSource.includes("body.mailRecordId = mailRecordId"));
-        assert.ok(appJsSource.includes("simulateRequestSeq"));
-        assert.ok(appJsSource.includes("aiReplyState.requestSeq"));
+        assert.match(appJsSource, /source:\s*\{\s*sourceType:\s*"TRAINING_MAIL",\s*sourceId:\s*Number\(mail\.mailRecordId\)/);
+        assert.ok(appJsSource.includes("selectedSimulateMailRecordId"));
+        assert.ok(workbenchJsSource.includes("sourceId: Number(options.source.sourceId)"));
     });
 
     it("keeps S-1/S-2 CSS classes without tag-editor reuse", () => {
@@ -911,8 +892,8 @@ describe("ai reply loading helpers source contracts", () => {
         assert.ok(stylesSource.includes(".ai-reply-warning"));
         assert.ok(stylesSource.includes(".ai-reply-error"));
         assert.ok(/\.ai-reply-section \.ai-chat-panel \{[\s\S]*?position:\s*relative;/.test(stylesSource));
-        assert.ok(appJsSource.includes("compose-workbench-section"));
-        assert.ok(appJsSource.includes("compose-draft ai-chat-panel"));
+        assert.ok(workbenchJsSource.includes("trust-reply-layout"));
+        assert.ok(workbenchJsSource.includes("ai-reply-generation-controls"));
         assert.strictEqual((stylesSource.match(/\.ai-reply-loading-overlay\s*\{/g) || []).length, 1);
         assert.strictEqual((stylesSource.match(/\.ai-reply-progress-track\s*\{/g) || []).length, 1);
         assert.strictEqual((stylesSource.match(/\.ai-reply-stop-button\s*\{/g) || []).length, 1);
@@ -1057,7 +1038,7 @@ describe("coverage isolation and send guard contracts", () => {
         assert.doesNotMatch(fs.readFileSync(stylesCssPath, "utf-8"), /needsGroundingReview|reviewItems/);
         assert.doesNotMatch(fs.readFileSync(indexHtmlPath, "utf-8"), /needsGroundingReview|reviewItems/);
         assert.match(fs.readFileSync(stylesCssPath, "utf-8"), /\.ai-reply-coverage/);
-        assert.match(fs.readFileSync(indexHtmlPath, "utf-8"), /id="aiTrainingSimulateFeedback"/);
+        assert.match(fs.readFileSync(indexHtmlPath, "utf-8"), /id="aiTrainingTrustReplyHost"/);
     });
 
     it("readiness text does not appear in body or template payloads", () => {

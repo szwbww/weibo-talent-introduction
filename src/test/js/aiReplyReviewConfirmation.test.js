@@ -5,8 +5,30 @@ const fs = require("fs");
 
 const app = fs.readFileSync("src/main/resources/static/app.js", "utf-8");
 const html = fs.readFileSync("src/main/resources/static/index.html", "utf-8");
+const workbench = fs.readFileSync("src/main/resources/static/trust-reply-workbench.js", "utf-8");
 
 describe("adopt-direct-send UI contracts", function () {
+    it("shared completion has simulation and live adapters without a send call", function () {
+        if (!app.includes("mountAiTrainingTrustReply")) throw new Error("missing training adapter");
+        if (!app.includes("mountLiveTrustReply")) throw new Error("missing live adapter");
+        if (!app.includes("adoptTrustReplyAssembly")) throw new Error("missing live adoption adapter");
+        if (!workbench.includes("完成模拟并评估") || !workbench.includes("采用到人工回复")) {
+            throw new Error("missing fixed completion labels");
+        }
+        if (workbench.includes("manual-rich-reply") || workbench.includes("/send")) {
+            throw new Error("shared component must not know send paths");
+        }
+    });
+
+    it("live adapter adopts the same raw/rendered/hash assembly", function () {
+        if (!app.includes("rawTemplate: assembly.rawDraftText")) throw new Error("raw authority lost");
+        if (!app.includes("renderedDraftText || assembly.rawDraftText")) throw new Error("rendered authority lost");
+        if (!app.includes("draftHash: assembly.draftHash")) throw new Error("draft hash lost");
+        if (!app.includes("editor.innerText = rendered")) throw new Error("editor adoption missing");
+        if (!app.includes("requestedFactIds: assembly.requestedFactIds || assembly.canonicalFactIds")) throw new Error("training fact selection lost");
+        if (!app.includes("liveTrustReplyToken === token")) throw new Error("live adapter identity guard missing");
+    });
+
     it("HTML does not contain aiReplyReviewModal", function () {
         if (html.includes("aiReplyReviewModal")) throw new Error("review modal should be removed");
         if (html.includes("aiReplyReviewList")) throw new Error("review list should be removed");
@@ -46,8 +68,8 @@ describe("adopt-direct-send UI contracts", function () {
         if (sendBlock.includes("openReviewModal")) throw new Error("send should not open review modal");
     });
 
-    it("preserves raw template across adopt→send only when editor matches baseline", function () {
-        const adoptIdx = app.indexOf('if (action === "trust-adopt-draft")');
+    it("preserves raw template across live adoption→send only when editor matches baseline", function () {
+        const adoptIdx = app.indexOf("function adoptTrustReplyAssembly");
         const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
         const adoptBlock = app.slice(adoptIdx, adoptIdx + 1600);
         const sendBlock = app.slice(sendIdx, sendIdx + 2200);
@@ -90,9 +112,9 @@ describe("adopt-direct-send UI contracts", function () {
             throw new Error("send should not call isAiReplyGenerationSuccess");
     });
 
-    it("existing handler structure preserved", function () {
+    it("existing manual send handler structure preserved", function () {
         if (!app.includes('"send-manual-rich-reply"')) throw new Error("send handler missing");
-        if (!app.includes('"trust-adopt-draft"')) throw new Error("trust adopt handler missing");
+        if (app.includes('"trust-adopt-draft"')) throw new Error("legacy trust adopt handler should be removed");
     });
 });
 

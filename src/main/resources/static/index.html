@@ -885,25 +885,8 @@
                         </div>
                         <div class="ai-training-mail-detail-wrap">
                             <div id="aiSimulateMailDetail" class="ai-training-mail-detail muted">选择左侧邮件查看完整正文。</div>
-                            <div class="ai-reply-section">
-                                <div class="ai-chat-panel">
-                                    <div class="ai-reply-model-row">
-                                        <label>生成模型
-                                            <select id="aiTrainingReplyModel" class="ai-reply-model-select">
-                                                <option value="DEEPSEEK_V4_FLASH" selected>DeepSeek V4 Flash</option>
-                                                <option value="DEEPSEEK_V4_PRO">DeepSeek V4 Pro</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                    <div id="aiTrainingSimulateFeedback" class="ai-reply-feedback" role="status" aria-live="polite" hidden></div>
-                                    <div id="aiTrainingSimulateMessages" class="ai-chat-messages"></div>
-                                    <div class="ai-chat-input-row">
-                                        <textarea id="aiTrainingPromptOverride" class="ai-chat-input" rows="2" placeholder="可选：临时补充要求，仅影响本次模拟，不落库"></textarea>
-                                        <button type="button" class="button primary" id="aiTrainingSimulateBtn">生成模拟回复</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="aiTrainingSimulateMeta" class="muted ai-training-simulate-meta"></div>
+                            <div id="aiTrainingTrustReplyHost"></div>
+                            <section id="aiTrainingEvaluationPanel" class="compose-panel trust-training-evaluation" hidden></section>
                         </div>
                     </div>
                 </section>
@@ -1876,6 +1859,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
+<script src="/trust-reply-workbench.js"></script>
 <script src="app.js?v=20260715-batch-diff-display-fix"></script>
 </body>
 </html>
