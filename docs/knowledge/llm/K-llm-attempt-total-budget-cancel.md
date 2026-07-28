@@ -2,8 +2,8 @@
 id: K-llm-attempt-total-budget-cancel
 domain: llm
 created: 2026-07-23
-last_used: 2026-07-25
-hit_count: 11
+last_used: 2026-07-27
+hit_count: 12
 source: create-p:ai-reply-streaming-dual-ttl-cancel-plan
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

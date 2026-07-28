@@ -2,8 +2,8 @@
 id: K-ai-preview-raw-adoption-boundary
 domain: mail
 created: 2026-07-13
-last_used: 2026-07-21
-hit_count: 23
+last_used: 2026-07-27
+hit_count: 24
 source: fix-v:ai-reply-05-rendered-preview:fix-1
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

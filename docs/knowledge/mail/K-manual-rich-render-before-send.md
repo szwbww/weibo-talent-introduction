@@ -2,8 +2,8 @@
 id: K-manual-rich-render-before-send
 domain: mail
 created: 2026-07-13
-last_used: 2026-07-20
-hit_count: 20
+last_used: 2026-07-27
+hit_count: 21
 source: fix-v:ai-reply-06-rich-send-variable-rendering:fix-1
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1

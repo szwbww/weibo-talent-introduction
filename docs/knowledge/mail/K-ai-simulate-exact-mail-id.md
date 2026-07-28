@@ -2,8 +2,8 @@
 id: K-ai-simulate-exact-mail-id
 domain: mail
 created: 2026-07-12
-last_used: 2026-07-21
-hit_count: 8
+last_used: 2026-07-27
+hit_count: 9
 source: create-p:ai-reply-grounded-parity-backend
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

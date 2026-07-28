@@ -3,7 +3,7 @@ id: K-answerbody-source-exclusive
 domain: llm
 created: 2026-07-19
 last_used: 2026-07-27
-hit_count: 11
+hit_count: 12
 source: fix-v:ai-reply-05-trust-boundary-readiness-plan:fix-2
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

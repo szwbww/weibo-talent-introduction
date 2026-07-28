@@ -2,8 +2,8 @@
 id: K-ai-draft-review-state-per-draft
 domain: frontend
 created: 2026-07-21
-last_used: 2026-07-25
-hit_count: 36
+last_used: 2026-07-27
+hit_count: 37
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

@@ -2,8 +2,8 @@
 id: K-ai-draft-audit-version-hash-not-replay
 domain: mail
 created: 2026-07-19
-last_used: 2026-07-19
-hit_count: 1
+last_used: 2026-07-27
+hit_count: 2
 source: create-p:ai-reply-06-draft-audit-evidence-preflight
 severity: P1
 ---
