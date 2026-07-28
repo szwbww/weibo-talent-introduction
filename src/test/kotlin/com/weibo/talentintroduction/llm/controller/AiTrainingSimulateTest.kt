@@ -26,6 +26,12 @@ import com.weibo.talentintroduction.llm.service.AiTrainingQaDto
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationResponse
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationService
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import com.weibo.talentintroduction.llm.service.LlmDraftClient
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -123,6 +129,9 @@ class AiTrainingSimulateTest {
 
     @MockBean
     private lateinit var aiTrainingDialogueService: AiTrainingDialogueService
+
+    @MockBean
+    private lateinit var aiTrainingEvaluationService: AiTrainingEvaluationService
 
     @MockBean
     private lateinit var mailVariableService: MailVariableService
@@ -942,4 +951,68 @@ class AiTrainingSimulateTest {
         assertTrue(!capturedHistory!!.contains("TRAIN_PENDING_EXCLUDED"))
         assertTrue(!capturedHistory!!.contains("TRAIN_CURRENT_EXCLUDED"))
     }
+
+    @Test
+    fun `evaluation endpoint accepts the complete assembly input and returns only evaluation result`() {
+        Mockito.`when`(aiTrainingEvaluationService.save(anyNonNull(AiTrainingEvaluationRequest(
+            assembly = TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+                expectedSourceVersion = "source-v1",
+                expectedEvidenceSetVersion = "evidence-v1",
+                lockedItems = emptyList()
+            ),
+            rating = "NEEDS_IMPROVEMENT",
+            note = "too long",
+            operatorName = "operator-a"
+        ))))
+            .thenReturn(AiTrainingEvaluationResponse(456L, "NEEDS_IMPROVEMENT", "2026-07-28T20:00:00"))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate/evaluations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"source-v1","expectedEvidenceSetVersion":"evidence-v1","lockedItems":[],"rating":"NEEDS_IMPROVEMENT","note":"too long","operatorName":"operator-a"}"""
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.evaluationId").value(456))
+            .andExpect(jsonPath("$.rating").value("NEEDS_IMPROVEMENT"))
+            .andExpect(jsonPath("$.createdAt").value("2026-07-28T20:00:00"))
+            .andExpect(jsonPath("$.*").value(org.hamcrest.Matchers.hasSize<Any>(3)))
+
+        Mockito.verify(aiTrainingEvaluationService).save(anyNonNull(AiTrainingEvaluationRequest(
+            assembly = TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+                expectedSourceVersion = "source-v1",
+                expectedEvidenceSetVersion = "evidence-v1",
+                lockedItems = emptyList()
+            ),
+            rating = "NEEDS_IMPROVEMENT",
+            note = "too long",
+            operatorName = "operator-a"
+        )))
+    }
+
+    @Test
+    fun `evaluation endpoint rejects non canonical source before service`() {
+        mockMvc.perform(
+            post("/api/ai-training/simulate/evaluations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"source":{"sourceType":"LIVE_INBOUND","sourceId":123},"expectedSourceVersion":"source-v1","expectedEvidenceSetVersion":"evidence-v1","lockedItems":[],"rating":"UNUSABLE"}"""
+                )
+        ).andExpect(status().isUnprocessableEntity)
+
+        Mockito.verify(aiTrainingEvaluationService, Mockito.never()).save(anyNonNull(AiTrainingEvaluationRequest(
+            assembly = TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+                expectedSourceVersion = "source-v1",
+                expectedEvidenceSetVersion = "evidence-v1",
+                lockedItems = emptyList()
+            ),
+            rating = "UNUSABLE"
+        )))
+    }
+
+    private fun <T> anyNonNull(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 }

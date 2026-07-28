@@ -16,10 +16,23 @@ import com.weibo.talentintroduction.llm.service.AiTrainingQaPage
 import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueService
 import com.weibo.talentintroduction.llm.service.AiTrainingDialogueView
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationRequest
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationResponse
+import com.weibo.talentintroduction.llm.service.AiTrainingEvaluationService
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.TagView
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
+import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
+import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
+import org.springframework.http.ResponseEntity
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -44,7 +57,8 @@ class AiTrainingController(
     private val inboundMailTagService: InboundMailTagService,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val llmProperties: LlmProperties,
-    private val aiTrainingDialogueService: AiTrainingDialogueService
+    private val aiTrainingDialogueService: AiTrainingDialogueService,
+    private val aiTrainingEvaluationService: AiTrainingEvaluationService
 ) {
     companion object {
         /** Spring JDBC rejects empty IN lists; ignored when unrestricted=true. */
@@ -260,6 +274,57 @@ class AiTrainingController(
         )
     }
 
+    @PostMapping("/simulate/evaluations")
+    fun saveSimulationEvaluation(
+        @RequestBody request: AiTrainingEvaluationHttpRequest
+    ): AiTrainingEvaluationResponse = aiTrainingEvaluationService.save(request.toDomain())
+
+    @ExceptionHandler(TrustReplyWorkbenchException::class)
+    fun handleTrustReplyException(ex: TrustReplyWorkbenchException): ResponseEntity<TrustReplyErrorResponse> =
+        ResponseEntity.status(ex.status).body(TrustReplyErrorResponse(code = ex.code))
+
+    private fun AiTrainingEvaluationHttpRequest.toDomain(): AiTrainingEvaluationRequest {
+        val sourceType = runCatching { TrustReplySourceType.valueOf(source.sourceType.trim()) }
+            .getOrElse { throw TrustReplyWorkbenchException(HttpStatus.BAD_REQUEST, "TRUST_REPLY_SOURCE_INVALID") }
+        if (source.sourceId <= 0) {
+            throw TrustReplyWorkbenchException(HttpStatus.BAD_REQUEST, "TRUST_REPLY_SOURCE_INVALID")
+        }
+        if (sourceType != TrustReplySourceType.TRAINING_MAIL) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_TRAINING_SOURCE_REQUIRED")
+        }
+        return AiTrainingEvaluationRequest(
+            assembly = TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(sourceType, source.sourceId),
+                expectedSourceVersion = expectedSourceVersion,
+                expectedEvidenceSetVersion = expectedEvidenceSetVersion,
+                lockedItems = lockedItems.map { it.toDomain() },
+                requestedFactIds = requestedFactIds
+            ),
+            rating = rating,
+            note = note,
+            operatorName = operatorName
+        )
+    }
+
+    private fun TrustReplyLockedItemHttpRequest.toDomain(): TrustReplyLockedItemRequest {
+        val handling = runCatching { TrustReplyItemHandling.valueOf(this.handling.trim().uppercase()) }
+            .getOrElse { throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_HANDLING_INVALID") }
+        val generationKind = runCatching { TrustReplyItemGenerationKind.valueOf(this.generationKind.trim()) }
+            .getOrElse { throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_GENERATION_KIND_INVALID") }
+        return TrustReplyLockedItemRequest(
+            requestKey = requestKey,
+            versionId = versionId,
+            handling = handling,
+            answerText = answerText,
+            claims = claims,
+            model = model,
+            generationKind = generationKind,
+            evidenceSetVersion = evidenceSetVersion,
+            sourceVersion = sourceVersion,
+            operatorInstructionHash = operatorInstructionHash
+        )
+    }
+
     private fun mergeWarningsPreserveOrder(existing: List<String>, extra: List<String>): List<String> {
         val seen = linkedSetOf<String>()
         return (existing + extra).filter { seen.add(it) }
@@ -439,4 +504,15 @@ data class IntentCoverageResponse(
     val evidenceRuleIds: List<Long>,
     val missingEvidenceKeys: List<String>,
     val requiresResearchContext: Boolean
+)
+
+data class AiTrainingEvaluationHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedSourceVersion: String,
+    val expectedEvidenceSetVersion: String,
+    val lockedItems: List<TrustReplyLockedItemHttpRequest>,
+    val requestedFactIds: List<Long>? = null,
+    val rating: String?,
+    val note: String? = null,
+    val operatorName: String? = null
 )

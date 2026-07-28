@@ -13,5 +13,6 @@ enum class OperatorActionType(val summary: String) {
     AI_REPLY_DRAFT_NEEDS_REVIEW("AI 草稿生成-需审核"),
     AI_REPLY_DRAFT_BLOCKED("AI 草稿生成-被阻止"),
     AI_REPLY_SEND_BLOCKED("AI 回复发送被阻止"),
-    AI_REPLY_REVIEW_CONFIRMED("AI 回复人工审核确认")
+    AI_REPLY_REVIEW_CONFIRMED("AI 回复人工审核确认"),
+    AI_TRAINING_REPLY_EVALUATED("AI 训练回复评估")
 }
