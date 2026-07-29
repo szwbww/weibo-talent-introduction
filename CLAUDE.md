@@ -77,7 +77,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 多请求 grounded LLM 首轮与修复只返回 exact claimKey→text/actionText；服务端 plan 持有 request/source/paragraph/missingFacts/review 元数据，绑定完整 key set 后再做 claim/trust/action policy，raw JSON 不得进入 response。(K-grounded-json-materialize-before-policy)
 - Grounded 段落上限必须由服务端 plan 在组装前分组并保证每个 claim 恰好覆盖一次；composer 禁止末端 `take(N)` 或任何静默截断。(K-grounded-paragraph-cap-never-drop-claims)
 - LLM JSON 协议的所有标识必须是可转换范围内的 integral number；拒绝浮点、溢出和截断后才能比对 request/rule 矩阵。(K-ai-reply-json-integral-identifiers, K-ai-reply-json-integral-range)
-- `GROUNDED/PARTIAL/UNSUPPORTED` 只属于操作端审核状态；PARTIAL 外文只含有据事实，UNSUPPORTED 不生成答案，materializer 必须拒绝内部状态 token 或说明句进入邮件正文。(K-grounding-status-ui-only)
+- `GROUNDED/PARTIAL/UNSUPPORTED` 只属于操作端审核状态；PARTIAL 只含有据事实；UNSUPPORTED 的自动/QA-grounded 路径不生成事实答案，只有显式人工说明路径可生成空 claims 的待采用版本，且不得升级为证据或自动回复；materializer 必须拒绝内部状态 token。(K-grounding-status-ui-only)
 - AI 回复 loading 必须挂在稳定的 `.ai-chat-panel`，由共享 helper 在 finally 恢复遮罩和控件状态；训练模拟与收发件箱共用 requestSeq/邮件/模型快照防陈旧响应。(K-ai-reply-loading-panel)
 - LLM 流式进度不得伪造完成率；前端应展示稳定阶段、provider 活动、TTL 已用比例与最近活动，并按 generationId/progressSeq 隔离陈旧事件。(K-ai-stream-progress-no-fake-percent)
 - AI 聊天每个草稿条目必须自带 raw/rendered 与 `usedLlm/generationState` 采用边界；采用旧稿不可复用最后一次响应，fallback 不可采用；该状态不升级为人工最终发送审批。(K-ai-draft-review-state-per-draft)

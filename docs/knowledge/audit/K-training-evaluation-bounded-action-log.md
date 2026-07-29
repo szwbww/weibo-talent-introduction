@@ -2,8 +2,8 @@
 id: K-training-evaluation-bounded-action-log
 domain: audit
 created: 2026-07-28
-last_used: 2026-07-28
-hit_count: 1
+last_used: 2026-07-29
+hit_count: 2
 source: create-p:trusted-reply-shared-workbench
 severity: P1
 ---
@@ -16,4 +16,3 @@ AI 训练评估可复用 append-only 操作日志，但必须作为独立 action
 4. 每次评估新增一条记录，不 update/upsert 旧评估；唯一业务写路径为统一 action-log service。
 5. 新训练 action 不得加入线上 ready/partial/blocked/send/review 的精确 action filter，避免训练点击污染生产指标。
 6. 训练评估 service 不得依赖发送 service 或保存 mail/inbound 状态。
-
