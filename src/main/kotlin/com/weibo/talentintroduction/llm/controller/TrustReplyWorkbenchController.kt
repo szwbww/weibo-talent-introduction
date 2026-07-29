@@ -148,7 +148,8 @@ class TrustReplyWorkbenchController(
                 },
                 evidenceSetVersion = locked.evidenceSetVersion,
                 sourceVersion = locked.sourceVersion,
-                operatorInstructionHash = locked.operatorInstructionHash
+                operatorInstructionHash = locked.operatorInstructionHash,
+                operatorInstruction = locked.operatorInstruction
             )
         }
     )
@@ -206,7 +207,8 @@ data class TrustReplyLockedItemHttpRequest(
     val generationKind: String,
     val evidenceSetVersion: String,
     val sourceVersion: String,
-    val operatorInstructionHash: String = ""
+    val operatorInstructionHash: String = "",
+    val operatorInstruction: String = ""
 )
 
 data class TrustReplyAssembleHttpRequest(

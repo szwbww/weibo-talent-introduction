@@ -183,6 +183,63 @@ class TrustReplyWorkbenchControllerTest {
     }
 
     @Test
+    fun `assemble round trips operator instruction and new handling`() {
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L)
+        var captured: TrustReplyAssembleRequest? = null
+        val response = TrustReplyAssembleResponse(
+                source = source,
+                sourceVersion = "s1",
+                evidenceSetVersion = "e1",
+                rawDraftText = "answer",
+                renderedDraftText = "answer",
+                draftHash = "hash",
+                canonicalFactIds = emptyList(),
+                itemVersions = emptyList()
+        )
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplyAssembleRequest
+            response
+        }.`when`(service).assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+            source = source,
+            expectedSourceVersion = "s1",
+            expectedEvidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "source":{"sourceType":"TRAINING_MAIL","sourceId":123},
+                      "expectedSourceVersion":"s1",
+                      "expectedEvidenceSetVersion":"e1",
+                      "lockedItems":[{
+                        "requestKey":"k",
+                        "versionId":"v",
+                        "handling":"ANSWER_FROM_OPERATOR_INPUT",
+                        "answerText":"answer",
+                        "claims":[],
+                        "model":"DEEPSEEK_V4_FLASH",
+                        "generationKind":"AI_GENERATED",
+                        "evidenceSetVersion":"e1",
+                        "sourceVersion":"s1",
+                        "operatorInstructionHash":"hash",
+                        "operatorInstruction":"Use this exact answer basis."
+                      }]
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+
+        val locked = requireNotNull(captured).lockedItems.single()
+        assertEquals(TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT, locked.handling)
+        assertEquals("Use this exact answer basis.", locked.operatorInstruction)
+    }
+
+    @Test
     fun `synchronous item adjustment endpoint is unavailable`() {
         mockMvc.perform(
             post("/api/trust-reply/workbench/items/adjust")

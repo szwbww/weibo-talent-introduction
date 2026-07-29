@@ -123,6 +123,53 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `operator directed item uses only target question and operator answer basis`() {
+        stubEmptyFrame()
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult("Our current partners include A University and B Institute.")
+            }
+        }
+        val handling = TrustReplyItemHandling.values().firstOrNull {
+            it.name == "ANSWER_FROM_OPERATOR_INPUT"
+        }
+        assertNotNull(handling)
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "First question? Second question?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "First question?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = handling!!,
+            requestKey = "target-request",
+            operatorInstruction = "Reply: our current partners include A University and B Institute."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        assertEquals("Our current partners include A University and B Institute.", result.itemAnswer?.answerText)
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains("operator-provided answer basis"))
+        assertTrue(prompt.contains("our current partners include A University and B Institute"))
+        assertTrue(prompt.contains("First question?"))
+        assertFalse(prompt.contains("Second question?"))
+        assertFalse(prompt.contains("expression only"))
+    }
+
+    @Test
     fun `draft result exposes empty item answers by default for legacy consumers`() {
         val result = AiReplyDraftResult(
             draftText = "draft",

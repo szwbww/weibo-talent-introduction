@@ -994,6 +994,55 @@ class AiTrainingSimulateTest {
     }
 
     @Test
+    fun `evaluation endpoint preserves operator instruction in locked item`() {
+        var captured: AiTrainingEvaluationRequest? = null
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as AiTrainingEvaluationRequest
+            AiTrainingEvaluationResponse(456L, "MEETS_EXPECTATION", null)
+        }.`when`(aiTrainingEvaluationService).save(Mockito.any(AiTrainingEvaluationRequest::class.java) ?: AiTrainingEvaluationRequest(
+            assembly = TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+                expectedSourceVersion = "source-v1",
+                expectedEvidenceSetVersion = "evidence-v1",
+                lockedItems = emptyList()
+            ),
+            rating = "MEETS_EXPECTATION"
+        ))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate/evaluations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "source":{"sourceType":"TRAINING_MAIL","sourceId":123},
+                      "expectedSourceVersion":"source-v1",
+                      "expectedEvidenceSetVersion":"evidence-v1",
+                      "lockedItems":[{
+                        "requestKey":"k",
+                        "versionId":"v",
+                        "handling":"ANSWER_FROM_OPERATOR_INPUT",
+                        "answerText":"answer",
+                        "claims":[],
+                        "model":"DEEPSEEK_V4_FLASH",
+                        "generationKind":"AI_GENERATED",
+                        "evidenceSetVersion":"e1",
+                        "sourceVersion":"s1",
+                        "operatorInstructionHash":"hash",
+                        "operatorInstruction":"Use this answer basis."
+                      }],
+                      "rating":"MEETS_EXPECTATION"
+                    }
+                    """.trimIndent()
+                )
+        ).andExpect(status().isOk)
+
+        val locked = requireNotNull(captured).assembly.lockedItems.single()
+        assertEquals("Use this answer basis.", locked.operatorInstruction)
+        assertEquals("ANSWER_FROM_OPERATOR_INPUT", locked.handling.name)
+    }
+
+    @Test
     fun `evaluation endpoint rejects non canonical source before service`() {
         mockMvc.perform(
             post("/api/ai-training/simulate/evaluations")

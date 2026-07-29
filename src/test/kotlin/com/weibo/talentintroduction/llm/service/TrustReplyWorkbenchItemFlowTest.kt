@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -19,6 +20,93 @@ import java.time.LocalDateTime
 import java.util.Optional
 
 class TrustReplyWorkbenchItemFlowTest {
+    @Test
+    fun `operator directed handling has canonical version fields`() {
+        val operatorHandling = operatorDirectedHandling()
+        assertEquals(
+            setOf(
+                operatorHandling,
+                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                TrustReplyItemHandling.OMIT
+            ),
+            TrustReplyWorkbenchService.allowedHandlings(RequestGroundingStatus.UNSUPPORTED).toSet()
+        )
+
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorHandling,
+            answerText = "We work with the named institutions.",
+            claims = emptyList()
+        )
+        val version = fixture.service.assemble(fixture.request).itemVersions.single()
+        assertEquals(1, version.requestIndex)
+        assertEquals("What?", version.requestText)
+        assertEquals("Use the operator-provided basis.", version.operatorInstruction)
+    }
+
+    @Test
+    fun `operator directed handling on grounded item rejects before instruction validation`() {
+        val fixture = assembleFixture(status = RequestGroundingStatus.GROUNDED)
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.adjustItem(
+                TrustReplyItemAdjustmentRequest(
+                    source = fixture.request.source,
+                    expectedSourceVersion = fixture.request.expectedSourceVersion,
+                    expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+                    requestKey = fixture.validLockedItem.requestKey,
+                    handling = operatorDirectedHandling(),
+                    operatorInstruction = null
+                )
+            )
+        }
+
+        assertEquals("TRUST_REPLY_HANDLING_INVALID", error.code)
+    }
+
+    @Test
+    fun `assembled operator directed answer cannot bypass action policy`() {
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorDirectedHandling(),
+            answerText = "Please send your CV.",
+            claims = emptyList()
+        )
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_CLAIM_INVALID", error.code)
+    }
+
+    @Test
+    fun `unsupported operator directed handling rejects incomplete canonical input`() {
+        val operatorHandling = operatorDirectedHandling()
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorHandling,
+            answerText = "We work with the named institutions.",
+            claims = emptyList()
+        )
+        val version = fixture.validLockedItem
+        fun code(item: TrustReplyLockedItemRequest): String = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request.copy(lockedItems = listOf(item)))
+        }.code
+
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", code(version.copy(answerText = "")))
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", code(version.copy(claims = listOf(
+            AiReplyItemClaim("general.answer", "unexpected claim", listOf(9L))
+        ))))
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", code(version.copy(operatorInstructionHash = "wrong")))
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", code(version.copy(
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
+        )))
+        assertEquals("TRUST_REPLY_ITEM_VERSION_INVALID", code(version.copy(
+            versionId = "tampered",
+            answerText = "A different answer."
+        )))
+    }
+
     @Test
     fun `request key is deterministic and changes with every identity component`() {
         val first = TrustReplyWorkbenchService.requestKey("source-v1", 1, "  What is the fee? ", listOf("fees.amount"))
@@ -45,8 +133,16 @@ class TrustReplyWorkbenchItemFlowTest {
             TrustReplyWorkbenchService.allowedHandlings(RequestGroundingStatus.PARTIAL).toSet()
         )
         assertEquals(
-            setOf(TrustReplyItemHandling.ACKNOWLEDGE_PENDING, TrustReplyItemHandling.OMIT),
+            setOf(
+                TrustReplyItemHandling.valueOf("ANSWER_FROM_OPERATOR_INPUT"),
+                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                TrustReplyItemHandling.OMIT
+            ),
             TrustReplyWorkbenchService.allowedHandlings(RequestGroundingStatus.UNSUPPORTED).toSet()
+        )
+        assertEquals(
+            TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            TrustReplyWorkbenchService.recommendedHandling(RequestGroundingStatus.UNSUPPORTED)
         )
         RequestGroundingStatus.values().forEach { status ->
             TrustReplyItemHandling.values()
@@ -263,6 +359,7 @@ class TrustReplyWorkbenchItemFlowTest {
     @Test
     fun `adjust item materializes OMIT version without draft generation and assembles it`() {
         val fixture = assembleFixture()
+        val ignoredInstruction = "Ignore this instruction."
         Mockito.clearInvocations(fixture.draftService)
 
         val result = fixture.service.adjustItem(
@@ -271,13 +368,17 @@ class TrustReplyWorkbenchItemFlowTest {
                 expectedSourceVersion = fixture.request.expectedSourceVersion,
                 expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
                 requestKey = fixture.validLockedItem.requestKey,
-                handling = TrustReplyItemHandling.OMIT
+                handling = TrustReplyItemHandling.OMIT,
+                operatorInstruction = ignoredInstruction
             )
         )
 
         assertEquals(TrustReplyItemGenerationKind.OMITTED, result.version.generationKind)
         assertEquals("", result.version.answerText)
         assertTrue(result.version.claims.isEmpty())
+        assertEquals("", result.version.operatorInstruction)
+        assertEquals(AiReplyDraftService.sha256Hex(""), result.version.operatorInstructionHash)
+        assertFalse(Mockito.mockingDetails(fixture.draftService).invocations.any { it.method.name == "generateItem" })
         assertEquals(
             TrustReplyWorkbenchService.versionId(
                 requestKey = fixture.validLockedItem.requestKey,
@@ -294,20 +395,87 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         Mockito.verifyNoInteractions(fixture.draftService)
 
-        fixture.service.assemble(fixture.request.copy(lockedItems = listOf(
-            TrustReplyLockedItemRequest(
-                requestKey = result.version.requestKey,
-                versionId = result.version.versionId,
-                handling = result.version.handling,
-                answerText = result.version.answerText,
-                claims = result.version.claims,
-                model = result.version.model,
-                generationKind = result.version.generationKind,
-                evidenceSetVersion = result.version.evidenceSetVersion,
-                sourceVersion = result.version.sourceVersion,
-                operatorInstructionHash = result.version.operatorInstructionHash
+        val lockedOmit = TrustReplyLockedItemRequest(
+            requestKey = result.version.requestKey,
+            versionId = result.version.versionId,
+            handling = result.version.handling,
+            answerText = result.version.answerText,
+            claims = result.version.claims,
+            model = result.version.model,
+            generationKind = result.version.generationKind,
+            evidenceSetVersion = result.version.evidenceSetVersion,
+            sourceVersion = result.version.sourceVersion,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex(ignoredInstruction),
+            operatorInstruction = ignoredInstruction
+        )
+        val assembled = fixture.service.assemble(fixture.request.copy(lockedItems = listOf(lockedOmit)))
+        val assembledVersion = assembled.itemVersions.single()
+        assertEquals("", assembledVersion.operatorInstruction)
+        assertEquals(AiReplyDraftService.sha256Hex(""), assembledVersion.operatorInstructionHash)
+        assertEquals(result.version.versionId, assembledVersion.versionId)
+        assertEquals("", assembled.rawDraftText)
+    }
+
+    @Test
+    fun `full draft does not create an unsupported initial version`() {
+        val fixture = assembleFixture(status = RequestGroundingStatus.UNSUPPORTED)
+        val result = AiReplyDraftResult(
+            draftText = "fallback",
+            usedLlm = false,
+            qaRuleIds = listOf(9L),
+            mode = AiReplyMode.QA_GROUNDED,
+            requestFacts = listOf(RequestFactItem(1, "What?", listOf(9L), RequestGroundingStatus.UNSUPPORTED)),
+            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+            draftReadiness = AiReplyDraftReadiness.BLOCKED,
+            evidenceSetVersion = "e1",
+            itemAnswers = emptyList()
+        )
+        Mockito.`when`(
+            fixture.draftService.generate(
+                inboundText = "What?",
+                operatorTurns = emptyList(),
+                qaRuleIds = null,
+                operatorInstruction = null,
+                expertProfile = "Name: Test",
+                mailHistory = "history",
+                contextWarnings = emptyList(),
+                replyModel = null,
+                researchProfileSufficient = true
             )
-        )))
+        ).thenReturn(result)
+        Mockito.`when`(fixture.previewService.preview("fallback", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("fallback", emptyList()))
+
+        val generated = fixture.service.generate(
+            TrustReplyGenerationRequest(
+                source = fixture.request.source,
+                expectedSourceVersion = fixture.request.expectedSourceVersion
+            )
+        )
+
+        assertTrue(generated.itemVersions.isEmpty())
+    }
+
+    @Test
+    fun `operator directed adjustment requires bounded nonblank instruction`() {
+        val handling = operatorDirectedHandling()
+        val fixture = assembleFixture(status = RequestGroundingStatus.UNSUPPORTED, handling = handling)
+        fun code(instruction: String?): String = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.adjustItem(
+                TrustReplyItemAdjustmentRequest(
+                    source = fixture.request.source,
+                    expectedSourceVersion = fixture.request.expectedSourceVersion,
+                    expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+                    requestKey = fixture.validLockedItem.requestKey,
+                    handling = handling,
+                    operatorInstruction = instruction
+                )
+            )
+        }.code
+
+        assertEquals("TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID", code(null))
+        assertEquals("TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID", code("x".repeat(501)))
+        assertFalse(Mockito.mockingDetails(fixture.draftService).invocations.any { it.method.name == "generateItem" })
     }
 
     @Test
@@ -319,6 +487,7 @@ class TrustReplyWorkbenchItemFlowTest {
         assertEquals("rendered Salary info", response.renderedDraftText)
         assertEquals(AiReplyDraftService.sha256Hex("raw Salary info"), response.draftHash)
         assertEquals(listOf(9L), response.canonicalFactIds)
+        assertEquals(listOf(9L), response.requestedFactIds)
         assertEquals(fixture.validLockedItem.versionId, response.itemVersions.single().versionId)
         Mockito.verifyNoInteractions(fixture.auditService)
     }
@@ -420,6 +589,14 @@ class TrustReplyWorkbenchItemFlowTest {
         Mockito.verify(fixture.composer).composeLockedItems(listOf(canonical))
     }
 
+    private fun operatorDirectedHandling(): TrustReplyItemHandling {
+        val handling = TrustReplyItemHandling.values().firstOrNull {
+            it.name == "ANSWER_FROM_OPERATOR_INPUT"
+        }
+        assertNotNull(handling)
+        return handling!!
+    }
+
     private data class AssembleFixture(
         val service: TrustReplyWorkbenchService,
         val request: TrustReplyAssembleRequest,
@@ -511,7 +688,12 @@ class TrustReplyWorkbenchItemFlowTest {
         val canonicalAnswer = when (handling) {
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
-            else -> claims.joinToString(" ") { it.text }
+            else -> answerText.trim().ifBlank { claims.joinToString(" ") { it.text } }
+        }
+        val operatorInstruction = if (handling.name == "ANSWER_FROM_OPERATOR_INPUT") {
+            "Use the operator-provided basis."
+        } else {
+            ""
         }
         val canonicalClaims = if (
             handling == TrustReplyItemHandling.OMIT || handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING
@@ -542,7 +724,6 @@ class TrustReplyWorkbenchItemFlowTest {
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
         val requestKey = TrustReplyWorkbenchService.requestKey(sourceVersion, 1, "What?", emptyList())
-        val instructionHash = AiReplyDraftService.sha256Hex("")
         val versionId = TrustReplyWorkbenchService.versionId(
             requestKey,
             handling,
@@ -552,7 +733,7 @@ class TrustReplyWorkbenchItemFlowTest {
             generationKind,
             evidenceSetVersion,
             sourceVersion,
-            instructionHash
+            AiReplyDraftService.sha256Hex(operatorInstruction)
         )
         val locked = TrustReplyLockedItemRequest(
             requestKey = requestKey,
@@ -564,7 +745,8 @@ class TrustReplyWorkbenchItemFlowTest {
             generationKind = generationKind,
             evidenceSetVersion = evidenceSetVersion,
             sourceVersion = sourceVersion,
-            operatorInstructionHash = instructionHash
+            operatorInstructionHash = AiReplyDraftService.sha256Hex(operatorInstruction),
+            operatorInstruction = operatorInstruction
         )
         return AssembleFixture(
             service = service,

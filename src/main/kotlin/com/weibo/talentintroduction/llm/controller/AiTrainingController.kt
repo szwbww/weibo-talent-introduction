@@ -321,7 +321,8 @@ class AiTrainingController(
             generationKind = generationKind,
             evidenceSetVersion = evidenceSetVersion,
             sourceVersion = sourceVersion,
-            operatorInstructionHash = operatorInstructionHash
+            operatorInstructionHash = operatorInstructionHash,
+            operatorInstruction = operatorInstruction
         )
     }
 

@@ -425,6 +425,21 @@ class AiReplyDraftService(
             )
         }
 
+        if (handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT) {
+            return generateOperatorDirectedAnswer(
+                inboundText = inboundText,
+                requestFact = requestFact,
+                requestKey = requestKey,
+                operatorInstruction = instruction,
+                expertProfile = expertProfile,
+                replyModel = replyModel,
+                llmAttemptTimeoutSeconds = llmAttemptTimeoutSeconds,
+                llmTotalTimeoutSeconds = llmTotalTimeoutSeconds,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            )
+        }
+
         val token = cancellationToken ?: AiReplyCancellationToken()
         val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
         val budget = policy.budget()
@@ -596,6 +611,120 @@ class AiReplyDraftService(
         )
     }
 
+    private fun generateOperatorDirectedAnswer(
+        inboundText: String,
+        requestFact: RequestFactItem,
+        requestKey: String?,
+        operatorInstruction: String?,
+        expertProfile: String?,
+        replyModel: String?,
+        llmAttemptTimeoutSeconds: Int?,
+        llmTotalTimeoutSeconds: Int?,
+        cancellationToken: AiReplyCancellationToken?,
+        progressReporter: AiReplyProgressReporter
+    ): AiReplyItemGenerationResult {
+        val instruction = operatorInstruction?.trim().orEmpty()
+        require(instruction.isNotBlank()) { "operatorInstruction is required" }
+        val token = cancellationToken ?: AiReplyCancellationToken()
+        val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
+        val budget = policy.budget()
+        progressReporter.startBudget(budget)
+        val selectedModel = AiReplyModel.fromNullable(replyModel)
+        val client = llmDraftClientProvider.getIfAvailable()
+        if (!properties.enabled || client == null) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+                generationKind = null,
+                generationState = if (!properties.enabled) {
+                    AiReplyGenerationState.FALLBACK_LLM_DISABLED
+                } else {
+                    AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                },
+                usedLlm = false,
+                lockable = false
+            )
+        }
+
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
+        val messages = withActionBoundary(
+            listOf(
+                LlmChatMessage(
+                    role = "system",
+                    content = "Rewrite one recipient-facing answer from the operator-provided answer basis. " +
+                        "The operator-provided answer basis is authoritative content. Only restate or organize it; " +
+                        "do not add any institution, programme, funding, contract, time, identity, number, URL, or other fact " +
+                        "not present in that basis. Return plain email prose only, with no JSON, headings, lists, status labels, " +
+                        "or internal markers."
+                ),
+                LlmChatMessage(
+                    role = "user",
+                    content = buildString {
+                        appendLine("Target requestKey: ${requestKey ?: requestFact.index}")
+                        appendLine("Target question:")
+                        appendLine(requestFact.requestText)
+                        if (!expertProfile.isNullOrBlank()) {
+                            appendLine("Recipient context:")
+                            appendLine(expertProfile)
+                        }
+                        appendLine("operator-provided answer basis:")
+                        appendLine(instruction)
+                    }
+                )
+            ),
+            allowedActions
+        )
+
+        val observed = try {
+            executeWithRetry(
+                client = client,
+                messages = messages,
+                temperature = properties.temperature,
+                providerModel = selectedModel.resolveProviderModel(properties),
+                jsonOutput = false,
+                budget = budget,
+                cancellationToken = token,
+                progressReporter = progressReporter
+            ).first
+        } finally {
+            progressReporter.endProviderCall()
+        }
+        val candidate = observed.content?.trim().orEmpty()
+        val transportWarning = failureTypeToWarning(observed.failureType)
+        val warnings = transportWarning?.let(::listOf).orEmpty()
+        val invalid = candidate.isBlank() || INTERNAL_RESPONSE_MARKER.containsMatchIn(candidate) ||
+            AiReplyActionPolicy.findViolations(candidate, allowedActions).isNotEmpty()
+        if (observed.failureType != LlmChatFailureType.SUCCESS || invalid) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+                generationKind = null,
+                generationState = if (observed.failureType == LlmChatFailureType.CLIENT_UNAVAILABLE) {
+                    AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                } else {
+                    AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                },
+                usedLlm = false,
+                lockable = false,
+                warningCodes = warnings
+            )
+        }
+        return AiReplyItemGenerationResult(
+            itemAnswer = AiReplyItemAnswer(
+                requestIndex = requestFact.index,
+                requestText = requestFact.requestText,
+                status = requestFact.status,
+                answerText = candidate,
+                claims = emptyList()
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            generationState = AiReplyGenerationState.LLM_USED,
+            usedLlm = true,
+            lockable = true
+        )
+    }
+
     private fun safeAcknowledgementResult(
         requestFact: RequestFactItem,
         text: String,
@@ -629,6 +758,7 @@ class AiReplyDraftService(
                 TrustReplyItemHandling.OMIT
             )
             RequestGroundingStatus.UNSUPPORTED -> setOf(
+                TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
                 TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
                 TrustReplyItemHandling.OMIT
             )
@@ -2173,6 +2303,9 @@ class AiReplyDraftService(
     }
 
     companion object {
+        private val INTERNAL_RESPONSE_MARKER = Regex(
+            "(?i)(?:AI_REPLY_[A-Z0-9_]+|\\b(?:GROUNDED|PARTIAL|UNSUPPORTED)\\b|\\b(?:requestKey|sourceVersion|evidenceSetVersion)\\b)"
+        )
         private const val GROUNDED_REPAIR_TEMPERATURE = 0.0
         const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
         const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"

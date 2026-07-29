@@ -21,6 +21,7 @@ enum class TrustReplySourceType {
 enum class TrustReplyItemHandling {
     ANSWER_WITH_EVIDENCE,
     ANSWER_SUPPORTED_PART,
+    ANSWER_FROM_OPERATOR_INPUT,
     ACKNOWLEDGE_PENDING,
     OMIT
 }
@@ -154,7 +155,10 @@ data class TrustReplyItemVersion(
     val generationKind: TrustReplyItemGenerationKind,
     val evidenceSetVersion: String,
     val sourceVersion: String,
-    val operatorInstructionHash: String = ""
+    val operatorInstructionHash: String = "",
+    val requestIndex: Int = -1,
+    val requestText: String = "",
+    val operatorInstruction: String = ""
 )
 
 data class TrustReplyItemAdjustmentRequest(
@@ -187,7 +191,8 @@ data class TrustReplyLockedItemRequest(
     val generationKind: TrustReplyItemGenerationKind,
     val evidenceSetVersion: String,
     val sourceVersion: String,
-    val operatorInstructionHash: String = ""
+    val operatorInstructionHash: String = "",
+    val operatorInstruction: String = ""
 )
 
 data class TrustReplyAssembleRequest(
@@ -206,7 +211,8 @@ data class TrustReplyAssembleResponse(
     val renderedDraftText: String,
     val draftHash: String,
     val canonicalFactIds: List<Long>,
-    val itemVersions: List<TrustReplyItemVersion>
+    val itemVersions: List<TrustReplyItemVersion>,
+    val requestedFactIds: List<Long> = emptyList()
 )
 
 class TrustReplyWorkbenchException(
@@ -424,8 +430,7 @@ class TrustReplyWorkbenchService(
                 sourceVersion = resolved.sourceVersion,
                 evidenceSetVersion = result.evidenceSetVersion,
                 selectedModel = result.selectedModel,
-                itemAnswers = result.itemAnswers,
-                inboundText = resolved.inboundText
+                itemAnswers = result.itemAnswers
             )
         )
     }
@@ -448,10 +453,15 @@ class TrustReplyWorkbenchService(
         val item = selection.requestFacts.firstOrNull { item ->
             requestKey(resolved.sourceVersion, item) == request.requestKey
         } ?: throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
-        if (request.operatorInstruction?.trim()?.length ?: 0 > 500) {
-            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
-        }
         requireAllowedHandlingForApi(item.status, request.handling)
+        if (request.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT) {
+            if (request.operatorInstruction?.trim()?.length ?: 0 > 500) {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
+            }
+            if (request.operatorInstruction?.trim().isNullOrEmpty()) {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
+            }
+        }
         if (request.handling == TrustReplyItemHandling.OMIT) {
             cancellationToken?.throwIfCancelled()
             if (beforeCommit != null && !beforeCommit()) {
@@ -546,8 +556,8 @@ class TrustReplyWorkbenchService(
         val groundedSections = mutableListOf<ValidatedSection>()
         val versions = orderedItems.mapIndexed { index, locked ->
             val item = selection.requestFacts.sortedBy { it.index }[index]
-            if (locked.handling != TrustReplyItemHandling.OMIT &&
-                locked.handling != TrustReplyItemHandling.ACKNOWLEDGE_PENDING
+            if (locked.handling == TrustReplyItemHandling.ANSWER_WITH_EVIDENCE ||
+                locked.handling == TrustReplyItemHandling.ANSWER_SUPPORTED_PART
             ) {
                 groundedSections += ValidatedSection(
                     item.index,
@@ -566,6 +576,7 @@ class TrustReplyWorkbenchService(
                 generationKind = locked.generationKind,
                 evidenceSetVersion = evidenceSetVersion,
                 sourceVersion = resolved.sourceVersion,
+                operatorInstruction = locked.operatorInstruction,
                 operatorInstructionHash = locked.operatorInstructionHash
             ).also { version ->
                 if (version.versionId != locked.versionId) {
@@ -614,7 +625,8 @@ class TrustReplyWorkbenchService(
             renderedDraftText = preview.renderedText,
             draftHash = AiReplyDraftService.sha256Hex(raw),
             canonicalFactIds = factIds.toList(),
-            itemVersions = versions
+            itemVersions = versions,
+            requestedFactIds = selection.sendQaRuleIds
         )
     }
 
@@ -648,6 +660,22 @@ class TrustReplyWorkbenchService(
                     ) || !claimValidator.validateNoEvidenceAcknowledgement(locked.answerText).valid
                 ) {
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ACKNOWLEDGEMENT_INVALID")
+                }
+            }
+            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> {
+                val instruction = locked.operatorInstruction.trim()
+                if (item.status != RequestGroundingStatus.UNSUPPORTED || instruction.isBlank() ||
+                    instruction.length > 500 || locked.operatorInstructionHash != sha256Hex(instruction) ||
+                    locked.answerText.isBlank() || locked.claims.isNotEmpty() ||
+                    locked.generationKind != TrustReplyItemGenerationKind.AI_GENERATED
+                ) {
+                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
+                }
+                val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
+                if (AiReplyActionPolicy.detectActions(locked.answerText).isNotEmpty() ||
+                    AiReplyActionPolicy.findViolations(locked.answerText, allowedActions).isNotEmpty()
+                ) {
+                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
                 }
             }
             TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
@@ -720,7 +748,16 @@ class TrustReplyWorkbenchService(
         operatorInstruction: String? = null,
         operatorInstructionHash: String = ""
     ): TrustReplyItemVersion {
-        val normalizedClaims = if (handling == TrustReplyItemHandling.OMIT || handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING) {
+        val normalizedInstruction = if (handling == TrustReplyItemHandling.OMIT) {
+            ""
+        } else {
+            operatorInstruction?.trim().orEmpty()
+        }
+        val normalizedClaims = if (
+            handling == TrustReplyItemHandling.OMIT ||
+            handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING ||
+            handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+        ) {
             emptyList()
         } else {
             canonicalizeClaims(item, claims, answerText)
@@ -728,10 +765,15 @@ class TrustReplyWorkbenchService(
         val normalizedAnswer = when (handling) {
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
+            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> answerText.trim()
             else -> normalizedClaims.joinToString(" ") { it.text }
         }
-        val instructionHash = operatorInstructionHash.ifBlank {
-            sha256Hex(operatorInstruction?.trim().orEmpty())
+        val instructionHash = sha256Hex(normalizedInstruction).also { calculated ->
+            if (handling != TrustReplyItemHandling.OMIT &&
+                operatorInstructionHash.isNotBlank() && operatorInstructionHash != calculated
+            ) {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
+            }
         }
         return TrustReplyItemVersion(
             versionId = versionId(
@@ -746,7 +788,10 @@ class TrustReplyWorkbenchService(
             generationKind = generationKind,
             evidenceSetVersion = evidenceSetVersion,
             sourceVersion = sourceVersion,
-            operatorInstructionHash = instructionHash
+            operatorInstructionHash = instructionHash,
+            requestIndex = item.index,
+            requestText = item.requestText,
+            operatorInstruction = normalizedInstruction
         )
     }
 
@@ -923,8 +968,7 @@ class TrustReplyWorkbenchService(
         sourceVersion: String,
         evidenceSetVersion: String,
         selectedModel: String,
-        itemAnswers: List<AiReplyItemAnswer>,
-        inboundText: String
+        itemAnswers: List<AiReplyItemAnswer>
     ): List<TrustReplyItemVersion> {
         val answersByIndex = itemAnswers.associateBy { it.requestIndex }
         return requestFacts.sortedBy { it.index }.mapNotNull { item ->
@@ -944,18 +988,6 @@ class TrustReplyWorkbenchService(
                     claims = answer.claims,
                     model = selectedModel,
                     generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                    evidenceSetVersion = evidenceSetVersion,
-                    sourceVersion = sourceVersion
-                )
-            } else if (item.status == RequestGroundingStatus.UNSUPPORTED) {
-                materializeVersion(
-                    item = item,
-                    requestKey = key,
-                    handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                    answerText = AiReplyHighRiskClaimValidator.safeAcknowledgementFor(inboundText),
-                    claims = emptyList(),
-                    model = selectedModel,
-                    generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE,
                     evidenceSetVersion = evidenceSetVersion,
                     sourceVersion = sourceVersion
                 )
@@ -1033,6 +1065,7 @@ class TrustReplyWorkbenchService(
                 TrustReplyItemHandling.OMIT
             )
             RequestGroundingStatus.UNSUPPORTED -> listOf(
+                TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
                 TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
                 TrustReplyItemHandling.OMIT
             )
