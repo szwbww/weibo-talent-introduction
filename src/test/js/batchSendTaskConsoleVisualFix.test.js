@@ -34,8 +34,8 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260729-trust-reply-workbench-contract-fix'));
-        assert.ok(html.includes('app.js?v=20260729-trust-reply-workbench-contract-fix'));
+        assert.ok(html.includes('styles.css?v=20260729-trust-reply-omit-lock-fix'));
+        assert.ok(html.includes('app.js?v=20260729-trust-reply-omit-lock-fix'));
     });
 
     it("removes send-type controls and template filtering from the config editor", () => {

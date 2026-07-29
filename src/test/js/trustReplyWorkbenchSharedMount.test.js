@@ -327,6 +327,61 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(payload.llmTotalTimeoutSeconds, 600);
     });
 
+    it("materializes and locks an OMIT decision after item generation fails", async () => {
+        const current = bootstrap("LIVE_INBOUND", 305);
+        current.requestCoverage[0].status = "UNSUPPORTED";
+        current.requestCoverage[0].allowedHandlings = ["ACKNOWLEDGE_PENDING", "OMIT"];
+        current.requestCoverage[0].recommendedHandling = "ACKNOWLEDGE_PENDING";
+        const requestKey = current.requestCoverage[0].requestKey;
+        const omitted = {
+            ...itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "omit-v1"),
+            handling: "OMIT",
+            answerText: "",
+            generationKind: "OMITTED"
+        };
+        const calls = [];
+        const responses = [
+            jsonResponse(current),
+            sseResponse("error", { message: "AI generation failed" }),
+            sseResponse("result", {
+                source: current.source,
+                sourceVersion: current.sourceVersion,
+                evidenceSetVersion: current.evidenceSetVersion,
+                itemVersions: [omitted]
+            })
+        ];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            return Promise.resolve(responses.shift());
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        assert.match(host.innerHTML, /AI generation failed/);
+        host.dispatchEvent("change", { dataset: { role: "handling", requestKey }, value: "OMIT" });
+        const lockButton = host.innerHTML.match(/<button[^>]*data-action="lock-item"[^>]*>[^<]*<\/button>/)?.[0];
+        assert.ok(lockButton);
+        assert.doesNotMatch(lockButton, /\sdisabled/);
+        assert.match(lockButton, /确认省略并锁定/);
+
+        click(host, "lock-item", requestKey);
+        await settle();
+
+        const payload = JSON.parse(calls[2].options.body);
+        assert.strictEqual(payload.operation, "ADJUST_ITEM");
+        assert.strictEqual(payload.handling, "OMIT");
+        assert.match(host.innerHTML, /data-locked="true"/);
+        assert.match(host.innerHTML, /已锁定 1\/1 项/);
+        assert.match(host.innerHTML, /解锁/);
+    });
+
     it("rejects a foreign item result before it can become a version or lock", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 303;

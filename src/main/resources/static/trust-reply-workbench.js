@@ -479,6 +479,7 @@
                 request.pending = false;
                 state.itemControllers.delete(request.requestKey);
                 render();
+                return version;
             } catch (error) {
                 if (isStaleError(error)) {
                     handleStaleGeneration(sourceSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
@@ -617,7 +618,7 @@
                 const request = findRequest(button.dataset.requestKey);
                 if (request) void adjustItem(request);
             }
-            if (action === "lock-item") toggleLock(button.dataset.requestKey);
+            if (action === "lock-item") void toggleLock(button.dataset.requestKey);
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
@@ -673,17 +674,23 @@
             return state.requests.find((request) => request.requestKey === requestKey);
         }
 
-        function toggleLock(requestKey) {
+        async function toggleLock(requestKey) {
             const request = findRequest(requestKey);
             if (!request || request.pending) return;
             if (request.lockedVersionId) {
                 request.lockedVersionId = null;
-            } else if (request.activeVersionId && activeVersion(request)) {
-                request.lockedVersionId = request.activeVersionId;
             } else {
-                request.error = "请先生成并选择一个版本";
-                render();
-                return;
+                let version = activeVersion(request);
+                if (!version && request.handling === "OMIT") {
+                    version = await adjustItem(request);
+                    if (!version || findRequest(requestKey) !== request) return;
+                }
+                if (!version) {
+                    request.error = "请先生成并选择一个版本";
+                    render();
+                    return;
+                }
+                request.lockedVersionId = version.versionId;
             }
             invalidateAssembly();
             render();
@@ -743,11 +750,14 @@
         function renderRequest(request) {
             const locked = !!request.lockedVersionId;
             const version = activeVersion(request);
+            const canMaterializeOmit = !locked && !version && request.handling === "OMIT" && !state.generation.pending;
+            const lockDisabled = request.pending || (!locked && !version && !canMaterializeOmit);
+            const lockLabel = locked ? "解锁" : canMaterializeOmit ? "确认省略并锁定" : version ? "锁定此版本" : "请先生成版本";
             const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.handling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
             const versions = request.versions.map((item, index) => `<option value="${escapeText(item.versionId)}"${item.versionId === request.activeVersionId ? " selected" : ""}>版本 ${index + 1} · ${escapeText(GENERATION_KIND_LABELS[item.generationKind] || item.generationKind || "版本")}</option>`).join("");
             const coverage = request.coverage || "";
             const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(coverage)}" data-locked="${locked}"><div class="trust-reply-item-head"><span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""}</div><span class="badge ${locked ? "ok" : ""}">${locked ? "已锁定" : "待处理"}</span></div><div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">AI 调整要求<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${locked || request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${version ? `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-head"><span>${escapeText(GENERATION_KIND_LABELS[version.generationKind] || "版本正文")}</span></div><div class="trust-reply-answer-body pre">${escapeText(version.answerText || "（此项省略）")}</div></div>` : `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-body muted">尚未生成版本</div></div>`}${error}<div class="trust-reply-item-actions"><button type="button" class="button secondary" data-action="adjust-item" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending || state.generation.pending ? " disabled" : ""}>${request.pending ? "生成中…" : "AI 调整"}</button><button type="button" class="button ${locked ? "secondary" : "primary"}" aria-pressed="${locked}" data-action="lock-item" data-request-key="${escapeText(request.requestKey)}"${request.pending || !request.activeVersionId ? " disabled" : ""}>${locked ? "解锁" : "锁定此版本"}</button></div></article>`;
+            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(coverage)}" data-locked="${locked}"><div class="trust-reply-item-head"><span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""}</div><span class="badge ${locked ? "ok" : ""}">${locked ? "已锁定" : "待处理"}</span></div><div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">AI 调整要求<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${locked || request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${version ? `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-head"><span>${escapeText(GENERATION_KIND_LABELS[version.generationKind] || "版本正文")}</span></div><div class="trust-reply-answer-body pre">${escapeText(version.answerText || "（此项省略）")}</div></div>` : `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-body muted">尚未生成版本</div></div>`}${error}<div class="trust-reply-item-actions"><button type="button" class="button secondary" data-action="adjust-item" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending || state.generation.pending ? " disabled" : ""}>${request.pending ? "生成中…" : "AI 调整"}</button><button type="button" class="button ${lockDisabled || locked ? "secondary" : "primary"}" aria-pressed="${locked}" data-action="lock-item" data-request-key="${escapeText(request.requestKey)}"${lockDisabled ? " disabled" : ""}>${lockLabel}</button></div></article>`;
         }
 
         function renderSummary() {
