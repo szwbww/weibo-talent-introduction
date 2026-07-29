@@ -1074,7 +1074,7 @@ class TrustReplyWorkbenchService(
         fun recommendedHandling(status: RequestGroundingStatus): TrustReplyItemHandling = when (status) {
             RequestGroundingStatus.GROUNDED -> TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
             RequestGroundingStatus.PARTIAL -> TrustReplyItemHandling.ANSWER_SUPPORTED_PART
-            RequestGroundingStatus.UNSUPPORTED -> TrustReplyItemHandling.ACKNOWLEDGE_PENDING
+            RequestGroundingStatus.UNSUPPORTED -> TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
 
         fun requireAllowedHandling(status: RequestGroundingStatus, handling: TrustReplyItemHandling) {

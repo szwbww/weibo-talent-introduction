@@ -12,6 +12,7 @@
     const HANDLING_LABELS = Object.freeze({
         ANSWER_WITH_EVIDENCE: "依据完整回答",
         ANSWER_SUPPORTED_PART: "回答有依据部分",
+        ANSWER_FROM_OPERATOR_INPUT: "按回答说明生成",
         ACKNOWLEDGE_PENDING: "确认待补充",
         OMIT: "省略此项"
     });
@@ -153,6 +154,8 @@
             rules: [],
             generation: { pending: false, stage: "", message: "", generationId: null, controller: null },
             itemControllers: new Map(),
+            translationControllers: new Set(),
+            initialFullDraftSourceVersions: new Set(),
             assembly: null,
             bootSeq: 0,
             destroyed: false,
@@ -301,15 +304,20 @@
             state.requests.forEach((request) => {
                 request.versions = [];
                 request.activeVersionId = null;
-                request.lockedVersionId = null;
+                request.resolvedVersionId = null;
                 request.pending = false;
                 request.error = null;
+                request.expanded = request.coverage === "UNSUPPORTED";
+                request.questionTranslation = { state: "idle", text: "" };
+                request.answerTranslationsByVersionId = {};
                 request.requestSeq += 1;
             });
             state.itemControllers.forEach((controller) => cancelController(controller));
             state.itemControllers.clear();
             cancelController(state.generation.controller);
             state.generation.controller = null;
+            state.translationControllers.forEach((controller) => cancelController(controller));
+            state.translationControllers.clear();
             state.generation.pending = false;
             invalidateAssembly();
         }
@@ -322,11 +330,14 @@
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
                 availableHandlings: [...(item.allowedHandlings || [])],
-                handling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
+                draftHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
                 instruction: "",
                 versions: [],
                 activeVersionId: null,
-                lockedVersionId: null,
+                resolvedVersionId: null,
+                expanded: item.status === "UNSUPPORTED",
+                questionTranslation: { state: "idle", text: "" },
+                answerTranslationsByVersionId: {},
                 requestSeq: 0,
                 pending: false,
                 error: null
@@ -349,6 +360,14 @@
             state.generation.pending = false;
             setStatus("", "READY");
             render();
+            state.requests
+                .filter((request) => request.coverage === "UNSUPPORTED")
+                .forEach((request) => { void requestTranslation(request, null); });
+            if (state.requests.some((request) => request.coverage === "GROUNDED" || request.coverage === "PARTIAL")
+                && !state.initialFullDraftSourceVersions.has(state.sourceVersion)) {
+                state.initialFullDraftSourceVersions.add(state.sourceVersion);
+                void generateAll();
+            }
         }
 
         async function bootstrap() {
@@ -441,7 +460,13 @@
         }
 
         async function adjustItem(request) {
-            if (request.pending || request.lockedVersionId || state.generation.pending) return;
+            if (request.pending || state.generation.pending) return;
+            if (request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT" && !request.instruction.trim()) {
+                request.error = "请先填写回答说明";
+                request.expanded = true;
+                render();
+                return;
+            }
             const requestSeq = ++request.requestSeq;
             const sourceSeq = state.bootSeq;
             const generationId = makeId();
@@ -451,7 +476,7 @@
             render();
             let result = null;
             try {
-                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(request.requestKey, request.handling, request.instruction, generationId), request.requestKey, (event, data) => {
+                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(request.requestKey, request.draftHandling, request.instruction, generationId), request.requestKey, (event, data) => {
                     if (!isLive(sourceSeq) || request.requestSeq !== requestSeq) return;
                     if (event === "progress" || event === "ready" || event === "heartbeat") {
                         setStatus((data.progress || data).message || (data.progress || data).phase || event, (data.progress || data).phase || event.toUpperCase());
@@ -476,6 +501,10 @@
                 if (!version) throw new Error("单项生成未返回版本");
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
+                if (version.handling === "OMIT") {
+                    request.resolvedVersionId = version.versionId;
+                    request.expanded = false;
+                }
                 request.pending = false;
                 state.itemControllers.delete(request.requestKey);
                 render();
@@ -513,14 +542,25 @@
                 }
                 return !!request && !!version;
             }
+            applyInitialVersions(versions);
+            invalidateAssembly();
+            return true;
+        }
+
+        function applyInitialVersions(versions) {
             state.requests.forEach((request) => {
                 const matching = versions.filter((version) => version.requestKey === request.requestKey);
                 request.versions = matching;
-                request.activeVersionId = matching.length ? matching[matching.length - 1].versionId : null;
-                request.lockedVersionId = null;
+                const initialVersion = matching.find((version) => request.availableHandlings.includes(version.handling));
+                request.activeVersionId = initialVersion ? initialVersion.versionId : null;
+                if (initialVersion && (request.coverage === "GROUNDED" || request.coverage === "PARTIAL")) {
+                    request.resolvedVersionId = initialVersion.versionId;
+                    request.expanded = false;
+                } else {
+                    request.resolvedVersionId = null;
+                    request.expanded = true;
+                }
             });
-            invalidateAssembly();
-            return true;
         }
 
         async function cancelGeneration(generationId, controller) {
@@ -540,6 +580,14 @@
 
         async function assemble() {
             if (!canAssemble()) return;
+            const lockedItems = state.requests.map(serializeResolvedVersion);
+            const invalidRequest = state.requests.find((request, index) => !lockedItems[index]);
+            if (invalidRequest) {
+                invalidRequest.error = "已采用版本无效，请重新生成并采用";
+                invalidRequest.expanded = true;
+                render();
+                return;
+            }
             const seq = state.bootSeq;
             state.generation.pending = true;
             state.generation.stage = "ASSEMBLING";
@@ -551,21 +599,7 @@
                     expectedSourceVersion: state.sourceVersion,
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
                     requestedFactIds: [...state.selectedFactIds],
-                    lockedItems: state.requests.map((request) => {
-                        const version = activeVersion(request);
-                        return {
-                            requestKey: request.requestKey,
-                            versionId: version.versionId,
-                            handling: request.handling,
-                            answerText: version.answerText,
-                            claims: version.claims || [],
-                            model: version.model,
-                            generationKind: version.generationKind,
-                            evidenceSetVersion: version.evidenceSetVersion,
-                            sourceVersion: version.sourceVersion,
-                            operatorInstructionHash: version.operatorInstructionHash || ""
-                        };
-                    })
+                    lockedItems
                 });
                 if (!isLive(seq)) return;
                 if (response.sourceVersion !== state.sourceVersion || response.evidenceSetVersion !== state.evidenceSetVersion) {
@@ -587,13 +621,43 @@
 
         function canAssemble() {
             return !state.generation.pending && state.requests.length > 0 && state.requests.every((request) => {
-                return !request.pending && request.lockedVersionId && activeVersion(request);
+                return !request.pending && !!serializeResolvedVersion(request);
             });
         }
 
         function activeVersion(request) {
-            const id = request.lockedVersionId || request.activeVersionId;
-            return request.versions.find((version) => version.versionId === id) || null;
+            return request.versions.find((version) => version.versionId === request.activeVersionId) || null;
+        }
+
+        function resolvedVersion(request) {
+            return request.versions.find((version) => version.versionId === request.resolvedVersionId) || null;
+        }
+
+        function invalidateDecision(request) {
+            request.resolvedVersionId = null;
+            invalidateAssembly();
+        }
+
+        function serializeResolvedVersion(request) {
+            const version = resolvedVersion(request);
+            if (!version || version.requestKey !== request.requestKey
+                || !version.versionId || !version.handling || !version.generationKind
+                || !version.sourceVersion || !version.evidenceSetVersion || !Array.isArray(version.claims)) {
+                return null;
+            }
+            return {
+                requestKey: version.requestKey,
+                versionId: version.versionId,
+                handling: version.handling,
+                answerText: version.answerText || "",
+                claims: version.claims,
+                model: version.model || "",
+                generationKind: version.generationKind,
+                evidenceSetVersion: version.evidenceSetVersion,
+                sourceVersion: version.sourceVersion,
+                operatorInstructionHash: version.operatorInstructionHash || "",
+                operatorInstruction: version.operatorInstruction || ""
+            };
         }
 
         function onFactChange(checkbox) {
@@ -613,12 +677,26 @@
             const button = event.target.closest && event.target.closest("[data-action]");
             if (!button || !host.contains(button)) return;
             const action = button.dataset.action;
-            if (action === "generate-all") void generateAll();
             if (action === "adjust-item") {
                 const request = findRequest(button.dataset.requestKey);
                 if (request) void adjustItem(request);
             }
-            if (action === "lock-item") void toggleLock(button.dataset.requestKey);
+            if (action === "resolve-item") void toggleResolve(button.dataset.requestKey);
+            if (action === "toggle-item") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) {
+                    request.expanded = !request.expanded;
+                    render();
+                }
+            }
+            if (action === "translate-question") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) void toggleTranslation(request, null);
+            }
+            if (action === "translate-answer") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) void toggleTranslation(request, button.dataset.versionId);
+            }
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
@@ -646,16 +724,13 @@
             const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
             if (!request) return;
             if (target.dataset.role === "handling") {
-                if (request.lockedVersionId) { render(); return; }
-                request.handling = target.value;
-                request.versions = [];
+                request.draftHandling = target.value;
                 request.activeVersionId = null;
-                invalidateAssembly();
+                invalidateDecision(request);
                 render();
             } else if (target.dataset.role === "version") {
-                if (request.lockedVersionId) { render(); return; }
                 request.activeVersionId = target.value || null;
-                invalidateAssembly();
+                if (request.activeVersionId !== request.resolvedVersionId) invalidateDecision(request);
                 render();
             }
         }
@@ -663,8 +738,14 @@
         function onInput(event) {
             const target = event.target;
             const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
-            if (target.dataset?.role === "instruction" && request && !request.lockedVersionId) {
-                request.instruction = target.value.slice(0, 500);
+            if (target.dataset?.role === "instruction" && request) {
+                const instruction = target.value.slice(0, 500);
+                if (instruction !== request.instruction) {
+                    request.instruction = instruction;
+                    request.activeVersionId = null;
+                    invalidateDecision(request);
+                    syncInstructionUi(request);
+                }
             }
             if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
             if (target.dataset?.role === "total-custom") state.totalTimeout.customSeconds = target.value;
@@ -674,14 +755,15 @@
             return state.requests.find((request) => request.requestKey === requestKey);
         }
 
-        async function toggleLock(requestKey) {
+        async function toggleResolve(requestKey) {
             const request = findRequest(requestKey);
             if (!request || request.pending) return;
-            if (request.lockedVersionId) {
-                request.lockedVersionId = null;
+            if (request.resolvedVersionId) {
+                request.resolvedVersionId = null;
+                request.expanded = true;
             } else {
                 let version = activeVersion(request);
-                if (!version && request.handling === "OMIT") {
+                if (!version && request.draftHandling === "OMIT") {
                     version = await adjustItem(request);
                     if (!version || findRequest(requestKey) !== request) return;
                 }
@@ -690,7 +772,8 @@
                     render();
                     return;
                 }
-                request.lockedVersionId = version.versionId;
+                request.resolvedVersionId = version.versionId;
+                request.expanded = false;
             }
             invalidateAssembly();
             render();
@@ -735,7 +818,6 @@
 
         function renderToolbar() {
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            const hasPendingItems = state.requests.some((request) => request.pending);
             const cancelButton = state.generation.pending
                 ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
                 : "";
@@ -744,28 +826,160 @@
                 const id = rule.ruleId ?? rule.id;
                 return `<label class="trust-reply-fact-option"><input data-role="fact" type="checkbox" value="${escapeText(id)}"${state.selectedFactIds.includes(Number(id)) ? " checked" : ""}><span>${escapeText(rule.displayName || "事实")}</span></label>`;
             }).join("");
-            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}<button type="button" class="button primary" data-action="generate-all"${state.generation.pending || hasPendingItems || !state.requests.length ? " disabled" : ""}>${state.generation.pending ? "生成中…" : "生成全部版本"}</button></div><div class="compose-rule-list" data-role="facts"><span class="muted">事实选择：</span>${factOptions || "<span class=muted>服务端未提供可选事实</span>"}</div>`;
+            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div><div class="compose-rule-list" data-role="facts"><span class="muted">事实选择：</span>${factOptions || "<span class=muted>服务端未提供可选事实</span>"}</div>`;
+        }
+
+        function translationEntry(request, versionId) {
+            if (!versionId) return request.questionTranslation;
+            if (!request.answerTranslationsByVersionId[versionId]) {
+                request.answerTranslationsByVersionId[versionId] = { state: "idle", text: "" };
+            }
+            return request.answerTranslationsByVersionId[versionId];
+        }
+
+        async function requestTranslation(request, versionId) {
+            const version = versionId ? request.versions.find((item) => item.versionId === versionId) : null;
+            const text = versionId ? version?.answerText : request.requestText;
+            const entry = translationEntry(request, versionId);
+            if (!String(text || "").trim() || entry.state === "pending") return;
+            const sourceVersion = state.sourceVersion;
+            const requestKey = request.requestKey;
+            const controller = new AbortController();
+            entry.state = "pending";
+            entry.text = "";
+            state.translationControllers.add(controller);
+            render();
+            try {
+                const response = await requestJson("/api/translate", { text }, controller);
+                if (!isLive() || state.sourceVersion !== sourceVersion || request.requestKey !== requestKey
+                    || (versionId && !request.versions.some((item) => item.versionId === versionId))) return;
+                entry.state = response?.ok && String(response.translatedText || "").trim() ? "expanded" : "error";
+                entry.text = entry.state === "expanded" ? response.translatedText : "";
+            } catch (error) {
+                if (!isLive() || isAbort(error) || state.sourceVersion !== sourceVersion || request.requestKey !== requestKey) return;
+                entry.state = "error";
+                entry.text = "";
+            } finally {
+                state.translationControllers.delete(controller);
+                if (isLive() && state.sourceVersion === sourceVersion && request.requestKey === requestKey) render();
+            }
+        }
+
+        async function toggleTranslation(request, versionId) {
+            const entry = translationEntry(request, versionId);
+            if (entry.state === "expanded") {
+                entry.state = "collapsed";
+                render();
+                return;
+            }
+            if (entry.state === "collapsed" && entry.text) {
+                entry.state = "expanded";
+                render();
+                return;
+            }
+            await requestTranslation(request, versionId);
+        }
+
+        function renderTranslation(request, versionId, entry) {
+            const translation = entry || { state: "idle", text: "" };
+            const action = versionId ? "translate-answer" : "translate-question";
+            const buttonLabel = translation.state === "pending" ? "翻译中…"
+                : translation.state === "expanded" ? "收起译文"
+                    : translation.state === "error" ? "翻译失败，重试" : "🌐 翻译为中文";
+            const source = versionId ? "" : `<div class="pre" data-role="question-text">${escapeText(request.requestText)}</div>`;
+            const text = translation.text && translation.state === "expanded"
+                ? `<div class="translation-text pre" data-role="translation-text">${escapeText(translation.text)}</div>` : "";
+            return `<div class="translatable-body-block" data-role="${versionId ? "answer-translation" : "question-translation"}">${source}<button type="button" class="btn-translate" data-action="${action}" data-request-key="${escapeText(request.requestKey)}"${versionId ? ` data-version-id="${escapeText(versionId)}"` : ""}${translation.state === "pending" ? " disabled" : ""}>${buttonLabel}</button>${text}</div>`;
+        }
+
+        function requestAction(request) {
+            const resolved = resolvedVersion(request);
+            const version = activeVersion(request);
+            const isOmit = request.draftHandling === "OMIT";
+            const needsOperatorInstruction = request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT";
+            const generateDisabled = request.pending || state.generation.pending || (needsOperatorInstruction && !request.instruction.trim());
+            const resolveDisabled = request.pending || (!resolved && !version && !isOmit);
+            const action = resolved ? "resolve-item" : (version || isOmit ? "resolve-item" : "adjust-item");
+            return {
+                resolved,
+                locked: !!resolved,
+                action,
+                disabled: resolved ? request.pending : (action === "adjust-item" ? generateDisabled : resolveDisabled),
+                label: resolved
+                    ? (resolved.handling === "OMIT" ? "取消省略" : "取消采用")
+                    : isOmit ? "确认省略"
+                        : version ? "采用此版本"
+                            : request.error ? "重试 AI 调整" : "AI 生成回答"
+            };
+        }
+
+        function renderRequestHeader(request) {
+            const action = requestAction(request);
+            const coverage = request.coverage || "";
+            const badge = action.resolved?.handling === "OMIT" ? "已省略" : action.locked ? "已处理" : "待处理";
+            return `<span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""} <button type="button" class="button small secondary" data-action="toggle-item" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.expanded}">${request.expanded ? "收起" : "展开"}</button></div><span class="badge ${action.locked ? "ok" : ""}">${badge}</span>`;
+        }
+
+        function renderItemActions(request) {
+            const action = requestAction(request);
+            return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${action.disabled ? " disabled" : ""}>${request.pending ? "生成中…" : action.label}</button>`;
+        }
+
+        function renderRequestAnswerContents(request) {
+            const version = activeVersion(request);
+            return version
+                ? `<div class="trust-reply-answer-head"><span>${escapeText(GENERATION_KIND_LABELS[version.generationKind] || "版本正文")}</span></div><div class="trust-reply-answer-body pre">${escapeText(version.answerText || "")}</div>${version.answerText?.trim() ? renderTranslation(request, version.versionId, request.answerTranslationsByVersionId[version.versionId]) : ""}`
+                : `<div class="trust-reply-answer-body muted">尚未生成版本</div>`;
+        }
+
+        function renderRequestAnswer(request) {
+            return `<div class="trust-reply-answer" data-role="answer">${renderRequestAnswerContents(request)}</div>`;
+        }
+
+        function findRenderedElement(container, role, requestKey) {
+            return [...container.querySelectorAll("[data-role]")].find((element) => {
+                return element.dataset?.role === role && (requestKey == null || element.dataset.requestKey === requestKey);
+            }) || null;
+        }
+
+        function syncInstructionUi(request) {
+            const item = findRenderedElement(host, "item", request.requestKey);
+            if (item) {
+                const action = requestAction(request);
+                item.dataset.locked = String(action.locked);
+                const header = findRenderedElement(item, "item-header");
+                const version = findRenderedElement(item, "version", request.requestKey);
+                const answer = findRenderedElement(item, "answer");
+                const actions = findRenderedElement(item, "item-actions");
+                if (header) header.innerHTML = renderRequestHeader(request);
+                if (version) version.value = request.activeVersionId || "";
+                if (answer) answer.innerHTML = renderRequestAnswerContents(request);
+                if (actions) actions.innerHTML = renderItemActions(request);
+            }
+            const summary = findRenderedElement(host, "summary");
+            if (summary) summary.innerHTML = renderSummary();
         }
 
         function renderRequest(request) {
-            const locked = !!request.lockedVersionId;
-            const version = activeVersion(request);
-            const canMaterializeOmit = !locked && !version && request.handling === "OMIT" && !state.generation.pending;
-            const lockDisabled = request.pending || (!locked && !version && !canMaterializeOmit);
-            const lockLabel = locked ? "解锁" : canMaterializeOmit ? "确认省略并锁定" : version ? "锁定此版本" : "请先生成版本";
-            const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.handling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
+            const action = requestAction(request);
+            const resolved = action.resolved;
+            const locked = action.locked;
+            const needsOperatorInstruction = request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT";
+            const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.draftHandling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
             const versions = request.versions.map((item, index) => `<option value="${escapeText(item.versionId)}"${item.versionId === request.activeVersionId ? " selected" : ""}>版本 ${index + 1} · ${escapeText(GENERATION_KIND_LABELS[item.generationKind] || item.generationKind || "版本")}</option>`).join("");
-            const coverage = request.coverage || "";
             const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(coverage)}" data-locked="${locked}"><div class="trust-reply-item-head"><span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""}</div><span class="badge ${locked ? "ok" : ""}">${locked ? "已锁定" : "待处理"}</span></div><div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">AI 调整要求<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${locked || request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${version ? `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-head"><span>${escapeText(GENERATION_KIND_LABELS[version.generationKind] || "版本正文")}</span></div><div class="trust-reply-answer-body pre">${escapeText(version.answerText || "（此项省略）")}</div></div>` : `<div class="trust-reply-answer" data-role="answer"><div class="trust-reply-answer-body muted">尚未生成版本</div></div>`}${error}<div class="trust-reply-item-actions"><button type="button" class="button secondary" data-action="adjust-item" data-request-key="${escapeText(request.requestKey)}"${locked || request.pending || state.generation.pending ? " disabled" : ""}>${request.pending ? "生成中…" : "AI 调整"}</button><button type="button" class="button ${lockDisabled || locked ? "secondary" : "primary"}" aria-pressed="${locked}" data-action="lock-item" data-request-key="${escapeText(request.requestKey)}"${lockDisabled ? " disabled" : ""}>${lockLabel}</button></div></article>`;
+            const questionTranslation = renderTranslation(request, null, request.questionTranslation);
+            const answer = renderRequestAnswer(request);
+            const instructionLabel = needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）";
+            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div><div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
         }
 
         function renderSummary() {
-            const locked = state.requests.filter((request) => request.lockedVersionId).length;
+            const locked = state.requests.filter((request) => request.resolvedVersionId).length;
             const total = state.requests.length;
             const assembly = state.assembly;
             const percent = total > 0 ? Math.round((locked / total) * 100) : 0;
-            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">已锁定 ${locked}/${total} 项${locked < total ? "，所有当前项目须显式锁定" : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${assembly ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>` : ""}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${state.generation.pending && state.generation.stage === "ASSEMBLING" ? "整合中…" : "服务端整合"}</button><button type="button" class="button secondary" data-action="complete"${!assembly || state.completePending ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
+            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">已处理 ${locked}/${total}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${assembly ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>` : ""}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${state.generation.pending && state.generation.stage === "ASSEMBLING" ? "整合中…" : "服务端整合"}</button><button type="button" class="button secondary" data-action="complete"${!assembly || state.completePending ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
         }
 
         function renderStatus() {
@@ -808,6 +1022,8 @@
             cancelController(state.generation.controller);
             state.itemControllers.forEach((controller) => cancelController(controller));
             state.itemControllers.clear();
+            state.translationControllers.forEach((controller) => cancelController(controller));
+            state.translationControllers.clear();
             listeners.forEach(([type, handler]) => host.removeEventListener(type, handler));
             host.innerHTML = "";
         }

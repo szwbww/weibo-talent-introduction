@@ -141,7 +141,7 @@ class TrustReplyWorkbenchItemFlowTest {
             TrustReplyWorkbenchService.allowedHandlings(RequestGroundingStatus.UNSUPPORTED).toSet()
         )
         assertEquals(
-            TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            TrustReplyItemHandling.valueOf("ANSWER_FROM_OPERATOR_INPUT"),
             TrustReplyWorkbenchService.recommendedHandling(RequestGroundingStatus.UNSUPPORTED)
         )
         RequestGroundingStatus.values().forEach { status ->

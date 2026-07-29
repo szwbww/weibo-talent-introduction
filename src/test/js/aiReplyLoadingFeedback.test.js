@@ -610,7 +610,7 @@ describe("renderAiReplyFeedback generationState", () => {
     it("shared workbench owns timeout controls, SSE status, and fixed completion actions", () => {
         assert.match(workbenchJsSource, /data-role=\"attempt-timeout\"/);
         assert.match(workbenchJsSource, /data-role=\"total-timeout\"/);
-        assert.match(workbenchJsSource, /data-action=\"generate-all\"/);
+        assert.doesNotMatch(workbenchJsSource, /data-action=\"generate-all\"/);
         assert.match(workbenchJsSource, /data-action=\"complete\"/);
         assert.doesNotMatch(workbenchJsSource, /完成率|百分比/);
     });

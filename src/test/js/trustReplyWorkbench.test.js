@@ -14,9 +14,9 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /function requestJson\(/);
         assert.match(workbench, /function requestSse\(/);
         assert.match(workbench, /function resetVersions\(/);
-        assert.match(workbench, /function toggleLock\(/);
+        assert.match(workbench, /function toggleResolve\(/);
         assert.match(workbench, /function assemble\(/);
-        assert.match(workbench, /lockedItems:/);
+        assert.match(workbench, /lockedItems/);
         assert.match(workbench, /rawDraftText/);
         assert.match(workbench, /generationKind/);
         assert.doesNotMatch(app, /composedReplyState|renderComposedReplyWorkbenchHtml|trust-generate-draft/);
@@ -26,7 +26,12 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /data-role="handling"/);
         assert.match(workbench, /data-role="instruction"/);
         assert.match(workbench, /data-role="version"/);
-        assert.match(workbench, /data-action="lock-item"/);
+        assert.match(workbench, /resolve-item/);
+        assert.match(workbench, /data-action="toggle-item"/);
+        assert.match(workbench, /ANSWER_FROM_OPERATOR_INPUT/);
+        assert.match(workbench, /function resolvedVersion\(/);
+        assert.match(workbench, /function requestTranslation\(/);
+        assert.doesNotMatch(workbench, /data-action="generate-all"/);
         assert.match(workbench, /data-action="cancel-generation"/);
         assert.match(workbench, /模拟 · 不外发/);
         assert.match(workbench, /正式回复/);
