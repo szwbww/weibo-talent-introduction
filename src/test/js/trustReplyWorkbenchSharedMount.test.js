@@ -104,13 +104,13 @@ function itemVersion(requestKey, sourceVersion, evidenceSetVersion, versionId = 
     };
 }
 
-function createSandbox(fetchImpl) {
+function createSandbox(fetchImpl, { crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000001" } } = {}) {
     const document = new FakeDocument();
     const window = {
         document,
         fetch: fetchImpl,
         confirm: () => true,
-        crypto: { randomUUID: () => "00000000-0000-4000-8000-000000000001" },
+        crypto,
         AbortController,
         TextDecoder,
         TextEncoder,
@@ -241,6 +241,90 @@ describe("shared trust reply workbench mount contract", () => {
             contextPath: "",
             onComplete: async () => {}
         }), /来源|模式|source|mode/i);
+    });
+
+    it("keeps the generation id canonical when randomUUID is unavailable", async () => {
+        const current = bootstrap("TRAINING_MAIL", 301);
+        const calls = [];
+        const responses = [
+            jsonResponse(current),
+            { ok: false, status: 400, json: async () => ({ code: "EXPECTED_TEST_STOP" }) }
+        ];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            return Promise.resolve(responses.shift());
+        }, { crypto: null });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "generate-all");
+        await settle();
+
+        const payload = JSON.parse(calls[1].options.body);
+        assert.match(payload.generationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    });
+
+    it("allows the SSE endpoint to return a structured JSON error", async () => {
+        const current = bootstrap("TRAINING_MAIL", 302);
+        const calls = [];
+        const responses = [
+            jsonResponse(current),
+            { ok: false, status: 400, json: async () => ({ code: "TRUST_REPLY_GENERATION_ID_INVALID" }) }
+        ];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            return Promise.resolve(responses.shift());
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "generate-all");
+        await settle();
+
+        assert.strictEqual(calls[1].options.headers.Accept, "text/event-stream, application/json");
+        assert.match(host.innerHTML, /TRUST_REPLY_GENERATION_ID_INVALID/);
+    });
+
+    it("writes global model and timeout controls into the generation payload", async () => {
+        const current = bootstrap("TRAINING_MAIL", 304);
+        current.availableModels = ["DEEPSEEK_V4_FLASH", "DEEPSEEK_V4_PRO"];
+        const calls = [];
+        const responses = [
+            jsonResponse(current),
+            { ok: false, status: 400, json: async () => ({ code: "EXPECTED_TEST_STOP" }) }
+        ];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            return Promise.resolve(responses.shift());
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        host.dispatchEvent("change", { dataset: { role: "model" }, value: "DEEPSEEK_V4_PRO" });
+        host.dispatchEvent("change", { dataset: { role: "attempt-timeout" }, value: "60" });
+        host.dispatchEvent("change", { dataset: { role: "total-timeout" }, value: "600" });
+        click(host, "generate-all");
+        await settle();
+
+        const payload = JSON.parse(calls[1].options.body);
+        assert.strictEqual(payload.model, "DEEPSEEK_V4_PRO");
+        assert.strictEqual(payload.llmAttemptTimeoutSeconds, 60);
+        assert.strictEqual(payload.llmTotalTimeoutSeconds, 600);
     });
 
     it("rejects a foreign item result before it can become a version or lock", async () => {

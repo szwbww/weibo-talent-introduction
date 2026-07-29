@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -103,6 +104,19 @@ class TrustReplyWorkbenchControllerTest {
                 .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":1},"expectedSourceVersion":"v","generationId":"not-uuid"}""")
         )
             .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_GENERATION_ID_INVALID"))
+    }
+
+    @Test
+    fun `stream validation error remains structured when client accepts only event stream`() {
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/generations/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":1},"expectedSourceVersion":"v","generationId":"not-uuid"}""")
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
             .andExpect(jsonPath("$.code").value("TRUST_REPLY_GENERATION_ID_INVALID"))
     }
 

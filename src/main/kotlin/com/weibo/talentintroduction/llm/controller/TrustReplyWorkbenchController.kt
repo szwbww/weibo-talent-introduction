@@ -96,7 +96,9 @@ class TrustReplyWorkbenchController(
 
     @ExceptionHandler(TrustReplyWorkbenchException::class)
     fun handleWorkbenchException(ex: TrustReplyWorkbenchException): ResponseEntity<TrustReplyErrorResponse> =
-        ResponseEntity.status(ex.status).body(TrustReplyErrorResponse(code = ex.code))
+        ResponseEntity.status(ex.status)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(TrustReplyErrorResponse(code = ex.code))
 
     private fun TrustReplySourceHttpRequest.toDomain(): TrustReplySourceRef {
         val sourceType = runCatching { TrustReplySourceType.valueOf(sourceType) }.getOrElse {

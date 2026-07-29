@@ -39,7 +39,18 @@
         if (global.crypto && typeof global.crypto.randomUUID === "function") {
             return global.crypto.randomUUID();
         }
-        return `trust-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const bytes = new Uint8Array(16);
+        if (global.crypto && typeof global.crypto.getRandomValues === "function") {
+            global.crypto.getRandomValues(bytes);
+        } else {
+            for (let index = 0; index < bytes.length; index += 1) {
+                bytes[index] = Math.floor(Math.random() * 256);
+            }
+        }
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     }
 
     function apiUrl(contextPath, path) {
@@ -192,7 +203,7 @@
             try {
                 const response = await global.fetch(apiUrl(state.contextPath, path), {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+                    headers: { "Content-Type": "application/json", Accept: "text/event-stream, application/json" },
                     body: JSON.stringify(payload),
                     signal: controller.signal
                 });
@@ -615,6 +626,22 @@
         function onChange(event) {
             const target = event.target;
             if (target.matches && target.matches('[data-role="fact"]')) return onFactChange(target);
+            if (target.dataset?.role === "model") {
+                state.selectedModel = target.value;
+                return;
+            }
+            if (target.dataset?.role === "attempt-timeout") {
+                state.attemptTimeout.mode = target.value;
+                state.attemptTimeout.seconds = timeoutSeconds(state.attemptTimeout, 10, 600);
+                render();
+                return;
+            }
+            if (target.dataset?.role === "total-timeout") {
+                state.totalTimeout.mode = target.value;
+                state.totalTimeout.seconds = timeoutSeconds(state.totalTimeout, 10, 7200);
+                render();
+                return;
+            }
             const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
             if (!request) return;
             if (target.dataset.role === "handling") {
@@ -628,16 +655,6 @@
                 if (request.lockedVersionId) { render(); return; }
                 request.activeVersionId = target.value || null;
                 invalidateAssembly();
-                render();
-            } else if (target.dataset.role === "model") {
-                state.selectedModel = target.value;
-            } else if (target.dataset.role === "attempt-timeout") {
-                state.attemptTimeout.mode = target.value;
-                state.attemptTimeout.seconds = timeoutSeconds(state.attemptTimeout, 10, 600);
-                render();
-            } else if (target.dataset.role === "total-timeout") {
-                state.totalTimeout.mode = target.value;
-                state.totalTimeout.seconds = timeoutSeconds(state.totalTimeout, 10, 7200);
                 render();
             }
         }
