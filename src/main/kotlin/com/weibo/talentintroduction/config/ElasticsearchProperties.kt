@@ -11,5 +11,6 @@ data class ElasticsearchProperties(
     val password: String,
     val rawIndexName: String,
     val candidateIndexName: String,
-    val applicationIndexName: String
+    val applicationIndexName: String,
+    val unsupportedAnswerIndexName: String = "trust_reply_unsupported_answer_v1"
 )

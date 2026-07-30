@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260729-trust-reply-unsupported-answer-v1-02">
+    <link rel="stylesheet" href="styles.css?v=20260729-trust-reply-unsupported-answer-v1-03">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -778,6 +778,7 @@
                 <button type="button" class="ai-tab" data-tab="dialogues">对话范例</button>
                 <button type="button" class="ai-tab" data-tab="prompts">AI 提示词与约束</button>
                 <button type="button" class="ai-tab active" data-tab="simulate">历史邮件模拟回复</button>
+                <button type="button" class="ai-tab" data-tab="unsupportedAnswers">无依据回答索引</button>
             </div>
 
             <div class="ai-tab-content" id="aiTabQa">
@@ -888,6 +889,36 @@
                             <div id="aiTrainingTrustReplyHost"></div>
                             <section id="aiTrainingEvaluationPanel" class="compose-panel trust-training-evaluation" hidden></section>
                         </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="ai-tab-content" id="aiTabUnsupportedAnswers">
+                <section class="panel ai-training-panel">
+                    <div class="panel-head">
+                        <h2>无依据回答索引</h2>
+                        <div class="toolbar-inline">
+                            <select id="aiTrainingUnsupportedAnswerSourceFilter">
+                                <option value="">全部来源</option>
+                                <option value="TRAINING">训练</option>
+                                <option value="LIVE">正式发送</option>
+                            </select>
+                            <button type="button" class="button" id="reloadAiTrainingUnsupportedAnswersBtn">刷新</button>
+                        </div>
+                    </div>
+                    <div class="ai-reply-feedback" id="aiTrainingUnsupportedAnswerStatus" role="status" aria-live="polite"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr><th>状态/来源</th><th>原问题</th><th>操作员描述</th><th>AI 回答</th><th>模型</th><th>创建时间</th></tr>
+                            </thead>
+                            <tbody id="aiTrainingUnsupportedAnswerTable"><tr><td colspan="6" class="muted-cell">暂无已确认的无依据回答</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div id="aiTrainingUnsupportedAnswerPager" class="list-pager" hidden>
+                        <button type="button" class="button small" id="aiTrainingUnsupportedAnswerPrevPage">上一页</button>
+                        <span id="aiTrainingUnsupportedAnswerPageInfo" class="list-pager-info"></span>
+                        <button type="button" class="button small" id="aiTrainingUnsupportedAnswerNextPage">下一页</button>
                     </div>
                 </section>
             </div>
@@ -1859,7 +1890,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260729-trust-reply-unsupported-answer-v1-02"></script>
-<script src="app.js?v=20260729-trust-reply-unsupported-answer-v1-02"></script>
+<script src="trust-reply-workbench.js?v=20260729-trust-reply-unsupported-answer-v1-03"></script>
+<script src="app.js?v=20260729-trust-reply-unsupported-answer-v1-03"></script>
 </body>
 </html>

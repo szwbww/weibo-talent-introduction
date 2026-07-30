@@ -93,6 +93,15 @@ const state = {
         qaSource: "",
         qaItems: [],
         editingQaId: null,
+        unsupportedAnswers: [],
+        unsupportedAnswersTotal: 0,
+        unsupportedAnswersPage: 0,
+        unsupportedAnswersSize: 20,
+        unsupportedAnswersSourceMode: "",
+        unsupportedAnswersLoaded: false,
+        unsupportedAnswersLoading: false,
+        unsupportedAnswersError: "",
+        unsupportedAnswersRequestToken: 0,
         dialogueItems: [],
         promptConfig: null,
         promptIsCustom: false,
@@ -2913,9 +2922,13 @@ function switchAiTrainingTab(tab) {
         const active = (tab === "qa" && panelId === "aiTabQa")
             || (tab === "dialogues" && panelId === "aiTabDialogues")
             || (tab === "prompts" && panelId === "aiTabPrompts")
-            || (tab === "simulate" && panelId === "aiTabSimulate");
+            || (tab === "simulate" && panelId === "aiTabSimulate")
+            || (tab === "unsupportedAnswers" && panelId === "aiTabUnsupportedAnswers");
         panel.classList.toggle("active", active);
     });
+    if (tab === "unsupportedAnswers" && !state.aiTraining.unsupportedAnswersLoaded && !state.aiTraining.unsupportedAnswersLoading) {
+        void loadAiTrainingUnsupportedAnswers();
+    }
 }
 
 function renderAiTrainingQaPager() {
@@ -3042,6 +3055,82 @@ async function loadAiTrainingQa() {
     state.aiTraining.qaItems = data.items || [];
     state.aiTraining.qaTotal = data.total ?? state.aiTraining.qaItems.length;
     renderAiTrainingQaTable();
+}
+
+function renderAiTrainingUnsupportedAnswersPager() {
+    const pager = $("#aiTrainingUnsupportedAnswerPager");
+    if (!pager) return;
+    const total = state.aiTraining.unsupportedAnswersTotal;
+    const size = state.aiTraining.unsupportedAnswersSize;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    pager.hidden = total <= size;
+    if (pager.hidden) return;
+    $("#aiTrainingUnsupportedAnswerPageInfo").textContent = `第 ${state.aiTraining.unsupportedAnswersPage + 1} / ${totalPages} 页（共 ${total} 条）`;
+    $("#aiTrainingUnsupportedAnswerPrevPage").disabled = state.aiTraining.unsupportedAnswersPage <= 0;
+    $("#aiTrainingUnsupportedAnswerNextPage").disabled = state.aiTraining.unsupportedAnswersPage >= totalPages - 1;
+}
+
+function renderAiTrainingUnsupportedAnswers() {
+    const table = $("#aiTrainingUnsupportedAnswerTable");
+    const status = $("#aiTrainingUnsupportedAnswerStatus");
+    if (!table || !status) return;
+    const training = state.aiTraining;
+    if (training.unsupportedAnswersLoading) {
+        status.hidden = false;
+        status.className = "ai-reply-feedback";
+        status.textContent = "正在加载无依据回答索引…";
+    } else if (training.unsupportedAnswersError) {
+        status.hidden = false;
+        status.className = "ai-reply-feedback ai-reply-error";
+        status.textContent = training.unsupportedAnswersError;
+    } else {
+        status.hidden = true;
+        status.className = "ai-reply-feedback";
+        status.textContent = "";
+    }
+    const rows = training.unsupportedAnswers.map((item) => {
+        const isTraining = item.sourceMode === "TRAINING";
+        const statusText = isTraining ? "CANDIDATE / 训练" : "ACTIVE / 正式发送";
+        return `<tr>
+            <td>${badge(statusText, isTraining ? "warn" : "ok")}</td>
+            <td>${translatableBody(item.requestText || "", { emptyLabel: "-" })}</td>
+            <td class="muted-cell"><div class="pre">${escapeHtml(item.operatorInstruction || "-")}</div></td>
+            <td>${translatableBody(item.answerText || "", { emptyLabel: "-" })}</td>
+            <td class="muted-cell">${escapeHtml(item.model || "-")}</td>
+            <td class="muted-cell">${escapeHtml(item.createdAt || "-")}</td>
+        </tr>`;
+    }).join("");
+    table.innerHTML = rows || `<tr><td colspan="6" class="muted-cell">暂无已确认的无依据回答</td></tr>`;
+    renderAiTrainingUnsupportedAnswersPager();
+}
+
+async function loadAiTrainingUnsupportedAnswers(force = false) {
+    const training = state.aiTraining;
+    if (training.unsupportedAnswersLoading && !force) return;
+    if (!force && training.unsupportedAnswersLoaded) return;
+    const requestToken = ++training.unsupportedAnswersRequestToken;
+    training.unsupportedAnswersLoading = true;
+    training.unsupportedAnswersError = "";
+    renderAiTrainingUnsupportedAnswers();
+    const params = new URLSearchParams();
+    params.set("page", String(training.unsupportedAnswersPage));
+    params.set("size", String(training.unsupportedAnswersSize));
+    if (training.unsupportedAnswersSourceMode) params.set("sourceMode", training.unsupportedAnswersSourceMode);
+    try {
+        const data = await api(`/api/ai-training/unsupported-answers?${params}`);
+        if (requestToken !== training.unsupportedAnswersRequestToken) return;
+        training.unsupportedAnswers = Array.isArray(data.items) ? data.items : [];
+        training.unsupportedAnswersTotal = Number.isFinite(data.total) ? data.total : training.unsupportedAnswers.length;
+        training.unsupportedAnswersLoaded = true;
+    } catch (error) {
+        if (requestToken !== training.unsupportedAnswersRequestToken) return;
+        training.unsupportedAnswersError = error?.message || "无依据回答索引暂不可用";
+    } finally {
+        if (requestToken === training.unsupportedAnswersRequestToken) {
+            training.unsupportedAnswersLoading = false;
+            renderAiTrainingUnsupportedAnswers();
+        }
+    }
 }
 
 function fillAiTrainingPromptForm(config) {
@@ -10651,6 +10740,25 @@ function bindEvents() {
     });
     $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
         loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#reloadAiTrainingUnsupportedAnswersBtn")?.addEventListener("click", () => {
+        loadAiTrainingUnsupportedAnswers(true);
+    });
+    $("#aiTrainingUnsupportedAnswerSourceFilter")?.addEventListener("change", (event) => {
+        state.aiTraining.unsupportedAnswersSourceMode = event.target.value;
+        state.aiTraining.unsupportedAnswersPage = 0;
+        loadAiTrainingUnsupportedAnswers(true);
+    });
+    $("#aiTrainingUnsupportedAnswerPrevPage")?.addEventListener("click", () => {
+        if (state.aiTraining.unsupportedAnswersPage <= 0) return;
+        state.aiTraining.unsupportedAnswersPage -= 1;
+        loadAiTrainingUnsupportedAnswers(true);
+    });
+    $("#aiTrainingUnsupportedAnswerNextPage")?.addEventListener("click", () => {
+        const totalPages = Math.max(1, Math.ceil(state.aiTraining.unsupportedAnswersTotal / state.aiTraining.unsupportedAnswersSize));
+        if (state.aiTraining.unsupportedAnswersPage >= totalPages - 1) return;
+        state.aiTraining.unsupportedAnswersPage += 1;
+        loadAiTrainingUnsupportedAnswers(true);
     });
     $("#reloadAiTrainingDialoguesBtn")?.addEventListener("click", () => {
         loadAiTrainingDialogues().catch((error) => showStatus(error.message, "error"));

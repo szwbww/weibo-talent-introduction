@@ -33,6 +33,7 @@ talent-introduction:
     raw-index-name: ${ES_RAW_INDEX_NAME:orcid_info}
     candidate-index-name: ${ES_CANDIDATE_INDEX_NAME:orcid_info_candidate}
     application-index-name: ${ES_APPLICATION_INDEX_NAME:orcid_info_application}
+    unsupported-answer-index-name: ${ES_UNSUPPORTED_ANSWER_INDEX_NAME:trust_reply_unsupported_answer_v1}
   candidate-filter:
     require-orcid: ${CANDIDATE_REQUIRE_ORCID:false}
     require-doctoral-degree: ${CANDIDATE_REQUIRE_DOCTORAL_DEGREE:false}
