@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.llm.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexCreateOutcome
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexDocument
@@ -12,6 +13,12 @@ import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexSourceMode
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexSourceType
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexStatus
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexUnavailableException
+import com.weibo.talentintroduction.llm.service.ResolvedTrustReplySource
+import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
+import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
+import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -160,6 +167,77 @@ class UnsupportedAnswerIndexApiTest {
             .andRespond(withStatus(HttpStatus.CONFLICT))
         assertEquals(UnsupportedAnswerIndexCreateOutcome.CREATED, service.create(valid).outcome)
         assertEquals(UnsupportedAnswerIndexCreateOutcome.ALREADY_EXISTS, service.create(valid).outcome)
+        server.verify()
+    }
+
+    @Test
+    fun `training archive writes server qualification fields and summarizes partial results`() {
+        val service = service()
+        val source = ResolvedTrustReplySource(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 101L),
+            contact = ExpertContact(
+                id = 202L,
+                campaignId = 303L,
+                orcidId = "0000-0001",
+                expertEmail = "expert@example.com",
+                expertName = "Dr. Test"
+            ),
+            inboundText = "When will you follow up?",
+            subject = "Subject",
+            messageId = "message-101",
+            senderAccountCode = "sender-1",
+            profileText = "profile",
+            mailHistory = "history",
+            contextWarnings = emptyList(),
+            researchProfileSufficient = true,
+            sourceVersion = "training-101-v1"
+        )
+        fun version(index: Int, id: String, answer: String) = TrustReplyItemVersion(
+            versionId = id,
+            requestKey = "training-request-$index",
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            answerText = answer,
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = "evidence-v1",
+            sourceVersion = "training-101-v1",
+            operatorInstructionHash = sha256("Please say $answer"),
+            requestIndex = index,
+            requestText = "When will you follow up?",
+            operatorInstruction = "Please say $answer"
+        )
+        val first = version(0, "canonical-version-1", "We will follow up next week.")
+        val second = version(1, "canonical-version-2", "We will follow up tomorrow.")
+        val server = mockServer(service)
+        val firstId = sha256("TRAINING_MAIL|101|training-request-0|canonical-version-1")
+        val secondId = sha256("TRAINING_MAIL|101|training-request-1|canonical-version-2")
+        server.expect(requestTo("$indexUrl/_create/$firstId"))
+            .andExpect(method(HttpMethod.PUT))
+            .andExpect(jsonPath("$.status").value("CANDIDATE"))
+            .andExpect(jsonPath("$.sourceMode").value("TRAINING"))
+            .andExpect(jsonPath("$.sourceId").value(101))
+            .andExpect(jsonPath("$.expertContactId").value(202))
+            .andExpect(jsonPath("$.campaignId").value(303))
+            .andExpect(jsonPath("$.qualificationType").value("TRAINING_EVALUATION"))
+            .andExpect(jsonPath("$.qualificationId").value("evaluation-55"))
+            .andExpect(jsonPath("$.approvedBy").value("operator-1"))
+            .andRespond(withStatus(HttpStatus.CREATED))
+        server.expect(requestTo("$indexUrl/_create/$secondId"))
+            .andExpect(method(HttpMethod.PUT))
+            .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR))
+
+        val result = service.archiveCanonicalVersions(
+            source = source,
+            versions = listOf(first, second),
+            qualificationId = "evaluation-55",
+            approvedBy = "operator-1",
+            createdAt = Instant.parse("2026-07-30T02:00:00Z")
+        )
+
+        assertEquals(com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus.PARTIAL, result.status)
+        assertEquals(1, result.archivedCount)
+        assertEquals(1, result.failedCount)
         server.verify()
     }
 

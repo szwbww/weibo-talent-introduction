@@ -62,6 +62,14 @@ data class UnsupportedAnswerIndexCreateResult(
     val errorCode: String? = null
 )
 
+enum class UnsupportedAnswerArchiveStatus { NOT_APPLICABLE, SAVED, PARTIAL, FAILED }
+
+data class UnsupportedAnswerIndexArchiveResult(
+    val status: UnsupportedAnswerArchiveStatus = UnsupportedAnswerArchiveStatus.NOT_APPLICABLE,
+    val archivedCount: Int = 0,
+    val failedCount: Int = 0
+)
+
 data class UnsupportedAnswerIndexListItem(
     val status: String,
     val sourceMode: String,
@@ -145,6 +153,48 @@ class UnsupportedAnswerIndexService(
             log.warn("Unsupported answer index create failed: {}", error.javaClass.simpleName)
             UnsupportedAnswerIndexCreateResult(UnsupportedAnswerIndexCreateOutcome.FAILED, "UNSUPPORTED_ANSWER_INDEX_WRITE_FAILED")
         }
+    }
+
+    fun archiveCanonicalVersions(
+        source: ResolvedTrustReplySource,
+        versions: List<TrustReplyItemVersion>,
+        qualificationId: String,
+        approvedBy: String,
+        createdAt: Instant
+    ): UnsupportedAnswerIndexArchiveResult {
+        if (versions.isEmpty()) return UnsupportedAnswerIndexArchiveResult()
+
+        var archivedCount = 0
+        var failedCount = 0
+        versions.forEach { version ->
+            var idForLog = version.versionId
+            try {
+                val document = trainingDocument(source, version, qualificationId, approvedBy, createdAt)
+                idForLog = documentId(document)
+                val result = create(document)
+                when (result.outcome) {
+                    UnsupportedAnswerIndexCreateOutcome.CREATED,
+                    UnsupportedAnswerIndexCreateOutcome.ALREADY_EXISTS -> archivedCount++
+                    else -> {
+                        failedCount++
+                        log.warn(
+                            "Unsupported answer archive rejected for document {}: {}",
+                            idForLog,
+                            result.errorCode ?: "UNSUPPORTED_ANSWER_INDEX_WRITE_FAILED"
+                        )
+                    }
+                }
+            } catch (error: Exception) {
+                failedCount++
+                log.warn("Unsupported answer archive failed for document {}: {}", idForLog, error.javaClass.simpleName)
+            }
+        }
+        val status = when {
+            failedCount == 0 -> UnsupportedAnswerArchiveStatus.SAVED
+            archivedCount == 0 -> UnsupportedAnswerArchiveStatus.FAILED
+            else -> UnsupportedAnswerArchiveStatus.PARTIAL
+        }
+        return UnsupportedAnswerIndexArchiveResult(status, archivedCount, failedCount)
     }
 
     fun list(
@@ -264,6 +314,37 @@ class UnsupportedAnswerIndexService(
         put("approvedBy", document.approvedBy)
         put("createdAt", document.createdAt.toString())
     }
+
+    private fun trainingDocument(
+        source: ResolvedTrustReplySource,
+        version: TrustReplyItemVersion,
+        qualificationId: String,
+        approvedBy: String,
+        createdAt: Instant
+    ): UnsupportedAnswerIndexDocument = UnsupportedAnswerIndexDocument(
+        status = UnsupportedAnswerIndexStatus.CANDIDATE,
+        sourceMode = UnsupportedAnswerIndexSourceMode.TRAINING,
+        sourceType = UnsupportedAnswerIndexSourceType.TRAINING_MAIL,
+        sourceId = source.source.sourceId,
+        sourceVersion = source.sourceVersion,
+        expertContactId = requireNotNull(source.contact.id) { "Training source contact id is required" },
+        campaignId = source.contact.campaignId,
+        requestKey = version.requestKey,
+        requestIndex = version.requestIndex,
+        requestText = version.requestText,
+        handling = version.handling.name,
+        operatorInstruction = version.operatorInstruction,
+        operatorInstructionHash = version.operatorInstructionHash,
+        versionId = version.versionId,
+        answerText = version.answerText,
+        answerHash = sha256(version.answerText),
+        model = version.model,
+        generationKind = version.generationKind.name,
+        qualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
+        qualificationId = qualificationId,
+        approvedBy = approvedBy,
+        createdAt = createdAt
+    )
 
     private fun validate(document: UnsupportedAnswerIndexDocument): String? {
         if (document.schemaVersion != SCHEMA_VERSION || document.sourceId <= 0 || document.expertContactId <= 0

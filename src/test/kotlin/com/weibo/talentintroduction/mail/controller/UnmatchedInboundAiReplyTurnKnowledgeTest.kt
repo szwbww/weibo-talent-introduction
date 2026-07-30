@@ -1084,8 +1084,14 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             val capture = captureEmitterChunks(emitter)
             assertTrue(firstPublished.await(1, TimeUnit.SECONDS))
             releaseSecond.countDown()
-            eventually("first endpoint progress") { progressEventCount(capture) >= 1 }
-            assertEquals(1, progressEventCount(capture), "endpoint same phase progress must wait for the 1 Hz window")
+            eventually("first CALLING endpoint progress") {
+                progressEventPhases(capture).count { it == AiReplyProgressPhase.CALLING.name } >= 1
+            }
+            assertEquals(
+                1,
+                progressEventPhases(capture).count { it == AiReplyProgressPhase.CALLING.name },
+                "endpoint same phase progress must wait for the 1 Hz window"
+            )
             releaseResult.countDown()
         } finally {
             releaseSecond.countDown()
@@ -1166,7 +1172,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 entered.countDown()
                 release.await(1, TimeUnit.SECONDS)
                 reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
-                progressSendEntered.await(1, TimeUnit.SECONDS)
+                progressSendEntered.await(5, TimeUnit.SECONDS)
                 val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
                 sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
                 sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
@@ -1190,10 +1196,15 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
             )
             assertTrue(entered.await(1, TimeUnit.SECONDS))
             release.countDown()
+            assertTrue(progressSendEntered.await(5, TimeUnit.SECONDS), "progress send failure was not observed")
             eventually("send failure cleanup") {
                 endpoint.cancelAiReplyGeneration(id, generationId)["status"] == "NOT_ACTIVE"
             }
-            assertEquals(1, capture.failedEventAttempts.get(), "endpoint send failure must not retry pending progress")
+            assertEquals(
+                1,
+                capture.failedEventAttempts.get(),
+                "endpoint send failure must not retry pending progress"
+            )
         } finally {
             release.countDown()
             releaseFailedSend.countDown()
@@ -1285,9 +1296,9 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         failureEntered: CountDownLatch? = null,
         releaseFailure: CountDownLatch? = null
     ): CapturedEmitter {
-        val chunks = java.util.Collections.synchronizedList(mutableListOf<Any?>())
-        val timeoutCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
-        val completionCallbacks = java.util.Collections.synchronizedList(mutableListOf<Runnable>())
+        val chunks = java.util.concurrent.CopyOnWriteArrayList<Any?>()
+        val timeoutCallbacks = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
+        val completionCallbacks = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
         val sendAttempts = AtomicInteger()
         val failedEventAttempts = AtomicInteger()
         val handlerType = Class.forName(

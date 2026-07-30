@@ -13,14 +13,17 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
+import java.time.Instant
 import java.time.LocalDateTime
 
 class AiTrainingEvaluationServiceTest {
     private val workbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val operatorActionLogRepository = Mockito.mock(OperatorActionLogRepository::class.java)
+    private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private lateinit var service: AiTrainingEvaluationService
     private lateinit var assembly: TrustReplyAssembleRequest
     private lateinit var assembled: TrustReplyAssembleResponse
+    private lateinit var resolved: ResolvedTrustReplySource
 
     @BeforeEach
     fun setUp() {
@@ -32,7 +35,7 @@ class AiTrainingEvaluationServiceTest {
             expertEmail = "expert@example.com",
             expertName = "Dr. Test"
         )
-        val resolved = ResolvedTrustReplySource(
+        resolved = ResolvedTrustReplySource(
             source = source,
             contact = contact,
             inboundText = "SECRET-INBOUND-27",
@@ -63,6 +66,15 @@ class AiTrainingEvaluationServiceTest {
         )
         Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembled)
         Mockito.`when`(workbenchService.resolveSource(source)).thenReturn(resolved)
+        Mockito.lenient().`when`(
+            unsupportedAnswerIndexService.archiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult())
         var nextId = 100L
         Mockito.`when`(operatorActionLogRepository.save(Mockito.any(OperatorActionLog::class.java)))
             .thenAnswer { invocation ->
@@ -74,8 +86,121 @@ class AiTrainingEvaluationServiceTest {
             operatorActionLogService = OperatorActionLogService(
                 operatorActionLogRepository,
                 ObjectMapper()
-            )
+            ),
+            unsupportedAnswerIndexService = unsupportedAnswerIndexService
         )
+    }
+
+    @Test
+    fun `qualified evaluation archives only canonical operator directed answers after audit log`() {
+        val eligible = item(
+            answer = "We will follow up next week.",
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestIndex = 1,
+            requestText = "When will you follow up?",
+            operatorInstruction = "Please say we will follow up next week."
+        )
+        val grounded = item(answer = "The answer is supported.")
+        val acknowledgement = item(
+            answer = "We will check and follow up.",
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING
+        )
+        val omitted = item(
+            answer = "",
+            handling = TrustReplyItemHandling.OMIT,
+            generationKind = TrustReplyItemGenerationKind.OMITTED
+        )
+        assembled = assembled.copy(itemVersions = listOf(grounded, acknowledgement, omitted, eligible))
+        Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
+
+        val result = service.save(
+            AiTrainingEvaluationRequest(assembly, AiTrainingEvaluationRating.MEETS_EXPECTATION.name, operatorName = " operator-a ")
+        )
+
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        assertEquals(1, result.unsupportedAnswerArchivedCount)
+        assertEquals(0, result.unsupportedAnswerArchiveFailedCount)
+        val invocation = Mockito.mockingDetails(unsupportedAnswerIndexService).invocations
+            .single { it.method.name == "archiveCanonicalVersions" }
+        val archivedItems = invocation.arguments[1] as List<*>
+        assertEquals(listOf(eligible), archivedItems)
+        assertEquals("100", invocation.arguments[2])
+        assertEquals("operator-a", invocation.arguments[3])
+        val order = Mockito.inOrder(operatorActionLogRepository, unsupportedAnswerIndexService)
+        order.verify(operatorActionLogRepository).save(Mockito.any(OperatorActionLog::class.java))
+        order.verify(unsupportedAnswerIndexService).archiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+    }
+
+    @Test
+    fun `non qualifying ratings do not archive and archive failure does not undo evaluation`() {
+        val eligible = item(
+            answer = "We will follow up next week.",
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestIndex = 0,
+            requestText = "When will you follow up?",
+            operatorInstruction = "Please say we will follow up next week."
+        )
+        assembled = assembled.copy(itemVersions = listOf(eligible))
+        Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembled)
+
+        val needsImprovement = service.save(
+            AiTrainingEvaluationRequest(assembly, AiTrainingEvaluationRating.NEEDS_IMPROVEMENT.name)
+        )
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, needsImprovement.unsupportedAnswerArchiveStatus)
+        val unusable = service.save(
+            AiTrainingEvaluationRequest(assembly, AiTrainingEvaluationRating.UNUSABLE.name)
+        )
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, unusable.unsupportedAnswerArchiveStatus)
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(), Mockito.anyString(), Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+
+        Mockito.reset(unsupportedAnswerIndexService)
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenThrow(IllegalStateException("es unavailable"))
+        val meetsExpectation = service.save(
+            AiTrainingEvaluationRequest(assembly, AiTrainingEvaluationRating.MEETS_EXPECTATION.name)
+        )
+        assertEquals(102L, meetsExpectation.evaluationId)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, meetsExpectation.unsupportedAnswerArchiveStatus)
+        assertEquals(1, meetsExpectation.unsupportedAnswerArchiveFailedCount)
+    }
+
+    @Test
+    fun `action log failure prevents archive call`() {
+        Mockito.reset(operatorActionLogRepository)
+        Mockito.doThrow(IllegalStateException("audit unavailable"))
+            .`when`(operatorActionLogRepository)
+            .save(Mockito.any(OperatorActionLog::class.java))
+
+        assertThrows(RuntimeException::class.java) {
+            service.save(AiTrainingEvaluationRequest(assembly, AiTrainingEvaluationRating.MEETS_EXPECTATION.name))
+        }
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
     }
 
     @Test
@@ -173,16 +298,25 @@ class AiTrainingEvaluationServiceTest {
         answer: String,
         requestKey: String = "request-key",
         versionId: String = "version-id",
-        model: String = "DEEPSEEK_V4_FLASH"
+        model: String = "DEEPSEEK_V4_FLASH",
+        handling: TrustReplyItemHandling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+        generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+        requestIndex: Int = -1,
+        requestText: String = "",
+        operatorInstruction: String = ""
     ): TrustReplyItemVersion = TrustReplyItemVersion(
         versionId = versionId,
         requestKey = requestKey,
-        handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+        handling = handling,
         answerText = answer,
         claims = emptyList(),
         model = model,
-        generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+        generationKind = generationKind,
         evidenceSetVersion = "evidence-v1",
-        sourceVersion = "source-v1"
+        sourceVersion = "source-v1",
+        operatorInstructionHash = AiReplyDraftService.sha256Hex(operatorInstruction),
+        requestIndex = requestIndex,
+        requestText = requestText,
+        operatorInstruction = operatorInstruction
     )
 }

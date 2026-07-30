@@ -3373,12 +3373,31 @@ async function saveAiTrainingEvaluation(token) {
     if (!aiTrainingEvaluationContext || aiTrainingEvaluationContext.token !== token
         || aiTrainingEvaluationContext.assembly !== assembly) return;
     context.saved = true;
-    if (status) status.textContent = `已保存评估 #${result.evaluationId}${result.createdAt ? ` · ${result.createdAt}` : ""}`;
+    const archiveStatus = result.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
+    const archivedCount = Number(result.unsupportedAnswerArchivedCount) || 0;
+    const failedCount = Number(result.unsupportedAnswerArchiveFailedCount) || 0;
+    if (status) {
+        if (archiveStatus === "SAVED") {
+            status.textContent = `已保存评估 #${result.evaluationId} · 已归档 ${archivedCount} 条无依据回答`;
+        } else if (archiveStatus === "PARTIAL") {
+            status.textContent = `评估已保存 #${result.evaluationId}；无依据回答仅归档 ${archivedCount}/${archivedCount + failedCount} 条`;
+        } else if (archiveStatus === "FAILED") {
+            status.textContent = `评估已保存 #${result.evaluationId}；无依据回答索引写入失败`;
+        } else {
+            status.textContent = `已保存评估 #${result.evaluationId}${result.createdAt ? ` · ${result.createdAt}` : ""}`;
+        }
+    }
     if (button) {
         button.disabled = true;
         button.textContent = "已保存";
     }
-    showStatus("训练评估已保存", "ok");
+    const archiveWarning = archiveStatus === "PARTIAL" || archiveStatus === "FAILED";
+    showStatus(
+        archiveWarning
+            ? "训练评估已保存；请前往无依据回答索引 Tab 检查归档结果"
+            : "训练评估已保存",
+        archiveWarning ? "warn" : "ok"
+    );
 }
 
 function mountAiTrainingTrustReply(mail) {

@@ -135,4 +135,63 @@ describe("AI training unsupported answer index", () => {
         assert.match(app, /reloadAiTrainingUnsupportedAnswersBtn/);
         assert.match(app, /aiTrainingUnsupportedAnswerSourceFilter/);
     });
+
+    it("keeps evaluation saved while showing independent archive status", async () => {
+        const save = extractFunction("saveAiTrainingEvaluation");
+        const cases = [
+            ["SAVED", 2, 0, "已保存评估 #123 · 已归档 2 条无依据回答", "训练评估已保存", "ok"],
+            ["PARTIAL", 1, 1, "评估已保存 #123；无依据回答仅归档 1/2 条", "训练评估已保存；请前往无依据回答索引 Tab 检查归档结果", "warn"],
+            ["FAILED", 0, 2, "评估已保存 #123；无依据回答索引写入失败", "训练评估已保存；请前往无依据回答索引 Tab 检查归档结果", "warn"],
+            ["NOT_APPLICABLE", 0, 0, "已保存评估 #123 · 2026-07-30T10:00:00Z", "训练评估已保存", "ok"]
+        ];
+        for (const [archiveStatus, archivedCount, failedCount, expectedStatus, expectedToastMessage, expectedToastLevel] of cases) {
+            const token = {};
+            const assembly = {
+                source: { sourceType: "TRAINING_MAIL", sourceId: 11 },
+                sourceVersion: "source-v1",
+                evidenceSetVersion: "evidence-v1",
+                itemVersions: []
+            };
+            const status = { textContent: "" };
+            const button = { disabled: false, textContent: "保存评估" };
+            const panel = {
+                querySelector: (selector) => {
+                    if (selector.includes("training-evaluation-status")) return status;
+                    if (selector.includes("save-training-evaluation")) return button;
+                    if (selector.includes("training-evaluation-note")) return { value: "" };
+                    if (selector.includes("aiTrainingEvaluationRating")) return { value: "MEETS_EXPECTATION" };
+                    return null;
+                }
+            };
+            const calls = [];
+            const toasts = [];
+            const sandbox = {
+                aiTrainingEvaluationContext: { token, assembly, saved: false },
+                $: () => panel,
+                api: async (...args) => {
+                    calls.push(args);
+                    return {
+                        evaluationId: 123,
+                        createdAt: "2026-07-30T10:00:00Z",
+                        unsupportedAnswerArchiveStatus: archiveStatus,
+                        unsupportedAnswerArchivedCount: archivedCount,
+                        unsupportedAnswerArchiveFailedCount: failedCount
+                    };
+                },
+                showStatus: (message, level) => toasts.push({ message, level }),
+                window: { localStorage: { getItem: () => "operator" } }
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(save, sandbox);
+            vm.runInContext("this.saveAiTrainingEvaluation = saveAiTrainingEvaluation;", sandbox);
+            await sandbox.saveAiTrainingEvaluation(token);
+            await sandbox.saveAiTrainingEvaluation(token);
+            assert.strictEqual(calls.length, 1);
+            assert.strictEqual(sandbox.aiTrainingEvaluationContext.saved, true);
+            assert.strictEqual(button.disabled, true);
+            assert.strictEqual(button.textContent, "已保存");
+            assert.strictEqual(status.textContent, expectedStatus);
+            assert.deepStrictEqual(toasts, [{ message: expectedToastMessage, level: expectedToastLevel }]);
+        }
+    });
 });

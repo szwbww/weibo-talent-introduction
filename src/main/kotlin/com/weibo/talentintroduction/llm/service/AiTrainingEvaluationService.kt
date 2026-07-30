@@ -1,9 +1,13 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import java.time.Instant
+import java.time.ZoneId
 
 enum class AiTrainingEvaluationRating {
     MEETS_EXPECTATION,
@@ -18,17 +22,24 @@ data class AiTrainingEvaluationRequest(
     val operatorName: String? = null
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class AiTrainingEvaluationResponse(
     val evaluationId: Long,
     val rating: String,
-    val createdAt: String?
+    val createdAt: String?,
+    val unsupportedAnswerArchiveStatus: UnsupportedAnswerArchiveStatus? = null,
+    val unsupportedAnswerArchivedCount: Int? = null,
+    val unsupportedAnswerArchiveFailedCount: Int? = null
 )
 
 @Service
 class AiTrainingEvaluationService(
     private val workbenchService: TrustReplyWorkbenchService,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     companion object {
         const val SNAPSHOT_SCHEMA_VERSION = "ai-training-reply-evaluation-v1"
         private const val MAX_NOTE_LENGTH = 1000
@@ -61,7 +72,7 @@ class AiTrainingEvaluationService(
         }
 
         val snapshot = buildSnapshot(assembled, rating)
-        val log = operatorActionLogService.record(
+        val evaluationLog = operatorActionLogService.record(
             targetType = "MAIL_RECORD",
             targetId = source.sourceId,
             actionType = OperatorActionType.AI_TRAINING_REPLY_EVALUATED,
@@ -72,10 +83,48 @@ class AiTrainingEvaluationService(
             note = note
         )
 
+        val evaluationId = requireNotNull(evaluationLog.id) { "Persisted evaluation must have an id" }
+        val eligibleVersions = if (rating == AiTrainingEvaluationRating.MEETS_EXPECTATION) {
+            assembled.itemVersions.filter { item ->
+                item.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
+                    item.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
+                    item.requestText.isNotBlank() &&
+                    item.operatorInstruction.isNotBlank() &&
+                    item.answerText.isNotBlank()
+            }
+        } else {
+            emptyList()
+        }
+        val archive = if (eligibleVersions.isEmpty()) {
+            UnsupportedAnswerIndexArchiveResult()
+        } else {
+            try {
+                unsupportedAnswerIndexService.archiveCanonicalVersions(
+                    source = resolved,
+                    versions = eligibleVersions,
+                    qualificationId = evaluationId.toString(),
+                    approvedBy = operatorName,
+                    createdAt = evaluationLog.createdAt
+                        ?.atZone(ZoneId.systemDefault())
+                        ?.toInstant()
+                        ?: Instant.now()
+                )
+            } catch (error: Exception) {
+                log.warn("Unsupported answer archive failed after evaluation {}: {}", evaluationId, error.javaClass.simpleName)
+                UnsupportedAnswerIndexArchiveResult(
+                    status = UnsupportedAnswerArchiveStatus.FAILED,
+                    failedCount = eligibleVersions.size
+                )
+            }
+        }
+
         return AiTrainingEvaluationResponse(
-            evaluationId = requireNotNull(log.id) { "Persisted evaluation must have an id" },
+            evaluationId = evaluationId,
             rating = rating.name,
-            createdAt = log.createdAt?.toString()
+            createdAt = evaluationLog.createdAt?.toString(),
+            unsupportedAnswerArchiveStatus = archive.status,
+            unsupportedAnswerArchivedCount = archive.archivedCount,
+            unsupportedAnswerArchiveFailedCount = archive.failedCount
         )
     }
 
