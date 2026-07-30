@@ -279,7 +279,7 @@ class UnsupportedAnswerIndexService(
             set<ArrayNode>("_source", objectMapper.createArrayNode().apply { LIST_SOURCE_FIELDS.forEach(::add) })
             set<ArrayNode>("sort", objectMapper.createArrayNode().apply {
                 add(objectMapper.createObjectNode().set<ObjectNode>("createdAt", objectMapper.createObjectNode().put("order", "desc")))
-                add(objectMapper.createObjectNode().set<ObjectNode>("_id", objectMapper.createObjectNode().put("order", "asc")))
+                add(objectMapper.createObjectNode().set<ObjectNode>("versionId", objectMapper.createObjectNode().put("order", "asc")))
             })
             if (sourceMode == null) {
                 set<ObjectNode>("query", objectMapper.createObjectNode().set<ObjectNode>("match_all", objectMapper.createObjectNode()))

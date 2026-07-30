@@ -318,7 +318,7 @@ class UnsupportedAnswerIndexApiTest {
             .andExpect(jsonPath("$.size").value(20))
             .andExpect(jsonPath("$.query.term.sourceMode").value("TRAINING"))
             .andExpect(jsonPath("$.sort[0].createdAt.order").value("desc"))
-            .andExpect(jsonPath("$.sort[1]._id.order").value("asc"))
+            .andExpect(jsonPath("$.sort[1].versionId.order").value("asc"))
             .andRespond(withSuccess("""
                 {"hits":{"total":{"value":2,"relation":"eq"},"hits":[
                   {"_id":"ok-1","_source":{"status":"CANDIDATE","sourceMode":"TRAINING","requestText":"Question","operatorInstruction":"Instruction","answerText":"Answer","model":"DEEPSEEK_V4_FLASH","createdAt":"2026-07-29T10:00:00Z"}},

@@ -411,6 +411,86 @@ describe("shared trust reply workbench mount contract", () => {
         assert.doesNotMatch(host.innerHTML, /data-role="item-body" hidden/);
     });
 
+    it("keeps an unsupported answer action clickable and explains when its description is missing", async () => {
+        const current = bootstrap("LIVE_INBOUND", 309);
+        current.requestCoverage[0].status = "UNSUPPORTED";
+        current.requestCoverage[0].allowedHandlings = ["ANSWER_FROM_OPERATOR_INPUT", "OMIT"];
+        current.requestCoverage[0].recommendedHandling = "ANSWER_FROM_OPERATOR_INPUT";
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "问题译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        const actionButton = host.innerHTML.match(/<button[^>]*data-action="adjust-item"[^>]*>[^<]*<\/button>/)?.[0];
+        assert.ok(actionButton, "unsupported item must render an AI generation action");
+        assert.doesNotMatch(actionButton, /\sdisabled/);
+        click(host, "adjust-item", current.requestCoverage[0].requestKey);
+        await settle();
+
+        assert.match(host.innerHTML, /请先填写回答说明/);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0);
+    });
+
+    it("keeps an unsupported answer action clickable and explains when full generation is running", async () => {
+        const current = bootstrap("LIVE_INBOUND", 310);
+        const unsupported = {
+            ...current.requestCoverage[0],
+            index: 1,
+            requestKey: "LIVE_INBOUND-310-request-unsupported",
+            requestText: "Unsupported question",
+            status: "UNSUPPORTED",
+            factRuleIds: [],
+            allowedHandlings: ["ANSWER_FROM_OPERATOR_INPUT", "OMIT"],
+            recommendedHandling: "ANSWER_FROM_OPERATOR_INPUT"
+        };
+        current.requestCoverage.push(unsupported);
+        const fullGeneration = deferred();
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "问题译文" }));
+            if (url.includes("/generations/stream")) return fullGeneration.promise;
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        host.dispatchEvent("input", {
+            dataset: { role: "instruction", requestKey: unsupported.requestKey },
+            value: "请说明企业案例需以官网为准"
+        });
+
+        const actionButton = host.innerHTML.match(new RegExp(`<button[^>]*data-action="adjust-item"[^>]*data-request-key="${unsupported.requestKey}"[^>]*>[^<]*<\\/button>`))?.[0];
+        assert.ok(actionButton, "unsupported item must render an AI generation action");
+        assert.doesNotMatch(actionButton, /\sdisabled/);
+        click(host, "adjust-item", unsupported.requestKey);
+        await settle();
+
+        assert.match(host.innerHTML, /正在生成其他回复，请稍后/);
+        fullGeneration.resolve(sseResponse("result", {
+            source: current.source,
+            sourceVersion: current.sourceVersion,
+            evidenceSetVersion: current.evidenceSetVersion,
+            itemVersions: [itemVersion(current.requestCoverage[0].requestKey, current.sourceVersion, current.evidenceSetVersion)]
+        }));
+        await settle();
+    });
+
     it("keeps operator instruction focus while invalidating only its resolved assembly", async () => {
         const current = bootstrap("LIVE_INBOUND", 308);
         const first = current.requestCoverage[0];

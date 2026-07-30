@@ -460,7 +460,13 @@
         }
 
         async function adjustItem(request) {
-            if (request.pending || state.generation.pending) return;
+            if (request.pending) return;
+            if (state.generation.pending) {
+                request.error = "正在生成其他回复，请稍后";
+                request.expanded = true;
+                render();
+                return;
+            }
             if (request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT" && !request.instruction.trim()) {
                 request.error = "请先填写回答说明";
                 request.expanded = true;
@@ -897,7 +903,7 @@
             const version = activeVersion(request);
             const isOmit = request.draftHandling === "OMIT";
             const needsOperatorInstruction = request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT";
-            const generateDisabled = request.pending || state.generation.pending || (needsOperatorInstruction && !request.instruction.trim());
+            const generateDisabled = request.pending;
             const resolveDisabled = request.pending || (!resolved && !version && !isOmit);
             const action = resolved ? "resolve-item" : (version || isOmit ? "resolve-item" : "adjust-item");
             return {
