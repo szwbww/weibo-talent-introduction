@@ -68,15 +68,46 @@ describe("adopt-direct-send UI contracts", function () {
         if (sendBlock.includes("openReviewModal")) throw new Error("send should not open review modal");
     });
 
+    it("archive snapshot preserves canonical requestedFactIds without claim fallback", function () {
+        const snapshotFn = app.match(/function buildTrustReplyAssemblySnapshot\(assembly\) \{[\s\S]*?\n\}/)?.[0] || "";
+        if (!snapshotFn) throw new Error("missing buildTrustReplyAssemblySnapshot");
+        if (!snapshotFn.includes("requestedFactIds: [...(assembly.requestedFactIds || [])]")) {
+            throw new Error("archive snapshot must preserve requestedFactIds only");
+        }
+        if (snapshotFn.includes("canonicalFactIds")) {
+            throw new Error("archive snapshot builder must not fall back to canonicalFactIds");
+        }
+    });
+
     it("preserves raw template across live adoption→send only when editor matches baseline", function () {
         const adoptIdx = app.indexOf("function adoptTrustReplyAssembly");
         const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
-        const adoptBlock = app.slice(adoptIdx, adoptIdx + 1600);
-        const sendBlock = app.slice(sendIdx, sendIdx + 2200);
+        const adoptBlock = app.slice(adoptIdx, adoptIdx + 2200);
+        const sendBlock = app.slice(sendIdx, sendIdx + 2400);
         if (!adoptBlock.includes("editor.innerText = rendered")) throw new Error("adopt should copy rendered text");
         if (!adoptBlock.includes("rawTemplate:")) throw new Error("adopt should keep raw template baseline");
+        if (!adoptBlock.includes("trustReplyAssembly:")) throw new Error("adopt should keep reassemble snapshot");
+        if (!adoptBlock.includes("buildTrustReplyAssemblySnapshot")) throw new Error("adopt should build assembly snapshot");
         if (!sendBlock.includes("templateTextBody = adopt.rawTemplate")) throw new Error("send should pass raw template when unedited");
+        if (!sendBlock.includes("trustReplyAssembly = adopt.trustReplyAssembly")) throw new Error("send should pass assembly when unedited");
         if (!sendBlock.includes("editor.innerHTML === (adopt.renderedBaselineHtml")) throw new Error("send should compare HTML baseline");
+    });
+
+    it("submitManualRichReply surfaces archive warnings without treating them as send failure", function () {
+        const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
+        if (!submit.includes("unsupportedAnswerArchiveStatus")) throw new Error("submit should read archive status");
+        if (!submit.includes("人工回复邮件发送成功")) throw new Error("submit should keep success wording");
+        if (!submit.includes("无依据回答索引未完整写入，请勿重复发送")) throw new Error("submit should warn on archive failure");
+        if (!submit.includes('showStatus("人工回复邮件发送成功；无依据回答索引未完整写入，请勿重复发送", "warn")')) {
+            throw new Error("submit should use warn status for archive failure");
+        }
+        if (submit.includes('showStatus("人工回复发送失败')) throw new Error("submit must not mark archive failure as send failure");
+    });
+
+    it("training host never constructs manual-rich-reply payload", function () {
+        const trainingBlock = app.slice(app.indexOf("function mountAiTrainingTrustReply"), app.indexOf("function selectSimulateMail"));
+        if (trainingBlock.includes("send-manual-rich-reply")) throw new Error("training host must not send");
+        if (trainingBlock.includes("trustReplyAssembly")) throw new Error("training host must not build manual send assembly");
     });
 
     it("send path has no section numbering gate after adopt", function () {

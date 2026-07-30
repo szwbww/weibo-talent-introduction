@@ -9136,6 +9136,32 @@ async function doPreflightCheck(recordId, capturedDraftId) {
     }
 }
 
+function copyTrustReplyLockedItem(item) {
+    return {
+        requestKey: item.requestKey,
+        versionId: item.versionId,
+        handling: item.handling,
+        answerText: item.answerText,
+        claims: [...(item.claims || [])],
+        model: item.model,
+        generationKind: item.generationKind,
+        evidenceSetVersion: item.evidenceSetVersion,
+        sourceVersion: item.sourceVersion,
+        operatorInstructionHash: item.operatorInstructionHash || "",
+        operatorInstruction: item.operatorInstruction || ""
+    };
+}
+
+function buildTrustReplyAssemblySnapshot(assembly) {
+    return {
+        source: assembly.source,
+        expectedSourceVersion: assembly.sourceVersion,
+        expectedEvidenceSetVersion: assembly.evidenceSetVersion,
+        requestedFactIds: [...(assembly.requestedFactIds || [])],
+        lockedItems: (assembly.itemVersions || []).map(copyTrustReplyLockedItem)
+    };
+}
+
 function adoptTrustReplyAssembly(recordId, assembly) {
     const editor = $("#manualRichReplyEditor");
     const rendered = assembly.renderedDraftText || assembly.rawDraftText || "";
@@ -9153,7 +9179,8 @@ function adoptTrustReplyAssembly(recordId, assembly) {
         mode: "TRUST_REPLY_WORKBENCH",
         qaRuleIds: [...(assembly.canonicalFactIds || [])],
         evidenceSetVersion: assembly.evidenceSetVersion,
-        draftHash: assembly.draftHash
+        draftHash: assembly.draftHash,
+        trustReplyAssembly: buildTrustReplyAssemblySnapshot(assembly)
     };
     manualReplyQaContext = {
         qaRuleIds: [...(assembly.canonicalFactIds || [])],
@@ -9822,14 +9849,25 @@ async function handleUnmatchedAction(element) {
 
     async function submitManualRichReply(recordId, requestBody) {
         try {
-            await api(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, {
+            const result = await api(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, {
                 method: "POST",
                 body: JSON.stringify(requestBody)
             });
             manualReplyQaContext = null;
             aiReplyState.adoptContext = null;
             resetPreflightState();
-            alert("人工回复邮件发送成功");
+            const archiveStatus = result.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
+            const archivedCount = Number(result.unsupportedAnswerArchivedCount) || 0;
+            if (archiveStatus === "SAVED") {
+                const suffix = archivedCount > 0 ? `，已记录 ${archivedCount} 条无依据回答` : "";
+                alert(`人工回复邮件发送成功${suffix}`);
+                showStatus(`人工回复邮件发送成功${suffix}`, "ok");
+            } else if (archiveStatus === "PARTIAL" || archiveStatus === "FAILED") {
+                alert("人工回复邮件发送成功\n无依据回答索引未完整写入，请勿重复发送");
+                showStatus("人工回复邮件发送成功；无依据回答索引未完整写入，请勿重复发送", "warn");
+            } else {
+                alert("人工回复邮件发送成功");
+            }
         } catch (e) {
             alert("人工回复发送失败: " + e.message);
             throw e;
@@ -9866,6 +9904,9 @@ async function handleUnmatchedAction(element) {
             && editor.innerHTML === (adopt.renderedBaselineHtml || "")
         ) {
             requestBody.templateTextBody = adopt.rawTemplate;
+            if (adopt.trustReplyAssembly) {
+                requestBody.trustReplyAssembly = adopt.trustReplyAssembly;
+            }
         }
         if (manualReplyQaContext?.qaRuleIds?.length) {
             requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;

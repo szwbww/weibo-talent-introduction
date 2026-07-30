@@ -25,6 +25,16 @@ import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
 import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.ResolvedQaRules
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
+import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchService
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexArchiveResult
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
@@ -38,6 +48,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import org.slf4j.LoggerFactory
+import java.time.Instant
 import java.time.LocalDateTime
 
 @Service
@@ -60,7 +71,9 @@ class PendingMailOperationService(
     private val mailBodyCleaner: MailBodyCleaner,
     private val mailContentService: MailContentService,
     private val mailVariableService: MailVariableService,
-    private val manualReplySendAttemptService: ManualReplySendAttemptService
+    private val manualReplySendAttemptService: ManualReplySendAttemptService,
+    private val trustReplyWorkbenchService: TrustReplyWorkbenchService,
+    private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
@@ -126,7 +139,8 @@ class PendingMailOperationService(
         freeTextPreview: String? = null,
         useVariants: Boolean = false,
         templateTextBody: String? = null,
-        templateHtmlBody: String? = null
+        templateHtmlBody: String? = null,
+        trustReplyAssembly: TrustReplyAssembleRequest? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -257,8 +271,8 @@ class PendingMailOperationService(
                     val classification = classifyDelivery(delivered)
 
                     if (classification.isSent) {
-                        try {
-                            val mailRecordId = manualReplySendAttemptService.finalizeSuccess(
+                        val mailRecordId = try {
+                            val id = manualReplySendAttemptService.finalizeSuccess(
                                 payload = payload,
                                 attemptId = claim.attemptId,
                                 messageId = claim.messageId
@@ -266,7 +280,7 @@ class PendingMailOperationService(
                             manualReplySendAttemptService.recordSendAudit(
                                 inboundProcessingId = inboundProcessingId,
                                 contactId = contactId,
-                                mailRecordId = mailRecordId,
+                                mailRecordId = id,
                                 canonicalFactIds = canonicalFactIds,
                                 carriesQa = carriesQa,
                                 delivered = delivered,
@@ -278,6 +292,7 @@ class PendingMailOperationService(
                                 edited = edited,
                                 note = "Manual rich reply sent for inbound processing $inboundProcessingId"
                             )
+                            id
                         } catch (finalizeEx: Exception) {
                             log.warn("finalizeSuccess failed for attempt {}: {}", claim.attemptId, finalizeEx.message)
                             try {
@@ -297,13 +312,24 @@ class PendingMailOperationService(
                                 "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
                             )
                         }
+                        val archive = archiveLiveUnsupportedAnswers(
+                            inboundProcessingId = inboundProcessingId,
+                            templateTextBody = templateTextBody,
+                            finalTextBody = finalTextBody,
+                            operatorName = operatorName,
+                            outboundMailRecordId = mailRecordId,
+                            candidateAssembly = trustReplyAssembly
+                        )
                         PendingMailSendResult(
                             contactId = contactId,
                             senderAccountCode = account.accountCode,
                             mailType = "MANUAL_RICH_REPLY",
                             subject = renderedSubject,
                             sendStatus = "SENT",
-                            messageId = claim.messageId
+                            messageId = claim.messageId,
+                            unsupportedAnswerArchiveStatus = archive.status,
+                            unsupportedAnswerArchivedCount = archive.archivedCount,
+                            unsupportedAnswerArchiveFailedCount = archive.failedCount
                         )
                     } else {
                         manualReplySendAttemptService.finalizeFailure(
@@ -358,13 +384,24 @@ class PendingMailOperationService(
 
             ManualReplySendAttemptService.ClaimResult.DEDUP_SENT -> {
                 val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+                val archive = archiveLiveUnsupportedAnswers(
+                    inboundProcessingId = inboundProcessingId,
+                    templateTextBody = templateTextBody,
+                    finalTextBody = finalTextBody,
+                    operatorName = operatorName,
+                    outboundMailRecordId = existingRecord?.id,
+                    candidateAssembly = trustReplyAssembly
+                )
                 PendingMailSendResult(
                     contactId = contactId,
                     senderAccountCode = payload.accountCode,
                     mailType = "MANUAL_RICH_REPLY",
                     subject = renderedSubject,
                     sendStatus = "SENT",
-                    messageId = existingRecord?.messageId ?: claim.messageId
+                    messageId = existingRecord?.messageId ?: claim.messageId,
+                    unsupportedAnswerArchiveStatus = archive.status,
+                    unsupportedAnswerArchivedCount = archive.archivedCount,
+                    unsupportedAnswerArchiveFailedCount = archive.failedCount
                 )
             }
 
@@ -492,6 +529,84 @@ class PendingMailOperationService(
 
     private fun inboundMessageBody(record: com.weibo.talentintroduction.mail.domain.InboundMailProcessing): String =
         record.cleanedBody?.takeIf { it.isNotBlank() } ?: record.body.orEmpty()
+
+    private fun archiveLiveUnsupportedAnswers(
+        inboundProcessingId: Long,
+        templateTextBody: String?,
+        finalTextBody: String,
+        operatorName: String?,
+        outboundMailRecordId: Long?,
+        candidateAssembly: TrustReplyAssembleRequest?
+    ): UnsupportedAnswerIndexArchiveResult {
+        if (candidateAssembly == null || outboundMailRecordId == null) {
+            return UnsupportedAnswerIndexArchiveResult()
+        }
+        val operatorDirectedCount = candidateAssembly.lockedItems.count {
+            it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+        }
+        return try {
+            if (candidateAssembly.source.sourceType != TrustReplySourceType.LIVE_INBOUND ||
+                candidateAssembly.source.sourceId != inboundProcessingId
+            ) {
+                return failedArchive(operatorDirectedCount)
+            }
+            val assembled = trustReplyWorkbenchService.assemble(candidateAssembly)
+            val rawTemplate = templateTextBody?.takeIf { it.isNotBlank() }
+                ?: return UnsupportedAnswerIndexArchiveResult()
+            if (assembled.rawDraftText != rawTemplate || assembled.renderedDraftText != finalTextBody) {
+                return failedArchive(operatorDirectedCount)
+            }
+            val eligibleVersions = assembled.itemVersions.filter(::isArchiveEligibleOperatorDirectedVersion)
+            if (eligibleVersions.isEmpty()) {
+                return UnsupportedAnswerIndexArchiveResult()
+            }
+            val resolved = trustReplyWorkbenchService.resolveSource(candidateAssembly.source)
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                source = resolved,
+                versions = eligibleVersions,
+                qualificationId = outboundMailRecordId.toString(),
+                approvedBy = normalizeArchiveOperatorName(operatorName),
+                createdAt = Instant.now()
+            )
+        } catch (error: TrustReplyWorkbenchException) {
+            log.warn(
+                "Unsupported answer archive rejected for inbound {}: {}",
+                inboundProcessingId,
+                error.code
+            )
+            failedArchive(operatorDirectedCount)
+        } catch (error: Exception) {
+            log.warn(
+                "Unsupported answer archive failed for inbound {}: {}",
+                inboundProcessingId,
+                error.javaClass.simpleName
+            )
+            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(candidateAssembly)))
+        }
+    }
+
+    private fun failedArchive(failedCount: Int): UnsupportedAnswerIndexArchiveResult =
+        UnsupportedAnswerIndexArchiveResult(
+            status = UnsupportedAnswerArchiveStatus.FAILED,
+            failedCount = failedCount.coerceAtLeast(1)
+        )
+
+    private fun eligibleFailureCount(candidateAssembly: TrustReplyAssembleRequest): Int =
+        candidateAssembly.lockedItems.count {
+            it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+        }.coerceAtLeast(1)
+
+    private fun isArchiveEligibleOperatorDirectedVersion(version: TrustReplyItemVersion): Boolean =
+        version.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
+            version.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
+            version.requestText.isNotBlank() &&
+            version.operatorInstruction.isNotBlank() &&
+            version.answerText.isNotBlank()
+
+    private fun normalizeArchiveOperatorName(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return normalized.ifEmpty { "UNKNOWN" }.take(128)
+    }
 
     private fun toRequestCoverage(requestFacts: List<RequestFactItem>): List<RequestCoverageItem> =
         requestFacts.map { fact ->
@@ -904,7 +1019,10 @@ data class PendingMailSendResult(
     val mailType: String,
     val subject: String,
     val sendStatus: String,
-    val messageId: String?
+    val messageId: String?,
+    val unsupportedAnswerArchiveStatus: UnsupportedAnswerArchiveStatus = UnsupportedAnswerArchiveStatus.NOT_APPLICABLE,
+    val unsupportedAnswerArchivedCount: Int = 0,
+    val unsupportedAnswerArchiveFailedCount: Int = 0
 )
 
 data class PendingQaReplyRequest(
@@ -927,7 +1045,8 @@ data class PendingManualRichReplyRequest(
     val freeTextPreview: String? = null,
     val useVariants: Boolean = false,
     val templateTextBody: String? = null,
-    val templateHtmlBody: String? = null
+    val templateHtmlBody: String? = null,
+    val trustReplyAssembly: TrustReplyAssembleRequest? = null
 )
 
 data class ComposedReplyRequest(

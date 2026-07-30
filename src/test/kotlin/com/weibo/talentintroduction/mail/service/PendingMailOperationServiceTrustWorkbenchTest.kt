@@ -18,6 +18,20 @@ import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.llm.service.ResolvedQaRules
+import com.weibo.talentintroduction.llm.service.ResolvedTrustReplySource
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
+import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
+import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
+import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchService
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexArchiveResult
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -36,7 +50,10 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.InOrder
 import org.mockito.Mockito
+import org.springframework.http.HttpStatus
+import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -72,6 +89,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val manualReplySendAttemptService = Mockito.mock(ManualReplySendAttemptService::class.java)
+    private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
+    private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -91,7 +110,9 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         MailBodyCleaner(),
         MailContentService(),
         mailVariableService,
-        manualReplySendAttemptService
+        manualReplySendAttemptService,
+        trustReplyWorkbenchService,
+        unsupportedAnswerIndexService
     )
 
     private val contact = ExpertContact(
@@ -524,6 +545,525 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         }
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
+
+    @Test
+    fun `sendManualRichReply archives live unsupported answers after finalize and audit`() {
+        val assembly = liveAssembly()
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible)
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = " operator-a ",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        assertEquals(1, result.unsupportedAnswerArchivedCount)
+        val order = Mockito.inOrder(mailDeliveryService, manualReplySendAttemptService, unsupportedAnswerIndexService)
+        order.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+        order.verify(manualReplySendAttemptService).finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        order.verify(manualReplySendAttemptService).recordSendAudit(
+            Mockito.eq(100L), Mockito.eq(1L), Mockito.eq(500L),
+            anyValue(emptyList<Long>()), Mockito.eq(false),
+            anyValue(DeliveredMail("", "")), Mockito.anyString(),
+            Mockito.anyString(), eqValue(" operator-a "), anyValue(inbound()),
+            anyValue(emptyList<Long>()), anyValue(false), anyValue("")
+        )
+        order.verify(unsupportedAnswerIndexService).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            eqValue(listOf(eligible)),
+            eqValue("500"),
+            eqValue("operator-a"),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+    }
+
+    @Test
+    fun `sendManualRichReply without assembly does not archive`() {
+        stubSuccessfulSend()
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Hello",
+            htmlBody = "<p>Thank you for your patience.</p>",
+            textBody = "Thank you for your patience.",
+            operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply returns SENT with failed archive when replay mismatches`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = "different-template",
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply keeps SENT when archive throws`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenThrow(IllegalStateException("es unavailable"))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
+        assertEquals(1, result.unsupportedAnswerArchiveFailedCount)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+            anyValue(sendPayload()),
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.anyString()
+        )
+    }
+
+    @Test
+    fun `sendManualRichReply dedup archives without smtp`() {
+        val assembly = liveAssembly()
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible)
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.DEDUP_SENT
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(
+            MailRecord(
+                id = 700L,
+                expertContactId = 1L,
+                direction = "OUTBOUND",
+                mailType = "MANUAL_RICH_REPLY",
+                messageId = "<manual-rich-abc@weibo.com>",
+                inReplyTo = null,
+                subject = "Re: Test",
+                body = "body",
+                matchedQaRuleId = null,
+                sendStatus = "SENT",
+                receivedAt = null,
+                sentAt = LocalDateTime.now()
+            )
+        )
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+        Mockito.verify(unsupportedAnswerIndexService).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            eqValue(listOf(eligible)),
+            eqValue("700"),
+            eqValue("op"),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+    }
+
+    @Test
+    fun `sendManualRichReply delivery failure does not archive`() {
+        val assembly = liveAssembly()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(
+            DeliveredMail(
+                messageId = "<manual-rich-abc@weibo.com>",
+                status = "FAILED",
+                errorCategory = com.weibo.talentintroduction.mail.domain.SmtpErrorCategory.TRANSIENT,
+                smtpResponseCode = 451,
+                errorDetail = "try later"
+            )
+        )
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), Mockito.anyString(), Mockito.anyString(), Mockito.any()
+            )
+        ).thenReturn(501L)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply returns SENT with failed archive when source mismatches`() {
+        val assembly = liveAssembly().copy(
+            source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 99L)
+        )
+        val assembled = assembledResponse(operatorDirectedVersion())
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply returns SENT with failed archive when stale replay rejected`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly))
+            .thenThrow(TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_SOURCE_STALE"))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply returns SENT with failed archive when rendered text mismatches`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+            .copy(renderedDraftText = "Authoritative rendered mismatch")
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>We will follow up next week.</p>",
+            textBody = "We will follow up next week.",
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply returns SENT with not applicable when no eligible operator directed versions`() {
+        val assembly = liveAssembly()
+        val acknowledgement = operatorDirectedVersion().copy(
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            answerText = "We will check and follow up."
+        )
+        val assembled = assembledResponse(acknowledgement)
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+    }
+
+    @Test
+    fun `sendManualRichReply with assembly does not archive on delivery unknown claim`() {
+        val assembly = liveAssembly()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.UNKNOWN
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>",
+                textBody = "Test", operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply with assembly does not archive on in progress claim`() {
+        val assembly = liveAssembly()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.IN_PROGRESS
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>",
+                textBody = "Test", operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply with assembly does not archive on permanent failure claim`() {
+        val assembly = liveAssembly()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.PERMANENT_FAILED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>",
+                textBody = "Test", operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+    }
+
+    @Test
+    fun `sendManualRichReply with assembly does not archive when finalize success fails`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(ResolvedQaRules(emptyList(), emptyList(), emptyList()))
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        ).thenThrow(IllegalStateException("finalize failed"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), Mockito.anyString(), Mockito.anyString(), Mockito.any()
+            )
+        ).thenReturn(501L)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L,
+                senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>${assembled.renderedDraftText}</p>",
+                textBody = assembled.renderedDraftText,
+                operatorName = "op",
+                templateTextBody = assembled.rawDraftText,
+                trustReplyAssembly = assembly
+            )
+        }
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+    }
+
+    private fun stubSuccessfulSend() {
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = emptyList(),
+                    promptRuleIds = emptyList(),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        ).thenReturn(500L)
+    }
+
+    private fun liveAssembly(): TrustReplyAssembleRequest {
+        val source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 100L)
+        val version = operatorDirectedVersion()
+        return TrustReplyAssembleRequest(
+            source = source,
+            expectedSourceVersion = "live-v1",
+            expectedEvidenceSetVersion = "evidence-v1",
+            lockedItems = listOf(
+                TrustReplyLockedItemRequest(
+                    requestKey = version.requestKey,
+                    versionId = version.versionId,
+                    handling = version.handling,
+                    answerText = version.answerText,
+                    claims = version.claims,
+                    model = version.model,
+                    generationKind = version.generationKind,
+                    evidenceSetVersion = version.evidenceSetVersion,
+                    sourceVersion = version.sourceVersion,
+                    operatorInstructionHash = version.operatorInstructionHash,
+                    operatorInstruction = version.operatorInstruction
+                )
+            )
+        )
+    }
+
+    private fun operatorDirectedVersion() = TrustReplyItemVersion(
+        versionId = "live-version-1",
+        requestKey = "live-request-1",
+        handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+        answerText = "We will follow up next week.",
+        claims = emptyList(),
+        model = "DEEPSEEK_V4_FLASH",
+        generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+        evidenceSetVersion = "evidence-v1",
+        sourceVersion = "live-v1",
+        operatorInstructionHash = "hash-1",
+        requestIndex = 0,
+        requestText = "When will you follow up?",
+        operatorInstruction = "Please say we will follow up next week."
+    )
+
+    private fun assembledResponse(version: TrustReplyItemVersion): TrustReplyAssembleResponse {
+        val body = "We will follow up next week."
+        return TrustReplyAssembleResponse(
+            source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 100L),
+            sourceVersion = "live-v1",
+            evidenceSetVersion = "evidence-v1",
+            rawDraftText = body,
+            renderedDraftText = body,
+            draftHash = "draft-hash",
+            canonicalFactIds = emptyList(),
+            itemVersions = listOf(version)
+        )
+    }
+
+    private fun liveResolvedSource() = com.weibo.talentintroduction.llm.service.ResolvedTrustReplySource(
+        source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 100L),
+        contact = contact,
+        inboundText = "Can I work remotely?",
+        subject = "Question",
+        messageId = "in-1",
+        senderAccountCode = "sender-1",
+        profileText = "",
+        mailHistory = "",
+        contextWarnings = emptyList(),
+        researchProfileSufficient = true,
+        sourceVersion = "live-v1"
+    )
 
     private fun inbound() = InboundMailProcessing(
         id = 100L,

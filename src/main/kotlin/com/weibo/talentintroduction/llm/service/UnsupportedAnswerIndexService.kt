@@ -161,6 +161,25 @@ class UnsupportedAnswerIndexService(
         qualificationId: String,
         approvedBy: String,
         createdAt: Instant
+    ): UnsupportedAnswerIndexArchiveResult = archiveVersions(
+        versions = versions,
+        documentFactory = { version -> trainingDocument(source, version, qualificationId, approvedBy, createdAt) }
+    )
+
+    fun archiveLiveCanonicalVersions(
+        source: ResolvedTrustReplySource,
+        versions: List<TrustReplyItemVersion>,
+        qualificationId: String,
+        approvedBy: String,
+        createdAt: Instant
+    ): UnsupportedAnswerIndexArchiveResult = archiveVersions(
+        versions = versions,
+        documentFactory = { version -> liveDocument(source, version, qualificationId, approvedBy, createdAt) }
+    )
+
+    private fun archiveVersions(
+        versions: List<TrustReplyItemVersion>,
+        documentFactory: (TrustReplyItemVersion) -> UnsupportedAnswerIndexDocument
     ): UnsupportedAnswerIndexArchiveResult {
         if (versions.isEmpty()) return UnsupportedAnswerIndexArchiveResult()
 
@@ -169,7 +188,7 @@ class UnsupportedAnswerIndexService(
         versions.forEach { version ->
             var idForLog = version.versionId
             try {
-                val document = trainingDocument(source, version, qualificationId, approvedBy, createdAt)
+                val document = documentFactory(version)
                 idForLog = documentId(document)
                 val result = create(document)
                 when (result.outcome) {
@@ -321,13 +340,53 @@ class UnsupportedAnswerIndexService(
         qualificationId: String,
         approvedBy: String,
         createdAt: Instant
-    ): UnsupportedAnswerIndexDocument = UnsupportedAnswerIndexDocument(
+    ): UnsupportedAnswerIndexDocument = baseDocument(
+        source = source,
+        version = version,
         status = UnsupportedAnswerIndexStatus.CANDIDATE,
         sourceMode = UnsupportedAnswerIndexSourceMode.TRAINING,
         sourceType = UnsupportedAnswerIndexSourceType.TRAINING_MAIL,
+        qualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
+        qualificationId = qualificationId,
+        approvedBy = approvedBy,
+        createdAt = createdAt
+    )
+
+    private fun liveDocument(
+        source: ResolvedTrustReplySource,
+        version: TrustReplyItemVersion,
+        qualificationId: String,
+        approvedBy: String,
+        createdAt: Instant
+    ): UnsupportedAnswerIndexDocument = baseDocument(
+        source = source,
+        version = version,
+        status = UnsupportedAnswerIndexStatus.ACTIVE,
+        sourceMode = UnsupportedAnswerIndexSourceMode.LIVE,
+        sourceType = UnsupportedAnswerIndexSourceType.LIVE_INBOUND,
+        qualificationType = UnsupportedAnswerIndexQualificationType.LIVE_SEND,
+        qualificationId = qualificationId,
+        approvedBy = approvedBy,
+        createdAt = createdAt
+    )
+
+    private fun baseDocument(
+        source: ResolvedTrustReplySource,
+        version: TrustReplyItemVersion,
+        status: UnsupportedAnswerIndexStatus,
+        sourceMode: UnsupportedAnswerIndexSourceMode,
+        sourceType: UnsupportedAnswerIndexSourceType,
+        qualificationType: UnsupportedAnswerIndexQualificationType,
+        qualificationId: String,
+        approvedBy: String,
+        createdAt: Instant
+    ): UnsupportedAnswerIndexDocument = UnsupportedAnswerIndexDocument(
+        status = status,
+        sourceMode = sourceMode,
+        sourceType = sourceType,
         sourceId = source.source.sourceId,
         sourceVersion = source.sourceVersion,
-        expertContactId = requireNotNull(source.contact.id) { "Training source contact id is required" },
+        expertContactId = requireNotNull(source.contact.id) { "Source contact id is required" },
         campaignId = source.contact.campaignId,
         requestKey = version.requestKey,
         requestIndex = version.requestIndex,
@@ -340,7 +399,7 @@ class UnsupportedAnswerIndexService(
         answerHash = sha256(version.answerText),
         model = version.model,
         generationKind = version.generationKind.name,
-        qualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
+        qualificationType = qualificationType,
         qualificationId = qualificationId,
         approvedBy = approvedBy,
         createdAt = createdAt

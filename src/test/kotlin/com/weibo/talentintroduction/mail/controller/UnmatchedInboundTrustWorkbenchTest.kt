@@ -14,6 +14,10 @@ import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.AutoReplyPreviewService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.llm.service.TrustReplySourceType
+import com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus
 import com.weibo.talentintroduction.mail.service.PendingManualRichReplyRequest
 import com.weibo.talentintroduction.mail.service.PendingQaReplyRequest
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
@@ -181,7 +185,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 freeTextPreview = null,
                 useVariants = false,
                 templateTextBody = null,
-                templateHtmlBody = null
+                templateHtmlBody = null,
+                trustReplyAssembly = null
             )
         ).thenReturn(
             PendingMailSendResult(
@@ -219,7 +224,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(), Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(
@@ -245,7 +250,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(), Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "\u53d1\u9001\u6682\u65f6\u5931\u8d25\uff0c\u53ef\u5b89\u5168\u91cd\u8bd5")
@@ -268,7 +273,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(), Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.CONFLICT, "\u53d1\u9001\u72b6\u6001\u672a\u77e5\uff0c\u8bf7\u52ff\u91cd\u590d\u53d1\u9001 (Message-ID: <test@weibo.com>)")
@@ -282,6 +287,64 @@ class UnmatchedInboundTrustWorkbenchTest {
         }
         assertEquals(HttpStatus.CONFLICT, ex.status)
         assertTrue(ex.reason!!.contains("\u8bf7\u52ff\u91cd\u590d\u53d1\u9001"))
+    }
+
+    @Test
+    fun `manual rich reply passes trust reply assembly and returns archive defaults`() {
+        val assembly = TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 5L),
+            expectedSourceVersion = "live-v1",
+            expectedEvidenceSetVersion = "evidence-v1",
+            lockedItems = emptyList()
+        )
+        Mockito.`when`(
+            pendingMailOperationService.sendManualRichReply(
+                inboundProcessingId = 5L,
+                senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Hello</p>",
+                textBody = "Hello",
+                operatorName = "op",
+                qaRuleIds = null,
+                suggestedRuleIds = null,
+                ackSnippetId = null,
+                edited = null,
+                freeTextPreview = null,
+                useVariants = false,
+                templateTextBody = "RAW",
+                templateHtmlBody = null,
+                trustReplyAssembly = assembly
+            )
+        ).thenReturn(
+            PendingMailSendResult(
+                contactId = 1L,
+                senderAccountCode = "sender-1",
+                mailType = "MANUAL_RICH_REPLY",
+                subject = "Re: Test",
+                sendStatus = "SENT",
+                messageId = "out-1",
+                unsupportedAnswerArchiveStatus = UnsupportedAnswerArchiveStatus.SAVED,
+                unsupportedAnswerArchivedCount = 1,
+                unsupportedAnswerArchiveFailedCount = 0
+            )
+        )
+
+        val result = controller.sendManualRichReply(
+            5L,
+            PendingManualRichReplyRequest(
+                senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Hello</p>",
+                textBody = "Hello",
+                operatorName = "op",
+                templateTextBody = "RAW",
+                trustReplyAssembly = assembly
+            )
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        assertEquals(1, result.unsupportedAnswerArchivedCount)
     }
 
     @Test
@@ -304,7 +367,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(), Mockito.any()
             )
         ).thenReturn(
             PendingMailSendResult(

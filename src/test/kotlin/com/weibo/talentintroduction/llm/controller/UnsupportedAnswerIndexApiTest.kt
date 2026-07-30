@@ -242,6 +242,72 @@ class UnsupportedAnswerIndexApiTest {
     }
 
     @Test
+    fun `live archive writes ACTIVE LIVE_SEND qualification from outbound mail record`() {
+        val service = service()
+        val source = ResolvedTrustReplySource(
+            source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 55L),
+            contact = ExpertContact(
+                id = 202L,
+                campaignId = 303L,
+                orcidId = "0000-0001",
+                expertEmail = "expert@example.com",
+                expertName = "Dr. Test"
+            ),
+            inboundText = "When will you follow up?",
+            subject = "Subject",
+            messageId = "message-55",
+            senderAccountCode = "sender-1",
+            profileText = "profile",
+            mailHistory = "history",
+            contextWarnings = emptyList(),
+            researchProfileSufficient = true,
+            sourceVersion = "live-55-v1"
+        )
+        val version = TrustReplyItemVersion(
+            versionId = "live-version-1",
+            requestKey = "live-request-0",
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            answerText = "We will follow up next week.",
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = "evidence-v1",
+            sourceVersion = "live-55-v1",
+            operatorInstructionHash = sha256("Please say we will follow up next week."),
+            requestIndex = 0,
+            requestText = "When will you follow up?",
+            operatorInstruction = "Please say we will follow up next week."
+        )
+        val server = mockServer(service)
+        val expectedId = sha256("LIVE_INBOUND|55|live-request-0|live-version-1")
+        server.expect(requestTo("$indexUrl/_create/$expectedId"))
+            .andExpect(method(HttpMethod.PUT))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.sourceMode").value("LIVE"))
+            .andExpect(jsonPath("$.sourceType").value("LIVE_INBOUND"))
+            .andExpect(jsonPath("$.sourceId").value(55))
+            .andExpect(jsonPath("$.expertContactId").value(202))
+            .andExpect(jsonPath("$.campaignId").value(303))
+            .andExpect(jsonPath("$.qualificationType").value("LIVE_SEND"))
+            .andExpect(jsonPath("$.qualificationId").value("9001"))
+            .andExpect(jsonPath("$.approvedBy").value("operator-live"))
+            .andRespond(withStatus(HttpStatus.CREATED))
+
+        val result = service.archiveLiveCanonicalVersions(
+            source = source,
+            versions = listOf(version),
+            qualificationId = "9001",
+            approvedBy = "operator-live",
+            createdAt = Instant.parse("2026-07-30T03:00:00Z")
+        )
+
+        assertEquals(com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus.SAVED, result.status)
+        assertEquals(1, result.archivedCount)
+        assertEquals(0, result.failedCount)
+        server.verify()
+    }
+
+    @Test
     fun `list builds bounded fixed query and skips malformed hits`() {
         val service = service()
         val server = mockServer(service)

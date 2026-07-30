@@ -250,7 +250,8 @@ class UnmatchedInboundMailController(
             freeTextPreview = request.freeTextPreview,
             useVariants = request.useVariants,
             templateTextBody = request.templateTextBody,
-            templateHtmlBody = request.templateHtmlBody
+            templateHtmlBody = request.templateHtmlBody,
+            trustReplyAssembly = request.trustReplyAssembly
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
