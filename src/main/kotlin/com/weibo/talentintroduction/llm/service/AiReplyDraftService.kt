@@ -412,7 +412,7 @@ class AiReplyDraftService(
         }
 
         if (handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING) {
-            return generatePendingAcknowledgement(
+            return rejectNonEnglishItemAnswer(generatePendingAcknowledgement(
                 inboundText = inboundText,
                 requestFact = requestFact,
                 requestKey = requestKey,
@@ -422,11 +422,11 @@ class AiReplyDraftService(
                 llmTotalTimeoutSeconds = llmTotalTimeoutSeconds,
                 cancellationToken = cancellationToken,
                 progressReporter = progressReporter
-            )
+            ))
         }
 
         if (handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT) {
-            return generateOperatorDirectedAnswer(
+            return rejectNonEnglishItemAnswer(generateOperatorDirectedAnswer(
                 inboundText = inboundText,
                 requestFact = requestFact,
                 requestKey = requestKey,
@@ -437,7 +437,7 @@ class AiReplyDraftService(
                 llmTotalTimeoutSeconds = llmTotalTimeoutSeconds,
                 cancellationToken = cancellationToken,
                 progressReporter = progressReporter
-            )
+            ))
         }
 
         val token = cancellationToken ?: AiReplyCancellationToken()
@@ -513,7 +513,7 @@ class AiReplyDraftService(
             progressReporter.endProviderCall()
         }
         val answer = result.itemAnswers.singleOrNull()
-        return if (result.usedLlm && result.generationState == AiReplyGenerationState.LLM_USED && answer != null) {
+        return rejectNonEnglishItemAnswer(if (result.usedLlm && result.generationState == AiReplyGenerationState.LLM_USED && answer != null) {
             AiReplyItemGenerationResult(
                 itemAnswer = answer,
                 handling = handling,
@@ -533,7 +533,7 @@ class AiReplyDraftService(
                 lockable = false,
                 warningCodes = result.contextWarnings
             )
-        }
+        })
     }
 
     private fun generatePendingAcknowledgement(
@@ -561,6 +561,7 @@ class AiReplyDraftService(
             LlmChatMessage(
                 role = "system",
                 content = "Return one short single-paragraph acknowledgement. Confirm only that the point is pending verification. " +
+                    "Return English only, regardless of the language used in the inbound email or operator instruction. " +
                     "Do not add facts, numbers, dates, URLs, identities, contracts, funding, actions, lists, internal labels, or promises with a deadline."
             ),
             LlmChatMessage(
@@ -652,6 +653,7 @@ class AiReplyDraftService(
                 LlmChatMessage(
                     role = "system",
                     content = "Rewrite one recipient-facing answer from the operator-provided answer basis. " +
+                        "Return English only, regardless of the language used in the target question or answer basis; translate the answer basis into natural English without changing its facts. " +
                         "The operator-provided answer basis is authoritative content. Only restate or organize it; " +
                         "do not add any institution, programme, funding, contract, time, identity, number, URL, or other fact " +
                         "not present in that basis. Return plain email prose only, with no JSON, headings, lists, status labels, " +
@@ -723,6 +725,25 @@ class AiReplyDraftService(
             usedLlm = true,
             lockable = true
         )
+    }
+
+    private fun rejectNonEnglishItemAnswer(result: AiReplyItemGenerationResult): AiReplyItemGenerationResult {
+        val answer = result.itemAnswer ?: return result
+        if (result.generationKind != TrustReplyItemGenerationKind.AI_GENERATED || !containsNonLatinLetter(answer.answerText)) {
+            return result
+        }
+        return result.copy(
+            itemAnswer = null,
+            generationKind = null,
+            generationState = AiReplyGenerationState.FALLBACK_NO_RESPONSE,
+            usedLlm = false,
+            lockable = false,
+            warningCodes = (result.warningCodes + WARNING_ENGLISH_REPLY_REQUIRED).distinct()
+        )
+    }
+
+    private fun containsNonLatinLetter(text: String): Boolean = text.any { char ->
+        Character.isLetter(char) && Character.UnicodeScript.of(char.code) != Character.UnicodeScript.LATIN
     }
 
     private fun safeAcknowledgementResult(
@@ -2069,7 +2090,7 @@ class AiReplyDraftService(
         appendLine("- Produce exactly one claim for every server-plan claimKey. Claim array order is arbitrary; the server owns final order.")
         appendLine("- Do not output requestIndex, intentKey, sourceIds, paragraphs, missingFacts, requiresReview, proposedAction, status, explanation, or any other field.")
         appendLine("- actionText must be null or one independently authorized action. Never put an outbound action in claim text.")
-        appendLine("- Write each claim in 1-3 concrete, restrained sentences per claim. Use the same language as the inbound email.")
+        appendLine("- Write each claim in 1-3 concrete, restrained sentences per claim. Return English only, regardless of the language used in the inbound email or operator instruction.")
         appendLine("- For identity/verification questions: state only confirmed identity facts and verifiable registration paths. Never claim government cooperation, official authorization, no fees, confidentiality, funding or contract guarantees unless those facts appear in your approved evidence.")
         appendLine("- Never output: \"trust us\", \"rest assured\", \"prestigious\", \"unique opportunity\", \"we are delighted\", \"please find our answers below\", \"do not hesitate\".")
         appendLine("- Claims must not contain salutations, fixed thank-you phrases, sign-offs, or unauthorized CTAs.")
@@ -2306,6 +2327,7 @@ class AiReplyDraftService(
         private val INTERNAL_RESPONSE_MARKER = Regex(
             "(?i)(?:AI_REPLY_[A-Z0-9_]+|\\b(?:GROUNDED|PARTIAL|UNSUPPORTED)\\b|\\b(?:requestKey|sourceVersion|evidenceSetVersion)\\b)"
         )
+        const val WARNING_ENGLISH_REPLY_REQUIRED = "AI_REPLY_ENGLISH_REQUIRED"
         private const val GROUNDED_REPAIR_TEMPERATURE = 0.0
         const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
         const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"

@@ -170,6 +170,71 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `operator directed item rejects a Chinese AI answer for an English reply`() {
+        stubEmptyFrame()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("您可参考官网发布的相关信息。")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share examples of the institutions involved?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you share examples of the institutions involved?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "请专家参考官网发布的相关信息。"
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertNull(result.itemAnswer)
+        assertNull(result.generationKind)
+        assertTrue(result.warningCodes.contains("AI_REPLY_ENGLISH_REQUIRED"))
+    }
+
+    @Test
+    fun `pending acknowledgement rejects a Chinese AI answer for an English reply`() {
+        stubEmptyFrame()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("该事项尚待确认。")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you confirm the programme details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you confirm the programme details?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            requestKey = "target-request"
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertNull(result.itemAnswer)
+        assertNull(result.generationKind)
+        assertTrue(result.warningCodes.contains("AI_REPLY_ENGLISH_REQUIRED"))
+    }
+
+    @Test
     fun `draft result exposes empty item answers by default for legacy consumers`() {
         val result = AiReplyDraftResult(
             draftText = "draft",
