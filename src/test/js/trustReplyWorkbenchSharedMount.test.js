@@ -19,9 +19,11 @@ class FakeElement {
         this.listeners = new Map();
         this.attributes = new Map();
         this.dataset = {};
+        this.innerHTMLWriteCount = 0;
     }
 
     set innerHTML(value) {
+        this.innerHTMLWriteCount += 1;
         this._innerHTML = String(value);
         if (this.ownerDocument.activeElement?.ownerHost === this) this.ownerDocument.activeElement = null;
     }
@@ -127,6 +129,32 @@ function createSandbox(fetchImpl, { crypto = { randomUUID: () => "00000000-0000-
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox);
     return { sandbox, window, document };
+}
+
+function bootstrapWithCoverage(sourceType, sourceId, coverageItems) {
+    const payload = bootstrap(sourceType, sourceId);
+    payload.requestCoverage = coverageItems;
+    return payload;
+}
+
+function coverageItem(sourceType, sourceId, index, status, requestKeySuffix = "") {
+    return {
+        index,
+        requestKey: `${sourceType}-${sourceId}-request${requestKeySuffix}`,
+        requestText: `Question ${index + 1}`,
+        status,
+        factRuleIds: status === "UNSUPPORTED" ? [] : [1],
+        allowedHandlings: status === "UNSUPPORTED"
+            ? ["ANSWER_FROM_OPERATOR_INPUT", "ACKNOWLEDGE_PENDING", "OMIT"]
+            : status === "PARTIAL"
+                ? ["ANSWER_SUPPORTED_PART", "OMIT"]
+                : ["ANSWER_WITH_EVIDENCE", "OMIT"],
+        recommendedHandling: status === "UNSUPPORTED"
+            ? "ACKNOWLEDGE_PENDING"
+            : status === "PARTIAL"
+                ? "ANSWER_SUPPORTED_PART"
+                : "ANSWER_WITH_EVIDENCE"
+    };
 }
 
 const bootstrap = (sourceType, sourceId) => ({
@@ -269,9 +297,10 @@ describe("shared trust reply workbench mount contract", () => {
             onComplete: async () => {}
         });
         await settle();
+        click(host, "assemble");
         await settle();
 
-        const payload = JSON.parse(calls[1].options.body);
+        const payload = JSON.parse(calls.find((call) => call.url.includes("/generations/stream")).options.body);
         assert.match(payload.generationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     });
 
@@ -295,9 +324,10 @@ describe("shared trust reply workbench mount contract", () => {
             onComplete: async () => {}
         });
         await settle();
+        click(host, "assemble");
         await settle();
 
-        assert.strictEqual(calls[1].options.headers.Accept, "text/event-stream, application/json");
+        assert.strictEqual(calls.find((call) => call.url.includes("/generations/stream")).options.headers.Accept, "text/event-stream, application/json");
         assert.match(host.innerHTML, /TRUST_REPLY_GENERATION_ID_INVALID/);
     });
 
@@ -337,23 +367,19 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(payload.llmTotalTimeoutSeconds, 600);
     });
 
-    it("automatically generates and adopts grounded items once per mount", async () => {
-        const current = bootstrap("TRAINING_MAIL", 306);
-        const requestKey = current.requestCoverage[0].requestKey;
-        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion);
+    it("does not auto-generate on mount and shows grounded items as pending generation", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 306;
+        const current = bootstrapWithCoverage(sourceType, sourceId, [
+            coverageItem(sourceType, sourceId, 0, "GROUNDED"),
+            coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial"),
+            coverageItem(sourceType, sourceId, 2, "UNSUPPORTED", "-unsupported")
+        ]);
         const calls = [];
         const { window } = createSandbox((url, options) => {
             calls.push({ url, options });
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
-            if (url.includes("/generations/stream")) {
-                return Promise.resolve(sseResponse("result", {
-                    source: current.source,
-                    sourceVersion: current.sourceVersion,
-                    evidenceSetVersion: current.evidenceSetVersion,
-                    itemVersions: [version]
-                }));
-            }
-            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "回答译文" }));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "问题译文" }));
             throw new Error(`unexpected request: ${url}`);
         });
         const host = new FakeElement(window.document);
@@ -366,18 +392,12 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
         await settle();
 
-        const fullDrafts = calls
-            .map((call) => JSON.parse(call.options.body))
-            .filter((payload) => payload.operation === "FULL_DRAFT");
-        assert.strictEqual(fullDrafts.length, 1);
-        assert.match(host.innerHTML, /data-locked="true"/);
-        assert.match(host.innerHTML, /已处理 1\/1/);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0);
+        assert.match(host.innerHTML, /待生成/);
+        assert.match(host.innerHTML, /待处理/);
         assert.match(host.innerHTML, /data-role="item-body" hidden/);
+        assert.match(host.innerHTML, /data-action="adjust-item"/);
         assert.doesNotMatch(host.innerHTML, /data-action="generate-all"/);
-        click(host, "toggle-item", requestKey);
-        click(host, "translate-answer", requestKey, "v1");
-        await settle();
-        assert.match(host.innerHTML, /回答译文/);
     });
 
     it("does not generate a full draft for all unsupported items and translates the question", async () => {
@@ -444,17 +464,7 @@ describe("shared trust reply workbench mount contract", () => {
 
     it("keeps an unsupported answer action clickable and explains when full generation is running", async () => {
         const current = bootstrap("LIVE_INBOUND", 310);
-        const unsupported = {
-            ...current.requestCoverage[0],
-            index: 1,
-            requestKey: "LIVE_INBOUND-310-request-unsupported",
-            requestText: "Unsupported question",
-            status: "UNSUPPORTED",
-            factRuleIds: [],
-            allowedHandlings: ["ANSWER_FROM_OPERATOR_INPUT", "OMIT"],
-            recommendedHandling: "ANSWER_FROM_OPERATOR_INPUT"
-        };
-        current.requestCoverage.push(unsupported);
+        const requestKey = current.requestCoverage[0].requestKey;
         const fullGeneration = deferred();
         const { window } = createSandbox((url) => {
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
@@ -470,15 +480,12 @@ describe("shared trust reply workbench mount contract", () => {
             onComplete: async () => {}
         });
         await settle();
-        host.dispatchEvent("input", {
-            dataset: { role: "instruction", requestKey: unsupported.requestKey },
-            value: "请说明企业案例需以官网为准"
-        });
+        click(host, "assemble");
+        await settle();
 
-        const actionButton = host.innerHTML.match(new RegExp(`<button[^>]*data-action="adjust-item"[^>]*data-request-key="${unsupported.requestKey}"[^>]*>[^<]*<\\/button>`))?.[0];
-        assert.ok(actionButton, "unsupported item must render an AI generation action");
-        assert.doesNotMatch(actionButton, /\sdisabled/);
-        click(host, "adjust-item", unsupported.requestKey);
+        const actionButton = host.innerHTML.match(/<button[^>]*data-action="adjust-item"[^>]*>[^<]*<\/button>/)?.[0];
+        assert.ok(actionButton, "grounded item must render an AI generation action");
+        click(host, "adjust-item", requestKey);
         await settle();
 
         assert.match(host.innerHTML, /正在生成其他回复，请稍后/);
@@ -486,7 +493,7 @@ describe("shared trust reply workbench mount contract", () => {
             source: current.source,
             sourceVersion: current.sourceVersion,
             evidenceSetVersion: current.evidenceSetVersion,
-            itemVersions: [itemVersion(current.requestCoverage[0].requestKey, current.sourceVersion, current.evidenceSetVersion)]
+            itemVersions: [itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion)]
         }));
         await settle();
     });
@@ -738,13 +745,14 @@ describe("shared trust reply workbench mount contract", () => {
             onComplete: async () => {}
         });
         await settle();
+        click(host, "assemble");
         await settle();
         assert.doesNotMatch(host.innerHTML, /版本 1|value="v1"/);
         assert.match(host.innerHTML, /data-action="complete" disabled/);
         assert.match(host.innerHTML, /来源或事实已变化/);
     });
 
-    it("auto adopts grounded versions and invalidates assembly when a decision changes", async () => {
+    it("assembles after explicit full draft and invalidates assembly when a decision changes", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 404;
         const current = bootstrap(sourceType, sourceId);
@@ -779,7 +787,6 @@ describe("shared trust reply workbench mount contract", () => {
             onComplete: async () => {}
         });
         await settle();
-        await settle();
         click(host, "assemble");
         await settle();
         assert.match(host.innerHTML, /server draft/);
@@ -794,5 +801,462 @@ describe("shared trust reply workbench mount contract", () => {
         const styles = fs.readFileSync(stylesPath, "utf-8");
         assert.match(source, /class="compose-panel trust-reply-item"/);
         assert.match(styles, /\.trust-reply-fact-option\s*\{/);
+    });
+
+    it("requires adopt after single-item generation", async () => {
+        const current = bootstrap("TRAINING_MAIL", 360);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion);
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+
+        const payload = JSON.parse(calls.find((call) => call.url.includes("/generations/stream")).options.body);
+        assert.strictEqual(payload.operation, "ADJUST_ITEM");
+        assert.match(host.innerHTML, /采用此版本/);
+        assert.doesNotMatch(host.innerHTML, /data-locked="true"/);
+        click(host, "resolve-item", requestKey);
+        await settle();
+        assert.match(host.innerHTML, /data-locked="true"/);
+    });
+
+    it("merges only missing grounded versions during assemble", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 361;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded, partial]);
+        const partialVersion = {
+            ...itemVersion(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "partial-v1"),
+            handling: "ANSWER_SUPPORTED_PART"
+        };
+        const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "grounded-v1");
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                if (payload.operation === "ADJUST_ITEM") {
+                    return Promise.resolve(sseResponse("result", {
+                        source: current.source,
+                        sourceVersion: current.sourceVersion,
+                        evidenceSetVersion: current.evidenceSetVersion,
+                        version: partialVersion
+                    }));
+                }
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    itemVersions: [groundedVersion, partialVersion]
+                }));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "merged draft",
+                    renderedDraftText: "merged draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [groundedVersion, partialVersion]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        click(host, "resolve-item", partial.requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length, 1);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 1);
+        assert.match(host.innerHTML, /merged draft/);
+        assert.match(host.innerHTML, /partial-v1/);
+    });
+
+    it("adopts active grounded versions during assemble without regenerating them", async () => {
+        const current = bootstrap("LIVE_INBOUND", 362);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "active-v1");
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "active adopted",
+                    renderedDraftText: "active adopted",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [version]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length, 0);
+        assert.match(host.innerHTML, /active adopted/);
+    });
+
+    it("keeps textarea stable while typing instructions", async () => {
+        const current = bootstrap("LIVE_INBOUND", 363);
+        const request = current.requestCoverage[0];
+        const version = itemVersion(request.requestKey, current.sourceVersion, current.evidenceSetVersion, "stable-v1");
+        const { window, document } = createSandbox((url, options) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "assembled",
+                    renderedDraftText: "assembled",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [version]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        let changes = 0;
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onChange: () => { changes += 1; },
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", request.requestKey);
+        await settle();
+        click(host, "resolve-item", request.requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+
+        const header = new FakeElement(document);
+        header.dataset = { role: "item-header" };
+        const answer = new FakeElement(document);
+        answer.dataset = { role: "answer" };
+        const actions = new FakeElement(document);
+        actions.dataset = { role: "item-actions" };
+        const summary = new FakeElement(document);
+        summary.dataset = { role: "summary" };
+        summary.innerHTML = "assembled";
+        const item = new FakeElement(document);
+        item.dataset = { role: "item", requestKey: request.requestKey };
+        const neighbor = new FakeElement(document);
+        neighbor.dataset = { role: "item", requestKey: "neighbor-card" };
+        const neighborTranslation = new FakeElement(document);
+        neighborTranslation.dataset = { role: "translation-text" };
+        neighborTranslation.innerHTML = "相邻项译文";
+        item.querySelectorAll = () => [header, answer, actions];
+        neighbor.querySelectorAll = () => [neighborTranslation];
+        host.querySelectorAll = () => [item, neighbor, summary];
+
+        const textarea = {
+            ownerHost: host,
+            dataset: { role: "instruction", requestKey: request.requestKey },
+            value: "",
+            selectionStart: 0,
+            selectionEnd: 0
+        };
+        document.activeElement = textarea;
+        const text = "一二三四五六七八九十一二三四五六七八九十";
+        let firstInvalidationWrites = 0;
+        let writesAfterFirst = 0;
+        for (let index = 0; index < text.length; index += 1) {
+            textarea.value = text.slice(0, index + 1);
+            textarea.selectionStart = textarea.selectionEnd = index + 1;
+            const beforeHeader = header.innerHTMLWriteCount;
+            const beforeAnswer = answer.innerHTMLWriteCount;
+            const beforeActions = actions.innerHTMLWriteCount;
+            const beforeSummary = summary.innerHTMLWriteCount;
+            host.dispatchEvent("input", textarea);
+            const delta = (header.innerHTMLWriteCount - beforeHeader)
+                + (answer.innerHTMLWriteCount - beforeAnswer)
+                + (actions.innerHTMLWriteCount - beforeActions)
+                + (summary.innerHTMLWriteCount - beforeSummary);
+            if (index === 0) firstInvalidationWrites = delta;
+            else writesAfterFirst += delta;
+        }
+        assert.strictEqual(textarea.value, text);
+        assert.strictEqual(document.activeElement, textarea);
+        assert.strictEqual(textarea.selectionStart, text.length);
+        assert.strictEqual(textarea.selectionEnd, text.length);
+        assert.ok(firstInvalidationWrites > 0);
+        assert.strictEqual(writesAfterFirst, 0);
+        assert.strictEqual(neighbor.dataset.requestKey, "neighbor-card");
+        assert.match(neighborTranslation.innerHTML, /相邻项译文/);
+        assert.strictEqual(changes, 1);
+    });
+
+    async function mountResolvedPartialWithMissingGrounded(sourceId) {
+        const sourceType = "TRAINING_MAIL";
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded, partial]);
+        const partialVersion = {
+            ...itemVersion(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "partial-v1"),
+            handling: "ANSWER_SUPPORTED_PART"
+        };
+        const calls = [];
+        const hostRef = { host: null };
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                if (payload.operation === "ADJUST_ITEM") {
+                    return Promise.resolve(sseResponse("result", {
+                        source: current.source,
+                        sourceVersion: current.sourceVersion,
+                        evidenceSetVersion: current.evidenceSetVersion,
+                        version: partialVersion
+                    }));
+                }
+                return hostRef.streamResponse ? hostRef.streamResponse(current, payload) : Promise.reject(new Error("missing stream response"));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "assembled",
+                    renderedDraftText: "assembled",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [partialVersion]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        hostRef.host = host;
+        hostRef.window = window;
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        host.dispatchEvent("input", { dataset: { role: "instruction", requestKey: partial.requestKey }, value: "manual note" });
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        click(host, "resolve-item", partial.requestKey);
+        await settle();
+        return { current, grounded, partial, partialVersion, calls, host, hostRef, window };
+    }
+
+    it("preserves manual decisions when full generation is cancelled", async () => {
+        const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(370);
+        hostRef.streamResponse = () => Promise.resolve(sseResponse("cancelled", { message: "cancelled" }));
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /manual note/);
+        assert.match(host.innerHTML, /partial-v1/);
+        assert.match(host.innerHTML, /已取消生成，可重试/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[^>]*data-locked="true"`));
+    });
+
+    it("preserves manual decisions when full generation omits terminal identity", async () => {
+        const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(371);
+        const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "grounded-v1");
+        hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
+            itemVersions: [groundedVersion, partialVersion]
+        }));
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /manual note/);
+        assert.match(host.innerHTML, /partial-v1/);
+        assert.match(host.innerHTML, /来源或事实已变化/);
+    });
+
+    it("preserves manual decisions when full generation identity mismatches", async () => {
+        const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(372);
+        const groundedVersion = itemVersion(grounded.requestKey, "foreign-source", current.evidenceSetVersion, "grounded-v1");
+        hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
+            source: current.source,
+            sourceVersion: current.sourceVersion,
+            evidenceSetVersion: current.evidenceSetVersion,
+            itemVersions: [groundedVersion, partialVersion]
+        }));
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /manual note/);
+        assert.match(host.innerHTML, /partial-v1/);
+        assert.match(host.innerHTML, /生成版本身份无效/);
+    });
+
+    it("rejects duplicate identical full-generation versions before merge", async () => {
+        const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(373);
+        const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "dup-v1");
+        hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
+            source: current.source,
+            sourceVersion: current.sourceVersion,
+            evidenceSetVersion: current.evidenceSetVersion,
+            itemVersions: [groundedVersion, { ...groundedVersion }]
+        }));
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /manual note/);
+        assert.match(host.innerHTML, /partial-v1/);
+        assert.match(host.innerHTML, /完整生成返回重复版本/);
+    });
+
+    it("routes server stale full-generation errors through the stale reset path", async () => {
+        const { grounded, partial, calls, host, hostRef, window } = await mountResolvedPartialWithMissingGrounded(375);
+        window.confirm = () => false;
+        hostRef.streamResponse = () => Promise.resolve(sseResponse("error", {
+            code: "TRUST_REPLY_SOURCE_STALE",
+            message: "TRUST_REPLY_SOURCE_STALE"
+        }));
+        const bootstrapCallsBefore = calls.filter((call) => call.url.includes("/bootstrap")).length;
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/bootstrap")).length, bootstrapCallsBefore);
+        assert.match(host.innerHTML, /TRUST_REPLY_SOURCE_STALE|来源或事实已变化/);
+        assert.doesNotMatch(host.innerHTML, /partial-v1/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[^>]*data-locked="true"`));
+        assert.match(host.innerHTML, /manual note/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[^>]*data-locked="true"`));
+    });
+
+    it("rejects request-disallowed versions for adoption and assembly", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 374;
+        const partial = coverageItem(sourceType, sourceId, 0, "PARTIAL");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [partial]);
+        const liveVersion = {
+            ...itemVersion(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "bad-v1"),
+            handling: "ANSWER_WITH_EVIDENCE"
+        };
+        let generationCalls = 0;
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                generationCalls += 1;
+                if (generationCalls === 1) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            source: current.source,
+                            sourceVersion: current.sourceVersion,
+                            evidenceSetVersion: current.evidenceSetVersion,
+                            version: liveVersion
+                        })
+                    });
+                }
+                liveVersion.versionId = "good-v1";
+                liveVersion.handling = "ANSWER_SUPPORTED_PART";
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        source: current.source,
+                        sourceVersion: current.sourceVersion,
+                        evidenceSetVersion: current.evidenceSetVersion,
+                        version: liveVersion
+                    })
+                });
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        assert.match(host.innerHTML, /生成版本处理方式无效/);
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        liveVersion.handling = "ANSWER_WITH_EVIDENCE";
+        click(host, "resolve-item", partial.requestKey);
+        await settle();
+        assert.match(host.innerHTML, /当前版本无效，请重新生成并采用/);
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /待人工处理 1 项/);
     });
 });

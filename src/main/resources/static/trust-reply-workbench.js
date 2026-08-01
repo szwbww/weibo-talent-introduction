@@ -155,7 +155,6 @@
             generation: { pending: false, stage: "", message: "", generationId: null, controller: null },
             itemControllers: new Map(),
             translationControllers: new Set(),
-            initialFullDraftSourceVersions: new Set(),
             assembly: null,
             bootSeq: 0,
             destroyed: false,
@@ -251,8 +250,10 @@
         }
 
         function invalidateAssembly() {
+            const hadAssembly = !!state.assembly;
             state.assembly = null;
-            state.onChange && state.onChange();
+            if (hadAssembly) state.onChange && state.onChange();
+            return hadAssembly;
         }
 
         function sameSource(candidate) {
@@ -307,7 +308,7 @@
                 request.resolvedVersionId = null;
                 request.pending = false;
                 request.error = null;
-                request.expanded = request.coverage === "UNSUPPORTED";
+                request.expanded = request.coverage !== "GROUNDED";
                 request.questionTranslation = { state: "idle", text: "" };
                 request.answerTranslationsByVersionId = {};
                 request.requestSeq += 1;
@@ -335,7 +336,7 @@
                 versions: [],
                 activeVersionId: null,
                 resolvedVersionId: null,
-                expanded: item.status === "UNSUPPORTED",
+                expanded: item.status !== "GROUNDED",
                 questionTranslation: { state: "idle", text: "" },
                 answerTranslationsByVersionId: {},
                 requestSeq: 0,
@@ -363,11 +364,6 @@
             state.requests
                 .filter((request) => request.coverage === "UNSUPPORTED")
                 .forEach((request) => { void requestTranslation(request, null); });
-            if (state.requests.some((request) => request.coverage === "GROUNDED" || request.coverage === "PARTIAL")
-                && !state.initialFullDraftSourceVersions.has(state.sourceVersion)) {
-                state.initialFullDraftSourceVersions.add(state.sourceVersion);
-                void generateAll();
-            }
         }
 
         async function bootstrap() {
@@ -406,15 +402,20 @@
             };
         }
 
-        async function generateAll() {
-            if (state.generation.pending || state.requests.some((request) => request.pending)
-                || !state.requests.length || !state.sourceVersion) return;
-            const seq = state.bootSeq;
+        async function generateMissingGrounded(allowlist, seq) {
+            if (!allowlist.length || state.generation.pending || !state.sourceVersion) return false;
+            const frozenKeys = [...allowlist];
+            const frozenSourceVersion = state.sourceVersion;
+            const frozenEvidenceSetVersion = state.evidenceSetVersion;
             const generationId = makeId();
-            state.generation = { pending: true, stage: "QUEUED", message: "已提交完整生成", generationId, controller: null };
-            state.requests.forEach((request) => { request.error = null; });
+            state.generation = { pending: true, stage: "QUEUED", message: "正在生成缺失有据回答", generationId, controller: null };
+            frozenKeys.forEach((requestKey) => {
+                const request = findRequest(requestKey);
+                if (request) request.error = null;
+            });
             render();
             let result = null;
+            let cancelled = false;
             try {
                 await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(null, null, null, generationId), "full", (event, data) => {
                     if (!isLive(seq)) return;
@@ -428,34 +429,62 @@
                     } else if (event === "error") {
                         throw errorFromStream(data, "AI 生成失败");
                     } else if (event === "cancelled") {
+                        cancelled = true;
                         state.generation.message = "已取消生成";
                     }
                 });
-                if (!isLive(seq)) return;
-                if (result && !applyGenerationResult(result, null, seq)) return;
+                if (!isLive(seq)) return false;
+                if ((cancelled && !result) || !result) {
+                    failFullGenerationTransaction(seq, cancelled ? "已取消生成，可重试" : "完整生成未返回结果，可重试", cancelled ? "CANCELLED" : "ERROR");
+                    return false;
+                }
+                if (!hasGenerationIdentity(result)) {
+                    failFullGenerationTransaction(seq, "来源或事实已变化，请确认后刷新工作台");
+                    return false;
+                }
+                if (result.sourceVersion !== frozenSourceVersion || result.evidenceSetVersion !== frozenEvidenceSetVersion) {
+                    failFullGenerationTransaction(seq, "来源或事实已变化，请确认后刷新工作台");
+                    return false;
+                }
+                const versions = Array.isArray(result.itemVersions) ? result.itemVersions : [];
+                const requestKeys = new Set(state.requests.map((request) => request.requestKey));
+                if (versions.some((version) => !requestKeys.has(version.requestKey) || !hasVersionIdentity(version, version.requestKey))) {
+                    failFullGenerationTransaction(seq, "生成版本身份无效，请确认刷新工作台");
+                    return false;
+                }
+                const validated = validateAllowlistVersions(versions, frozenKeys);
+                for (const requestKey of frozenKeys) {
+                    const request = findRequest(requestKey);
+                    const version = validated.get(requestKey);
+                    const knownIds = new Set(request.versions.map((item) => item.versionId));
+                    request.versions = knownIds.has(version.versionId)
+                        ? request.versions
+                        : [...request.versions, version];
+                    request.activeVersionId = version.versionId;
+                    request.resolvedVersionId = version.versionId;
+                    request.expanded = false;
+                    request.error = null;
+                }
                 state.generation.pending = false;
                 state.generation.controller = null;
+                state.generation.stage = "READY";
+                state.generation.message = "有据回答生成完成";
                 render();
+                return true;
             } catch (error) {
-                if (isStaleError(error)) {
-                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
-                }
                 if (isAbort(error)) {
                     if (isLive(seq) && state.generation.generationId === generationId) {
-                        state.generation.pending = false;
-                        state.generation.controller = null;
-                        state.generation.stage = "CANCELLED";
-                        state.generation.message = "已取消生成，可重试";
-                        render();
+                        failFullGenerationTransaction(seq, "已取消生成，可重试", "CANCELLED");
                     }
-                    return;
+                    return false;
                 }
-                if (!isLive(seq)) return;
-                state.generation.pending = false;
-                state.generation.message = error.message || "生成失败，可重试";
-                state.generation.stage = "ERROR";
-                render();
+                if (!isLive(seq)) return false;
+                if (isStaleError(error)) {
+                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return false;
+                }
+                failFullGenerationTransaction(seq, error.message || "生成失败，可重试");
+                return false;
             }
         }
 
@@ -505,6 +534,9 @@
                     return;
                 }
                 if (!version) throw new Error("单项生成未返回版本");
+                if (!isVersionSerializable(version, request)) {
+                    throw new Error("生成版本处理方式无效");
+                }
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
                 if (version.handling === "OMIT") {
@@ -527,65 +559,101 @@
             }
         }
 
-        function applyGenerationResult(result, targetRequestKey, seq) {
-            if (!result || !isLive(seq)) return;
-            if (!hasGenerationIdentity(result)) {
-                handleStaleGeneration(seq, "来源或事实已变化，请确认后刷新工作台");
-                return false;
-            }
-            const versions = Array.isArray(result.itemVersions) ? result.itemVersions : [];
-            const requestKeys = new Set(state.requests.map((request) => request.requestKey));
-            if (versions.some((version) => !requestKeys.has(version.requestKey) || !hasVersionIdentity(version, version.requestKey))) {
-                handleStaleGeneration(seq, "生成版本身份无效，请确认刷新工作台");
-                return false;
-            }
-            if (targetRequestKey) {
-                const request = state.requests.find((item) => item.requestKey === targetRequestKey);
-                const version = versions.find((item) => item.requestKey === targetRequestKey);
-                if (request && version) {
-                    request.versions = [...request.versions, version];
-                    request.activeVersionId = version.versionId;
-                }
-                return !!request && !!version;
-            }
-            applyInitialVersions(versions);
-            invalidateAssembly();
-            return true;
+        function isVersionSerializable(version, request) {
+            return !!version
+                && !!request
+                && version.requestKey === request.requestKey
+                && version.versionId
+                && version.handling
+                && version.generationKind
+                && version.sourceVersion
+                && version.evidenceSetVersion
+                && Array.isArray(version.claims)
+                && request.availableHandlings.includes(version.handling);
         }
 
-        function applyInitialVersions(versions) {
+        function failFullGenerationTransaction(seq, message, stage) {
+            if (!isLive(seq)) return;
+            state.generation.pending = false;
+            state.generation.controller = null;
+            state.generation.stage = stage || "ERROR";
+            state.generation.message = message || "生成失败，可重试";
+            render();
+        }
+
+        function validateAllowlistVersions(versions, frozenKeys) {
+            const allowSet = new Set(frozenKeys);
+            const grouped = new Map(frozenKeys.map((requestKey) => [requestKey, []]));
+            versions.forEach((version) => {
+                if (!allowSet.has(version.requestKey)) return;
+                grouped.get(version.requestKey).push(version);
+            });
+            const validated = new Map();
+            frozenKeys.forEach((requestKey) => {
+                const entries = grouped.get(requestKey) || [];
+                if (entries.length !== 1) {
+                    throw new Error(entries.length === 0 ? "完整生成缺少有据回答版本" : "完整生成返回重复版本");
+                }
+                const request = findRequest(requestKey);
+                const version = entries[0];
+                if (!isVersionSerializable(version, request)) {
+                    throw new Error("完整生成版本处理方式无效");
+                }
+                validated.set(requestKey, version);
+            });
+            return validated;
+        }
+
+        function isAdoptableActiveVersion(request) {
+            return isVersionSerializable(activeVersion(request), request);
+        }
+
+        function computeReadiness() {
+            const total = state.requests.length;
+            const resolvedCount = state.requests.filter((request) => !!request.resolvedVersionId).length;
+            const missingGroundedKeys = [];
+            const adoptableGrounded = [];
+            const unresolvedManualKeys = [];
             state.requests.forEach((request) => {
-                const matching = versions.filter((version) => version.requestKey === request.requestKey);
-                request.versions = matching;
-                const initialVersion = matching.find((version) => request.availableHandlings.includes(version.handling));
-                request.activeVersionId = initialVersion ? initialVersion.versionId : null;
-                if (initialVersion && (request.coverage === "GROUNDED" || request.coverage === "PARTIAL")) {
-                    request.resolvedVersionId = initialVersion.versionId;
-                    request.expanded = false;
-                } else {
-                    request.resolvedVersionId = null;
-                    request.expanded = true;
+                if (request.coverage === "GROUNDED") {
+                    if (request.resolvedVersionId) return;
+                    if (isAdoptableActiveVersion(request)) adoptableGrounded.push(request);
+                    else missingGroundedKeys.push(request.requestKey);
+                } else if (request.coverage === "PARTIAL" || request.coverage === "UNSUPPORTED") {
+                    if (!serializeResolvedVersion(request)) unresolvedManualKeys.push(request.requestKey);
                 }
             });
-        }
-
-        async function cancelGeneration(generationId, controller) {
-            cancelController(controller);
-            if (!state.destroyed && state.generation.generationId === generationId) {
-                state.generation.pending = false;
-                state.generation.controller = null;
-                state.generation.stage = "CANCELLED";
-                state.generation.message = "已取消生成，可重试";
-                render();
-            }
-            if (!generationId || state.destroyed) return;
-            try {
-                await requestJson(`/api/trust-reply/workbench/generations/${encodeURIComponent(generationId)}/cancel`, { source });
-            } catch (_) { /* cancellation is best effort */ }
+            const pendingGeneration = missingGroundedKeys.length;
+            const unresolvedManual = unresolvedManualKeys.length;
+            const canStartAssembly = !state.generation.pending
+                && total > 0
+                && unresolvedManual === 0
+                && !state.requests.some((request) => request.pending);
+            return {
+                resolvedCount,
+                total,
+                pendingGeneration,
+                unresolvedManual,
+                missingGroundedKeys,
+                adoptableGrounded,
+                unresolvedManualKeys,
+                canStartAssembly
+            };
         }
 
         async function assemble() {
-            if (!canAssemble()) return;
+            const readiness = computeReadiness();
+            if (!readiness.canStartAssembly) return;
+            readiness.adoptableGrounded.forEach((request) => {
+                request.resolvedVersionId = request.activeVersionId;
+                request.expanded = false;
+            });
+            const seq = state.bootSeq;
+            const missingKeys = computeReadiness().missingGroundedKeys;
+            if (missingKeys.length > 0) {
+                const generated = await generateMissingGrounded(missingKeys, seq);
+                if (!generated || !isLive(seq)) return;
+            }
             const lockedItems = state.requests.map(serializeResolvedVersion);
             const invalidRequest = state.requests.find((request, index) => !lockedItems[index]);
             if (invalidRequest) {
@@ -594,7 +662,6 @@
                 render();
                 return;
             }
-            const seq = state.bootSeq;
             state.generation.pending = true;
             state.generation.stage = "ASSEMBLING";
             state.generation.message = "正在请求服务端整合…";
@@ -626,9 +693,22 @@
         }
 
         function canAssemble() {
-            return !state.generation.pending && state.requests.length > 0 && state.requests.every((request) => {
-                return !request.pending && !!serializeResolvedVersion(request);
-            });
+            return computeReadiness().canStartAssembly;
+        }
+
+        async function cancelGeneration(generationId, controller) {
+            cancelController(controller);
+            if (!state.destroyed && state.generation.generationId === generationId) {
+                state.generation.pending = false;
+                state.generation.controller = null;
+                state.generation.stage = "CANCELLED";
+                state.generation.message = "已取消生成，可重试";
+                render();
+            }
+            if (!generationId || state.destroyed) return;
+            try {
+                await requestJson(`/api/trust-reply/workbench/generations/${encodeURIComponent(generationId)}/cancel`, { source });
+            } catch (_) { /* cancellation is best effort */ }
         }
 
         function activeVersion(request) {
@@ -640,17 +720,15 @@
         }
 
         function invalidateDecision(request) {
-            request.resolvedVersionId = null;
-            invalidateAssembly();
+            const hadResolved = !!request.resolvedVersionId;
+            if (hadResolved) request.resolvedVersionId = null;
+            const hadAssembly = invalidateAssembly();
+            return hadResolved || hadAssembly;
         }
 
         function serializeResolvedVersion(request) {
             const version = resolvedVersion(request);
-            if (!version || version.requestKey !== request.requestKey
-                || !version.versionId || !version.handling || !version.generationKind
-                || !version.sourceVersion || !version.evidenceSetVersion || !Array.isArray(version.claims)) {
-                return null;
-            }
+            if (!isVersionSerializable(version, request)) return null;
             return {
                 requestKey: version.requestKey,
                 versionId: version.versionId,
@@ -747,9 +825,14 @@
             if (target.dataset?.role === "instruction" && request) {
                 const instruction = target.value.slice(0, 500);
                 if (instruction !== request.instruction) {
+                    const hadActive = !!request.activeVersionId;
+                    const hadResolved = !!request.resolvedVersionId;
+                    const hadAssembly = !!state.assembly;
                     request.instruction = instruction;
+                    if (!hadActive && !hadResolved && !hadAssembly) return;
                     request.activeVersionId = null;
-                    invalidateDecision(request);
+                    if (hadResolved) request.resolvedVersionId = null;
+                    if (hadAssembly) invalidateAssembly();
                     syncInstructionUi(request);
                 }
             }
@@ -775,6 +858,11 @@
                 }
                 if (!version) {
                     request.error = "请先生成并选择一个版本";
+                    render();
+                    return;
+                }
+                if (!isVersionSerializable(version, request)) {
+                    request.error = "当前版本无效，请重新生成并采用";
                     render();
                     return;
                 }
@@ -922,7 +1010,13 @@
         function renderRequestHeader(request) {
             const action = requestAction(request);
             const coverage = request.coverage || "";
-            const badge = action.resolved?.handling === "OMIT" ? "已省略" : action.locked ? "已处理" : "待处理";
+            const badge = action.resolved?.handling === "OMIT"
+                ? "已省略"
+                : action.locked
+                    ? "已处理"
+                    : coverage === "GROUNDED"
+                        ? "待生成"
+                        : "待处理";
             return `<span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""} <button type="button" class="button small secondary" data-action="toggle-item" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.expanded}">${request.expanded ? "收起" : "展开"}</button></div><span class="badge ${action.locked ? "ok" : ""}">${badge}</span>`;
         }
 
@@ -981,11 +1075,28 @@
         }
 
         function renderSummary() {
-            const locked = state.requests.filter((request) => request.resolvedVersionId).length;
-            const total = state.requests.length;
+            const readiness = computeReadiness();
+            const locked = readiness.resolvedCount;
+            const total = readiness.total;
             const assembly = state.assembly;
             const percent = total > 0 ? Math.round((locked / total) * 100) : 0;
-            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">已处理 ${locked}/${total}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${assembly ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>` : ""}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${state.generation.pending && state.generation.stage === "ASSEMBLING" ? "整合中…" : "服务端整合"}</button><button type="button" class="button secondary" data-action="complete"${!assembly || state.completePending ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
+            const countParts = [`已处理 ${locked}/${total}`];
+            if (readiness.pendingGeneration > 0) countParts.push(`待生成 ${readiness.pendingGeneration} 项`);
+            if (readiness.unresolvedManual > 0) countParts.push(`待人工处理 ${readiness.unresolvedManual} 项`);
+            const lockHint = countParts.join(" · ");
+            const assembleLabel = state.generation.pending && state.generation.stage === "ASSEMBLING"
+                ? "整合中…"
+                : state.generation.pending && readiness.pendingGeneration > 0
+                    ? "生成并整合中…"
+                    : readiness.unresolvedManual > 0
+                        ? "服务端整合"
+                        : readiness.pendingGeneration > 0
+                            ? "生成有据回答并整合"
+                            : "服务端整合";
+            const assembleHint = readiness.unresolvedManual > 0
+                ? `尚有 ${readiness.unresolvedManual} 项待人工处理`
+                : "";
+            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${assembly ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>` : ""}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${!assembly || state.completePending ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
         }
 
         function renderStatus() {

@@ -25,11 +25,14 @@ describe("mail processing reply workflow source", () => {
         assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-body-section cleaned-mail-body-section" open'));
     });
 
-    it("auto-loads the folded auto-reply preview and exposes summary metadata", () => {
+    it("requires manual click to load the folded auto-reply preview", () => {
         assert.ok(appJsSource.includes("async function loadAutoReplyPreview(recordId)"));
         assert.ok(appJsSource.includes('id="autoReplyPreviewStatus"'));
         assert.ok(appJsSource.includes('id="autoReplyPreviewMeta"'));
-        assert.ok(appJsSource.includes("loadAutoReplyPreview(id).catch"));
+        assert.ok(appJsSource.includes("点击按钮后分析来信意图与回复规则"));
+        assert.ok(appJsSource.includes("尚未生成自动回复预览"));
+        assert.ok(appJsSource.includes('data-action="preview-auto-reply"'));
+        assert.ok(!appJsSource.includes("loadAutoReplyPreview(id).catch"));
     });
 
     it("adds visible page groups and folds operation logs", () => {

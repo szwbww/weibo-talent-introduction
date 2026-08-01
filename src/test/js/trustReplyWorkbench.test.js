@@ -48,6 +48,16 @@ describe("shared trust reply workbench", () => {
         assert.doesNotMatch(workbench, /answers\.join|dedupe|truncate|LLM rewrite/i);
     });
 
+    it("keeps explicit generation triggers and no mount-time full draft", () => {
+        assert.doesNotMatch(workbench, /initialFullDraftSourceVersions/);
+        assert.doesNotMatch(workbench, /void generateAll\(\)/);
+        assert.match(workbench, /function generateMissingGrounded\(/);
+        assert.match(workbench, /function computeReadiness\(/);
+        assert.match(workbench, /data-action="assemble"/);
+        assert.match(workbench, /operation: requestKey \? "ADJUST_ITEM" : "FULL_DRAFT"/);
+        assert.doesNotMatch(workbench, /data-action="generate-all"/);
+    });
+
     it("keeps page code as thin training/live adapters", () => {
         assert.match(app, /mountAiTrainingTrustReply/);
         assert.match(app, /source: \{ sourceType: "TRAINING_MAIL", sourceId: Number\(mail\.mailRecordId\) \}/);

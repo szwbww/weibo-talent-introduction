@@ -8933,9 +8933,14 @@ async function loadAutoReplyPreview(recordId) {
     const resultEl = $("#autoReplyPreviewResult");
     const statusEl = $("#autoReplyPreviewStatus");
     const metaEl = $("#autoReplyPreviewMeta");
+    const button = document.querySelector(`[data-action="preview-auto-reply"][data-record-id="${recordId}"]`);
     if (resultEl) resultEl.innerHTML = `<p class="text-muted">加载预览中…</p>`;
     if (statusEl) statusEl.textContent = "生成中…";
     if (metaEl) metaEl.textContent = "正在分析来信意图与回复规则";
+    if (button) {
+        button.disabled = true;
+        button.textContent = "生成中…";
+    }
     try {
         const preview = await api(`/api/mail/unmatched-inbound/${recordId}/auto-reply-preview`);
         if (String(state.mailbox.detailContext?.id) !== String(recordId)) return null;
@@ -8943,11 +8948,21 @@ async function loadAutoReplyPreview(recordId) {
         if (resultEl) resultEl.innerHTML = renderAutoReplyPreviewHtml(preview);
         if (statusEl) statusEl.textContent = summary.status;
         if (metaEl) metaEl.textContent = summary.meta;
+        if (button) {
+            button.disabled = false;
+            button.textContent = "重新生成预览";
+        }
         return preview;
     } catch (error) {
-        if (resultEl) resultEl.innerHTML = `<p class="text-muted">${escapeHtml(error.message || "预览失败")}</p>`;
-        if (statusEl) statusEl.textContent = "预览失败";
-        if (metaEl) metaEl.textContent = error.message || "请稍后重试";
+        if (String(state.mailbox.detailContext?.id) === String(recordId)) {
+            if (resultEl) resultEl.innerHTML = `<p class="text-muted">${escapeHtml(error.message || "预览失败")}</p>`;
+            if (statusEl) statusEl.textContent = "预览失败";
+            if (metaEl) metaEl.textContent = error.message || "请稍后重试";
+            if (button) {
+                button.disabled = false;
+                button.textContent = "生成自动回复预览";
+            }
+        }
         throw error;
     }
 }
@@ -9421,14 +9436,14 @@ async function showUnmatchedDetail(id) {
             <details class="detail-section reply-workflow-detail auto-reply-preview-section" data-record-id="${id}">
                 <summary class="reply-workflow-summary">
                     <span class="reply-workflow-icon" aria-hidden="true">自</span>
-                    <span class="reply-workflow-title"><strong>自动回复预览</strong><small id="autoReplyPreviewMeta">正在分析来信意图与回复规则</small></span>
-                    <span class="reply-workflow-status" id="autoReplyPreviewStatus">生成中…</span>
+                    <span class="reply-workflow-title"><strong>自动回复预览</strong><small id="autoReplyPreviewMeta">点击按钮后分析来信意图与回复规则</small></span>
+                    <span class="reply-workflow-status" id="autoReplyPreviewStatus">未生成</span>
                     <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
                 </summary>
                 <div class="reply-workflow-content">
                     <p class="text-muted" style="font-size:12px;margin:0 0 8px;">模拟「若此刻开启自动回复」系统会回什么（不发送、不写库）</p>
-                    <button type="button" class="button" data-action="preview-auto-reply" data-record-id="${id}">重新预览</button>
-                    <div id="autoReplyPreviewResult" style="margin-top:12px;"><p class="text-muted">加载预览中…</p></div>
+                    <button type="button" class="button" data-action="preview-auto-reply" data-record-id="${id}">生成自动回复预览</button>
+                    <div id="autoReplyPreviewResult" style="margin-top:12px;"><p class="text-muted">尚未生成自动回复预览</p></div>
                 </div>
             </details>
 
@@ -9470,8 +9485,6 @@ async function showUnmatchedDetail(id) {
     `;
 
     if (record.expertContactId) mountLiveTrustReply(Number(id));
-
-    loadAutoReplyPreview(id).catch(() => {});
 
     focusMailboxProcessingPanel();
 }
