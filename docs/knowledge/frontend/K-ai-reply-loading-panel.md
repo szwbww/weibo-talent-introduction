@@ -2,8 +2,8 @@
 id: K-ai-reply-loading-panel
 domain: frontend
 created: 2026-07-12
-last_used: 2026-07-27
-hit_count: 31
+last_used: 2026-08-01
+hit_count: 32
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 ---

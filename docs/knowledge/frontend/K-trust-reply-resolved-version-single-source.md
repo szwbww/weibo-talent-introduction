@@ -2,8 +2,8 @@
 id: K-trust-reply-resolved-version-single-source
 domain: frontend
 created: 2026-07-29
-last_used: 2026-07-29
-hit_count: 0
+last_used: 2026-08-01
+hit_count: 1
 source: create-p:trust-reply-unsupported-answer-v1
 severity: P1
 ---
@@ -16,4 +16,3 @@ severity: P1
 4. 服务端仍应重新 materialize 并计算 versionId；前端状态一致不是信任边界。
 
 如果用可变下拉 handling 搭配已生成版本正文，常见症状是界面看似“已锁定”，服务端却返回 locked item invalid；更危险的实现会猜测并接受错误语义。
-
