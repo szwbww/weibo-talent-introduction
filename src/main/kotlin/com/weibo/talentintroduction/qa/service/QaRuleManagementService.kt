@@ -71,13 +71,16 @@ class QaRuleManagementService(
         QaFactBodyPolicy.validate(answerBody, mailVariableService)
         validateRuleMeta(command.keywords, command.matchMode, command.priority)
         val policy = QaReplyPolicy.fromName(command.replyPolicy)
+        val normalizedCoverage = QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys)
+        QaCoverageKeyCatalog.validateControlledBody(normalizedCoverage, answerBody)
+        val coverageKeys = QaCoverageKeyCatalog.serialize(normalizedCoverage)
 
         val saved = ruleRepository.save(
             command.toDomain(answerBody)
                 .copy(
                     replyBody = answerBody,
                     answerBody = answerBody,
-                    coverageKeys = ""
+                    coverageKeys = coverageKeys
                 )
                 .withReplyPolicy(policy)
         )
@@ -95,6 +98,15 @@ class QaRuleManagementService(
         QaFactBodyPolicy.validate(answerBody, mailVariableService)
         validateRuleMeta(command.keywords, command.matchMode, command.priority)
         val policy = QaReplyPolicy.fromName(command.replyPolicy)
+        val effectiveCoverage = when (command.coverageKeys) {
+            null -> QaCoverageKeyCatalog.parseStored(existing.coverageKeys)
+            else -> QaCoverageKeyCatalog.normalizeAndValidate(command.coverageKeys)
+        }
+        QaCoverageKeyCatalog.validateControlledBody(effectiveCoverage, answerBody)
+        val coverageKeys = when (command.coverageKeys) {
+            null -> existing.coverageKeys
+            else -> QaCoverageKeyCatalog.serialize(effectiveCoverage)
+        }
 
         val saved = ruleRepository.save(
             existing.copy(
@@ -104,6 +116,8 @@ class QaRuleManagementService(
                 priority = command.priority,
                 displayName = command.displayName?.trim()?.takeIf { it.isNotEmpty() },
                 answerBody = answerBody,
+                replyBody = answerBody,
+                coverageKeys = coverageKeys,
                 enabled = command.enabled
             ).withReplyPolicy(policy)
         )
@@ -120,6 +134,12 @@ class QaRuleManagementService(
     fun setRuleEnabled(ruleId: Long, enabled: Boolean): QaRuleDetail {
         val existing = ruleRepository.findById(ruleId)
             .orElseThrow { error("QA rule not found: $ruleId") }
+        if (enabled) {
+            QaCoverageKeyCatalog.validateControlledBody(
+                QaCoverageKeyCatalog.parseStored(existing.coverageKeys),
+                existing.answerBody
+            )
+        }
         val saved = ruleRepository.save(existing.copy(enabled = enabled))
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }

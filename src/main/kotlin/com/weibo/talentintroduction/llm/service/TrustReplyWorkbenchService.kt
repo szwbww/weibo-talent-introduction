@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.Locale
 
 enum class TrustReplySourceType {
     TRAINING_MAIL,
@@ -606,6 +607,8 @@ class TrustReplyWorkbenchService(
             }
         }
 
+        validateNoDuplicateClaims(versions)
+
         val orderedAnswers = versions.mapNotNull { version ->
             version.answerText.takeIf { version.handling != TrustReplyItemHandling.OMIT }
         }
@@ -628,6 +631,38 @@ class TrustReplyWorkbenchService(
             itemVersions = versions,
             requestedFactIds = selection.sendQaRuleIds
         )
+    }
+
+    private fun validateNoDuplicateClaims(versions: List<TrustReplyItemVersion>) {
+        val seenClaimKeys = mutableSetOf<Pair<String, Long>>()
+        val seenNormalizedAnswers = mutableMapOf<String, Int>()
+        versions.forEach { version ->
+            if (version.handling == TrustReplyItemHandling.OMIT) {
+                return@forEach
+            }
+            version.claims.forEach { claim ->
+                claim.sourceRuleIds.forEach { sourceRuleId ->
+                    if (!seenClaimKeys.add(claim.intentKey to sourceRuleId)) {
+                        throw TrustReplyWorkbenchException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "TRUST_REPLY_DUPLICATE_CLAIM"
+                        )
+                    }
+                }
+            }
+            if (version.answerText.isNotBlank()) {
+                val normalized = version.answerText.trim()
+                    .lowercase(Locale.ROOT)
+                    .replace(Regex("\\s+"), " ")
+                val previous = seenNormalizedAnswers.putIfAbsent(normalized, version.requestIndex)
+                if (previous != null) {
+                    throw TrustReplyWorkbenchException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "TRUST_REPLY_DUPLICATE_CLAIM"
+                    )
+                }
+            }
+        }
     }
 
     private fun validateLockedItem(

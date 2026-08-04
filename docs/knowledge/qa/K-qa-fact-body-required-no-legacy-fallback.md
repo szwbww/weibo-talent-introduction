@@ -2,8 +2,8 @@
 id: K-qa-fact-body-required-no-legacy-fallback
 domain: qa
 created: 2026-07-17
-last_used: 2026-07-17
-hit_count: 7
+last_used: 2026-08-04
+hit_count: 8
 source: fix-v:qa-refactor-02-fact-card-foundation:fix-1
 severity: P1
 ---

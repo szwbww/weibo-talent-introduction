@@ -993,7 +993,7 @@ class AiReplyDraftServiceTest {
         replyBody: String = "Salary info",
         answerBody: String = replyBody,
         keywords: String = "salary",
-        coverageKeys: String = "finance.government_funding"
+        coverageKeys: String = ""
     ) = QaRule(
         id = id,
         categoryId = 1,

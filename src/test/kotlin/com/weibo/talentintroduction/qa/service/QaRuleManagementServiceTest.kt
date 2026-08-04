@@ -57,6 +57,9 @@ class QaRuleManagementServiceTest {
     )
     private val variantIdSeq = AtomicLong(1)
 
+    private val v82DocKeywords = "confidential,keep my documents,never charge,any fee,money transfer"
+    private val v82ContractKeywords = "intellectual property,ip rights,ip arrangements,contractual,contract terms,patent ownership,who owns the,formal agreement,formal contract,before any collaboration begins"
+
     @Test
     fun `creates qa rule when category exists`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
@@ -105,7 +108,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `update answerBody preserves legacy replyBody and routing fields`() {
+    fun `update synchronizes reply body with answer body and preserves routing fields`() {
         val existing = rule(
             id = 10L,
             enabled = true,
@@ -143,7 +146,7 @@ class QaRuleManagementServiceTest {
         )
 
         assertEquals("Updated fact-only body.", updated.rule.answerBody)
-        assertEquals("Legacy runtime body", updated.rule.replyBody)
+        assertEquals("Updated fact-only body.", updated.rule.replyBody)
         assertEquals(QaReplyPolicy.AUTO.name, updated.rule.replyPolicy)
         assertEquals("Legacy subject", updated.rule.replySubject)
         assertTrue(updated.rule.autoReplyEnabled)
@@ -542,10 +545,10 @@ class QaRuleManagementServiceTest {
         assertFalse(disabled.rule.enabled)
     }
 
-    // ── coverage keys (frozen — request ignored) ───────────────────────────────
+    // ── coverage keys write path (I-5) ────────────────────────────────────────
 
     @Test
-    fun `create ignores coverage keys in request`() {
+    fun `create writes normalized coverage keys from request`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -559,7 +562,7 @@ class QaRuleManagementServiceTest {
             )
         )
 
-        assertEquals("", created.rule.coverageKeys)
+        assertEquals("company.legal_name,finance.government_funding", created.rule.coverageKeys)
     }
 
     @Test
@@ -581,7 +584,24 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `create ignores unknown coverage keys`() {
+    fun `create rejects unknown coverage keys`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    answerBody = "Funding info.",
+                    coverageKeys = listOf("finance.guaranteed_amount")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `create accepts all high risk coverage keys`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -591,11 +611,18 @@ class QaRuleManagementServiceTest {
                 categoryId = 1L,
                 keywords = "funding",
                 answerBody = "Funding info.",
-                coverageKeys = listOf("finance.guaranteed_amount")
+                coverageKeys = listOf(
+                    "publication.authorship",
+                    "finance.compensation_structure",
+                    "confidentiality.research"
+                )
             )
         )
 
-        assertEquals("", created.rule.coverageKeys)
+        assertEquals(
+            "publication.authorship,finance.compensation_structure,confidentiality.research",
+            created.rule.coverageKeys
+        )
     }
 
     @Test
@@ -631,7 +658,7 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `update preserves coverage keys when request sends empty list`() {
+    fun `update clears coverage keys on explicit empty list`() {
         val existing = rule(id = 10L, enabled = true).copy(
             coverageKeys = "company.legal_name,company.registered_location"
         )
@@ -659,7 +686,64 @@ class QaRuleManagementServiceTest {
             )
         )
 
-        assertEquals("company.legal_name,company.registered_location", updated.rule.coverageKeys)
+        assertEquals("", updated.rule.coverageKeys)
+    }
+
+    @Test
+    fun `update replaces coverage keys with validated non empty list`() {
+        val existing = rule(id = 10L, enabled = true).copy(
+            coverageKeys = "company.legal_name"
+        )
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
+            )
+        ).thenReturn(emptyList())
+
+        val updated = service.updateRule(
+            10L,
+            QaRuleUpdateCommand(
+                categoryId = 1L,
+                keywords = "funding",
+                matchMode = "ANY",
+                priority = 100,
+                answerBody = "Funding info.",
+                enabled = true,
+                coverageKeys = listOf("role.responsibilities", "role.deliverables")
+            )
+        )
+
+        assertEquals("role.responsibilities,role.deliverables", updated.rule.coverageKeys)
+    }
+
+    @Test
+    fun `update rejects invalid coverage keys without touching stored value`() {
+        val existing = rule(id = 10L, enabled = true).copy(
+            coverageKeys = "company.legal_name"
+        )
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.updateRule(
+                10L,
+                QaRuleUpdateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    matchMode = "ANY",
+                    priority = 100,
+                    answerBody = "Funding info.",
+                    enabled = true,
+                    coverageKeys = listOf("unknown.key")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
     }
 
     @Test
@@ -683,10 +767,12 @@ class QaRuleManagementServiceTest {
         assertEquals("company.legal_name,company.verification_evidence", disabled.rule.coverageKeys)
     }
 
-    // ── P1-1: blank key rejection (ignored in fact-card phase) ─────────────────
+    // ── V82 controlled coverage -> canonical body gate (R-1) ───────────────────
+
+    private val canonicalFeeBody = "We never charge any fees throughout the entire process."
 
     @Test
-    fun `create ignores blank coverage key items`() {
+    fun `create accepts controlled coverage only with canonical body`() {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -694,19 +780,65 @@ class QaRuleManagementServiceTest {
         val created = service.createRule(
             QaRuleCreateCommand(
                 categoryId = 1L,
-                keywords = "funding",
-                answerBody = "Funding info.",
-                coverageKeys = listOf("", "company.legal_name")
+                keywords = "any fees",
+                answerBody = canonicalFeeBody,
+                coverageKeys = listOf("fees.policy")
             )
         )
 
-        assertEquals("", created.rule.coverageKeys)
+        assertEquals("fees.policy", created.rule.coverageKeys)
     }
 
     @Test
-    fun `update ignores blank coverage key items`() {
-        val existing = rule(id = 10L, enabled = true).copy(coverageKeys = "company.legal_name")
-        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+    fun `create rejects controlled coverage with mismatched body without saving`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "any fees",
+                    answerBody = "We never charge participants at any stage.",
+                    coverageKeys = listOf("fees.policy")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `create rejects mixed controlled coverage without saving`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "any fees",
+                    answerBody = canonicalFeeBody,
+                    coverageKeys = listOf("fees.policy", "confidentiality.materials")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `update preserves controlled gate on null coverage and validates new writes`() {
+        fun existing(body: String, coverage: String) = rule(
+            id = 10L, enabled = true,
+            replyBody = body,
+            answerBody = body
+        ).copy(coverageKeys = coverage)
+        fun updateCommand(answerBody: String, coverageKeys: List<String>?) = QaRuleUpdateCommand(
+            categoryId = 1L,
+            keywords = "funding",
+            matchMode = "ANY",
+            priority = 100,
+            answerBody = answerBody,
+            enabled = true,
+            coverageKeys = coverageKeys
+        )
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
@@ -717,20 +849,142 @@ class QaRuleManagementServiceTest {
             )
         ).thenReturn(emptyList())
 
-        val updated = service.updateRule(
-            10L,
-            QaRuleUpdateCommand(
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(
+            Optional.of(existing("We never charge any fees throughout the entire process.", "fees.policy"))
+        )
+        val preserved = service.updateRule(10L, updateCommand(canonicalFeeBody, null))
+        assertEquals("fees.policy", preserved.rule.coverageKeys)
+
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(
+            Optional.of(existing("Stale stored body", "fees.policy"))
+        )
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.updateRule(10L, updateCommand("Some other body.", null))
+        }
+        assertTrue(ex.message!!.contains("canonical body"))
+        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+    }
+
+    @Test
+    fun `enable re-verifies controlled stored rule before saving`() {
+        fun existing(body: String, coverage: String) = rule(
+            id = 2L, enabled = false,
+            replyBody = body,
+            answerBody = body
+        ).copy(coverageKeys = coverage)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                2L
+            )
+        ).thenReturn(emptyList())
+
+        Mockito.`when`(ruleRepository.findById(2L)).thenReturn(
+            Optional.of(existing(canonicalFeeBody, "fees.policy"))
+        )
+        assertEquals("fees.policy", service.setRuleEnabled(2L, true).rule.coverageKeys)
+        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+
+        Mockito.`when`(ruleRepository.findById(2L)).thenReturn(
+            Optional.of(existing("Wrong body for fees.", "fees.policy"))
+        )
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.setRuleEnabled(2L, true)
+        }
+        assertTrue(ex.message!!.contains("canonical body"))
+        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+    }
+
+    @Test
+    fun `invalid controlled rule can be disabled but stays blocked on enable`() {
+        val invalid = rule(
+            id = 2L, enabled = true,
+            replyBody = "Wrong body for fees.",
+            answerBody = "Wrong body for fees."
+        ).copy(coverageKeys = "fees.policy")
+        Mockito.`when`(ruleRepository.findById(2L)).thenReturn(Optional.of(invalid))
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                2L
+            )
+        ).thenReturn(emptyList())
+
+        val disabled = service.setRuleEnabled(2L, false)
+        assertFalse(disabled.rule.enabled)
+        assertEquals("Wrong body for fees.", disabled.rule.answerBody, "disable must not mutate the body")
+        assertEquals("fees.policy", disabled.rule.coverageKeys)
+        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.setRuleEnabled(2L, true)
+        }
+        assertTrue(ex.message!!.contains("canonical body"))
+        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+    }
+
+    @Test
+    fun `legacy non controlled coverage is unaffected by the body gate`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
+
+        val created = service.createRule(
+            QaRuleCreateCommand(
                 categoryId = 1L,
-                keywords = "funding",
-                matchMode = "ANY",
-                priority = 100,
-                answerBody = "Funding info.",
-                enabled = true,
-                coverageKeys = listOf("company.legal_name", "  ")
+                keywords = "programme purpose",
+                answerBody = "Program overview body.",
+                coverageKeys = listOf("programme.purpose", "programme.structure")
             )
         )
 
-        assertEquals("company.legal_name", updated.rule.coverageKeys)
+        assertEquals("programme.purpose,programme.structure", created.rule.coverageKeys)
+    }
+
+    // ── P1-1: blank key rejection (I-5) ────────────────────────────────────────
+
+    @Test
+    fun `create rejects blank coverage key items`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.createRule(
+                QaRuleCreateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    answerBody = "Funding info.",
+                    coverageKeys = listOf("", "company.legal_name")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `update rejects blank coverage key items`() {
+        val existing = rule(id = 10L, enabled = true).copy(coverageKeys = "company.legal_name")
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.updateRule(
+                10L,
+                QaRuleUpdateCommand(
+                    categoryId = 1L,
+                    keywords = "funding",
+                    matchMode = "ANY",
+                    priority = 100,
+                    answerBody = "Funding info.",
+                    enabled = true,
+                    coverageKeys = listOf("company.legal_name", "  ")
+                )
+            )
+        }
+        Mockito.verify(ruleRepository, Mockito.never()).save(Mockito.any())
     }
 
     // ── P1-2/P1-3/P1-4: V76 migration static checks ────────────────────────────
@@ -816,6 +1070,143 @@ class QaRuleManagementServiceTest {
         assertTrue(section.contains("work.travel_arrangement"), "Workplace should include travel_arrangement")
         assertTrue(section.contains("work.relocation"), "Workplace should include relocation")
         assertFalse(section.contains("work.remote_arrangement"), "Workplace must NOT include remote_arrangement")
+    }
+
+    // ── V82: atomic trust-reply facts (I-1/I-3/I-4/I-6) ────────────────────────
+
+    @Test
+    fun `v82 disables composite rules only against baseline gate`() {
+        val v82 = Files.readString(
+            Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
+        )
+        assertTrue(v82.contains("'Document confidentiality and no fees'"), "old confidentiality subject targeted")
+        assertTrue(v82.contains("'Contract and IP arrangements'"), "old contract/IP subject targeted")
+        assertTrue(v82.contains("SHA2(answer_body, 256)"), "answer hash baseline gate present")
+        assertTrue(v82.contains("'2026-06-26 22:14:06'"), "confidentiality updatedAt baseline present")
+        assertTrue(v82.contains("'2026-07-16 18:03:00'"), "contract updatedAt baseline present")
+        assertTrue(v82.contains("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'"), "confidentiality answer SHA-256 baseline")
+        assertTrue(v82.contains("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'"), "contract answer SHA-256 baseline")
+        assertTrue(v82.contains("id = 17") && v82.contains("id = 34"), "both audited ids present")
+        assertTrue(v82.contains(v82DocKeywords), "id 17 keyword baseline present")
+        assertTrue(v82.contains(v82ContractKeywords), "id 34 keyword baseline present")
+    }
+
+    @Test
+    fun `v82 aborts on baseline drift before any qa rule write`() {
+        val v82 = Files.readString(
+            Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
+        )
+        val createGateIdx = v82.indexOf("CREATE PROCEDURE v82_trust_reply_baseline_gate")
+        val callGateIdx = v82.indexOf("CALL v82_trust_reply_baseline_gate")
+        val firstInsertIdx = v82.indexOf("INSERT INTO qa_rule")
+        val firstUpdateIdx = v82.indexOf("UPDATE qa_rule")
+        assertTrue(createGateIdx in 1..callGateIdx, "gate created before it runs")
+        assertTrue(callGateIdx in 1..firstInsertIdx, "gate runs before any INSERT")
+        assertTrue(callGateIdx in 1..firstUpdateIdx, "gate runs before any UPDATE")
+
+        val gateBody = v82.substring(createGateIdx, v82.indexOf("DELIMITER ;", createGateIdx))
+        assertTrue(gateBody.contains("SIGNAL SQLSTATE '45000'"), "migration aborts via SIGNAL on baseline drift")
+        assertTrue(gateBody.contains("id = 17") && gateBody.contains("id = 34"), "gate checks both audited ids")
+        assertTrue(
+            gateBody.contains(v82DocKeywords) && gateBody.contains(v82ContractKeywords),
+            "gate checks exact baseline keywords"
+        )
+        assertTrue(
+            gateBody.contains("'2026-06-26 22:14:06'") && gateBody.contains("'2026-07-16 18:03:00'"),
+            "gate validates both baseline records"
+        )
+        assertTrue(
+            gateBody.contains("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'") &&
+                gateBody.contains("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'"),
+            "gate validates both audited answer hashes"
+        )
+        assertTrue(v82.contains("DROP PROCEDURE v82_trust_reply_baseline_gate"), "gate procedure is cleaned up")
+    }
+
+    @Test
+    fun `v82 gates and disables only the fully validated legacy rows`() {
+        val v82 = Files.readString(
+            Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
+        )
+        assertTrue(
+            v82.indexOf("id = 17") != v82.lastIndexOf("id = 17"),
+            "id 17 guarded in both gate and disable predicate"
+        )
+        assertTrue(
+            v82.indexOf("id = 34") != v82.lastIndexOf("id = 34"),
+            "id 34 guarded in both gate and disable predicate"
+        )
+        assertTrue(
+            v82.indexOf(v82DocKeywords) != v82.lastIndexOf(v82DocKeywords),
+            "id 17 exact keywords guarded in both gate and disable predicate"
+        )
+        assertTrue(
+            v82.indexOf(v82ContractKeywords) != v82.lastIndexOf(v82ContractKeywords),
+            "id 34 exact keywords guarded in both gate and disable predicate"
+        )
+        assertTrue(
+            v82.contains("(SELECT category_id FROM qa_rule WHERE id = 17)"),
+            "material/fee rules derive category from validated id 17"
+        )
+        assertTrue(
+            v82.contains("(SELECT category_id FROM qa_rule WHERE id = 34)"),
+            "contract/IP rules derive category from validated id 34"
+        )
+        assertFalse(v82.contains("ORDER BY id LIMIT 1"), "no subject-based fallback derivation remains")
+    }
+
+    @Test
+    fun `v82 inserts four atomic rules idempotently with atomic bodies`() {
+        val v82 = Files.readString(
+            Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
+        )
+        val subjects = listOf(
+            "Application material confidentiality" to "confidentiality.materials",
+            "Participant fee policy" to "fees.policy",
+            "Contract arrangements" to "contract.party,contract.terms",
+            "Pre-contract IP boundary" to "ip.arrangements"
+        )
+        val sectionStarts = subjects.map { (subject, _) ->
+            val idx = v82.indexOf(subject)
+            assertTrue(idx > 0, "$subject section exists")
+            idx
+        }
+        subjects.forEachIndexed { index, (subject, coverage) ->
+            val idx = sectionStarts[index]
+            val sectionEnd = sectionStarts.getOrNull(index + 1) ?: v82.length
+            val section = v82.substring(maxOf(0, idx - 350), sectionEnd)
+            assertTrue(section.contains("INSERT INTO qa_rule"), "$subject inserted")
+            assertTrue(section.contains("WHERE NOT EXISTS"), "$subject insert is idempotent")
+            assertTrue(section.contains(coverage), "$subject has coverage $coverage")
+        }
+
+        val materialBody = "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction."
+        val feeBody = "We never charge any fees throughout the entire process."
+        val contractBody = "After selection, you will sign a labor contract directly with the matched enterprise, and you may review the full terms before making any commitment."
+        val ipBody = "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement."
+        assertTrue(v82.contains(materialBody), "material body present")
+        assertTrue(v82.contains(feeBody), "fee body present")
+        assertTrue(v82.contains(contractBody), "contract body present")
+        assertTrue(v82.contains(ipBody), "IP body present")
+
+        assertFalse(materialBody.contains("fee", ignoreCase = true), "material body has no fee sentence")
+        assertFalse(materialBody.contains("charge", ignoreCase = true), "material body has no charge sentence")
+        assertFalse(materialBody.contains("contract", ignoreCase = true), "material body has no contract sentence")
+
+        assertFalse(feeBody.contains("confidential", ignoreCase = true), "fee body has no confidentiality sentence")
+        assertFalse(feeBody.contains("redaction", ignoreCase = true), "fee body has no redaction sentence")
+
+        val feeIdx = v82.indexOf("Participant fee policy")
+        val feeSection = v82.substring(maxOf(0, feeIdx - 350), v82.indexOf("Contract arrangements"))
+        assertFalse(feeSection.contains("obligations", ignoreCase = true), "fee rule must not recall bare obligations")
+        assertTrue(feeSection.contains("any costs", ignoreCase = true), "fee rule keeps cost-specific recall")
+
+        assertFalse(contractBody.contains("intellectual", ignoreCase = true), "contract body has no IP sentence")
+        assertFalse(contractBody.contains("transfers any rights", ignoreCase = true), "contract body has no IP-boundary sentence")
+
+        assertFalse(ipBody.contains("labor contract", ignoreCase = true), "IP body has no contract-clause sentence")
+        assertFalse(ipBody.contains("review the full terms", ignoreCase = true), "IP body has no contract-review sentence")
+        assertTrue(ipBody.contains("transfers any rights", ignoreCase = true), "IP body keeps pre-signature no-transfer fact")
     }
 
     // ── P1-7: parseStored canonical ordering and dedup ──────────────────────────

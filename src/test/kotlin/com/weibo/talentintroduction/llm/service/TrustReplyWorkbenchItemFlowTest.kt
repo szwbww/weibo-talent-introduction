@@ -589,6 +589,191 @@ class TrustReplyWorkbenchItemFlowTest {
         Mockito.verify(fixture.composer).composeLockedItems(listOf(canonical))
     }
 
+    // ── I-7/I-8: cross-request duplicate claim guard before compose ────────────
+
+    @Test
+    fun `assemble rejects same intent and source rule across requests`() {
+        val fixture = duplicateFixture(item2Source = 9L, item2Text = "Claim B")
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
+        Mockito.verifyNoInteractions(fixture.composer)
+        Mockito.verifyNoInteractions(fixture.previewService)
+    }
+
+    @Test
+    fun `assemble rejects identical normalized answers across requests`() {
+        val fixture = duplicateFixture(item1Text = "Same  claim", item2Text = "Same CLAIM")
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
+        Mockito.verifyNoInteractions(fixture.composer)
+    }
+
+    @Test
+    fun `assemble keeps similar answers from different claims in canonical order`() {
+        val fixture = duplicateFixture()
+
+        val response = fixture.service.assemble(fixture.request)
+
+        assertEquals("raw Claim A|Claim B", response.rawDraftText)
+        assertEquals(listOf(9L, 10L), response.canonicalFactIds)
+        assertEquals(listOf("Claim A", "Claim B"), response.itemVersions.map { it.answerText })
+    }
+
+    private data class DuplicateFixture(
+        val service: TrustReplyWorkbenchService,
+        val request: TrustReplyAssembleRequest,
+        val composer: AiReplyPointByPointComposer,
+        val previewService: AiReplyDraftPreviewService
+    )
+
+    private fun duplicateFixture(
+        item1Source: Long = 9L,
+        item2Source: Long = 10L,
+        item1Text: String = "Claim A",
+        item2Text: String = "Claim B"
+    ): DuplicateFixture {
+        val mailRecords = Mockito.mock(MailRecordRepository::class.java)
+        val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        val trainingQa = Mockito.mock(AiTrainingQaService::class.java)
+        val contextService = Mockito.mock(AiReplyContextService::class.java)
+        val factSelection = Mockito.mock(QaFactSelectionService::class.java)
+        val qaRules = Mockito.mock(QaRuleRepository::class.java)
+        val draftService = Mockito.mock(AiReplyDraftService::class.java)
+        val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
+        val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+        val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val contact = ExpertContact(
+            id = 7L,
+            campaignId = 1L,
+            orcidId = "0000-0000",
+            expertEmail = "test@example.com",
+            expertName = "Test"
+        )
+        val mail = MailRecord(
+            id = 11L,
+            expertContactId = 7L,
+            direction = "INBOUND",
+            mailType = "REPLY",
+            senderAccountCode = null,
+            messageId = "<11@example.com>",
+            inReplyTo = null,
+            subject = "Subject",
+            body = "What?",
+            cleanedBody = null,
+            matchedQaRuleId = null,
+            sendStatus = null,
+            receivedAt = LocalDateTime.of(2026, 7, 28, 10, 0),
+            sentAt = null
+        )
+        val item1 = RequestFactItem(1, "What?", listOf(item1Source), RequestGroundingStatus.GROUNDED)
+        val item2 = RequestFactItem(2, "Who?", listOf(item2Source), RequestGroundingStatus.GROUNDED)
+        val sendIds = listOf(item1Source, item2Source).distinct()
+        val selection = ResolvedQaRules(
+            sendQaRuleIds = sendIds,
+            promptRuleIds = sendIds,
+            requestFacts = listOf(item1, item2),
+            requestCount = 2,
+            groundedRequestCount = 2
+        )
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(mail))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(mail))
+        Mockito.`when`(trainingQa.buildKnowledgeContext("What?")).thenReturn("")
+        Mockito.`when`(
+            contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: contact,
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(AiReplyContext("Name: Test", "history", emptyList(), true))
+        Mockito.`when`(factSelection.select("What?", null, true)).thenReturn(selection)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(sendIds))
+            .thenReturn(Triple("e2", emptyList(), emptyList()))
+        listOf(item1Source, item2Source).distinct().forEach { id ->
+            Mockito.`when`(qaRules.findById(id)).thenReturn(Optional.of(QaRule(
+                id = id,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Salary info",
+                answerBody = "Salary info",
+                replySubject = null,
+                enabled = true
+            )))
+        }
+        val composedRaw = "raw $item1Text|$item2Text"
+        Mockito.`when`(composer.composeLockedItems(listOf(item1Text, item2Text))).thenReturn(composedRaw)
+        Mockito.`when`(previewService.preview(composedRaw, contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered $composedRaw", emptyList()))
+
+        val claimValidator = AiReplyHighRiskClaimValidator(qaRules)
+        val service = TrustReplyWorkbenchService(
+            mailRecordRepository = mailRecords,
+            inboundMailProcessingRepository = inboundProcessing,
+            expertContactRepository = contacts,
+            aiTrainingQaService = trainingQa,
+            aiReplyContextService = contextService,
+            qaFactSelectionService = factSelection,
+            qaRuleRepository = qaRules,
+            aiReplyDraftService = draftService,
+            aiReplyDraftPreviewService = previewService,
+            aiReplyReviewAuditService = auditService,
+            llmProperties = LlmProperties(enabled = true),
+            aiReplyPointByPointComposer = composer,
+            claimValidator = claimValidator
+        )
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
+        val sourceVersion = service.resolveSource(source).sourceVersion
+        val emptyHash = AiReplyDraftService.sha256Hex("")
+        fun locked(item: RequestFactItem, text: String, sourceId: Long): TrustReplyLockedItemRequest {
+            val claims = listOf(AiReplyItemClaim("general.answer", text, listOf(sourceId)))
+            val requestKey = TrustReplyWorkbenchService.requestKey(sourceVersion, item.index, item.requestText, emptyList())
+            val versionId = TrustReplyWorkbenchService.versionId(
+                requestKey = requestKey,
+                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                answerText = text,
+                claims = claims,
+                model = "DEEPSEEK_V4_FLASH",
+                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                evidenceSetVersion = "e2",
+                sourceVersion = sourceVersion,
+                operatorInstructionHash = emptyHash
+            )
+            return TrustReplyLockedItemRequest(
+                requestKey = requestKey,
+                versionId = versionId,
+                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                answerText = text,
+                claims = claims,
+                model = "DEEPSEEK_V4_FLASH",
+                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                evidenceSetVersion = "e2",
+                sourceVersion = sourceVersion,
+                operatorInstructionHash = emptyHash
+            )
+        }
+        val lockedItems = listOf(
+            locked(item1, item1Text, item1Source),
+            locked(item2, item2Text, item2Source)
+        )
+        return DuplicateFixture(
+            service = service,
+            request = TrustReplyAssembleRequest(source, sourceVersion, "e2", lockedItems),
+            composer = composer,
+            previewService = previewService
+        )
+    }
+
     private fun operatorDirectedHandling(): TrustReplyItemHandling {
         val handling = TrustReplyItemHandling.values().firstOrNull {
             it.name == "ANSWER_FROM_OPERATOR_INPUT"

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.llm.service
 
 import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 
 internal data class IntentGroupTitle(
     val intentKeys: Set<String>,
@@ -56,7 +57,9 @@ object AiReplyIntentCatalog {
                 "finance.compensation_structure",
                 "ip.arrangements",
                 "publication.authorship",
-                "confidentiality.research"
+                "confidentiality.research",
+                "fees.policy",
+                "confidentiality.materials"
             ),
             title = "Contractual, financial and IP arrangements"
         ),
@@ -195,11 +198,18 @@ object AiReplyIntentCatalog {
                 "financial", "compensation", "salary", "funding", "payment", "how much",
                 "advisory role compensated", "is the advisory role compensated",
                 "compensated", "paid", "remuneration", "stipend", "honorarium",
-                "whether this is a paid role", "is this a paid position",
-                "costs", "obligations", "cost", "any costs", "any fees"
+                "whether this is a paid role", "is this a paid position"
             ),
             requiredCoverageKeys = listOf("finance.government_funding"),
             alternativeCoverageKeys = listOf("finance.enterprise_compensation")
+        ),
+        RequestIntentDefinition(
+            key = "fees.policy",
+            title = "Participant fee policy",
+            requestAliases = listOf(
+                "fees", "cost", "costs", "any fees", "any costs", "charge", "charges"
+            ),
+            requiredCoverageKeys = listOf("fees.policy")
         ),
         RequestIntentDefinition(
             key = "finance.compensation_structure",
@@ -236,6 +246,15 @@ object AiReplyIntentCatalog {
                 "confidentiality managed", "confidentiality policy", "research data confidentiality"
             ),
             requiredCoverageKeys = listOf("confidentiality.research")
+        ),
+        RequestIntentDefinition(
+            key = "confidentiality.materials",
+            title = "Application material confidentiality",
+            requestAliases = listOf(
+                "application materials", "materials confidential",
+                "application materials confidential", "my application materials"
+            ),
+            requiredCoverageKeys = listOf("confidentiality.materials")
         ),
         RequestIntentDefinition(
             key = "application.next_stages",
@@ -426,18 +445,54 @@ object AiReplyIntentCatalog {
         return score
     }
 
+    /**
+     * Intents that may only be evidenced by rules whose coverage_keys intersect
+     * the intent's required/alternative coverage. A blank or non-intersecting
+     * coverage never supports these intents (I-2). Legacy intents not listed
+     * here keep the historical blank-coverage assignment behavior.
+     */
+    private val coverageRequiredIntentKeys: Set<String> = setOf(
+        "contract.terms",
+        "finance.compensation_structure",
+        "ip.arrangements",
+        "publication.authorship",
+        "confidentiality.research",
+        "confidentiality.materials",
+        "fees.policy"
+    )
+
+    /**
+     * Any non-empty stored coverage must intersect the intent's required or
+     * alternative coverage before the rule may evidence that intent. Blank
+     * coverage keeps the legacy behavior: only the I-2 high-risk intents reject
+     * it, other legacy intents keep the historical assignment.
+     */
+    private fun isCoverageEligible(rule: QaRule, intent: RequestIntentDefinition): Boolean {
+        val keys = QaCoverageKeyCatalog.parseStored(rule.coverageKeys)
+        if (keys.isEmpty()) {
+            return intent.key !in coverageRequiredIntentKeys
+        }
+        val required = intent.requiredCoverageKeys + intent.alternativeCoverageKeys
+        return required.any { it in keys }
+    }
+
     private fun selectIntentKeyForRule(
         rule: QaRule,
         intents: List<RequestIntentDefinition>,
         catalogOrder: Map<String, Int>,
         intentKeys: Set<String>
     ): String? {
-        val scored = intents.map { intent ->
-            intent.key to scoreRuleIntentAlignment(rule, intent)
+        val scored = intents.mapNotNull { intent ->
+            if (!isCoverageEligible(rule, intent)) {
+                null
+            } else {
+                intent.key to scoreRuleIntentAlignment(rule, intent)
+            }
         }.filter { (_, score) -> score > 0 }
 
         if (scored.isEmpty()) {
-            return if ("general.answer" in intentKeys) "general.answer" else null
+            val blankCoverage = QaCoverageKeyCatalog.parseStored(rule.coverageKeys).isEmpty()
+            return if (blankCoverage && "general.answer" in intentKeys) "general.answer" else null
         }
 
         val bestScore = scored.maxOf { it.second }

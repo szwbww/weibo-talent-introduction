@@ -233,7 +233,7 @@ class AiReplyIntentCatalogTest {
     }
 
     @Test
-    fun `Q7 costs obligations matches finance dot arrangements`() {
-        assertExactKeys(q7, "finance.arrangements")
+    fun `Q7 costs obligations matches fee policy not finance arrangements`() {
+        assertExactKeys(q7, "fees.policy")
     }
 }

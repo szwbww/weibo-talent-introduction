@@ -8,6 +8,48 @@ object QaCoverageKeyCatalog {
         val group: String
     )
 
+    data class ControlledCoverageGroup(
+        val keys: Set<String>,
+        val canonicalAnswerBody: String
+    )
+
+    /** V82 atomic fact groups: coverage set -> its exact canonical answer body. */
+    private val controlledCoverageGroups: List<ControlledCoverageGroup> = listOf(
+        ControlledCoverageGroup(
+            keys = setOf("confidentiality.materials"),
+            canonicalAnswerBody = "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction."
+        ),
+        ControlledCoverageGroup(
+            keys = setOf("fees.policy"),
+            canonicalAnswerBody = "We never charge any fees throughout the entire process."
+        ),
+        ControlledCoverageGroup(
+            keys = setOf("contract.party", "contract.terms"),
+            canonicalAnswerBody = "After selection, you will sign a labor contract directly with the matched enterprise, and you may review the full terms before making any commitment."
+        ),
+        ControlledCoverageGroup(
+            keys = setOf("ip.arrangements"),
+            canonicalAnswerBody = "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement."
+        )
+    )
+
+    fun validateControlledBody(coverageKeys: List<String>, answerBody: String) {
+        val parsed = coverageKeys.toSet()
+        val controlled = controlledCoverageGroups.flatMap { it.keys }.toSet()
+        if (parsed.none { it in controlled }) {
+            return
+        }
+        val group = controlledCoverageGroups.firstOrNull { it.keys == parsed }
+            ?: throw IllegalArgumentException(
+                "Controlled coverage keys must form exactly one V82 atomic fact group"
+            )
+        if (answerBody.trim() != group.canonicalAnswerBody) {
+            throw IllegalArgumentException(
+                "Answer body must match the V82 canonical body for coverage ${group.keys.sorted().joinToString(",")}"
+            )
+        }
+    }
+
     private val catalog: Map<String, Entry> = listOf(
         Entry("general.answer", "通用回答", "通用/兜底回答", "通用"),
 
@@ -30,9 +72,11 @@ object QaCoverageKeyCatalog {
         Entry("contract.party", "签约主体", "与谁签合同", "合同与IP"),
         Entry("contract.terms", "合同条款", "合同主要条款与条件", "合同与IP"),
         Entry("ip.arrangements", "知识产权安排", "知识产权归属与安排", "合同与IP"),
+        Entry("publication.authorship", "发表署名权", "论文/成果的发表署名安排", "合同与IP"),
 
         Entry("finance.government_funding", "政府资金", "政府科研经费额度与范围", "资金"),
         Entry("finance.enterprise_compensation", "企业报酬", "企业提供的个人薪酬/补贴", "资金"),
+        Entry("finance.compensation_structure", "薪酬结构", "薪酬构成与结构明细", "资金"),
 
         Entry("application.required_materials", "申请所需材料", "申请需要提交的材料清单", "申请流程"),
         Entry("application.steps", "申请步骤", "申请的主要步骤与流程", "申请流程"),
@@ -43,7 +87,8 @@ object QaCoverageKeyCatalog {
         Entry("work.relocation", "搬迁要求", "是否需要/如何搬迁", "工作安排"),
 
         Entry("fees.policy", "费用政策", "申请/项目各阶段是否收费", "费用与保密"),
-        Entry("confidentiality.materials", "材料保密", "申请材料的保密处理", "费用与保密")
+        Entry("confidentiality.materials", "材料保密", "申请材料的保密处理", "费用与保密"),
+        Entry("confidentiality.research", "研究保密", "研究数据/研究过程保密制度", "费用与保密")
     ).associateBy { it.key }
 
     fun all(): List<Entry> = catalog.values.toList()
