@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.LocalDateTime
 import java.util.Locale
 
 enum class TrustReplySourceType {
@@ -110,7 +111,36 @@ data class TrustReplyBootstrapResponse(
     val requestCoverage: List<TrustReplyRequestCoverage>,
     val draftReadiness: String,
     val contextWarnings: List<String> = emptyList(),
-    val evidenceSetVersion: String
+    val evidenceSetVersion: String,
+    val savedState: TrustReplySavedState? = null
+)
+
+data class TrustReplySavedStatePayload(
+    val schemaVersion: String,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestedFactIds: List<Long>,
+    val selectedModel: String,
+    val lockedItems: List<TrustReplyLockedItemRequest>
+)
+
+data class TrustReplySavedState(
+    val status: String,
+    val stateVersion: Long = 0,
+    val selectedModel: String = "",
+    val requestedFactIds: List<Long> = emptyList(),
+    val lockedItems: List<TrustReplyLockedItemRequest> = emptyList()
+)
+
+data class TrustReplySaveStateRequest(
+    val source: TrustReplySourceRef,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestedFactIds: List<Long>? = null,
+    val selectedModel: String? = null,
+    val lockedItems: List<TrustReplyLockedItemRequest>
 )
 
 data class TrustReplyRuleMetadata(
@@ -216,7 +246,7 @@ data class TrustReplyAssembleResponse(
     val requestedFactIds: List<Long> = emptyList()
 )
 
-class TrustReplyWorkbenchException(
+open class TrustReplyWorkbenchException(
     val status: HttpStatus,
     val code: String
 ) : RuntimeException(code)
@@ -235,7 +265,8 @@ class TrustReplyWorkbenchService(
     private val aiReplyReviewAuditService: AiReplyReviewAuditService,
     private val llmProperties: LlmProperties,
     private val aiReplyPointByPointComposer: AiReplyPointByPointComposer,
-    private val claimValidator: AiReplyHighRiskClaimValidator
+    private val claimValidator: AiReplyHighRiskClaimValidator,
+    private val stateStore: TrustReplyWorkbenchStateStore
 ) {
     fun resolveSource(source: TrustReplySourceRef): ResolvedTrustReplySource {
         require(source.sourceId > 0) { "sourceId must be positive" }
@@ -247,16 +278,51 @@ class TrustReplyWorkbenchService(
 
     fun bootstrap(request: TrustReplyBootstrapRequest): TrustReplyBootstrapResponse {
         val resolved = resolveSource(request.source)
+        val stored = stateStore.load(resolved.source.sourceType.name, resolved.source.sourceId)
+        val now = LocalDateTime.now()
+        val callerFactIds = request.requestedFactIds
+        val storedPayload = if (callerFactIds == null) {
+            stored?.payloadJson?.let { stateStore.decodePayload(it) }
+        } else {
+            null
+        }
+        val candidateFactIds = when {
+            callerFactIds != null -> callerFactIds
+            storedPayload != null -> storedPayload.requestedFactIds
+            else -> null
+        }
+        var implicitSelectionUnusable = false
         val selection = try {
             qaFactSelectionService.select(
                 inboundText = resolved.inboundText,
-                selectedRuleIds = request.requestedFactIds,
+                selectedRuleIds = candidateFactIds,
                 researchProfileSufficient = resolved.researchProfileSufficient
             )
         } catch (ex: IllegalArgumentException) {
-            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
+            if (callerFactIds == null && storedPayload != null && candidateFactIds != null) {
+                implicitSelectionUnusable = true
+                qaFactSelectionService.select(
+                    inboundText = resolved.inboundText,
+                    selectedRuleIds = null,
+                    researchProfileSufficient = resolved.researchProfileSufficient
+                )
+            } else {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
+            }
         }
         val evidence = aiReplyDraftService.buildEvidenceSnapshotForSelection(selection.sendQaRuleIds)
+        val savedState = if (implicitSelectionUnusable && stored != null && stored.expiresAt.isAfter(now)) {
+            TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+        } else {
+            restoreSavedState(
+                resolved = resolved,
+                stored = stored,
+                requestFactIds = candidateFactIds,
+                selection = selection,
+                evidenceSetVersion = evidence.first,
+                now = now
+            )
+        }
         return TrustReplyBootstrapResponse(
             source = resolved.source,
             sourceVersion = resolved.sourceVersion,
@@ -273,8 +339,161 @@ class TrustReplyWorkbenchService(
             requestCoverage = selection.requestFacts.toCoverage(resolved.sourceVersion),
             draftReadiness = bootstrapReadiness(selection),
             contextWarnings = resolved.contextWarnings,
-            evidenceSetVersion = evidence.first
+            evidenceSetVersion = evidence.first,
+            savedState = savedState
         )
+    }
+
+    fun saveState(request: TrustReplySaveStateRequest): TrustReplySavedState {
+        val resolved = resolveSource(request.source)
+        requireCurrentSourceVersion(request.sourceVersion, resolved.sourceVersion)
+        if (request.schemaVersion != null && request.schemaVersion != TrustReplyWorkbenchStateStore.SCHEMA_VERSION) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_STATE_INVALID")
+        }
+        val (selection, evidenceSetVersion) = resolveCanonicalSelection(resolved, request.requestedFactIds)
+        requireCurrentEvidenceVersion(request.evidenceSetVersion, evidenceSetVersion)
+        val now = LocalDateTime.now()
+        if (request.lockedItems.isEmpty()) {
+            stateStore.delete(resolved.source.sourceType.name, resolved.source.sourceId, request.expectedStateVersion)
+            stateStore.pruneExpired(now)
+            return TrustReplySavedState(status = "DELETED", stateVersion = 0)
+        }
+        val orderedLocked = validateLockedSubset(
+            resolved = resolved,
+            selection = selection,
+            evidenceSetVersion = evidenceSetVersion,
+            lockedItems = request.lockedItems
+        )
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = evidenceSetVersion,
+            requestedFactIds = selection.sendQaRuleIds,
+            selectedModel = request.selectedModel?.trim()?.takeIf { it.isNotBlank() }
+                ?: AiReplyModel.DEEPSEEK_V4_FLASH.name,
+            lockedItems = orderedLocked
+        )
+        val json = stateStore.encodePayload(payload)
+        val newVersion = stateStore.save(
+            resolved.source.sourceType.name,
+            resolved.source.sourceId,
+            request.expectedStateVersion,
+            json,
+            now
+        )
+        stateStore.pruneExpired(now)
+        return TrustReplySavedState(
+            status = "SAVED",
+            stateVersion = newVersion,
+            selectedModel = payload.selectedModel,
+            requestedFactIds = payload.requestedFactIds,
+            lockedItems = payload.lockedItems
+        )
+    }
+
+    private fun restoreSavedState(
+        resolved: ResolvedTrustReplySource,
+        stored: TrustReplyWorkbenchStateStore.TrustReplyStoredState?,
+        requestFactIds: List<Long>?,
+        selection: ResolvedQaRules,
+        evidenceSetVersion: String,
+        now: LocalDateTime
+    ): TrustReplySavedState? {
+        if (stored == null) return null
+        if (!stored.expiresAt.isAfter(now)) {
+            stateStore.pruneExpired(now)
+            return TrustReplySavedState(status = "EXPIRED", stateVersion = 0)
+        }
+        val payload = stateStore.decodePayload(stored.payloadJson) ?: return TrustReplySavedState(
+            status = "INVALID",
+            stateVersion = stored.stateVersion
+        )
+        if (payload.sourceVersion != resolved.sourceVersion || payload.evidenceSetVersion != evidenceSetVersion) {
+            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+        }
+        if (requestFactIds != null && payload.requestedFactIds != requestFactIds) {
+            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+        }
+        val ordered = try {
+            validateLockedSubset(
+                resolved = resolved,
+                selection = selection,
+                evidenceSetVersion = evidenceSetVersion,
+                lockedItems = payload.lockedItems
+            )
+        } catch (ex: TrustReplyWorkbenchException) {
+            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+        }
+        return TrustReplySavedState(
+            status = "RESTORED",
+            stateVersion = stored.stateVersion,
+            selectedModel = payload.selectedModel,
+            requestedFactIds = payload.requestedFactIds,
+            lockedItems = ordered
+        )
+    }
+
+    private fun validateLockedSubset(
+        resolved: ResolvedTrustReplySource,
+        selection: ResolvedQaRules,
+        evidenceSetVersion: String,
+        lockedItems: List<TrustReplyLockedItemRequest>
+    ): List<TrustReplyLockedItemRequest> {
+        val canonicalItems = selection.requestFacts.sortedBy { it.index }
+        val canonicalKeys = canonicalItems.map { requestKey(resolved.sourceVersion, it) }
+        val actualKeys = lockedItems.map { it.requestKey }
+        if (actualKeys.size != actualKeys.toSet().size) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEMS_INCOMPLETE")
+        }
+        val unknown = actualKeys.filter { it !in canonicalKeys }
+        if (unknown.isNotEmpty()) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
+        }
+        val byKey = lockedItems.associateBy { it.requestKey }
+        val groundedSections = mutableListOf<ValidatedSection>()
+        val versions = canonicalItems.mapNotNull { item ->
+            val key = requestKey(resolved.sourceVersion, item)
+            val locked = byKey[key] ?: return@mapNotNull null
+            validateLockedItem(
+                item = item,
+                locked = locked,
+                sourceVersion = resolved.sourceVersion,
+                evidenceSetVersion = evidenceSetVersion,
+                inboundText = resolved.inboundText
+            )
+            materializeVersion(
+                item = item,
+                requestKey = locked.requestKey,
+                handling = locked.handling,
+                answerText = locked.answerText,
+                claims = locked.claims,
+                model = locked.model,
+                generationKind = locked.generationKind,
+                evidenceSetVersion = evidenceSetVersion,
+                sourceVersion = resolved.sourceVersion,
+                operatorInstruction = locked.operatorInstruction,
+                operatorInstructionHash = locked.operatorInstructionHash
+            ).also { version ->
+                if (locked.handling == TrustReplyItemHandling.ANSWER_WITH_EVIDENCE ||
+                    locked.handling == TrustReplyItemHandling.ANSWER_SUPPORTED_PART
+                ) {
+                    groundedSections += ValidatedSection(
+                        item.index,
+                        version.claims.map { claim ->
+                            IntentAnswer(claim.intentKey, claim.text, claim.sourceRuleIds)
+                        }
+                    )
+                }
+                if (version.versionId != locked.versionId) {
+                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ITEM_VERSION_INVALID")
+                }
+            }
+        }
+        validateGroundedTrustBoundary(selection.requestFacts, groundedSections)
+        validateNoDuplicateClaims(versions)
+        return byKey.let { map ->
+            canonicalItems.mapNotNull { item -> map[requestKey(resolved.sourceVersion, item)] }
+        }
     }
 
     fun generate(
@@ -586,26 +805,7 @@ class TrustReplyWorkbenchService(
             }
         }
 
-        if (groundedSections.isNotEmpty()) {
-            val plan = AiReplyGroundedContentPlanner().buildPlan(selection.requestFacts, emptySet())
-            val claimResult = claimValidator.validate(groundedSections, selection.requestFacts)
-            if (!claimResult.valid) {
-                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
-            }
-            val trustResult = claimValidator.validateGroundedCandidate(
-                GroundedCandidateInput(
-                    validatedSections = groundedSections,
-                    requestFacts = selection.requestFacts,
-                    plan = plan,
-                    finalBody = groundedSections.flatMap { it.answers }.joinToString(" ") { it.answer },
-                    hasBlockingTrustGap = AiReplyGroundedContentPlanner().hasBlockingTrustGap(selection.requestFacts),
-                    sourceTextsByClaim = claimResult.sourceTextsByClaim
-                )
-            )
-            if (!trustResult.valid) {
-                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
-            }
-        }
+        validateGroundedTrustBoundary(selection.requestFacts, groundedSections)
 
         validateNoDuplicateClaims(versions)
 
@@ -631,6 +831,31 @@ class TrustReplyWorkbenchService(
             itemVersions = versions,
             requestedFactIds = selection.sendQaRuleIds
         )
+    }
+
+    private fun validateGroundedTrustBoundary(
+        requestFacts: List<RequestFactItem>,
+        groundedSections: List<ValidatedSection>
+    ) {
+        if (groundedSections.isEmpty()) return
+        val plan = AiReplyGroundedContentPlanner().buildPlan(requestFacts, emptySet())
+        val claimResult = claimValidator.validate(groundedSections, requestFacts)
+        if (!claimResult.valid) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
+        }
+        val trustResult = claimValidator.validateGroundedCandidate(
+            GroundedCandidateInput(
+                validatedSections = groundedSections,
+                requestFacts = requestFacts,
+                plan = plan,
+                finalBody = groundedSections.flatMap { it.answers }.joinToString(" ") { it.answer },
+                hasBlockingTrustGap = AiReplyGroundedContentPlanner().hasBlockingTrustGap(requestFacts),
+                sourceTextsByClaim = claimResult.sourceTextsByClaim
+            )
+        )
+        if (!trustResult.valid) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
+        }
     }
 
     private fun validateNoDuplicateClaims(versions: List<TrustReplyItemVersion>) {

@@ -206,6 +206,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
         val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
         val claimValidator = Mockito.mock(AiReplyHighRiskClaimValidator::class.java)
+        val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
         val contact = ExpertContact(
             id = 7L,
             campaignId = 1L,
@@ -274,7 +275,8 @@ class TrustReplyWorkbenchItemFlowTest {
             aiReplyReviewAuditService = auditService,
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
-            claimValidator = claimValidator
+            claimValidator = claimValidator,
+            stateStore = stateStore
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
@@ -717,6 +719,7 @@ class TrustReplyWorkbenchItemFlowTest {
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered $composedRaw", emptyList()))
 
         val claimValidator = AiReplyHighRiskClaimValidator(qaRules)
+        val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
         val service = TrustReplyWorkbenchService(
             mailRecordRepository = mailRecords,
             inboundMailProcessingRepository = inboundProcessing,
@@ -730,7 +733,8 @@ class TrustReplyWorkbenchItemFlowTest {
             aiReplyReviewAuditService = auditService,
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
-            claimValidator = claimValidator
+            claimValidator = claimValidator,
+            stateStore = stateStore
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
@@ -891,6 +895,7 @@ class TrustReplyWorkbenchItemFlowTest {
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("", emptyList()))
 
         val claimValidator = AiReplyHighRiskClaimValidator(qaRules)
+        val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
         val service = TrustReplyWorkbenchService(
             mailRecordRepository = mailRecords,
             inboundMailProcessingRepository = inboundProcessing,
@@ -904,7 +909,8 @@ class TrustReplyWorkbenchItemFlowTest {
             aiReplyReviewAuditService = auditService,
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
-            claimValidator = claimValidator
+            claimValidator = claimValidator,
+            stateStore = stateStore
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion

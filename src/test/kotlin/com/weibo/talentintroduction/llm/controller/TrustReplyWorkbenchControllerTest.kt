@@ -13,6 +13,9 @@ import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
 import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -293,5 +296,160 @@ class TrustReplyWorkbenchControllerTest {
         )
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("TRUST_REPLY_SOURCE_STALE"))
+    }
+
+    @Test
+    fun `state PUT round trips locked subset and expected version`() {
+        var captured: TrustReplySaveStateRequest? = null
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplySaveStateRequest
+            TrustReplySavedState(
+                status = "SAVED",
+                stateVersion = 7,
+                selectedModel = "DEEPSEEK_V4_FLASH",
+                requestedFactIds = listOf(9L),
+                lockedItems = captured!!.lockedItems
+            )
+        }.`when`(service).saveState(Mockito.any(TrustReplySaveStateRequest::class.java) ?: TrustReplySaveStateRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedStateVersion = 0,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "source":{"sourceType":"TRAINING_MAIL","sourceId":123},
+                      "expectedStateVersion":3,
+                      "sourceVersion":"s1",
+                      "evidenceSetVersion":"e1",
+                      "requestedFactIds":[9],
+                      "selectedModel":"DEEPSEEK_V4_FLASH",
+                      "lockedItems":[{
+                        "requestKey":"k",
+                        "versionId":"v",
+                        "handling":"ANSWER_WITH_EVIDENCE",
+                        "answerText":"answer",
+                        "claims":[],
+                        "model":"DEEPSEEK_V4_FLASH",
+                        "generationKind":"AI_GENERATED",
+                        "evidenceSetVersion":"e1",
+                        "sourceVersion":"s1"
+                      }]
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("SAVED"))
+            .andExpect(jsonPath("$.stateVersion").value(7))
+
+        val saved = requireNotNull(captured)
+        assertEquals(3L, saved.expectedStateVersion)
+        assertEquals("k", saved.lockedItems.single().requestKey)
+        assertEquals(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE, saved.lockedItems.single().handling)
+    }
+
+    @Test
+    fun `state PUT maps conflict and invalid locked item to stable codes`() {
+        Mockito.`when`(service.saveState(Mockito.any(TrustReplySaveStateRequest::class.java) ?: TrustReplySaveStateRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedStateVersion = 0,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))).thenThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.CONFLICT,
+            "TRUST_REPLY_STATE_CONFLICT"
+        ))
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":1,"sourceVersion":"s1","evidenceSetVersion":"e1","lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_STATE_CONFLICT"))
+
+        Mockito.doThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+            "TRUST_REPLY_REQUEST_KEY_INVALID"
+        )).`when`(service).saveState(Mockito.any(TrustReplySaveStateRequest::class.java) ?: TrustReplySaveStateRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedStateVersion = 0,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":0,"sourceVersion":"s1","evidenceSetVersion":"e1","lockedItems":[{"requestKey":"k","versionId":"v","handling":"ANSWER_WITH_EVIDENCE","answerText":"answer","claims":[],"model":"DEEPSEEK_V4_FLASH","generationKind":"AI_GENERATED","evidenceSetVersion":"e1","sourceVersion":"s1"}]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_REQUEST_KEY_INVALID"))
+    }
+
+    @Test
+    fun `bootstrap serializes the savedState object`() {
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L)
+        val bootstrap = TrustReplyBootstrapResponse(
+            source = source,
+            sourceVersion = "source-v1",
+            inboundSubject = "Subject",
+            inboundText = "Question",
+            expertName = "Test",
+            expertEmail = "test@example.com",
+            llmEnabled = false,
+            availableModels = listOf("DEEPSEEK_V4_FLASH"),
+            defaultModel = "DEEPSEEK_V4_FLASH",
+            suggestedFactIds = listOf(9L),
+            canonicalFactIds = listOf(9L),
+            requestCoverage = emptyList(),
+            draftReadiness = "READY",
+            evidenceSetVersion = "evidence-v1",
+            savedState = TrustReplySavedState(
+                status = "RESTORED",
+                stateVersion = 2,
+                selectedModel = "DEEPSEEK_V4_FLASH",
+                requestedFactIds = listOf(9L),
+                lockedItems = listOf(
+                    TrustReplyLockedItemRequest(
+                        requestKey = "k".repeat(32),
+                        versionId = "v1",
+                        handling = TrustReplyItemHandling.OMIT,
+                        answerText = "",
+                        claims = emptyList(),
+                        model = "DEEPSEEK_V4_FLASH",
+                        generationKind = TrustReplyItemGenerationKind.OMITTED,
+                        evidenceSetVersion = "e1",
+                        sourceVersion = "s1"
+                    )
+                )
+            )
+        )
+        Mockito.`when`(service.bootstrap(TrustReplyBootstrapRequest(source, null))).thenReturn(bootstrap)
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/bootstrap")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":123}}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.savedState.status").value("RESTORED"))
+            .andExpect(jsonPath("$.savedState.stateVersion").value(2))
+            .andExpect(jsonPath("$.savedState.lockedItems[0].requestKey").value("k".repeat(32)))
     }
 }

@@ -112,6 +112,68 @@ function itemVersion(requestKey, sourceVersion, evidenceSetVersion, versionId = 
     };
 }
 
+function lockedItem(requestKey, sourceVersion, evidenceSetVersion, versionId = "v1", overrides = {}) {
+    return {
+        requestKey,
+        versionId,
+        handling: "ANSWER_WITH_EVIDENCE",
+        answerText: "answer",
+        claims: [],
+        model: "DEEPSEEK_V4_FLASH",
+        generationKind: "AI_GENERATED",
+        evidenceSetVersion,
+        sourceVersion,
+        operatorInstructionHash: "",
+        operatorInstruction: "",
+        ...overrides
+    };
+}
+
+function serializeLocked(version, current) {
+    return {
+        requestKey: version.requestKey,
+        versionId: version.versionId,
+        handling: version.handling,
+        answerText: version.answerText || "",
+        claims: version.claims || [],
+        model: version.model || "",
+        generationKind: version.generationKind,
+        evidenceSetVersion: version.evidenceSetVersion,
+        sourceVersion: version.sourceVersion,
+        operatorInstructionHash: version.operatorInstructionHash || "",
+        operatorInstruction: version.operatorInstruction || ""
+    };
+}
+
+function stateResponse(stateVersion, lockedItems, status) {
+    return jsonResponse({
+        status: status || "SAVED",
+        stateVersion,
+        selectedModel: "DEEPSEEK_V4_FLASH",
+        requestedFactIds: [1],
+        lockedItems: lockedItems || []
+    });
+}
+
+function conflictResponse(code) {
+    return { ok: false, status: 409, json: async () => ({ code: code || "TRUST_REPLY_STATE_CONFLICT" }) };
+}
+
+function pendingSseFetch() {
+    let resolveFetch;
+    let rejectFetch;
+    const promise = new Promise((resolve, reject) => { resolveFetch = resolve; rejectFetch = reject; });
+    promise.bind = (options) => {
+        if (options && options.signal) {
+            options.signal.addEventListener("abort", () => {
+                rejectFetch(Object.assign(new Error("AbortError"), { name: "AbortError", code: 20 }));
+            });
+        }
+    };
+    promise.resolveFetch = (value) => resolveFetch(value);
+    return promise;
+}
+
 function createSandbox(fetchImpl, { crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000001" } } = {}) {
     const document = new FakeDocument();
     const window = {
@@ -466,9 +528,10 @@ describe("shared trust reply workbench mount contract", () => {
         const current = bootstrap("LIVE_INBOUND", 310);
         const requestKey = current.requestCoverage[0].requestKey;
         const fullGeneration = deferred();
-        const { window } = createSandbox((url) => {
+        const { window } = createSandbox((url, options) => {
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
             if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "问题译文" }));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             if (url.includes("/generations/stream")) return fullGeneration.promise;
             throw new Error(`unexpected request: ${url}`);
         });
@@ -531,6 +594,7 @@ describe("shared trust reply workbench mount contract", () => {
             const payload = JSON.parse(options.body);
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
             if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             if (url.includes("/generations/stream")) {
                 generationPayloads.push(payload);
                 const version = payload.requestKey === first.requestKey && payload.operatorInstruction === "first second"
@@ -611,6 +675,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(document.activeElement, textarea);
         textarea.value = "first second";
         host.dispatchEvent("input", textarea);
+        await settle();
         assert.strictEqual(document.activeElement, textarea);
         assert.strictEqual(firstDom.versionSelect.value, "");
         assert.doesNotMatch(firstDom.answer.innerHTML, /old first/);
@@ -657,6 +722,7 @@ describe("shared trust reply workbench mount contract", () => {
         ];
         const { window } = createSandbox((url, options) => {
             if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             calls.push({ url, options });
             return Promise.resolve(responses.shift());
         });
@@ -671,8 +737,7 @@ describe("shared trust reply workbench mount contract", () => {
         host.dispatchEvent("change", { dataset: { role: "handling", requestKey }, value: "ACKNOWLEDGE_PENDING" });
         click(host, "adjust-item", requestKey);
         await settle();
-        assert.match(host.innerHTML, /AI generation failed/);
-        host.dispatchEvent("change", { dataset: { role: "handling", requestKey }, value: "OMIT" });
+        assert.match(host.innerHTML, /AI generation failed/);        host.dispatchEvent("change", { dataset: { role: "handling", requestKey }, value: "OMIT" });
         const lockButton = host.innerHTML.match(/<button[^>]*data-action="resolve-item"[^>]*>[^<]*<\/button>/)?.[0];
         assert.ok(lockButton);
         assert.doesNotMatch(lockButton, /\sdisabled/);
@@ -752,7 +817,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /来源或事实已变化/);
     });
 
-    it("assembles after explicit full draft and invalidates assembly when a decision changes", async () => {
+    it("assembles after the grounded sequence and invalidates assembly when a decision changes", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 404;
         const current = bootstrap(sourceType, sourceId);
@@ -764,7 +829,7 @@ describe("shared trust reply workbench mount contract", () => {
                 source: current.source,
                 sourceVersion: current.sourceVersion,
                 evidenceSetVersion: current.evidenceSetVersion,
-                itemVersions: [version]
+                version
             }),
             jsonResponse({
                 source: current.source,
@@ -777,7 +842,11 @@ describe("shared trust reply workbench mount contract", () => {
                 itemVersions: [version]
             })
         ];
-        const { window } = createSandbox(() => Promise.resolve(responses.shift()));
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            return Promise.resolve(responses.shift());
+        });
         window.confirm = () => false;
         const host = new FakeElement(window.document);
         window.TrustReplyWorkbench.mount(host, {
@@ -811,6 +880,7 @@ describe("shared trust reply workbench mount contract", () => {
         const { window } = createSandbox((url, options) => {
             calls.push({ url, options });
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             if (url.includes("/generations/stream")) {
                 return Promise.resolve(sseResponse("result", {
                     source: current.source,
@@ -841,7 +911,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /data-locked="true"/);
     });
 
-    it("merges only missing grounded versions during assemble", async () => {
+    it("durably saves every locked decision and never falls back to FULL_DRAFT during assemble", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 361;
         const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
@@ -858,20 +928,15 @@ describe("shared trust reply workbench mount contract", () => {
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
             if (url.includes("/generations/stream")) {
                 const payload = JSON.parse(options.body);
-                if (payload.operation === "ADJUST_ITEM") {
-                    return Promise.resolve(sseResponse("result", {
-                        source: current.source,
-                        sourceVersion: current.sourceVersion,
-                        evidenceSetVersion: current.evidenceSetVersion,
-                        version: partialVersion
-                    }));
-                }
                 return Promise.resolve(sseResponse("result", {
                     source: current.source,
                     sourceVersion: current.sourceVersion,
                     evidenceSetVersion: current.evidenceSetVersion,
-                    itemVersions: [groundedVersion, partialVersion]
+                    version: payload.requestKey === partial.requestKey ? partialVersion : groundedVersion
                 }));
+            }
+            if (url.includes("/state")) {
+                return Promise.resolve(stateResponse(calls.filter((call) => call.url.includes("/state")).length));
             }
             if (url.includes("/assemble")) {
                 return Promise.resolve(jsonResponse({
@@ -902,8 +967,20 @@ describe("shared trust reply workbench mount contract", () => {
         click(host, "assemble");
         await settle();
 
-        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length, 1);
-        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 1);
+        const streamCalls = calls.filter((call) => call.url.includes("/generations/stream"));
+        const stateCalls = calls.filter((call) => call.url.includes("/state"));
+        const assembleCalls = calls.filter((call) => call.url.includes("/assemble"));
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length, 0);
+        assert.strictEqual(streamCalls.length, 2);
+        assert.strictEqual(streamCalls[1].url.includes("/generations/stream"), true);
+        assert.strictEqual(JSON.parse(streamCalls[1].options.body).operation, "ADJUST_ITEM");
+        assert.strictEqual(JSON.parse(streamCalls[1].options.body).requestKey, grounded.requestKey);
+        assert.strictEqual(JSON.parse(streamCalls[1].options.body).handling, "ANSWER_WITH_EVIDENCE");
+        assert.strictEqual(stateCalls.length, 2);
+        assert.strictEqual(assembleCalls.length, 1);
+        const assembleIndex = calls.indexOf(assembleCalls[0]);
+        const lastStateIndex = calls.indexOf(stateCalls[1]);
+        assert.ok(lastStateIndex < assembleIndex, "durable save must complete before assemble");
         assert.match(host.innerHTML, /merged draft/);
         assert.match(host.innerHTML, /partial-v1/);
     });
@@ -923,6 +1000,9 @@ describe("shared trust reply workbench mount contract", () => {
                     evidenceSetVersion: current.evidenceSetVersion,
                     version
                 }));
+            }
+            if (url.includes("/state")) {
+                return Promise.resolve(stateResponse(1, [serializeLocked(version, current)]));
             }
             if (url.includes("/assemble")) {
                 return Promise.resolve(jsonResponse({
@@ -952,6 +1032,9 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
 
         assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length, 0);
+        const stateIndex = calls.findIndex((call) => call.url.includes("/state"));
+        const assembleIndex = calls.findIndex((call) => call.url.includes("/assemble"));
+        assert.ok(stateIndex >= 0 && stateIndex < assembleIndex, "active grounded adoption must be durably saved before assemble");
         assert.match(host.innerHTML, /active adopted/);
     });
 
@@ -961,6 +1044,7 @@ describe("shared trust reply workbench mount contract", () => {
         const version = itemVersion(request.requestKey, current.sourceVersion, current.evidenceSetVersion, "stable-v1");
         const { window, document } = createSandbox((url, options) => {
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             if (url.includes("/generations/stream")) {
                 return Promise.resolve(sseResponse("result", {
                     source: current.source,
@@ -1071,9 +1155,10 @@ describe("shared trust reply workbench mount contract", () => {
         const { window } = createSandbox((url, options) => {
             calls.push({ url, options });
             if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
             if (url.includes("/generations/stream")) {
                 const payload = JSON.parse(options.body);
-                if (payload.operation === "ADJUST_ITEM") {
+                if (payload.operation === "ADJUST_ITEM" && payload.requestKey === partial.requestKey) {
                     return Promise.resolve(sseResponse("result", {
                         source: current.source,
                         sourceVersion: current.sourceVersion,
@@ -1115,7 +1200,7 @@ describe("shared trust reply workbench mount contract", () => {
         return { current, grounded, partial, partialVersion, calls, host, hostRef, window };
     }
 
-    it("preserves manual decisions when full generation is cancelled", async () => {
+    it("preserves manual decisions when the assembly sequence is cancelled", async () => {
         const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(370);
         hostRef.streamResponse = () => Promise.resolve(sseResponse("cancelled", { message: "cancelled" }));
         click(host, "assemble");
@@ -1127,7 +1212,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[^>]*data-locked="true"`));
     });
 
-    it("preserves manual decisions when full generation omits terminal identity", async () => {
+    it("preserves manual decisions when an item result omits terminal identity", async () => {
         const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(371);
         const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "grounded-v1");
         hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
@@ -1141,7 +1226,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /来源或事实已变化/);
     });
 
-    it("preserves manual decisions when full generation identity mismatches", async () => {
+    it("preserves manual decisions when an item result identity mismatches", async () => {
         const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(372);
         const groundedVersion = itemVersion(grounded.requestKey, "foreign-source", current.evidenceSetVersion, "grounded-v1");
         hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
@@ -1158,14 +1243,15 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /生成版本身份无效/);
     });
 
-    it("rejects duplicate identical full-generation versions before merge", async () => {
+    it("rejects duplicate response versions for one request in the assembly loop", async () => {
         const { current, grounded, partial, partialVersion, calls, host, hostRef } = await mountResolvedPartialWithMissingGrounded(373);
         const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "dup-v1");
         hostRef.streamResponse = () => Promise.resolve(sseResponse("result", {
             source: current.source,
             sourceVersion: current.sourceVersion,
             evidenceSetVersion: current.evidenceSetVersion,
-            itemVersions: [groundedVersion, { ...groundedVersion }]
+            version: groundedVersion,
+            itemVersions: [groundedVersion, { ...groundedVersion, versionId: "dup-v2" }]
         }));
         click(host, "assemble");
         await settle();
@@ -1175,7 +1261,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /完整生成返回重复版本/);
     });
 
-    it("routes server stale full-generation errors through the stale reset path", async () => {
+    it("routes server stale errors through the stale reset path", async () => {
         const { grounded, partial, calls, host, hostRef, window } = await mountResolvedPartialWithMissingGrounded(375);
         window.confirm = () => false;
         hostRef.streamResponse = () => Promise.resolve(sseResponse("error", {
@@ -1258,5 +1344,503 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
         assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
         assert.match(host.innerHTML, /待人工处理 1 项/);
+    });
+
+    it("restores durable locked items on bootstrap without any generation", async () => {
+        for (const [mode, sourceType, sourceId] of [["SIMULATION", "TRAINING_MAIL", 380], ["LIVE", "LIVE_INBOUND", 381]]) {
+            const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+            const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+            const current = bootstrapWithCoverage(sourceType, sourceId, [grounded, partial]);
+            current.savedState = {
+                status: "RESTORED",
+                stateVersion: 3,
+                selectedModel: "DEEPSEEK_V4_FLASH",
+                requestedFactIds: [1],
+                lockedItems: [lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "restored-v1")]
+            };
+            const calls = [];
+            const { window } = createSandbox((url, options) => {
+                calls.push({ url, options });
+                if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+                if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+                throw new Error(`unexpected request: ${url}`);
+            });
+            const host = new FakeElement(window.document);
+            window.TrustReplyWorkbench.mount(host, {
+                mode,
+                source: current.source,
+                contextPath: "",
+                onComplete: async () => {}
+            });
+            await settle();
+            await settle();
+            assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0, mode);
+            assert.match(host.innerHTML, /已恢复 1 项已锁定回答/);
+            assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+            assert.match(host.innerHTML, /已处理/);
+            assert.match(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[^>]*data-locked="false"`));
+            assert.doesNotMatch(host.innerHTML, /generations\/stream/);
+        }
+    });
+
+    it("does not restore stale saved state and never generates", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 382;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded]);
+        current.savedState = {
+            status: "STALE",
+            stateVersion: 2,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "stale-v1")]
+        };
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0);
+        assert.match(host.innerHTML, /STALE：来源或依据已变化，旧锁定回答未恢复/);
+        assert.doesNotMatch(host.innerHTML, /stale-v1/);
+        assert.doesNotMatch(host.innerHTML, /data-locked="true"/);
+    });
+
+    it("rolls back a failed durable lock and keeps the active version adoptable", async () => {
+        const current = bootstrap("LIVE_INBOUND", 383);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "adopt-v1");
+        let stateCalls = 0;
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCalls += 1;
+                return stateCalls === 1 ? Promise.resolve(conflictResponse()) : Promise.resolve(stateResponse(1));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "resolve-item", requestKey);
+        await settle();
+        assert.doesNotMatch(host.innerHTML, /data-locked="true"/);
+        assert.match(host.innerHTML, /TRUST_REPLY_STATE_CONFLICT|保存失败/);
+        assert.match(host.innerHTML, /采用此版本/);
+        click(host, "resolve-item", requestKey);
+        await settle();
+        assert.match(host.innerHTML, /data-locked="true"/);
+        assert.strictEqual(stateCalls, 2);
+    });
+
+    it("deletes saved state before switching facts and refuses to switch on delete failure", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 384;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded]);
+        current.savedState = {
+            status: "RESTORED",
+            stateVersion: 4,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "r-v1")]
+        };
+        const buildMount = (failDelete) => {
+            const statePayloads = [];
+            let bootstrapCalls = 0;
+            const { window } = createSandbox((url, options) => {
+                if (url.includes("/bootstrap")) {
+                    bootstrapCalls += 1;
+                    return Promise.resolve(jsonResponse(current));
+                }
+                if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+                if (url.includes("/state")) {
+                    statePayloads.push(JSON.parse(options.body));
+                    return failDelete
+                        ? Promise.resolve({ ok: false, status: 500, json: async () => ({ code: "TRUST_REPLY_STATE_TOO_LARGE" }) })
+                        : Promise.resolve(stateResponse(0));
+                }
+                throw new Error(`unexpected request: ${url}`);
+            });
+            const host = new FakeElement(window.document);
+            window.TrustReplyWorkbench.mount(host, {
+                mode: "SIMULATION",
+                source: current.source,
+                contextPath: "",
+                onComplete: async () => {}
+            });
+            return { window, host, statePayloads, getBootstrapCalls: () => bootstrapCalls };
+        };
+
+        const okMount = buildMount(false);
+        await settle();
+        await settle();
+        okMount.host.dispatchEvent("change", { dataset: { role: "fact" }, value: "2", checked: true, matches: () => true });
+        await settle();
+        assert.strictEqual(okMount.statePayloads.length, 1);
+        assert.deepStrictEqual(okMount.statePayloads[0].lockedItems, []);
+        assert.strictEqual(okMount.statePayloads[0].expectedStateVersion, 4);
+        assert.ok(okMount.getBootstrapCalls() >= 2, "facts must re-bootstrap after a successful delete");
+
+        const failMount = buildMount(true);
+        await settle();
+        await settle();
+        failMount.host.dispatchEvent("change", { dataset: { role: "fact" }, value: "2", checked: true, matches: () => true });
+        await settle();
+        assert.strictEqual(failMount.statePayloads.length, 1);
+        assert.strictEqual(failMount.getBootstrapCalls(), 1, "delete failure must not switch facts");
+        assert.match(failMount.host.innerHTML, /旧锁定状态删除失败/);
+    });
+
+    it("generates all missing grounded items in canonical order with durable per-item saves", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 385;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-b");
+        const g2 = coverageItem(sourceType, sourceId, 2, "GROUNDED", "-c");
+        const partial = coverageItem(sourceType, sourceId, 3, "PARTIAL", "-partial");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [g0, g1, g2, partial]);
+        const versions = {
+            [g0.requestKey]: itemVersion(g0.requestKey, current.sourceVersion, current.evidenceSetVersion, "g0-v1"),
+            [g1.requestKey]: itemVersion(g1.requestKey, current.sourceVersion, current.evidenceSetVersion, "g1-v1"),
+            [g2.requestKey]: itemVersion(g2.requestKey, current.sourceVersion, current.evidenceSetVersion, "g2-v1")
+        };
+        const calls = [];
+        const streamPayloads = [];
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                streamPayloads.push(payload);
+                const version = versions[payload.requestKey]
+                    || {
+                        ...itemVersion(payload.requestKey, current.sourceVersion, current.evidenceSetVersion, "partial-v1"),
+                        handling: "ANSWER_SUPPORTED_PART"
+                    };
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(stateResponse(stateCount));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "looped draft",
+                    renderedDraftText: "looped draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [versions[g0.requestKey], versions[g1.requestKey], versions[g2.requestKey]]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        click(host, "resolve-item", partial.requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+
+        const groundedPayloads = streamPayloads.filter((payload) => payload.requestKey !== partial.requestKey);
+        assert.strictEqual(groundedPayloads.length, 3);
+        assert.deepStrictEqual(groundedPayloads.map((payload) => payload.requestKey), [g0.requestKey, g1.requestKey, g2.requestKey]);
+        assert.ok(groundedPayloads.every((payload) => payload.operation === "ADJUST_ITEM"));
+        assert.ok(groundedPayloads.every((payload) => payload.handling === "ANSWER_WITH_EVIDENCE"));
+        assert.strictEqual(streamPayloads.filter((payload) => payload.requestKey === partial.requestKey).length, 1);
+        assert.strictEqual(streamPayloads.filter((payload) => payload.operation === "FULL_DRAFT").length, 0);
+        assert.strictEqual(stateCount, 4);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 1);
+        assert.match(host.innerHTML, /looped draft/);
+        assert.match(host.innerHTML, /g0-v1/);
+    });
+
+    it("stops the assembly loop at the k-th failure and keeps earlier durable items", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 386;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-b");
+        const g2 = coverageItem(sourceType, sourceId, 2, "GROUNDED", "-c");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [g0, g1, g2]);
+        const versions = {
+            [g0.requestKey]: itemVersion(g0.requestKey, current.sourceVersion, current.evidenceSetVersion, "g0-v1"),
+            [g1.requestKey]: itemVersion(g1.requestKey, current.sourceVersion, current.evidenceSetVersion, "g1-v1"),
+            [g2.requestKey]: itemVersion(g2.requestKey, current.sourceVersion, current.evidenceSetVersion, "g2-v1")
+        };
+        const calls = [];
+        let streamCount = 0;
+        let stateCount = 0;
+        let failNext = false;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                streamCount += 1;
+                if (payload.requestKey === g1.requestKey && failNext) {
+                    return Promise.resolve(sseResponse("error", { message: "k-th failed" }));
+                }
+                const version = versions[payload.requestKey];
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(stateResponse(stateCount));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "retried draft",
+                    renderedDraftText: "retried draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [versions[g0.requestKey], versions[g1.requestKey], versions[g2.requestKey]]
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        failNext = true;
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(streamCount, 2);
+        assert.strictEqual(stateCount, 1);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /k-th failed/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /g2-v1/);
+        failNext = false;
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(streamCount, 4);
+        assert.strictEqual(stateCount, 3);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 1);
+        assert.match(host.innerHTML, /retried draft/);
+        assert.match(host.innerHTML, /g2-v1/);
+    });
+
+    it("stops the assembly loop when a durable save conflicts", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 387;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-b");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [g0, g1]);
+        const versions = {
+            [g0.requestKey]: itemVersion(g0.requestKey, current.sourceVersion, current.evidenceSetVersion, "g0-v1"),
+            [g1.requestKey]: itemVersion(g1.requestKey, current.sourceVersion, current.evidenceSetVersion, "g1-v1")
+        };
+        const calls = [];
+        let streamCount = 0;
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                streamCount += 1;
+                const version = versions[payload.requestKey];
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return stateCount === 2 ? Promise.resolve(conflictResponse()) : Promise.resolve(stateResponse(stateCount));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(streamCount, 2);
+        assert.strictEqual(stateCount, 2);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /TRUST_REPLY_STATE_CONFLICT|保存失败/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${g1.requestKey}"[^>]*data-locked="true"`));
+    });
+
+    it("cancels only the current generation in the assembly sequence", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 388;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-b");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [g0, g1]);
+        const v0 = itemVersion(g0.requestKey, current.sourceVersion, current.evidenceSetVersion, "g0-v1");
+        const calls = [];
+        let streamCount = 0;
+        let stateCount = 0;
+        const pending = pendingSseFetch();
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                streamCount += 1;
+                if (payload.requestKey === g0.requestKey) {
+                    return Promise.resolve(sseResponse("result", {
+                        source: current.source,
+                        sourceVersion: current.sourceVersion,
+                        evidenceSetVersion: current.evidenceSetVersion,
+                        version: v0
+                    }));
+                }
+                pending.bind(options);
+                return pending.promise;
+            }
+            if (url.includes("/cancel")) return Promise.resolve(jsonResponse({ status: "CANCELLED" }));
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(stateResponse(stateCount));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(streamCount, 2);
+        assert.strictEqual(stateCount, 1);
+        click(host, "cancel-generation");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, /已取消生成，可重试/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /g1-v1/);
+    });
+
+    it("stops assembly after cancellation during a durable item save", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 389;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-b");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [g0, g1]);
+        const versions = {
+            [g0.requestKey]: itemVersion(g0.requestKey, current.sourceVersion, current.evidenceSetVersion, "g0-v1"),
+            [g1.requestKey]: itemVersion(g1.requestKey, current.sourceVersion, current.evidenceSetVersion, "g1-v1")
+        };
+        const calls = [];
+        let streamCount = 0;
+        let stateCount = 0;
+        const pendingSave = deferred();
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                streamCount += 1;
+                const version = versions[payload.requestKey];
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return stateCount === 1 ? pendingSave.promise : Promise.resolve(stateResponse(stateCount));
+            }
+            if (url.includes("/cancel")) return Promise.resolve(jsonResponse({ status: "CANCELLED" }));
+            if (url.includes("/assemble")) return Promise.resolve(jsonResponse({}));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "assemble");
+        await settle();
+        assert.strictEqual(streamCount, 1);
+        assert.strictEqual(stateCount, 1);
+
+        click(host, "cancel-generation");
+        await settle();
+        assert.match(host.innerHTML, /已取消生成，可重试/);
+
+        pendingSave.resolve(stateResponse(1));
+        await settle();
+        await settle();
+        assert.strictEqual(streamCount, 1);
+        assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /g1-v1/);
     });
 });

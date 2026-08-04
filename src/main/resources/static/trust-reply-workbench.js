@@ -158,7 +158,10 @@
             assembly: null,
             bootSeq: 0,
             destroyed: false,
-            completePending: false
+            completePending: false,
+            savedStateVersion: 0,
+            stateSavePending: false,
+            sequenceCancelled: false
         };
         const listeners = [];
 
@@ -182,9 +185,9 @@
             if (key !== "full" && state.itemControllers.get(key) === controller) state.itemControllers.delete(key);
         }
 
-        async function requestJson(path, payload, controller) {
+        async function requestJson(path, payload, controller, method) {
             const response = await global.fetch(apiUrl(state.contextPath, path), {
-                method: "POST",
+                method: method || "POST",
                 headers: { "Content-Type": "application/json", Accept: "application/json" },
                 body: JSON.stringify(payload),
                 signal: controller && controller.signal
@@ -359,11 +362,62 @@
             state.llmEnabled = data.llmEnabled !== false;
             state.requests = requestFromCoverage(data.requestCoverage);
             state.generation.pending = false;
-            setStatus("", "READY");
+            state.sequenceCancelled = false;
+            applySavedState(data.savedState || null);
             render();
             state.requests
                 .filter((request) => request.coverage === "UNSUPPORTED")
                 .forEach((request) => { void requestTranslation(request, null); });
+        }
+
+        function applySavedState(savedState) {
+            state.savedStateVersion = savedState && Number.isInteger(savedState.stateVersion) ? savedState.stateVersion : 0;
+            if (!savedState) {
+                setStatus("", "READY");
+                return;
+            }
+            if (savedState.status === "RESTORED") {
+                let restoredCount = 0;
+                (Array.isArray(savedState.lockedItems) ? savedState.lockedItems : []).forEach((locked) => {
+                    const request = findRequest(locked.requestKey);
+                    if (!request) return;
+                    const version = lockedToVersion(locked);
+                    if (!isVersionSerializable(version, request)) return;
+                    request.versions = [...request.versions, version];
+                    request.activeVersionId = version.versionId;
+                    request.resolvedVersionId = version.versionId;
+                    request.draftHandling = version.handling;
+                    request.instruction = version.operatorInstruction || "";
+                    request.expanded = false;
+                    request.error = null;
+                    restoredCount += 1;
+                });
+                setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
+            } else if (savedState.status === "STALE") {
+                setStatus("STALE：来源或依据已变化，旧锁定回答未恢复", "STALE");
+            } else if (savedState.status === "INVALID") {
+                setStatus("INVALID：旧锁定状态无效，未恢复", "INVALID");
+            } else if (savedState.status === "EXPIRED") {
+                setStatus("EXPIRED：旧锁定状态已过期，未恢复", "EXPIRED");
+            } else {
+                setStatus("", "READY");
+            }
+        }
+
+        function lockedToVersion(locked) {
+            return {
+                versionId: locked.versionId,
+                requestKey: locked.requestKey,
+                handling: locked.handling,
+                answerText: locked.answerText || "",
+                claims: Array.isArray(locked.claims) ? locked.claims : [],
+                model: locked.model || "",
+                generationKind: locked.generationKind,
+                evidenceSetVersion: locked.evidenceSetVersion,
+                sourceVersion: locked.sourceVersion,
+                operatorInstructionHash: locked.operatorInstructionHash || "",
+                operatorInstruction: locked.operatorInstruction || ""
+            };
         }
 
         async function bootstrap() {
@@ -402,140 +456,177 @@
             };
         }
 
-        async function generateMissingGrounded(allowlist, seq) {
-            if (!allowlist.length || state.generation.pending || !state.sourceVersion) return false;
-            const frozenKeys = [...allowlist];
-            const frozenSourceVersion = state.sourceVersion;
-            const frozenEvidenceSetVersion = state.evidenceSetVersion;
-            const generationId = makeId();
-            state.generation = { pending: true, stage: "QUEUED", message: "正在生成缺失有据回答", generationId, controller: null };
-            frozenKeys.forEach((requestKey) => {
-                const request = findRequest(requestKey);
-                if (request) request.error = null;
-            });
-            render();
-            let result = null;
-            let cancelled = false;
+        async function persistResolvedSnapshot() {
+            const lockedItems = state.requests.map(serializeResolvedVersion).filter(Boolean);
+            const response = await requestJson("/api/trust-reply/workbench/state", {
+                source,
+                expectedStateVersion: state.savedStateVersion,
+                schemaVersion: "trust-reply-workbench-state-v1",
+                sourceVersion: state.sourceVersion,
+                evidenceSetVersion: state.evidenceSetVersion,
+                requestedFactIds: [...state.selectedFactIds],
+                selectedModel: state.selectedModel,
+                lockedItems
+            }, null, "PUT");
+            if (response && Number.isInteger(response.stateVersion)) {
+                state.savedStateVersion = response.stateVersion;
+            }
+            return response;
+        }
+
+        async function deleteSavedState() {
+            if (state.savedStateVersion <= 0) return true;
             try {
-                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(null, null, null, generationId), "full", (event, data) => {
-                    if (!isLive(seq)) return;
-                    if (event === "ready" || event === "progress" || event === "heartbeat") {
-                        const progress = data.progress || data;
-                        state.generation.stage = progress.phase || event.toUpperCase();
-                        state.generation.message = progress.message || progress.phase || event;
-                        renderStatusOnly();
-                    } else if (event === "result") {
-                        result = data;
-                    } else if (event === "error") {
-                        throw errorFromStream(data, "AI 生成失败");
-                    } else if (event === "cancelled") {
-                        cancelled = true;
-                        state.generation.message = "已取消生成";
-                    }
-                });
-                if (!isLive(seq)) return false;
-                if ((cancelled && !result) || !result) {
-                    failFullGenerationTransaction(seq, cancelled ? "已取消生成，可重试" : "完整生成未返回结果，可重试", cancelled ? "CANCELLED" : "ERROR");
-                    return false;
-                }
-                if (!hasGenerationIdentity(result)) {
-                    failFullGenerationTransaction(seq, "来源或事实已变化，请确认后刷新工作台");
-                    return false;
-                }
-                if (result.sourceVersion !== frozenSourceVersion || result.evidenceSetVersion !== frozenEvidenceSetVersion) {
-                    failFullGenerationTransaction(seq, "来源或事实已变化，请确认后刷新工作台");
-                    return false;
-                }
-                const versions = Array.isArray(result.itemVersions) ? result.itemVersions : [];
-                const requestKeys = new Set(state.requests.map((request) => request.requestKey));
-                if (versions.some((version) => !requestKeys.has(version.requestKey) || !hasVersionIdentity(version, version.requestKey))) {
-                    failFullGenerationTransaction(seq, "生成版本身份无效，请确认刷新工作台");
-                    return false;
-                }
-                const validated = validateAllowlistVersions(versions, frozenKeys);
-                for (const requestKey of frozenKeys) {
-                    const request = findRequest(requestKey);
-                    const version = validated.get(requestKey);
-                    const knownIds = new Set(request.versions.map((item) => item.versionId));
-                    request.versions = knownIds.has(version.versionId)
-                        ? request.versions
-                        : [...request.versions, version];
-                    request.activeVersionId = version.versionId;
-                    request.resolvedVersionId = version.versionId;
-                    request.expanded = false;
-                    request.error = null;
-                }
-                state.generation.pending = false;
-                state.generation.controller = null;
-                state.generation.stage = "READY";
-                state.generation.message = "有据回答生成完成";
-                render();
+                await requestJson("/api/trust-reply/workbench/state", {
+                    source,
+                    expectedStateVersion: state.savedStateVersion,
+                    schemaVersion: "trust-reply-workbench-state-v1",
+                    sourceVersion: state.sourceVersion,
+                    evidenceSetVersion: state.evidenceSetVersion,
+                    requestedFactIds: [...state.selectedFactIds],
+                    selectedModel: state.selectedModel,
+                    lockedItems: []
+                }, null, "PUT");
+                state.savedStateVersion = 0;
                 return true;
-            } catch (error) {
-                if (isAbort(error)) {
-                    if (isLive(seq) && state.generation.generationId === generationId) {
-                        failFullGenerationTransaction(seq, "已取消生成，可重试", "CANCELLED");
-                    }
-                    return false;
-                }
-                if (!isLive(seq)) return false;
-                if (isStaleError(error)) {
-                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return false;
-                }
-                failFullGenerationTransaction(seq, error.message || "生成失败，可重试");
+            } catch (_) {
                 return false;
             }
         }
 
-        async function adjustItem(request) {
-            if (request.pending) return;
-            if (state.generation.pending) {
-                request.error = "正在生成其他回复，请稍后";
-                request.expanded = true;
+        async function generateMissingGrounded(allowlist, seq) {
+            if (!allowlist.length || state.generation.pending || !state.sourceVersion) return false;
+            const frozenKeys = [...allowlist];
+            const total = frozenKeys.length;
+            state.sequenceCancelled = false;
+            state.generation = { pending: true, stage: "GENERATING", message: `正在生成有据回答 1/${total}`, generationId: null, controller: null };
+            render();
+            let index = 0;
+            for (const requestKey of frozenKeys) {
+                if (!isLive(seq) || state.sequenceCancelled) return false;
+                const request = findRequest(requestKey);
+                if (!request) return false;
+                if (request.resolvedVersionId) continue;
+                index += 1;
+                state.generation.stage = "GENERATING";
+                state.generation.message = `正在生成有据回答 ${index}/${total}`;
+                state.generation.generationId = makeId();
+                state.generation.controller = null;
                 render();
-                return;
-            }
-            if (request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT" && !request.instruction.trim()) {
-                request.error = "请先填写回答说明";
-                request.expanded = true;
+                const outcome = await requestItemVersion(request, seq, state.generation.generationId, "full", "ANSWER_WITH_EVIDENCE");
+                if (!isLive(seq) || state.sequenceCancelled) return false;
+                if (outcome && outcome.stale) {
+                    state.generation.pending = false;
+                    state.generation.controller = null;
+                    render();
+                    return false;
+                }
+                if (outcome && outcome.cancelled) {
+                    state.sequenceCancelled = true;
+                    state.generation.pending = false;
+                    state.generation.controller = null;
+                    state.generation.stage = "CANCELLED";
+                    state.generation.message = "已取消生成，可重试";
+                    request.expanded = true;
+                    render();
+                    return false;
+                }
+                if (!outcome || !outcome.version) {
+                    state.generation.pending = false;
+                    state.generation.controller = null;
+                    state.generation.stage = "ERROR";
+                    state.generation.message = request.error || "生成失败，可重试";
+                    request.expanded = true;
+                    render();
+                    return false;
+                }
+                request.resolvedVersionId = outcome.version.versionId;
+                request.expanded = false;
+                request.error = null;
+                state.stateSavePending = true;
                 render();
-                return;
+                try {
+                    await persistResolvedSnapshot();
+                } catch (error) {
+                    if (isStaleError(error)) {
+                        state.stateSavePending = false;
+                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                        return false;
+                    }
+                    if (!isLive(seq)) return false;
+                    request.resolvedVersionId = null;
+                    request.expanded = true;
+                    request.error = error.message || "保存失败，请重试";
+                    state.stateSavePending = false;
+                    state.generation.pending = false;
+                    state.generation.controller = null;
+                    state.generation.stage = "ERROR";
+                    state.generation.message = request.error;
+                    render();
+                    return false;
+                }
+                state.stateSavePending = false;
+                state.generation.controller = null;
+                if (!isLive(seq)) return false;
+                if (state.sequenceCancelled) {
+                    state.generation.pending = false;
+                    state.generation.stage = "CANCELLED";
+                    state.generation.message = "已取消生成，可重试";
+                    render();
+                    return false;
+                }
+                render();
             }
+            state.generation.pending = false;
+            state.generation.controller = null;
+            state.generation.stage = "READY";
+            state.generation.message = "有据回答生成完成";
+            render();
+            return true;
+        }
+
+        async function requestItemVersion(request, seq, generationId, controllerKey, handlingOverride) {
             const requestSeq = ++request.requestSeq;
-            const sourceSeq = state.bootSeq;
-            const generationId = makeId();
             request.pending = true;
             request.error = null;
             invalidateAssembly();
             render();
             let result = null;
+            let cancelled = false;
             try {
-                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(request.requestKey, request.draftHandling, request.instruction, generationId), request.requestKey, (event, data) => {
-                    if (!isLive(sourceSeq) || request.requestSeq !== requestSeq) return;
+                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(request.requestKey, handlingOverride || request.draftHandling, request.instruction, generationId), controllerKey || request.requestKey, (event, data) => {
+                    if (!isLive(seq) || request.requestSeq !== requestSeq) return;
                     if (event === "progress" || event === "ready" || event === "heartbeat") {
                         setStatus((data.progress || data).message || (data.progress || data).phase || event, (data.progress || data).phase || event.toUpperCase());
                         renderStatusOnly();
                     } else if (event === "result") {
                         result = data;
+                    } else if (event === "cancelled") {
+                        cancelled = true;
                     } else if (event === "error") {
                         throw errorFromStream(data, "单项生成失败");
                     }
                 });
-                if (!isLive(sourceSeq) || request.requestSeq !== requestSeq) return;
+                if (!isLive(seq) || request.requestSeq !== requestSeq) return null;
+                if (cancelled) {
+                    request.pending = false;
+                    return { cancelled: true };
+                }
                 if (!hasGenerationIdentity(result)) {
-                    handleStaleGeneration(sourceSeq, "来源或事实已变化，请确认后刷新工作台");
-                    return;
+                    return failItemVersion(request, seq, "来源或事实已变化，请确认后刷新工作台");
                 }
                 const candidates = [result.version, ...(Array.isArray(result.itemVersions) ? result.itemVersions : [])].filter(Boolean);
-                const version = candidates.find((item) => hasVersionIdentity(item, request.requestKey));
+                const matching = candidates.filter((item) => item.requestKey === request.requestKey && hasVersionIdentity(item, request.requestKey));
                 if (candidates.some((item) => item.requestKey === request.requestKey && !hasVersionIdentity(item, request.requestKey))) {
-                    handleStaleGeneration(sourceSeq, "生成版本的来源或事实已变化，请确认后刷新工作台");
-                    return;
+                    return failItemVersion(request, seq, "生成版本身份无效，请确认刷新工作台");
                 }
+                const version = matching[0];
                 if (!version) throw new Error("单项生成未返回版本");
+                if (matching.some((item) => item.versionId !== version.versionId)) {
+                    return failItemVersion(request, seq, "完整生成返回重复版本");
+                }
                 if (!isVersionSerializable(version, request)) {
-                    throw new Error("生成版本处理方式无效");
+                    return failItemVersion(request, seq, "生成版本处理方式无效");
                 }
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
@@ -544,19 +635,52 @@
                     request.expanded = false;
                 }
                 request.pending = false;
-                state.itemControllers.delete(request.requestKey);
                 render();
-                return version;
+                return { version };
             } catch (error) {
                 if (isStaleError(error)) {
-                    handleStaleGeneration(sourceSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
+                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return { stale: true };
                 }
-                if (!isLive(sourceSeq) || request.requestSeq !== requestSeq || isAbort(error)) return;
+                if (!isLive(seq) || request.requestSeq !== requestSeq) return null;
+                if (isAbort(error)) {
+                    request.pending = false;
+                    return { cancelled: true };
+                }
                 request.pending = false;
                 request.error = error.message || "单项生成失败，可重试";
                 render();
+                return null;
             }
+        }
+
+        function failItemVersion(request, seq, message) {
+            if (!isLive(seq)) return null;
+            request.pending = false;
+            request.error = message;
+            render();
+            return { failed: true };
+        }
+
+        async function adjustItem(request) {
+            if (state.generation.pending) {
+                request.error = "正在生成其他回复，请稍后";
+                request.expanded = true;
+                render();
+                return;
+            }
+            if (request.pending) return;
+            if (request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT" && !request.instruction.trim()) {
+                request.error = "请先填写回答说明";
+                request.expanded = true;
+                render();
+                return;
+            }
+            const sourceSeq = state.bootSeq;
+            const generationId = makeId();
+            const outcome = await requestItemVersion(request, sourceSeq, generationId, request.requestKey);
+            if (!outcome || !outcome.version) return null;
+            return outcome.version;
         }
 
         function isVersionSerializable(version, request) {
@@ -570,38 +694,6 @@
                 && version.evidenceSetVersion
                 && Array.isArray(version.claims)
                 && request.availableHandlings.includes(version.handling);
-        }
-
-        function failFullGenerationTransaction(seq, message, stage) {
-            if (!isLive(seq)) return;
-            state.generation.pending = false;
-            state.generation.controller = null;
-            state.generation.stage = stage || "ERROR";
-            state.generation.message = message || "生成失败，可重试";
-            render();
-        }
-
-        function validateAllowlistVersions(versions, frozenKeys) {
-            const allowSet = new Set(frozenKeys);
-            const grouped = new Map(frozenKeys.map((requestKey) => [requestKey, []]));
-            versions.forEach((version) => {
-                if (!allowSet.has(version.requestKey)) return;
-                grouped.get(version.requestKey).push(version);
-            });
-            const validated = new Map();
-            frozenKeys.forEach((requestKey) => {
-                const entries = grouped.get(requestKey) || [];
-                if (entries.length !== 1) {
-                    throw new Error(entries.length === 0 ? "完整生成缺少有据回答版本" : "完整生成返回重复版本");
-                }
-                const request = findRequest(requestKey);
-                const version = entries[0];
-                if (!isVersionSerializable(version, request)) {
-                    throw new Error("完整生成版本处理方式无效");
-                }
-                validated.set(requestKey, version);
-            });
-            return validated;
         }
 
         function isAdoptableActiveVersion(request) {
@@ -626,6 +718,7 @@
             const pendingGeneration = missingGroundedKeys.length;
             const unresolvedManual = unresolvedManualKeys.length;
             const canStartAssembly = !state.generation.pending
+                && !state.stateSavePending
                 && total > 0
                 && unresolvedManual === 0
                 && !state.requests.some((request) => request.pending);
@@ -644,11 +737,35 @@
         async function assemble() {
             const readiness = computeReadiness();
             if (!readiness.canStartAssembly) return;
-            readiness.adoptableGrounded.forEach((request) => {
+            const seq = state.bootSeq;
+            const adoptable = [...readiness.adoptableGrounded];
+            adoptable.forEach((request) => {
                 request.resolvedVersionId = request.activeVersionId;
                 request.expanded = false;
             });
-            const seq = state.bootSeq;
+            if (adoptable.length > 0) {
+                state.stateSavePending = true;
+                render();
+                try {
+                    await persistResolvedSnapshot();
+                } catch (error) {
+                    if (isStaleError(error)) {
+                        state.stateSavePending = false;
+                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                        return;
+                    }
+                    if (!isLive(seq)) return;
+                    adoptable.forEach((request) => {
+                        request.resolvedVersionId = null;
+                        request.expanded = request.coverage !== "GROUNDED";
+                    });
+                    state.stateSavePending = false;
+                    setStatus(error.message || "保存失败，请重试", "ERROR");
+                    render();
+                    return;
+                }
+                state.stateSavePending = false;
+            }
             const missingKeys = computeReadiness().missingGroundedKeys;
             if (missingKeys.length > 0) {
                 const generated = await generateMissingGrounded(missingKeys, seq);
@@ -699,6 +816,7 @@
         async function cancelGeneration(generationId, controller) {
             cancelController(controller);
             if (!state.destroyed && state.generation.generationId === generationId) {
+                state.sequenceCancelled = true;
                 state.generation.pending = false;
                 state.generation.controller = null;
                 state.generation.stage = "CANCELLED";
@@ -726,6 +844,48 @@
             return hadResolved || hadAssembly;
         }
 
+        function captureDecision(request) {
+            return {
+                resolvedVersionId: request.resolvedVersionId,
+                activeVersionId: request.activeVersionId,
+                draftHandling: request.draftHandling,
+                instruction: request.instruction,
+                expanded: request.expanded
+            };
+        }
+
+        function restoreDecision(request, previous) {
+            request.resolvedVersionId = previous.resolvedVersionId;
+            request.activeVersionId = previous.activeVersionId;
+            request.draftHandling = previous.draftHandling;
+            request.instruction = previous.instruction;
+            request.expanded = previous.expanded;
+        }
+
+        async function persistDecisionUnlock(request, previous) {
+            if (!previous.resolvedVersionId || state.destroyed) return;
+            state.stateSavePending = true;
+            syncInstructionUi(request);
+            try {
+                await persistResolvedSnapshot();
+            } catch (error) {
+                if (!isLive()) return;
+                state.stateSavePending = false;
+                if (isStaleError(error)) {
+                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return;
+                }
+                restoreDecision(request, previous);
+                request.error = error.message || "保存失败，请重试";
+                render();
+                return;
+            }
+            if (!state.destroyed) {
+                state.stateSavePending = false;
+                syncInstructionUi(request);
+            }
+        }
+
         function serializeResolvedVersion(request) {
             const version = resolvedVersion(request);
             if (!isVersionSerializable(version, request)) return null;
@@ -744,13 +904,21 @@
             };
         }
 
-        function onFactChange(checkbox) {
+        async function onFactChange(checkbox) {
             const requested = [...host.querySelectorAll('[data-role="fact"]')]
                 .filter((item) => item.checked)
                 .map((item) => Number(item.value));
             if (typeof global.confirm === "function" && !global.confirm("事实变化会清空当前版本和整合结果，继续？")) {
                 render();
                 return;
+            }
+            if (state.savedStateVersion > 0) {
+                const deleted = await deleteSavedState();
+                if (!deleted) {
+                    setStatus("旧锁定状态删除失败，未切换事实，请刷新后重试", "ERROR");
+                    render();
+                    return;
+                }
             }
             state.selectedFactIds = requested;
             resetVersions();
@@ -808,14 +976,18 @@
             const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
             if (!request) return;
             if (target.dataset.role === "handling") {
+                const previous = captureDecision(request);
                 request.draftHandling = target.value;
                 request.activeVersionId = null;
-                invalidateDecision(request);
+                const invalidated = invalidateDecision(request);
                 render();
+                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
             } else if (target.dataset.role === "version") {
+                const previous = captureDecision(request);
                 request.activeVersionId = target.value || null;
-                if (request.activeVersionId !== request.resolvedVersionId) invalidateDecision(request);
+                const invalidated = request.activeVersionId !== request.resolvedVersionId && invalidateDecision(request);
                 render();
+                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
             }
         }
 
@@ -825,15 +997,13 @@
             if (target.dataset?.role === "instruction" && request) {
                 const instruction = target.value.slice(0, 500);
                 if (instruction !== request.instruction) {
-                    const hadActive = !!request.activeVersionId;
-                    const hadResolved = !!request.resolvedVersionId;
-                    const hadAssembly = !!state.assembly;
+                    const previous = captureDecision(request);
                     request.instruction = instruction;
-                    if (!hadActive && !hadResolved && !hadAssembly) return;
+                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) return;
                     request.activeVersionId = null;
-                    if (hadResolved) request.resolvedVersionId = null;
-                    if (hadAssembly) invalidateAssembly();
+                    const invalidated = invalidateDecision(request);
                     syncInstructionUi(request);
+                    if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
                 }
             }
             if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
@@ -846,7 +1016,9 @@
 
         async function toggleResolve(requestKey) {
             const request = findRequest(requestKey);
-            if (!request || request.pending) return;
+            if (!request || request.pending || state.stateSavePending) return;
+            const previousResolved = request.resolvedVersionId;
+            const previousExpanded = request.expanded;
             if (request.resolvedVersionId) {
                 request.resolvedVersionId = null;
                 request.expanded = true;
@@ -870,7 +1042,27 @@
                 request.expanded = false;
             }
             invalidateAssembly();
+            state.stateSavePending = true;
             render();
+            try {
+                await persistResolvedSnapshot();
+            } catch (error) {
+                if (!isLive()) return;
+                state.stateSavePending = false;
+                if (isStaleError(error)) {
+                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return;
+                }
+                request.resolvedVersionId = previousResolved;
+                request.expanded = previousExpanded;
+                request.error = error.message || "保存失败，请重试";
+                render();
+                return;
+            }
+            if (!state.destroyed) {
+                state.stateSavePending = false;
+                render();
+            }
         }
 
         async function complete() {
@@ -1022,7 +1214,9 @@
 
         function renderItemActions(request) {
             const action = requestAction(request);
-            return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${action.disabled ? " disabled" : ""}>${request.pending ? "生成中…" : action.label}</button>`;
+            const label = request.pending ? "生成中…" : state.stateSavePending ? "保存中…" : action.label;
+            const disabled = action.disabled || state.stateSavePending;
+            return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${disabled ? " disabled" : ""}>${label}</button>`;
         }
 
         function renderRequestAnswerContents(request) {

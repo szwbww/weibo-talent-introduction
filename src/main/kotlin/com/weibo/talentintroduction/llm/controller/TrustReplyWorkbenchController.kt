@@ -13,6 +13,8 @@ import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -20,6 +22,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -94,6 +97,10 @@ class TrustReplyWorkbenchController(
     fun assemble(@RequestBody request: TrustReplyAssembleHttpRequest): TrustReplyAssembleResponse =
         workbenchService.assemble(request.toDomain())
 
+    @PutMapping("/state")
+    fun saveState(@RequestBody request: TrustReplySaveStateHttpRequest): TrustReplySavedState =
+        workbenchService.saveState(request.toDomain())
+
     @ExceptionHandler(TrustReplyWorkbenchException::class)
     fun handleWorkbenchException(ex: TrustReplyWorkbenchException): ResponseEntity<TrustReplyErrorResponse> =
         ResponseEntity.status(ex.status)
@@ -133,6 +140,35 @@ class TrustReplyWorkbenchController(
         expectedSourceVersion = expectedSourceVersion,
         expectedEvidenceSetVersion = expectedEvidenceSetVersion,
         requestedFactIds = requestedFactIds,
+        lockedItems = lockedItems.map { locked ->
+            TrustReplyLockedItemRequest(
+                requestKey = locked.requestKey,
+                versionId = locked.versionId,
+                handling = locked.handling.toHandling(),
+                answerText = locked.answerText,
+                claims = locked.claims,
+                model = locked.model,
+                generationKind = runCatching {
+                    com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind.valueOf(locked.generationKind)
+                }.getOrElse {
+                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_GENERATION_KIND_INVALID")
+                },
+                evidenceSetVersion = locked.evidenceSetVersion,
+                sourceVersion = locked.sourceVersion,
+                operatorInstructionHash = locked.operatorInstructionHash,
+                operatorInstruction = locked.operatorInstruction
+            )
+        }
+    )
+
+    private fun TrustReplySaveStateHttpRequest.toDomain() = TrustReplySaveStateRequest(
+        source = source.toDomain(),
+        expectedStateVersion = expectedStateVersion,
+        schemaVersion = schemaVersion,
+        sourceVersion = sourceVersion,
+        evidenceSetVersion = evidenceSetVersion,
+        requestedFactIds = requestedFactIds,
+        selectedModel = selectedModel,
         lockedItems = lockedItems.map { locked ->
             TrustReplyLockedItemRequest(
                 requestKey = locked.requestKey,
@@ -217,6 +253,17 @@ data class TrustReplyAssembleHttpRequest(
     val expectedEvidenceSetVersion: String,
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestedFactIds: List<Long>? = null
+)
+
+data class TrustReplySaveStateHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestedFactIds: List<Long>? = null,
+    val selectedModel: String? = null,
+    val lockedItems: List<TrustReplyLockedItemHttpRequest>
 )
 
 data class TrustReplyCancelHttpRequest(
