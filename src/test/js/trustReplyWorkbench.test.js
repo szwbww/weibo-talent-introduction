@@ -22,7 +22,13 @@ describe("shared trust reply workbench", () => {
         assert.doesNotMatch(app, /composedReplyState|renderComposedReplyWorkbenchHtml|trust-generate-draft/);
     });
 
-    it("renders item controls and fixed mode completion labels", () => {
+    it("renders two tab panels with shared state and fixed completion labels", () => {
+        assert.match(workbench, /role="tablist"/);
+        assert.match(workbench, /data-action="set-page"/);
+        assert.match(workbench, /data-page-panel="facts"/);
+        assert.match(workbench, /data-page-panel="frame"/);
+        assert.match(workbench, /function setActivePage\(/);
+        assert.match(workbench, /aria-selected/);
         assert.match(workbench, /data-role="handling"/);
         assert.match(workbench, /data-role="instruction"/);
         assert.match(workbench, /data-role="version"/);
@@ -48,14 +54,48 @@ describe("shared trust reply workbench", () => {
         assert.doesNotMatch(workbench, /answers\.join|dedupe|truncate|LLM rewrite/i);
     });
 
-    it("keeps explicit generation triggers and no mount-time full draft", () => {
+    it("sends the canonical matrix and frame snapshot instead of flat facts", () => {
+        assert.match(workbench, /function serializeRequestFactSelections\(/);
+        assert.match(workbench, /requestFactSelections: serializeRequestFactSelections\(\)/);
+        assert.match(workbench, /frameSnapshot: state\.frameSnapshot/);
+        assert.match(workbench, /function sameFrameSnapshot\(/);
+        assert.match(workbench, /function factOwnerById\(/);
+        assert.doesNotMatch(workbench, /requestedFactIds/);
+        assert.doesNotMatch(workbench, /selectedFactIds/);
+        assert.doesNotMatch(workbench, /\[data-role="fact"\]/);
+        assert.match(workbench, /trust-reply-workbench-state-v3/);
+    });
+
+    it("keeps explicit per-item generation triggers and no mount-time full draft", () => {
         assert.doesNotMatch(workbench, /initialFullDraftSourceVersions/);
         assert.doesNotMatch(workbench, /void generateAll\(\)/);
         assert.match(workbench, /function generateMissingGrounded\(/);
         assert.match(workbench, /function computeReadiness\(/);
         assert.match(workbench, /data-action="assemble"/);
-        assert.match(workbench, /operation: requestKey \? "ADJUST_ITEM" : "FULL_DRAFT"/);
+        assert.match(workbench, /operation: "ADJUST_ITEM"/);
+        assert.doesNotMatch(workbench, /"FULL_DRAFT"/);
         assert.doesNotMatch(workbench, /data-action="generate-all"/);
+    });
+
+    it("only accepts a server assembly for completion and shows preview states", () => {
+        assert.match(workbench, /function assemblyIdentityMatches\(/);
+        assert.match(workbench, /function previewState\(/);
+        assert.match(workbench, /previewState\(\) !== "CURRENT"/);
+        assert.match(workbench, /配置预览 · 尚未服务端整合/);
+        assert.match(workbench, /服务端整合完成/);
+        assert.match(workbench, /配置已变化 · 请重新整合/);
+        assert.match(workbench, /data-role="local-preview"/);
+        assert.match(workbench, /data-role="raw-preview"/);
+    });
+
+    it("exposes per-card fact chips and picker with owner labels", () => {
+        assert.match(workbench, /data-action="add-fact"/);
+        assert.match(workbench, /data-action="remove-fact"/);
+        assert.match(workbench, /data-action="toggle-fact-picker"/);
+        assert.match(workbench, /已用于摘要 /);
+        assert.match(workbench, /已选择/);
+        assert.match(workbench, /保存中/);
+        assert.match(workbench, /class="trust-reply-fact-picker-option"/);
     });
 
     it("keeps page code as thin training/live adapters", () => {
@@ -64,6 +104,7 @@ describe("shared trust reply workbench", () => {
         assert.match(app, /mountLiveTrustReply/);
         assert.match(app, /source: \{ sourceType: "LIVE_INBOUND", sourceId: Number\(recordId\) \}/);
         assert.match(app, /rawTemplate: assembly\.rawDraftText/);
+        assert.match(app, /function buildTrustReplyAssemblySnapshot\(/);
         assert.doesNotMatch(app, /aiTrainingSimulateBtn|aiTrainingSimulateMessages|aiTrainingReplyModel/);
     });
 });

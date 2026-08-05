@@ -7150,7 +7150,7 @@ tr td {
   padding: 14px;
 }
 
-/* 工具栏：白卡三段（模式条 / 模型行 / 事实 chips） */
+/* 工具栏：白卡两段（模式条 / 模型行）；全局事实入口已退役（S-5） */
 .trust-reply-toolbar {
   display: flex;
   flex-direction: column;
@@ -7187,21 +7187,6 @@ tr td {
 .trust-reply-toolbar .ai-reply-model-row [data-action="generate-all"],
 .trust-reply-toolbar .ai-reply-model-row [data-action="cancel-generation"] { margin-left: auto; }
 
-.trust-reply-toolbar .compose-rule-list[data-role="facts"] {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 9px 14px;
-  border: none;
-  background: none;
-}
-
-.trust-reply-toolbar .compose-rule-list[data-role="facts"] > .muted {
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .trust-reply-mode-note {
   display: inline-flex;
   align-items: center;
@@ -7223,72 +7208,6 @@ tr td {
   border-radius: 50%;
   background: var(--primary);
   flex: none;
-}
-
-/* 事实 chip：单行药丸，隐藏原生 checkbox */
-.trust-reply-fact-option {
-  position: relative;
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  white-space: nowrap;
-  gap: 5px;
-  min-width: 0;
-  padding: 3px 10px 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel-bg);
-  color: var(--text-sidebar);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  user-select: none;
-  transition: border-color .15s ease, background .15s ease, color .15s ease, box-shadow .15s ease;
-}
-
-.trust-reply-fact-option:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.trust-reply-fact-option input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  margin: 0;
-}
-
-.trust-reply-fact-option::before {
-  content: "";
-  width: 12px;
-  height: 12px;
-  flex: none;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel-bg);
-  transition: all .15s ease;
-}
-
-.trust-reply-fact-option:has(input:checked) {
-  border-color: var(--primary);
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-.trust-reply-fact-option:has(input:checked)::before {
-  border-color: var(--primary);
-  background: var(--primary);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.5l2.2 2.2 4.8-5.2' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-size: 10px;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.trust-reply-fact-option:has(input:focus-visible) {
-  outline: 2px solid var(--primary-tint);
-  outline-offset: 1px;
 }
 
 /* 状态条：信息蓝细条 + 呼吸圆点 */
@@ -7321,14 +7240,7 @@ tr td {
 
 @keyframes trustReplyPulse { 50% { opacity: .35; } }
 
-/* 布局 A：单列满宽，摘要横条置顶 */
-.trust-reply-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: stretch;
-}
-
+/* 布局：双页 tab panel（S-1）替代原单页 trust-reply-layout 横条 */
 .trust-reply-item-list {
   display: flex;
   flex-direction: column;
@@ -7606,6 +7518,342 @@ tr td {
   transform: translateY(-0.5px);
 }
 
+/* ===== Style S-1：双页 tab 与 panel ===== */
+.trust-reply-workbench .trust-reply-page-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.trust-reply-workbench .trust-reply-page-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.trust-reply-workbench .trust-reply-page-tab:hover {
+  border-color: var(--border);
+  color: var(--text-main);
+  background: var(--panel-bg);
+}
+
+.trust-reply-workbench .trust-reply-page-tab[aria-selected="true"] {
+  border-color: rgba(var(--primary-rgb), .18);
+  color: var(--primary);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.trust-reply-workbench .trust-reply-page-tab:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), .35);
+  outline-offset: 2px;
+}
+
+.trust-reply-workbench .trust-reply-page-tab:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.trust-reply-workbench .trust-reply-page-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, .06);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.trust-reply-workbench .trust-reply-page-tab[aria-selected="true"] .trust-reply-page-step {
+  background: var(--primary-light);
+}
+
+.trust-reply-workbench .trust-reply-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.trust-reply-workbench .trust-reply-page[hidden] {
+  display: none;
+}
+
+/* ===== Style S-2：页头与上一页/下一页动作 ===== */
+.trust-reply-workbench .trust-reply-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0;
+}
+
+.trust-reply-workbench .trust-reply-page-head h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.trust-reply-workbench .trust-reply-page-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.trust-reply-workbench .trust-reply-page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+/* ===== Style S-3：摘要卡内事实 chips 与 picker ===== */
+.trust-reply-workbench .trust-reply-fact-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.trust-reply-workbench .trust-reply-fact-section > strong {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 5px 3px 9px;
+  border: 1px solid rgba(var(--primary-rgb), .18);
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip > button:hover {
+  background: var(--primary-tint);
+}
+
+.trust-reply-workbench .trust-reply-fact-chip > button:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), .35);
+  outline-offset: 1px;
+}
+
+.trust-reply-workbench .trust-reply-fact-chip > button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker[hidden] {
+  display: none;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg);
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option > span > strong {
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option > span > em {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 400;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option > small {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option:not(:disabled):hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), .35);
+  outline-offset: 1px;
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option[data-state="selected"] {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option[data-state="used"] {
+  border-style: dashed;
+  background: rgba(15, 23, 42, .035);
+}
+
+.trust-reply-workbench .trust-reply-fact-picker-option:disabled {
+  opacity: .62;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ===== Style S-4：回复框架、配置预览与服务端状态 ===== */
+.trust-reply-workbench .trust-reply-frame-panel {
+  gap: 14px;
+}
+
+.trust-reply-workbench .trust-reply-frame-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trust-reply-workbench .trust-reply-frame-grid .trust-reply-field select {
+  min-height: 36px;
+}
+
+.trust-reply-workbench .trust-reply-frame-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.trust-reply-workbench .trust-reply-preview-state {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid var(--info-border);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: #0369a1;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.trust-reply-workbench .trust-reply-preview-state[data-state="CURRENT"] {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.trust-reply-workbench .trust-reply-preview-state[data-state="STALE"] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.trust-reply-workbench .trust-reply-frame-preview .trust-reply-summary {
+  align-items: center;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 .trust-training-evaluation { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .trust-training-evaluation[hidden] { display: none; }
 .trust-training-evaluation h4 { margin: 0; }
@@ -7644,6 +7892,40 @@ tr td {
 @media (prefers-reduced-motion: reduce) {
   .trust-reply-item,
   .trust-training-rating-option { transition: none; }
+}
+
+/* ===== Style S-6：窄屏与 reduced motion ===== */
+@media (max-width: 640px) {
+  .trust-reply-workbench .trust-reply-page-tab {
+    min-height: 44px;
+    padding-inline: 6px;
+    white-space: normal;
+  }
+
+  .trust-reply-workbench .trust-reply-page-head {
+    align-items: flex-start;
+  }
+
+  .trust-reply-workbench .trust-reply-frame-grid,
+  .trust-reply-workbench .trust-reply-fact-picker {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trust-reply-workbench .trust-reply-page-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trust-reply-workbench .trust-reply-page-actions .button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trust-reply-workbench .trust-reply-page-tab,
+  .trust-reply-workbench .trust-reply-fact-picker-option {
+    transition: none;
+  }
 }
 
 @media (max-width: 1100px) {

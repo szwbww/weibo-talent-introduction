@@ -3357,14 +3357,42 @@ async function saveAiTrainingEvaluation(token) {
     if (button) button.disabled = true;
     if (status) status.textContent = "保存中…";
     const assembly = context.assembly;
+    const requestFactSelections = (assembly.requestFactSelections || []).map((selection) => ({
+        requestKey: selection.requestKey,
+        factRuleIds: [...(selection.factRuleIds || [])]
+    }));
+    const frameSnapshot = assembly.frameSnapshot
+        ? {
+            selection: {
+                salutationSnippetId: assembly.frameSnapshot.selection?.salutationSnippetId ?? null,
+                greetingSnippetId: assembly.frameSnapshot.selection?.greetingSnippetId ?? null,
+                ackSnippetId: assembly.frameSnapshot.selection?.ackSnippetId ?? null,
+                closingSnippetId: assembly.frameSnapshot.selection?.closingSnippetId ?? null
+            },
+            version: assembly.frameSnapshot.version || ""
+        }
+        : null;
     const result = await api("/api/ai-training/simulate/evaluations", {
         method: "POST",
         body: JSON.stringify({
             source: assembly.source,
             expectedSourceVersion: assembly.sourceVersion,
             expectedEvidenceSetVersion: assembly.evidenceSetVersion,
-            requestedFactIds: assembly.requestedFactIds || assembly.canonicalFactIds,
-            lockedItems: assembly.itemVersions,
+            requestFactSelections: requestFactSelections.length ? requestFactSelections : null,
+            frameSnapshot,
+            lockedItems: (assembly.itemVersions || []).map((item) => ({
+                requestKey: item.requestKey,
+                versionId: item.versionId,
+                handling: item.handling,
+                answerText: item.answerText,
+                claims: [...(item.claims || [])],
+                model: item.model,
+                generationKind: item.generationKind,
+                evidenceSetVersion: item.evidenceSetVersion,
+                sourceVersion: item.sourceVersion,
+                operatorInstructionHash: item.operatorInstructionHash || "",
+                operatorInstruction: item.operatorInstruction || ""
+            })),
             rating,
             note,
             operatorName: window.localStorage.getItem("operatorName") || "console"
@@ -9168,11 +9196,26 @@ function copyTrustReplyLockedItem(item) {
 }
 
 function buildTrustReplyAssemblySnapshot(assembly) {
+    const requestFactSelections = (assembly.requestFactSelections || []).map((selection) => ({
+        requestKey: selection.requestKey,
+        factRuleIds: [...(selection.factRuleIds || [])]
+    }));
     return {
         source: assembly.source,
         expectedSourceVersion: assembly.sourceVersion,
         expectedEvidenceSetVersion: assembly.evidenceSetVersion,
-        requestedFactIds: [...(assembly.requestedFactIds || [])],
+        requestFactSelections: requestFactSelections.length ? requestFactSelections : null,
+        frameSnapshot: assembly.frameSnapshot
+            ? {
+                selection: {
+                    salutationSnippetId: assembly.frameSnapshot.selection?.salutationSnippetId ?? null,
+                    greetingSnippetId: assembly.frameSnapshot.selection?.greetingSnippetId ?? null,
+                    ackSnippetId: assembly.frameSnapshot.selection?.ackSnippetId ?? null,
+                    closingSnippetId: assembly.frameSnapshot.selection?.closingSnippetId ?? null
+                },
+                version: assembly.frameSnapshot.version || ""
+            }
+            : null,
         lockedItems: (assembly.itemVersions || []).map(copyTrustReplyLockedItem)
     };
 }

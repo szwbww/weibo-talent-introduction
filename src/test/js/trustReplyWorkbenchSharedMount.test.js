@@ -91,10 +91,10 @@ function settle() {
     return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
 }
 
-function click(host, action, requestKey, versionId) {
+function click(host, action, requestKey, versionId, factId, page) {
     host.dispatchEvent("click", {
-        dataset: { action, requestKey, versionId },
-        closest: () => ({ dataset: { action, requestKey, versionId } })
+        dataset: { action, requestKey, versionId, factId, page },
+        closest: () => ({ dataset: { action, requestKey, versionId, factId, page } })
     });
 }
 
@@ -245,6 +245,44 @@ const bootstrap = (sourceType, sourceId) => ({
     contextWarnings: [],
     evidenceSetVersion: `${sourceType}-${sourceId}-e1`
 });
+
+const DEFAULT_FRAME_SNAPSHOT = {
+    selection: { salutationSnippetId: 11, greetingSnippetId: 21, ackSnippetId: null, closingSnippetId: 41 },
+    version: "frame-v1"
+};
+
+const DEFAULT_FRAME_OPTIONS = [
+    { id: 11, snippetType: "SALUTATION", content: "尊敬的专家", displayOrder: 1, isDefault: true },
+    { id: 21, snippetType: "GREETING", content: "您好", displayOrder: 1, isDefault: true },
+    { id: 22, snippetType: "GREETING", content: "您好呀", displayOrder: 2, isDefault: false },
+    { id: 31, snippetType: "ACK", content: "感谢您的来信", displayOrder: 1, isDefault: false },
+    { id: 41, snippetType: "CLOSING", content: "此致敬礼", displayOrder: 1, isDefault: true }
+];
+
+function bootstrapWithFrame(sourceType, sourceId, coverageItems) {
+    const current = bootstrapWithCoverage(sourceType, sourceId, coverageItems);
+    current.frameOptions = DEFAULT_FRAME_OPTIONS.map((option) => ({ ...option }));
+    current.frameSnapshot = {
+        selection: { ...DEFAULT_FRAME_SNAPSHOT.selection },
+        version: DEFAULT_FRAME_SNAPSHOT.version
+    };
+    current.requestFactSelections = coverageItems.map((item) => ({
+        requestKey: item.requestKey,
+        factRuleIds: [...(item.factRuleIds || [])]
+    }));
+    return current;
+}
+
+function frameStateResponse(stateVersion, frameSnapshot, lockedItems) {
+    return jsonResponse({
+        status: "SAVED",
+        stateVersion,
+        selectedModel: "DEEPSEEK_V4_FLASH",
+        requestedFactIds: [1],
+        lockedItems: lockedItems || [],
+        frameSnapshot
+    });
+}
 
 describe("shared trust reply workbench mount contract", () => {
     it("loads the runtime relative to the deployed context and guards both host mounts", () => {
@@ -865,11 +903,20 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /data-action="complete" disabled/);
     });
 
-    it("keeps the shared card and fact-option style contract", () => {
+    it("keeps the shared card and the S-1..S-6 scoped style contract", () => {
         const stylesPath = path.join(__dirname, "..", "..", "main", "resources", "static", "styles.css");
         const styles = fs.readFileSync(stylesPath, "utf-8");
         assert.match(source, /class="compose-panel trust-reply-item"/);
-        assert.match(styles, /\.trust-reply-fact-option\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-page-nav\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-page-tab\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-chip\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-picker-option\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-picker-option\[data-state="used"\]/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-preview-state\[data-state="CURRENT"\]/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-frame-preview \.trust-reply-summary/);
+        assert.doesNotMatch(styles, /\.trust-reply-layout\s*\{/);
+        assert.doesNotMatch(styles, /\.trust-reply-fact-option\s*\{/);
+        assert.doesNotMatch(styles, /\.trust-reply-toolbar \.compose-rule-list\[data-role="facts"\]/);
     });
 
     it("requires adopt after single-item generation", async () => {
@@ -1501,17 +1548,20 @@ describe("shared trust reply workbench mount contract", () => {
         const okMount = buildMount(false);
         await settle();
         await settle();
-        okMount.host.dispatchEvent("change", { dataset: { role: "fact" }, value: "2", checked: true, matches: () => true });
+        click(okMount.host, "add-fact", grounded.requestKey, undefined, "2");
+        await settle();
         await settle();
         assert.strictEqual(okMount.statePayloads.length, 1);
         assert.deepStrictEqual(okMount.statePayloads[0].lockedItems, []);
         assert.strictEqual(okMount.statePayloads[0].expectedStateVersion, 4);
+        assert.strictEqual(okMount.statePayloads[0].schemaVersion, "trust-reply-workbench-state-v3");
+        assert.deepStrictEqual(okMount.statePayloads[0].requestFactSelections[0].factRuleIds, [1], "delete must use the old matrix");
         assert.ok(okMount.getBootstrapCalls() >= 2, "facts must re-bootstrap after a successful delete");
 
         const failMount = buildMount(true);
         await settle();
         await settle();
-        failMount.host.dispatchEvent("change", { dataset: { role: "fact" }, value: "2", checked: true, matches: () => true });
+        click(failMount.host, "add-fact", grounded.requestKey, undefined, "2");
         await settle();
         assert.strictEqual(failMount.statePayloads.length, 1);
         assert.strictEqual(failMount.getBootstrapCalls(), 1, "delete failure must not switch facts");
@@ -1842,5 +1892,652 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(calls.filter((call) => call.url.includes("/assemble")).length, 0);
         assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
         assert.doesNotMatch(host.innerHTML, /g1-v1/);
+    });
+
+    it("renders two equal tabs with unique panel ids and switches pages without re-bootstrap", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 500;
+        const current = bootstrap(sourceType, sourceId);
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+        const bootstrapCalls = calls.filter((call) => call.url.includes("/bootstrap")).length;
+        assert.match(host.innerHTML, /role="tablist"/);
+        assert.strictEqual((host.innerHTML.match(/role="tab"/g) || []).length, 2);
+        assert.match(host.innerHTML, /data-page-panel="facts"/);
+        assert.match(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        assert.strictEqual((host.innerHTML.match(/aria-selected="true"/g) || []).length, 1);
+        const factsPanelId = host.innerHTML.match(/data-page-panel="facts" id="([^"]+)"/)?.[1];
+        const framePanelId = host.innerHTML.match(/data-page-panel="frame" id="([^"]+)"/)?.[1];
+        assert.ok(factsPanelId && framePanelId && factsPanelId !== framePanelId, "panel ids must be instance-unique");
+        assert.ok(host.innerHTML.includes(`aria-controls="${framePanelId}"`));
+
+        click(host, "next-page");
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-action="prev-page"/);
+        click(host, "prev-page");
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        click(host, "set-page", undefined, undefined, undefined, "frame");
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.strictEqual(
+            calls.filter((call) => call.url.includes("/bootstrap")).length,
+            bootstrapCalls,
+            "page switching must never re-bootstrap"
+        );
+    });
+
+    it("navigates the two tabs with arrow and home/end keys", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 501;
+        const current = bootstrap(sourceType, sourceId);
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        const factsTab = { dataset: { page: "facts" } };
+        const frameTab = { dataset: { page: "frame" } };
+        host.querySelectorAll = (selector) => (selector === '[role="tab"]' ? [factsTab, frameTab] : []);
+        const dispatchKey = (key, tab) => host.dispatchEvent("keydown", {
+            key,
+            closest: () => tab,
+            preventDefault: () => {}
+        });
+
+        dispatchKey("ArrowRight", factsTab);
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "ArrowRight must open the frame page");
+        dispatchKey("ArrowLeft", frameTab);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "ArrowLeft must open the facts page");
+        dispatchKey("End", factsTab);
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "End must open the last page");
+        dispatchKey("Home", frameTab);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "Home must open the first page");
+    });
+
+    it("shows per-card fact chips with used owners disabled and releases facts on remove", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 502;
+        const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const second = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-second");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [first, second]);
+        current.rulesByCategory = [
+            { ruleId: 1, displayName: "Fact One", answerBody: "answer one" },
+            { ruleId: 2, displayName: "Fact Two", answerBody: "answer two" },
+            { ruleId: 3, displayName: "Fact Three", answerBody: "answer three" }
+        ];
+        current.requestCoverage[0].factRuleIds = [1];
+        current.requestCoverage[1].factRuleIds = [];
+        current.requestFactSelections = [
+            { requestKey: first.requestKey, factRuleIds: [1] },
+            { requestKey: second.requestKey, factRuleIds: [] }
+        ];
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${first.requestKey}"[\\s\\S]*?class="trust-reply-fact-chip"`));
+        click(host, "toggle-fact-picker", second.requestKey);
+        assert.match(host.innerHTML, /data-state="used"/);
+        assert.match(host.innerHTML, /已用于摘要 1/);
+        assert.match(host.innerHTML, /data-state="used"[^>]*disabled/);
+        assert.match(host.innerHTML, /data-state="available"/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[^>]*data-state="selected"`));
+
+        click(host, "remove-fact", first.requestKey, undefined, "1");
+        await settle();
+        await settle();
+        const bootstrapPayloads = calls
+            .filter((call) => call.url.includes("/bootstrap"))
+            .map((call) => JSON.parse(call.options.body));
+        assert.ok(bootstrapPayloads.length >= 2, "remove must re-bootstrap");
+        const lastMatrix = bootstrapPayloads.at(-1).requestFactSelections.find((s) => s.requestKey === first.requestKey);
+        assert.deepStrictEqual(lastMatrix.factRuleIds, [], "the released fact must leave the matrix");
+    });
+
+    it("cancels a destructive fact change without touching state or DOM", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 507;
+        const current = bootstrap(sourceType, sourceId);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "locked-v1");
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "resolve-item", requestKey);
+        await settle();
+        assert.match(host.innerHTML, /data-locked="true"/);
+        const stateCallsBefore = calls.filter((call) => call.url.includes("/state")).length;
+
+        window.confirm = () => false;
+        click(host, "add-fact", requestKey, undefined, "2");
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/state")).length, stateCallsBefore, "cancel must not delete state");
+        assert.strictEqual(calls.filter((call) => call.url.includes("/bootstrap")).length, 1, "cancel must not re-bootstrap");
+        assert.match(host.innerHTML, /data-locked="true"/);
+    });
+
+    it("confirms a destructive fact change, deletes durable state, resets versions and re-bootstraps", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 508;
+        const current = bootstrap(sourceType, sourceId);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "locked-v1");
+        const calls = [];
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(stateResponse(stateCount));
+            }
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "resolve-item", requestKey);
+        await settle();
+        assert.match(host.innerHTML, /data-locked="true"/);
+
+        click(host, "add-fact", requestKey, undefined, "2");
+        await settle();
+        await settle();
+        const statePayloads = calls.filter((call) => call.url.includes("/state")).map((call) => JSON.parse(call.options.body));
+        assert.deepStrictEqual(statePayloads.at(-1).lockedItems, [], "durable state must be deleted first");
+        assert.strictEqual(statePayloads.at(-1).expectedStateVersion, 1);
+        assert.ok(calls.filter((call) => call.url.includes("/bootstrap")).length >= 2, "fact change must re-bootstrap");
+        assert.doesNotMatch(host.innerHTML, /data-locked="true"/, "old locks must not survive a fact change");
+        assert.match(host.innerHTML, /待生成/);
+    });
+
+    it("frame change clears only the assembly, keeps locks and persists the new frame", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 503;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithFrame(sourceType, sourceId, [grounded]);
+        const requestKey = grounded.requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "fv-locked");
+        const calls = [];
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(frameStateResponse(stateCount, {
+                    selection: { salutationSnippetId: 11, greetingSnippetId: 22, ackSnippetId: null, closingSnippetId: 41 },
+                    version: "frame-v2"
+                }, [serializeLocked(version, current)]));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "frame server draft",
+                    renderedDraftText: "frame server draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [version],
+                    requestFactSelections: [{ requestKey, factRuleIds: [1] }],
+                    frameSnapshot: {
+                        selection: { ...current.frameSnapshot.selection },
+                        version: current.frameSnapshot.version
+                    }
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "resolve-item", requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+        assert.match(host.innerHTML, /服务端整合完成/);
+        assert.match(host.innerHTML, /frame server draft/);
+        assert.doesNotMatch(host.innerHTML, /data-action="complete" disabled/);
+
+        host.dispatchEvent("change", { dataset: { role: "frame-select", frameSlot: "greetingSnippetId" }, value: "22" });
+        await settle();
+        await settle();
+        assert.doesNotMatch(host.innerHTML, /data-state="CURRENT"/, "a frame change must invalidate the assembly");
+        assert.match(host.innerHTML, /data-state="STALE"/);
+        assert.match(host.innerHTML, /配置已变化 · 请重新整合/);
+        assert.match(host.innerHTML, /data-action="complete" disabled/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${requestKey}"[\\s\\S]*?data-locked="true"`), "locks must survive a frame change");
+        const statePayloads = calls.filter((call) => call.url.includes("/state")).map((call) => JSON.parse(call.options.body));
+        const frameSave = statePayloads.at(-1);
+        assert.strictEqual(frameSave.frameSnapshot.selection.greetingSnippetId, 22);
+        assert.strictEqual(frameSave.frameSnapshot.selection.salutationSnippetId, 11, "other slots must be preserved");
+        assert.deepStrictEqual(frameSave.lockedItems.map((item) => item.requestKey), [requestKey], "the same locked items must be saved");
+    });
+
+    it("keeps locked answers and switches to the frame page on a frame stale conflict", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 509;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithFrame(sourceType, sourceId, [grounded]);
+        const requestKey = grounded.requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "stale-frame-locked");
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return stateCount >= 2
+                    ? Promise.resolve(conflictResponse("TRUST_REPLY_FRAME_STALE"))
+                    : Promise.resolve(frameStateResponse(stateCount, current.frameSnapshot, [serializeLocked(version, current)]));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "stale draft",
+                    renderedDraftText: "stale draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [version],
+                    frameSnapshot: { selection: { ...current.frameSnapshot.selection }, version: current.frameSnapshot.version }
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        click(host, "resolve-item", requestKey);
+        await settle();
+
+        host.dispatchEvent("change", { dataset: { role: "frame-select", frameSlot: "greetingSnippetId" }, value: "22" });
+        await settle();
+        await settle();
+        assert.match(host.innerHTML, /TRUST_REPLY_FRAME_STALE|框架配置已变化/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${requestKey}"[\\s\\S]*?data-locked="true"`), "locks must survive frame stale");
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/, "frame page must be active after frame stale");
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+    });
+
+    it("sends the full matrix and frame snapshot on every generation, state and assemble payload", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 504;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+        const current = bootstrapWithFrame(sourceType, sourceId, [grounded, partial]);
+        const partialVersion = {
+            ...itemVersion(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "partial-v1"),
+            handling: "ANSWER_SUPPORTED_PART"
+        };
+        const groundedVersion = itemVersion(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "grounded-v1");
+        const calls = [];
+        let stateCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                const version = payload.requestKey === partial.requestKey ? partialVersion : groundedVersion;
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) {
+                stateCount += 1;
+                return Promise.resolve(frameStateResponse(stateCount, current.frameSnapshot, []));
+            }
+            if (url.includes("/assemble")) {
+                return Promise.resolve(jsonResponse({
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    rawDraftText: "matrix draft",
+                    renderedDraftText: "matrix draft",
+                    draftHash: "hash",
+                    canonicalFactIds: [1],
+                    itemVersions: [groundedVersion, partialVersion],
+                    requestFactSelections: [
+                        { requestKey: grounded.requestKey, factRuleIds: [1] },
+                        { requestKey: partial.requestKey, factRuleIds: [1] }
+                    ],
+                    frameSnapshot: { selection: { ...current.frameSnapshot.selection }, version: current.frameSnapshot.version }
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", partial.requestKey);
+        await settle();
+        click(host, "resolve-item", partial.requestKey);
+        await settle();
+        click(host, "assemble");
+        await settle();
+
+        const payloads = calls.map((call) => JSON.parse(call.options.body));
+        const expectedMatrix = [
+            { requestKey: grounded.requestKey, factRuleIds: [1] },
+            { requestKey: partial.requestKey, factRuleIds: [1] }
+        ];
+        payloads.forEach((payload) => {
+            assert.ok(!("requestedFactIds" in payload), "no payload may carry flat requestedFactIds");
+        });
+        const statePayloads = payloads.filter((payload) => payload.schemaVersion);
+        assert.ok(statePayloads.length >= 2);
+        statePayloads.forEach((payload) => {
+            assert.strictEqual(payload.schemaVersion, "trust-reply-workbench-state-v3");
+            assert.deepStrictEqual(payload.requestFactSelections, expectedMatrix);
+            assert.deepStrictEqual(payload.frameSnapshot.selection, current.frameSnapshot.selection);
+        });
+        const streamPayloads = payloads.filter((payload) => payload.operation === "ADJUST_ITEM");
+        assert.strictEqual(streamPayloads.length, 2);
+        streamPayloads.forEach((payload) => {
+            assert.deepStrictEqual(payload.requestFactSelections, expectedMatrix);
+        });
+        const assemblePayload = payloads.find((payload) => payload.lockedItems && !payload.schemaVersion && !payload.operation);
+        assert.ok(assemblePayload, "assemble payload must exist");
+        assert.deepStrictEqual(assemblePayload.requestFactSelections, expectedMatrix);
+        assert.deepStrictEqual(assemblePayload.frameSnapshot.selection, current.frameSnapshot.selection);
+        assert.match(host.innerHTML, /matrix draft/);
+    });
+
+    it("fails closed when the server canonical matrix disagrees with coverage", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 505;
+        const current = bootstrap(sourceType, sourceId);
+        current.requestFactSelections = [{ requestKey: current.requestCoverage[0].requestKey, factRuleIds: [9] }];
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+        assert.match(host.innerHTML, /TRUST_REPLY_FACT_SELECTION_INVALID/);
+    });
+
+    it("derives the local preview from resolved versions only", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 506;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithFrame(sourceType, sourceId, [grounded]);
+        const requestKey = grounded.requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "preview-v1");
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(frameStateResponse(1, current.frameSnapshot, [serializeLocked(version, current)]));
+            if (url.includes("/generations/stream")) {
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", requestKey);
+        await settle();
+        let preview = host.innerHTML.match(/<pre class="pre" data-role="local-preview">([\s\S]*?)<\/pre>/)?.[1] || "";
+        assert.doesNotMatch(preview, /answer/, "an active, unadopted version must not enter the local preview");
+        assert.match(host.innerHTML, /配置预览 · 尚未服务端整合/);
+
+        click(host, "resolve-item", requestKey);
+        await settle();
+        preview = host.innerHTML.match(/<pre class="pre" data-role="local-preview">([\s\S]*?)<\/pre>/)?.[1] || "";
+        assert.match(preview, /answer/, "the resolved version must enter the local preview");
+    });
+
+    it("isolates instance ids, active pages and state across two mounts", async () => {
+        const pendingTraining = deferred();
+        const pendingLive = deferred();
+        let uuidCounter = 0;
+        const { window } = createSandbox((url, options) => {
+            const request = JSON.parse(options.body);
+            return request.source.sourceType === "TRAINING_MAIL" ? pendingTraining.promise : pendingLive.promise;
+        }, { crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, "0")}` } });
+        const trainingHost = new FakeElement(window.document);
+        const liveHost = new FakeElement(window.document);
+        const training = window.TrustReplyWorkbench.mount(trainingHost, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 601 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        const live = window.TrustReplyWorkbench.mount(liveHost, {
+            mode: "LIVE",
+            source: { sourceType: "LIVE_INBOUND", sourceId: 602 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        pendingTraining.resolve({ ok: true, status: 200, json: async () => bootstrap("TRAINING_MAIL", 601) });
+        pendingLive.resolve({ ok: true, status: 200, json: async () => bootstrap("LIVE_INBOUND", 602) });
+        await new Promise((resolve) => setImmediate(resolve));
+
+        const trainingFactsId = trainingHost.innerHTML.match(/data-page-panel="facts" id="([^"]+)"/)?.[1];
+        const liveFactsId = liveHost.innerHTML.match(/data-page-panel="facts" id="([^"]+)"/)?.[1];
+        assert.ok(trainingFactsId && liveFactsId, "both mounts must render panels");
+        assert.notStrictEqual(trainingFactsId, liveFactsId, "panel ids must be per-instance");
+
+        click(trainingHost, "next-page");
+        assert.match(trainingHost.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.doesNotMatch(liveHost.innerHTML, /data-page-panel="facts"[^>]* hidden/, "live mount must keep its own page");
+        assert.match(liveHost.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+
+        training.unmount();
+        live.unmount();
+        assert.strictEqual(trainingHost.innerHTML, "");
+        assert.strictEqual(liveHost.innerHTML, "");
+    });
+
+    it("restores locked items on a FRAME_STALE saved state and opens the frame page", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 511;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithFrame(sourceType, sourceId, [grounded]);
+        current.savedState = {
+            status: "FRAME_STALE",
+            stateVersion: 3,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "restored-frame-v1")]
+        };
+        const calls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+        assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0);
+        assert.match(host.innerHTML, /FRAME_STALE：框架配置已变化/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/, "frame page must open for a frame-stale restore");
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+    });
+
+    it("unmount aborts an in-flight generation and drops its result", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 510;
+        const current = bootstrap(sourceType, sourceId);
+        const requestKey = current.requestCoverage[0].requestKey;
+        const version = itemVersion(requestKey, current.sourceVersion, current.evidenceSetVersion, "late-v1");
+        const pending = pendingSseFetch();
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                pending.bind(options);
+                return pending.promise;
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        const instance = window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "assemble");
+        await settle();
+        instance.unmount();
+        assert.strictEqual(host.innerHTML, "");
+        pending.resolveFetch(sseResponse("result", {
+            source: current.source,
+            sourceVersion: current.sourceVersion,
+            evidenceSetVersion: current.evidenceSetVersion,
+            version
+        }));
+        await settle();
+        await settle();
+        assert.strictEqual(host.innerHTML, "", "a late generation must not repaint an unmounted host");
     });
 });
