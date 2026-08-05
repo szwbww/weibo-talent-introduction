@@ -1,6 +1,6 @@
 # 可信回复工作台 02：可选择回复框架开发计划
 
-> 使用 `create-p` 编写。前置：`trust-reply-configurable-workbench-01-request-fact-assignment.md` 已执行并通过独立验证。后续：`trust-reply-configurable-workbench-03-two-page-workbench-ui.md`。
+> 使用 `create-p` 编写。总纲：`trust-reply-configurable-workbench-00-master.md`。前置：`trust-reply-configurable-workbench-01-request-fact-assignment.md` 已执行并通过独立验证。后续：`trust-reply-configurable-workbench-03-two-page-workbench-ui.md`。
 
 ## 需求描述
 

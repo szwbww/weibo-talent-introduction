@@ -1,6 +1,6 @@
 # 可信回复工作台 01：摘要—事实唯一分配开发计划
 
-> 使用 `create-p` 编写。执行顺序：本计划完成并独立验证后，再执行 `trust-reply-configurable-workbench-02-selectable-reply-frame.md`，最后执行 `trust-reply-configurable-workbench-03-two-page-workbench-ui.md`。
+> 使用 `create-p` 编写。总纲：`trust-reply-configurable-workbench-00-master.md`。执行顺序：本计划完成并独立验证后，再执行 `trust-reply-configurable-workbench-02-selectable-reply-frame.md`，最后执行 `trust-reply-configurable-workbench-03-two-page-workbench-ui.md`。
 
 ## 需求描述
 
