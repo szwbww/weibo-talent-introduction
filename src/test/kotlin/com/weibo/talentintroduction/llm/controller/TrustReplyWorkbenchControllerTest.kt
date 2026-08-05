@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
+import com.weibo.talentintroduction.llm.service.TrustReplyRequestFactSelection
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
@@ -400,6 +401,174 @@ class TrustReplyWorkbenchControllerTest {
         )
             .andExpect(status().isUnprocessableEntity)
             .andExpect(jsonPath("$.code").value("TRUST_REPLY_REQUEST_KEY_INVALID"))
+    }
+
+    @Test
+    fun `bootstrap round trips request fact selections`() {
+        var captured: TrustReplyBootstrapRequest? = null
+        val bootstrap = TrustReplyBootstrapResponse(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            sourceVersion = "source-v1",
+            inboundSubject = "Subject",
+            inboundText = "Question",
+            expertName = "Test",
+            expertEmail = "test@example.com",
+            llmEnabled = false,
+            availableModels = listOf("DEEPSEEK_V4_FLASH"),
+            defaultModel = "DEEPSEEK_V4_FLASH",
+            suggestedFactIds = listOf(9L),
+            canonicalFactIds = listOf(9L),
+            requestCoverage = emptyList(),
+            draftReadiness = "READY",
+            evidenceSetVersion = "evidence-v1",
+            requestFactSelections = listOf(TrustReplyRequestFactSelection("k".repeat(32), listOf(9L)))
+        )
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplyBootstrapRequest
+            bootstrap
+        }.`when`(service).bootstrap(Mockito.any(TrustReplyBootstrapRequest::class.java) ?: TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            requestedFactIds = null
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/bootstrap")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "source":{"sourceType":"TRAINING_MAIL","sourceId":123},
+                      "requestFactSelections":[{"requestKey":"${"k".repeat(32)}","factRuleIds":[9]}]
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.requestFactSelections[0].requestKey").value("k".repeat(32)))
+            .andExpect(jsonPath("$.requestFactSelections[0].factRuleIds[0]").value(9))
+
+        val capturedRequest = requireNotNull(captured)
+        assertEquals("k".repeat(32), capturedRequest.requestFactSelections?.single()?.requestKey)
+        assertEquals(listOf(9L), capturedRequest.requestFactSelections?.single()?.factRuleIds)
+    }
+
+    @Test
+    fun `assemble round trips request fact selections`() {
+        var captured: TrustReplyAssembleRequest? = null
+        val response = TrustReplyAssembleResponse(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            rawDraftText = "answer",
+            renderedDraftText = "answer",
+            draftHash = "hash",
+            canonicalFactIds = emptyList(),
+            itemVersions = emptyList(),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection("k".repeat(32), listOf(9L)))
+        )
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplyAssembleRequest
+            response
+        }.`when`(service).assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedSourceVersion = "s1",
+            expectedEvidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"e1","requestFactSelections":[{"requestKey":"${"k".repeat(32)}","factRuleIds":[9]}],"lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.requestFactSelections[0].factRuleIds[0]").value(9))
+
+        assertEquals("k".repeat(32), requireNotNull(captured).requestFactSelections?.single()?.requestKey)
+        assertEquals(listOf(9L), requireNotNull(captured).requestFactSelections?.single()?.factRuleIds)
+    }
+
+    @Test
+    fun `state PUT round trips request fact selections`() {
+        var captured: TrustReplySaveStateRequest? = null
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplySaveStateRequest
+            TrustReplySavedState(
+                status = "SAVED",
+                stateVersion = 7,
+                selectedModel = "DEEPSEEK_V4_FLASH",
+                requestedFactIds = listOf(9L),
+                lockedItems = emptyList(),
+                requestFactSelections = listOf(TrustReplyRequestFactSelection("k".repeat(32), listOf(9L)))
+            )
+        }.`when`(service).saveState(Mockito.any(TrustReplySaveStateRequest::class.java) ?: TrustReplySaveStateRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedStateVersion = 0,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":3,"sourceVersion":"s1","evidenceSetVersion":"e1","requestFactSelections":[{"requestKey":"${"k".repeat(32)}","factRuleIds":[9]}],"lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.requestFactSelections[0].requestKey").value("k".repeat(32)))
+
+        assertEquals("k".repeat(32), requireNotNull(captured).requestFactSelections?.single()?.requestKey)
+    }
+
+    @Test
+    fun `ambiguous and duplicate assignment map to stable 422 codes`() {
+        Mockito.`when`(service.bootstrap(Mockito.any(TrustReplyBootstrapRequest::class.java) ?: TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            requestedFactIds = null
+        ))).thenThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+            "TRUST_REPLY_FACT_SELECTION_AMBIGUOUS"
+        ))
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/bootstrap")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"requestedFactIds":[9],"requestFactSelections":[{"requestKey":"k","factRuleIds":[9]}]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_FACT_SELECTION_AMBIGUOUS"))
+
+        Mockito.`when`(service.assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedSourceVersion = "s1",
+            expectedEvidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))).thenThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+            "TRUST_REPLY_FACT_ALREADY_ASSIGNED"
+        ))
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"e1","requestFactSelections":[{"requestKey":"k","factRuleIds":[9]},{"requestKey":"j","factRuleIds":[9]}],"lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_FACT_ALREADY_ASSIGNED"))
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.qa.service.QaRequestExtractor
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
@@ -53,9 +54,21 @@ data class ResolvedTrustReplySource(
     val sourceVersion: String
 )
 
+/**
+ * Canonical summary-to-fact matrix entry (I-1). [requestKey] is the canonical
+ * request identity computed by [TrustReplyWorkbenchService.requestKey];
+ * [factRuleIds] is the ordered list of fact rule ids assigned to that request.
+ * A rule id may appear at most once across the whole matrix (I-2).
+ */
+data class TrustReplyRequestFactSelection(
+    val requestKey: String,
+    val factRuleIds: List<Long>
+)
+
 data class TrustReplyBootstrapRequest(
     val source: TrustReplySourceRef,
-    val requestedFactIds: List<Long>? = null
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
 )
 
 data class TrustReplyGenerationRequest(
@@ -72,7 +85,8 @@ data class TrustReplyGenerationRequest(
     val expectedEvidenceSetVersion: String? = null,
     val requestKey: String? = null,
     val handling: TrustReplyItemHandling? = null,
-    val requestedFactIds: List<Long>? = null
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
 )
 
 data class TrustReplyRequestCoverage(
@@ -112,7 +126,8 @@ data class TrustReplyBootstrapResponse(
     val draftReadiness: String,
     val contextWarnings: List<String> = emptyList(),
     val evidenceSetVersion: String,
-    val savedState: TrustReplySavedState? = null
+    val savedState: TrustReplySavedState? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
 )
 
 data class TrustReplySavedStatePayload(
@@ -121,7 +136,8 @@ data class TrustReplySavedStatePayload(
     val evidenceSetVersion: String,
     val requestedFactIds: List<Long>,
     val selectedModel: String,
-    val lockedItems: List<TrustReplyLockedItemRequest>
+    val lockedItems: List<TrustReplyLockedItemRequest>,
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
 )
 
 data class TrustReplySavedState(
@@ -129,7 +145,8 @@ data class TrustReplySavedState(
     val stateVersion: Long = 0,
     val selectedModel: String = "",
     val requestedFactIds: List<Long> = emptyList(),
-    val lockedItems: List<TrustReplyLockedItemRequest> = emptyList()
+    val lockedItems: List<TrustReplyLockedItemRequest> = emptyList(),
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
 )
 
 data class TrustReplySaveStateRequest(
@@ -140,13 +157,15 @@ data class TrustReplySaveStateRequest(
     val evidenceSetVersion: String,
     val requestedFactIds: List<Long>? = null,
     val selectedModel: String? = null,
-    val lockedItems: List<TrustReplyLockedItemRequest>
+    val lockedItems: List<TrustReplyLockedItemRequest>,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
 )
 
 data class TrustReplyRuleMetadata(
     val ruleId: Long,
     val displayName: String,
-    val categoryId: Long? = null
+    val categoryId: Long? = null,
+    val answerBody: String? = null
 )
 
 data class TrustReplyGenerationResult(
@@ -201,6 +220,7 @@ data class TrustReplyItemAdjustmentRequest(
     val operatorInstruction: String? = null,
     val model: String? = null,
     val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
     val llmAttemptTimeoutSeconds: Int? = null,
     val llmTotalTimeoutSeconds: Int? = null
 )
@@ -231,7 +251,8 @@ data class TrustReplyAssembleRequest(
     val expectedSourceVersion: String,
     val expectedEvidenceSetVersion: String,
     val lockedItems: List<TrustReplyLockedItemRequest>,
-    val requestedFactIds: List<Long>? = null
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
 )
 
 data class TrustReplyAssembleResponse(
@@ -243,7 +264,8 @@ data class TrustReplyAssembleResponse(
     val draftHash: String,
     val canonicalFactIds: List<Long>,
     val itemVersions: List<TrustReplyItemVersion>,
-    val requestedFactIds: List<Long> = emptyList()
+    val requestedFactIds: List<Long> = emptyList(),
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
 )
 
 open class TrustReplyWorkbenchException(
@@ -280,46 +302,45 @@ class TrustReplyWorkbenchService(
         val resolved = resolveSource(request.source)
         val stored = stateStore.load(resolved.source.sourceType.name, resolved.source.sourceId)
         val now = LocalDateTime.now()
+        val callerSelections = request.requestFactSelections
         val callerFactIds = request.requestedFactIds
-        val storedPayload = if (callerFactIds == null) {
+        val storedPayload = if (callerSelections == null && callerFactIds == null) {
             stored?.payloadJson?.let { stateStore.decodePayload(it) }
         } else {
             null
         }
-        val candidateFactIds = when {
-            callerFactIds != null -> callerFactIds
-            storedPayload != null -> storedPayload.requestedFactIds
-            else -> null
-        }
+        // v2 durable state carries the canonical matrix; v1 carries the legacy flat union (I-6).
+        val candidateSelections = callerSelections
+            ?: storedPayload
+                ?.takeIf { it.schemaVersion == TrustReplyWorkbenchStateStore.SCHEMA_VERSION }
+                ?.requestFactSelections
+        val candidateFactIds = callerFactIds
+            ?: storedPayload
+                ?.takeIf { it.schemaVersion != TrustReplyWorkbenchStateStore.SCHEMA_VERSION }
+                ?.requestedFactIds
         var implicitSelectionUnusable = false
-        val selection = try {
-            qaFactSelectionService.select(
-                inboundText = resolved.inboundText,
-                selectedRuleIds = candidateFactIds,
-                researchProfileSufficient = resolved.researchProfileSufficient
-            )
-        } catch (ex: IllegalArgumentException) {
-            if (callerFactIds == null && storedPayload != null && candidateFactIds != null) {
+        val resolvedSelection = try {
+            resolveCanonicalSelection(resolved, candidateSelections, candidateFactIds, useLocalEvidence = false)
+        } catch (ex: TrustReplyWorkbenchException) {
+            if (callerSelections == null && callerFactIds == null && storedPayload != null &&
+                (candidateSelections != null || candidateFactIds != null)
+            ) {
                 implicitSelectionUnusable = true
-                qaFactSelectionService.select(
-                    inboundText = resolved.inboundText,
-                    selectedRuleIds = null,
-                    researchProfileSufficient = resolved.researchProfileSufficient
-                )
+                resolveCanonicalSelection(resolved, null, null, useLocalEvidence = false)
             } else {
-                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
+                throw ex
             }
         }
-        val evidence = aiReplyDraftService.buildEvidenceSnapshotForSelection(selection.sendQaRuleIds)
+        val selection = resolvedSelection.selection
         val savedState = if (implicitSelectionUnusable && stored != null && stored.expiresAt.isAfter(now)) {
             TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
         } else {
             restoreSavedState(
                 resolved = resolved,
                 stored = stored,
-                requestFactIds = candidateFactIds,
                 selection = selection,
-                evidenceSetVersion = evidence.first,
+                matrix = resolvedSelection.requestFactSelections,
+                evidenceSetVersion = resolvedSelection.evidenceSetVersion,
                 now = now
             )
         }
@@ -339,19 +360,30 @@ class TrustReplyWorkbenchService(
             requestCoverage = selection.requestFacts.toCoverage(resolved.sourceVersion),
             draftReadiness = bootstrapReadiness(selection),
             contextWarnings = resolved.contextWarnings,
-            evidenceSetVersion = evidence.first,
-            savedState = savedState
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            savedState = savedState,
+            requestFactSelections = resolvedSelection.requestFactSelections
         )
     }
 
     fun saveState(request: TrustReplySaveStateRequest): TrustReplySavedState {
         val resolved = resolveSource(request.source)
         requireCurrentSourceVersion(request.sourceVersion, resolved.sourceVersion)
-        if (request.schemaVersion != null && request.schemaVersion != TrustReplyWorkbenchStateStore.SCHEMA_VERSION) {
+        // PUT accepts request schema v1 or v2 during the transition (I-6); writes are always v2.
+        if (request.schemaVersion != null && request.schemaVersion !in setOf(
+                TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+                TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION
+            )
+        ) {
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_STATE_INVALID")
         }
-        val (selection, evidenceSetVersion) = resolveCanonicalSelection(resolved, request.requestedFactIds)
-        requireCurrentEvidenceVersion(request.evidenceSetVersion, evidenceSetVersion)
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            request.requestFactSelections,
+            request.requestedFactIds,
+            useLocalEvidence = false
+        )
+        requireCurrentEvidenceVersion(request.evidenceSetVersion, resolvedSelection.evidenceSetVersion)
         val now = LocalDateTime.now()
         if (request.lockedItems.isEmpty()) {
             stateStore.delete(resolved.source.sourceType.name, resolved.source.sourceId, request.expectedStateVersion)
@@ -360,15 +392,16 @@ class TrustReplyWorkbenchService(
         }
         val orderedLocked = validateLockedSubset(
             resolved = resolved,
-            selection = selection,
-            evidenceSetVersion = evidenceSetVersion,
+            selection = resolvedSelection.selection,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
             lockedItems = request.lockedItems
         )
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = resolved.sourceVersion,
-            evidenceSetVersion = evidenceSetVersion,
-            requestedFactIds = selection.sendQaRuleIds,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            requestedFactIds = resolvedSelection.selection.sendQaRuleIds,
+            requestFactSelections = resolvedSelection.requestFactSelections,
             selectedModel = request.selectedModel?.trim()?.takeIf { it.isNotBlank() }
                 ?: AiReplyModel.DEEPSEEK_V4_FLASH.name,
             lockedItems = orderedLocked
@@ -387,15 +420,16 @@ class TrustReplyWorkbenchService(
             stateVersion = newVersion,
             selectedModel = payload.selectedModel,
             requestedFactIds = payload.requestedFactIds,
-            lockedItems = payload.lockedItems
+            lockedItems = payload.lockedItems,
+            requestFactSelections = payload.requestFactSelections
         )
     }
 
     private fun restoreSavedState(
         resolved: ResolvedTrustReplySource,
         stored: TrustReplyWorkbenchStateStore.TrustReplyStoredState?,
-        requestFactIds: List<Long>?,
         selection: ResolvedQaRules,
+        matrix: List<TrustReplyRequestFactSelection>,
         evidenceSetVersion: String,
         now: LocalDateTime
     ): TrustReplySavedState? {
@@ -411,7 +445,13 @@ class TrustReplyWorkbenchService(
         if (payload.sourceVersion != resolved.sourceVersion || payload.evidenceSetVersion != evidenceSetVersion) {
             return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
         }
-        if (requestFactIds != null && payload.requestedFactIds != requestFactIds) {
+        // v2 restores must carry the identical canonical mapping; v1 is re-normalized
+        // from its flat union by the resolver and must still match the union (I-4/I-6).
+        if (payload.schemaVersion == TrustReplyWorkbenchStateStore.SCHEMA_VERSION) {
+            if (payload.requestFactSelections != matrix) {
+                return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+            }
+        } else if (payload.requestedFactIds != selection.sendQaRuleIds) {
             return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
         }
         val ordered = try {
@@ -429,7 +469,8 @@ class TrustReplyWorkbenchService(
             stateVersion = stored.stateVersion,
             selectedModel = payload.selectedModel,
             requestedFactIds = payload.requestedFactIds,
-            lockedItems = ordered
+            lockedItems = ordered,
+            requestFactSelections = matrix
         )
     }
 
@@ -503,6 +544,12 @@ class TrustReplyWorkbenchService(
         beforeCommit: (() -> Boolean)? = null
     ): TrustReplyGenerationResult {
         val resolved = resolveSource(request.source)
+        val operation = request.operation.trim().uppercase()
+        // I-7: matrix clients generate per-item only; a FULL_DRAFT carrying the matrix
+        // would flatten the assignment back into a reusable flat pool and must fail closed.
+        if (operation != "ADJUST_ITEM" && request.requestFactSelections != null) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATION_INVALID")
+        }
         val expectedVersion = request.expectedSourceVersion?.trim()
         if (expectedVersion.isNullOrEmpty()) {
             throw TrustReplyWorkbenchException(HttpStatus.BAD_REQUEST, "TRUST_REPLY_SOURCE_VERSION_REQUIRED")
@@ -511,7 +558,7 @@ class TrustReplyWorkbenchService(
             throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_SOURCE_STALE")
         }
 
-        if (request.operation == "ADJUST_ITEM") {
+        if (operation == "ADJUST_ITEM") {
             val key = request.requestKey?.trim()
                 ?: throw TrustReplyWorkbenchException(HttpStatus.BAD_REQUEST, "TRUST_REPLY_REQUEST_KEY_REQUIRED")
             val handling = request.handling
@@ -526,6 +573,7 @@ class TrustReplyWorkbenchService(
                     operatorInstruction = request.operatorInstruction,
                     model = request.model,
                     requestedFactIds = request.requestedFactIds,
+                    requestFactSelections = request.requestFactSelections,
                     llmAttemptTimeoutSeconds = request.llmAttemptTimeoutSeconds,
                     llmTotalTimeoutSeconds = request.llmTotalTimeoutSeconds
                 ),
@@ -664,11 +712,14 @@ class TrustReplyWorkbenchService(
         cancellationToken?.throwIfCancelled()
         val resolved = resolveSource(request.source)
         requireCurrentSourceVersion(request.expectedSourceVersion, resolved.sourceVersion)
-        val (selection, evidenceSetVersion) = if (request.handling == TrustReplyItemHandling.OMIT) {
-            resolveCanonicalSelectionWithoutDraftService(resolved, request.requestedFactIds)
-        } else {
-            resolveCanonicalSelection(resolved, request.requestedFactIds)
-        }
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            request.requestFactSelections,
+            request.requestedFactIds,
+            useLocalEvidence = request.handling == TrustReplyItemHandling.OMIT
+        )
+        val selection = resolvedSelection.selection
+        val evidenceSetVersion = resolvedSelection.evidenceSetVersion
         requireCurrentEvidenceVersion(request.expectedEvidenceSetVersion, evidenceSetVersion)
         val item = selection.requestFacts.firstOrNull { item ->
             requestKey(resolved.sourceVersion, item) == request.requestKey
@@ -753,7 +804,14 @@ class TrustReplyWorkbenchService(
     fun assemble(request: TrustReplyAssembleRequest): TrustReplyAssembleResponse {
         val resolved = resolveSource(request.source)
         requireCurrentSourceVersion(request.expectedSourceVersion, resolved.sourceVersion)
-        val (selection, evidenceSetVersion) = resolveCanonicalSelection(resolved, request.requestedFactIds)
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            request.requestFactSelections,
+            request.requestedFactIds,
+            useLocalEvidence = false
+        )
+        val selection = resolvedSelection.selection
+        val evidenceSetVersion = resolvedSelection.evidenceSetVersion
         requireCurrentEvidenceVersion(request.expectedEvidenceSetVersion, evidenceSetVersion)
         val expectedKeys = selection.requestFacts.map { requestKey(resolved.sourceVersion, it) }
         val actualKeys = request.lockedItems.map { it.requestKey }
@@ -829,7 +887,8 @@ class TrustReplyWorkbenchService(
             draftHash = AiReplyDraftService.sha256Hex(raw),
             canonicalFactIds = factIds.toList(),
             itemVersions = versions,
-            requestedFactIds = selection.sendQaRuleIds
+            requestedFactIds = selection.sendQaRuleIds,
+            requestFactSelections = resolvedSelection.requestFactSelections
         )
     }
 
@@ -1162,36 +1221,132 @@ class TrustReplyWorkbenchService(
         return sha256Hex(canonical)
     }
 
+    private data class CanonicalRequestRef(
+        val index: Int,
+        val requestKey: String,
+        val requestText: String
+    )
+
+    private data class ResolvedCanonicalSelection(
+        val selection: ResolvedQaRules,
+        val requestFactSelections: List<TrustReplyRequestFactSelection>,
+        val evidenceSetVersion: String
+    )
+
+    /**
+     * Unified workbench selection resolver (Task 3): resolves canonical
+     * requestKeys, then matrix/legacy/auto input, and returns the resolved
+     * rules, the canonical matrix, and the mapping-sensitive evidence version.
+     * [useLocalEvidence] keeps the OMIT fast path free of the draft-service
+     * evidence read while producing an identical base version (I-5).
+     */
     private fun resolveCanonicalSelection(
         resolved: ResolvedTrustReplySource,
-        requestedFactIds: List<Long>?
-    ): Pair<ResolvedQaRules, String> {
-        val selection = try {
-            qaFactSelectionService.select(
-                inboundText = resolved.inboundText,
-                selectedRuleIds = requestedFactIds,
-                researchProfileSufficient = resolved.researchProfileSufficient
-            )
-        } catch (_: IllegalArgumentException) {
-            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
+        requestFactSelections: List<TrustReplyRequestFactSelection>?,
+        requestedFactIds: List<Long>?,
+        useLocalEvidence: Boolean
+    ): ResolvedCanonicalSelection {
+        if (requestFactSelections != null && requestedFactIds != null) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_AMBIGUOUS")
         }
-        return selection to aiReplyDraftService.buildEvidenceSnapshotForSelection(selection.sendQaRuleIds).first
+        val selectionsByRequest = requestFactSelections?.let { selections ->
+            val canonical = canonicalRequests(resolved)
+            validateMatrixKeys(canonical, selections)
+            canonical.sortedBy { it.index }.map { ref ->
+                selections.first { it.requestKey == ref.requestKey }.factRuleIds
+            }
+        }
+        val selection = qaFactSelectionService.selectForWorkbench(
+            inboundText = resolved.inboundText,
+            selectionsByRequest = selectionsByRequest,
+            requestedFactIds = requestedFactIds,
+            researchProfileSufficient = resolved.researchProfileSufficient
+        )
+        val matrix = canonicalMatrix(resolved.sourceVersion, selection)
+        val matrixIds = matrix.flatMap { it.factRuleIds }
+        if (matrixIds.size != matrixIds.toSet().size) {
+            // Duplicates that survive canonicalization (I-2) must never reach the store/composer.
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_ALREADY_ASSIGNED")
+        }
+        val baseEvidence = if (useLocalEvidence) {
+            localEvidenceSetVersion(selection.sendQaRuleIds)
+        } else {
+            aiReplyDraftService.buildEvidenceSnapshotForSelection(selection.sendQaRuleIds).first
+        }
+        return ResolvedCanonicalSelection(
+            selection = selection,
+            requestFactSelections = matrix,
+            evidenceSetVersion = evidenceSetVersionWithMapping(baseEvidence, matrix)
+        )
     }
 
-    private fun resolveCanonicalSelectionWithoutDraftService(
-        resolved: ResolvedTrustReplySource,
-        requestedFactIds: List<Long>?
-    ): Pair<ResolvedQaRules, String> {
-        val selection = try {
-            qaFactSelectionService.select(
-                inboundText = resolved.inboundText,
-                selectedRuleIds = requestedFactIds,
-                researchProfileSufficient = resolved.researchProfileSufficient
+    private fun canonicalRequests(resolved: ResolvedTrustReplySource): List<CanonicalRequestRef> =
+        QaRequestExtractor.extract(resolved.inboundText).mapIndexed { idx, request ->
+            val intentKeys = AiReplyIntentCatalog.matchIntents(request.text).map { it.key }
+            CanonicalRequestRef(
+                index = idx + 1,
+                requestKey = requestKey(resolved.sourceVersion, idx + 1, request.text, intentKeys),
+                requestText = request.text
             )
-        } catch (_: IllegalArgumentException) {
+        }
+
+    private fun validateMatrixKeys(
+        canonical: List<CanonicalRequestRef>,
+        selections: List<TrustReplyRequestFactSelection>
+    ) {
+        val keys = selections.map { it.requestKey }
+        if (keys.any { it.isBlank() } || keys.size != keys.toSet().size) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
+        }
+        val knownKeys = canonical.map { it.requestKey }.toSet()
+        if (keys.any { it !in knownKeys }) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
+        }
+        if (knownKeys.any { it !in keys.toSet() }) {
+            // I-1: the matrix must fully express every canonical request.
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
         }
-        val versionParts = selection.sendQaRuleIds.distinct().map { ruleId ->
+        selections.forEach { selection ->
+            if (selection.factRuleIds.any { it <= 0 }) {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_SELECTION_INVALID")
+            }
+        }
+    }
+
+    private fun canonicalMatrix(
+        sourceVersion: String,
+        selection: ResolvedQaRules
+    ): List<TrustReplyRequestFactSelection> =
+        selection.requestFacts.sortedBy { it.index }.map { item ->
+            TrustReplyRequestFactSelection(
+                requestKey = requestKey(sourceVersion, item),
+                factRuleIds = item.factRuleIds
+            )
+        }
+
+    /**
+     * I-5: the workbench evidence version binds the per-request fact assignment
+     * into the identity — the same fact union re-assigned to a different request
+     * produces a different version. Inputs are rule ids, availability, updatedAt,
+     * answerBody SHA-256 and the canonical mapping only; no observed time.
+     */
+    private fun evidenceSetVersionWithMapping(
+        baseEvidenceVersion: String,
+        matrix: List<TrustReplyRequestFactSelection>
+    ): String {
+        val mappingCanonical = matrix.joinToString("\u0001") { selection ->
+            "${selection.requestKey}\u0000${selection.factRuleIds.joinToString(",")}"
+        }
+        return sha256Hex("$baseEvidenceVersion\u0000$mappingCanonical")
+    }
+
+    /**
+     * OMIT fast path: mirrors [AiReplyDraftService.buildEvidenceSnapshotForSelection]
+     * without the draft-service read so an OMIT adjustment never needs evidence
+     * assembly, while producing the identical base version for the same input.
+     */
+    private fun localEvidenceSetVersion(sendQaRuleIds: List<Long>): String {
+        val versionParts = sendQaRuleIds.distinct().map { ruleId ->
             val rule = try {
                 qaRuleRepository.findById(ruleId).orElse(null)
             } catch (_: Exception) {
@@ -1202,7 +1357,7 @@ class TrustReplyWorkbenchService(
             val answerBodyHash = if (available) sha256Hex(rule?.answerBody.orEmpty()) else ""
             "$ruleId:$available:$updatedAt:$answerBodyHash"
         }
-        return selection to sha256Hex(versionParts.joinToString("|"))
+        return sha256Hex(versionParts.joinToString("|"))
     }
 
     private fun requireCurrentSourceVersion(expected: String?, actual: String) {
@@ -1276,7 +1431,8 @@ class TrustReplyWorkbenchService(
                     TrustReplyRuleMetadata(
                         ruleId = id,
                         displayName = rule.displayName?.takeIf { it.isNotBlank() } ?: "未命名事实",
-                        categoryId = rule.categoryId
+                        categoryId = rule.categoryId,
+                        answerBody = rule.answerBody
                     )
                 }
             }

@@ -110,10 +110,20 @@ class TrustReplyWorkbenchStateStore(
         return json
     }
 
+    /**
+     * I-6: v2 payloads carry the canonical matrix and are handed to the business
+     * resolver for revalidation; v1 payloads are returned as legacy flat unions
+     * so the business layer can normalize them (I-4). Unknown or corrupt payloads
+     * decode to null and surface as INVALID on restore.
+     */
     fun decodePayload(json: String): TrustReplySavedStatePayload? =
         try {
             val decoded = objectMapper.readValue<TrustReplySavedStatePayload>(json)
-            if (decoded.schemaVersion != SCHEMA_VERSION) null else decoded
+            if (decoded.schemaVersion != SCHEMA_VERSION && decoded.schemaVersion != LEGACY_SCHEMA_VERSION) {
+                null
+            } else {
+                decoded
+            }
         } catch (_: Exception) {
             null
         }
@@ -164,7 +174,8 @@ class TrustReplyWorkbenchStateStore(
     }
 
     companion object {
-        const val SCHEMA_VERSION = "trust-reply-workbench-state-v1"
+        const val SCHEMA_VERSION = "trust-reply-workbench-state-v2"
+        const val LEGACY_SCHEMA_VERSION = "trust-reply-workbench-state-v1"
         const val MAX_PAYLOAD_BYTES = 256 * 1024
         const val EXPIRY_DAYS = 30L
     }
