@@ -110,10 +110,23 @@ class TrustReplyWorkbenchStateStore(
         return json
     }
 
+    /**
+     * I-7: v3 payloads carry the canonical matrix plus the frame snapshot;
+     * v2 payloads carry the matrix without a frame and are presented as the
+     * current matrix schema with a null frame (I-2 default compat); v1 payloads
+     * are returned as legacy flat unions so the business layer can normalize
+     * them (I-4). Unknown or corrupt payloads decode to null and surface as
+     * INVALID on restore.
+     */
     fun decodePayload(json: String): TrustReplySavedStatePayload? =
         try {
             val decoded = objectMapper.readValue<TrustReplySavedStatePayload>(json)
-            if (decoded.schemaVersion != SCHEMA_VERSION) null else decoded
+            when (decoded.schemaVersion) {
+                SCHEMA_VERSION -> decoded
+                PREVIOUS_SCHEMA_VERSION -> decoded.copy(schemaVersion = SCHEMA_VERSION)
+                LEGACY_SCHEMA_VERSION -> decoded
+                else -> null
+            }
         } catch (_: Exception) {
             null
         }
@@ -164,7 +177,14 @@ class TrustReplyWorkbenchStateStore(
     }
 
     companion object {
-        const val SCHEMA_VERSION = "trust-reply-workbench-state-v1"
+        const val SCHEMA_VERSION = "trust-reply-workbench-state-v3"
+        const val PREVIOUS_SCHEMA_VERSION = "trust-reply-workbench-state-v2"
+        const val LEGACY_SCHEMA_VERSION = "trust-reply-workbench-state-v1"
+        val ACCEPTED_REQUEST_SCHEMA_VERSIONS = setOf(
+            SCHEMA_VERSION,
+            PREVIOUS_SCHEMA_VERSION,
+            LEGACY_SCHEMA_VERSION
+        )
         const val MAX_PAYLOAD_BYTES = 256 * 1024
         const val EXPIRY_DAYS = 30L
     }

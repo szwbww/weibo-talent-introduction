@@ -26,6 +26,18 @@
         PARTIAL: "PARTIAL · 部分有据",
         UNSUPPORTED: "UNSUPPORTED · 无依据"
     });
+    const STATE_SCHEMA_VERSION = "trust-reply-workbench-state-v3";
+    const FRAME_SLOTS = Object.freeze([
+        { key: "salutationSnippetId", snippetType: "SALUTATION", label: "尊语" },
+        { key: "greetingSnippetId", snippetType: "GREETING", label: "开场白" },
+        { key: "ackSnippetId", snippetType: "ACK", label: "致谢语" },
+        { key: "closingSnippetId", snippetType: "CLOSING", label: "结束语" }
+    ]);
+    const PREVIEW_STATE_LABELS = Object.freeze({
+        LOCAL: "配置预览 · 尚未服务端整合",
+        CURRENT: "服务端整合完成",
+        STALE: "配置已变化 · 请重新整合"
+    });
 
     function escapeText(value) {
         return String(value == null ? "" : value)
@@ -144,7 +156,11 @@
             onChange: typeof options.onChange === "function" ? options.onChange : null,
             sourceVersion: null,
             evidenceSetVersion: null,
-            selectedFactIds: [],
+            activePage: "facts",
+            frameOptions: [],
+            frameSnapshot: null,
+            frameSavePending: false,
+            assemblyStale: false,
             selectedModel: "DEEPSEEK_V4_FLASH",
             availableModels: ["DEEPSEEK_V4_FLASH"],
             llmEnabled: true,
@@ -288,6 +304,11 @@
             return ["TRUST_REPLY_SOURCE_STALE", "TRUST_REPLY_EVIDENCE_STALE"].some((item) => String(code || "").includes(item));
         }
 
+        function isFrameStaleError(error) {
+            const code = error && (error.code || error.message);
+            return String(code || "").includes("TRUST_REPLY_FRAME_STALE");
+        }
+
         function handleStaleGeneration(seq, message) {
             if (!isLive(seq)) return;
             resetVersions();
@@ -297,6 +318,19 @@
             if (typeof global.confirm === "function" && global.confirm("来源或事实已变化，确认刷新工作台并重新生成？")) {
                 void bootstrap();
             }
+        }
+
+        // Frame-only staleness (I-3): keep the locked answers, drop the stale
+        // assembly, surface the frame page and ask the operator to refresh the
+        // frame options before re-integrating. Unlike SOURCE/EVIDENCE stale it
+        // must never reset versions.
+        function handleFrameStale(seq, message) {
+            if (!isLive(seq)) return;
+            state.assembly = null;
+            state.assemblyStale = true;
+            setStatus(message || "框架配置已变化，请重新选择后整合", "FRAME_STALE");
+            state.activePage = "frame";
+            render();
         }
 
         function setStatus(message, type) {
@@ -312,6 +346,7 @@
                 request.pending = false;
                 request.error = null;
                 request.expanded = request.coverage !== "GROUNDED";
+                request.factPickerOpen = false;
                 request.questionTranslation = { state: "idle", text: "" };
                 request.answerTranslationsByVersionId = {};
                 request.requestSeq += 1;
@@ -333,6 +368,7 @@
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
+                factPickerOpen: false,
                 availableHandlings: [...(item.allowedHandlings || [])],
                 draftHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
                 instruction: "",
@@ -348,6 +384,76 @@
             }));
         }
 
+        // I-1/G-1 canonical matrix: every canonical request in order, including
+        // empty fact lists. This is the only fact payload sent to the server.
+        function serializeRequestFactSelections() {
+            return state.requests.map((request) => ({
+                requestKey: request.requestKey,
+                factRuleIds: [...(request.factRuleIds || [])]
+            }));
+        }
+
+        function snapshotFrame(frame) {
+            if (!frame) return null;
+            return {
+                selection: {
+                    salutationSnippetId: frame.selection?.salutationSnippetId ?? null,
+                    greetingSnippetId: frame.selection?.greetingSnippetId ?? null,
+                    ackSnippetId: frame.selection?.ackSnippetId ?? null,
+                    closingSnippetId: frame.selection?.closingSnippetId ?? null
+                },
+                version: frame.version || ""
+            };
+        }
+
+        function sameFrameSnapshot(a, b) {
+            if (!a && !b) return true;
+            if (!a || !b) return false;
+            const selA = a.selection || {};
+            const selB = b.selection || {};
+            return (a.version || "") === (b.version || "")
+                && (selA.salutationSnippetId ?? null) === (selB.salutationSnippetId ?? null)
+                && (selA.greetingSnippetId ?? null) === (selB.greetingSnippetId ?? null)
+                && (selA.ackSnippetId ?? null) === (selB.ackSnippetId ?? null)
+                && (selA.closingSnippetId ?? null) === (selB.closingSnippetId ?? null);
+        }
+
+        // I-6: preview/state/assemble read only the resolved versions.
+        function currentResolvedVersions() {
+            const versions = {};
+            state.requests.forEach((request) => {
+                if (request.resolvedVersionId) versions[request.requestKey] = request.resolvedVersionId;
+            });
+            return versions;
+        }
+
+        function factRuleById(factId) {
+            const numeric = Number(factId);
+            return state.rules.find((rule) => Number(rule.ruleId ?? rule.id) === numeric) || null;
+        }
+
+        // I-2: per-request ownership derived from the canonical matrix; a fact
+        // may belong to at most one request (server keeps the final word).
+        function factOwnerById() {
+            const owners = new Map();
+            state.requests.forEach((request) => {
+                (request.factRuleIds || []).forEach((factId) => {
+                    const numeric = Number(factId);
+                    if (!owners.has(numeric)) owners.set(numeric, request);
+                });
+            });
+            return owners;
+        }
+
+        function availableFactsFor(request) {
+            const owners = factOwnerById();
+            return state.rules.filter((rule) => {
+                const id = Number(rule.ruleId ?? rule.id);
+                const owner = owners.get(id);
+                return !owner || owner.requestKey === request.requestKey;
+            });
+        }
+
         function applyBootstrap(data, seq) {
             if (!isLive(seq)) return;
             if (!data || data.source?.sourceType !== source.sourceType || Number(data.source?.sourceId) !== source.sourceId) {
@@ -355,12 +461,26 @@
             }
             state.sourceVersion = data.sourceVersion;
             state.evidenceSetVersion = data.evidenceSetVersion;
-            state.selectedFactIds = [...(data.canonicalFactIds || data.suggestedFactIds || [])];
             state.rules = data.rulesByCategory || [];
             state.availableModels = data.availableModels?.length ? [...data.availableModels] : [data.defaultModel || "DEEPSEEK_V4_FLASH"];
             state.selectedModel = state.availableModels.includes(data.defaultModel) ? data.defaultModel : state.availableModels[0];
             state.llmEnabled = data.llmEnabled !== false;
             state.requests = requestFromCoverage(data.requestCoverage);
+            state.frameOptions = Array.isArray(data.frameOptions) ? data.frameOptions : [];
+            state.frameSnapshot = snapshotFrame(data.frameSnapshot);
+            // Fail closed when the server canonical matrix disagrees with the
+            // per-request coverage instead of silently re-deriving a flat pool.
+            if (Array.isArray(data.requestFactSelections) && data.requestFactSelections.length > 0) {
+                const selectionsByKey = new Map(data.requestFactSelections.map((selection) => [selection.requestKey, selection.factRuleIds || []]));
+                const inconsistent = state.requests.find((request) => {
+                    const canonical = selectionsByKey.get(request.requestKey);
+                    if (!canonical) return false;
+                    return JSON.stringify([...canonical]) !== JSON.stringify([...(request.factRuleIds || [])]);
+                });
+                if (inconsistent) {
+                    throw new Error("TRUST_REPLY_FACT_SELECTION_INVALID");
+                }
+            }
             state.generation.pending = false;
             state.sequenceCancelled = false;
             applySavedState(data.savedState || null);
@@ -376,7 +496,7 @@
                 setStatus("", "READY");
                 return;
             }
-            if (savedState.status === "RESTORED") {
+            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE") {
                 let restoredCount = 0;
                 (Array.isArray(savedState.lockedItems) ? savedState.lockedItems : []).forEach((locked) => {
                     const request = findRequest(locked.requestKey);
@@ -392,7 +512,12 @@
                     request.error = null;
                     restoredCount += 1;
                 });
-                setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
+                if (savedState.status === "FRAME_STALE") {
+                    setStatus(`FRAME_STALE：框架配置已变化，已保留 ${restoredCount} 项锁定回答，请刷新框架选项`, "FRAME_STALE");
+                    state.activePage = "frame";
+                } else {
+                    setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
+                }
             } else if (savedState.status === "STALE") {
                 setStatus("STALE：来源或依据已变化，旧锁定回答未恢复", "STALE");
             } else if (savedState.status === "INVALID") {
@@ -428,7 +553,8 @@
             try {
                 const data = await requestJson("/api/trust-reply/workbench/bootstrap", {
                     source,
-                    requestedFactIds: state.selectedFactIds.length ? state.selectedFactIds : null
+                    requestFactSelections: state.requests.length ? serializeRequestFactSelections() : null,
+                    frameSnapshot: state.frameSnapshot
                 });
                 applyBootstrap(data, seq);
             } catch (error) {
@@ -444,13 +570,13 @@
                 source,
                 expectedSourceVersion: state.sourceVersion,
                 expectedEvidenceSetVersion: state.evidenceSetVersion,
-                requestedFactIds: [...state.selectedFactIds],
+                requestFactSelections: serializeRequestFactSelections(),
                 requestKey: requestKey || null,
                 handling: handling || null,
                 operatorInstruction: instruction || null,
                 model: state.selectedModel,
                 generationId,
-                operation: requestKey ? "ADJUST_ITEM" : "FULL_DRAFT",
+                operation: "ADJUST_ITEM",
                 llmAttemptTimeoutSeconds: timeoutSeconds(state.attemptTimeout, 10, 600),
                 llmTotalTimeoutSeconds: timeoutSeconds(state.totalTimeout, 10, 7200)
             };
@@ -461,11 +587,12 @@
             const response = await requestJson("/api/trust-reply/workbench/state", {
                 source,
                 expectedStateVersion: state.savedStateVersion,
-                schemaVersion: "trust-reply-workbench-state-v1",
+                schemaVersion: STATE_SCHEMA_VERSION,
                 sourceVersion: state.sourceVersion,
                 evidenceSetVersion: state.evidenceSetVersion,
-                requestedFactIds: [...state.selectedFactIds],
+                requestFactSelections: serializeRequestFactSelections(),
                 selectedModel: state.selectedModel,
+                frameSnapshot: state.frameSnapshot,
                 lockedItems
             }, null, "PUT");
             if (response && Number.isInteger(response.stateVersion)) {
@@ -480,11 +607,12 @@
                 await requestJson("/api/trust-reply/workbench/state", {
                     source,
                     expectedStateVersion: state.savedStateVersion,
-                    schemaVersion: "trust-reply-workbench-state-v1",
+                    schemaVersion: STATE_SCHEMA_VERSION,
                     sourceVersion: state.sourceVersion,
                     evidenceSetVersion: state.evidenceSetVersion,
-                    requestedFactIds: [...state.selectedFactIds],
+                    requestFactSelections: serializeRequestFactSelections(),
                     selectedModel: state.selectedModel,
+                    frameSnapshot: state.frameSnapshot,
                     lockedItems: []
                 }, null, "PUT");
                 state.savedStateVersion = 0;
@@ -548,6 +676,11 @@
                 try {
                     await persistResolvedSnapshot();
                 } catch (error) {
+                    if (isFrameStaleError(error)) {
+                        state.stateSavePending = false;
+                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                        return false;
+                    }
                     if (isStaleError(error)) {
                         state.stateSavePending = false;
                         handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
@@ -638,6 +771,11 @@
                 render();
                 return { version };
             } catch (error) {
+                if (isFrameStaleError(error)) {
+                    request.pending = false;
+                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                    return { stale: true };
+                }
                 if (isStaleError(error)) {
                     handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
                     return { stale: true };
@@ -719,6 +857,7 @@
             const unresolvedManual = unresolvedManualKeys.length;
             const canStartAssembly = !state.generation.pending
                 && !state.stateSavePending
+                && !state.frameSavePending
                 && total > 0
                 && unresolvedManual === 0
                 && !state.requests.some((request) => request.pending);
@@ -732,6 +871,20 @@
                 unresolvedManualKeys,
                 canStartAssembly
             };
+        }
+
+        function assemblyIdentityMatches(assembly) {
+            return !!assembly
+                && sameSource(assembly.source)
+                && assembly.sourceVersion === state.sourceVersion
+                && assembly.evidenceSetVersion === state.evidenceSetVersion
+                && sameFrameSnapshot(assembly.frameSnapshot, state.frameSnapshot);
+        }
+
+        function previewState() {
+            if (state.assembly && assemblyIdentityMatches(state.assembly)) return "CURRENT";
+            if (state.assemblyStale) return "STALE";
+            return "LOCAL";
         }
 
         async function assemble() {
@@ -749,6 +902,11 @@
                 try {
                     await persistResolvedSnapshot();
                 } catch (error) {
+                    if (isFrameStaleError(error)) {
+                        state.stateSavePending = false;
+                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                        return;
+                    }
                     if (isStaleError(error)) {
                         state.stateSavePending = false;
                         handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
@@ -788,20 +946,36 @@
                     source,
                     expectedSourceVersion: state.sourceVersion,
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
-                    requestedFactIds: [...state.selectedFactIds],
+                    requestFactSelections: serializeRequestFactSelections(),
+                    frameSnapshot: state.frameSnapshot,
                     lockedItems
                 });
                 if (!isLive(seq)) return;
                 if (response.sourceVersion !== state.sourceVersion || response.evidenceSetVersion !== state.evidenceSetVersion) {
                     throw new Error("TRUST_REPLY_ASSEMBLY_STALE");
                 }
-                state.assembly = { ...response, requestedFactIds: [...state.selectedFactIds] };
+                if (response.frameSnapshot) {
+                    state.frameSnapshot = snapshotFrame(response.frameSnapshot);
+                }
+                state.assembly = {
+                    ...response,
+                    requestFactSelections: Array.isArray(response.requestFactSelections)
+                        ? response.requestFactSelections.map((selection) => ({ requestKey: selection.requestKey, factRuleIds: [...(selection.factRuleIds || [])] }))
+                        : [],
+                    frameSnapshot: snapshotFrame(response.frameSnapshot)
+                };
+                state.assemblyStale = false;
                 state.generation.pending = false;
                 state.generation.message = "服务端整合完成";
                 state.generation.stage = "READY";
                 render();
             } catch (error) {
                 if (!isLive(seq) || isAbort(error)) return;
+                if (isFrameStaleError(error)) {
+                    state.generation.pending = false;
+                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
                 state.generation.pending = false;
                 state.generation.stage = "ERROR";
                 state.generation.message = error.message || "整合失败，可重试";
@@ -871,6 +1045,10 @@
             } catch (error) {
                 if (!isLive()) return;
                 state.stateSavePending = false;
+                if (isFrameStaleError(error)) {
+                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
                 if (isStaleError(error)) {
                     handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
                     return;
@@ -904,11 +1082,14 @@
             };
         }
 
-        async function onFactChange(checkbox) {
-            const requested = [...host.querySelectorAll('[data-role="fact"]')]
-                .filter((item) => item.checked)
-                .map((item) => Number(item.value));
-            if (typeof global.confirm === "function" && !global.confirm("事实变化会清空当前版本和整合结果，继续？")) {
+        // I-3: fact add/remove invalidates everything (durable state, versions,
+        // locks, assembly) and re-bootstraps the canonical matrix; frame changes
+        // only clear the assembly and are handled by onFrameChange.
+        async function changeRequestFacts(request, nextFactRuleIds) {
+            const hasGeneratedState = state.requests.some((item) => item.versions.length > 0 || item.resolvedVersionId)
+                || !!state.assembly
+                || state.savedStateVersion > 0;
+            if (hasGeneratedState && typeof global.confirm === "function" && !global.confirm("事实变化会清空当前版本和整合结果，继续？")) {
                 render();
                 return;
             }
@@ -920,153 +1101,208 @@
                     return;
                 }
             }
-            state.selectedFactIds = requested;
+            request.factRuleIds = nextFactRuleIds;
             resetVersions();
             void bootstrap();
         }
 
-        function onClick(event) {
-            const button = event.target.closest && event.target.closest("[data-action]");
-            if (!button || !host.contains(button)) return;
-            const action = button.dataset.action;
-            if (action === "adjust-item") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void adjustItem(request);
-            }
-            if (action === "resolve-item") void toggleResolve(button.dataset.requestKey);
-            if (action === "toggle-item") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) {
-                    request.expanded = !request.expanded;
-                    render();
-                }
-            }
-            if (action === "translate-question") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void toggleTranslation(request, null);
-            }
-            if (action === "translate-answer") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void toggleTranslation(request, button.dataset.versionId);
-            }
-            if (action === "assemble") void assemble();
-            if (action === "complete") void complete();
-            if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
-        }
-
-        function onChange(event) {
-            const target = event.target;
-            if (target.matches && target.matches('[data-role="fact"]')) return onFactChange(target);
-            if (target.dataset?.role === "model") {
-                state.selectedModel = target.value;
-                return;
-            }
-            if (target.dataset?.role === "attempt-timeout") {
-                state.attemptTimeout.mode = target.value;
-                state.attemptTimeout.seconds = timeoutSeconds(state.attemptTimeout, 10, 600);
-                render();
-                return;
-            }
-            if (target.dataset?.role === "total-timeout") {
-                state.totalTimeout.mode = target.value;
-                state.totalTimeout.seconds = timeoutSeconds(state.totalTimeout, 10, 7200);
-                render();
-                return;
-            }
-            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
-            if (!request) return;
-            if (target.dataset.role === "handling") {
-                const previous = captureDecision(request);
-                request.draftHandling = target.value;
-                request.activeVersionId = null;
-                const invalidated = invalidateDecision(request);
-                render();
-                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-            } else if (target.dataset.role === "version") {
-                const previous = captureDecision(request);
-                request.activeVersionId = target.value || null;
-                const invalidated = request.activeVersionId !== request.resolvedVersionId && invalidateDecision(request);
-                render();
-                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-            }
-        }
-
-        function onInput(event) {
-            const target = event.target;
-            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
-            if (target.dataset?.role === "instruction" && request) {
-                const instruction = target.value.slice(0, 500);
-                if (instruction !== request.instruction) {
-                    const previous = captureDecision(request);
-                    request.instruction = instruction;
-                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) return;
-                    request.activeVersionId = null;
-                    const invalidated = invalidateDecision(request);
-                    syncInstructionUi(request);
-                    if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-                }
-            }
-            if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
-            if (target.dataset?.role === "total-custom") state.totalTimeout.customSeconds = target.value;
-        }
-
-        function findRequest(requestKey) {
-            return state.requests.find((request) => request.requestKey === requestKey);
-        }
-
-        async function toggleResolve(requestKey) {
+        async function addFact(requestKey, factId) {
             const request = findRequest(requestKey);
-            if (!request || request.pending || state.stateSavePending) return;
-            const previousResolved = request.resolvedVersionId;
-            const previousExpanded = request.expanded;
-            if (request.resolvedVersionId) {
-                request.resolvedVersionId = null;
-                request.expanded = true;
-            } else {
-                let version = activeVersion(request);
-                if (!version && request.draftHandling === "OMIT") {
-                    version = await adjustItem(request);
-                    if (!version || findRequest(requestKey) !== request) return;
-                }
-                if (!version) {
-                    request.error = "请先生成并选择一个版本";
-                    render();
-                    return;
-                }
-                if (!isVersionSerializable(version, request)) {
-                    request.error = "当前版本无效，请重新生成并采用";
-                    render();
-                    return;
-                }
-                request.resolvedVersionId = version.versionId;
-                request.expanded = false;
-            }
-            invalidateAssembly();
-            state.stateSavePending = true;
-            render();
-            try {
-                await persistResolvedSnapshot();
-            } catch (error) {
-                if (!isLive()) return;
-                state.stateSavePending = false;
-                if (isStaleError(error)) {
-                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
-                }
-                request.resolvedVersionId = previousResolved;
-                request.expanded = previousExpanded;
-                request.error = error.message || "保存失败，请重试";
+            if (!request) return;
+            const id = Number(factId);
+            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const owner = factOwnerById().get(id);
+            if (owner && owner.requestKey !== request.requestKey) {
+                setStatus("该事实已被其他摘要使用", "ERROR");
                 render();
                 return;
             }
-            if (!state.destroyed) {
-                state.stateSavePending = false;
-                render();
+            if ((request.factRuleIds || []).map(Number).includes(id)) return;
+            await changeRequestFacts(request, [...(request.factRuleIds || []), id]);
+        }
+
+        async function removeFact(requestKey, factId) {
+            const request = findRequest(requestKey);
+            if (!request) return;
+            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const id = Number(factId);
+            await changeRequestFacts(request, (request.factRuleIds || []).filter((item) => Number(item) !== id));
+        }
+
+        function toggleFactPicker(requestKey) {
+            const request = findRequest(requestKey);
+            if (!request) return;
+            request.factPickerOpen = !request.factPickerOpen;
+            render();
+        }
+
+        function tabId(page) {
+            return `${state.instanceId}-tab-${page}`;
+        }
+
+        function panelId(page) {
+            return `${state.instanceId}-panel-${page}`;
+        }
+
+        // I-1/I-7: switching pages only toggles DOM visibility; business state
+        // (requests, matrix, frame, versions, locks, assembly) is shared.
+        function setActivePage(page, focusTarget) {
+            if (page !== "facts" && page !== "frame") return;
+            state.activePage = page;
+            render();
+            if (!focusTarget || state.destroyed) return;
+            const id = focusTarget === "tab" ? tabId(page) : focusTarget === "panel" ? panelId(page) : null;
+            if (!id) return;
+            const element = host.querySelector ? host.querySelector(`#${id}`) : null;
+            if (element && typeof element.focus === "function") element.focus();
+        }
+
+        function onKeydown(event) {
+            const key = event.key || (event.target && event.target.key);
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
+            const tab = event.target && event.target.closest && event.target.closest('[role="tab"]');
+            if (!tab || !host.contains(tab)) return;
+            event.preventDefault && event.preventDefault();
+            const tabs = host.querySelectorAll ? [...host.querySelectorAll('[role="tab"]')] : [];
+            const index = tabs.indexOf(tab);
+            if (index < 0) return;
+            const next = key === "ArrowRight"
+                ? Math.min(tabs.length - 1, index + 1)
+                : key === "ArrowLeft"
+                    ? Math.max(0, index - 1)
+                    : key === "Home"
+                        ? 0
+                        : tabs.length - 1;
+            const page = tabs[next] && tabs[next].dataset && tabs[next].dataset.page;
+            if (page) setActivePage(page, "tab");
+        }
+
+        function renderPageTabs() {
+            const pages = [
+                { key: "facts", step: "1", label: "摘要与事实" },
+                { key: "frame", step: "2", label: "回复框架与整合" }
+            ];
+            return pages.map((page) => {
+                const selected = state.activePage === page.key;
+                return `<button type="button" class="trust-reply-page-tab" role="tab" data-action="set-page" data-page="${page.key}" id="${tabId(page.key)}" aria-controls="${panelId(page.key)}" aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}"><span class="trust-reply-page-step">${page.step}</span><span>${escapeText(page.label)}</span></button>`;
+            }).join("");
+        }
+
+        function renderPageActions(page) {
+            if (page === "facts") {
+                return `<button type="button" class="button primary" data-action="next-page" data-page="frame">下一页：回复框架与整合</button>`;
             }
+            return `<button type="button" class="button secondary" data-action="prev-page" data-page="facts">上一页：摘要与事实</button>`;
+        }
+
+        // I-2: per-card fact chips and picker. Owners, pending saves and server
+        // re-validation keep the matrix canonical; disabled states are UX only.
+        function renderFactSection(request) {
+            const factActionsDisabled = request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending;
+            const owners = factOwnerById();
+            const chips = (request.factRuleIds || []).map((factId) => {
+                const id = Number(factId);
+                const rule = factRuleById(id);
+                const label = rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
+                return `<span class="trust-reply-fact-chip" data-fact-id="${id}"><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
+            }).join("");
+            const pickerOptions = state.rules.map((rule) => {
+                const id = Number(rule.ruleId ?? rule.id);
+                const owner = owners.get(id);
+                const selected = (request.factRuleIds || []).map(Number).includes(id);
+                const used = !!owner && owner.requestKey !== request.requestKey;
+                let optionState = "available";
+                let label = "可添加";
+                let disabled = false;
+                if (selected) {
+                    optionState = "selected";
+                    label = "已选择";
+                    disabled = true;
+                } else if (used) {
+                    optionState = "used";
+                    label = `已用于摘要 ${Number(owner.index) + 1}`;
+                    disabled = true;
+                } else if (factActionsDisabled) {
+                    optionState = "pending";
+                    label = "保存中";
+                    disabled = true;
+                }
+                return `<button type="button" class="trust-reply-fact-picker-option" data-action="add-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" data-state="${optionState}"${disabled ? " disabled" : ""}><span><strong>${escapeText(rule.displayName || `事实 ${id}`)}</strong><em>${escapeText(rule.answerBody || "")}</em></span><small>${escapeText(label)}</small></button>`;
+            }).join("");
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><strong>对应事实</strong><div class="trust-reply-fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
+        }
+
+        function renderFrameSelects() {
+            const selection = state.frameSnapshot?.selection || {};
+            return FRAME_SLOTS.map((slot) => {
+                const options = state.frameOptions
+                    .filter((option) => option.snippetType === slot.snippetType)
+                    .sort((a, b) => (Number(a.displayOrder) - Number(b.displayOrder)) || (Number(a.id) - Number(b.id)))
+                    .map((option) => `<option value="${escapeText(option.id)}"${Number(selection[slot.key]) === Number(option.id) ? " selected" : ""}>${escapeText(option.content)}</option>`)
+                    .join("");
+                return `<label class="trust-reply-field">${escapeText(slot.label)}<select data-role="frame-select" data-frame-slot="${slot.key}"${state.frameSavePending ? " disabled" : ""}><option value="">不使用</option>${options}</select></label>`;
+            }).join("");
+        }
+
+        // I-3: frame-only invalidation. Locked versions survive; the assembly is
+        // dropped; with locks present the new frame is persisted immediately.
+        function onFrameChange(slotKey, value) {
+            const previous = snapshotFrame(state.frameSnapshot);
+            const selection = { ...(state.frameSnapshot?.selection || {}) };
+            selection[slotKey] = value ? Number(value) : null;
+            state.frameSnapshot = { selection, version: "" };
+            const hadAssembly = invalidateAssembly();
+            if (hadAssembly) state.assemblyStale = true;
+            const hasLocks = state.requests.some((request) => !!request.resolvedVersionId);
+            if (!hasLocks) {
+                state.frameSavePending = false;
+                render();
+                return;
+            }
+            state.frameSavePending = true;
+            render();
+            void persistResolvedSnapshot().then((response) => {
+                if (state.destroyed) return;
+                state.frameSavePending = false;
+                if (response && response.frameSnapshot) state.frameSnapshot = snapshotFrame(response.frameSnapshot);
+                setStatus("回复框架已保存", "READY");
+                render();
+            }).catch((error) => {
+                if (state.destroyed) return;
+                state.frameSavePending = false;
+                state.frameSnapshot = previous;
+                if (isFrameStaleError(error)) {
+                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
+                setStatus(error.message || "框架保存失败，请重试", "ERROR");
+                render();
+            });
+        }
+
+        function renderPreviewState() {
+            const stateKey = previewState();
+            return `<span class="trust-reply-preview-state" data-state="${stateKey}">${escapeText(PREVIEW_STATE_LABELS[stateKey])}</span>`;
+        }
+
+        // I-4: display-only preview derived from server frame option content and
+        // resolved answers. Never written into state.assembly or the adopt path.
+        function renderFrameLocalPreview() {
+            const selection = state.frameSnapshot?.selection || {};
+            const frameParts = FRAME_SLOTS.map((slot) => {
+                const id = selection[slot.key];
+                if (id == null) return null;
+                const option = state.frameOptions.find((item) => Number(item.id) === Number(id));
+                return option && String(option.content || "").trim() ? option.content : null;
+            }).filter((text) => text != null);
+            const resolvedAnswers = state.requests.map((request) => resolvedVersion(request)?.answerText)
+                .filter((text) => text && String(text).trim());
+            return [...frameParts, ...resolvedAnswers].join("\n\n");
         }
 
         async function complete() {
             if (!state.assembly || state.completePending) return;
+            if (previewState() !== "CURRENT") return;
             state.completePending = true;
             renderStatusOnly();
             try {
@@ -1079,12 +1315,14 @@
             }
         }
 
+        // S-5: the former single-pane .trust-reply-layout shell (layout aside +
+        // item list) is retired and replaced by two .trust-reply-page panels.
         function renderShell(message) {
             if (state.destroyed) return;
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
             host.innerHTML = `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div><div class="trust-reply-layout"><aside class="trust-reply-summary compose-panel" data-role="summary"></aside><div class="trust-reply-item-list" data-role="items"></div></div></div>
+                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
             </details>`;
         }
 
@@ -1098,7 +1336,7 @@
             const itemMarkup = state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`;
             return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><div class="trust-reply-layout"><aside class="trust-reply-summary compose-panel" data-role="summary">${renderSummary()}</aside><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div></div></div>
+                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section></div>
             </details>`;
         }
 
@@ -1108,11 +1346,7 @@
                 ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
                 : "";
             const modelOptions = state.availableModels.map((model) => `<option value="${escapeText(model)}"${model === state.selectedModel ? " selected" : ""}>${escapeText(MODEL_LABELS[model] || model)}</option>`).join("");
-            const factOptions = state.rules.map((rule) => {
-                const id = rule.ruleId ?? rule.id;
-                return `<label class="trust-reply-fact-option"><input data-role="fact" type="checkbox" value="${escapeText(id)}"${state.selectedFactIds.includes(Number(id)) ? " checked" : ""}><span>${escapeText(rule.displayName || "事实")}</span></label>`;
-            }).join("");
-            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div><div class="compose-rule-list" data-role="facts"><span class="muted">事实选择：</span>${factOptions || "<span class=muted>服务端未提供可选事实</span>"}</div>`;
+            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
         }
 
         function translationEntry(request, versionId) {
@@ -1265,7 +1499,7 @@
             const questionTranslation = renderTranslation(request, null, request.questionTranslation);
             const answer = renderRequestAnswer(request);
             const instructionLabel = needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）";
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div><div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
+            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
         }
 
         function renderSummary() {
@@ -1290,7 +1524,12 @@
             const assembleHint = readiness.unresolvedManual > 0
                 ? `尚有 ${readiness.unresolvedManual} 项待人工处理`
                 : "";
-            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${assembly ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>` : ""}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${!assembly || state.completePending ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
+            const stateKey = previewState();
+            const previewBlock = stateKey === "CURRENT" && assembly
+                ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>`
+                : `<div class="trust-reply-assembly"><div class="muted">配置预览 · 未整合</div><pre class="pre" data-role="local-preview">${escapeText(renderFrameLocalPreview())}</pre></div>`;
+            const completeDisabled = !assembly || stateKey !== "CURRENT" || state.completePending;
+            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${previewBlock}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${completeDisabled ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
         }
 
         function renderStatus() {
@@ -1326,6 +1565,159 @@
             return error && (error.name === "AbortError" || error.code === 20);
         }
 
+        function onClick(event) {
+            const button = event.target.closest && event.target.closest("[data-action]");
+            if (!button || !host.contains(button)) return;
+            const action = button.dataset.action;
+            if (action === "adjust-item") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) void adjustItem(request);
+            }
+            if (action === "resolve-item") void toggleResolve(button.dataset.requestKey);
+            if (action === "toggle-item") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) {
+                    request.expanded = !request.expanded;
+                    render();
+                }
+            }
+            if (action === "toggle-fact-picker") toggleFactPicker(button.dataset.requestKey);
+            if (action === "add-fact") void addFact(button.dataset.requestKey, button.dataset.factId);
+            if (action === "remove-fact") void removeFact(button.dataset.requestKey, button.dataset.factId);
+            if (action === "set-page") setActivePage(button.dataset.page, "tab");
+            if (action === "next-page") setActivePage(button.dataset.page || "frame", "tab");
+            if (action === "prev-page") setActivePage(button.dataset.page || "facts", "tab");
+            if (action === "translate-question") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) void toggleTranslation(request, null);
+            }
+            if (action === "translate-answer") {
+                const request = findRequest(button.dataset.requestKey);
+                if (request) void toggleTranslation(request, button.dataset.versionId);
+            }
+            if (action === "assemble") void assemble();
+            if (action === "complete") void complete();
+            if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
+        }
+
+        function onChange(event) {
+            const target = event.target;
+            if (target.dataset?.role === "model") {
+                state.selectedModel = target.value;
+                return;
+            }
+            if (target.dataset?.role === "attempt-timeout") {
+                state.attemptTimeout.mode = target.value;
+                state.attemptTimeout.seconds = timeoutSeconds(state.attemptTimeout, 10, 600);
+                render();
+                return;
+            }
+            if (target.dataset?.role === "total-timeout") {
+                state.totalTimeout.mode = target.value;
+                state.totalTimeout.seconds = timeoutSeconds(state.totalTimeout, 10, 7200);
+                render();
+                return;
+            }
+            if (target.dataset?.role === "frame-select" && target.dataset.frameSlot) {
+                onFrameChange(target.dataset.frameSlot, target.value);
+                return;
+            }
+            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
+            if (!request) return;
+            if (target.dataset.role === "handling") {
+                const previous = captureDecision(request);
+                request.draftHandling = target.value;
+                request.activeVersionId = null;
+                const invalidated = invalidateDecision(request);
+                render();
+                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
+            } else if (target.dataset.role === "version") {
+                const previous = captureDecision(request);
+                request.activeVersionId = target.value || null;
+                const invalidated = request.activeVersionId !== request.resolvedVersionId && invalidateDecision(request);
+                render();
+                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
+            }
+        }
+
+        function onInput(event) {
+            const target = event.target;
+            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
+            if (target.dataset?.role === "instruction" && request) {
+                const instruction = target.value.slice(0, 500);
+                if (instruction !== request.instruction) {
+                    const previous = captureDecision(request);
+                    request.instruction = instruction;
+                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) return;
+                    request.activeVersionId = null;
+                    const invalidated = invalidateDecision(request);
+                    syncInstructionUi(request);
+                    if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
+                }
+            }
+            if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
+            if (target.dataset?.role === "total-custom") state.totalTimeout.customSeconds = target.value;
+        }
+
+        function findRequest(requestKey) {
+            return state.requests.find((request) => request.requestKey === requestKey);
+        }
+
+        async function toggleResolve(requestKey) {
+            const request = findRequest(requestKey);
+            if (!request || request.pending || state.stateSavePending) return;
+            const previousResolved = request.resolvedVersionId;
+            const previousExpanded = request.expanded;
+            if (request.resolvedVersionId) {
+                request.resolvedVersionId = null;
+                request.expanded = true;
+            } else {
+                let version = activeVersion(request);
+                if (!version && request.draftHandling === "OMIT") {
+                    version = await adjustItem(request);
+                    if (!version || findRequest(requestKey) !== request) return;
+                }
+                if (!version) {
+                    request.error = "请先生成并选择一个版本";
+                    render();
+                    return;
+                }
+                if (!isVersionSerializable(version, request)) {
+                    request.error = "当前版本无效，请重新生成并采用";
+                    render();
+                    return;
+                }
+                request.resolvedVersionId = version.versionId;
+                request.expanded = false;
+            }
+            invalidateAssembly();
+            state.stateSavePending = true;
+            render();
+            try {
+                await persistResolvedSnapshot();
+            } catch (error) {
+                if (!isLive()) return;
+                state.stateSavePending = false;
+                if (isFrameStaleError(error)) {
+                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
+                if (isStaleError(error)) {
+                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return;
+                }
+                request.resolvedVersionId = previousResolved;
+                request.expanded = previousExpanded;
+                request.error = error.message || "保存失败，请重试";
+                render();
+                return;
+            }
+            if (!state.destroyed) {
+                state.stateSavePending = false;
+                render();
+            }
+        }
+
         function unmount() {
             if (state.destroyed) return;
             state.destroyed = true;
@@ -1342,6 +1734,7 @@
         listen("click", onClick);
         listen("change", onChange);
         listen("input", onInput);
+        listen("keydown", onKeydown);
         renderShell("正在加载工作台…");
         return { state, bootstrap, unmount };
     }

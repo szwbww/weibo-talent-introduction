@@ -298,13 +298,34 @@ class AiTrainingController(
                 expectedSourceVersion = expectedSourceVersion,
                 expectedEvidenceSetVersion = expectedEvidenceSetVersion,
                 lockedItems = lockedItems.map { it.toDomain() },
-                requestedFactIds = requestedFactIds
+                requestedFactIds = requestedFactIds,
+                requestFactSelections = requestFactSelections?.map { it.toDomain() },
+                frameSnapshot = frameSnapshot?.toDomain()
             ),
             rating = rating,
             note = note,
             operatorName = operatorName
         )
     }
+
+    private fun TrustReplyRequestFactSelectionHttpRequest.toDomain() =
+        com.weibo.talentintroduction.llm.service.TrustReplyRequestFactSelection(
+            requestKey = requestKey.orEmpty(),
+            factRuleIds = factRuleIds.orEmpty()
+        )
+
+    private fun TrustReplyFrameSnapshotHttpRequest.toDomain() =
+        com.weibo.talentintroduction.llm.service.TrustReplyFrameSnapshot(
+            selection = selection?.let {
+                com.weibo.talentintroduction.llm.service.TrustReplyFrameSelection(
+                    salutationSnippetId = it.salutationSnippetId,
+                    greetingSnippetId = it.greetingSnippetId,
+                    ackSnippetId = it.ackSnippetId,
+                    closingSnippetId = it.closingSnippetId
+                )
+            },
+            version = version.orEmpty()
+        )
 
     private fun TrustReplyLockedItemHttpRequest.toDomain(): TrustReplyLockedItemRequest {
         val handling = runCatching { TrustReplyItemHandling.valueOf(this.handling.trim().uppercase()) }
@@ -513,6 +534,8 @@ data class AiTrainingEvaluationHttpRequest(
     val expectedEvidenceSetVersion: String,
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null,
     val rating: String?,
     val note: String? = null,
     val operatorName: String? = null

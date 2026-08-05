@@ -953,25 +953,44 @@ class AiTrainingSimulateTest {
     }
 
     @Test
-    fun `evaluation endpoint accepts the complete assembly input and returns only evaluation result`() {
-        Mockito.`when`(aiTrainingEvaluationService.save(anyNonNull(AiTrainingEvaluationRequest(
+    fun `evaluation endpoint maps the complete assembly input including matrix and frame into domain`() {
+        var captured: AiTrainingEvaluationRequest? = null
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as AiTrainingEvaluationRequest
+            AiTrainingEvaluationResponse(456L, "NEEDS_IMPROVEMENT", "2026-07-28T20:00:00")
+        }.`when`(aiTrainingEvaluationService).save(Mockito.any(AiTrainingEvaluationRequest::class.java) ?: AiTrainingEvaluationRequest(
             assembly = TrustReplyAssembleRequest(
                 source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
                 expectedSourceVersion = "source-v1",
                 expectedEvidenceSetVersion = "evidence-v1",
                 lockedItems = emptyList()
             ),
-            rating = "NEEDS_IMPROVEMENT",
-            note = "too long",
-            operatorName = "operator-a"
-        ))))
-            .thenReturn(AiTrainingEvaluationResponse(456L, "NEEDS_IMPROVEMENT", "2026-07-28T20:00:00"))
+            rating = "NEEDS_IMPROVEMENT"
+        ))
 
         mockMvc.perform(
             post("/api/ai-training/simulate/evaluations")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    """{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"source-v1","expectedEvidenceSetVersion":"evidence-v1","lockedItems":[],"rating":"NEEDS_IMPROVEMENT","note":"too long","operatorName":"operator-a"}"""
+                    """
+                    {
+                      "source":{"sourceType":"TRAINING_MAIL","sourceId":123},
+                      "expectedSourceVersion":"source-v1",
+                      "expectedEvidenceSetVersion":"evidence-v1",
+                      "requestFactSelections":[
+                        {"requestKey":"k1","factRuleIds":[1,2]},
+                        {"requestKey":"k2","factRuleIds":[]}
+                      ],
+                      "frameSnapshot":{
+                        "selection":{"salutationSnippetId":11,"greetingSnippetId":12,"ackSnippetId":null,"closingSnippetId":14},
+                        "version":"frame-v1"
+                      },
+                      "lockedItems":[],
+                      "rating":"NEEDS_IMPROVEMENT",
+                      "note":"too long",
+                      "operatorName":"operator-a"
+                    }
+                    """.trimIndent()
                 )
         )
             .andExpect(status().isOk)
@@ -980,17 +999,47 @@ class AiTrainingSimulateTest {
             .andExpect(jsonPath("$.createdAt").value("2026-07-28T20:00:00"))
             .andExpect(jsonPath("$.*").value(org.hamcrest.Matchers.hasSize<Any>(3)))
 
-        Mockito.verify(aiTrainingEvaluationService).save(anyNonNull(AiTrainingEvaluationRequest(
+        val domain = requireNotNull(captured).assembly
+        assertEquals(2, domain.requestFactSelections!!.size)
+        assertEquals("k1", domain.requestFactSelections!![0].requestKey)
+        assertEquals(listOf(1L, 2L), domain.requestFactSelections!![0].factRuleIds)
+        assertEquals("k2", domain.requestFactSelections!![1].requestKey)
+        assertEquals(emptyList<Long>(), domain.requestFactSelections!![1].factRuleIds)
+        assertEquals(11L, domain.frameSnapshot!!.selection!!.salutationSnippetId)
+        assertEquals(12L, domain.frameSnapshot!!.selection!!.greetingSnippetId)
+        assertEquals(null, domain.frameSnapshot!!.selection!!.ackSnippetId)
+        assertEquals(14L, domain.frameSnapshot!!.selection!!.closingSnippetId)
+        assertEquals("frame-v1", domain.frameSnapshot!!.version)
+    }
+
+    @Test
+    fun `evaluation endpoint keeps legacy clients working when matrix and frame are absent`() {
+        var captured: AiTrainingEvaluationRequest? = null
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as AiTrainingEvaluationRequest
+            AiTrainingEvaluationResponse(456L, "MEETS_EXPECTATION", null)
+        }.`when`(aiTrainingEvaluationService).save(Mockito.any(AiTrainingEvaluationRequest::class.java) ?: AiTrainingEvaluationRequest(
             assembly = TrustReplyAssembleRequest(
                 source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
                 expectedSourceVersion = "source-v1",
                 expectedEvidenceSetVersion = "evidence-v1",
                 lockedItems = emptyList()
             ),
-            rating = "NEEDS_IMPROVEMENT",
-            note = "too long",
-            operatorName = "operator-a"
-        )))
+            rating = "MEETS_EXPECTATION"
+        ))
+
+        mockMvc.perform(
+            post("/api/ai-training/simulate/evaluations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"source-v1","expectedEvidenceSetVersion":"evidence-v1","lockedItems":[],"rating":"MEETS_EXPECTATION"}"""
+                )
+        ).andExpect(status().isOk)
+
+        val domain = requireNotNull(captured).assembly
+        assertEquals(null, domain.requestFactSelections)
+        assertEquals(null, domain.frameSnapshot)
+        assertEquals(null, domain.requestedFactIds)
     }
 
     @Test

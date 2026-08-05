@@ -598,6 +598,206 @@ class QaFactSelectionServiceTest {
         assertEquals(RequestGroundingStatus.GROUNDED, fact.status)
     }
 
+    // ── Workbench matrix selection (plan 01, I-1..I-4) ──
+
+    @Test
+    fun `auto workbench selection assigns shared rule to the first accepting request only`() {
+        val shared = rule(id = 1, keywords = "salary,visa", answerBody = "Shared body")
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(shared))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertTrue(resolved.requestFacts[1].factRuleIds.isEmpty())
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `matrix mode accepts exact per request assignment and builds the ordered union`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(2L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `matrix mode rejects the same rule assigned to two requests`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?\n- Visa?",
+                selectionsByRequest = listOf(listOf(1L, 2L), listOf(2L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_ALREADY_ASSIGNED", ex.code)
+    }
+
+    @Test
+    fun `matrix mode rejects a fact that matches another request only`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?\n- Visa?",
+                selectionsByRequest = listOf(listOf(2L), emptyList()),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
+    }
+
+    @Test
+    fun `matrix mode rejects disabled never and blank facts`() {
+        val disabled = rule(id = 1, keywords = "salary", answerBody = "X").copy(enabled = false)
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(disabled))
+        val disabledEx = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(1L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", disabledEx.code)
+
+        val never = rule(id = 2, keywords = "salary", answerBody = "X", replyPolicy = QaReplyPolicy.NEVER.name)
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(never))
+        val neverEx = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(2L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", neverEx.code)
+
+        val blank = rule(id = 3, keywords = "salary", answerBody = "")
+        Mockito.`when`(repository.findById(3L)).thenReturn(Optional.of(blank))
+        val blankEx = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(3L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", blankEx.code)
+    }
+
+    @Test
+    fun `matrix mode allows empty fact lists and keeps intent statuses`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Can you guarantee 10 million RMB?",
+            selectionsByRequest = listOf(emptyList()),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(emptyList<Long>(), resolved.requestFacts.single().factRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, resolved.requestFacts.single().status)
+        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `legacy flat assigns each id exactly once to the first accepting request`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = null,
+            requestedFactIds = listOf(1L, 2L),
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `legacy flat rejects ids not consumed by any request`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val feeRule = rule(id = 2, keywords = "fee", answerBody = "Fee body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(feeRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = null,
+                requestedFactIds = listOf(1L, 2L),
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
+    }
+
+    @Test
+    fun `legacy flat rejects duplicate ids as already assigned`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = null,
+                requestedFactIds = listOf(1L, 1L),
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_ALREADY_ASSIGNED", ex.code)
+    }
+
+    @Test
+    fun `workbench selection rejects both matrix and legacy fields`() {
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(1L)),
+                requestedFactIds = listOf(1L),
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_SELECTION_AMBIGUOUS", ex.code)
+    }
+
     private fun reqFactStatusCount(resolved: ResolvedQaRules, status: RequestGroundingStatus): Int =
         resolved.requestFacts.count { it.status == status }
 }

@@ -1,0 +1,29 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-05/trust-reply-configurable-workbench-00-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-05/trust-reply-configurable-workbench-00-master.md (SHA-256 57d9a4e39b48d363d7a3ca5429cd22a82cfa6b405b520aa55976f81ba19163d2)
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/trust-reply-configurable-workbench/ledger.md (SHA-256 8d30cca70436080b456def76ba35b1b7deb1fa2cd5394cb1a76e98d2a35a4457)
+- Fast-p handoff: docs/plans/fast/trust-reply-configurable-workbench/human-review-handoff.md (SHA-256 3c2e0379818814df939843ec40a5d25e1e29624ee275a0d696fe6c31607b3e9c)
+- Master base: 931e724042d9ceee9f75d4cacb45fd3ba29462a5
+- Final code head: 82a23b4b08bcc6469fb3bf0402ebeb69c4093db4
+- Evidence parent before next commit: 3b77de08a42f63db68f1d6a29c798d0f3b695261
+- Previous evidence commit: N/A
+- Branch: fast/trust-reply-configurable-workbench
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/trust-reply-configurable-workbench
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED by `/Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py`; exact branch/worktree, READY_FOR_HUMAN_REVIEW ledger/handoff, terminal children, and ancestry verified.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer_epoch1
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1--2026-08-06-002233-0800
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Await human completion of mandatory A-M1 through A-M7 and explicit sign-off for 82a23b4b08bcc6469fb3bf0402ebeb69c4093db4.

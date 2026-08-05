@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
+import java.time.LocalDateTime
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicLong
 
@@ -277,6 +279,163 @@ class ReplySnippetServiceTest {
         assertEquals("Dear Dr. \${expertFamilyName|Professor},", created.snippet.content)
     }
 
+    // ── 02 selectable frame: options, strict resolution, deterministic version ──
+
+    @Test
+    fun `listSelectableFrameOptions returns only enabled four slot main snippets in fixed order`() {
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.SALUTATION.name))
+            .thenReturn(listOf(
+                snippet(id = 1L, snippetType = SnippetType.SALUTATION.name, content = "Sal 1"),
+                snippet(id = 2L, snippetType = SnippetType.SALUTATION.name, content = "Sal 2", displayOrder = 5)
+            ))
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.GREETING.name))
+            .thenReturn(listOf(snippet(id = 3L, snippetType = SnippetType.GREETING.name, content = "Greet")))
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.ACK.name))
+            .thenReturn(listOf(
+                snippet(id = 4L, snippetType = SnippetType.ACK.name, content = "Ack"),
+                snippet(id = 5L, snippetType = SnippetType.ACK.name, content = "   ", displayOrder = 1)
+            ))
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.CLOSING.name))
+            .thenReturn(listOf(snippet(id = 6L, snippetType = SnippetType.CLOSING.name, content = "Close")))
+
+        val options = service.listSelectableFrameOptions()
+
+        // fixed slot order SALUTATION -> GREETING -> ACK -> CLOSING, then displayOrder, then id
+        assertEquals(listOf(2L, 1L, 3L, 4L, 6L), options.map { it.id })
+        assertTrue(options.all { it.content.isNotBlank() })
+        assertTrue(options.all { it.snippetType != SnippetType.CUSTOM.name })
+        Mockito.verify(repository, Mockito.never())
+            .findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.CUSTOM.name)
+    }
+
+    @Test
+    fun `listSelectableFrameOptions filters disabled and blank snippets`() {
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.SALUTATION.name))
+            .thenReturn(listOf(
+                snippet(id = 1L, snippetType = SnippetType.SALUTATION.name, content = "Sal", enabled = false),
+                snippet(id = 2L, snippetType = SnippetType.SALUTATION.name, content = "   "),
+                snippet(id = 3L, snippetType = SnippetType.SALUTATION.name, content = "Sal 3")
+            ))
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.GREETING.name))
+            .thenReturn(emptyList())
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.ACK.name))
+            .thenReturn(emptyList())
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueOrderByDisplayOrderAsc(SnippetType.CLOSING.name))
+            .thenReturn(emptyList())
+
+        assertEquals(listOf(3L), service.listSelectableFrameOptions().map { it.id })
+    }
+
+    @Test
+    fun `resolveDefaultSelectableFrame uses enabled defaults and null ack`() {
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueAndIsDefaultTrue(SnippetType.SALUTATION.name))
+            .thenReturn(listOf(snippet(id = 1L, snippetType = SnippetType.SALUTATION.name, isDefault = true, content = "Dear X,")))
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueAndIsDefaultTrue(SnippetType.GREETING.name))
+            .thenReturn(emptyList())
+        Mockito.`when`(repository.findBySnippetTypeAndEnabledTrueAndIsDefaultTrue(SnippetType.CLOSING.name))
+            .thenReturn(listOf(snippet(id = 3L, snippetType = SnippetType.CLOSING.name, isDefault = true, content = "Regards")))
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(
+            snippet(id = 1L, snippetType = SnippetType.SALUTATION.name, isDefault = true, content = "Dear X,")
+        ))
+        Mockito.`when`(repository.findById(3L)).thenReturn(Optional.of(
+            snippet(id = 3L, snippetType = SnippetType.CLOSING.name, isDefault = true, content = "Regards")
+        ))
+
+        val frame = service.resolveDefaultSelectableFrame()
+
+        assertEquals(1L, frame.selection.salutationSnippetId)
+        assertNull(frame.selection.greetingSnippetId)
+        assertNull(frame.selection.ackSnippetId)
+        assertEquals(3L, frame.selection.closingSnippetId)
+        assertEquals("Dear X,", frame.salutation)
+        assertNull(frame.greeting)
+        assertNull(frame.acknowledgement)
+        assertEquals("Regards", frame.closing)
+        assertTrue(frame.version.isNotBlank())
+    }
+
+    @Test
+    fun `resolveSelectableFrame fails closed on missing disabled type mismatch and blank`() {
+        Mockito.`when`(repository.findById(10L)).thenReturn(Optional.empty())
+        val missing = assertThrows(IllegalArgumentException::class.java) {
+            service.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 10L))
+        }
+        assertTrue(missing.message!!.contains("SALUTATION"))
+
+        Mockito.`when`(repository.findById(11L)).thenReturn(Optional.of(
+            snippet(id = 11L, snippetType = SnippetType.SALUTATION.name, enabled = false)
+        ))
+        assertThrows(IllegalArgumentException::class.java) {
+            service.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 11L))
+        }
+
+        Mockito.`when`(repository.findById(12L)).thenReturn(Optional.of(
+            snippet(id = 12L, snippetType = SnippetType.CLOSING.name)
+        ))
+        val mismatch = assertThrows(IllegalArgumentException::class.java) {
+            service.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 12L))
+        }
+        assertTrue(mismatch.message!!.contains("type mismatch"))
+
+        Mockito.`when`(repository.findById(13L)).thenReturn(Optional.of(
+            snippet(id = 13L, snippetType = SnippetType.ACK.name, content = "   ")
+        ))
+        assertThrows(IllegalArgumentException::class.java) {
+            service.resolveSelectableFrame(ReplyFrameSelection(ackSnippetId = 13L))
+        }
+    }
+
+    @Test
+    fun `all null selection resolves explicit empty frame with stable version`() {
+        val empty = ReplyFrameSelection(null, null, null, null)
+        val first = service.resolveSelectableFrame(empty)
+        val second = service.resolveSelectableFrame(empty)
+
+        assertNull(first.salutation)
+        assertNull(first.greeting)
+        assertNull(first.acknowledgement)
+        assertNull(first.closing)
+        assertTrue(first.version.isNotBlank())
+        assertEquals(first.version, second.version)
+    }
+
+    @Test
+    fun `frame version is deterministic and changes with content updatedAt id and slot`() {
+        val base = snippet(
+            id = 1L,
+            snippetType = SnippetType.GREETING.name,
+            content = "Hello",
+            updatedAt = LocalDateTime.of(2026, 8, 1, 9, 0)
+        )
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(base))
+        val selection = ReplyFrameSelection(greetingSnippetId = 1L)
+        val v1 = service.resolveSelectableFrame(selection).version
+        assertEquals(v1, service.resolveSelectableFrame(selection).version)
+
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(base.copy(content = "Hello there")))
+        assertNotEquals(v1, service.resolveSelectableFrame(selection).version)
+
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(
+            base.copy(updatedAt = LocalDateTime.of(2026, 8, 2, 9, 0))
+        ))
+        assertNotEquals(v1, service.resolveSelectableFrame(selection).version)
+
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(base.copy(id = 2L)))
+        val vDifferentId = service.resolveSelectableFrame(ReplyFrameSelection(greetingSnippetId = 2L)).version
+        assertNotEquals(v1, vDifferentId)
+
+        Mockito.`when`(repository.findById(3L)).thenReturn(Optional.of(
+            snippet(
+                id = 3L,
+                snippetType = SnippetType.SALUTATION.name,
+                content = "Hello",
+                updatedAt = LocalDateTime.of(2026, 8, 1, 9, 0)
+            )
+        ))
+        val vDifferentSlot = service.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 3L)).version
+        assertNotEquals(v1, vDifferentSlot)
+    }
+
     private fun stubVariantPersistence() {
         val stored = mutableListOf<ContentVariant>()
         Mockito.lenient().doAnswer {
@@ -308,14 +467,17 @@ class ReplySnippetServiceTest {
         snippetType: String,
         isDefault: Boolean = false,
         enabled: Boolean = true,
-        content: String = "Dear Professor,"
+        content: String = "Dear Professor,",
+        displayOrder: Int = 10,
+        updatedAt: LocalDateTime? = null
     ): ReplySnippet =
         ReplySnippet(
             id = id,
             snippetType = snippetType,
             content = content,
-            displayOrder = 10,
+            displayOrder = displayOrder,
             isDefault = isDefault,
-            enabled = enabled
+            enabled = enabled,
+            updatedAt = updatedAt
         )
 }

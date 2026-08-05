@@ -25,7 +25,11 @@ describe("adopt-direct-send UI contracts", function () {
         if (!app.includes("renderedDraftText || assembly.rawDraftText")) throw new Error("rendered authority lost");
         if (!app.includes("draftHash: assembly.draftHash")) throw new Error("draft hash lost");
         if (!app.includes("editor.innerText = rendered")) throw new Error("editor adoption missing");
-        if (!app.includes("requestedFactIds: assembly.requestedFactIds || assembly.canonicalFactIds")) throw new Error("training fact selection lost");
+        if (!app.includes("requestFactSelections: requestFactSelections.length ? requestFactSelections : null")) throw new Error("training fact matrix lost");
+        if (!app.includes("requestFactSelections")) throw new Error("training evaluation must carry the canonical matrix");
+        if (app.includes("requestedFactIds: assembly.requestedFactIds || assembly.canonicalFactIds")) {
+            throw new Error("training fact selection must not fall back to flat ids");
+        }
         if (!app.includes("liveTrustReplyToken === token")) throw new Error("live adapter identity guard missing");
     });
 
@@ -68,14 +72,26 @@ describe("adopt-direct-send UI contracts", function () {
         if (sendBlock.includes("openReviewModal")) throw new Error("send should not open review modal");
     });
 
-    it("archive snapshot preserves canonical requestedFactIds without claim fallback", function () {
+    it("archive snapshot deep copies the canonical matrix and frame without claim fallback", function () {
         const snapshotFn = app.match(/function buildTrustReplyAssemblySnapshot\(assembly\) \{[\s\S]*?\n\}/)?.[0] || "";
         if (!snapshotFn) throw new Error("missing buildTrustReplyAssemblySnapshot");
-        if (!snapshotFn.includes("requestedFactIds: [...(assembly.requestedFactIds || [])]")) {
-            throw new Error("archive snapshot must preserve requestedFactIds only");
+        if (!snapshotFn.includes("requestFactSelections: requestFactSelections.length ? requestFactSelections : null")) {
+            throw new Error("archive snapshot must preserve the full request fact matrix");
+        }
+        if (!snapshotFn.includes("factRuleIds: [...(selection.factRuleIds || [])]")) {
+            throw new Error("archive snapshot must deep copy each factRuleIds list");
+        }
+        if (!snapshotFn.includes("frameSnapshot: assembly.frameSnapshot")) {
+            throw new Error("archive snapshot must carry the frame snapshot");
+        }
+        if (!snapshotFn.includes("version: assembly.frameSnapshot.version || \"\"")) {
+            throw new Error("archive snapshot must preserve the frame version");
         }
         if (snapshotFn.includes("canonicalFactIds")) {
             throw new Error("archive snapshot builder must not fall back to canonicalFactIds");
+        }
+        if (snapshotFn.includes("requestedFactIds")) {
+            throw new Error("archive snapshot builder must not send flat requestedFactIds");
         }
     });
 

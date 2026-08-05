@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.llm.service
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.springframework.stereotype.Service
 
 @Service
@@ -18,6 +19,26 @@ class AiReplyPointByPointComposer(
             frame.greeting?.takeIf { it.isNotBlank() }?.let(::add)
             addAll(orderedAnswers)
             frame.closing?.takeIf { it.isNotBlank() }?.let(::add)
+        }
+        return blocks.joinToString("\n\n")
+    }
+
+    /**
+     * I-5 explicit-frame locked composer (workbench-only): inserts the resolved
+     * salutation, greeting, acknowledgement and closing around the canonical
+     * answer list in the fixed order SALUTATION → GREETING → ACK → answers →
+     * CLOSING, each block separated by a single blank line. Blank frame blocks
+     * are filtered; every non-OMIT locked answer must appear verbatim, in
+     * original order, exactly once — no trim, dedupe, reorder or LLM call.
+     */
+    fun composeLockedItems(orderedAnswers: List<String>, resolvedFrame: ResolvedReplyFrame): String {
+        require(orderedAnswers.all { it.isNotBlank() }) { "locked answers must be non-empty" }
+        val blocks = buildList {
+            resolvedFrame.salutation?.takeIf { it.isNotBlank() }?.let(::add)
+            resolvedFrame.greeting?.takeIf { it.isNotBlank() }?.let(::add)
+            resolvedFrame.acknowledgement?.takeIf { it.isNotBlank() }?.let(::add)
+            addAll(orderedAnswers)
+            resolvedFrame.closing?.takeIf { it.isNotBlank() }?.let(::add)
         }
         return blocks.joinToString("\n\n")
     }
