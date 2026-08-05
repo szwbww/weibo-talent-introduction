@@ -16,6 +16,8 @@ import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import com.weibo.talentintroduction.llm.service.TrustReplyRequestFactSelection
+import com.weibo.talentintroduction.llm.service.TrustReplyFrameSelection
+import com.weibo.talentintroduction.llm.service.TrustReplyFrameSnapshot
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -42,7 +44,8 @@ class TrustReplyWorkbenchController(
             TrustReplyBootstrapRequest(
                 source = request.source.toDomain(),
                 requestedFactIds = request.requestedFactIds,
-                requestFactSelections = request.requestFactSelections?.map { it.toDomain() }
+                requestFactSelections = request.requestFactSelections?.map { it.toDomain() },
+                frameSnapshot = request.frameSnapshot?.toDomain()
             )
         )
 
@@ -124,6 +127,18 @@ class TrustReplyWorkbenchController(
         factRuleIds = factRuleIds.orEmpty()
     )
 
+    private fun TrustReplyFrameSnapshotHttpRequest.toDomain() = TrustReplyFrameSnapshot(
+        selection = selection?.let {
+            TrustReplyFrameSelection(
+                salutationSnippetId = it.salutationSnippetId,
+                greetingSnippetId = it.greetingSnippetId,
+                ackSnippetId = it.ackSnippetId,
+                closingSnippetId = it.closingSnippetId
+            )
+        },
+        version = version.orEmpty()
+    )
+
     private fun TrustReplyGenerationHttpRequest.toDomain(): TrustReplyGenerationRequest =
         TrustReplyGenerationRequest(
             source = source.toDomain(),
@@ -149,6 +164,7 @@ class TrustReplyWorkbenchController(
         expectedEvidenceSetVersion = expectedEvidenceSetVersion,
         requestedFactIds = requestedFactIds,
         requestFactSelections = requestFactSelections?.map { it.toDomain() },
+        frameSnapshot = frameSnapshot?.toDomain(),
         lockedItems = lockedItems.map { locked ->
             TrustReplyLockedItemRequest(
                 requestKey = locked.requestKey,
@@ -179,6 +195,7 @@ class TrustReplyWorkbenchController(
         requestedFactIds = requestedFactIds,
         requestFactSelections = requestFactSelections?.map { it.toDomain() },
         selectedModel = selectedModel,
+        frameSnapshot = frameSnapshot?.toDomain(),
         lockedItems = lockedItems.map { locked ->
             TrustReplyLockedItemRequest(
                 requestKey = locked.requestKey,
@@ -220,10 +237,23 @@ data class TrustReplyRequestFactSelectionHttpRequest(
     val factRuleIds: List<Long>? = null
 )
 
+data class TrustReplyFrameSelectionHttpRequest(
+    val salutationSnippetId: Long? = null,
+    val greetingSnippetId: Long? = null,
+    val ackSnippetId: Long? = null,
+    val closingSnippetId: Long? = null
+)
+
+data class TrustReplyFrameSnapshotHttpRequest(
+    val selection: TrustReplyFrameSelectionHttpRequest? = null,
+    val version: String? = null
+)
+
 data class TrustReplyBootstrapHttpRequest(
     val source: TrustReplySourceHttpRequest,
     val requestedFactIds: List<Long>? = null,
-    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
 )
 
 data class TrustReplyTurnHttpRequest(
@@ -270,7 +300,8 @@ data class TrustReplyAssembleHttpRequest(
     val expectedEvidenceSetVersion: String,
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestedFactIds: List<Long>? = null,
-    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
 )
 
 data class TrustReplySaveStateHttpRequest(
@@ -282,7 +313,8 @@ data class TrustReplySaveStateHttpRequest(
     val requestedFactIds: List<Long>? = null,
     val selectedModel: String? = null,
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
-    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
 )
 
 data class TrustReplyCancelHttpRequest(

@@ -8,10 +8,14 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -205,6 +209,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
         val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
         val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
         val claimValidator = Mockito.mock(AiReplyHighRiskClaimValidator::class.java)
         val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
         val contact = ExpertContact(
@@ -276,7 +281,8 @@ class TrustReplyWorkbenchItemFlowTest {
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
             claimValidator = claimValidator,
-            stateStore = stateStore
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
@@ -638,7 +644,8 @@ class TrustReplyWorkbenchItemFlowTest {
             generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
         )
         val padded = "  $canonical  "
-        Mockito.`when`(fixture.composer.composeLockedItems(listOf(padded))).thenReturn("raw $padded")
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf(padded), fixture.defaultFrame))
+            .thenReturn("raw $padded")
         Mockito.`when`(fixture.previewService.preview("raw $padded", fixture.contact, null))
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered $padded", emptyList()))
 
@@ -647,7 +654,7 @@ class TrustReplyWorkbenchItemFlowTest {
         )
 
         assertEquals("raw $canonical", response.rawDraftText)
-        Mockito.verify(fixture.composer).composeLockedItems(listOf(canonical))
+        Mockito.verify(fixture.composer).composeLockedItems(listOf(canonical), fixture.defaultFrame)
     }
 
     // ── I-7/I-8: cross-request duplicate claim guard before compose ────────────
@@ -688,6 +695,110 @@ class TrustReplyWorkbenchItemFlowTest {
         assertEquals(listOf("Claim A", "Claim B"), response.itemVersions.map { it.answerText })
     }
 
+
+    // ── 02 selectable frame assembly (I-2/I-3/I-4/I-5) ────────────────────
+
+    @Test
+    fun `frame switch changes assembly but never locked item identity`() {
+        val fixture = assembleFixture()
+        val selectionA = ReplyFrameSelection(salutationSnippetId = 1L)
+        val selectionB = ReplyFrameSelection(salutationSnippetId = 2L)
+        val frameA = resolvedFrame(selection = selectionA, version = "frame-A", salutation = "Sal A", closing = "Close A")
+        val frameB = resolvedFrame(selection = selectionB, version = "frame-B", salutation = "Sal B", closing = "Close B")
+        Mockito.`when`(fixture.replySnippetService.resolveSelectableFrame(selectionA)).thenReturn(frameA)
+        Mockito.`when`(fixture.replySnippetService.resolveSelectableFrame(selectionB)).thenReturn(frameB)
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf("Salary info"), frameA)).thenReturn("raw A")
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf("Salary info"), frameB)).thenReturn("raw B")
+        Mockito.`when`(fixture.previewService.preview("raw A", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered A", emptyList()))
+        Mockito.`when`(fixture.previewService.preview("raw B", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered B", emptyList()))
+
+        val respA = fixture.service.assemble(fixture.request.copy(
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 1L),
+                version = "frame-A"
+            )
+        ))
+        val respB = fixture.service.assemble(fixture.request.copy(
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 2L),
+                version = "frame-B"
+            )
+        ))
+
+        // I-4: locked identity, evidence and request key never change with the frame.
+        assertEquals(respA.itemVersions, respB.itemVersions)
+        assertEquals("Salary info", respA.itemVersions.single().answerText)
+        assertEquals(respA.itemVersions.single().versionId, respB.itemVersions.single().versionId)
+        assertEquals(respA.evidenceSetVersion, respB.evidenceSetVersion)
+        assertEquals(respA.requestedFactIds, respB.requestedFactIds)
+        // I-3/I-4: the assembly (raw, rendered, hash) changes with the frame.
+        assertNotEquals(respA.rawDraftText, respB.rawDraftText)
+        assertNotEquals(respA.draftHash, respB.draftHash)
+        assertEquals("frame-A", respA.frameSnapshot?.version)
+        assertEquals("frame-B", respB.frameSnapshot?.version)
+        assertEquals(1L, respA.frameSnapshot?.selection?.salutationSnippetId)
+        assertEquals(2L, respB.frameSnapshot?.selection?.salutationSnippetId)
+    }
+
+    @Test
+    fun `assemble fails closed on stale expected frame version before compose or preview`() {
+        val fixture = assembleFixture()
+        Mockito.`when`(
+            fixture.replySnippetService.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 1L))
+        ).thenReturn(resolvedFrame(
+            selection = ReplyFrameSelection(salutationSnippetId = 1L),
+            version = "fresh-version",
+            salutation = "Fresh Sal"
+        ))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request.copy(
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = TrustReplyFrameSelection(salutationSnippetId = 1L),
+                    version = "old-version"
+                )
+            ))
+        }
+
+        assertEquals("TRUST_REPLY_FRAME_STALE", ex.code)
+        Mockito.verifyNoInteractions(fixture.composer)
+        Mockito.verifyNoInteractions(fixture.previewService)
+    }
+
+    @Test
+    fun `assemble with all null frame selection never falls back to defaults`() {
+        val fixture = assembleFixture()
+        val emptySelection = ReplyFrameSelection(null, null, null, null)
+        val emptyFrame = resolvedFrame(
+            selection = emptySelection,
+            version = "empty-frame",
+            salutation = null,
+            greeting = null,
+            acknowledgement = null,
+            closing = null
+        )
+        Mockito.`when`(fixture.replySnippetService.resolveSelectableFrame(emptySelection)).thenReturn(emptyFrame)
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf("Salary info"), emptyFrame))
+            .thenReturn("Salary info")
+        Mockito.`when`(fixture.previewService.preview("Salary info", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered Salary info", emptyList()))
+
+        val response = fixture.service.assemble(fixture.request.copy(
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(null, null, null, null),
+                version = "empty-frame"
+            )
+        ))
+
+        // I-2: explicit four-null selection produces answers only, no default frame text.
+        assertEquals("Salary info", response.rawDraftText)
+        assertEquals("empty-frame", response.frameSnapshot?.version)
+        assertNull(response.frameSnapshot?.selection?.salutationSnippetId)
+        assertNull(response.frameSnapshot?.selection?.closingSnippetId)
+        Mockito.verify(fixture.replySnippetService, Mockito.never()).resolveDefaultSelectableFrame()
+    }
 
     private fun item(
         index: Int,
@@ -736,6 +847,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
         val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
         val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
         val contact = ExpertContact(
             id = 7L,
             campaignId = 1L,
@@ -797,7 +909,10 @@ class TrustReplyWorkbenchItemFlowTest {
             )))
         }
         val composedRaw = "raw $item1Text|$item2Text"
-        Mockito.`when`(composer.composeLockedItems(listOf(item1Text, item2Text))).thenReturn(composedRaw)
+        val defaultFrame = defaultResolvedFrame()
+        Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultFrame)
+        Mockito.`when`(composer.composeLockedItems(listOf(item1Text, item2Text), defaultFrame))
+            .thenReturn(composedRaw)
         Mockito.`when`(previewService.preview(composedRaw, contact, null))
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered $composedRaw", emptyList()))
 
@@ -817,7 +932,8 @@ class TrustReplyWorkbenchItemFlowTest {
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
             claimValidator = claimValidator,
-            stateStore = stateStore
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
@@ -866,6 +982,36 @@ class TrustReplyWorkbenchItemFlowTest {
         )
     }
 
+    private fun defaultResolvedFrame() = ResolvedReplyFrame(
+        selection = ReplyFrameSelection(
+            salutationSnippetId = 1L,
+            greetingSnippetId = 2L,
+            ackSnippetId = null,
+            closingSnippetId = 3L
+        ),
+        version = "frame-default",
+        salutation = "Salutation",
+        greeting = "Greeting",
+        acknowledgement = null,
+        closing = "Closing"
+    )
+
+    private fun resolvedFrame(
+        selection: ReplyFrameSelection,
+        version: String,
+        salutation: String? = null,
+        greeting: String? = null,
+        acknowledgement: String? = null,
+        closing: String? = null
+    ) = ResolvedReplyFrame(
+        selection = selection,
+        version = version,
+        salutation = salutation,
+        greeting = greeting,
+        acknowledgement = acknowledgement,
+        closing = closing
+    )
+
     private fun operatorDirectedHandling(): TrustReplyItemHandling {
         val handling = TrustReplyItemHandling.values().firstOrNull {
             it.name == "ANSWER_FROM_OPERATOR_INPUT"
@@ -883,7 +1029,9 @@ class TrustReplyWorkbenchItemFlowTest {
         val contact: ExpertContact,
         val composer: AiReplyPointByPointComposer,
         val previewService: AiReplyDraftPreviewService,
-        val auditService: AiReplyReviewAuditService
+        val auditService: AiReplyReviewAuditService,
+        val replySnippetService: ReplySnippetService,
+        val defaultFrame: ResolvedReplyFrame
     )
 
     private fun assembleFixture(
@@ -904,6 +1052,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
         val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
         val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
         val contact = ExpertContact(
             id = 7L,
             campaignId = 1L,
@@ -976,10 +1125,13 @@ class TrustReplyWorkbenchItemFlowTest {
         val canonicalClaims = if (
             handling == TrustReplyItemHandling.OMIT || handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING
         ) emptyList() else claims
-        Mockito.`when`(composer.composeLockedItems(listOf(canonicalAnswer))).thenReturn("raw $canonicalAnswer")
+        val defaultFrame = defaultResolvedFrame()
+        Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultFrame)
+        Mockito.`when`(composer.composeLockedItems(listOf(canonicalAnswer), defaultFrame))
+            .thenReturn("raw $canonicalAnswer")
         Mockito.`when`(previewService.preview("raw $canonicalAnswer", contact, null))
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered $canonicalAnswer", emptyList()))
-        Mockito.`when`(composer.composeLockedItems(emptyList())).thenReturn("")
+        Mockito.`when`(composer.composeLockedItems(emptyList(), defaultFrame)).thenReturn("")
         Mockito.`when`(previewService.preview("", contact, null))
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("", emptyList()))
 
@@ -999,7 +1151,8 @@ class TrustReplyWorkbenchItemFlowTest {
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = composer,
             claimValidator = claimValidator,
-            stateStore = stateStore
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
@@ -1038,7 +1191,9 @@ class TrustReplyWorkbenchItemFlowTest {
             contact = contact,
             composer = composer,
             previewService = previewService,
-            auditService = auditService
+            auditService = auditService,
+            replySnippetService = replySnippetService,
+            defaultFrame = defaultFrame
         )
     }
 }

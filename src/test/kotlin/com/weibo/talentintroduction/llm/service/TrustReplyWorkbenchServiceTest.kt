@@ -11,11 +11,16 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
@@ -36,11 +41,41 @@ class TrustReplyWorkbenchServiceTest {
     private val pointByPointComposer = Mockito.mock(AiReplyPointByPointComposer::class.java)
     private val claimValidator = Mockito.mock(AiReplyHighRiskClaimValidator::class.java)
     private val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
+    private val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+    private val defaultFrame = ResolvedReplyFrame(
+        selection = ReplyFrameSelection(
+            salutationSnippetId = 1L,
+            greetingSnippetId = 2L,
+            ackSnippetId = null,
+            closingSnippetId = 3L
+        ),
+        version = "frame-default",
+        salutation = "Salutation",
+        greeting = "Greeting",
+        acknowledgement = null,
+        closing = "Closing"
+    )
 
     private lateinit var service: TrustReplyWorkbenchService
 
     @BeforeEach
     fun setUp() {
+        Mockito.reset(
+            mailRecords,
+            inboundProcessing,
+            contacts,
+            trainingQa,
+            contextService,
+            factSelection,
+            qaRules,
+            draftService,
+            previewService,
+            auditService,
+            pointByPointComposer,
+            claimValidator,
+            stateStore,
+            replySnippetService
+        )
         service = TrustReplyWorkbenchService(
             mailRecordRepository = mailRecords,
             inboundMailProcessingRepository = inboundProcessing,
@@ -55,8 +90,10 @@ class TrustReplyWorkbenchServiceTest {
             llmProperties = LlmProperties(enabled = true),
             aiReplyPointByPointComposer = pointByPointComposer,
             claimValidator = claimValidator,
-            stateStore = stateStore
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
         )
+        Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultFrame)
         Mockito.`when`(trainingQa.buildKnowledgeContext(Mockito.anyString())).thenReturn("")
         Mockito.`when`(
             contextService.build(
@@ -377,6 +414,22 @@ class TrustReplyWorkbenchServiceTest {
 
     private fun canonicalMatrix(version: String): List<TrustReplyRequestFactSelection> =
         listOf(TrustReplyRequestFactSelection(canonicalKey(version), listOf(9L)))
+
+    private fun resolvedFrame(
+        selection: ReplyFrameSelection,
+        version: String,
+        salutation: String? = null,
+        greeting: String? = null,
+        acknowledgement: String? = null,
+        closing: String? = null
+    ) = ResolvedReplyFrame(
+        selection = selection,
+        version = version,
+        salutation = salutation,
+        greeting = greeting,
+        acknowledgement = acknowledgement,
+        closing = closing
+    )
 
     @Test
     fun `saveState persists canonical-ordered subset after revalidation`() {
@@ -1099,7 +1152,8 @@ class TrustReplyWorkbenchServiceTest {
             cancellationToken = null,
             progressReporter = AiReplyProgressReporter.NOOP
         )).thenReturn(generated)
-        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf("Salary info"))).thenReturn("raw Salary info")
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf("Salary info"), defaultFrame))
+            .thenReturn("raw Salary info")
         Mockito.`when`(previewService.preview("raw Salary info", contact(), null))
             .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered Salary info", emptyList()))
 
@@ -1170,6 +1224,346 @@ class TrustReplyWorkbenchServiceTest {
             requestedFactIds = listOf(9L)
         ))
         assertEquals(matrix, assembled.requestFactSelections)
+    }
+
+    // ── 02 selectable frame: bootstrap options, strict resolve, state persistence ──
+
+    @Test
+    fun `bootstrap returns frame options and default canonical frame snapshot`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        Mockito.`when`(replySnippetService.listSelectableFrameOptions()).thenReturn(listOf(
+            com.weibo.talentintroduction.reply.service.ReplyFrameOption(1L, "SALUTATION", "Dear X,", 10, true),
+            com.weibo.talentintroduction.reply.service.ReplyFrameOption(4L, "ACK", "Thanks", 10, false)
+        ))
+
+        val bootstrap = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+
+        assertEquals(2, bootstrap.frameOptions.size)
+        assertEquals(listOf(1L, 4L), bootstrap.frameOptions.map { it.id })
+        assertEquals("Dear X,", bootstrap.frameOptions[0].content)
+        assertEquals("frame-default", bootstrap.frameSnapshot?.version)
+        assertEquals(1L, bootstrap.frameSnapshot?.selection?.salutationSnippetId)
+        assertNull(bootstrap.frameSnapshot?.selection?.ackSnippetId)
+        assertNull(bootstrap.savedState)
+    }
+
+    @Test
+    fun `bootstrap resolves explicit caller frame selection strictly`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val selection = ReplyFrameSelection(salutationSnippetId = 7L, closingSnippetId = 8L)
+        Mockito.`when`(replySnippetService.resolveSelectableFrame(selection)).thenReturn(resolvedFrame(
+            selection = selection,
+            version = "caller-v1",
+            salutation = "Caller Sal",
+            closing = "Caller Close"
+        ))
+
+        val bootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L, closingSnippetId = 8L),
+                version = "caller-v1"
+            )
+        ))
+
+        assertEquals("caller-v1", bootstrap.frameSnapshot?.version)
+        assertEquals(7L, bootstrap.frameSnapshot?.selection?.salutationSnippetId)
+        assertEquals(8L, bootstrap.frameSnapshot?.selection?.closingSnippetId)
+    }
+
+    @Test
+    fun `bootstrap rejects invalid caller frame selection with 422`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        Mockito.`when`(
+            replySnippetService.resolveSelectableFrame(
+                Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()
+            )
+        ).thenThrow(IllegalArgumentException("not found"))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.bootstrap(TrustReplyBootstrapRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = TrustReplyFrameSelection(salutationSnippetId = 99L)
+                )
+            ))
+        }
+
+        assertEquals("TRUST_REPLY_FRAME_SELECTION_INVALID", ex.code)
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.status)
+    }
+
+    @Test
+    fun `bootstrap rejects stale caller frame version with 409`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        Mockito.`when`(
+            replySnippetService.resolveSelectableFrame(
+                Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()
+            )
+        ).thenReturn(resolvedFrame(
+            selection = ReplyFrameSelection(),
+            version = "fresh-version"
+        ))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.bootstrap(TrustReplyBootstrapRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = TrustReplyFrameSelection(salutationSnippetId = 1L),
+                    version = "old-version"
+                )
+            ))
+        }
+
+        assertEquals("TRUST_REPLY_FRAME_STALE", ex.code)
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+    }
+
+    @Test
+    fun `bootstrap restores v3 state with its saved frame snapshot`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val storedSelection = ReplyFrameSelection(salutationSnippetId = 7L, ackSnippetId = 8L)
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            requestFactSelections = canonicalMatrix(version),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(locked),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L, ackSnippetId = 8L),
+                version = "saved-v1"
+            )
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(3L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
+        Mockito.`when`(replySnippetService.resolveSelectableFrame(storedSelection)).thenReturn(resolvedFrame(
+            selection = storedSelection,
+            version = "saved-v1",
+            salutation = "Saved Sal",
+            acknowledgement = "Saved Ack"
+        ))
+
+        val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+
+        assertEquals("RESTORED", restored.savedState?.status)
+        assertEquals(listOf(locked.requestKey), restored.savedState?.lockedItems?.map { it.requestKey })
+        assertEquals("saved-v1", restored.frameSnapshot?.version)
+        assertEquals(7L, restored.savedState?.frameSnapshot?.selection?.salutationSnippetId)
+        assertEquals(7L, restored.frameSnapshot?.selection?.salutationSnippetId)
+    }
+
+    @Test
+    fun `bootstrap frame stale restores locks and falls back to default frame`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            requestFactSelections = canonicalMatrix(version),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(locked),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L),
+                version = "old-version"
+            )
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(3L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
+        Mockito.`when`(
+            replySnippetService.resolveSelectableFrame(ReplyFrameSelection(salutationSnippetId = 7L))
+        ).thenReturn(resolvedFrame(
+            selection = ReplyFrameSelection(salutationSnippetId = 7L),
+            version = "fresh-version",
+            salutation = "Fresh Sal"
+        ))
+
+        val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+
+        assertEquals("FRAME_STALE", restored.savedState?.status)
+        assertEquals(listOf(locked.requestKey), restored.savedState?.lockedItems?.map { it.requestKey })
+        assertEquals("frame-default", restored.frameSnapshot?.version)
+        assertEquals(1L, restored.frameSnapshot?.selection?.salutationSnippetId)
+        assertEquals("frame-default", restored.savedState?.frameSnapshot?.version)
+    }
+
+    @Test
+    fun `bootstrap restores v1 and v2 state with default frame compat`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+
+        val v1Payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(locked)
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(2L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(v1Payload)
+        val v1Restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("RESTORED", v1Restored.savedState?.status)
+        assertEquals("frame-default", v1Restored.frameSnapshot?.version)
+        assertEquals(listOf(locked.requestKey), v1Restored.savedState?.lockedItems?.map { it.requestKey })
+
+        val v2Payload = v1Payload.copy(
+            schemaVersion = TrustReplyWorkbenchStateStore.PREVIOUS_SCHEMA_VERSION,
+            requestFactSelections = canonicalMatrix(version)
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(v2Payload)
+        val v2Restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("RESTORED", v2Restored.savedState?.status)
+        assertEquals("frame-default", v2Restored.frameSnapshot?.version)
+        assertEquals(listOf(locked.requestKey), v2Restored.savedState?.lockedItems?.map { it.requestKey })
+    }
+
+    @Test
+    fun `saveState persists canonical frame snapshot with locked items`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val selection = ReplyFrameSelection(salutationSnippetId = 7L)
+        Mockito.`when`(replySnippetService.resolveSelectableFrame(selection)).thenReturn(resolvedFrame(
+            selection = selection,
+            version = "saved-frame-v1",
+            salutation = "Saved Sal"
+        ))
+        var capturedPayload: TrustReplySavedStatePayload? = null
+        Mockito.doAnswer { invocation ->
+            capturedPayload = invocation.arguments[0] as TrustReplySavedStatePayload
+            "{}"
+        }.`when`(stateStore).encodePayload(
+            Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+                schemaVersion = "",
+                sourceVersion = "",
+                evidenceSetVersion = "",
+                requestedFactIds = emptyList(),
+                selectedModel = "",
+                lockedItems = emptyList()
+            )
+        )
+        Mockito.`when`(stateStore.save(Mockito.anyString() ?: "TRAINING_MAIL", Mockito.anyLong() ?: 11L, Mockito.anyLong() ?: 0L, Mockito.anyString() ?: "", Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())).thenReturn(1L)
+
+        val saved = service.saveState(TrustReplySaveStateRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedStateVersion = 0,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            lockedItems = listOf(locked),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L),
+                version = "saved-frame-v1"
+            )
+        ))
+
+        assertEquals("SAVED", saved.status)
+        assertEquals("saved-frame-v1", saved.frameSnapshot?.version)
+        assertEquals(7L, saved.frameSnapshot?.selection?.salutationSnippetId)
+        Mockito.verify(stateStore).encodePayload(
+            Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+                schemaVersion = "",
+                sourceVersion = "",
+                evidenceSetVersion = "",
+                requestedFactIds = emptyList(),
+                selectedModel = "",
+                lockedItems = emptyList()
+            )
+        )
+        assertEquals("saved-frame-v1", requireNotNull(capturedPayload).frameSnapshot?.version)
+        assertEquals(7L, requireNotNull(capturedPayload).frameSnapshot?.selection?.salutationSnippetId)
+    }
+
+    @Test
+    fun `saveState rejects invalid frame selection before touching the store`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        Mockito.`when`(
+            replySnippetService.resolveSelectableFrame(
+                Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()
+            )
+        ).thenThrow(IllegalArgumentException("disabled"))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.saveState(TrustReplySaveStateRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedStateVersion = 0,
+                sourceVersion = version,
+                evidenceSetVersion = currentEvidence,
+                lockedItems = listOf(locked),
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = TrustReplyFrameSelection(salutationSnippetId = 99L)
+                )
+            ))
+        }
+
+        assertEquals("TRUST_REPLY_FRAME_SELECTION_INVALID", ex.code)
+        Mockito.verify(stateStore, Mockito.never()).save(
+            Mockito.anyString(),
+            Mockito.anyLong(),
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
+    }
+
+    @Test
+    fun `saveState rejects stale frame version with 409`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        Mockito.`when`(
+            replySnippetService.resolveSelectableFrame(
+                Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()
+            )
+        ).thenReturn(resolvedFrame(
+            selection = ReplyFrameSelection(salutationSnippetId = 7L),
+            version = "fresh-version"
+        ))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.saveState(TrustReplySaveStateRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedStateVersion = 0,
+                sourceVersion = version,
+                evidenceSetVersion = currentEvidence,
+                lockedItems = listOf(locked),
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = TrustReplyFrameSelection(salutationSnippetId = 7L),
+                    version = "old-version"
+                )
+            ))
+        }
+
+        assertEquals("TRUST_REPLY_FRAME_STALE", ex.code)
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        Mockito.verify(stateStore, Mockito.never()).save(
+            Mockito.anyString(),
+            Mockito.anyLong(),
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
     }
 
     private fun contact() = ExpertContact(

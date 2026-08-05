@@ -9,6 +9,9 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaRequestExtractor
+import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
+import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
@@ -65,10 +68,40 @@ data class TrustReplyRequestFactSelection(
     val factRuleIds: List<Long>
 )
 
+/**
+ * Workbench frame selection: four nullable snippet ids. An all-null selection
+ * is the explicit "no frame" choice (I-2); a null [TrustReplyFrameSnapshot]
+ * entirely means the legacy default frame.
+ */
+data class TrustReplyFrameSelection(
+    val salutationSnippetId: Long? = null,
+    val greetingSnippetId: Long? = null,
+    val ackSnippetId: Long? = null,
+    val closingSnippetId: Long? = null
+)
+
+/**
+ * Canonical frame identity (I-3): the effective selection plus its
+ * deterministic server-computed version. The payload never stores frame text.
+ */
+data class TrustReplyFrameSnapshot(
+    val selection: TrustReplyFrameSelection? = null,
+    val version: String = ""
+)
+
+data class TrustReplyFrameOption(
+    val id: Long,
+    val snippetType: String,
+    val content: String,
+    val displayOrder: Int,
+    val isDefault: Boolean
+)
+
 data class TrustReplyBootstrapRequest(
     val source: TrustReplySourceRef,
     val requestedFactIds: List<Long>? = null,
-    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplyGenerationRequest(
@@ -127,7 +160,9 @@ data class TrustReplyBootstrapResponse(
     val contextWarnings: List<String> = emptyList(),
     val evidenceSetVersion: String,
     val savedState: TrustReplySavedState? = null,
-    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
+    val frameOptions: List<TrustReplyFrameOption> = emptyList(),
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplySavedStatePayload(
@@ -137,7 +172,8 @@ data class TrustReplySavedStatePayload(
     val requestedFactIds: List<Long>,
     val selectedModel: String,
     val lockedItems: List<TrustReplyLockedItemRequest>,
-    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplySavedState(
@@ -146,7 +182,8 @@ data class TrustReplySavedState(
     val selectedModel: String = "",
     val requestedFactIds: List<Long> = emptyList(),
     val lockedItems: List<TrustReplyLockedItemRequest> = emptyList(),
-    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplySaveStateRequest(
@@ -158,7 +195,8 @@ data class TrustReplySaveStateRequest(
     val requestedFactIds: List<Long>? = null,
     val selectedModel: String? = null,
     val lockedItems: List<TrustReplyLockedItemRequest>,
-    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplyRuleMetadata(
@@ -252,7 +290,8 @@ data class TrustReplyAssembleRequest(
     val expectedEvidenceSetVersion: String,
     val lockedItems: List<TrustReplyLockedItemRequest>,
     val requestedFactIds: List<Long>? = null,
-    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 data class TrustReplyAssembleResponse(
@@ -265,7 +304,8 @@ data class TrustReplyAssembleResponse(
     val canonicalFactIds: List<Long>,
     val itemVersions: List<TrustReplyItemVersion>,
     val requestedFactIds: List<Long> = emptyList(),
-    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList()
+    val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
+    val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
 open class TrustReplyWorkbenchException(
@@ -288,7 +328,8 @@ class TrustReplyWorkbenchService(
     private val llmProperties: LlmProperties,
     private val aiReplyPointByPointComposer: AiReplyPointByPointComposer,
     private val claimValidator: AiReplyHighRiskClaimValidator,
-    private val stateStore: TrustReplyWorkbenchStateStore
+    private val stateStore: TrustReplyWorkbenchStateStore,
+    private val replySnippetService: ReplySnippetService
 ) {
     fun resolveSource(source: TrustReplySourceRef): ResolvedTrustReplySource {
         require(source.sourceId > 0) { "sourceId must be positive" }
@@ -332,16 +373,22 @@ class TrustReplyWorkbenchService(
             }
         }
         val selection = resolvedSelection.selection
-        val savedState = if (implicitSelectionUnusable && stored != null && stored.expiresAt.isAfter(now)) {
-            TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+        val frameOptions = replySnippetService.listSelectableFrameOptions().map { it.toTrustReplyFrameOption() }
+        // I-2/G-1: caller explicit selection > recoverable saved selection > current default.
+        val restoreResult = if (implicitSelectionUnusable && stored != null && stored.expiresAt.isAfter(now)) {
+            RestoreFrameResult(
+                savedState = TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion),
+                canonicalFrame = resolveFrameSnapshot(request.frameSnapshot)
+            )
         } else {
-            restoreSavedState(
+            restoreSavedStateWithFrame(
                 resolved = resolved,
                 stored = stored,
                 selection = selection,
                 matrix = resolvedSelection.requestFactSelections,
                 evidenceSetVersion = resolvedSelection.evidenceSetVersion,
-                now = now
+                now = now,
+                callerFrame = request.frameSnapshot
             )
         }
         return TrustReplyBootstrapResponse(
@@ -361,19 +408,19 @@ class TrustReplyWorkbenchService(
             draftReadiness = bootstrapReadiness(selection),
             contextWarnings = resolved.contextWarnings,
             evidenceSetVersion = resolvedSelection.evidenceSetVersion,
-            savedState = savedState,
-            requestFactSelections = resolvedSelection.requestFactSelections
+            savedState = restoreResult.savedState,
+            requestFactSelections = resolvedSelection.requestFactSelections,
+            frameOptions = frameOptions,
+            frameSnapshot = restoreResult.canonicalFrame
         )
     }
 
     fun saveState(request: TrustReplySaveStateRequest): TrustReplySavedState {
         val resolved = resolveSource(request.source)
         requireCurrentSourceVersion(request.sourceVersion, resolved.sourceVersion)
-        // PUT accepts request schema v1 or v2 during the transition (I-6); writes are always v2.
-        if (request.schemaVersion != null && request.schemaVersion !in setOf(
-                TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
-                TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION
-            )
+        // PUT accepts request schema v1, v2 or v3 during the transition (I-6/I-7); writes are always v3.
+        if (request.schemaVersion != null &&
+            request.schemaVersion !in TrustReplyWorkbenchStateStore.ACCEPTED_REQUEST_SCHEMA_VERSIONS
         ) {
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_STATE_INVALID")
         }
@@ -396,6 +443,8 @@ class TrustReplyWorkbenchService(
             evidenceSetVersion = resolvedSelection.evidenceSetVersion,
             lockedItems = request.lockedItems
         )
+        // I-7: persist only the canonical frame ids + deterministic version, never resolved text.
+        val frameSnapshot = resolveFrameSnapshot(request.frameSnapshot)
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = resolved.sourceVersion,
@@ -404,7 +453,8 @@ class TrustReplyWorkbenchService(
             requestFactSelections = resolvedSelection.requestFactSelections,
             selectedModel = request.selectedModel?.trim()?.takeIf { it.isNotBlank() }
                 ?: AiReplyModel.DEEPSEEK_V4_FLASH.name,
-            lockedItems = orderedLocked
+            lockedItems = orderedLocked,
+            frameSnapshot = frameSnapshot
         )
         val json = stateStore.encodePayload(payload)
         val newVersion = stateStore.save(
@@ -421,38 +471,66 @@ class TrustReplyWorkbenchService(
             selectedModel = payload.selectedModel,
             requestedFactIds = payload.requestedFactIds,
             lockedItems = payload.lockedItems,
-            requestFactSelections = payload.requestFactSelections
+            requestFactSelections = payload.requestFactSelections,
+            frameSnapshot = frameSnapshot
         )
     }
 
-    private fun restoreSavedState(
+    private data class RestoreFrameResult(
+        val savedState: TrustReplySavedState?,
+        val canonicalFrame: TrustReplyFrameSnapshot
+    )
+
+    /**
+     * I-4/I-7 restore split: source/evidence/fact-mapping staleness keeps the
+     * snapshot STALE without restoring locks; frame-only staleness returns
+     * FRAME_STALE with the revalidated locks restored and the top-level frame
+     * falling back to the caller selection or the current default; a fully
+     * valid snapshot returns RESTORED with the saved frame.
+     */
+    private fun restoreSavedStateWithFrame(
         resolved: ResolvedTrustReplySource,
         stored: TrustReplyWorkbenchStateStore.TrustReplyStoredState?,
         selection: ResolvedQaRules,
         matrix: List<TrustReplyRequestFactSelection>,
         evidenceSetVersion: String,
-        now: LocalDateTime
-    ): TrustReplySavedState? {
-        if (stored == null) return null
+        now: LocalDateTime,
+        callerFrame: TrustReplyFrameSnapshot?
+    ): RestoreFrameResult {
+        if (stored == null) {
+            return RestoreFrameResult(null, resolveFrameSnapshot(callerFrame))
+        }
         if (!stored.expiresAt.isAfter(now)) {
             stateStore.pruneExpired(now)
-            return TrustReplySavedState(status = "EXPIRED", stateVersion = 0)
+            return RestoreFrameResult(
+                TrustReplySavedState(status = "EXPIRED", stateVersion = 0),
+                resolveFrameSnapshot(callerFrame)
+            )
         }
-        val payload = stateStore.decodePayload(stored.payloadJson) ?: return TrustReplySavedState(
-            status = "INVALID",
-            stateVersion = stored.stateVersion
+        val payload = stateStore.decodePayload(stored.payloadJson) ?: return RestoreFrameResult(
+            TrustReplySavedState(status = "INVALID", stateVersion = stored.stateVersion),
+            resolveFrameSnapshot(callerFrame)
         )
         if (payload.sourceVersion != resolved.sourceVersion || payload.evidenceSetVersion != evidenceSetVersion) {
-            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+            return RestoreFrameResult(
+                TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion),
+                resolveFrameSnapshot(callerFrame)
+            )
         }
-        // v2 restores must carry the identical canonical mapping; v1 is re-normalized
+        // v2/v3 restores must carry the identical canonical mapping; v1 is re-normalized
         // from its flat union by the resolver and must still match the union (I-4/I-6).
         if (payload.schemaVersion == TrustReplyWorkbenchStateStore.SCHEMA_VERSION) {
             if (payload.requestFactSelections != matrix) {
-                return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+                return RestoreFrameResult(
+                    TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion),
+                    resolveFrameSnapshot(callerFrame)
+                )
             }
         } else if (payload.requestedFactIds != selection.sendQaRuleIds) {
-            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+            return RestoreFrameResult(
+                TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion),
+                resolveFrameSnapshot(callerFrame)
+            )
         }
         val ordered = try {
             validateLockedSubset(
@@ -462,17 +540,134 @@ class TrustReplyWorkbenchService(
                 lockedItems = payload.lockedItems
             )
         } catch (ex: TrustReplyWorkbenchException) {
-            return TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion)
+            return RestoreFrameResult(
+                TrustReplySavedState(status = "STALE", stateVersion = stored.stateVersion),
+                resolveFrameSnapshot(callerFrame)
+            )
         }
-        return TrustReplySavedState(
-            status = "RESTORED",
-            stateVersion = stored.stateVersion,
-            selectedModel = payload.selectedModel,
-            requestedFactIds = payload.requestedFactIds,
-            lockedItems = ordered,
-            requestFactSelections = matrix
+        val storedFrame = resolveStoredFrame(payload.frameSnapshot)
+        val frameStale = payload.frameSnapshot?.selection != null && storedFrame == null
+        val canonicalFrame = when {
+            callerFrame != null -> resolveFrameSnapshot(callerFrame)
+            storedFrame != null -> storedFrame
+            else -> resolveFrameSnapshot(null)
+        }
+        val status = if (callerFrame != null) {
+            "RESTORED"
+        } else if (frameStale) {
+            "FRAME_STALE"
+        } else {
+            "RESTORED"
+        }
+        return RestoreFrameResult(
+            savedState = TrustReplySavedState(
+                status = status,
+                stateVersion = stored.stateVersion,
+                selectedModel = payload.selectedModel,
+                requestedFactIds = payload.requestedFactIds,
+                lockedItems = ordered,
+                requestFactSelections = matrix,
+                frameSnapshot = canonicalFrame
+            ),
+            canonicalFrame = canonicalFrame
         )
     }
+
+    /**
+     * I-3/I-4: revalidates the stored frame snapshot against fresh snippet
+     * state. Returns the canonical snapshot when the stored selection is
+     * present and its expected version matches fresh resolution; null when the
+     * payload carries no frame (v1/v2 default compat) or the selection is
+     * invalid/stale.
+     */
+    private fun resolveStoredFrame(payloadFrame: TrustReplyFrameSnapshot?): TrustReplyFrameSnapshot? {
+        val selection = payloadFrame?.selection ?: return null
+        return try {
+            val resolved = replySnippetService.resolveSelectableFrame(selection.toReplyFrameSelection())
+            if (payloadFrame.version.isNotBlank() && payloadFrame.version != resolved.version) {
+                null
+            } else {
+                TrustReplyFrameSnapshot(
+                    selection = selection,
+                    version = resolved.version
+                )
+            }
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /**
+     * I-1/I-2 unified canonical frame resolver for bootstrap/state:
+     * a missing snapshot (or a snapshot without a selection) resolves the
+     * current default frame; an explicit selection is resolved strictly —
+     * invalid selections are 422 TRUST_REPLY_FRAME_SELECTION_INVALID and a
+     * mismatched expected version is 409 TRUST_REPLY_FRAME_STALE.
+     */
+    private fun resolveFrameSnapshot(snapshot: TrustReplyFrameSnapshot?): TrustReplyFrameSnapshot {
+        if (snapshot == null || snapshot.selection == null) {
+            val resolved = replySnippetService.resolveDefaultSelectableFrame()
+            return TrustReplyFrameSnapshot(
+                selection = resolved.selection.toTrustReplyFrameSelection(),
+                version = resolved.version
+            )
+        }
+        return try {
+            val resolved = replySnippetService.resolveSelectableFrame(snapshot.selection.toReplyFrameSelection())
+            if (snapshot.version.isNotBlank() && snapshot.version != resolved.version) {
+                throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_FRAME_STALE")
+            }
+            TrustReplyFrameSnapshot(
+                selection = snapshot.selection,
+                version = resolved.version
+            )
+        } catch (ex: IllegalArgumentException) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FRAME_SELECTION_INVALID")
+        }
+    }
+
+    /**
+     * I-5 assembly-time frame resolution: returns the server-resolved frame
+     * (current default when absent) for the explicit-frame composer overload,
+     * enforcing the same 422/409 fail-closed boundary as [resolveFrameSnapshot].
+     */
+    private fun resolveFrameForAssemble(snapshot: TrustReplyFrameSnapshot?): ResolvedReplyFrame {
+        if (snapshot == null || snapshot.selection == null) {
+            return replySnippetService.resolveDefaultSelectableFrame()
+        }
+        return try {
+            val resolved = replySnippetService.resolveSelectableFrame(snapshot.selection.toReplyFrameSelection())
+            if (snapshot.version.isNotBlank() && snapshot.version != resolved.version) {
+                throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_FRAME_STALE")
+            }
+            resolved
+        } catch (ex: IllegalArgumentException) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FRAME_SELECTION_INVALID")
+        }
+    }
+
+    private fun TrustReplyFrameSelection.toReplyFrameSelection() = ReplyFrameSelection(
+        salutationSnippetId = salutationSnippetId,
+        greetingSnippetId = greetingSnippetId,
+        ackSnippetId = ackSnippetId,
+        closingSnippetId = closingSnippetId
+    )
+
+    private fun ReplyFrameSelection.toTrustReplyFrameSelection() = TrustReplyFrameSelection(
+        salutationSnippetId = salutationSnippetId,
+        greetingSnippetId = greetingSnippetId,
+        ackSnippetId = ackSnippetId,
+        closingSnippetId = closingSnippetId
+    )
+
+    private fun com.weibo.talentintroduction.reply.service.ReplyFrameOption.toTrustReplyFrameOption() =
+        TrustReplyFrameOption(
+            id = id,
+            snippetType = snippetType,
+            content = content,
+            displayOrder = displayOrder,
+            isDefault = isDefault
+        )
 
     private fun validateLockedSubset(
         resolved: ResolvedTrustReplySource,
@@ -870,7 +1065,10 @@ class TrustReplyWorkbenchService(
         val orderedAnswers = versions.mapNotNull { version ->
             version.answerText.takeIf { version.handling != TrustReplyItemHandling.OMIT }
         }
-        val raw = aiReplyPointByPointComposer.composeLockedItems(orderedAnswers)
+        // I-1/I-3/I-5: resolve the frame only after every locked item, claim and
+        // version has passed validation; stale expected versions fail closed here.
+        val resolvedFrame = resolveFrameForAssemble(request.frameSnapshot)
+        val raw = aiReplyPointByPointComposer.composeLockedItems(orderedAnswers, resolvedFrame)
         val preview = aiReplyDraftPreviewService.preview(
             raw = raw,
             contact = resolved.contact,
@@ -888,7 +1086,11 @@ class TrustReplyWorkbenchService(
             canonicalFactIds = factIds.toList(),
             itemVersions = versions,
             requestedFactIds = selection.sendQaRuleIds,
-            requestFactSelections = resolvedSelection.requestFactSelections
+            requestFactSelections = resolvedSelection.requestFactSelections,
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = resolvedFrame.selection.toTrustReplyFrameSelection(),
+                version = resolvedFrame.version
+            )
         )
     }
 

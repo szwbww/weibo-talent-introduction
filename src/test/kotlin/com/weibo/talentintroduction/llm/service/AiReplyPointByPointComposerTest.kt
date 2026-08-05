@@ -4,7 +4,9 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
+import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -102,6 +104,56 @@ class AiReplyPointByPointComposerTest {
         assertEquals("first\n\nsecond\n\nfirst", text)
         assertTrue(text.indexOf("first") < text.indexOf("second"))
         assertFalse(text.isBlank())
+    }
+
+    // ── 02 explicit-frame locked composer (I-5) ──────────────────────────
+
+    private fun resolvedFrame(
+        salutation: String? = "SALUTATION",
+        greeting: String? = "GREETING",
+        acknowledgement: String? = "ACKNOWLEDGEMENT",
+        closing: String? = "CLOSING"
+    ) = ResolvedReplyFrame(
+        selection = ReplyFrameSelection(1L, 2L, 3L, 4L),
+        version = "frame-v1",
+        salutation = salutation,
+        greeting = greeting,
+        acknowledgement = acknowledgement,
+        closing = closing
+    )
+
+    @Test
+    fun `composeLockedItems with resolved frame orders salutation greeting ack answers closing`() {
+        val text = composer.composeLockedItems(listOf("answer-1", "answer-2"), resolvedFrame())
+
+        assertEquals("SALUTATION\n\nGREETING\n\nACKNOWLEDGEMENT\n\nanswer-1\n\nanswer-2\n\nCLOSING", text)
+    }
+
+    @Test
+    fun `composeLockedItems with resolved frame filters blank blocks and keeps answers verbatim`() {
+        val text = composer.composeLockedItems(
+            listOf("same", "same", "x  y"),
+            resolvedFrame(salutation = "  ", greeting = null, acknowledgement = "", closing = "CLOSING")
+        )
+
+        assertEquals("same\n\nsame\n\nx  y\n\nCLOSING", text)
+    }
+
+    @Test
+    fun `composeLockedItems with resolved frame preserves duplicate answers in byte order`() {
+        val text = composer.composeLockedItems(
+            listOf("answer-1", "same answer", "answer-3\nwith two lines", "same answer", "answer-5 {{expert.name}}"),
+            resolvedFrame()
+        )
+
+        assertEquals(2, Regex("same answer").findAll(text).count())
+        assertEquals(1, Regex("answer-1").findAll(text).count())
+        assertEquals(1, Regex("answer-3\\nwith two lines").findAll(text).count())
+        assertTrue(text.contains("answer-5 {{expert.name}}"))
+        assertTrue(text.indexOf("SALUTATION") < text.indexOf("GREETING"))
+        assertTrue(text.indexOf("GREETING") < text.indexOf("ACKNOWLEDGEMENT"))
+        assertTrue(text.indexOf("ACKNOWLEDGEMENT") < text.indexOf("answer-1"))
+        assertTrue(text.indexOf("answer-5 {{expert.name}}") < text.indexOf("CLOSING"))
     }
 
     @Test
