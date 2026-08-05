@@ -2,8 +2,8 @@
 id: K-workbench-lock-replay-needs-dedicated-state-store
 domain: llm
 created: 2026-08-04
-last_used: 2026-08-04
-hit_count: 0
+last_used: 2026-08-05
+hit_count: 1
 source: create-p:trust-reply-durable-locks-and-assembly-generation
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-ai-reply-evidence-version-deterministic
 domain: llm
 created: 2026-07-19
-last_used: 2026-08-04
-hit_count: 4
+last_used: 2026-08-05
+hit_count: 5
 source: fix-v:ai-reply-06-draft-audit-evidence-preflight-plan:fix-1
 severity: P1
 ---

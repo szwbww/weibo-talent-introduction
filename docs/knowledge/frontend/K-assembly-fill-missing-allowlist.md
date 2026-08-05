@@ -2,8 +2,8 @@
 id: K-assembly-fill-missing-allowlist
 domain: frontend
 created: 2026-08-01
-last_used: 2026-08-04
-hit_count: 1
+last_used: 2026-08-05
+hit_count: 2
 source: create-p:trust-reply-manual-generation-and-stable-input
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-explicit-fact-selection-must-match-request
 domain: qa
 created: 2026-07-17
-last_used: 2026-07-27
-hit_count: 6
+last_used: 2026-08-05
+hit_count: 7
 source: fix-v:qa-refactor-04-grounded-engine:fix-1
 severity: P1
 ---
