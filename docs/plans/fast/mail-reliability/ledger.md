@@ -5,6 +5,8 @@
 - Master base: d911bd6
 - Branch: fast/mail-reliability
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability
+- Finalization mode: REPAIR
+- Finalization repair parent: 7a7028773ca6a8ab31c0b72e6c13dd75d8e1e547
 - Started: 2026-08-06 19:52 CST
 - Current child: N/A (all children terminal)
 - Waiting role: N/A
