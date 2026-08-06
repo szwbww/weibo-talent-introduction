@@ -54,6 +54,7 @@
 | `mail/service/ManualExpertMailService.kt` | **P4** | P3 的 I-5 已声明不改此文件 |
 | `db/migration/V84__personalize_material_reminder_template.sql`（新增） | **P4** | 四份中唯一的迁移，见 M-6 |
 | 各计划自有测试文件 | 各自 | 无交叉 |
+| `src/test/js/mailboxInboundTags.test.js` | **P1**（M-1 仲裁 2026-08-06：`:84` 的 `refreshExpertTagsFromEs` 桩随 P1 任务 2.2 契约同步为对象形态；计划文件清单遗漏，修复由计划自身 Interaction point 3 规则唯一确定） | 其余三份不得触碰 |
 
 **零交叉确认**：除 `AutoMailReplyService.kt` 外（见 M-4），四份计划的文件集合两两不相交。
 

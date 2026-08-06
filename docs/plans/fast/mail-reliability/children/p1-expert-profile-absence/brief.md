@@ -12,6 +12,10 @@
 3. `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt`（任务 1.3）
 4. `src/test/js/expertTagBatchFix.test.js`（任务 3.1）
 5. `src/test/js/expertProfileAbsence.test.js`（新增，任务 3.2）
+6. `src/test/js/mailboxInboundTags.test.js`（修改 —— **M-1 仲裁 2026-08-06**：`:84` 的 `refreshExpertTagsFromEs` 桩 `async () => ["自动晋升"]` 在任务 2.2 契约下抛 TypeError；修复 = `async () => ({ found: true, tags: ["自动晋升"] })`，测试自身断言不变。仲裁依据：master 计划 M-1「由本文件裁决归属」；修复由计划 Interaction point 3 规则唯一确定）
+
+> 仲裁授权范围：先 grep `src/test/js` 全量 `fetchExpertTagsFromEs|refreshExpertTagsFromEs` 桩，
+> 凡返回裸数组且会破坏新契约者一并同步为 `{ found, tags }` 形态（若有发现，在 execution.md 逐条列出）。
 
 `styles.css` **零改动**；`ExpertSearchService.kt`、`AiReplyContextService.kt`、任何 migration、任何 mail 侧文件不得触碰。
 

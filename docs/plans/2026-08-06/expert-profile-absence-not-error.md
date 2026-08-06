@@ -278,8 +278,16 @@
 | 3 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt` | 修改 | ① | I-1 |
 | 4 | `src/test/js/expertTagBatchFix.test.js` | 修改 | ② | I-4 |
 | 5 | `src/test/js/expertProfileAbsence.test.js` | 新增 | ② | I-1, I-3, I-4, S-1, S-2 |
+| 6 | `src/test/js/mailboxInboundTags.test.js` | 修改（M-1 仲裁 2026-08-06） | ② | I-4, IP-3 |
 
-**文件数：5 ≤ 10 ✓** ｜ **子系统数：2 ✓** ｜ **共享存储新增字段：0 ✓** ｜ **数据库迁移：无 ✓** ｜ **`styles.css` 改动：无 ✓**
+**文件数：6 ≤ 10 ✓** ｜ **子系统数：2 ✓** ｜ **共享存储新增字段：0 ✓** ｜ **数据库迁移：无 ✓** ｜ **`styles.css` 改动：无 ✓**
+
+> M-1 仲裁记录（2026-08-06）：任务 2.2 把 `refreshExpertTagsFromEs` 返回值改为对象后，
+> `mailboxInboundTags.test.js:84` 的桩（`async () => ["自动晋升"]` 裸数组）会抛
+> `TypeError: Cannot read properties of undefined (reading 'includes')`，全量 `mvn test` 必挂。
+> 计划 Interaction point 3 只盘点了 `expertTagBatchFix.test.js`，遗漏该文件。按 master 计划 M-1
+> 「由本文件裁决归属」仲裁：该文件归 P1，修复 = 桩改为 `async () => ({ found: true, tags: ["自动晋升"] })`，
+> 测试自身断言不变。修复由计划自身规则唯一确定，非行为决策。
 
 ---
 
