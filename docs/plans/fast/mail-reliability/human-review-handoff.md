@@ -7,12 +7,12 @@
 
 ## Child Status
 
-| Child | Status | Code boundary | Fix rounds | Evidence |
+| Child | Status | Code boundary | Fix rounds | Evidence commit |
 |---|---|---|---|---|
-| p4-task0-rfc8058 | LIGHT_PASS_WITH_NOTES | 92a678b..f2916674 | 0 | e704a58 (docs(fast-p): record p4-task0-rfc8058 light verification) |
-| p1-expert-profile-absence | LIGHT_PASS_WITH_NOTES | f2916674..33e1ffb | 0 | 92b13aa (docs(fast-p): record p1-expert-profile-absence light verification) |
-| p3-outbound-message-id-01 | LIGHT_PASS_WITH_NOTES | 33e1ffb..025b875 | 0 | 68536d8 (docs(fast-p): record p3-outbound-message-id-01 light verification) |
-| p2-inbound-message-id-prefix | LIGHT_PASS | 025b875..ef7e471 | 0 | ff259b1 (docs(fast-p): record p2-inbound-message-id-prefix light verification) |
+| p4-task0-rfc8058 | LIGHT_PASS_WITH_NOTES | 92a678b..f2916674 | 0 | e704a58 |
+| p1-expert-profile-absence | LIGHT_PASS_WITH_NOTES | f2916674..33e1ffb | 0 | 92b13aa |
+| p3-outbound-message-id-01 | LIGHT_PASS_WITH_NOTES | 33e1ffb..025b875 | 0 | 68536d8 |
+| p2-inbound-message-id-prefix | LIGHT_PASS | 025b875..ef7e471 | 0 | ff259b1 |
 
 Commit lineage (all on `fast/mail-reliability`):
 `d911bd6` (master base) → `92a678b` seed plans → `f2916674` p4 impl → `e704a58` p4 evidence → `9bbb046` M-1 arbitration docs → `33e1ffb` p1 impl → `92b13aa` p1 evidence → `025b875` p3 impl → `68536d8` p3 evidence → `ef7e471` p2 impl → `ff259b1` p2 evidence → handoff commit.

@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-08-06/00-main-plan-mail-reliability.md
 
 - Status: READY_FOR_HUMAN_REVIEW
-- Master plan: docs/plans/2026-08-06/00-main-plan-mail-reliability.md (seeded at 92a678b)
-- Master base: d911bd6 (main HEAD at start; worktree created from it)
+- Master plan: docs/plans/2026-08-06/00-main-plan-mail-reliability.md (commit 9bbb046)
+- Master base: d911bd6
 - Branch: fast/mail-reliability
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability
 - Started: 2026-08-06 19:52 CST
@@ -22,5 +22,3 @@
 | p1-expert-profile-absence | expert-profile-absence-not-error.md | none | 1 | LIGHT_PASS_WITH_NOTES | f2916674 | 33e1ffb | 0 | — | 33e1ffb | 92b13aa | Master order ②; implementer=ImplP1, verifier=VerP1; M-1 仲裁 9bbb046 (mailboxInboundTags.test.js 第 6 文件); RECORD_ONLY: 仲裁桩同步（一致）、boundary 内 11 个 controller 记账文档文件 |
 | p3-outbound-message-id-01 | outbound-message-id-01-fill-missing.md | none (M-5 知识写回先于 p2) | 1 | LIGHT_PASS_WITH_NOTES | 33e1ffb | 025b875 | 0 | — | 025b875 | 68536d8 | Master order ③; implementer=ImplP3, verifier=VerP3; RECORD_ONLY: 两个测试实现适配（IP-4 kind 提取正则、captor→thenAnswer）经核实仍证明所需断言; 知识写回已落地（K-message-id-fingerprint 修正表 + K-outbound-message-id-single-factory.md） |
 | p2-inbound-message-id-prefix | inbound-message-id-vendor-prefix.md | p3 知识写回先落地（M-5 串行，后写者复核前写者） | 1 | LIGHT_PASS | 025b875 | ef7e471 | 0 | — | ef7e471 | ff259b1 | Master order ④; implementer=ImplP2, verifier=VerP2; M-5 门 PASS（先读确认 p3 更正存在后追加末段证伪 + 新建 K-vendor-message-id-prefix.md） |
-| p3-outbound-message-id-01 | outbound-message-id-01-fill-missing.md | none (M-5 知识写回先于 p2) | 1 | PENDING | — | — | 0 | — | — | — | Master order ③; Phase 6 知识写回含 M-5 串行 |
-| p2-inbound-message-id-prefix | inbound-message-id-vendor-prefix.md | p3 知识写回先落地（M-5 串行，后写者复核前写者） | 1 | PENDING | — | — | 0 | — | — | — | Master order ④; Phase 6 知识写回须先读 K-message-id-fingerprint.md 确认 p3 更正已存在 |
