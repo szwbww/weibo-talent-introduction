@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.ComposedMail
+import com.weibo.talentintroduction.mail.service.OutboundMessageIdFactory
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import org.springframework.stereotype.Service
@@ -125,7 +126,8 @@ class MeetingScheduleService(
         val composed = ComposedMail(
             to = contact.expertEmail,
             subject = rendered.subject,
-            body = rendered.body
+            body = rendered.body,
+            messageId = OutboundMessageIdFactory.newId("meeting-confirmation", contact.orcidId, account.senderEmail)
         )
         val delivered = mailDeliveryService.send(account, composed)
         val now = LocalDateTime.now()

@@ -22,7 +22,8 @@ class MeetingInvitationMailComposer(
         return ComposedMail(
             to = expert.email ?: error("Expert email is required for meeting invitation mail"),
             subject = rendered.subject,
-            body = rendered.body
+            body = rendered.body,
+            messageId = OutboundMessageIdFactory.newId("meeting-invitation", expert.orcidId, account.senderEmail)
         )
     }
 }

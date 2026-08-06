@@ -35,7 +35,9 @@ import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
@@ -977,6 +979,11 @@ class AutoMailReplyServiceTest {
         assertEquals(true, sentMail.html)
         assertEquals(plainBody, sentMail.text)
         assertEquals(mailContentService.plainTextToHtml(plainBody), sentMail.body)
+        assertNotNull(sentMail.messageId)
+        assertTrue(
+            sentMail.messageId!!.matches(Regex("^<auto-reply-11-[0-9a-f-]{36}@qftechtalent\\.com>$")),
+            "unexpected messageId: ${sentMail.messageId}"
+        )
         val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
         Mockito.verify(mailRecordRepository, Mockito.atLeastOnce()).save(mailRecordCaptor.capture())
         val outboundRecord = mailRecordCaptor.allValues.last { it.direction == "OUTBOUND" && it.mailType == "QA_REPLY" }
@@ -985,6 +992,37 @@ class AutoMailReplyServiceTest {
         val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
         Mockito.verify(contactRepository, Mockito.atLeast(1)).save(contactCaptor.capture())
         assertEquals(ConversationStatus.QA_AUTO_REPLIED.name, contactCaptor.allValues.last().currentStatus)
+    }
+
+    @Test
+    fun `repeated QA auto replies for same contact get distinct message ids`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        stubReadyDecision(subject = "Re: Program", body = "Auto reply body", ruleIds = listOf(1L))
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        val sentMails = mutableListOf<ComposedMail>()
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail(messageId = "msg-200", status = "SUCCESS")
+        }
+
+        service.processSingle(account, reply(imapUid = 101), skipImapAck = true)
+        service.processSingle(account, reply(imapUid = 202), skipImapAck = true)
+
+        val messageIds = sentMails.map { it.messageId }
+        assertEquals(2, messageIds.size)
+        assertTrue(messageIds.all { it != null })
+        assertTrue(
+            messageIds.all { it!!.matches(Regex("^<auto-reply-11-[0-9a-f-]{36}@qftechtalent\\.com>$")) },
+            "unexpected messageIds: $messageIds"
+        )
+        assertEquals(2, messageIds.distinct().size)
     }
 
     @Test
@@ -1123,12 +1161,16 @@ class AutoMailReplyServiceTest {
                 mailType = "MEETING_INVITATION"
             )
         )
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(
             deliveryService.send(
                 anyValue(account),
                 anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
             )
-        ).thenReturn(DeliveredMail(messageId = "msg-meeting", status = "SUCCESS"))
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail(messageId = "msg-meeting", status = "SUCCESS")
+        }
 
         val result = service.processSingle(account, received, skipImapAck = true)
 
@@ -1137,6 +1179,15 @@ class AutoMailReplyServiceTest {
             eqValue("MEETING_INVITATION"),
             anyValue(emptyMap<String, String>()),
             eqValue(expectedSeed)
+        )
+        val sentMail = sentMails.single()
+        assertNotNull(sentMail.messageId)
+        // IP-4: kind must be identical to MeetingInvitationMailComposer's "meeting-invitation"
+        val kind = Regex("^<([a-z-]+)-").find(sentMail.messageId!!)!!.groupValues[1]
+        assertEquals("meeting-invitation", kind)
+        assertTrue(
+            sentMail.messageId!!.matches(Regex("^<meeting-invitation-ORCID-11-[0-9a-f-]{36}@qftechtalent\\.com>$")),
+            "unexpected messageId: ${sentMail.messageId}"
         )
     }
 
