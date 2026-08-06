@@ -75,7 +75,8 @@ class UnmatchedInboundMailService(
 
         val inReplyTo = record.inReplyTo
         if (inReplyTo != null) {
-            val outboundMail = mailRecordRepository.findByMessageId(inReplyTo)
+            val outboundMail = MessageIdNormalizer.candidatesFor(inReplyTo)
+                .firstNotNullOfOrNull { mailRecordRepository.findByMessageId(it) }
             if (outboundMail != null) {
                 val contact = expertContactRepository.findById(outboundMail.expertContactId).orElse(null)
                 if (contact != null) {

@@ -134,9 +134,11 @@ class BounceCollectionService(
 
     private fun resolveOriginalContact(signal: BounceSignal) =
         signal.originalMessageId?.let { origMsgId ->
-            mailRecordRepository.findByMessageId(origMsgId)?.let { mailRecord ->
-                expertContactRepository.findById(mailRecord.expertContactId).orElse(null)
-            }
+            MessageIdNormalizer.candidatesFor(origMsgId)
+                .firstNotNullOfOrNull { mailRecordRepository.findByMessageId(it) }
+                ?.let { mailRecord ->
+                    expertContactRepository.findById(mailRecord.expertContactId).orElse(null)
+                }
         } ?: signal.failedRecipient?.let { recipient ->
             expertEmailAliasService.findContactByEmailOrAlias(recipient)
         }

@@ -36,3 +36,5 @@ last_source: create-p:ai-reply-final-send-identity-scope-repair
 - `ManualExpertMailService.kt` 已由 `3bff469`（material-reminder-01-threading）修复，产出 `<reminder-{contactId}-{uuid}@{senderDomain}>`。
 
 因此真正缺失的 4 处为：`MeetingInvitationMailComposer.kt:22`、`MeetingScheduleService.kt:125`、`AutoMailReplyService.kt:567`、`AutoMailReplyService.kt:958` —— 已由 `outbound-message-id-01-fill-missing.md` 收口，统一经 `OutboundMessageIdFactory` 生成（见 [[K-outbound-message-id-single-factory]]）。
+
+**2026-08-06 三次复验修正（p2-inbound-message-id-vendor-prefix 回写）**：上文「落库的 `mail_record.message_id` 取 `message.messageID`，两种情况下都与实际发出值一致」被本次审计**证伪**。`message.messageID` 是交给中继**之前**的值；腾讯企业邮中继会在投递时改写 Message-ID，给 local-part 加 `[0-9A-F]{16}+` 前缀（16 位大写十六进制 + `+`），因此**库内值 ≠ 实际投递值**：库内值 = 交给中继前值。入站 `in_reply_to` / 退信 `originalMessageId` 引用的是投递后值，与库内 `message_id` 精确匹配必然落空 —— 读侧须经 `MessageIdNormalizer` 构造候选（原值 → 规范化 → 有界剥离前缀）逐个精确查询（见 [[K-vendor-message-id-prefix.md]]）。
