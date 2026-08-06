@@ -189,3 +189,35 @@ if (tokenService.enabled()) {
 - L2-4：清空 `secret` 配置时，`tokenService.enabled()==false`，发送不追加退订头且不抛异常。
 - 端到端：合法 token POST 后，`email_suppression` 出现该邮箱（来源 `ONE_CLICK`）；随后该邮箱进入 `InitialOutreachService.sendInitialBatch` 被跳过（依赖 01 的 G-3，跨子计划集成验证）。
 - 路由：实测 `GET /u/unsubscribe?token=...` 返回控制器 HTML 而非前端 SPA 页面（确认 `FrontendController` 兜底未拦截）。
+
+---
+
+## 修正记录
+
+### 修正 1（2026-08-06）：`List-Unsubscribe-Post` 的值不合 RFC 8058，本计划原文即为错误源
+
+- **原文**：本计划 `:9`、`:26`、任务 4（`:152`）、验收标准 L2-2（`:187`）四处均写死
+  `List-Unsubscribe-Post: List=One-Click`。代码 `SmtpMailDeliveryService.kt:54` 是对本计划的**忠实实现**，
+  因此这不是代码缺陷，而是**计划缺陷传导至代码**。
+- **修正为**：值必须逐字为 `List-Unsubscribe=One-Click`。
+- **依据**：RFC 8058 §3.1「The List-Unsubscribe-Post header MUST contain the single key/value pair
+  `List-Unsubscribe=One-Click`」；§5 ABNF `postarg = "List-Unsubscribe=One-Click"`。
+  值不合法时 Gmail 不渲染一键退订按钮。
+- **生产实证**（两封外发原文，2026-07-05 与 2026-08-06，跨两个腾讯企业邮中继集群）：
+  两封均携带 `List-Unsubscribe`（配置正常、token 正常签发）、SPF/DKIM/DMARC 全部 pass，
+  但 Gmail 界面无退订按钮。
+- **另一并存阻断点（本计划范围外，代码不可解）**：RFC 8058 §4 要求 `List-Unsubscribe` 与
+  `List-Unsubscribe-Post` 必须被 DKIM 签名覆盖并出现在 `h=` 中，否则
+  「the mail receiver SHOULD NOT offer a one-click unsubscribe」。实际签名由腾讯企业邮
+  （`bizesmtp.qq.com`，`s=card2607`）完成，其 `h=Date:From:To:Message-ID:Subject:MIME-Version`
+  **不含**这两个头，且 `h=` 由中继 MTA 决定，JavaMail 侧无法控制。
+  **因此仅修正本条的 header 值，Gmail 按钮仍不会出现** —— 两者是与关系。
+  出路：① 要求腾讯企业邮把 List-* 加入 `h=`；② 更换支持 RFC 8058 的发送服务商；
+  ③ 发信前自签一份覆盖 List-* 的 DKIM（多重 DKIM-Signature 合法）——
+  但**不得签 `Message-ID`**，因为该中继会给 Message-ID 加 `[0-9A-F]{16}+` 前缀，会破坏签名。
+- **代码修正的归属**：并入 `docs/plans/2026-08-06/material-reminder-02-headers-personalization.md`
+  —— 该计划已持有 `SmtpMailDeliveryService` 退订头逻辑的所有权（Invariant J-1）
+  及任务 7 的修正记录机制。**不另起新计划**，避免多个计划同时改同一文件。
+  注意其执行前决策点：若任务 1/2（对 `MATERIAL_REMINDER` 抑制退订头）被放弃，
+  **本条 header 值修正仍必须执行** —— 它作用于其余所有邮件类型。
+- **发现来源**：`docs/plans/2026-08-06/expert-profile-absence-not-error.md` 的关联缺陷移交第 1 项。
