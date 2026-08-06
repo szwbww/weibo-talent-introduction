@@ -9024,8 +9024,19 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-timeline-row:last-child { border-bottom: 0; }
 .batch-timeline-batch { min-width: 50px; font-weight: 700; color: #2563eb; }
 .batch-timeline-time { min-width: 140px; color: #94a3b8; }
-.batch-timeline-status { flex: 1; }
+.batch-timeline-status { color: #64748b; }
 .batch-timeline-count { font-weight: 600; color: #1e293b; }
+
+/* 执行过程时间线：阶段行（INIT/FINAL）、消息与错误 */
+.batch-timeline-row { align-items: flex-start; }
+.batch-timeline-row.is-phase { background: #f8fafc; }
+.batch-timeline-row.is-failed { background: #fef2f2; }
+.batch-timeline-phase { min-width: 50px; font-weight: 700; color: #64748b; }
+.batch-timeline-main { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.batch-timeline-message { color: #475569; word-break: break-word; }
+.batch-timeline-row.is-failed .batch-timeline-message { color: #e11d48; }
+.batch-timeline-stop { color: #d97706; font-weight: 600; }
+.batch-timeline-errors { margin: 0; padding: 6px 8px; border-radius: 8px; background: #fff7ed; color: #c2410c; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
 @media (max-width: 760px) {
   .task-modal.batch-send-task-modal { width: calc(100vw - 20px); min-height: 0; max-height: calc(100vh - 20px); }

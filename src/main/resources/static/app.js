@@ -13852,7 +13852,7 @@ function renderBatchExecutionDetail(d) {
     renderReasons("batchLogFailureReasons", d.failureReasons, "无失败原因");
     renderReasons("batchLogSkippedReasons", d.skippedReasons, "无跳过原因");
     renderErrorSamples(d.errorSamples);
-    renderBatchTimeline(d.progressBatches);
+    renderBatchTimeline(d.progressRows);
     renderLogStatusInfo(d);
 }
 
@@ -13881,6 +13881,7 @@ function renderOutcomeMetrics(d) {
 function renderIntegrityWarning(d) {
     var el = document.getElementById("batchLogIntegrityWarning");
     if (!el) return;
+    if (d.status === "RUNNING" || d.status === "CANCELLING") { el.hidden = true; return; }
     var expected = d.success + d.failure + d.skipped + (d.remaining || 0);
     if (expected !== d.target) {
         el.hidden = false;
@@ -13941,20 +13942,35 @@ function clearBatchLogDisplay() {
     if (integrityWarning) integrityWarning.hidden = true;
 }
 
-function renderBatchTimeline(batches) {
+function renderBatchTimeline(rows) {
     var container = document.getElementById("batchLogTimeline");
     if (!container) return;
-    if (!Array.isArray(batches) || batches.length === 0) {
-        container.innerHTML = '<div class="batch-timeline-row"><span style="color:#94a3b8;">无批次记录</span></div>';
+    if (!Array.isArray(rows) || rows.length === 0) {
+        container.innerHTML = '<div class="batch-timeline-row"><span class="muted">无执行过程记录</span></div>';
         return;
     }
-    container.innerHTML = batches.map(function(b) {
-        var time = b.updatedAt ? formatDateTime(b.updatedAt) : (b.startedAt ? formatDateTime(b.startedAt) : "—");
-        return '<div class="batch-timeline-row">' +
-            '<span class="batch-timeline-batch">批次 #' + b.batchNumber + '</span>' +
-            '<span class="batch-timeline-time">' + escapeHtml(time) + '</span>' +
-            '<span class="batch-timeline-status">' + escapeHtml(statusLabel(b.status || "")) + '</span>' +
-            '<span class="batch-timeline-count">已处理 ' + (b.batchProcessed || 0) + '</span>' +
+    container.innerHTML = rows.map(function(r) {
+        var phase = r.kind === "INIT" ? "初始化" : (r.kind === "FINAL" ? "结束" : "");
+        var cls = "batch-timeline-row";
+        if (phase) cls += " is-phase";
+        if (r.status === "FAILED" || r.status === "CANCELLED") cls += " is-failed";
+        var head = phase
+            ? '<span class="batch-timeline-phase">' + phase + '</span>'
+            : '<span class="batch-timeline-batch">批次 #' + r.batchNumber + '</span>';
+        var count = phase ? (r.processedCount || 0) : (r.batchProcessed || 0);
+        var main = '<span class="batch-timeline-main">' +
+            '<span class="batch-timeline-status">' + escapeHtml(statusLabel(r.status || "")) + '</span>' +
+            (r.message ? '<span class="batch-timeline-message">' + escapeHtml(r.message) + '</span>' : '') +
+            (r.stopReason ? '<span class="batch-timeline-stop">终止原因：' + escapeHtml(r.stopReason) + '</span>' : '') +
+            (Array.isArray(r.errors) && r.errors.length > 0
+                ? '<pre class="batch-timeline-errors">' + r.errors.map(escapeHtml).join("\n") + '</pre>'
+                : '') +
+            '</span>';
+        return '<div class="' + cls + '">' +
+            head +
+            '<span class="batch-timeline-time">' + escapeHtml(formatDateTime(r.createdAt)) + '</span>' +
+            main +
+            '<span class="batch-timeline-count">已处理 ' + count + '</span>' +
             '</div>';
     }).join("");
 }
@@ -13964,6 +13980,10 @@ function statusLabel(s) {
     if (s === "COMPLETED" || s === "SUCCESS") return "已完成";
     if (s === "FAILED") return "失败";
     if (s === "CANCELLED") return "已取消";
+    if (s === "PARTIAL_SUCCESS") return "部分成功";
+    if (s === "CANCELLING") return "取消中";
+    if (s === "PAUSED") return "已暂停";
+    if (s === "INTERRUPTED") return "已中断";
     return s || "—";
 }
 

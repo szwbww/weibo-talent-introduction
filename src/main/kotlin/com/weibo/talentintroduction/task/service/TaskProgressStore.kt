@@ -174,6 +174,11 @@ class TaskProgressStore(
             if (cancellationFlags.remove("$taskType:$pendingToken") == true) {
                 cancellationFlags["$taskType:$executionId"] = true
             }
+            try {
+                progressLogRepository.rebindPendingExecutionId(pendingToken, executionId)
+            } catch (e: Exception) {
+                log.warn("Failed to rebind pending progress logs from token {} to execution {}: {}", pendingToken, executionId, e.message, e)
+            }
         }
         return accepted
     }

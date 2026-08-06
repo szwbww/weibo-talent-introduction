@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.task.domain.TaskProgressLog
 import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -42,6 +43,7 @@ class BatchSendConfigController(
     private val progressLogRepository: TaskProgressLogRepository,
     private val objectMapper: ObjectMapper
 ) {
+    private val log = LoggerFactory.getLogger(BatchSendConfigController::class.java)
     // ── New multi-config CRUD ──────────────────────────────────────────────────
 
     @GetMapping("/configs")
@@ -104,11 +106,17 @@ class BatchSendConfigController(
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
         }
         val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(executionId)
-            .filter { it.batchNumber > 0 }
-            .groupBy { it.batchNumber }
-            .map { (_, group) -> group.last() }
-            .sortedBy { it.batchNumber }
-        return ResponseEntity.ok(toDetail(execution, logs))
+        val (zeroRows, roundRows) = logs.partition { it.batchNumber == 0 }
+        val initRow = zeroRows.firstOrNull()
+        val finalRows = zeroRows.drop(1)
+        val progressRows = buildList {
+            initRow?.let { add(it to "INIT") }
+            addAll(roundRows.groupBy { it.batchNumber }.map { (_, group) -> group.last() to "ROUND" })
+            finalRows.forEach { add(it to "FINAL") }
+        }
+            .sortedBy { (row, _) -> row.id ?: 0L }
+            .map { (row, kind) -> toExecutionProgressRow(row, kind) }
+        return ResponseEntity.ok(toDetail(execution, progressRows))
     }
 
     // ── INTRODUCTION compat config endpoints (legacy → entity adapter) ─────────
@@ -198,9 +206,14 @@ class BatchSendConfigController(
 
     private fun toDetail(
         execution: com.weibo.talentintroduction.task.domain.TaskExecution,
-        progressBatches: List<TaskProgressLog>
+        progressRows: List<ExecutionProgressRow>
     ): BatchConfigExecutionDetail {
         val outcome = parseOutcome(execution.resultSummary)
+        val runningFallback = if (outcome == null) {
+            execution.id?.let {
+                parseProgressLogOutcome(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(it))
+            }
+        } else null
         val requestSnapshot = execution.requestPayload?.let {
             runCatching { objectMapper.readTree(it) }.getOrNull()
         }
@@ -208,22 +221,82 @@ class BatchSendConfigController(
             executionId = execution.id,
             triggerType = execution.triggerType,
             status = execution.status,
-            target = outcome?.target ?: 0,
-            success = outcome?.success ?: execution.successCount,
-            failure = outcome?.failure ?: execution.failureCount,
-            skipped = outcome?.skipped ?: 0,
-            remaining = outcome?.remaining ?: 0,
+            target = outcome?.target ?: runningFallback?.target ?: 0,
+            success = outcome?.success ?: runningFallback?.success ?: execution.successCount,
+            failure = outcome?.failure ?: runningFallback?.failure ?: execution.failureCount,
+            skipped = outcome?.skipped ?: runningFallback?.skipped ?: 0,
+            remaining = outcome?.remaining ?: runningFallback?.remaining ?: 0,
             startedAt = execution.startedAt,
             finishedAt = execution.finishedAt,
             durationMs = if (execution.finishedAt != null) {
                 Duration.between(execution.startedAt, execution.finishedAt).toMillis()
             } else null,
             requestSnapshot = requestSnapshot,
-            failureReasons = outcome?.failureReasons ?: emptyMap(),
-            skippedReasons = outcome?.skippedReasons ?: emptyMap(),
-            errorSamples = outcome?.errorSamples ?: emptyList(),
-            progressBatches = progressBatches
+            failureReasons = outcome?.failureReasons ?: runningFallback?.failureReasons ?: emptyMap(),
+            skippedReasons = outcome?.skippedReasons ?: runningFallback?.skippedReasons ?: emptyMap(),
+            errorSamples = outcome?.errorSamples ?: runningFallback?.errorSamples ?: emptyList(),
+            progressRows = progressRows
         )
+    }
+
+    private fun toExecutionProgressRow(log: TaskProgressLog, kind: String): ExecutionProgressRow {
+        return ExecutionProgressRow(
+            kind = kind,
+            batchNumber = log.batchNumber,
+            status = log.status,
+            message = log.message,
+            stopReason = parseStopReason(log),
+            processedCount = log.processedCount,
+            totalCount = log.totalCount,
+            batchProcessed = log.batchProcessed,
+            batchPassed = log.batchPassed,
+            batchRejected = log.batchRejected,
+            errors = parseErrors(log.errorsJson),
+            createdAt = log.createdAt
+        )
+    }
+
+    private fun parseStopReason(entry: TaskProgressLog): String? {
+        val detailsJson = entry.detailsJson ?: return null
+        return try {
+            val node = objectMapper.readTree(detailsJson)
+            val stop = node.path("stopReason")
+            if (stop.isMissingNode || stop.isNull) null else stop.asText()
+        } catch (e: Exception) {
+            log.warn("Failed to parse stopReason from progress log {}: {}", entry.id, e.message)
+            null
+        }
+    }
+
+    private fun parseErrors(errorsJson: String?): List<String> {
+        if (errorsJson.isNullOrBlank()) return emptyList()
+        return try {
+            objectMapper.readTree(errorsJson).map { it.asText() }
+        } catch (e: Exception) {
+            log.warn("Failed to parse errorsJson from progress log: {}", e.message)
+            emptyList()
+        }
+    }
+
+    private fun parseProgressLogOutcome(entry: TaskProgressLog?): ParsedOutcome? {
+        if (entry == null) return null
+        val detailsJson = entry.detailsJson ?: return null
+        return try {
+            val node = objectMapper.readTree(detailsJson)
+            ParsedOutcome(
+                target = entry.totalCount.toInt(),
+                success = node.path("sentTotal").asInt(0),
+                failure = node.path("failedTotal").asInt(0),
+                skipped = node.path("skippedTotal").asInt(0),
+                remaining = node.path("pending").asInt(0),
+                failureReasons = parseReasonMap(node.path("failureReasons")),
+                skippedReasons = parseReasonMap(node.path("skippedReasons")),
+                errorSamples = parseErrors(entry.errorsJson)
+            )
+        } catch (e: Exception) {
+            log.warn("Failed to parse progress log outcome: {}", e.message)
+            null
+        }
     }
 
     private fun parseOutcome(resultSummary: String?): ParsedOutcome? {
@@ -324,7 +397,22 @@ data class BatchConfigExecutionDetail(
     val failureReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val errorSamples: List<String>,
-    val progressBatches: List<TaskProgressLog>
+    val progressRows: List<ExecutionProgressRow>
+)
+
+data class ExecutionProgressRow(
+    val kind: String,            // INIT | ROUND | FINAL
+    val batchNumber: Int,
+    val status: String,
+    val message: String?,
+    val stopReason: String?,
+    val processedCount: Long,
+    val totalCount: Long,
+    val batchProcessed: Int,
+    val batchPassed: Int,
+    val batchRejected: Int,
+    val errors: List<String>,
+    val createdAt: java.time.LocalDateTime
 )
 
 private data class ParsedOutcome(
