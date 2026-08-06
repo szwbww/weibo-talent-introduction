@@ -1204,7 +1204,9 @@
                 const id = Number(factId);
                 const rule = factRuleById(id);
                 const label = rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
-                return `<span class="trust-reply-fact-chip" data-fact-id="${id}"><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
+                const body = rule && rule.answerBody ? String(rule.answerBody) : "";
+                const title = body ? ` title="${escapeText(body)}"` : "";
+                return `<span class="trust-reply-fact-chip" data-fact-id="${id}"${title}><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
             }).join("");
             const pickerOptions = state.rules.map((rule) => {
                 const id = Number(rule.ruleId ?? rule.id);
@@ -1227,9 +1229,14 @@
                     label = "保存中";
                     disabled = true;
                 }
-                return `<button type="button" class="trust-reply-fact-picker-option" data-action="add-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" data-state="${optionState}"${disabled ? " disabled" : ""}><span><strong>${escapeText(rule.displayName || `事实 ${id}`)}</strong><em>${escapeText(rule.answerBody || "")}</em></span><small>${escapeText(label)}</small></button>`;
+                const searchText = `${rule.displayName || ""} ${rule.answerBody || ""}`.trim().toLowerCase();
+                return `<button type="button" class="trust-reply-fact-picker-option" data-action="add-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" data-state="${optionState}" data-search="${escapeText(searchText)}"${disabled ? " disabled" : ""}><span class="trust-reply-fact-picker-main"><strong>${escapeText(rule.displayName || `事实 ${id}`)}</strong><span>${escapeText(rule.answerBody || "")}</span></span><span class="trust-reply-fact-state" data-state="${optionState}">${escapeText(label)}</span></button>`;
             }).join("");
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><strong>对应事实</strong><div class="trust-reply-fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
+            const factCount = (request.factRuleIds || []).length;
+            const pickerSearch = pickerOptions
+                ? `<div class="trust-reply-fact-picker-search"><input type="text" data-role="fact-search" data-request-key="${escapeText(request.requestKey)}" placeholder="搜索事实标题 / 正文…" aria-label="搜索事实"${factActionsDisabled ? " disabled" : ""}></div>`
+                : "";
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
         }
 
         function renderFrameSelects() {
@@ -1657,6 +1664,15 @@
             }
             if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
             if (target.dataset?.role === "total-custom") state.totalTimeout.customSeconds = target.value;
+            if (target.dataset?.role === "fact-search") {
+                const picker = typeof target.closest === "function" ? target.closest('[data-role="fact-picker"]') : null;
+                if (picker && typeof picker.querySelectorAll === "function") {
+                    const query = (target.value || "").trim().toLowerCase();
+                    picker.querySelectorAll(".trust-reply-fact-picker-option").forEach((option) => {
+                        option.hidden = !!query && !(option.dataset?.search || "").includes(query);
+                    });
+                }
+            }
         }
 
         function findRequest(requestKey) {

@@ -2032,6 +2032,53 @@ describe("shared trust reply workbench mount contract", () => {
         assert.deepStrictEqual(lastMatrix.factRuleIds, [], "the released fact must leave the matrix");
     });
 
+    it("renders fact head with count and filters picker options via search input", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 512;
+        const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [first]);
+        current.rulesByCategory = [
+            { ruleId: 1, displayName: "Fact One", answerBody: "answer one" },
+            { ruleId: 2, displayName: "Fact Two", answerBody: "answer two" }
+        ];
+        current.requestCoverage[0].factRuleIds = [1];
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        assert.match(host.innerHTML, /class="trust-reply-fact-head"/);
+        assert.match(host.innerHTML, /class="trust-reply-fact-count">1</);
+        assert.match(host.innerHTML, /data-role="fact-search"/);
+        assert.match(host.innerHTML, /data-search="fact two answer two"/);
+        assert.match(host.innerHTML, /class="trust-reply-fact-state" data-state="selected"/);
+
+        const optA = { dataset: { search: "fact one answer one" }, hidden: false };
+        const optB = { dataset: { search: "fact two answer two" }, hidden: false };
+        const picker = { querySelectorAll: (selector) => selector === ".trust-reply-fact-picker-option" ? [optA, optB] : [] };
+        const target = {
+            dataset: { role: "fact-search", requestKey: first.requestKey },
+            value: "two",
+            closest: (selector) => selector === '[data-role="fact-picker"]' ? picker : null
+        };
+        host.dispatchEvent("input", target);
+        assert.strictEqual(optA.hidden, true, "non-matching option must hide");
+        assert.strictEqual(optB.hidden, false, "matching option must stay visible");
+        target.value = "";
+        host.dispatchEvent("input", target);
+        assert.strictEqual(optA.hidden, false, "clearing the query must restore options");
+    });
+
     it("cancels a destructive fact change without touching state or DOM", async () => {
         const sourceType = "LIVE_INBOUND";
         const sourceId = 507;
