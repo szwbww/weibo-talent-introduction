@@ -304,13 +304,10 @@ class ExpertIndexController(
     ): ExpertProfileTagsResponse {
         require(orcidId.isNotBlank()) { "orcidId is required" }
         val profile = expertSearchService.findByOrcidId(orcidId, level)
-            ?: throw org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.NOT_FOUND,
-                "Expert not found: $orcidId"
-            )
         return ExpertProfileTagsResponse(
-            orcidId = profile.orcidId,
-            tags = profile.tags.orEmpty()
+            orcidId = orcidId,
+            found = profile != null,
+            tags = profile?.tags.orEmpty()
         )
     }
 }
@@ -346,6 +343,7 @@ data class TagMutationResult(
 
 data class ExpertProfileTagsResponse(
     val orcidId: String,
+    val found: Boolean,
     val tags: List<String> = emptyList()
 )
 

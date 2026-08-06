@@ -376,6 +376,29 @@ class ExpertIndexControllerTest {
         val response = controller.getExpertProfile("orcid-1", ExpertIndexLevel.CANDIDATE)
 
         assertEquals("orcid-1", response.orcidId)
+        assertEquals(true, response.found)
         assertEquals(listOf("承诺回复材料"), response.tags)
+    }
+
+    @Test
+    fun `getExpertProfile returns found=false with empty tags when profile absent`() {
+        Mockito.`when`(searchService.findByOrcidId("orcid-absent", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(null)
+
+        val response = controller.getExpertProfile("orcid-absent", ExpertIndexLevel.CANDIDATE)
+
+        assertEquals("orcid-absent", response.orcidId)
+        assertEquals(false, response.found)
+        assertTrue(response.tags.isEmpty())
+    }
+
+    @Test
+    fun `getExpertProfile propagates search exception`() {
+        Mockito.`when`(searchService.findByOrcidId("orcid-err", ExpertIndexLevel.CANDIDATE))
+            .thenThrow(RuntimeException("es down"))
+
+        assertThrows(RuntimeException::class.java) {
+            controller.getExpertProfile("orcid-err", ExpertIndexLevel.CANDIDATE)
+        }
     }
 }

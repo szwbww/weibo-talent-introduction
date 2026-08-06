@@ -81,7 +81,7 @@ describe("mailbox inbound tag actions", () => {
             },
             loadContacts: async () => {},
             loadExpertTagOptions: async () => {},
-            refreshExpertTagsFromEs: async () => ["自动晋升"],
+            refreshExpertTagsFromEs: async () => ({ found: true, tags: ["自动晋升"] }),
             $: () => ({ value: "" }),
             URLSearchParams
         };
