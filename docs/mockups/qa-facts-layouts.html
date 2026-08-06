@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>可信回复工作台 · 事实区布局方案</title>
+<style>
+/* ===== styles.css tokens ===== */
+:root {
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-rgb: 37, 99, 235;
+    --primary-light: rgba(var(--primary-rgb), 0.07); --primary-tint: rgba(var(--primary-rgb), 0.1);
+    --bg-main: #f5f7fb; --panel-bg: #ffffff;
+    --panel-border: rgba(15, 23, 42, 0.08); --line: rgba(15, 23, 42, 0.055);
+    --border: rgba(15, 23, 42, 0.11); --surface: rgba(15, 23, 42, 0.022);
+    --text-main: #1e293b; --text-muted: #94a3b8; --text-sidebar: #64748b;
+    --success: #059669; --success-bg: rgba(5,150,105,0.08); --success-border: rgba(5,150,105,0.18);
+    --error: #e11d48; --error-bg: rgba(225,29,72,0.07); --error-border: rgba(225,29,72,0.16);
+    --warning: #d97706; --warning-bg: rgba(217,119,6,0.08); --warning-border: rgba(217,119,6,0.2);
+    --info: #0ea5e9; --info-bg: rgba(14,165,233,0.08); --info-border: rgba(14,165,233,0.2);
+    --radius-sm: 7px; --radius-md: 10px; --radius-lg: 14px;
+    --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+    --shadow-md: 0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.03);
+    --shadow-lg: 0 10px 28px -8px rgba(15,23,42,0.14), 0 2px 6px rgba(15,23,42,0.05);
+    --shadow-xl: 0 20px 48px -12px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0.06);
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg-main); color: var(--text-main); font-family: var(--font-body); font-size: 13px; line-height: 1.5; padding-bottom: 60px; }
+button, input, select, textarea { font-family: inherit; font-size: inherit; }
+
+/* ===== 现有 workbench 组件（照搬 trust-reply-workbench 样式） ===== */
+.button { appearance: none; border: 1px solid var(--border); background: var(--panel-bg); color: var(--text-main); border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.button:hover { background: var(--surface); }
+.button.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 1px 2px rgba(var(--primary-rgb), .35); }
+.button.primary:hover { background: var(--primary-hover); }
+.button.secondary { background: transparent; }
+.button.small { padding: 3px 8px; font-size: 11px; }
+.muted { color: var(--text-muted); }
+
+.trust-reply-item { border: 1px solid var(--panel-border); border-left: 3px solid var(--text-muted); border-radius: var(--radius-md); background: var(--panel-bg); padding: 14px 16px; box-shadow: var(--shadow-sm); }
+.trust-reply-item[data-coverage="GROUNDED"] { border-left-color: var(--success); }
+.trust-reply-item[data-coverage="PARTIAL"] { border-left-color: var(--warning); }
+.trust-reply-item-head { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.trust-reply-item-index { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); color: var(--text-sidebar); font-size: 11px; font-weight: 700; }
+.trust-reply-item-title strong { display: block; color: var(--text-main); font-size: 13.5px; font-weight: 600; }
+.trust-reply-coverage { display: inline-flex; align-items: center; width: fit-content; margin-top: 4px; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
+.trust-reply-coverage[data-coverage="GROUNDED"] { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.trust-reply-coverage[data-coverage="PARTIAL"] { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.badge.ok { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+
+/* 现有 chip（保留作对照/复用） */
+.trust-reply-fact-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 28px; padding: 3px 5px 3px 9px; border: 1px solid rgba(var(--primary-rgb), .18); border-radius: 999px; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 600; }
+.trust-reply-fact-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trust-reply-fact-chip > button { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; cursor: pointer; }
+.trust-reply-fact-chip > button:hover { background: var(--primary-tint); }
+
+/* ===== 预览框架 ===== */
+.demo-nav { position: sticky; top: 0; z-index: 10; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); padding: 10px 20px; display: flex; gap: 8px; align-items: center; box-shadow: var(--shadow-sm); }
+.demo-nav strong { margin-right: 12px; font-size: 14px; }
+.demo-tab { border: 1px solid var(--border); background: transparent; border-radius: var(--radius-sm); padding: 6px 14px; cursor: pointer; color: var(--text-sidebar); font-size: 12px; }
+.demo-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.demo-view { display: none; padding: 20px; max-width: 860px; margin: 0 auto; }
+.demo-view.active { display: block; }
+.demo-note { background: var(--info-bg); border: 1px solid var(--info-border); color: #0369a1; border-radius: var(--radius-md); padding: 8px 12px; margin-bottom: 14px; font-size: 12px; }
+.demo-shell { border: 1px dashed var(--border); border-radius: var(--radius-lg); padding: 14px; background: rgba(15,23,42,0.012); }
+.demo-shell > p { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+
+/* ===== 共用：事实区基础 ===== */
+.fact-section { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.fact-section-head { display: flex; align-items: center; gap: 8px; }
+.fact-section-head > strong { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+.fact-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary-light); color: var(--primary); font-size: 10.5px; font-weight: 700; }
+.fact-section-head .spacer { flex: 1; }
+
+/* ===== 方案 A：行内紧凑 chips + 单行 picker ===== */
+.a-chip-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.a-picker { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-bg); overflow: hidden; }
+.a-picker-search { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.a-picker-search input { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 12px; }
+.a-picker-search input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.a-picker-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 10px; border: none; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.a-picker-option:last-child { border-bottom: none; }
+.a-picker-option:not(:disabled):hover { background: var(--primary-light); }
+.a-picker-option:disabled { cursor: not-allowed; opacity: 0.62; }
+.a-picker-option .opt-main { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.a-picker-option .opt-main strong { flex: none; color: var(--text-main); font-size: 12px; font-weight: 600; }
+.a-picker-option .opt-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11px; }
+.a-picker-option .opt-state { flex: none; font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 1px 8px; }
+.opt-state.available { color: var(--success); background: var(--success-bg); border: 1px solid var(--success-border); }
+.opt-state.selected { color: var(--primary); background: var(--primary-light); border: 1px solid rgba(var(--primary-rgb), .18); }
+.opt-state.used { color: var(--text-sidebar); background: var(--surface); border: 1px dashed var(--border); }
+
+/* ===== 方案 B：已绑定事实列表行 + popover 添加 ===== */
+.b-fact-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-bg); overflow: hidden; }
+.b-fact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.b-fact-row:last-child { border-bottom: none; }
+.b-fact-row:hover { background: var(--surface); }
+.b-fact-row .row-main { min-width: 0; }
+.b-fact-row .row-main strong { font-size: 12px; font-weight: 600; margin-right: 8px; }
+.b-fact-row .row-main span { color: var(--text-muted); font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-fact-remove { flex: none; width: 24px; height: 24px; border: none; border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.b-fact-remove:hover { background: var(--error-bg); color: var(--error); }
+.b-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px; background: var(--panel-bg); border: 1px dashed var(--border); border-radius: var(--radius-sm); }
+.b-popover-wrap { position: relative; width: fit-content; }
+.b-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 420px; max-width: 78vw; border: 1px solid var(--panel-border); border-radius: var(--radius-md); background: var(--panel-bg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.b-popover .a-picker-search { border-bottom: 1px solid var(--line); }
+.b-popover-list { max-height: 260px; overflow-y: auto; }
+
+/* ===== 方案 C：chips 摘要 + 侧滑事实管理抽屉 ===== */
+.c-summary-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.drawer-shell { position: fixed; inset: 0; z-index: 50; display: none; }
+.drawer-shell.open { display: block; }
+.drawer-backdrop { position: absolute; inset: 0; border: none; background: rgba(15,23,42,0.35); backdrop-filter: blur(6px); }
+.drawer-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(480px, 92vw); background: var(--bg-main); border-left: 1px solid var(--panel-border); box-shadow: var(--shadow-xl); display: flex; flex-direction: column; animation: drawerIn .18s ease; }
+@keyframes drawerIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: var(--panel-bg); border-bottom: 1px solid var(--line); }
+.drawer-head h3 { font-size: 14px; }
+.drawer-head small { color: var(--text-muted); font-weight: 400; margin-left: 6px; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+.drawer-group-title { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
+.c-fact-card { border: 1px solid var(--panel-border); border-radius: var(--radius-md); background: var(--panel-bg); padding: 10px 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.c-fact-card .c-card-head { display: flex; align-items: center; gap: 8px; }
+.c-fact-card .c-card-head strong { font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-fact-card p { color: var(--text-sidebar); font-size: 11.5px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.c-fact-card .c-card-foot { display: flex; align-items: center; gap: 6px; }
+.c-fact-card .c-card-foot .spacer { flex: 1; }
+.c-fact-card.bound { border-left: 3px solid var(--primary); }
+.c-fact-card.used-elsewhere { opacity: 0.65; }
+.drawer-search { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; width: 100%; background: var(--panel-bg); }
+.drawer-search:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+</style>
+</head>
+<body>
+
+<nav class="demo-nav">
+    <strong>可信回复工作台 · 事实区布局</strong>
+    <button class="demo-tab active" data-view="view-a">A · 紧凑 chips + 单行 picker</button>
+    <button class="demo-tab" data-view="view-b">B · 绑定列表 + 弹出添加</button>
+    <button class="demo-tab" data-view="view-c">C · chips 摘要 + 侧滑管理</button>
+</nav>
+
+<!-- ============ 方案 A ============ -->
+<div class="demo-view active" id="view-a">
+    <div class="demo-note">改动最小：chip 加 title 悬浮看正文；picker 从 2 列卡片改单列行（标题 + 正文一行省略 + 状态药丸），顶部加搜索；状态用语义色 badge 替代灰色小字。</div>
+    <div class="demo-shell">
+        <p>摘要卡（节选「对应事实」区，其余结构不变）</p>
+        <article class="trust-reply-item" data-coverage="GROUNDED">
+            <div class="trust-reply-item-head">
+                <span class="trust-reply-item-index">1</span>
+                <div class="trust-reply-item-title">
+                    <strong>Who are you and which organization do you represent?</strong>
+                    <span class="trust-reply-coverage" data-coverage="GROUNDED">有据</span>
+                </div>
+                <span class="badge ok">已锁定</span>
+            </div>
+
+            <div class="fact-section">
+                <div class="fact-section-head">
+                    <strong>对应事实</strong>
+                    <span class="fact-count">2</span>
+                    <span class="spacer"></span>
+                    <button class="button small secondary">+ 添加事实</button>
+                </div>
+                <div class="a-chip-row">
+                    <span class="trust-reply-fact-chip" title="We are the official organizing committee of the 2026 Global Talent Summit, hosted in partnership with municipal talent offices."><span>项目组织方身份</span><button type="button" aria-label="移除">×</button></span>
+                    <span class="trust-reply-fact-chip" title="The program is jointly operated with the Weibo Talent Introduction platform under a 2024 cooperation agreement."><span>合作运营关系</span><button type="button" aria-label="移除">×</button></span>
+                </div>
+                <!-- picker 展开态 -->
+                <div class="a-picker">
+                    <div class="a-picker-search"><input type="text" placeholder="搜索事实标题 / 正文…"></div>
+                    <button class="a-picker-option">
+                        <span class="opt-main"><strong>费用承担政策</strong><span>All program fees are covered by the host institution, including travel and accommodation…</span></span>
+                        <span class="opt-state available">可添加</span>
+                    </button>
+                    <button class="a-picker-option" disabled>
+                        <span class="opt-main"><strong>项目组织方身份</strong><span>We are the official organizing committee of the 2026 Global Talent Summit…</span></span>
+                        <span class="opt-state selected">已选择</span>
+                    </button>
+                    <button class="a-picker-option" disabled>
+                        <span class="opt-main"><strong>合同签署主体</strong><span>The agreement is signed with Weibo Talent Introduction Co., Ltd…</span></span>
+                        <span class="opt-state used">已用于摘要 2</span>
+                    </button>
+                    <button class="a-picker-option">
+                        <span class="opt-main"><strong>申请截止时间</strong><span>The application deadline for this batch is September 30, 2026…</span></span>
+                        <span class="opt-state available">可添加</span>
+                    </button>
+                </div>
+            </div>
+        </article>
+    </div>
+</div>
+
+<!-- ============ 方案 B ============ -->
+<div class="demo-view" id="view-b">
+    <div class="demo-note">已绑定事实从 chip 改为列表行：标题 + 正文一行可见，移除按钮 hover 变红；「+ 添加事实」弹出带搜索的浮层，不撑开卡片高度；未绑定时显示空态提示。</div>
+    <div class="demo-shell">
+        <p>摘要卡（节选「对应事实」区）</p>
+        <article class="trust-reply-item" data-coverage="PARTIAL">
+            <div class="trust-reply-item-head">
+                <span class="trust-reply-item-index">1</span>
+                <div class="trust-reply-item-title">
+                    <strong>Who are you and which organization do you represent?</strong>
+                    <span class="trust-reply-coverage" data-coverage="PARTIAL">部分有据</span>
+                </div>
+                <button class="button small secondary">收起</button>
+            </div>
+
+            <div class="fact-section">
+                <div class="fact-section-head">
+                    <strong>对应事实</strong>
+                    <span class="fact-count">2</span>
+                    <span class="spacer"></span>
+                    <div class="b-popover-wrap">
+                        <button class="button small secondary">+ 添加事实</button>
+                        <!-- popover 展开态 -->
+                        <div class="b-popover">
+                            <div class="a-picker-search"><input type="text" placeholder="搜索事实标题 / 正文…"></div>
+                            <div class="b-popover-list">
+                                <button class="a-picker-option">
+                                    <span class="opt-main"><strong>费用承担政策</strong><span>All program fees are covered by the host institution…</span></span>
+                                    <span class="opt-state available">可添加</span>
+                                </button>
+                                <button class="a-picker-option" disabled>
+                                    <span class="opt-main"><strong>合同签署主体</strong><span>The agreement is signed with Weibo Talent Introduction Co., Ltd…</span></span>
+                                    <span class="opt-state used">已用于摘要 2</span>
+                                </button>
+                                <button class="a-picker-option">
+                                    <span class="opt-main"><strong>申请截止时间</strong><span>The application deadline for this batch is September 30, 2026…</span></span>
+                                    <span class="opt-state available">可添加</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="b-fact-list">
+                    <div class="b-fact-row">
+                        <div class="row-main">
+                            <strong>项目组织方身份</strong>
+                            <span>We are the official organizing committee of the 2026 Global Talent Summit, hosted in partnership with municipal talent offices.</span>
+                        </div>
+                        <button class="b-fact-remove" aria-label="移除事实 项目组织方身份">×</button>
+                    </div>
+                    <div class="b-fact-row">
+                        <div class="row-main">
+                            <strong>合作运营关系</strong>
+                            <span>The program is jointly operated with the Weibo Talent Introduction platform under a 2024 cooperation agreement.</span>
+                        </div>
+                        <button class="b-fact-remove" aria-label="移除事实 合作运营关系">×</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 空态示例 -->
+            <div class="fact-section" style="margin-top:10px">
+                <div class="fact-section-head">
+                    <strong>对应事实</strong>
+                    <span class="fact-count" style="background:var(--surface);color:var(--text-muted)">0</span>
+                    <span class="spacer"></span>
+                    <button class="button small secondary">+ 添加事实</button>
+                </div>
+                <div class="b-empty">尚未绑定事实 — 绑定后 AI 仅依据这些事实生成回复</div>
+            </div>
+        </article>
+    </div>
+</div>
+
+<!-- ============ 方案 C ============ -->
+<div class="demo-view" id="view-c">
+    <div class="demo-note">卡内只保留 chips 摘要 + 计数，点「管理事实」开右侧抽屉：上半已绑定（可移除），下半可添加（搜索 + 状态分组）。适合事实数量多、需要对照正文精挑的场景；卡片流不被撑长。</div>
+    <div class="demo-shell">
+        <p>摘要卡（节选「对应事实」区，始终只占一行高度）</p>
+        <article class="trust-reply-item" data-coverage="GROUNDED">
+            <div class="trust-reply-item-head">
+                <span class="trust-reply-item-index">1</span>
+                <div class="trust-reply-item-title">
+                    <strong>Who are you and which organization do you represent?</strong>
+                    <span class="trust-reply-coverage" data-coverage="GROUNDED">有据</span>
+                </div>
+                <span class="badge ok">已锁定</span>
+            </div>
+
+            <div class="fact-section">
+                <div class="fact-section-head">
+                    <strong>对应事实</strong>
+                    <span class="fact-count">2</span>
+                    <span class="spacer"></span>
+                    <button class="button small secondary" onclick="document.getElementById('drawer-c').classList.add('open')">管理事实</button>
+                </div>
+                <div class="c-summary-row">
+                    <span class="trust-reply-fact-chip"><span>项目组织方身份</span></span>
+                    <span class="trust-reply-fact-chip"><span>合作运营关系</span></span>
+                </div>
+            </div>
+        </article>
+        <p style="margin-top:10px"><button class="button primary" onclick="document.getElementById('drawer-c').classList.add('open')">打开事实管理抽屉</button></p>
+    </div>
+</div>
+
+<!-- 方案 C 抽屉 -->
+<div class="drawer-shell" id="drawer-c">
+    <button class="drawer-backdrop" onclick="document.getElementById('drawer-c').classList.remove('open')"></button>
+    <section class="drawer-panel" role="dialog" aria-label="管理事实">
+        <div class="drawer-head">
+            <h3>管理事实<small>摘要 1 · Who are you and which organization…</small></h3>
+            <button class="button secondary" onclick="document.getElementById('drawer-c').classList.remove('open')">×</button>
+        </div>
+        <div class="drawer-body">
+            <section>
+                <div class="drawer-group-title">已绑定（2）</div>
+                <div class="c-fact-card bound">
+                    <div class="c-card-head"><strong>项目组织方身份</strong><span class="opt-state selected">已绑定</span></div>
+                    <p>We are the official organizing committee of the 2026 Global Talent Summit, hosted in partnership with municipal talent offices.</p>
+                    <div class="c-card-foot"><span class="spacer"></span><button class="button small secondary">移除</button></div>
+                </div>
+                <div class="c-fact-card bound">
+                    <div class="c-card-head"><strong>合作运营关系</strong><span class="opt-state selected">已绑定</span></div>
+                    <p>The program is jointly operated with the Weibo Talent Introduction platform under a 2024 cooperation agreement.</p>
+                    <div class="c-card-foot"><span class="spacer"></span><button class="button small secondary">移除</button></div>
+                </div>
+            </section>
+            <section>
+                <div class="drawer-group-title">可添加</div>
+                <input type="text" class="drawer-search" placeholder="搜索事实标题 / 正文…" style="margin-bottom:10px">
+                <div class="c-fact-card">
+                    <div class="c-card-head"><strong>费用承担政策</strong><span class="opt-state available">可添加</span></div>
+                    <p>All program fees are covered by the host institution, including travel and accommodation for the first year.</p>
+                    <div class="c-card-foot"><span class="spacer"></span><button class="button small primary">添加</button></div>
+                </div>
+                <div class="c-fact-card">
+                    <div class="c-card-head"><strong>申请截止时间</strong><span class="opt-state available">可添加</span></div>
+                    <p>The application deadline for this batch is September 30, 2026. Late submissions roll to the next batch.</p>
+                    <div class="c-card-foot"><span class="spacer"></span><button class="button small primary">添加</button></div>
+                </div>
+                <div class="c-fact-card used-elsewhere">
+                    <div class="c-card-head"><strong>合同签署主体</strong><span class="opt-state used">已用于摘要 2</span></div>
+                    <p>The agreement is signed with Weibo Talent Introduction Co., Ltd. on behalf of the program.</p>
+                    <div class="c-card-foot"><span class="spacer"></span><button class="button small secondary" disabled>添加</button></div>
+                </div>
+            </section>
+        </div>
+    </section>
+</div>
+
+<script>
+document.querySelectorAll('.demo-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.demo-tab').forEach((t) => t.classList.remove('active'));
+        document.querySelectorAll('.demo-view').forEach((v) => v.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.view).classList.add('active');
+    });
+});
+</script>
+</body>
+</html>
