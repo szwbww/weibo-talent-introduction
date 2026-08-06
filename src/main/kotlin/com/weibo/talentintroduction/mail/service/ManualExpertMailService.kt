@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
+import java.util.UUID
 
 @Service
 class ManualExpertMailService(
@@ -66,7 +67,7 @@ class ManualExpertMailService(
                 triggeredBy = TriggeredBy.OPERATOR,
                 sourceInboundId = command.sourceInboundId,
                 messageId = delivered.messageId,
-                inReplyTo = null,
+                inReplyTo = composed.mail.inReplyTo,
                 subject = composed.mail.subject,
                 body = composed.mail.body,
                 matchedQaRuleId = composed.matchedQaRuleId,
@@ -170,18 +171,52 @@ class ManualExpertMailService(
             "邮件模板正文为空：所有内容块均不可用，请检查模板配置"
         }
 
+        val isMaterialReminder = (rendered.mailType ?: "COMPOSE_TEMPLATE") == "MATERIAL_REMINDER"
+        val anchor = if (isMaterialReminder) {
+            contact.id?.let { mailRecordRepository.findLatestInboundByExpertContactId(it) }
+        } else null
+        val anchorMessageId = anchor?.messageId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it.length <= 255 }        // I-1 长度守卫
+        val threadSubject = if (anchorMessageId != null) {
+            buildReplySubject(anchor?.subject, rendered.subject)     // I-2
+        } else rendered.subject
+        val references = if (anchorMessageId != null) {
+            listOfNotNull(anchor?.inReplyTo?.trim()?.takeIf { it.isNotBlank() }, anchorMessageId)
+                .joinToString(" ")
+        } else null
+
+        val senderDomain = account.senderEmail.substringAfter("@")
         return ManualComposedMail(
             mailType = rendered.mailType ?: "COMPOSE_TEMPLATE",
             mail = ComposedMail(
                 to = contact.expertEmail,
-                subject = rendered.subject,
+                subject = threadSubject,                                                    // I-2
                 body = mailContentService.plainTextToHtml(rendered.body),
                 html = true,
-                text = rendered.body
+                text = rendered.body,
+                messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
+                inReplyTo = anchorMessageId,                                                // I-1
+                references = references                                                     // I-1
             ),
             matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
             qaRuleIds = rendered.qaRuleIds
         )
+    }
+
+    private fun buildReplySubject(anchorSubject: String?, fallback: String): String {
+        val stripped = stripReplyPrefixes(anchorSubject?.trim().orEmpty())
+        if (stripped.isBlank()) return fallback
+        return ("Re: $stripped").take(255)
+    }
+
+    private fun stripReplyPrefixes(subject: String): String {
+        var s = subject
+        while (true) {
+            val m = REPLY_PREFIX_REGEX.find(s) ?: break
+            s = s.removeRange(m.range).trimStart()
+        }
+        return s.trim()
     }
 
     private fun nextStatus(currentStatus: String, mailType: String): ConversationStatus =
@@ -202,6 +237,11 @@ class ManualExpertMailService(
             "countryName" to account.countryName.orEmpty(),
             "senderDisplayName" to account.senderDisplayName.orEmpty()
         )
+
+    companion object {
+        private val REPLY_PREFIX_REGEX =
+            Regex("""^\s*(re|答复|回复)\s*(\[\d+\])?\s*[:：]\s*""", RegexOption.IGNORE_CASE)
+    }
 }
 
 enum class ManualMailOptionType {

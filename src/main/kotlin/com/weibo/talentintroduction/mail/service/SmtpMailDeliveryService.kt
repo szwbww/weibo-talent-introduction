@@ -30,6 +30,8 @@ class SmtpMailDeliveryService(
         message.setFrom(account.senderEmail)
         message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
         message.subject = mail.subject
+        mail.inReplyTo?.takeIf { it.isNotBlank() }?.let { message.setHeader("In-Reply-To", it) }
+        mail.references?.takeIf { it.isNotBlank() }?.let { message.setHeader("References", it) }
         if (mail.html) {
             val plain = mail.text?.takeIf { it.isNotBlank() }
                 ?: mailContentService.htmlToPlainText(mail.body)

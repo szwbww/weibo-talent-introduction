@@ -62,5 +62,7 @@ data class ComposedMail(
     val body: String,
     val html: Boolean = false,
     val text: String? = null,
-    val messageId: String? = null
+    val messageId: String? = null,
+    val inReplyTo: String? = null,
+    val references: String? = null
 )

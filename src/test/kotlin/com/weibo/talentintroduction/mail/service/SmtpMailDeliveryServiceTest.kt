@@ -244,6 +244,113 @@ class SmtpMailDeliveryServiceTest {
         assertEquals("Custom plain text", multipart.getBodyPart(0).content.toString().trim())
     }
 
+    @Test
+    fun `send writes In-Reply-To and References headers when provided`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail(
+                to = "recipient@example.com",
+                subject = "Subject",
+                body = "Body",
+                inReplyTo = "<anchor-1@example.com>",
+                references = "<anchor-0@example.com> <anchor-1@example.com>"
+            )
+        )
+
+        val message = captured.single()
+        assertEquals("<anchor-1@example.com>", message.getHeader("In-Reply-To", null))
+        assertEquals(
+            "<anchor-0@example.com> <anchor-1@example.com>",
+            message.getHeader("References", null)
+        )
+    }
+
+    @Test
+    fun `send omits thread headers when inReplyTo and references are null`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail("recipient@example.com", "Subject", "Body")
+        )
+
+        val message = captured.single()
+        assertNull(message.getHeader("In-Reply-To", null))
+        assertNull(message.getHeader("References", null))
+    }
+
+    @Test
+    fun `send omits thread headers when inReplyTo is blank`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail(
+                to = "recipient@example.com",
+                subject = "Subject",
+                body = "Body",
+                inReplyTo = "   ",
+                references = "   "
+            )
+        )
+
+        val message = captured.single()
+        assertNull(message.getHeader("In-Reply-To", null))
+        assertNull(message.getHeader("References", null))
+    }
+
+    @Test
+    fun `send writes In-Reply-To only once`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail(
+                to = "recipient@example.com",
+                subject = "Subject",
+                body = "Body",
+                inReplyTo = "<anchor-1@example.com>"
+            )
+        )
+
+        val headers = captured.single().getHeader("In-Reply-To")
+        assertEquals(1, headers.size)
+    }
+
     private fun testAccount(): MailSenderAccount =
         MailSenderAccount(
             accountCode = "test_acct",
