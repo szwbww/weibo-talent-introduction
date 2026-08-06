@@ -192,6 +192,47 @@ class BatchSendControlService(
         return legacyKvStartManual(sendType)
     }
 
+    /**
+     * I-1: live block exists iff the in-memory single slot for TASK_TYPE is
+     * currently bound to the queried executionId. Only reads the memory slot
+     * (never restoreFromLog), so a RUNNING row left behind by a restart does
+     * not produce a live block.
+     */
+    fun getLiveExecutionView(executionId: Long): ExecutionLiveView? {
+        if (progressStore.getCurrentExecutionId(TASK_TYPE) != executionId) return null
+        val progress = progressStore.get(TASK_TYPE) ?: return null
+        val details = progress.details
+        return ExecutionLiveView(
+            status = progress.status,
+            message = progress.message,
+            roundNumber = details?.asInt("roundNumber") ?: 0,
+            processedCount = progress.processedCount,
+            totalCount = progress.totalCount,
+            percentage = progress.percentage,
+            accounts = extractAccountStats(details),
+            cancellable = progress.status == "RUNNING"
+        )
+    }
+
+    /**
+     * I-2: cancellation target is decided by executionId, not by taskType.
+     * A mismatch returns 409 without touching requestCancel; requestCancel
+     * itself stays single-slot (only accepts RUNNING + bound executionId).
+     */
+    fun cancelExecution(executionId: Long): ResponseEntity<Map<String, Any>> {
+        if (progressStore.getCurrentExecutionId(TASK_TYPE) != executionId) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "该执行已结束或不是当前正在运行的执行"))
+        }
+        val accepted = progressStore.requestCancel(TASK_TYPE)
+        return if (accepted) {
+            ResponseEntity.ok(mapOf("message" to "已发送取消请求，将在当前批次结束后停止"))
+        } else {
+            ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("message" to "取消请求已在处理中"))
+        }
+    }
+
     fun pause(reason: String, sendType: BatchSendType = BatchSendType.INTRODUCTION): ResponseEntity<Map<String, String>> {
         val state = getRuntimeStatusInternal(sendType)
         if (state.status != "RUNNING") {
@@ -678,4 +719,15 @@ data class BatchSendStatusView(
     val todayRemainingCapacity: Int = 0,
     val templateName: String? = null,
     val activeSendType: String? = null
+)
+
+data class ExecutionLiveView(
+    val status: String,          // RUNNING | CANCELLING
+    val message: String?,
+    val roundNumber: Int,
+    val processedCount: Long,
+    val totalCount: Long,        // ES 估算值，前端须标注"约"
+    val percentage: Int,
+    val accounts: List<AccountStatRow>,
+    val cancellable: Boolean     // status == "RUNNING"
 )

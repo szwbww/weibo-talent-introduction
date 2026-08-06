@@ -12683,6 +12683,7 @@ var batchTaskState = {
     editorAutoEnabled: false,
     logConfigId: null,
     logExecutionId: null,
+    logMode: null,            // "config" | "execution"
     logRefreshTimer: null,
     manualSource: null,       // config view object or null
     manualDraft: null,        // current draft values
@@ -12727,6 +12728,7 @@ function resetBatchTaskState() {
         editorAutoEnabled: false,
         logConfigId: null,
         logExecutionId: null,
+        logMode: null,
         logRefreshTimer: null,
         manualSource: null,
         manualDraft: null,
@@ -13643,8 +13645,10 @@ async function confirmManualExecution() {
         });
         closeBatchManualConfirmDialog();
         showStatus("执行已启动 executionId: " + (response.executionId || "—"), "ok");
-        if (source) {
+        if (source && source.id != null) {
             openBatchConfigLogs(source.id, response.executionId);
+        } else {
+            openBatchExecutionLogs(response.executionId);
         }
     } catch (e) {
         showStatus("执行失败: " + e.message, "error");
@@ -13773,10 +13777,33 @@ function selectBatchManualSource(id) {
 function openBatchConfigLogs(configId, executionId) {
     batchTaskState.logConfigId = configId;
     batchTaskState.logExecutionId = executionId || null;
+    batchTaskState.logMode = "config";
     var drawer = document.getElementById("batchExecutionLogDrawer");
     if (drawer) drawer.hidden = false;
+    var title = document.getElementById("batchLogDrawerTitle");
+    if (title) title.textContent = "执行日志";
+    var select = document.getElementById("batchLogExecutionSelect");
+    if (select) select.hidden = false;
     clearBatchLogRefreshTimer();
     loadBatchLogExecutions(configId, executionId);
+}
+
+function openBatchExecutionLogs(executionId) {
+    if (!executionId) {
+        showStatus("执行已启动，但未能定位到日志", "warn");
+        return;
+    }
+    batchTaskState.logMode = "execution";
+    batchTaskState.logConfigId = null;
+    batchTaskState.logExecutionId = executionId;
+    var drawer = document.getElementById("batchExecutionLogDrawer");
+    if (drawer) drawer.hidden = false;
+    var title = document.getElementById("batchLogDrawerTitle");
+    if (title) title.textContent = "执行日志（独立执行）";
+    var select = document.getElementById("batchLogExecutionSelect");
+    if (select) select.hidden = true;
+    clearBatchLogRefreshTimer();
+    loadBatchLogDetail(null, executionId);
 }
 
 function closeBatchLogDrawer() {
@@ -13785,12 +13812,35 @@ function closeBatchLogDrawer() {
     clearBatchLogRefreshTimer();
     batchTaskState.logConfigId = null;
     batchTaskState.logExecutionId = null;
+    batchTaskState.logMode = null;
+    var live = document.getElementById("batchLogLive");
+    if (live) live.hidden = true;
 }
 
 function clearBatchLogRefreshTimer() {
     if (batchTaskState.logRefreshTimer) {
         clearInterval(batchTaskState.logRefreshTimer);
         batchTaskState.logRefreshTimer = null;
+    }
+}
+
+async function handleBatchLiveCancel() {
+    if (!confirm("确定取消本次批量发送吗？将在当前批次结束后停止，已发出的邮件不会撤回。")) return;
+    var executionId = batchTaskState.logExecutionId;
+    if (!executionId) return;
+    var btn = document.getElementById("batchLogLiveCancelBtn");
+    if (btn) btn.disabled = true;
+    try {
+        var response = await api("/api/mail/batch-send/executions/" + executionId + "/cancel", {
+            method: "POST"
+        });
+        showStatus(response.message || "已发送取消请求", "ok");
+        loadBatchLogDetail(batchTaskState.logConfigId, executionId);
+    } catch (e) {
+        showStatus(e.message, "warn");
+        loadBatchLogDetail(batchTaskState.logConfigId, executionId);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 
@@ -13827,17 +13877,23 @@ async function loadBatchLogExecutions(configId, executionId) {
 async function loadBatchLogDetail(configId, executionId) {
     if (!executionId) return;
     try {
-        var detail = await api("/api/mail/batch-send/configs/" + configId + "/executions/" + executionId);
+        var url = (configId == null || batchTaskState.logMode === "execution")
+            ? "/api/mail/batch-send/executions/" + executionId
+            : "/api/mail/batch-send/configs/" + configId + "/executions/" + executionId;
+        var detail = await api(url);
+        if (batchTaskState.logConfigId !== configId || batchTaskState.logExecutionId !== executionId) return;
         renderBatchExecutionDetail(detail);
-        if (detail.status === "RUNNING") {
+        if (detail.status === "RUNNING" || detail.live != null) {
             clearBatchLogRefreshTimer();
             batchTaskState.logRefreshTimer = setInterval(function() {
                 if (batchTaskState.logConfigId === configId && batchTaskState.logExecutionId === executionId) {
                     loadBatchLogDetail(configId, executionId);
                 }
-            }, 3000);
+            }, detail.live != null ? 1500 : 3000);
         } else {
             clearBatchLogRefreshTimer();
+            var live = document.getElementById("batchLogLive");
+            if (live) live.hidden = true;
         }
     } catch (e) {
         console.error("Failed to load log detail", e);
@@ -13847,6 +13903,7 @@ async function loadBatchLogDetail(configId, executionId) {
 }
 
 function renderBatchExecutionDetail(d) {
+    renderBatchLiveSection(d);
     renderOutcomeMetrics(d);
     renderIntegrityWarning(d);
     renderReasons("batchLogFailureReasons", d.failureReasons, "无失败原因");
@@ -13854,6 +13911,52 @@ function renderBatchExecutionDetail(d) {
     renderErrorSamples(d.errorSamples);
     renderBatchTimeline(d.progressRows);
     renderLogStatusInfo(d);
+}
+
+function renderBatchLiveSection(d) {
+    var live = document.getElementById("batchLogLive");
+    if (!live) return;
+    if (!d.live) {
+        live.hidden = true;
+        return;
+    }
+    var l = d.live;
+    live.hidden = false;
+    var statusEl = document.getElementById("batchLogLiveStatus");
+    if (statusEl) {
+        if (l.status === "CANCELLING") {
+            statusEl.className = "badge warn";
+            statusEl.textContent = "取消中";
+        } else {
+            statusEl.className = "badge ok";
+            statusEl.textContent = "运行中";
+        }
+    }
+    var roundEl = document.getElementById("batchLogLiveRound");
+    if (roundEl) roundEl.textContent = "第 " + (l.roundNumber || 0) + " 轮";
+    var fill = document.getElementById("batchLogLiveFill");
+    if (fill) fill.style.width = (l.totalCount > 0 ? l.percentage : 0) + "%";
+    var countsEl = document.getElementById("batchLogLiveCounts");
+    if (countsEl) {
+        if (l.totalCount > 0) {
+            countsEl.textContent = "已处理 " + l.processedCount + " / 约 " + l.totalCount + "（" + l.percentage + "%）";
+        } else {
+            countsEl.textContent = "已处理 " + l.processedCount;
+        }
+    }
+    var messageEl = document.getElementById("batchLogLiveMessage");
+    if (messageEl) messageEl.textContent = l.message ? escapeHtml(l.message) : "";
+    var accountsEl = document.getElementById("batchLogLiveAccounts");
+    if (accountsEl) {
+        accountsEl.innerHTML = (Array.isArray(l.accounts) ? l.accounts : []).map(function(a) {
+            var cls = (a.failed || 0) > 0 ? "batch-log-live-account is-failing" : "batch-log-live-account";
+            return '<span class="' + cls + '">' + escapeHtml(a.accountCode || "") +
+                " 成功 " + escapeHtml(String(a.success || 0)) +
+                " / 失败 " + escapeHtml(String(a.failed || 0)) + "</span>";
+        }).join("");
+    }
+    var cancelBtn = document.getElementById("batchLogLiveCancelBtn");
+    if (cancelBtn) cancelBtn.hidden = l.cancellable !== true;
 }
 
 function renderOutcomeMetrics(d) {
@@ -14098,6 +14201,9 @@ function bindBatchSendTaskEvents() {
     // Log drawer
     var logCloseBtn = document.getElementById("batchLogDrawerCloseBtn");
     if (logCloseBtn) logCloseBtn.addEventListener("click", closeBatchLogDrawer);
+
+    var liveCancelBtn = document.getElementById("batchLogLiveCancelBtn");
+    if (liveCancelBtn) liveCancelBtn.addEventListener("click", handleBatchLiveCancel);
 
     var logExecSelect = document.getElementById("batchLogExecutionSelect");
     if (logExecSelect) {

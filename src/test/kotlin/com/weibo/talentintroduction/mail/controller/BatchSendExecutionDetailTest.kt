@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService
+import com.weibo.talentintroduction.campaign.service.ExecutionLiveView
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
@@ -26,12 +27,13 @@ class BatchSendExecutionDetailTest {
 
     private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val progressLogRepository = Mockito.mock(TaskProgressLogRepository::class.java)
+    private val batchSendControlService = Mockito.mock(BatchSendControlService::class.java)
     private val objectMapper = ObjectMapper()
 
     private fun controller() = BatchSendConfigController(
         batchSendTaskConfigService = Mockito.mock(BatchSendTaskConfigService::class.java),
         templateRepository = Mockito.mock(MailComposeTemplateRepository::class.java),
-        batchSendControlService = Mockito.mock(BatchSendControlService::class.java),
+        batchSendControlService = batchSendControlService,
         manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java),
         taskExecutionService = taskExecutionService,
         progressLogRepository = progressLogRepository,
@@ -44,10 +46,11 @@ class BatchSendExecutionDetailTest {
         status: String = "SUCCESS",
         resultSummary: String? = null,
         successCount: Int = 0,
-        failureCount: Int = 0
+        failureCount: Int = 0,
+        taskType: String = "MANUAL_INITIAL_OUTREACH"
     ) = TaskExecution(
         id = id,
-        taskType = "MANUAL_INITIAL_OUTREACH",
+        taskType = taskType,
         triggerType = "MANUAL",
         status = status,
         requestPayload = null,
@@ -242,5 +245,95 @@ class BatchSendExecutionDetailTest {
         assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
         Mockito.verify(progressLogRepository, Mockito.never())
             .findAllByTaskExecutionIdOrderByIdAsc(Mockito.anyLong())
+    }
+
+    @Test
+    fun `execution level endpoint returns detail without config ownership check`() {
+        // batchConfigId belongs to config 2 while the path has no config id at all
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(batchConfigId = 2L))
+        stubLogs(
+            listOf(
+                logRow(1, 0, message = "正在初始化发送队列..."),
+                logRow(2, 1, message = "第1轮完成"),
+                logRow(3, 0, message = "发送任务已完成")
+            )
+        )
+
+        val detail = controller().getExecutionDetail(10L).body!!
+
+        assertEquals(10L, detail.executionId)
+        assertEquals(listOf("INIT", "ROUND", "FINAL"), detail.progressRows.map { it.kind })
+    }
+
+    @Test
+    fun `execution level endpoint accepts batchConfigId null independent run`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(batchConfigId = null))
+        stubLogs(emptyList())
+
+        val response = controller().getExecutionDetail(10L)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+    }
+
+    @Test
+    fun `execution level endpoint returns 404 for non manual task type`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L))
+            .thenReturn(execution(taskType = "EXPERT_DISCOVERY"))
+
+        val response = controller().getExecutionDetail(10L)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+        Mockito.verify(progressLogRepository, Mockito.never())
+            .findAllByTaskExecutionIdOrderByIdAsc(Mockito.anyLong())
+    }
+
+    @Test
+    fun `live is populated only when service reports the current execution`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(status = "RUNNING"))
+        stubLogs(listOf(logRow(1, 0)))
+        Mockito.`when`(batchSendControlService.getLiveExecutionView(10L)).thenReturn(
+            ExecutionLiveView(
+                status = "RUNNING",
+                message = "正在发送：a@b.edu",
+                roundNumber = 1,
+                processedCount = 7,
+                totalCount = 120,
+                percentage = 5,
+                accounts = emptyList(),
+                cancellable = true
+            )
+        )
+
+        val detail = controller().getExecutionDetail(10L).body!!
+
+        assertEquals("RUNNING", detail.live!!.status)
+        assertEquals(7, detail.live!!.processedCount)
+        assertEquals(120, detail.live!!.totalCount)
+        assertEquals(5, detail.live!!.percentage)
+    }
+
+    @Test
+    fun `RUNNING status without live view leaves live null`() {
+        // execution.status == "RUNNING" but getCurrentExecutionId does not match
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(status = "RUNNING"))
+        stubLogs(listOf(logRow(1, 0)))
+        Mockito.`when`(batchSendControlService.getLiveExecutionView(10L)).thenReturn(null)
+
+        val detail = controller().getConfigExecutionDetail(1L, 10L).body!!
+
+        assertNull(detail.live, "stale RUNNING row must not produce a live block")
+    }
+
+    @Test
+    fun `execution level cancel delegates to service`() {
+        Mockito.`when`(batchSendControlService.cancelExecution(10L)).thenReturn(
+            org.springframework.http.ResponseEntity.ok(mapOf("message" to "已发送取消请求，将在当前批次结束后停止"))
+        )
+
+        val response = controller().cancelExecution(10L)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals("已发送取消请求，将在当前批次结束后停止", response.body!!["message"])
+        Mockito.verify(batchSendControlService).cancelExecution(10L)
     }
 }

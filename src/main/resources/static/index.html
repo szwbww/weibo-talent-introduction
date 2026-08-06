@@ -1380,12 +1380,24 @@
         <!-- Log Drawer -->
         <aside id="batchExecutionLogDrawer" class="batch-log-drawer" hidden>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-                <h3 style="margin:0;font-size:15px;">执行日志</h3>
+                <h3 id="batchLogDrawerTitle" style="margin:0;font-size:15px;">执行日志</h3>
                 <button class="modal-close-btn" id="batchLogDrawerCloseBtn" type="button" style="font-size:20px;">×</button>
             </div>
             <select id="batchLogExecutionSelect" class="bsc-input bsc-select" style="margin-bottom:12px;">
                 <option value="">选择执行记录...</option>
             </select>
+            <div id="batchLogLive" class="batch-log-live" hidden>
+                <div class="batch-log-live-head">
+                    <span class="badge ok" id="batchLogLiveStatus">运行中</span>
+                    <span class="batch-log-live-round" id="batchLogLiveRound"></span>
+                    <button class="button small danger" id="batchLogLiveCancelBtn" type="button">取消执行</button>
+                </div>
+                <div class="task-progress-track"><div class="task-progress-fill" id="batchLogLiveFill"></div></div>
+                <div class="batch-log-live-counts" id="batchLogLiveCounts"></div>
+                <div class="batch-log-live-message" id="batchLogLiveMessage"></div>
+                <div class="batch-log-live-accounts" id="batchLogLiveAccounts"></div>
+                <div class="batch-log-live-hint">取消后将在当前批次结束时停止，已发出的邮件不会撤回。</div>
+            </div>
             <div id="batchLogMetrics" class="batch-log-metrics"></div>
             <div id="batchLogIntegrityWarning" class="batch-log-integrity-warning" hidden></div>
             <div id="batchLogFailureSection">

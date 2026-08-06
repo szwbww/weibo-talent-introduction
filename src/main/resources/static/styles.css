@@ -8982,6 +8982,17 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-reason-count { color: #1e293b; font-weight: 700; }
 .batch-log-integrity-warning { padding: 10px 12px; border-radius: 10px; background: #fff7ed; color: #c2410c; }
 
+/* 执行日志抽屉：运行中实时区 */
+.batch-log-live { margin: 0 0 14px; padding: 12px; border: 1px solid rgba(37, 99, 235, .28); border-radius: 10px; background: #f8fafc; }
+.batch-log-live-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.batch-log-live-round { flex: 1; min-width: 0; color: #64748b; font-size: 12px; }
+.batch-log-live-counts { margin-top: 8px; color: #1e293b; font-size: 12px; font-weight: 600; }
+.batch-log-live-message { margin-top: 6px; color: #475569; font-size: 12px; word-break: break-word; }
+.batch-log-live-accounts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.batch-log-live-account { padding: 3px 8px; border: 1px solid rgba(15, 23, 42, .08); border-radius: 999px; background: #fff; color: #475569; font-size: 11px; }
+.batch-log-live-account.is-failing { border-color: rgba(225, 29, 72, .35); color: #e11d48; }
+.batch-log-live-hint { margin-top: 8px; color: #94a3b8; font-size: 11px; }
+
 .batch-manual-source-dropdown {
   position: absolute;
   z-index: 5;

@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendStatusView
+import com.weibo.talentintroduction.campaign.service.ExecutionLiveView
 import com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService
 import com.weibo.talentintroduction.campaign.service.BatchSendType
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
@@ -105,18 +106,43 @@ class BatchSendConfigController(
         if (execution.batchConfigId != id) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
         }
+        return ResponseEntity.ok(
+            toDetail(execution, buildProgressRows(executionId), live = batchSendControlService.getLiveExecutionView(executionId))
+        )
+    }
+
+    // ── Execution-level endpoints (I-3: independent manual executions) ──────────
+
+    @GetMapping("/executions/{executionId}")
+    fun getExecutionDetail(
+        @PathVariable executionId: Long
+    ): ResponseEntity<BatchConfigExecutionDetail> {
+        val execution = taskExecutionService.getExecution(executionId)
+        if (execution.taskType != BatchSendControlService.TASK_TYPE) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
+        return ResponseEntity.ok(
+            toDetail(execution, buildProgressRows(executionId), live = batchSendControlService.getLiveExecutionView(executionId))
+        )
+    }
+
+    @PostMapping("/executions/{executionId}/cancel")
+    fun cancelExecution(
+        @PathVariable executionId: Long
+    ): ResponseEntity<Map<String, Any>> = batchSendControlService.cancelExecution(executionId)
+
+    private fun buildProgressRows(executionId: Long): List<ExecutionProgressRow> {
         val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(executionId)
         val (zeroRows, roundRows) = logs.partition { it.batchNumber == 0 }
         val initRow = zeroRows.firstOrNull()
         val finalRows = zeroRows.drop(1)
-        val progressRows = buildList {
+        return buildList {
             initRow?.let { add(it to "INIT") }
             addAll(roundRows.groupBy { it.batchNumber }.map { (_, group) -> group.last() to "ROUND" })
             finalRows.forEach { add(it to "FINAL") }
         }
             .sortedBy { (row, _) -> row.id ?: 0L }
             .map { (row, kind) -> toExecutionProgressRow(row, kind) }
-        return ResponseEntity.ok(toDetail(execution, progressRows))
     }
 
     // ── INTRODUCTION compat config endpoints (legacy → entity adapter) ─────────
@@ -206,7 +232,8 @@ class BatchSendConfigController(
 
     private fun toDetail(
         execution: com.weibo.talentintroduction.task.domain.TaskExecution,
-        progressRows: List<ExecutionProgressRow>
+        progressRows: List<ExecutionProgressRow>,
+        live: ExecutionLiveView? = null
     ): BatchConfigExecutionDetail {
         val outcome = parseOutcome(execution.resultSummary)
         val runningFallback = if (outcome == null) {
@@ -235,7 +262,8 @@ class BatchSendConfigController(
             failureReasons = outcome?.failureReasons ?: runningFallback?.failureReasons ?: emptyMap(),
             skippedReasons = outcome?.skippedReasons ?: runningFallback?.skippedReasons ?: emptyMap(),
             errorSamples = outcome?.errorSamples ?: runningFallback?.errorSamples ?: emptyList(),
-            progressRows = progressRows
+            progressRows = progressRows,
+            live = live
         )
     }
 
@@ -397,7 +425,8 @@ data class BatchConfigExecutionDetail(
     val failureReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val errorSamples: List<String>,
-    val progressRows: List<ExecutionProgressRow>
+    val progressRows: List<ExecutionProgressRow>,
+    val live: ExecutionLiveView? = null
 )
 
 data class ExecutionProgressRow(
