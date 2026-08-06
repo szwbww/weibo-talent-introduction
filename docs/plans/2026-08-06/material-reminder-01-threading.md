@@ -290,6 +290,29 @@ return ManualComposedMail(
 
 ---
 
+## 验证命令（可直接复制执行）
+
+> 本项目必须用 JDK 11（zulu-11），裸 `mvn` 会构建失败。以下为**唯一权威的可执行形式**，fix-v / verify-p 直接照抄，不得自行推断或简化。
+
+```bash
+# 全量测试（回归门禁）
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test
+
+# 本计划两个测试类（快速迭代用）
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=SmtpMailDeliveryServiceTest
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualExpertMailServiceTest
+
+# 构建（打包 WAR，交付前执行一次）
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
+
+# 空白/换行卫生
+git diff --check
+```
+
+通过判据：上述 `mvn test` 退出码 0，`Tests run: N, Failures: 0, Errors: 0`；`git diff --check` 退出码 0。
+
+---
+
 ## 验收标准（fix-v 机器验证）
 
 - **I-1**：grep `SmtpMailDeliveryService.kt` 确认两个头均在 `takeIf { it.isNotBlank() }` 保护下、且用 `setHeader`；grep `ManualExpertMailService.kt` 确认锚点唯一来源为 `findLatestInboundByExpertContactId`，无其他 messageId 来源；单测 `without inbound anchor` 与 `exceeds 255 chars` 两条通过。
@@ -297,7 +320,7 @@ return ManualComposedMail(
 - **I-3**：单测断言 `ComposedMail.messageId` 匹配 `^<reminder-\d+-[0-9a-f-]{36}@.+>$`。
 - **I-4**：单测断言落库 `MailRecord.inReplyTo` 与捕获的 `ComposedMail.inReplyTo` 全等（含双双 null 分支）；grep 确认 `sendManualMail` 读的是 `composed.mail.inReplyTo`，无第二份计算。
 - **I-5**：git diff 确认 `ComposedMail` 两个新字段均有 `= null` 默认值；确认 `MeetingInvitationMailComposer.kt`、`MeetingScheduleService.kt`、`AutoMailReplyService.kt`、`PendingMailOperationService.kt`、`InitialOutreachService.kt`、`ManualInitialOutreachService.kt` 六个文件**零改动**。
-- **回归**：`SmtpMailDeliveryServiceTest` 既有 12 条全绿；`ManualExpertMailServiceTest` 既有 11 条全绿；`mvn test` 全量通过。
+- **回归**：`SmtpMailDeliveryServiceTest` 既有 12 条全绿；`ManualExpertMailServiceTest` 既有 11 条全绿；执行「验证命令」节的全量测试命令通过（`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test`）。
 - **IP-1 集成**：构造一封 `In-Reply-To = <reminder-...>` 的入站信，断言 `suggestCandidates()` 产出 `reason = "IN_REPLY_TO"` 且 `confidence = 90` 的候选。
 - **未越界**：git diff 确认 `SmtpMailDeliveryService.kt` 的 `:30 setFrom` 与 `:48-53` 退订头区块**一行未改**（属第二批）；`mailTemplateVariables()` 一行未改；无新增 `db/migration` 文件。
 
