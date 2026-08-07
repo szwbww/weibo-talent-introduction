@@ -2,8 +2,8 @@
 id: K-progress-log-batchonly-two-readers
 domain: task
 created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
+last_used: 2026-08-07
+hit_count: 1
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
 ---

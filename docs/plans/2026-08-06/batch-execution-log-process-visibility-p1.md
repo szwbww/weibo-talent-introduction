@@ -637,3 +637,11 @@ git diff --check
 | K-manual-outreach-executor-shared | `bindExecutionId` 被多任务共用 → I-6 的 fail-safe 与 A-6 | 已应用 |
 | K-allowedTaskTypes-whitelist | 本期不新增任务类型 | 已评估，不适用 |
 | K-batch-send-daily-cap-cross-invocation | 本期不触碰 dailyCap 取数 | 已评估，不适用 |
+
+---
+
+## 修正记录
+
+| 日期 | 修订对象 | 修订内容 | 理由 | 决策出处 |
+|---|---|---|---|---|
+| 2026-08-07 | `## 样式契约` → `### S-1` → 「可选元素规则」 | 可选元素集合由 `{.batch-timeline-stop, .batch-timeline-errors}` 扩展为 `{.batch-timeline-status, .batch-timeline-stop, .batch-timeline-errors}`；`.batch-timeline-status` 的输出条件为 `r.status !== "RUNNING"`。本 S-1 的 DOM 骨架样例（终态行 `已暂停`）仍然有效，仅对 `status === "RUNNING"` 的行不再输出该元素。 | 本期 S-1 用终态行举例，未考虑 INIT 行与全部 ROUND 行的 `status` 恒为 `RUNNING`（写入侧 `ManualInitialOutreachService` 七处硬编码 `"RUNNING"`：`:264/:340/:353/:537/:600/:728/:742`）。无条件输出导致**已完成执行的每一行都渲染为「运行中」**，操作端据此误判任务卡死。 | `docs/plans/2026-08-07/batch-timeline-running-status-render.md`（I-1 / S-1） |
