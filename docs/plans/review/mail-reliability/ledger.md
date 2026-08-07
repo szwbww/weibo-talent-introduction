@@ -1,10 +1,12 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-06/00-main-plan-mail-reliability.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 1
-- Master plan: docs/plans/2026-08-06/00-main-plan-mail-reliability.md (sha256:e12dc8db681f95d08a253c6cadc2a0497de2b0061082e2f1e28b3807dfbb1201)
-- Amendments: N/A
-- Fast-p ledger: docs/plans/fast/mail-reliability/ledger.md (sha256:b34a3be7466c0845a89df722ee15d3f676693f615611ee0fc65b31e5fb51baab)
+- Master plan: docs/plans/2026-08-06/00-main-plan-mail-reliability.md (governing worktree sha256:5b8ca123301a2b9819470392bef3044cd33fbe1dcebe2ebb002dcbd628344e7d; recorded identity:commit 9bbb046)
+- Invoked master identity: sha256:e12dc8db681f95d08a253c6cadc2a0497de2b0061082e2f1e28b3807dfbb1201
+- Master identity state: AMENDMENT_RECORDED
+- Amendments: A1 — `92a678b..9bbb046`; master rule `Interaction point 3`; reason: ownership list omitted `src/test/js/mailboxInboundTags.test.js`, whose `refreshExpertTagsFromEs` stub must follow P1 task 2.2's object contract; approval: `HUMAN:retroactively confirmed 2026-08-07 — 事后追认，非当时批准；当时未持久化批准记录`.
+- Fast-p ledger: docs/plans/fast/mail-reliability/ledger.md (sha256:edbd887647c9c6d4a510ec0029565089b9dd9f78b6b4ade77baf4f520f682e5d)
 - Fast-p handoff: docs/plans/fast/mail-reliability/human-review-handoff.md (sha256:3c18ea271f79c695b5decf668f980faa59c50440f4ecde1611ebfa851527baab)
 - Master base: d911bd6
 - Final code head: ef7e471
@@ -15,15 +17,15 @@
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED by `/Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py`; exact master path; branch `fast/mail-reliability`; ledger/handoff identities above; `d911bd6..ef7e471`; 4 terminal children
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_review
+- Reviewer: /root/aggregate_review_v2
 - Reviewer attempt: 1
-- Machine result: BLOCKED
+- Machine result: FAIL
 - Machine report epoch: Epoch 1 in `machine-verification.md`
-- Repair artifact: N/A
+- Repair artifact: docs/plans/fix/00-main-plan-mail-reliability/repair.md
 - Repair evidence mode: N/A
 - Repair approval source: N/A
 - Repair executor: N/A
 - Repair code head: N/A
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: BLOCKED_PREFLIGHT — supplied master blob `e12dc8db681f95d08a253c6cadc2a0497de2b0061082e2f1e28b3807dfbb1201` (at `92a678b`) differs from governing `9bbb046` blob `5b8ca123301a2b9819470392bef3044cd33fbe1dcebe2ebb002dcbd628344e7d`; no approved amendment records that governing change. Human must approve the exact amended master identity or reconcile child authority.
+- Blocker/next action: V-1 confirmed; approve only the repair artifact via `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability/docs/plans/fix/00-main-plan-mail-reliability/repair.md`.
