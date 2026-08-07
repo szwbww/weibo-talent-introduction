@@ -2,6 +2,7 @@
 
 - Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-08-05/trust-reply-configurable-workbench-00-master.md (commit 931e724)
+- Amendments: N/A
 - Master base: 931e724042d9ceee9f75d4cacb45fd3ba29462a5
 - Branch: fast/trust-reply-configurable-workbench
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/trust-reply-configurable-workbench
@@ -30,3 +31,8 @@
 | trust-reply-configurable-workbench-01 | docs/plans/2026-08-05/trust-reply-configurable-workbench-01-request-fact-assignment.md | none | 1 | LIGHT_PASS_WITH_NOTES | 931e724 | ed944d1 | 0 | - | ed944d1 | e88f360 | impl ImplChild01; verify VerifyChild01b; note: StateStoreTest created at authorized path (absent at base) |
 | trust-reply-configurable-workbench-02 | docs/plans/2026-08-05/trust-reply-configurable-workbench-02-selectable-reply-frame.md | 01 PASS | 1 | LIGHT_PASS | ed944d1 | c99c3aa | 0 | - | c99c3aa | 4c2f01a | impl ImplChild02; verify VerifyChild02 |
 | trust-reply-configurable-workbench-03 | docs/plans/2026-08-05/trust-reply-configurable-workbench-03-two-page-workbench-ui.md | 01+02 PASS | 1 | LIGHT_PASS_WITH_NOTES | c99c3aa | 82a23b4 | 0 | - | 82a23b4 | 670558f | impl ImplChild03; verify VerifyChild03; 2 RECORD_ONLY deviations (S-5 doc-comment string; inlined locked-item copy) |
+
+## Amendments
+
+| ID | Plan | Before | After | Master rule | Reason | Approval |
+|---|---|---|---|---|---|---|
