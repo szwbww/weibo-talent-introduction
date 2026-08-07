@@ -6593,7 +6593,14 @@ async function showExpertDetail(expert) {
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
     const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
-    const expertTags = expert.orcidId ? await fetchExpertTagsFromEs(expert.orcidId, tagLevel) : { found: false, tags: [] };
+    let expertTags = { found: false, tags: [] };
+    if (expert.orcidId) {
+        try {
+            expertTags = await fetchExpertTagsFromEs(expert.orcidId, tagLevel);
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     $("#contactHeadActions").hidden = true;
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
@@ -6960,7 +6967,14 @@ async function loadContactDetail(contactId) {
     const contactDetail = $("#contactDetail");
     const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     const orcidId = contact.orcidId || expert.orcidId || "";
-    const expertTags = orcidId ? await fetchExpertTagsFromEs(orcidId, tagLevel) : { found: false, tags: [] };
+    let expertTags = { found: false, tags: [] };
+    if (orcidId) {
+        try {
+            expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
@@ -8776,9 +8790,14 @@ async function showMailDetail(source, id) {
             : "";
         const expertOrcidId = detail.expertOrcidId || "";
         const expertIndexLevel = detail.expertIndexLevel || "CANDIDATE";
-        const expertTagData = expertOrcidId
-            ? await fetchExpertTagsFromEs(expertOrcidId, expertIndexLevel)
-            : { found: false, tags: [] };
+        let expertTagData = { found: false, tags: [] };
+        if (expertOrcidId) {
+            try {
+                expertTagData = await fetchExpertTagsFromEs(expertOrcidId, expertIndexLevel);
+            } catch (error) {
+                showStatus(error.message, "error");
+            }
+        }
         const expertTagSectionHtml = expertOrcidId
             ? renderMailboxExpertTagEditor(
                 detail,
@@ -9341,9 +9360,14 @@ async function showUnmatchedDetail(id) {
         : null;
     const candidates = data.candidates || [];
     const contact = data.contact;
-    const processingExpertTags = contact?.orcidId
-        ? await fetchExpertTagsFromEs(contact.orcidId, contact.currentIndexLevel || "CANDIDATE")
-        : { found: false, tags: [] };
+    let processingExpertTags = { found: false, tags: [] };
+    if (contact?.orcidId) {
+        try {
+            processingExpertTags = await fetchExpertTagsFromEs(contact.orcidId, contact.currentIndexLevel || "CANDIDATE");
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     const processingExpertTagHtml = renderMailboxExpertTagEditor(
         contact,
         processingExpertTags.tags,

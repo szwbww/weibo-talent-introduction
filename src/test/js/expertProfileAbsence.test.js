@@ -146,3 +146,246 @@ describe("expertProfileAbsence: S-1 classes exist in styles.css", () => {
         assert.ok(stylesCssSource.includes(".inbound-tag-editor-head"), ".inbound-tag-editor-head must exist in styles.css");
     });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: V-1 repair — a rejected tag fetch degrades to S-1 and reports,
+// it never aborts the surrounding detail panel (P1 observable outcomes 1-4 / I-5)
+// ──────────────────────────────────────────────────────────────────────────
+
+// Brace-aware extractor: the four renderers contain nested template literals
+// (e.g. `${cond ? `...` : "..."}`), so a regex or single-level scanner is not
+// enough. Stack machine: base/expr contexts count braces; template-text
+// contexts ignore everything except `, \ and ${; strings and comments are
+// skipped in code contexts.
+function extractFunction(name) {
+    const startRe = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{");
+    const startMatch = appJsSource.match(startRe);
+    if (!startMatch) throw new Error("Could not find function " + name + " in app.js");
+    const stack = []; // entries: { kind: "expr", depth: 1 } | { kind: "tpl" }
+    let baseDepth = 1; // the function's opening brace
+    let i = startMatch.index + startMatch[0].length; // scan past the opening '{'
+    let mode = "code"; // code | sgl | dbl | line | block
+    for (; i < appJsSource.length; i++) {
+        const ch = appJsSource[i];
+        const next = appJsSource[i + 1];
+        if (mode === "line") {
+            if (ch === "\n") mode = "code";
+            continue;
+        }
+        if (mode === "block") {
+            if (ch === "*" && next === "/") { mode = "code"; i++; }
+            continue;
+        }
+        if (mode === "sgl") {
+            if (ch === "\\") { i++; continue; }
+            if (ch === "'") mode = "code";
+            continue;
+        }
+        if (mode === "dbl") {
+            if (ch === "\\") { i++; continue; }
+            if (ch === '"') mode = "code";
+            continue;
+        }
+        // mode === "code": function body, `${...}` expression, or template text
+        const top = stack[stack.length - 1];
+        if (top && top.kind === "tpl") {
+            if (ch === "\\") { i++; continue; }
+            if (ch === "`") { stack.pop(); continue; }
+            if (ch === "$" && next === "{") { stack.push({ kind: "expr", depth: 1 }); i++; continue; }
+            continue;
+        }
+        if (ch === "/" && next === "/") { mode = "line"; i++; continue; }
+        if (ch === "/" && next === "*") { mode = "block"; i++; continue; }
+        if (ch === "'") { mode = "sgl"; continue; }
+        if (ch === '"') { mode = "dbl"; continue; }
+        if (ch === "`") { stack.push({ kind: "tpl" }); continue; }
+        if (ch === "{") {
+            if (top && top.kind === "expr") top.depth++;
+            else baseDepth++;
+            continue;
+        }
+        if (ch === "}") {
+            if (top && top.kind === "expr") {
+                top.depth--;
+                if (top.depth === 0) stack.pop();
+                continue;
+            }
+            baseDepth--;
+            if (baseDepth === 0) return appJsSource.slice(startMatch.index, i + 1);
+        }
+    }
+    throw new Error("Unbalanced function body for " + name);
+}
+
+const NOTICE_TEXT = "该专家在 ES 中无画像文档，标签功能不可用";
+
+function createRendererSandbox() {
+    const elements = {};
+    const statusCalls = [];
+    function makeEl() {
+        return {
+            hidden: false,
+            innerHTML: "",
+            scrollTop: 0,
+            value: "CANDIDATE",
+            dataset: {},
+            classList: {
+                add() {}, remove() {}, toggle() {}, contains() { return false; }
+            },
+            addEventListener() {}, removeEventListener() {},
+            querySelector() { return null; },
+            showModal() {}, close() {}
+        };
+    }
+    function $(sel) {
+        if (!elements[sel]) elements[sel] = makeEl();
+        return elements[sel];
+    }
+    const sandbox = {
+        $,
+        statusCalls,
+        showStatus(message, type) { statusCalls.push([message, type]); },
+        api: async (url) => {
+            if (String(url).includes("/api/experts/profile")) {
+                throw new Error("es down");
+            }
+            if (String(url).includes("/api/mail/unmatched-inbound/")) {
+                return {
+                    record: { id: 5, expertContactId: 1, expertName: "Dr. Test", expertEmail: "t@d.cn", orcidId: "0000-0001", subject: "Re: materials", fromEmail: "t@d.cn", receivedAt: "2026-08-07T10:00:00", senderAccountCode: "acc", body: "hi", cleanedBody: "hi" },
+                    contact: { orcidId: "0000-0001", currentIndexLevel: "CANDIDATE", expertName: "Dr. Test", expertEmail: "t@d.cn", operatorStatus: "ACTIVE" },
+                    candidates: []
+                };
+            }
+            if (String(url).includes("/api/mail/mailbox/")) {
+                return {
+                    timestamp: "2026-08-07T10:00:00",
+                    direction: "INBOUND",
+                    mailType: "INTRODUCTION",
+                    hasAttachment: false,
+                    body: "Hello",
+                    subject: "Re: hi",
+                    senderAccountCode: "acc",
+                    expertEmail: "t@d.cn",
+                    expertName: "Dr. Test",
+                    expertOrcidId: "0000-0001",
+                    inboundProcessingId: null
+                };
+            }
+            if (String(url).includes("/api/expert-contacts/")) {
+                return {
+                    contact: {
+                        id: 1,
+                        expertName: "Dr. Test",
+                        expertEmail: "t@d.cn",
+                        orcidId: "0000-0001",
+                        currentIndexLevel: "CANDIDATE",
+                        operatorStatus: "ACTIVE",
+                        currentStatus: "MANUAL_REVIEW",
+                        mails: []
+                    },
+                    mails: []
+                };
+            }
+            return {};
+        },
+        loadMailSendOptions: async () => [],
+        unmountLiveTrustReply() {},
+        mountLiveTrustReply() {},
+        loadEmailAliases() {},
+        resetPreflightState() {},
+        focusMailboxProcessingPanel() {},
+        requestAnimationFrame() {},
+        backToListBtnHtml: () => "",
+        renderDetailSubTabs: () => "",
+        renderAcademicProfilePanel: () => "",
+        renderManualAttentionBanner: () => "",
+        renderMailSendOptionGroups: () => "",
+        renderMailItem: () => "",
+        renderMeetingSchedule: () => "",
+        renderKeywords: () => "",
+        renderExpertDocuments: () => "",
+        renderOperatorLogs: () => "",
+        renderMailboxInboundTagEditor: () => "",
+        formatStatusTransition: () => "",
+        formatMailTime: () => "",
+        translatableBody: (body) => String(body || ""),
+        labelMailDirection: () => "in",
+        labelMailType: () => "intro",
+        badge: () => "",
+        labelStatus: () => "?",
+        optionsFromArray: () => "",
+        indexLevelLabels: {},
+        operatorStatusLabels: {},
+        operatorStatusOptions: [],
+        indexLevelOptions: [],
+        URLSearchParams,
+        liveDetailLoadSeq: 1,
+        state: { contacts: [], selectedExpertOrcid: null, mailbox: { detailContext: null } }
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(`
+        let manualReplyQaContext = null;
+        let aiReplyState = { adoptContext: null };
+        const expertTagLabels = {
+            auto_promoted: "自动晋升",
+            verified: "已验证",
+            discovered: "新发现",
+            "承诺回复材料": "承诺回复材料"
+        };
+        function escapeHtml(v) {
+            return String(v == null ? "" : v);
+        }
+    `, sandbox);
+    vm.runInContext(extractFunction("fetchExpertTagsFromEs"), sandbox);
+    vm.runInContext(extractFunction("renderExpertTagEditor"), sandbox);
+    vm.runInContext(extractFunction("renderMailboxExpertTagEditor"), sandbox);
+    vm.runInContext(extractFunction("showExpertDetail"), sandbox);
+    vm.runInContext(extractFunction("loadContactDetail"), sandbox);
+    vm.runInContext(extractFunction("showMailDetail"), sandbox);
+    vm.runInContext(extractFunction("showUnmatchedDetail"), sandbox);
+    return { sandbox, elements, statusCalls };
+}
+
+describe("expertProfileAbsence: rejected tag fetch degrades to S-1 and reports (V-1 repair)", () => {
+    it("showExpertDetail completes and renders the S-1 notice when the tag fetch rejects", async () => {
+        const { sandbox, elements, statusCalls } = createRendererSandbox();
+        await sandbox.showExpertDetail({ orcidId: "0000-0001", displayName: "Dr. Test", email: "t@d.cn", indexLevel: "CANDIDATE" });
+
+        const html = elements["#contactDetail"].innerHTML;
+        assert.ok(html.length > 0, "detail panel must be populated");
+        assert.ok(html.includes(NOTICE_TEXT), "panel must render the profile-missing notice");
+        assert.deepStrictEqual(statusCalls, [["es down", "error"]], "failure must be reported via showStatus(error)");
+    });
+
+    it("loadContactDetail completes and renders the S-1 notice when the tag fetch rejects", async () => {
+        const { sandbox, elements, statusCalls } = createRendererSandbox();
+        await sandbox.loadContactDetail(1);
+
+        const html = elements["#contactDetail"].innerHTML;
+        assert.ok(html.length > 0, "detail panel must be populated");
+        assert.ok(html.includes(NOTICE_TEXT), "panel must render the profile-missing notice");
+        assert.deepStrictEqual(statusCalls, [["es down", "error"]], "failure must be reported via showStatus(error)");
+    });
+
+    it("showMailDetail read-only branch keeps the panel rendered with the S-1 notice when the tag fetch rejects", async () => {
+        const { sandbox, elements, statusCalls } = createRendererSandbox();
+        await sandbox.showMailDetail("INBOUND_PROCESSING", 42);
+
+        const panel = elements["#unmatchedDetailPanel"];
+        assert.strictEqual(panel.hidden, false, "panel must be shown");
+        assert.ok(panel.innerHTML.length > 0, "panel must be populated");
+        assert.ok(panel.innerHTML.includes(NOTICE_TEXT), "panel must render the profile-missing notice");
+        assert.deepStrictEqual(statusCalls, [["es down", "error"]], "failure must be reported via showStatus(error)");
+    });
+
+    it("showUnmatchedDetail keeps the panel rendered with the S-1 notice when the tag fetch rejects", async () => {
+        const { sandbox, elements, statusCalls } = createRendererSandbox();
+        await sandbox.showUnmatchedDetail(5);
+
+        const panel = elements["#unmatchedDetailPanel"];
+        assert.strictEqual(panel.hidden, false, "panel must be shown");
+        assert.ok(panel.innerHTML.length > 0, "panel must be populated");
+        assert.ok(panel.innerHTML.includes(NOTICE_TEXT), "panel must render the profile-missing notice");
+        assert.deepStrictEqual(statusCalls, [["es down", "error"]], "failure must be reported via showStatus(error)");
+    });
+});
