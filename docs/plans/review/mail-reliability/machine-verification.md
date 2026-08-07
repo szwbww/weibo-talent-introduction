@@ -65,3 +65,46 @@ All 17 required/deduplicated commands exited 0.
 ### Repair Planning Result
 
 `repair-p` produced `docs/plans/fix/00-main-plan-mail-reliability/repair.md` for V-1 only. Authorized files: `src/main/resources/static/app.js` and `src/test/js/expertProfileAbsence.test.js`. The plan preserves rejection semantics in `fetchExpertTagsFromEs()`, reports locally, and renders the existing S-1 fallback in all four paths.
+
+## Epoch 2 — 2026-08-07 CST
+
+- Master plan: `docs/plans/2026-08-06/00-main-plan-mail-reliability.md` (governing worktree sha256 `5b8ca123301a2b9819470392bef3044cd33fbe1dcebe2ebb002dcbd628344e7d`; recorded identity `commit 9bbb046`; invoked sha256 `e12dc8db681f95d08a253c6cadc2a0497de2b0061082e2f1e28b3807dfbb1201`; `AMENDMENT_RECORDED`, A1 `92a678b..9bbb046`)
+- Boundary: `d911bd6..c3e6d00`
+- Reviewer: `/root/aggregate_review_post_repair`
+- Result: `PASS`
+- Convergence: `PROGRESSING`
+- Repair artifact/result: V-1 repair `docs/plans/fix/00-main-plan-mail-reliability/repair.md` executed; `DURABLE_HANDOFF`; `ef7e471..c3e6d00` changed only authorized `src/main/resources/static/app.js` and `src/test/js/expertProfileAbsence.test.js`.
+- Product modification by reviewer: none
+
+### Fresh Command Evidence
+
+All 16 authoritative child-plan commands (exact duplicates deduplicated) passed: full test and clean package both Kotlin `2187/0/0/4`, JS `470/0`; P1 controller `18/0/0`, JS `11/0` and `33/0`, syntax check; P3 factory `7/0/0`, invitation `1/0/0`, auto-reply `40/0/0`, schedule `5/0/0`, combined `53/0/0`; P2 normalizer `13/0/0`, unmatched `10/0/0`, bounce `4/0/0`, combined `27/0/0`; `git diff --check` silent/0. P4 SMTP coverage is included in the full suite: `17/0/0`.
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| M-1 / A1 | PASS | Cumulative delta authorized; A1 stub at `mailboxInboundTags.test.js:84` is object-contract consistent. |
+| M-2, M-3, M-4, M-5, M-6 | PASS | Read/write split, migration scope, method overlap, knowledge corrections/links, and stated non-goals all preserved. |
+| P4 J-7 | PASS | Exact `List-Unsubscribe=One-Click`; equality coverage green. |
+| P3 I-1…I-5 | PASS | Factory paths and targets green. |
+| P2 I-1…I-5 | PASS | Strict ordered read-side normalization/candidates green. |
+| P1 I-1…I-4, S-1/S-2 | PASS | `found` contract and frontend suites green. |
+| P1 I-5 / outcomes | PASS | Four local catches preserve error reporting and S-1 rendering. |
+| J-1/J-2 | PENDING | Mandatory real Gmail/ES human acceptance. |
+| J-3 | PASS | Fresh full regression green. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | `app.js:6596-6603,6970-6977,8793-8800,9363-9369`; four rejected-tag-fetch regressions, `expertProfileAbsence.test.js` 11/0. |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Result |
+|---|---|
+| P4 expected literal update | PASS — required J-7 correction. |
+| A1 object-stub synchronization | PASS — individually authorized and contract-consistent. |
+| P3 test adaptations | PASS — required behavior remains discriminated. |
+| P2 baseline/date notes | NON-BLOCKING. |

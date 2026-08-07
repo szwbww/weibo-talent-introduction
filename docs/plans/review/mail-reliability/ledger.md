@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-06/00-main-plan-mail-reliability.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-08-06/00-main-plan-mail-reliability.md (governing worktree sha256:5b8ca123301a2b9819470392bef3044cd33fbe1dcebe2ebb002dcbd628344e7d; recorded identity:commit 9bbb046)
 - Invoked master identity: sha256:e12dc8db681f95d08a253c6cadc2a0497de2b0061082e2f1e28b3807dfbb1201
 - Master identity state: AMENDMENT_RECORDED
@@ -9,23 +9,23 @@
 - Fast-p ledger: docs/plans/fast/mail-reliability/ledger.md (sha256:edbd887647c9c6d4a510ec0029565089b9dd9f78b6b4ade77baf4f520f682e5d)
 - Fast-p handoff: docs/plans/fast/mail-reliability/human-review-handoff.md (sha256:3c18ea271f79c695b5decf668f980faa59c50440f4ecde1611ebfa851527baab)
 - Master base: d911bd6
-- Final code head: ef7e471
-- Evidence parent before next commit: 49fbfe8e3da1247cf1bd61edcc0c092ef4916b34
-- Previous evidence commit: N/A
+- Final code head: c3e6d00
+- Evidence parent before next commit: dcc75ea
+- Previous evidence commit: dcc75ea
 - Branch: fast/mail-reliability
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: SELECTED by `/Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py`; exact master path; branch `fast/mail-reliability`; ledger/handoff identities above; `d911bd6..ef7e471`; 4 terminal children
+- Discovery evidence: SELECTED by `/Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py`; exact master path; branch `fast/mail-reliability`; ledger/handoff identities above; initial `d911bd6..ef7e471`; post-repair candidate `ef7e471..c3e6d00`; 4 terminal children
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_review_v2
+- Reviewer: /root/aggregate_review_post_repair
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: Epoch 1 in `machine-verification.md`
+- Machine result: PASS
+- Machine report epoch: Epoch 2 in `machine-verification.md`
 - Repair artifact: docs/plans/fix/00-main-plan-mail-reliability/repair.md
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability/docs/plans/fix/00-main-plan-mail-reliability/repair.md` (2026-08-07)
+- Repair executor: Main session (controller)
+- Repair code head: c3e6d00
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-1 confirmed; approve only the repair artifact via `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/mail-reliability/docs/plans/fix/00-main-plan-mail-reliability/repair.md`.
+- Blocker/next action: Run and report mandatory human J-1/J-2 acceptance for `c3e6d00`, then explicitly sign off this boundary.
