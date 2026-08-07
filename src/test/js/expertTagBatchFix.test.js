@@ -18,7 +18,7 @@ function extractFn(name) {
 
 function createTagFetchSandbox() {
     const sandbox = {
-        api: async () => ({ tags: [] }),
+        api: async () => ({ found: true, tags: [] }),
         URLSearchParams
     };
     vm.createContext(sandbox);
@@ -139,12 +139,13 @@ describe("fetchExpertTagsFromEs authoritative tags (P1-2)", () => {
             return { orcidId: "0000-0001", tags: ["承诺回复材料"] };
         };
 
-        const tags = await sb.fetchExpertTagsFromEs("0000-0001", "CANDIDATE");
+        const result = await sb.fetchExpertTagsFromEs("0000-0001", "CANDIDATE");
 
         assert.ok(profileUrl.includes("/api/experts/profile"));
         assert.ok(profileUrl.includes("orcidId=0000-0001"));
         assert.ok(profileUrl.includes("level=CANDIDATE"));
-        assert.deepStrictEqual(tags, ["承诺回复材料"]);
+        assert.deepStrictEqual(result.tags, ["承诺回复材料"]);
+        assert.strictEqual(result.found, true);
     });
 
     it("renders ES tags in editor even when list cache has no tags", () => {

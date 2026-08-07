@@ -3948,7 +3948,17 @@ async function loadExpertTagOptions(level, { filters = {} } = {}) {
     }
 }
 
-function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor") {
+function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor", profileMissing = false) {
+    if (profileMissing === true) {
+        return `
+        <div class="detail-section expert-tag-editor" id="${escapeHtml(editorId)}" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}" data-profile-missing="true">
+            <div class="inbound-tag-editor-head">
+                <h3>专家标签</h3>
+            </div>
+            <div class="inbound-tag-editor-chips"><span class="muted">该专家在 ES 中无画像文档，标签功能不可用</span></div>
+        </div>
+    `;
+    }
     const chips = (tags || []).map(tag => `
         <span class="expert-tag tag-${escapeHtml(tag)}">
             ${escapeHtml(expertTagLabels[tag] || tag)}
@@ -4016,10 +4026,10 @@ function openExpertTagAddDialog(existingTags = []) {
 }
 
 async function fetchExpertTagsFromEs(orcidId, level) {
-    if (!orcidId) return [];
+    if (!orcidId) return { found: false, tags: [] };
     const params = new URLSearchParams({ orcidId, level });
     const profile = await api(`/api/experts/profile?${params}`);
-    return profile.tags || [];
+    return { found: profile?.found !== false, tags: profile?.tags || [] };
 }
 
 async function refreshExpertTagsFromEs(orcidId, level) {
@@ -4043,7 +4053,8 @@ async function mutateExpertTag(orcidId, level, tag, action) {
             region: $("#expertRegionFilter")?.value || ""
         }
     });
-    const refreshedTags = await refreshExpertTagsFromEs(orcidId, level);
+    const refreshed = await refreshExpertTagsFromEs(orcidId, level);
+    const refreshedTags = refreshed.tags;
     if (action === "add") {
         return refreshedTags.includes(tag) ? refreshedTags : [...refreshedTags, tag];
     }
@@ -4446,11 +4457,11 @@ function renderAiReplyFeedback(container, result, error = null) {
     container.innerHTML = parts.join("");
 }
 
-function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor") {
+function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor", profileMissing = false) {
     const orcidId = expertRef?.expertOrcidId || expertRef?.orcidId || "";
     if (!orcidId) return "";
     const level = expertRef?.expertIndexLevel || expertRef?.currentIndexLevel || "CANDIDATE";
-    return renderExpertTagEditor(tags, orcidId, level, editorId);
+    return renderExpertTagEditor(tags, orcidId, level, editorId, profileMissing);
 }
 
 const ES_MAX_RESULT_WINDOW = 10000;
@@ -6582,7 +6593,14 @@ async function showExpertDetail(expert) {
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
     const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
-    const expertTags = expert.orcidId ? await fetchExpertTagsFromEs(expert.orcidId, tagLevel) : [];
+    let expertTags = { found: false, tags: [] };
+    if (expert.orcidId) {
+        try {
+            expertTags = await fetchExpertTagsFromEs(expert.orcidId, tagLevel);
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     $("#contactHeadActions").hidden = true;
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
@@ -6602,7 +6620,7 @@ async function showExpertDetail(expert) {
                 </div>
             </div>
 
-            ${expert.orcidId ? renderExpertTagEditor(expertTags, expert.orcidId, tagLevel) : ""}
+            ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false) : ""}
 
             ${renderDetailSubTabs("academic")}
 
@@ -6949,7 +6967,14 @@ async function loadContactDetail(contactId) {
     const contactDetail = $("#contactDetail");
     const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     const orcidId = contact.orcidId || expert.orcidId || "";
-    const expertTags = orcidId ? await fetchExpertTagsFromEs(orcidId, tagLevel) : [];
+    let expertTags = { found: false, tags: [] };
+    if (orcidId) {
+        try {
+            expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
     contactDetail.innerHTML = `
@@ -6966,7 +6991,7 @@ async function loadContactDetail(contactId) {
                 </div>
             </div>
 
-            ${renderExpertTagEditor(expertTags, orcidId, tagLevel)}
+            ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false)}
 
             ${renderDetailSubTabs("contact")}
 
@@ -8344,7 +8369,12 @@ async function handleContactAction(element) {
         const orcidId = editor.dataset.orcid;
         const level = editor.dataset.level;
         const editorId = editor.id || "expertTagEditor";
-        const existingTags = await fetchExpertTagsFromEs(orcidId, level);
+        const existing = await fetchExpertTagsFromEs(orcidId, level);
+        if (existing.found === false) {
+            showStatus("该专家在 ES 中无画像文档，标签功能不可用", "warn");
+            return;
+        }
+        const existingTags = existing.tags;
         const tag = await openExpertTagAddDialog(existingTags);
         if (!tag) return;
         if (existingTags.includes(tag)) {
@@ -8760,11 +8790,20 @@ async function showMailDetail(source, id) {
             : "";
         const expertOrcidId = detail.expertOrcidId || "";
         const expertIndexLevel = detail.expertIndexLevel || "CANDIDATE";
+        let expertTagData = { found: false, tags: [] };
+        if (expertOrcidId) {
+            try {
+                expertTagData = await fetchExpertTagsFromEs(expertOrcidId, expertIndexLevel);
+            } catch (error) {
+                showStatus(error.message, "error");
+            }
+        }
         const expertTagSectionHtml = expertOrcidId
             ? renderMailboxExpertTagEditor(
                 detail,
-                await fetchExpertTagsFromEs(expertOrcidId, expertIndexLevel),
-                "mailboxExpertTagEditor"
+                expertTagData.tags,
+                "mailboxExpertTagEditor",
+                expertTagData.found === false
             )
             : "";
         panel.innerHTML = `
@@ -9321,13 +9360,19 @@ async function showUnmatchedDetail(id) {
         : null;
     const candidates = data.candidates || [];
     const contact = data.contact;
-    const processingExpertTags = contact?.orcidId
-        ? await fetchExpertTagsFromEs(contact.orcidId, contact.currentIndexLevel || "CANDIDATE")
-        : [];
+    let processingExpertTags = { found: false, tags: [] };
+    if (contact?.orcidId) {
+        try {
+            processingExpertTags = await fetchExpertTagsFromEs(contact.orcidId, contact.currentIndexLevel || "CANDIDATE");
+        } catch (error) {
+            showStatus(error.message, "error");
+        }
+    }
     const processingExpertTagHtml = renderMailboxExpertTagEditor(
         contact,
-        processingExpertTags,
-        "mailboxProcessingExpertTagEditor"
+        processingExpertTags.tags,
+        "mailboxProcessingExpertTagEditor",
+        processingExpertTags.found === false
     );
     if (detailLoadSeq !== liveDetailLoadSeq) return;
     const panel = $("#unmatchedDetailPanel");
@@ -10501,7 +10546,7 @@ function bindMonitoringEvents() {
             setMailboxPendingOnly(true);
             state.mailbox.page = 0;
             await loadMailbox();
-            await showUnmatchedDetail(target.dataset.id);
+            await showUnmatchedDetail(target.dataset.id).catch((error) => showStatus(error.message, "error"));
         }
         if (target.dataset.action === "retry-promotion") {
             await api(`/api/mail-monitoring/promotions/${target.dataset.id}/retry`, { method: "POST" });
@@ -11486,7 +11531,7 @@ function initBulkAutoReply() {
             return;
         }
         if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched"].includes(target.dataset.action)) {
-            await handleUnmatchedAction(target);
+            handleUnmatchedAction(target).catch((error) => showStatus(error.message, "error"));
         }
     });
 }

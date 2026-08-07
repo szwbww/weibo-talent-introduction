@@ -2,7 +2,8 @@
 
 > 用 create-p skill 编写。
 > **前置依赖**：`material-reminder-01-threading.md` 必须先落地并完成人工验收。本计划复用其在 `ComposedMail` 上确立的"新增字段必带默认值"约定与投递层改动惯例。第一批不依赖本批。
-> **执行前决策点**：若第一批上线后 `MATERIAL_REMINDER` 已稳定进入 Gmail「主要」标签页，**任务 1/2（退订头）应直接放弃**，只执行任务 3-5（称呼个性化）与任务 6（From 显示名）。退订头改动涉及修正既有计划的不变量且有合规争议面，收益不明确时不值得做。
+> **执行前决策点**：若第一批上线后 `MATERIAL_REMINDER` 已稳定进入 Gmail「主要」标签页，**任务 1/2（退订头抑制）应直接放弃**，只执行任务 3-5（称呼个性化）与任务 6（From 显示名）。退订头抑制涉及修正既有计划的不变量且有合规争议面，收益不明确时不值得做。
+> **⚠️ 任务 0（`List-Unsubscribe-Post` 值修正，J-7）不在该决策点范围内，任何情况下都必须执行** —— 它作用于除 `MATERIAL_REMINDER` 外的全部邮件类型，与"是否抑制提醒邮件的退订头"正交。
 > **修正既有计划**：`docs/plans/2026-06-20/unsubscribe-suppression-02-list-unsubscribe-oneclick.md` 的 Invariant L2-2（见本文 J-1）。
 
 ## 需求描述
@@ -78,6 +79,16 @@
 - Violation consequence: 无默认值会强制 8 处全改，把回归面扩大到全部投递路径。
 - 来源: original（沿用第一批 I-5）
 
+### Invariant J-7: `List-Unsubscribe-Post` 的值必须逐字为 `List-Unsubscribe=One-Click`
+
+- Rule: `SmtpMailDeliveryService.kt:54` 的 `message.addHeader("List-Unsubscribe-Post", ...)` 第二个实参必须**逐字**为 `"List-Unsubscribe=One-Click"`。RFC 8058 §5 的 ABNF 是 `postarg = "List-Unsubscribe=One-Click"`，§3.1 要求「MUST contain the single key/value pair」—— 是相等，不是包含。**禁止**写成 `List=One-Click`、`List-Unsubscribe = One-Click`（含空格）或任何变体。
+- Applies to: `SmtpMailDeliveryService.send()` 的退订头写入块（`:50-55`）—— 影响**除 `MATERIAL_REMINDER` 外的全部外发邮件**。
+- Violation consequence: 值不合规时 Gmail 不渲染一键退订按钮，收件人只能改用「举报垃圾邮件」，直接推高投诉率 —— 而 `docs/plans/2026-07-03/google-spam-mitigation.md` 记录过投诉率 6.9%（Google 阈值 0.3%）的事故。
+- **⚠️ 本条不随阶段 A 放弃**：文首决策点允许放弃任务 1/2（对 `MATERIAL_REMINDER` 抑制退订头），但**本条修正的是其余所有邮件类型的头值**，与是否抑制提醒邮件正交，**任何情况下都必须执行**。
+- **⚠️ 本条单独修正不足以让按钮出现**：RFC 8058 §4 另要求 `List-Unsubscribe` 与 `List-Unsubscribe-Post` 必须被 DKIM 签名覆盖并列入 `h=`。实测腾讯企业邮（`bizesmtp.qq.com`, `s=card2607`）的签名 `h=Date:From:To:Message-ID:Subject:MIME-Version` **不含**这两个头，且 `h=` 由中继 MTA 决定，代码侧无法控制。两者是**与**关系。故本条的验收标准只断言头值正确，**不得**把"Gmail 出现退订按钮"作为通过条件。DKIM 覆盖属对外沟通事项，不在本计划范围。
+- **本条同时修正 `docs/plans/2026-06-20/unsubscribe-suppression-02-list-unsubscribe-oneclick.md`** 的 `:9` / `:26` / 任务 4（`:152`） / 验收标准 L2-2（`:187`）四处 —— 那份计划原文即写死了错误值，现有代码是对它的忠实实现，属**计划缺陷传导至代码**，非代码缺陷。该计划已追加 `## 修正记录 → 修正 1`，任务 7 需同步核对。
+- 来源: original（发现于 `expert-profile-absence-not-error.md` 的关联缺陷移交第 1 项）
+
 ---
 
 ## 现状审计
@@ -147,6 +158,25 @@
 ---
 
 ## 实现方案
+
+### 阶段 0：RFC 8058 header 值修正（**不可放弃**）
+
+#### 任务 0：修正 `List-Unsubscribe-Post` 的值（J-7）
+
+文件：`src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt`
+
+`:54` 一行：
+
+```kotlin
+// 改前
+message.addHeader("List-Unsubscribe-Post", "List=One-Click")
+// 改后
+message.addHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+```
+
+`:53` 的 `List-Unsubscribe` 头（https + mailto 两段及其顺序）**逐字不变**。
+
+本任务与阶段 A 相互独立：阶段 A 决定**哪些邮件带**这两个头，本任务决定**头的值是否合规**。即使阶段 A 被放弃，本任务仍须执行。
 
 ### 阶段 A：退订头抑制（可放弃 —— 见文首决策点）
 
@@ -289,6 +319,9 @@ if (displayName != null) {
 - `send falls back to bare address when senderDisplayName is null`
 - `send falls back to bare address when senderDisplayName is blank`（`"   "`）
 - `send encodes non-ASCII display name`（断言 From 头为 RFC 2047 编码形态，非原始字节）
+- `list unsubscribe post header value is exactly RFC 8058 postarg`（J-7）—— 断言
+  `message.getHeader("List-Unsubscribe-Post").single() == "List-Unsubscribe=One-Click"`，
+  用**相等**断言；同一用例内断言 `List-Unsubscribe` 头逐字未变。本用例在阶段 A 放弃时**仍须保留**。
 
 #### 任务 9：组装层测试（J-1, J-3）
 
@@ -311,12 +344,12 @@ if (displayName != null) {
 | # | 文件 | 类型 | 子系统 | 不变量 | 阶段 A 放弃时 |
 |---|---|---|---|---|---|
 | 1 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt` | 修改（仅 `ComposedMail`） | 1 投递层 | J-1, J-6 | 移出清单 |
-| 2 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt` | 修改 | 1 投递层 | J-1, J-2 | 保留（仅 J-2） |
+| 2 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt` | 修改 | 1 投递层 | J-1, J-2, **J-7** | 保留（J-2 + **J-7**） |
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt` | 修改 | 2 组装层 | J-1, J-3, J-4 | 保留（仅 J-3/J-4） |
 | 4 | `src/main/resources/db/migration/V84__personalize_material_reminder_template.sql` | 新增 | 2 组装层 | J-3, J-5 | 保留 |
-| 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt` | 修改 | 1 投递层 | J-1, J-2 | 保留 |
+| 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt` | 修改 | 1 投递层 | J-1, J-2, **J-7** | 保留 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt` | 修改 | 2 组装层 | J-1, J-3 | 保留 |
-| 7 | `docs/plans/2026-06-20/unsubscribe-suppression-02-list-unsubscribe-oneclick.md` | 文档修正记录 | — | J-1 | 移出清单 |
+| 7 | `docs/plans/2026-06-20/unsubscribe-suppression-02-list-unsubscribe-oneclick.md` | 文档修正记录 | — | J-1, **J-7** | **保留**（J-7 的修正记录已于 2026-08-06 追加，任务 7 需核对并按阶段 A 的实际取舍补充 J-1 部分） |
 
 **文件数：6 个代码/迁移 + 1 个文档 ≤ 10 ✓** ｜ **子系统数：2 ✓** ｜ **共享存储新增字段：0 ✓** ｜ **单存储新增数据字段：0（`V84` 只改既有行内容，不加列）✓**
 
@@ -330,6 +363,7 @@ if (displayName != null) {
 - **J-4**：git diff 确认 `MailComposeTemplateService.kt` 零改动；确认 `IntroductionMailComposer.compose()`、`AutoMailReplyService.mailTemplateVariables()`、`AutoReplyPreviewService.mailTemplateVariables()`、`MeetingInvitationMailComposer` 四处零改动。
 - **J-5**：grep `V84` 确认两条 `UPDATE` 均含 `REPLACE(` 与 `LIKE '%Dear Professor,%'`，**无**整体 `SET body = '` / `SET custom_text = '` 覆写；确认同时覆盖 `mail_template` 与 `mail_compose_template_block` 两表。
 - **J-6**：git diff 确认除 `ManualExpertMailService.kt` 外，其余 6 个含 `ComposedMail(` 的文件零改动。
+- **J-7**：grep `SmtpMailDeliveryService.kt` 断言存在字面量 `"List-Unsubscribe=One-Click"` 且**全文不再出现** `"List=One-Click"`；`SmtpMailDeliveryServiceTest` 新增用例断言发出的 `MimeMessage` 的 `List-Unsubscribe-Post` 头值 `== "List-Unsubscribe=One-Click"`（**相等断言，不得用 `contains`** —— `"List=One-Click"` 不是 `"List-Unsubscribe=One-Click"` 的子串，但反向包含判断会让 `"List-Unsubscribe=One-Click extra"` 之类的畸形值蒙混过关）；同时断言 `List-Unsubscribe` 头逐字未变（含 https 与 mailto 两段及其顺序）。**不得**把"Gmail 界面出现退订按钮"写入本条判据（DKIM `h=` 未覆盖，属计划外阻断点，见 J-7 第二个 ⚠️）。
 - **回归**：`SmtpMailDeliveryServiceTest` 既有 16 条全绿；`ManualExpertMailServiceTest` 既有 20 条全绿；`mvn test` 全量通过。
 - **第一批不回退**：git diff 确认第一批的线程头写入分支、`buildReplySubject` / `stripReplyPrefixes`、`messageId` 生成、`inReplyTo = composed.mail.inReplyTo` 四处**一行未改**。
 - **IP-C 集成**：以 `expertName = "John Smith"` 的 contact 渲染 `MATERIAL_REMINDER` 模板，断言渲染结果首行为 `Dear John Smith,`；以 `expertName = null` 渲染，断言首行为 `Dear Professor,`。
@@ -406,11 +440,21 @@ if (displayName != null) {
 - 预期结果：四封均正常送达，主题正确，正文段落格式完好。`From` 显示名行为与 A-4 一致。源码中**均无** `In-Reply-To` / `References` 头。`Message-ID` 格式与本批改动前一致。
 - 覆盖：must-NOT-change 第 5、6 条，IP-B
 
+### A-11：退订头值符合 RFC 8058（J-7）
+
+- 前置条件：`UNSUBSCRIBE_BASE_URL` 与 `UNSUBSCRIBE_SECRET` 均已配置（线上已确认配置正常）。
+- 操作步骤：① 发一封 `INTRODUCTION`（**非** `MATERIAL_REMINDER`）到测试 Gmail 邮箱；② 打开该邮件 →「显示原始邮件」；③ 查看 `List-Unsubscribe-Post` 与 `List-Unsubscribe` 两行。
+- 预期结果：`List-Unsubscribe-Post: List-Unsubscribe=One-Click`（**逐字**，不是 `List=One-Click`）；`List-Unsubscribe` 仍为 `<https://…/u/unsubscribe?token=…>, <mailto:…?subject=unsubscribe>` 两段且顺序不变。
+- **不预期**：Gmail 界面出现退订按钮。DKIM `h=` 仍不覆盖这两个头（`h=Date:From:To:Message-ID:Subject:MIME-Version`），按 RFC 8058 §4 接收方 SHOULD NOT 提供一键退订。**按钮不出现不算本条失败**；若要按钮出现，须先解决 DKIM 覆盖（对外沟通事项）。
+- 覆盖：J-7、需求描述 must-NOT-change 第 1 条
+
 ---
 
 ## 观察项（不产生任务）
 
 1. **效果归因**：本批同时改了退订头、From 显示名、正文称呼三项，无法区分各自贡献。若需精确归因，可把阶段 A（退订头）与阶段 B/C 再分两次发布。
-2. **其余 4 个缺 Message-ID 的构造点**：会议邀请、会议确认、QA 自动回复、人工富文本回复仍在用 JavaMail 默认 Message-ID（见 K-message-id-fingerprint 的 2026-08-06 修正表）。属既有缺陷，建议单独立项统一收口。
+2. **其余缺 Message-ID 的构造点**：~~会议邀请、会议确认、QA 自动回复、人工富文本回复~~ —— 2026-08-06 重新实测更正：实际缺失为 **4 处**（`MeetingInvitationMailComposer:22`、`AutoMailReplyService:567`、`AutoMailReplyService:958`、`MeetingScheduleService:125`）；人工富文本回复（`PendingMailOperationService:258`）**已设置** `messageId`（取 `claim.messageId`），问题是域名硬编码 `@weibo.com` 而非缺失。已立项：`outbound-message-id-01-fill-missing.md`（补缺 4 处）与其第二批 `outbound-message-id-02-domain-alignment.md`（域名对齐 2 处）。本计划不处理。
+
+5. **DKIM 未覆盖 List-\* 头**：RFC 8058 §4 要求 `List-Unsubscribe` / `List-Unsubscribe-Post` 必须列入 DKIM 的 `h=`，实测腾讯企业邮签名（`s=card2607`）的 `h=Date:From:To:Message-ID:Subject:MIME-Version` 不含它们，`h=` 由中继 MTA 决定，代码侧无解。这是 Gmail 不显示退订按钮的**第二个阻断点**（与 J-7 是与关系）。出路：① 要求腾讯企业邮把 List-\* 加入 `h=`；② 更换支持 RFC 8058 的发送服务商；③ 发信前自签一份覆盖 List-\* 的 DKIM（多重 DKIM-Signature 合法），但**不得签 `Message-ID`** —— 该中继会给 Message-ID 加 `[0-9A-F]{16}+` 前缀，会破坏签名（实证见 `inbound-message-id-vendor-prefix.md`）。属对外沟通事项，不产生代码任务。
 3. **发送节奏**：`DEFAULT_REMINDER_DAILY_CAP = 60` / `ROUND_SIZE = 30` / `perMailIntervalMs = 3000`（`BatchSendSettingService.kt:224-228`）为运行时配置，运营后台可直接调整，本计划不动。
 4. **域名信誉**：若第一批的上线前置条件（`talents.szwebotech.cn` / `mail.szwebotech.cn` 的 SPF）仍未解决，本批同样会被抵消。

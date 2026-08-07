@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import java.time.LocalDateTime
@@ -134,6 +135,61 @@ class UnmatchedInboundMailServiceTest {
         assertEquals(1, candidates.size)
         assertEquals("IN_REPLY_TO", candidates[0].reason)
         assertEquals(90, candidates[0].confidence)
+    }
+
+    @Test
+    fun `suggestCandidates matches prefixed in_reply_to to unprefixed stored message id`() {
+        val prefixed = "<6136051B41AACA62+reminder-2088-710aba50-77fa-4936-a8d3-72ecffaba836@talents.szwebotech.cn>"
+        val stored = "<reminder-2088-710aba50-77fa-4936-a8d3-72ecffaba836@talents.szwebotech.cn>"
+        val record = processing(id = 1L, email = "a@b.com", inReplyTo = prefixed)
+        val outboundRecord = MailRecord(
+            id = 50L, expertContactId = 10L, direction = "OUTBOUND", mailType = "INTRODUCTION",
+            messageId = stored, inReplyTo = null, subject = "Hello", body = "Body",
+            matchedQaRuleId = null, sendStatus = null, receivedAt = null, sentAt = LocalDateTime.now()
+        )
+        val c = contact(10L, "expert@example.com")
+
+        Mockito.`when`(mailRecordRepository.findByMessageId(prefixed)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.findByMessageId(stored)).thenReturn(outboundRecord)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(c))
+
+        val candidates = service.suggestCandidates(record)
+        assertEquals(1, candidates.size)
+        assertEquals("IN_REPLY_TO", candidates[0].reason)
+        assertEquals(90, candidates[0].confidence)
+        assertEquals(10L, candidates[0].contact.id)
+        // I-4: 原值候选先查（落空），剥离前缀候选后查（命中）
+        Mockito.verify(mailRecordRepository).findByMessageId(prefixed)
+        Mockito.verify(mailRecordRepository).findByMessageId(stored)
+    }
+
+    @Test
+    fun `suggestCandidates with null in_reply_to does not query and has no IN_REPLY_TO candidate`() {
+        val record = processing(id = 1L, email = "a@b.com")
+
+        val candidates = service.suggestCandidates(record)
+
+        Mockito.verify(mailRecordRepository, Mockito.never()).findByMessageId(Mockito.anyString())
+        assertTrue(candidates.none { it.reason == "IN_REPLY_TO" })
+    }
+
+    @Test
+    fun `suggestCandidates falls back to NAME_OR_EMAIL_MATCH when prefixed in_reply_to has no record`() {
+        val prefixed = "<0123456789ABCDEF+nonexistent-id@example.com>"
+        val record = processing(id = 1L, email = "expert@example.com", inReplyTo = prefixed)
+        val c = contact(10L, "expert@example.com")
+
+        Mockito.`when`(mailRecordRepository.findByMessageId(Mockito.anyString())).thenReturn(null)
+        Mockito.`when`(
+            expertContactRepository.findAllByExpertNameContainingIgnoreCaseOrExpertEmailContainingIgnoreCaseOrderByUpdatedAtDesc(
+                Mockito.anyString(), Mockito.anyString()
+            )
+        ).thenReturn(listOf(c))
+
+        val candidates = service.suggestCandidates(record)
+        assertTrue(candidates.none { it.reason == "IN_REPLY_TO" })
+        assertEquals("NAME_OR_EMAIL_MATCH", candidates[0].reason)
+        assertEquals(60, candidates[0].confidence)
     }
 
     @Test

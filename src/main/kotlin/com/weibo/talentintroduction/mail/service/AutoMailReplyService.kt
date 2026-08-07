@@ -569,7 +569,8 @@ class AutoMailReplyService(
             subject = decision.subject,
             body = mailContentService.plainTextToHtml(plainBody),
             html = true,
-            text = plainBody
+            text = plainBody,
+            messageId = OutboundMessageIdFactory.newId("auto-reply", contactId.toString(), account.senderEmail)
         )
         val delivered = mailDeliveryService.send(account, reply)
         val now = LocalDateTime.now()
@@ -958,7 +959,8 @@ class AutoMailReplyService(
         val mail = ComposedMail(
             to = received.from,
             subject = rendered.subject.ifBlank { "Re: ${received.subject.orEmpty()}".trim() },
-            body = rendered.body
+            body = rendered.body,
+            messageId = OutboundMessageIdFactory.newId("meeting-invitation", contact.orcidId, account.senderEmail)
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()

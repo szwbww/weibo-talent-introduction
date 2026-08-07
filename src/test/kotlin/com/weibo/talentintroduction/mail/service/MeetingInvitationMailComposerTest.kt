@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 
@@ -67,6 +69,13 @@ class MeetingInvitationMailComposerTest {
         assertEquals("expert@example.com", mail.to)
         assertEquals("Follow-up on the Talent Program", mail.subject)
         assertEquals("Meeting invitation body", mail.body)
+        assertNotNull(mail.messageId)
+        assertTrue(
+            mail.messageId!!.matches(
+                Regex("^<meeting-invitation-0000-0001-[0-9a-f-]{36}@qftechtalent\\.com>$")
+            ),
+            "unexpected messageId: ${mail.messageId}"
+        )
         Mockito.verify(templateService).renderByCode(
             templateCode = "MEETING_INVITATION",
             variables = mapOf("senderDisplayName" to "Chen"),

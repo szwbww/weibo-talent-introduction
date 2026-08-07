@@ -145,7 +145,31 @@ class SmtpMailDeliveryServiceTest {
         val listUnsubscribe = message.getHeader("List-Unsubscribe", null)
         assertTrue(listUnsubscribe.contains("https://outreach.example.com/u/unsubscribe?token="))
         assertTrue(listUnsubscribe.contains("mailto:test@example.com?subject=unsubscribe"))
-        assertEquals("List=One-Click", message.getHeader("List-Unsubscribe-Post", null))
+        assertEquals("List-Unsubscribe=One-Click", message.getHeader("List-Unsubscribe-Post", null))
+    }
+
+    @Test
+    fun `list unsubscribe post header value is exactly RFC 8058 postarg`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+        val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
+
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService).send(account, mail)
+
+        assertEquals("SENT", delivered.status)
+        val message = captured.single()
+        assertEquals("List-Unsubscribe=One-Click", message.getHeader("List-Unsubscribe-Post").single())
+        assertEquals(
+            "<${enabledTokenService.unsubscribeUrl(mail.to)}>, <mailto:test@example.com?subject=unsubscribe>",
+            message.getHeader("List-Unsubscribe", null)
+        )
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.mail.domain.BounceRecord
+import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import java.time.LocalDateTime
+import java.util.Optional
 import java.util.Properties
 import javax.mail.Session
 import javax.mail.internet.InternetAddress
@@ -84,6 +87,77 @@ class BounceCollectionServiceTest {
         val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
         Mockito.verify(bounceRecordRepository).save(captor.capture())
         assertEquals("unknown@example.com", captor.value.failedRecipient)
+        assertNull(captor.value.originalExpertContactId)
+    }
+
+    @Test
+    fun `ingest resolves prefixed originalMessageId to original contact`() {
+        val prefixed = "<6136051B41AACA62+reminder-2088-710aba50-77fa-4936-a8d3-72ecffaba836@talents.szwebotech.cn>"
+        val stored = "<reminder-2088-710aba50-77fa-4936-a8d3-72ecffaba836@talents.szwebotech.cn>"
+        val outboundRecord = MailRecord(
+            id = 50L, expertContactId = 10L, direction = "OUTBOUND", mailType = "REMINDER",
+            messageId = stored, inReplyTo = null, subject = "Reminder", body = "Body",
+            matchedQaRuleId = null, sendStatus = null, receivedAt = null, sentAt = LocalDateTime.now()
+        )
+        val c = ExpertContact(
+            id = 10L, campaignId = 10L, orcidId = "orcid-10",
+            expertEmail = "expert@example.com", expertName = null
+        )
+
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findByMessageId(prefixed)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.findByMessageId(stored)).thenReturn(outboundRecord)
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(c))
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 3L) }
+
+        val result = service.ingest(
+            signal = BounceSignal(
+                bounceType = "HARD",
+                dsnStatus = "5.1.1",
+                failedRecipient = null,
+                reason = "Undelivered",
+                originalMessageId = prefixed
+            ),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-prefixed@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        assertEquals(BounceIngestResult.INGESTED, result)
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals(10L, captor.value.originalExpertContactId)
+    }
+
+    @Test
+    fun `ingest with NOID originalMessageId falls back to failedRecipient`() {
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("unknown@example.com")).thenReturn(null)
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 4L) }
+
+        val result = service.ingest(
+            signal = BounceSignal(
+                bounceType = "HARD",
+                dsnStatus = "5.1.1",
+                failedRecipient = "unknown@example.com",
+                reason = "Undelivered",
+                originalMessageId = "NOID:deadbeef"
+            ),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-noid@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        assertEquals(BounceIngestResult.INGESTED, result)
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals("NOID:deadbeef", captor.value.originalMessageId)
         assertNull(captor.value.originalExpertContactId)
     }
 

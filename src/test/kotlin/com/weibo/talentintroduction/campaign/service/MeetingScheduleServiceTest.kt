@@ -20,6 +20,7 @@ import com.weibo.talentintroduction.common.domain.ConversationStatus
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
@@ -134,12 +135,16 @@ class MeetingScheduleServiceTest {
                 mailType = "MEETING_CONFIRMATION"
             )
         )
+        val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(
             mailDeliveryService.send(
                 eqValue(account),
                 anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
             )
-        ).thenReturn(DeliveredMail("msg-123", "SENT"))
+        ).thenAnswer { invocation ->
+            sentMails.add(invocation.getArgument(1))
+            DeliveredMail("msg-123", "SENT")
+        }
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.getArgument<ExpertContact>(0) }
         Mockito.`when`(mailSenderAccountRepository.save(Mockito.any(MailSenderAccount::class.java)))
@@ -166,6 +171,17 @@ class MeetingScheduleServiceTest {
             eqValue("MEETING_CONFIRMATION"),
             anyValue(emptyMap<String, String>()),
             eqValue(expectedSeed)
+        )
+
+        val sentMail = sentMails.single()
+        assertNotNull(sentMail.messageId)
+        // I-2: domain must come from the stub account's senderEmail, not any hardcoded literal
+        val accountDomain = account.senderEmail.substringAfter("@")
+        assertTrue(
+            sentMail.messageId!!.matches(
+                Regex("^<meeting-confirmation-orcid-1-[0-9a-f-]{36}@${Regex.escape(accountDomain)}>$")
+            ),
+            "unexpected messageId: ${sentMail.messageId}"
         )
 
         val mailRecordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)

@@ -51,7 +51,7 @@ class SmtpMailDeliveryService(
             val httpsUrl = unsubscribeTokenService.unsubscribeUrl(mail.to)
             val mailto = "mailto:${account.senderEmail}?subject=unsubscribe"
             message.addHeader("List-Unsubscribe", "<$httpsUrl>, <$mailto>")
-            message.addHeader("List-Unsubscribe-Post", "List=One-Click")
+            message.addHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
         }
 
         return try {
