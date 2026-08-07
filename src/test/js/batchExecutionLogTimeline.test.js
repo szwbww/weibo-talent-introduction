@@ -123,6 +123,55 @@ describe("renderBatchTimeline (I-5 / S-1)", () => {
         sandbox.renderBatchTimeline([]);
         assert.ok(elements.batchLogTimeline.innerHTML.includes('class="muted">无执行过程记录</span>'));
     });
+
+    it("omits status element for INIT rows while running (I-1)", () => {
+        const { sandbox, elements } = createTimelineSandbox();
+        sandbox.renderBatchTimeline([
+            { kind: "INIT", batchNumber: 0, status: "RUNNING", message: "正在初始化发送队列...", stopReason: null, processedCount: 0, totalCount: 10, batchProcessed: 0, errors: [], createdAt: "2026-08-06T10:00:01" }
+        ]);
+        const html = elements.batchLogTimeline.innerHTML;
+
+        assert.ok(!html.includes("batch-timeline-status"), "RUNNING rows must not emit status element");
+        assert.ok(!html.includes("运行中"), "RUNNING rows must not read 运行中");
+        assert.ok(html.includes('<span class="batch-timeline-phase">初始化</span>'), "phase label must remain");
+        assert.ok(html.includes("正在初始化发送队列..."), "message must remain");
+    });
+
+    it("omits status element for ROUND rows while running (I-1)", () => {
+        const { sandbox, elements } = createTimelineSandbox();
+        sandbox.renderBatchTimeline([
+            { kind: "ROUND", batchNumber: 1, status: "RUNNING", message: "第1轮完成", stopReason: null, processedCount: 5, totalCount: 10, batchProcessed: 5, errors: [], createdAt: "2026-08-06T10:00:31" }
+        ]);
+        const html = elements.batchLogTimeline.innerHTML;
+
+        assert.ok(!html.includes("batch-timeline-status"), "RUNNING rows must not emit status element");
+        assert.ok(!html.includes("运行中"), "RUNNING rows must not read 运行中");
+        assert.ok(html.includes('<span class="batch-timeline-batch">批次 #1</span>'), "batch label must remain");
+        assert.ok(html.includes("第1轮完成"), "message must remain");
+    });
+
+    it("keeps status element and Chinese label for terminal statuses (I-1)", () => {
+        const { sandbox, elements } = createTimelineSandbox();
+        const terminal = [
+            { status: "PAUSED", label: "已暂停" },
+            { status: "SUCCESS", label: "已完成" },
+            { status: "FAILED", label: "失败" },
+            { status: "CANCELLED", label: "已取消" }
+        ];
+        terminal.forEach((t, i) => {
+            sandbox.renderBatchTimeline([
+                { kind: "FINAL", batchNumber: 0, status: t.status, message: "发送任务结束", stopReason: null, processedCount: 0, totalCount: 1, batchProcessed: 0, errors: [], createdAt: "2026-08-06T10:0" + i + ":00" }
+            ]);
+            const html = elements.batchLogTimeline.innerHTML;
+            assert.ok(html.includes('<span class="batch-timeline-status">' + t.label + '</span>'), t.status + " must keep status element and label");
+        });
+    });
+
+    it("never reads execution-level d.live or d.status (I-2)", () => {
+        const body = extractFn("renderBatchTimeline");
+        assert.ok(!body.includes("d.live"), "function body must not read d.live");
+        assert.ok(!body.includes("d.status"), "function body must not read d.status");
+    });
 });
 
 describe("renderIntegrityWarning (I-4)", () => {

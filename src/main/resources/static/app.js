@@ -14107,7 +14107,7 @@ function renderBatchTimeline(rows) {
             : '<span class="batch-timeline-batch">批次 #' + r.batchNumber + '</span>';
         var count = phase ? (r.processedCount || 0) : (r.batchProcessed || 0);
         var main = '<span class="batch-timeline-main">' +
-            '<span class="batch-timeline-status">' + escapeHtml(statusLabel(r.status || "")) + '</span>' +
+            (r.status === "RUNNING" ? '' : '<span class="batch-timeline-status">' + escapeHtml(statusLabel(r.status || "")) + '</span>') +
             (r.message ? '<span class="batch-timeline-message">' + escapeHtml(r.message) + '</span>' : '') +
             (r.stopReason ? '<span class="batch-timeline-stop">终止原因：' + escapeHtml(r.stopReason) + '</span>' : '') +
             (Array.isArray(r.errors) && r.errors.length > 0
