@@ -1,0 +1,31 @@
+# p2 Verification Log
+
+- Epoch: 1
+- Attempt: 1
+- Timestamp: 2026-08-09 12:42 CST
+- Reviewed SHA range: 07a77f3e15da0d56317ec413412a5ca15ece913b..d848b8c3999fd7d67388be6d7b340ab48db43ff2 (single implementation commit d848b8c, parent 4488b86)
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: p2 · 运营可见性（列表按模板门禁筛选） — docs/plans/2026-08-09/personalization-gate-p2-operator-visibility.md
+Boundary: 07a77f3e15da0d56317ec413412a5ca15ece913b..d848b8c3999fd7d67388be6d7b340ab48db43ff2
+Verifier: P2Verifier
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git diff --name-only 4488b86..d848b8c` = exactly the 8 authorized files (5 prod: ExpertSearchService.kt, MailComposeTemplateController.kt, index.html, styles.css, app.js; 3 tests: ExpertSearchServiceTest.kt, ComposeTemplateGateControllerTest.kt, gateTemplateFilter.test.js). No P1 product files (mail/**, campaign/**, MailComposeTemplate.kt, MailComposeTemplateService.kt, migrations, ExpertDiscoveryService.kt) touched. The range 07a77f3e..d848b8c additionally surfaces 8 docs/plans/fast/ evidence files added by the interleaved controller evidence commit 4488b86 (p1 records + ledger), not by the implementation commit (brief constraint 6). Worktree shows only docs/ evidence modifications — no product changes. |
+| Plan and invariants | PASS | I-9: `fieldPresenceFilter` (ExpertSearchService.kt:37-47) — keyword fields get `bool`{`must`:[exists], `must_not`:[term {field:""}]}, text fields bare `exists`; Kotlin test asserts researchFields filter has exists+must_not/term/"" and institution filter is bare exists; no 可发送/可发 in count UI (grep + gate test #1). I-10: app.js gate region has no `${` field parsing (only error-message template literals), no hardcoded field arrays (`gateEsFields = []`), no fallback on API failure (showStatus + no filter); gate test #2 asserts 500 → no chip selected, no hasField param, summary hidden. I-11: ALLOWED_HAS_FIELDS includes recentWorkTitles (ExpertSearchService.kt:22); `require(field in ALLOWED_HAS_FIELDS)` still at :797; Kotlin test asserts both whitelist and IllegalArgumentException on unknown field. I-12: `BLANK_EXCLUDABLE_FIELDS == {researchFields, recentWorkTitles, patentTitles, degree, country}` (ExpertSearchService.kt:29-33) matching keyword columns of orcid_info_candidate.json; used by both `buildExpertFilters` hasField branch (:798) and `buildFieldPresenceFilters` SATISFY_ALL (:621); MISSING_ANY branch unchanged (diff). S-1: index.html new button line verbatim between researchFields and patentTitles; .tag-chip rules untouched. S-2: styles.css four .gate-filter-summary rules verbatim incl. property order, placed after .tag-chip.active, before `/* Back to list button */`; index.html gate toolbar block matches skeleton; no inline styles, no extra classes. S-3: count text `符合 N / M` via totalHits of filtered vs unfiltered /api/experts (app.js refreshGateSummary :11355-11368); summary hidden on 不限; no new count endpoint (only new endpoint is GET /api/compose-templates/{id}/gate-fields). |
+| Required commands | PASS | Targeted: `mvn test -Dtest='ExpertSearchServiceTest,ComposeTemplateGateControllerTest'` → Tests run: 41 (38+3), Failures: 0, Errors: 0, BUILD SUCCESS, exit 0. `node --test src/test/js/gateTemplateFilter.test.js` → 4 pass, 0 fail, exit 0 (ran together with authFlow.test.js: 23 pass, 0 fail). Full `mvn test` → Tests run: 2231, Failures: 0, Errors: 0, Skipped: 4, Node tests 478 pass / 0 fail, BUILD SUCCESS. `mvn clean package` → BUILD SUCCESS, exit 0 (2231 0F 0E 4S, Node 478 pass). `git diff --check 07a77f3e..d848b8c` and `git diff --check 4488b86..d848b8c` → empty, exit 0. All match baseline expectations (2231/478, 41 targeted). |
+| Downstream interfaces | PASS | MailComposeTemplateController.kt:54-57 consumes P1 interfaces verbatim: `requiredKeys = service.effectiveRequiredKeys(id)`, `esFields = service.requiredEsFields(id)`; no setOf/listOf re-derivation in controller. Signatures match brief table: MailComposeTemplateService.kt:140 `effectiveRequiredKeys(templateId: Long): List<String>`, :149 `requiredEsFields(templateId: Long): List<String>`; MailPlaceholderService.kt ES_FIELD_BY_KEY maps `"primaryResearchField" to "researchFields"` and `"recentWorkTitle" to "recentWorkTitles"`. ComposeTemplateGateControllerTest asserts pass-through verbatim. |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- O-1 (D-1 adjudication, dropdown population timing): Plan 任务 5 step 1 says populate `#expertGateTemplateFilter` 页面加载时; implementation defers to first `focus` of the dropdown (app.js:11251-11266, registered :11416). (a) authFlow.test.js "pre-auth init safety scan" (authFlow.test.js:440-458) lexically scans bodies of pre-auth bootstrap functions (bindEvents, initBulkAutoReply, initPollLogPanel, initLayoutResizer, bindAuthEvents) with addEventListener callbacks stripped, for `api(`/`fetch(`/`XMLHttpRequest`/`new Request(`/`$.ajax`. A page-load population written as a bare `api("/api/compose-templates")` or IIFE inside `bindEvents` (the natural shape, since bindEvents is the pre-auth wiring site and `initHasFieldTags` precedent lives there) WOULD fail that scan; the current focus-deferred shape passes (ran `node --test src/test/js/authFlow.test.js` — 19 pass, 0 fail). A page-load call to a named top-level function from bindEvents would not be caught by the lexical scan, so the test alone does not strictly force deferral; however a page-load call fires before `checkAuth()` at runtime (app.js:12879-12885), contradicting the scan's no-pre-auth-network intent, which the plan does not reconcile. (b) The deviation is not a proven four-gate violation: no 验收标准 or observable outcome tests population timing; the plan's observable outcomes (dropdown exists, filters apply on selection, 符合 N / M, 不限 restores manual chips) all hold and are covered by the 4 gate JS tests; the plan does not uniquely define a correction that satisfies both page-load timing and the repo's pre-auth no-network invariant. Classified RECORD_ONLY (acceptable observable-equivalent behavior), outside the light gate.
+
+### Required Action
+- COMPLETE_CHILD
+
+---
+Epoch 1 证据补录（控制器）：上述为唯一一次轻量验证（LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD）。无 AUTO_FIX 轮次；fix-log.md 为空。本行仅为满足证据提交需同时记录 execution/verify-log/fix-log 的校验要求，不改变任何裁决。

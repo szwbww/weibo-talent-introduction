@@ -10,7 +10,8 @@ import java.util.UUID
 class IntroductionMailComposer(
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailComposeTemplateService: MailComposeTemplateService,
-    private val mailVariableService: MailVariableService
+    private val mailVariableService: MailVariableService,
+    private val personalizationGateService: PersonalizationGateService = PersonalizationGateService()
 ) {
     fun compose(accountCode: String, expert: ExpertProfile, templateId: Long? = null): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
@@ -22,15 +23,24 @@ class IntroductionMailComposer(
             mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
         }
 
+        val gateTemplateId = templateId ?: rendered.templateId
+        val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
+        val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)
+        if (gate.blocked) {
+            throw PersonalizationGateException(gate.missingKeys)
+        }
+
         val domain = account.senderEmail.substringAfter("@")
         val messageId = "<intro-${expert.orcidId}-${UUID.randomUUID()}@$domain>"
 
-        return ComposedMail(
+        val mail = ComposedMail(
             to = expert.email ?: error("Expert email is required for introduction mail"),
             subject = rendered.subject,
             body = rendered.body,
             messageId = messageId
         )
+        personalizationGateService.requireNoPlaceholderResidue(mail.subject, mail.body)
+        return mail
     }
 
     fun buildTemplateVariables(expert: ExpertProfile, accountCode: String?): List<TemplateVariableItem> {

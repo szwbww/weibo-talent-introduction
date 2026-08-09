@@ -27,7 +27,9 @@ class ManualExpertMailService(
     private val mailDeliveryService: MailDeliveryService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val mailContentService: MailContentService,
-    private val conversationStateService: ConversationStateService
+    private val conversationStateService: ConversationStateService,
+    private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
+    private val mailVariableService: MailVariableService? = null
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         return mailComposeTemplateService.listEnabled()
@@ -55,6 +57,11 @@ class ManualExpertMailService(
             ?.let(mailSenderAccountService::getManualSendAccount)
             ?: mailSenderAccountService.selectAccountForManualSending()
         val composed = compose(contact, account, command)
+        personalizationGateService.requireNoPlaceholderResidue(
+            composed.mail.subject,
+            composed.mail.text,
+            composed.mail.body
+        )
         val delivered = mailDeliveryService.send(account, composed.mail)
         val now = LocalDateTime.now()
 
@@ -162,13 +169,33 @@ class ManualExpertMailService(
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         require(template.enabled) { "Compose template is disabled: $templateId" }
+
+        val variableService = mailVariableService
+        val variables = if (variableService != null) {
+            val expert = variableService.resolveExpertProfileFor(contact)
+            variableService.buildVariables(
+                account, expert, contact.expertEmail, previewFallbacks = false, contact = contact
+            )
+        } else {
+            // Test-only fallback for the legacy 9-arg constructor (no MailVariableService
+            // wired). Production always injects the bean via Spring; this branch mirrors
+            // the pre-gate behavior so pre-existing tests keep their observable contract.
+            senderVariables(account) + MailVariableService.EXPERT_KEYS.associateWith { "" }
+        }
         val rendered = mailComposeTemplateService.render(
             templateId,
-            mailTemplateVariables(account),
+            variables,
             MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         )
         require(rendered.body.isNotBlank()) {
             "邮件模板正文为空：所有内容块均不可用，请检查模板配置"
+        }
+
+        val requiredKeys = (mailComposeTemplateService.effectiveRequiredKeys(templateId) ?: emptyList())
+        val rawTexts = rendered.rawTexts.ifEmpty { listOf(template.subject) }
+        val gate = personalizationGateService.evaluate(rawTexts, variables, requiredKeys)
+        if (gate.blocked) {
+            throw PersonalizationGateException(gate.missingKeys)
         }
 
         val isMaterialReminder = (rendered.mailType ?: "COMPOSE_TEMPLATE") == "MATERIAL_REMINDER"
@@ -187,12 +214,17 @@ class ManualExpertMailService(
         } else null
 
         val senderDomain = account.senderEmail.substringAfter("@")
+        val html = if (variableService != null) {
+            variableService.renderHtmlForContact(rendered.body, account, contact)
+        } else {
+            mailContentService.plainTextToHtml(rendered.body)
+        }
         return ManualComposedMail(
             mailType = rendered.mailType ?: "COMPOSE_TEMPLATE",
             mail = ComposedMail(
                 to = contact.expertEmail,
                 subject = threadSubject,                                                    // I-2
-                body = mailContentService.plainTextToHtml(rendered.body),
+                body = html,
                 html = true,
                 text = rendered.body,
                 messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
@@ -228,14 +260,13 @@ class ManualExpertMailService(
             else -> ConversationStatus.fromName(currentStatus)
         }
 
-    private fun mailTemplateVariables(account: MailSenderAccount): Map<String, String> =
+    private fun senderVariables(account: MailSenderAccount): Map<String, String> =
         mapOf(
             "senderEmail" to account.senderEmail,
             "senderName" to account.senderName,
             "senderTitle" to account.senderTitle.orEmpty(),
             "teamName" to account.teamName.orEmpty(),
-            "countryName" to account.countryName.orEmpty(),
-            "senderDisplayName" to account.senderDisplayName.orEmpty()
+            "countryName" to account.countryName.orEmpty()
         )
 
     companion object {

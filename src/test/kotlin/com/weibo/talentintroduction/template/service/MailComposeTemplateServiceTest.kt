@@ -1014,4 +1014,82 @@ class MailComposeTemplateServiceTest {
             variantOrder = order,
             content = content
         )
+
+    // ── P1 effectiveRequiredKeys / requiredEsFields (I-3, I-4) ──
+
+    private fun stubTemplateWithRequiredKeys(raw: String?) {
+        Mockito.`when`(templateRepository.findById(1L))
+            .thenReturn(
+                Optional.of(
+                    MailComposeTemplate(
+                        id = 1,
+                        templateName = "Test",
+                        subject = "Subject",
+                        requiredKeys = raw
+                    )
+                )
+            )
+    }
+
+    @Test
+    fun `effectiveRequiredKeys returns empty for null blank empty array and invalid json`() {
+        val cases = listOf<String?>(null, "", "   ", "[]", "{}", "{不是数组}")
+        cases.forEach { raw ->
+            stubTemplateWithRequiredKeys(raw)
+            assertEquals(emptyList<String>(), service.effectiveRequiredKeys(1L), "raw=$raw")
+        }
+    }
+
+    @Test
+    fun `effectiveRequiredKeys keeps configured order and filters unknown keys`() {
+        stubTemplateWithRequiredKeys("""["recentWorkTitle","primaryResearchField"]""")
+        assertEquals(listOf("recentWorkTitle", "primaryResearchField"), service.effectiveRequiredKeys(1L))
+
+        stubTemplateWithRequiredKeys("""["recentWorkTitle","bogus","expertFamilyName"]""")
+        assertEquals(listOf("recentWorkTitle", "expertFamilyName"), service.effectiveRequiredKeys(1L))
+    }
+
+    @Test
+    fun `requiredEsFields maps keys to es fields deduplicated in stable order`() {
+        stubTemplateWithRequiredKeys(
+            """["primaryResearchField","recentWorkTitle","primaryResearchField","senderEmail"]"""
+        )
+        // senderEmail is known but has no ES field → dropped
+        assertEquals(
+            listOf("researchFields", "recentWorkTitles"),
+            service.requiredEsFields(1L)
+        )
+    }
+
+    @Test
+    fun `render result exposes raw texts and template id for gate evaluation`() {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
+            .thenReturn(
+                MailComposeTemplate(
+                    id = 1,
+                    templateCode = "INTRO",
+                    templateName = "Intro",
+                    subject = "Hello \${senderName}",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(
+                listOf(
+                    MailComposeTemplateBlock(
+                        templateId = 1,
+                        blockOrder = 0,
+                        blockType = ComposeBlockType.CUSTOM_TEXT,
+                        customText = "Topic: \${researchFields|Science}"
+                    )
+                )
+            )
+
+        val rendered = service.renderByCode("INTRO", mapOf("senderName" to "Chen", "researchFields" to ""))
+
+        assertEquals("Hello Chen", rendered.subject)
+        assertEquals(1L, rendered.templateId)
+        // raw subject + raw block text, placeholders intact (I-3 input contract)
+        assertEquals(listOf("Hello \${senderName}", "Topic: \${researchFields|Science}"), rendered.rawTexts)
+    }
 }

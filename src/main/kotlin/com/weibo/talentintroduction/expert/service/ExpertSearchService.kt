@@ -21,7 +21,34 @@ class ExpertSearchService(
     private val expertIndexService: ExpertIndexService
 ) {
     companion object {
-        val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles")
+        val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
+
+        /**
+         * Fields whose ES mapping type is `keyword`, so an empty-string term can
+         * reliably exclude documents holding blank values. `text` fields are not
+         * listed here: `term ""` against them matches tokenized content and may
+         * wrongly exclude documents that have values (I-12).
+         */
+        val BLANK_EXCLUDABLE_FIELDS = setOf(
+            "researchFields", "recentWorkTitles", "patentTitles", "degree", "country"
+        )
+
+        /**
+         * Existence filter for a hasField-style query. For `keyword` fields the
+         * `exists` check is combined with `must_not term ""` so blank values do
+         * not count as present; for `text` fields a bare `exists` is used (I-9).
+         */
+        private fun fieldPresenceFilter(field: String): Map<String, Any> =
+            if (field in BLANK_EXCLUDABLE_FIELDS) {
+                mapOf(
+                    "bool" to mapOf(
+                        "must" to listOf(mapOf("exists" to mapOf("field" to field))),
+                        "must_not" to listOf(mapOf("term" to mapOf(field to "")))
+                    )
+                )
+            } else {
+                mapOf("exists" to mapOf("field" to field))
+            }
 
         private val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")
 
@@ -594,7 +621,7 @@ class ExpertSearchService(
     private fun buildFieldPresenceFilters(fields: List<String>, mode: FieldPresenceMode): List<Map<String, Any>> =
         when (mode) {
             FieldPresenceMode.SATISFY_ALL -> fields.map { field ->
-                mapOf("exists" to mapOf("field" to field))
+                fieldPresenceFilter(field)
             }
             FieldPresenceMode.MISSING_ANY -> listOf(
                 mapOf(
@@ -771,7 +798,7 @@ class ExpertSearchService(
         }
         hasField?.forEach { field ->
             require(field in ALLOWED_HAS_FIELDS) { "Invalid hasField: $field" }
-            filters.add(mapOf("exists" to mapOf("field" to field)))
+            filters.add(fieldPresenceFilter(field))
         }
 
         if (!discipline.isNullOrBlank()) {

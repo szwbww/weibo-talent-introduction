@@ -34,6 +34,7 @@ import com.weibo.talentintroduction.mail.service.ManualExpertMailService
 import com.weibo.talentintroduction.mail.service.ManualMailOptionType
 import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException
+import com.weibo.talentintroduction.mail.service.PersonalizationGateException
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
@@ -318,6 +319,13 @@ class ManualInitialOutreachService(
                         errors.add("发送失败 ($email): ${result.sendStatus}")
                         if (errors.size > 20) errors.removeAt(0)
                     }
+                } catch (e: PersonalizationGateException) {
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE,
+                        "个性化字段缺失（${e.missingKeys.joinToString(",")}）：$email"
+                    )
+                    // 计数由循环公共收尾路径（processedTotal/roundSent/roundProcessed）统一推进一次，
+                    // 此处不再自增，避免与收尾路径重复计数（V-1）。
                 } catch (e: Exception) {
                     log.error("Failed to send material reminder to contact {}", contactId, e)
                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送异常 ($email): ${e.message}")
@@ -588,6 +596,20 @@ class ManualInitialOutreachService(
                     val mail = try {
                         introductionMailComposer.compose(account.accountCode, expert, config.templateId)
                             .copy(messageId = messageId)
+                    } catch (e: PersonalizationGateException) {
+                        log.info("Personalization gate blocked ORCID {}: missing keys {}", normOrcid, e.missingKeys)
+                        accumulator.recordSkipped(
+                            BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE,
+                            "个性化字段缺失（${e.missingKeys.joinToString(",")}）：${expert.email}"
+                        )
+                        roundRejected++
+                        processedTotal++
+                        roundSent++
+                        roundProcessed++
+                        updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                            "RUNNING", "个性化字段缺失：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                        continue
                     } catch (e: Exception) {
                         log.error("Template compose failed for ORCID: {}", normOrcid, e)
                         accumulator.recordFailure(BatchOutcomeReasonCodes.TEMPLATE_RENDER_FAILED, "模板渲染失败 (${expert.email}): ${e.message}")
