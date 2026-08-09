@@ -94,3 +94,50 @@ Manual acceptance: PENDING (AM-1 through AM-7).
 - Excluded findings: O-1 test-only fallback; O-2 observable-equivalent focus timing.
 - Repair artifact includes the required Review-Fast-P one-approval execution handoff.
 - No implementation was performed.
+
+## Epoch 2 — 2026-08-09T18:30:00+08:00
+
+- Master plan: `docs/plans/2026-08-09/personalization-gate-master.md` (sha256 `cbae234bc59e9ae9fe67315bd86e4a86ee1d4ddd4ef54b94dbd14ebde13b8324`)
+- Governing master identity: recorded identity matches; state `CONSISTENT`; amendments N/A
+- Boundary: `ab5dcbb7fbb58f5e8a9b13b7e54022effd270b77..d7fbe460ee8b169e687c41d433f631e34b13c025`
+- Reviewer: `/root/post_repair_reviewer` (fresh after candidate commit)
+- Repair lineage: `RECONSTRUCTED_FROM_GIT`; approval `APPROVAL_NOT_RECORDED`; executor `UNAVAILABLE`; repair artifact sha256 `302cc4bd6eab1aae150518bdbf7ac94fa8dbc9e1a2a113b3796799d80bb1a042`
+- Result: `PASS`
+- Convergence: `PROGRESSING`
+- Repair artifact/result: N/A; V-1 and V-2 resolved, no new finding
+
+### Complete post-repair review-p output
+
+| Command | Result | Evidence |
+|---|---|---|
+| JDK 11 `mvn test` | PASS, exit 0 | JVM 2232, F0/E0/S4; Node 479 pass/0 fail |
+| JDK 11 `mvn clean package` | PASS, exit 0 | JVM 2232, F0/E0/S4; Node 479 pass/0 fail |
+| JDK 11 P1 impacted test command | PASS, exit 0 | JVM 98, F0/E0/S0; Node 479 pass/0 fail |
+| JDK 11 P2 impacted test command | PASS, exit 0 | JVM 41, F0/E0/S0; Node 479 pass/0 fail |
+| `node --test src/test/js/gateTemplateFilter.test.js` | PASS, exit 0 | 5 pass/0 fail |
+| `git diff --check` | PASS, exit 0 | no output |
+
+| Contract | Result | Independent evidence |
+|---|---|---|
+| Master O1/I-M1; P1 I-2 | PASS | both send paths reject placeholder residue before delivery |
+| Master O2/I-M2/I-M5; P1 I-3/I-4/I-5 | PASS | server evaluates raw template/current variables; unconfigured keys disable gate; both paths wired |
+| Master O3; P1 I-6 | PASS | both loops record `PERSONALIZATION_INCOMPLETE`; V-1 catch now uses shared accounting exactly once |
+| Master O4; P2 I-9/I-10/I-11/I-12 | PASS | server-derived template fields; shared ES filter; V-2 failure clears gate state; keyword blank handling preserved |
+| I-M3; P1 I-8; P1→P2 interface | PASS | service remains sole required/ES field derivation source; no frontend defaults |
+| I-M4; P1 I-7 | PASS | primary research field maps to existing `researchFields`; no ES write change |
+| Must-not-change rules and P2 S-1/S-2/S-3 | PASS | composer/callers, chips, query semantics, text, styles, and out-of-scope boundaries retained |
+| Authorized repair scope | PASS | `d848b8c..d7fbe46` product/test delta is exactly four repair-authorized files |
+
+| Finding | Epoch 1 | Epoch 2 |
+|---|---|---|
+| V-1 | FAIL: MATERIAL_REMINDER gate skip double-accounted | RESOLVED: catch only records skip; shared bookkeeping advances once; regression test added |
+| V-2 | FAIL: failed template switch retained old gate fields | RESOLVED: failure clears gate fields/template id, hides summary, reloads; JS regression test added |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| Legacy null `mailVariableService` fallback | I-M1/I-M5 | RECORD_ONLY | production DI injects the service; production path uses full variables and gate checks |
+| First-focus template-option loading | observable outcome 4/I-M3 | RECORD_ONLY | usable interaction path; no mandatory page-load request contract; preserves pre-auth no-network invariant |
+
+No product code, tests, or review evidence was modified by this reviewer. Manual acceptance remains pending.

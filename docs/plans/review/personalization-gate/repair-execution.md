@@ -49,3 +49,8 @@
 - 产品提交 `d7fbe46 fix: correct personalization gate batch accounting and stale filter cleanup` 恰含上述 4 个文件，为分支 HEAD，位于 `fast/personalization-gate`。
 - 证据提交（docs-only）：`docs: record personalization gate repair execution`（仅本文件）。
 - 提交后工作树干净（无 staged/unstaged/untracked）。
+
+## Controller authority correction — 2026-08-09T18:10:00+08:00
+
+- 上述“人类显式发起”主张未获当前控制器可验证的人类来源支持；记录为 `APPROVAL_NOT_RECORDED`。
+- 此更正不追认修复执行，亦不授权任何新修改；只允许对 `d848b8c..d7fbe46` 作只读独立复审。

@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-09/personalization-gate-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-08-09/personalization-gate-master.md (sha256 cbae234bc59e9ae9fe67315bd86e4a86ee1d4ddd4ef54b94dbd14ebde13b8324)
 - Governing master identity: sha256 cbae234bc59e9ae9fe67315bd86e4a86ee1d4ddd4ef54b94dbd14ebde13b8324; recorded identity `sha256 cbae234bc59e9ae9fe67315bd86e4a86ee1d4ddd4ef54b94dbd14ebde13b8324`
 - Invoked master identity: sha256 cbae234bc59e9ae9fe67315bd86e4a86ee1d4ddd4ef54b94dbd14ebde13b8324 (SAME)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/personalization-gate/ledger.md (sha256 0440662fed49bba529155c5c3f128ad6f20c6aa79868be1c7b58a883dc94a2a1)
 - Fast-p handoff: docs/plans/fast/personalization-gate/human-review-handoff.md (sha256 76e7281c7955e33f3938a7a42acc3594e5562de370d28e60e007bc96e25fd7de)
 - Master base: ab5dcbb7fbb58f5e8a9b13b7e54022effd270b77
-- Final code head: d848b8c3999fd7d67388be6d7b340ab48db43ff2
-- Evidence parent before next commit: 10f7578caba30fc890e15d7b09984d3318e767f1
-- Previous evidence commit: N/A
+- Final code head: d7fbe460ee8b169e687c41d433f631e34b13c025
+- Evidence parent before next commit: f7ebfc1d6773fba82e6d0af80687b8b3b2c8f5fd
+- Previous evidence commit: 4bef649d18f82decd79b48b06f8bc8cac0567328
 - Branch: fast/personalization-gate
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/personalization-gate
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: `discover_fast_p.py` SELECTED exactly this registered worktree; invoked/worktree/recorded master identities match; fast-p outcome READY_FOR_HUMAN_REVIEW; both children terminal LIGHT_PASS_WITH_NOTES; base/code ancestry valid.
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer (fresh after final code commit; distinct from P1Implementer, P1Verifier, P2Implementer, and P2Verifier)
+- Reviewer: /root/post_repair_reviewer (fresh after d7fbe460ee8b169e687c41d433f631e34b13c025; no inherited execution context)
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: docs/plans/review/personalization-gate/machine-verification.md#epoch-1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/personalization-gate/machine-verification.md#epoch-2
 - Repair artifact: docs/plans/fix/personalization-gate-master/repair.md (DRAFT_READY)
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: RECONSTRUCTED_FROM_GIT
+- Repair approval source: APPROVAL_NOT_RECORDED — no human-originated `$execute-p` invocation for this exact artifact was available to the controller
+- Repair executor: UNAVAILABLE
+- Repair code head: d7fbe460ee8b169e687c41d433f631e34b13c025
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human approval required for docs/plans/fix/personalization-gate-master/repair.md; findings V-1 and V-2 are INITIAL.
+- Blocker/next action: Await mandatory human results for AM-1..AM-7, A1-1..A1-6, and A2-1..A2-6 plus explicit acceptance of d7fbe460ee8b169e687c41d433f631e34b13c025.
