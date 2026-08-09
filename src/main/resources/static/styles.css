@@ -576,6 +576,38 @@ p {
     box-shadow: 0 1px 3px rgba(var(--primary-rgb), 0.3);
 }
 
+.gate-filter-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.gate-filter-summary.has-value {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+}
+
+.gate-filter-summary .gate-filter-match {
+    font-weight: 500;
+    color: var(--text-main);
+}
+
+.gate-filter-summary.has-value .gate-filter-match {
+    color: var(--primary);
+}
+
 /* Back to list button (only shown in single-column layout, see responsive section) */
 .back-to-list {
     display: none;

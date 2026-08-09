@@ -1336,4 +1336,145 @@ class ExpertSearchServiceTest {
         val termFilter = filter.first { it.containsKey("term") && (it["term"] as Map<*, *>).containsKey("disciplineCategory") }
         assertEquals("HUMANITIES", (termFilter["term"] as Map<*, *>)["disciplineCategory"])
     }
+
+    @Test
+    fun `ALLOWED_HAS_FIELDS includes recentWorkTitles so gate fields never 500`() {
+        assertTrue("recentWorkTitles" in ExpertSearchService.ALLOWED_HAS_FIELDS)
+        assertTrue(
+            ExpertSearchService.ALLOWED_HAS_FIELDS.containsAll(
+                listOf("employment", "degree", "institution", "researchFields", "patentTitles")
+            )
+        )
+    }
+
+    @Test
+    fun `BLANK_EXCLUDABLE_FIELDS equals the keyword-type field set exactly`() {
+        assertEquals(
+            setOf("researchFields", "recentWorkTitles", "patentTitles", "degree", "country"),
+            ExpertSearchService.BLANK_EXCLUDABLE_FIELDS
+        )
+    }
+
+    @Test
+    fun `searchExperts blank-excludes keyword researchFields but uses bare exists for text institution`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 2},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@x.com", "researchFields": "AI", "institution": "USTC"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(
+            size = 10,
+            level = ExpertIndexLevel.CANDIDATE,
+            hasField = listOf("researchFields", "institution")
+        )
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val request = entityCaptor.value.body as Map<*, *>
+        val query = request["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        // keyword field: exists + must_not term "" (blank values excluded, I-9/I-12)
+        val researchFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val inner = map["bool"] as? Map<*, *>
+            inner != null && (inner["must"] as List<*>).toString().contains("researchFields")
+        }
+        assertNotNull(researchFilter, "researchFields filter missing from: $filter")
+        val researchBool = (researchFilter as Map<*, *>)["bool"] as Map<*, *>
+        val researchMust = researchBool["must"] as List<*>
+        val researchMustNot = researchBool["must_not"] as List<*>
+        assertEquals(1, researchMust.size)
+        assertEquals(1, researchMustNot.size)
+        assertTrue(researchMust.toString().contains("exists") && researchMust.toString().contains("researchFields"))
+        val term = (researchMustNot[0] as Map<*, *>)["term"] as Map<*, *>
+        assertEquals("", term["researchFields"])
+
+        // text field: bare exists only, no bool wrapper
+        val institutionFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val exists = map["exists"] as? Map<*, *>
+            exists != null && exists["field"] == "institution"
+        }
+        assertNotNull(institutionFilter, "institution filter missing from: $filter")
+        assertFalse((institutionFilter as Map<*, *>).containsKey("bool"))
+        assertTrue((institutionFilter["exists"] as Map<*, *>)["field"].toString().contains("institution"))
+    }
+
+    @Test
+    fun `searchExperts rejects unknown hasField with IllegalArgumentException`() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            service.searchExperts(
+                size = 10,
+                level = ExpertIndexLevel.CANDIDATE,
+                hasField = listOf("notAnEsField")
+            )
+        }
+    }
+
+    @Test
+    fun `countByFieldPresence SATISFY_ALL blank-excludes keyword fields but keeps bare exists for text`() {
+        val responseNode = mapper.readTree("""{"count": 7}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val count = service.countByFieldPresence(
+            ExpertIndexLevel.CANDIDATE,
+            listOf("researchFields", "institution"),
+            FieldPresenceMode.SATISFY_ALL
+        )
+
+        assertEquals(7L, count)
+        val requestPayload = capture.value.body as Map<*, *>
+        val filter = ((requestPayload["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
+
+        val researchFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val inner = map["bool"] as? Map<*, *>
+            inner != null && (inner["must"] as List<*>).toString().contains("researchFields")
+        }
+        assertNotNull(researchFilter, "researchFields filter missing from: $filter")
+        val researchBool = (researchFilter as Map<*, *>)["bool"] as Map<*, *>
+        val researchMustNot = researchBool["must_not"] as List<*>
+        val term = (researchMustNot[0] as Map<*, *>)["term"] as Map<*, *>
+        assertEquals("", term["researchFields"])
+
+        val institutionFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val exists = map["exists"] as? Map<*, *>
+            exists != null && exists["field"] == "institution"
+        }
+        assertNotNull(institutionFilter, "institution filter missing from: $filter")
+        assertFalse((institutionFilter as Map<*, *>).containsKey("bool"))
+    }
 }

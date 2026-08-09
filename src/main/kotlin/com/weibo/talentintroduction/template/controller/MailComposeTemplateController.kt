@@ -48,6 +48,14 @@ class MailComposeTemplateController(
         service.delete(id)
     }
 
+    @GetMapping("/{id}/gate-fields")
+    fun gateFields(@PathVariable id: Long): ComposeTemplateGateFields =
+        ComposeTemplateGateFields(
+            templateId = id,
+            requiredKeys = service.effectiveRequiredKeys(id),
+            esFields = service.requiredEsFields(id)
+        )
+
     @GetMapping("/{id}/preview")
     fun preview(@PathVariable id: Long): ComposeTemplatePreviewResult =
         service.preview(id)
@@ -56,6 +64,12 @@ class MailComposeTemplateController(
     fun previewDraft(@RequestBody request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult =
         service.previewDraft(request)
 }
+
+data class ComposeTemplateGateFields(
+    val templateId: Long,
+    val requiredKeys: List<String>,
+    val esFields: List<String>
+)
 
 data class MailComposeTemplateRequest(
     val templateCode: String? = null,

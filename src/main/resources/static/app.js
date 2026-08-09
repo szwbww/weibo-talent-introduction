@@ -11138,6 +11138,11 @@ function bindEvents() {
             reloadContactsFromStart();
         }));
     })();
+
+    /* ── 按模板门禁 (gate filter by template required fields) ──
+       逻辑在顶层函数 initExpertGateFilter 中（含网络请求），此处仅注册；
+       bootstrap 阶段不得发起网络请求（见 authFlow 预认证扫描） */
+    initExpertGateFilter(reloadContactsFromStart);
     $("#contactPrevPage").addEventListener("click", () => {
         if (state.contactsPage > 0) {
             state.contactsPage -= 1;
@@ -11239,6 +11244,170 @@ function bindEvents() {
         }
     });
 
+}
+
+/* 填充「按模板门禁」下拉选项：用既有 compose 模板列表接口，value=模板 id、文案=模板名称。
+   定义为顶层函数并在首次聚焦时触发，避免在 bootstrap 预认证阶段发起网络请求；
+   失败时不回退硬编码集合，仅记录日志，下次聚焦重试（I-10）。 */
+let expertGateTemplateOptionsLoaded = false;
+function populateExpertGateTemplateFilter() {
+    const select = $("#expertGateTemplateFilter");
+    if (!select || expertGateTemplateOptionsLoaded) return;
+    expertGateTemplateOptionsLoaded = true;
+    api("/api/compose-templates")
+        .then((templates) => {
+            if (!Array.isArray(templates)) return;
+            templates.forEach((t) => {
+                const option = document.createElement("option");
+                option.value = String(t.id);
+                option.textContent = t.templateName;
+                select.appendChild(option);
+            });
+        })
+        .catch((e) => {
+            expertGateTemplateOptionsLoaded = false;
+            console.error(`[gate] compose templates load failed: ${e.message}`);
+        });
+}
+
+/* ── 按模板门禁 (gate filter by template required fields) ──
+   在 bindEvents 中以 reloadContactsFromStart 回调注册；本函数为顶层定义，
+   bootstrap 预认证阶段不执行任何网络请求（见 authFlow 预认证扫描）。 */
+function initExpertGateFilter(reloadContactsFromStart) {
+    const select = $("#expertGateTemplateFilter");
+    const summary = $("#expertGateSummary");
+    if (!select || !summary) return;
+
+    let gateTemplateId = "";
+    let gateEsFields = [];
+    let manualSnapshot = [];
+
+    const gateChips = () => Array.from($("#hasFieldTagSelect").querySelectorAll(".tag-chip"));
+
+    function gateChip(value) {
+        return gateChips().find((c) => c.dataset.value === value);
+    }
+
+    function gateActiveValues() {
+        return gateChips()
+            .filter((c) => c.classList.contains("active"))
+            .map((c) => c.dataset.value);
+    }
+
+    function gateSetChipActive(value, active) {
+        const chip = gateChip(value);
+        if (chip) {
+            chip.classList.toggle("active", active);
+            return true;
+        }
+        return false;
+    }
+
+    /* 清除由门禁自动加上的 .active（记录在 gateEsFields 中） */
+    function clearGateFields() {
+        gateEsFields.forEach((f) => gateSetChipActive(f, false));
+        gateEsFields = [];
+    }
+
+    /* 用门禁返回的 esFields 整体替换 chip 选中态；未知字段忽略并记录，不阻断 */
+    function applyGateFields(fields) {
+        gateChips().forEach((c) => c.classList.remove("active"));
+        fields.forEach((f) => {
+            if (!gateSetChipActive(f, true)) {
+                console.log(`[gate] esField ignored (no matching chip): ${f}`);
+            }
+        });
+        gateEsFields = fields;
+    }
+
+    /* 与 loadContacts() 一致的查询参数，但不含 hasField（size=1，仅取 totalHits） */
+    function gateSummaryParams() {
+        const params = new URLSearchParams();
+        const level = $("#expertIndexLevel");
+        if (!level) return null;
+        params.set("level", level.value);
+        params.set("size", "1");
+        const needsAttention = $("#contactNeedsAttentionFilter")?.value || "";
+        const replyMode = $("#contactReplyModeFilter")?.value || "";
+        if (needsAttention || replyMode) return null; // DB 路径无 ES 门禁计数
+        const operatorStatus = $("#contactStatusFilter")?.value || "";
+        if (operatorStatus) params.set("operatorStatus", operatorStatus);
+        const tag = $("#expertTagFilter")?.value || "";
+        if (tag) params.set("tag", tag);
+        const emailDomain = $("#expertEmailDomainFilter")?.value || "";
+        if (emailDomain) params.set("emailDomain", emailDomain);
+        const region = $("#expertRegionFilter")?.value || "";
+        if (region) params.set("region", region);
+        const discipline = $("#expertDisciplineFilter")?.value || "";
+        if (discipline) params.set("discipline", discipline);
+        const sortBy = $("#expertSortBy")?.value || "";
+        if (sortBy) params.set("sortBy", sortBy);
+        const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
+        if (hIndexMin) params.set("hIndexMin", hIndexMin);
+        const citationMin = $("#expertCitationMinFilter")?.value || "";
+        if (citationMin) params.set("citationCountMin", citationMin);
+        const recentYears = $("#expertRecentYearsFilter")?.value || "";
+        if (recentYears) params.set("recentYears", recentYears);
+        return params;
+    }
+
+    /* 符合 = 应用门禁 hasField 后的 totalHits；总数 = 不带 hasField 的 totalHits（I-9、S-3） */
+    async function refreshGateSummary() {
+        const base = gateSummaryParams();
+        if (!base) return;
+        const filtered = new URLSearchParams(base);
+        gateActiveValues().forEach((f) => filtered.append("hasField", f));
+        const [filteredData, totalData] = await Promise.all([
+            api(`/api/experts?${filtered}`),
+            api(`/api/experts?${base}`)
+        ]);
+        $("#expertGateMatchCount").textContent = String(filteredData.totalHits ?? 0);
+        $("#expertGateTotalCount").textContent = String(totalData.totalHits ?? 0);
+        summary.hidden = false;
+        summary.classList.add("has-value");
+    }
+
+    function hideGateSummary() {
+        summary.hidden = true;
+        summary.classList.remove("has-value");
+    }
+
+    async function handleExpertGateChange() {
+        const id = select.value;
+        if (!id) {
+            gateTemplateId = "";
+            clearGateFields();
+            gateChips().forEach((c) => c.classList.remove("active"));
+            manualSnapshot.forEach((v) => gateSetChipActive(v, true));
+            hideGateSummary();
+            reloadContactsFromStart();
+            return;
+        }
+        try {
+            const data = await api(`/api/compose-templates/${id}/gate-fields`);
+            const fields = Array.isArray(data?.esFields) ? data.esFields : [];
+            if (gateTemplateId === "") {
+                manualSnapshot = gateActiveValues();
+            }
+            applyGateFields(fields);
+            gateTemplateId = id;
+            try {
+                await refreshGateSummary();
+            } catch (e) {
+                hideGateSummary();
+                showStatus(`符合计数获取失败：${e.message}`, "error");
+            }
+            reloadContactsFromStart();
+        } catch (e) {
+            // 接口失败：不应用任何筛选，计数保持隐藏，仅提示一次（I-10，无硬编码回退）
+            showStatus(`按模板门禁筛选失败：${e.message}`, "error");
+        }
+    }
+
+    select.addEventListener("change", handleExpertGateChange);
+
+    /* 下拉选项由 populateExpertGateTemplateFilter() 在首次聚焦时填充（I-10，无硬编码回退） */
+    select.addEventListener("focus", populateExpertGateTemplateFilter);
 }
 
 const ACTION_DIALOG_SCHEMAS = {
