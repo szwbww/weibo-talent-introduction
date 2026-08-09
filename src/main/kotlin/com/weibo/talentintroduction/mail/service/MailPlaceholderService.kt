@@ -111,7 +111,8 @@ class MailPlaceholderService {
             "lastPublicationYear",
             "degree",
             "recentWorkTitle",
-            "patentTitle"
+            "patentTitle",
+            "primaryResearchField"
         )
 
         val VARIABLE_LABELS: Map<String, String> = mapOf(
@@ -133,6 +134,7 @@ class MailPlaceholderService {
             "degree" to "学历",
             "recentWorkTitle" to "近期论文标题",
             "patentTitle" to "专利标题",
+            "primaryResearchField" to "主要研究方向",
             "unsubscribeUrl" to "退订链接"
         )
 
@@ -155,6 +157,7 @@ class MailPlaceholderService {
             "degree" to "degree",
             "recentWorkTitle" to "recentWorkTitles",
             "patentTitle" to "patentTitles",
+            "primaryResearchField" to "researchFields",
             "unsubscribeUrl" to null
         )
 
@@ -177,6 +180,7 @@ class MailPlaceholderService {
             "degree" to "PhD",
             "recentWorkTitle" to "A Study on Neural Networks",
             "patentTitle" to "Method for Data Processing",
+            "primaryResearchField" to "Machine Learning and Data Classification",
             "unsubscribeUrl" to "https://example.com/u/unsubscribe?token=preview"
         )
 

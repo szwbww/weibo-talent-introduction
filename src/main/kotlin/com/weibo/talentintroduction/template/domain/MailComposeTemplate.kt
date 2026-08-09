@@ -13,6 +13,7 @@ data class MailComposeTemplate(
     val subjectVariants: String? = null,
     val description: String? = null,
     val mailType: String? = null,
+    val requiredKeys: String? = null,
     val enabled: Boolean = true,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null

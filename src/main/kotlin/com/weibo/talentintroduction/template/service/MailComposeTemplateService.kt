@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.template.service
 
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
 import com.weibo.talentintroduction.mail.service.PreviewVariableItem
@@ -17,6 +19,7 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.service.ContentVariantService
+import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -34,6 +37,7 @@ class MailComposeTemplateService(
     private val mailSenderAccountService: MailSenderAccountService,
     private val contentVariantService: ContentVariantService
 ) {
+    private val log = LoggerFactory.getLogger(MailComposeTemplateService::class.java)
     fun listAll(): List<MailComposeTemplateDetail> =
         templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
 
@@ -127,6 +131,42 @@ class MailComposeTemplateService(
         return renderTemplate(template, blocks, variables, variantSeed)
     }
 
+    /**
+     * Effective required-variable keys for the send gate (I-4): NULL, blank,
+     * empty JSON array or unparseable JSON all yield an empty list (gate
+     * disabled); unknown keys are filtered out. Parse failures log WARN but
+     * never throw.
+     */
+    fun effectiveRequiredKeys(templateId: Long): List<String> {
+        val template = findTemplate(templateId)
+        return parseRequiredKeys(template.requiredKeys)
+    }
+
+    /**
+     * Maps [effectiveRequiredKeys] through the variable→ES-field table, dropping
+     * keys without an ES field, deduplicated, in stable order.
+     */
+    fun requiredEsFields(templateId: Long): List<String> =
+        effectiveRequiredKeys(templateId)
+            .mapNotNull { MailPlaceholderService.ES_FIELD_BY_KEY[it] }
+            .distinct()
+
+    private fun parseRequiredKeys(requiredKeys: String?): List<String> {
+        val text = requiredKeys?.trim().orEmpty()
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val keys = try {
+            objectMapper.readValue(text, object : TypeReference<List<String>>() {})
+        } catch (e: Exception) {
+            log.warn("Failed to parse required_keys as JSON array, gate disabled: {}", e.message)
+            return emptyList()
+        }
+        val knownKeys = MailVariableService.VARIABLE_LABELS
+        return keys.map { it.trim() }
+            .filter { it.isNotEmpty() && it in knownKeys }
+    }
+
     private fun renderTemplate(
         template: MailComposeTemplate,
         blocks: List<MailComposeTemplateBlock>,
@@ -138,7 +178,9 @@ class MailComposeTemplateService(
             subject = renderText(template.subject, variables),
             body = resolved.includedTexts.joinToString("\n\n"),
             qaRuleIds = resolved.qaRuleIds,
-            mailType = template.mailType
+            mailType = template.mailType,
+            rawTexts = listOf(template.subject) + resolved.rawTexts.values,
+            templateId = template.id
         )
     }
 
@@ -390,6 +432,7 @@ class MailComposeTemplateService(
         val qaRuleIds = mutableListOf<Long>()
         val previewBlocks = mutableListOf<ComposeTemplatePreviewBlock>()
         val rawTextsByOrder = mutableMapOf<Int, String>()
+        val rawTexts = mutableMapOf<Int, String>()
         var variantPoolSize = 1
 
         blocks.sortedBy { it.blockOrder }.forEach { block ->
@@ -413,6 +456,7 @@ class MailComposeTemplateService(
                         return@forEach
                     }
                     val resolvedBody = rule.replyBody
+                    rawTexts[block.blockOrder] = resolvedBody
                     val text = if (renderVariables) {
                         renderText(resolvedBody, variables).trim()
                     } else {
@@ -459,6 +503,7 @@ class MailComposeTemplateService(
                         variantPoolSize,
                         contentVariantService.poolSize(ContentVariantOwnerType.REPLY_SNIPPET, refId, snippet.content)
                     )
+                    rawTexts[block.blockOrder] = resolvedContent
                     val text = if (renderVariables) {
                         renderText(resolvedContent, variables).trim()
                     } else {
@@ -479,6 +524,7 @@ class MailComposeTemplateService(
                     )
                 }
                 ComposeBlockType.CUSTOM_TEXT -> {
+                    rawTexts[block.blockOrder] = block.customText.orEmpty()
                     val text = if (renderVariables) {
                         block.customText?.let { renderText(it, variables) }?.trim().orEmpty()
                     } else {
@@ -507,6 +553,7 @@ class MailComposeTemplateService(
             qaRuleIds = qaRuleIds,
             previewBlocks = previewBlocks,
             rawTextsByOrder = rawTextsByOrder,
+            rawTexts = rawTexts,
             variantPoolSize = variantPoolSize
         )
     }
@@ -532,6 +579,7 @@ class MailComposeTemplateService(
         val qaRuleIds: List<Long>,
         val previewBlocks: List<ComposeTemplatePreviewBlock>,
         val rawTextsByOrder: Map<Int, String> = emptyMap(),
+        val rawTexts: Map<Int, String> = emptyMap(),
         val variantPoolSize: Int = 1
     )
 
@@ -606,7 +654,9 @@ data class ComposeTemplateRenderResult(
     val subject: String,
     val body: String,
     val qaRuleIds: List<Long> = emptyList(),
-    val mailType: String? = null
+    val mailType: String? = null,
+    val rawTexts: List<String> = emptyList(),
+    val templateId: Long? = null
 )
 
 data class ComposeTemplatePreviewResult(

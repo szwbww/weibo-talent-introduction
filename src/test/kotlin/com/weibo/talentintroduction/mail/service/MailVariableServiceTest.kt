@@ -532,4 +532,51 @@ class MailVariableServiceTest {
         assertTrue(html.startsWith("Dear Professor,"))
         assertTrue(preview.rendered.startsWith("Dear Professor,"))
     }
+
+    // ── primaryResearchField (P1 I-7, I-8) ──
+
+    @Test
+    fun `buildVariables derives primaryResearchField as first research field segment`() {
+        val multiField = expert.copy(researchFields = "Machine Learning, Data Mining, NLP")
+        val variables = service.buildVariables(account, multiField)
+
+        assertEquals("Machine Learning", variables["primaryResearchField"])
+        assertEquals("Machine Learning, Data Mining, NLP", variables["researchFields"])
+    }
+
+    @Test
+    fun `buildVariables primaryResearchField is empty when researchFields is null or blank`() {
+        assertEquals("", service.buildVariables(account, expert.copy(researchFields = null))["primaryResearchField"])
+        assertEquals("", service.buildVariables(account, expert.copy(researchFields = "  "))["primaryResearchField"])
+    }
+
+    @Test
+    fun `buildVariables primaryResearchField trims the first segment`() {
+        val variables = service.buildVariables(account, expert.copy(researchFields = "  Machine Learning , Data Mining"))
+        assertEquals("Machine Learning", variables["primaryResearchField"])
+    }
+
+    @Test
+    fun `variableMetadata exposes primaryResearchField with researchFields es field and example`() {
+        val metadata = service.variableMetadata().associateBy { it.key }
+        assertTrue(metadata.containsKey("primaryResearchField"))
+
+        val meta = metadata["primaryResearchField"]!!
+        assertEquals("researchFields", meta.esField)
+        assertTrue(meta.nullable)
+        assertTrue(meta.example.isNotBlank())
+        assertEquals("主要研究方向", meta.label)
+    }
+
+    @Test
+    fun `renderForContact replaces primaryResearchField with derived value`() {
+        val multiField = expert.copy(researchFields = "Machine Learning, Data Mining")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(multiField)
+
+        val rendered = service.renderForContact("Focus: \${primaryResearchField}", account, contact)
+
+        assertEquals("Focus: Machine Learning", rendered)
+        assertFalse(rendered.contains("\${"))
+    }
 }

@@ -91,6 +91,7 @@ object BatchOutcomeReasonCodes {
     const val DEDUP = "DEDUP"
     const val DAILY_CAP_EXCEEDED = "DAILY_CAP_EXCEEDED"
     const val CANCELLED = "CANCELLED"
+    const val PERSONALIZATION_INCOMPLETE = "PERSONALIZATION_INCOMPLETE"
 
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
@@ -100,7 +101,8 @@ object BatchOutcomeReasonCodes {
         NO_CONTACT to "无联系人账号",
         DEDUP to "去重跳过",
         DAILY_CAP_EXCEEDED to "超日限额",
-        CANCELLED to "被取消"
+        CANCELLED to "被取消",
+        PERSONALIZATION_INCOMPLETE to "个性化字段缺失"
     )
 
     fun label(code: String): String = LABELS[code] ?: code

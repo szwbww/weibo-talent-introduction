@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
@@ -58,6 +59,11 @@ class IntroductionMailComposerTest {
         "degree" to expert.degree.orEmpty(),
         "recentWorkTitle" to (expert.recentWorkTitles?.firstOrNull()).orEmpty(),
         "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty(),
+        "primaryResearchField" to (expert.researchFields
+            ?.split(", ")
+            ?.firstOrNull()
+            ?.trim())
+            .orEmpty(),
         "unsubscribeUrl" to ""
     )
 
@@ -373,5 +379,146 @@ class IntroductionMailComposerTest {
     private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T {
         captor.capture()
         return defaultValue
+    }
+
+    // ── P1 gate (I-2, I-5) ──
+
+    private fun stubEnabledAccount() {
+        Mockito.`when`(accountService.getEnabledAccount("chenjj"))
+            .thenReturn(
+                MailSenderAccount(
+                    accountCode = "chenjj",
+                    senderEmail = "chenjj@qftechtalent.com",
+                    senderName = "Chen",
+                    senderTitle = "Customer Care Officer",
+                    senderDisplayName = "Chen",
+                    teamName = "Qingfei Tech Talent Team",
+                    countryName = "China",
+                    smtpHost = "smtp.example.com",
+                    smtpPort = 465,
+                    smtpUsername = "chenjj@qftechtalent.com",
+                    smtpPassword = "secret",
+                    imapHost = "imap.example.com",
+                    imapPort = 993,
+                    imapUsername = "chenjj@qftechtalent.com",
+                    imapPassword = "secret"
+                )
+            )
+    }
+
+    private fun sparseExpert() = ExpertProfile(
+        orcidId = "0000-0001",
+        email = "expert@example.com",
+        givenNames = "Ada",
+        familyNames = "Lovelace",
+        country = null,
+        keyword = null,
+        employment = null,
+        researchFields = null,
+        institution = null
+    )
+
+    @Test
+    fun `compose throws PersonalizationGateException when required key fell back`() {
+        stubEnabledAccount()
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("INTRODUCTION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Intro Subject",
+                body = "Intro Body",
+                mailType = "INTRODUCTION",
+                rawTexts = listOf("Topic \${recentWorkTitle|Untitled}"),
+                templateId = 10
+            )
+        )
+        Mockito.`when`(templateService.effectiveRequiredKeys(10L))
+            .thenReturn(listOf("recentWorkTitle"))
+
+        val ex = assertThrows<PersonalizationGateException> {
+            composer.compose("chenjj", sparseExpert())
+        }
+
+        assertEquals(listOf("recentWorkTitle"), ex.missingKeys)
+    }
+
+    @Test
+    fun `compose throws PersonalizationGateException for template id path`() {
+        stubEnabledAccount()
+        Mockito.`when`(
+            templateService.render(
+                eqValue(7L),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Custom intro",
+                body = "Custom body",
+                mailType = "INTRODUCTION",
+                rawTexts = listOf("Focus \${primaryResearchField|N/A}"),
+                templateId = 7
+            )
+        )
+        Mockito.`when`(templateService.effectiveRequiredKeys(7L))
+            .thenReturn(listOf("primaryResearchField"))
+
+        val ex = assertThrows<PersonalizationGateException> {
+            composer.compose("chenjj", sparseExpert(), templateId = 7L)
+        }
+
+        assertEquals(listOf("primaryResearchField"), ex.missingKeys)
+    }
+
+    @Test
+    fun `compose throws PlaceholderResidueException on unresolved token`() {
+        stubEnabledAccount()
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("INTRODUCTION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Intro Subject",
+                body = "Body with \${unresolved} token",
+                mailType = "INTRODUCTION"
+            )
+        )
+
+        val ex = assertThrows<PlaceholderResidueException> {
+            composer.compose("chenjj", sparseExpert())
+        }
+
+        assertTrue(ex.message!!.contains("\${unresolved}"))
+    }
+
+    @Test
+    fun `compose succeeds when required keys are empty`() {
+        stubEnabledAccount()
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("INTRODUCTION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Intro Subject",
+                body = "Intro Body",
+                mailType = "INTRODUCTION"
+            )
+        )
+        Mockito.`when`(templateService.effectiveRequiredKeys(10L))
+            .thenReturn(emptyList())
+
+        val mail = composer.compose("chenjj", sparseExpert())
+
+        assertEquals("Intro Body", mail.body)
     }
 }

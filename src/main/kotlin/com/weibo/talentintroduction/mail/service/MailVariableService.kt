@@ -142,7 +142,12 @@ class MailVariableService(
                 "lastPublicationYear" to (expert.lastPublicationYear?.toString()).orEmpty(),
                 "degree" to expert.degree.orEmpty(),
                 "recentWorkTitle" to (expert.recentWorkTitles?.firstOrNull()).orEmpty(),
-                "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty()
+                "patentTitle" to (expert.patentTitles?.firstOrNull()).orEmpty(),
+                "primaryResearchField" to (expert.researchFields
+                    ?.split(", ")
+                    ?.firstOrNull()
+                    ?.trim())
+                    .orEmpty()
             )
         } else {
             EXPERT_KEYS.associateWith { "" }
@@ -178,7 +183,7 @@ class MailVariableService(
         renderContact(text, account, contact, previewFallbacks = false).rendered
 
     fun renderHtmlForContact(html: String, account: MailSenderAccount?, contact: ExpertContact): String {
-        val expert = resolveExpertProfile(contact)
+        val expert = resolveExpertProfileFor(contact)
         val variables = buildVariables(account, expert, contact.expertEmail, previewFallbacks = false, contact = contact)
             .mapValues { (_, value) -> HtmlUtils.htmlEscape(value) }
         return mailComposeTemplateService.renderWithVariables(html, variables)
@@ -193,7 +198,7 @@ class MailVariableService(
         contact: ExpertContact,
         previewFallbacks: Boolean
     ): RenderPreviewResult {
-        val expert = resolveExpertProfile(contact)
+        val expert = resolveExpertProfileFor(contact)
         val variables = buildVariables(account, expert, contact.expertEmail, previewFallbacks, contact = contact)
         val rendered = mailComposeTemplateService.renderWithVariables(text, variables)
         val fallbackKeys = detectFallbackKeys(text, variables)
@@ -257,7 +262,7 @@ class MailVariableService(
     private fun previewUnsubscribeUrl(previewFallbacks: Boolean): String =
         if (previewFallbacks) PREVIEW_UNSUBSCRIBE_URL else ""
 
-    private fun resolveExpertProfile(contact: ExpertContact): ExpertProfile? {
+    fun resolveExpertProfileFor(contact: ExpertContact): ExpertProfile? {
         val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
         return try {
             val level = parseIndexLevel(contact.currentIndexLevel)
