@@ -150,3 +150,10 @@ data class ReputationHistoryRow(
     val dkimSuccessRate: Double?,
     val dmarcSuccessRate: Double?
 )
+
+data class PostmasterCollectResponse(
+    val triggered: Boolean,
+    val reportDate: String?,
+    val domains: List<String>,
+    val message: String
+)
