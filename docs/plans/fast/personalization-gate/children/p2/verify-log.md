@@ -26,3 +26,6 @@ Verifier: P2Verifier
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+Epoch 1 证据补录（控制器）：上述为唯一一次轻量验证（LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD）。无 AUTO_FIX 轮次；fix-log.md 为空。本行仅为满足证据提交需同时记录 execution/verify-log/fix-log 的校验要求，不改变任何裁决。

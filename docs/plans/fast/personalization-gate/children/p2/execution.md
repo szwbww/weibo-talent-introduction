@@ -48,3 +48,6 @@
 
 1. **下拉填充时机**：计划任务 5.1 为「页面加载时填充」，实现改为「首次聚焦时填充」（`select` focus 事件触发顶层 `populateExpertGateTemplateFilter()`，一次性、失败可重试、无硬编码回退）。原因：仓库既有预认证安全扫描（`authFlow.test.js` 的 "pre-auth init safety scan"）禁止 `bootstrap` 阶段（`bindEvents`，先于 `checkAuth`）出现任何网络调用（含词法 `api(`/`fetch(`）；将门禁整体移出 `bindEvents` 到顶层函数亦为同一约束（`refreshGateSummary`/`handleExpertGateChange` 含 `api(`）。操作员侧可观察行为等价：下拉在可选择前即已填充。所有 JS 测试（含 authFlow 19/19）通过。
 2. 无其他偏差；未实现 master「Out of scope」项与 P1 后续阶段。
+
+---
+Epoch 1 证据补录（控制器）：本子计划无修复轮次（fix_round=0），fix-log.md 与 execution.md/verify-log.md 在同一证据提交中记录。
