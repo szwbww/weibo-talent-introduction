@@ -11399,8 +11399,13 @@ function initExpertGateFilter(reloadContactsFromStart) {
             }
             reloadContactsFromStart();
         } catch (e) {
-            // 接口失败：不应用任何筛选，计数保持隐藏，仅提示一次（I-10，无硬编码回退）
+            // 接口失败：清除先前模板遗留的门禁筛选与状态（chip/hasField/摘要），
+            // 仅提示一次，无硬编码回退字段（I-10、V-2）；随后刷新列表，不再携带门禁 hasField。
+            clearGateFields();
+            gateTemplateId = "";
+            hideGateSummary();
             showStatus(`按模板门禁筛选失败：${e.message}`, "error");
+            reloadContactsFromStart();
         }
     }
 

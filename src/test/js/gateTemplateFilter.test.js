@@ -206,4 +206,54 @@ describe("expert gate template filter", () => {
         assert.equal(sb.__chips.institution.classList.contains("active"), true, "manual snapshot restored");
         assert.equal(sb.$("#expertGateSummary").hidden, true, "summary hidden on 不限");
     });
+
+    it("failed switch to another template clears the prior gate chips, summary, and gate-derived hasField (V-2)", async () => {
+        const sb = createGateSandbox();
+        const expertUrls = [];
+        let failGateFields = false;
+        sb.api = async (url) => {
+            if (url.includes("/gate-fields")) {
+                if (failGateFields) throw new Error("500 Internal Server Error");
+                return {
+                    templateId: 5,
+                    requiredKeys: ["recentWorkTitle", "primaryResearchField"],
+                    esFields: ["recentWorkTitles", "researchFields"]
+                };
+            }
+            if (url.includes("/api/experts")) {
+                expertUrls.push(url);
+                const q = expertQueryParams(url);
+                return { totalHits: q.getAll("hasField").length > 0 ? 30 : 100 };
+            }
+            return { totalHits: 0 };
+        };
+
+        // 1. successful selection: gate chips active, summary visible
+        sb.$("#expertGateTemplateFilter").value = "5";
+        await sb.__triggerChange();
+        assert.equal(sb.__chips.recentWorkTitles.classList.contains("active"), true);
+        assert.equal(sb.__chips.researchFields.classList.contains("active"), true);
+        assert.equal(sb.$("#expertGateSummary").hidden, false, "summary visible after success");
+
+        // 2. switch to a template whose gate-fields request fails
+        failGateFields = true;
+        const reloadsBefore = sb.__reloads || 0;
+        sb.$("#expertGateTemplateFilter").value = "9";
+        await sb.__triggerChange();
+
+        // no gate-derived chip remains active → a later refresh derives no hasField (V-2)
+        Object.values(sb.__chips).forEach((chip) => {
+            assert.equal(
+                chip.classList.contains("active"),
+                false,
+                `no chip may remain active after a failed switch: ${chip.dataset.value}`
+            );
+        });
+        assert.equal(sb.$("#expertGateSummary").hidden, true, "summary hidden after a failed switch");
+        assert.equal(sb.__status.length, 1, "exactly one failure notice");
+        assert.equal(sb.__status[0].type, "error");
+        assert.match(sb.__status[0].message, /按模板门禁筛选失败/);
+        // the prior gate-filtered list is not left stale: a refresh was requested with no gate chip active
+        assert.ok((sb.__reloads || 0) > reloadsBefore, "list refresh requested after a failed switch");
+    });
 });

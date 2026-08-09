@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.Campaign
+import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
@@ -1215,6 +1216,116 @@ class ManualInitialOutreachServiceTest {
         assertNotEquals("WARMUP_LIMIT_REACHED", result.stopReason)
         assertEquals("COMPLETED", result.finalStatus)
         assertEquals(0, result.sent)
+    }
+
+    @Test
+    fun `runMaterialReminderBatch gate rejection records one skip, single progress advancement, and continues (V-1)`() {
+        // V-1: the MATERIAL_REMINDER gate catch must not double-count processedTotal/roundSent/roundProcessed,
+        // must record exactly one PERSONALIZATION_INCOMPLETE skip (not a failure), and must continue the batch.
+        Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+            .thenReturn(
+                BatchSendConfig(
+                    sendType = BatchSendType.MATERIAL_REMINDER,
+                    autoEnabled = false, cron = "0 0 8 * * ?",
+                    dailyCap = 60, roundSize = 30,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0,
+                    selfCheckTtlMinutes = 30, templateId = 10L
+                )
+            )
+        Mockito.`when`(
+            mailRecordRepository.countSentByMailTypeSince(
+                Mockito.anyString(),
+                anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(0L)
+
+        val blockedId = 701L
+        val sentId = 702L
+        val targets = listOf(
+            Pair(
+                ExpertContact(
+                    id = blockedId, campaignId = 10L, orcidId = "V001", expertEmail = "v1@test.com",
+                    expertName = "V1", currentStatus = "WAITING_REPLY"
+                ),
+                expert("V001", "v1@test.com")
+            ),
+            Pair(
+                ExpertContact(
+                    id = sentId, campaignId = 10L, orcidId = "V002", expertEmail = "v2@test.com",
+                    expertName = "V2", currentStatus = "WAITING_REPLY"
+                ),
+                expert("V002", "v2@test.com")
+            )
+        )
+        listOf(blockedId, sentId).forEach { cid ->
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(cid))
+                .thenReturn(emptyList())
+        }
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+        )).thenReturn(2L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )).thenReturn(targets.map { it.second })
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+            .thenReturn(targets.map { it.first })
+
+        val acc = account("chen")
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
+        )).thenReturn(acc)
+        Mockito.`when`(manualExpertMailService.sendManualMail(
+            anyLong(),
+            anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+        )).thenAnswer { invocation ->
+            val cid = invocation.getArgument<Long>(0)
+            if (cid == blockedId) {
+                throw com.weibo.talentintroduction.mail.service.PersonalizationGateException(listOf("recentWorkTitle"))
+            }
+            com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                contactId = cid, senderAccountCode = "chen",
+                mailType = "MATERIAL_REMINDER", subject = "Subj",
+                sendStatus = "SENT", messageId = "msg-$cid"
+            )
+        }
+
+        val processedCounts = mutableListOf<Long>()
+        // 注意：TaskProgressStore.update 是 Kotlin 非空参数接口，Mockito.any(Class)（返回 null）
+        // 会被 Kotlin 的非空检查拦截（"any(...) must not be null"），因此用本仓库的 anyValue 助手
+        // （内部注册 any() 匹配器、返回非空默认值）来匹配 progress 参数。
+        Mockito.`when`(progressStore.update(
+            Mockito.anyString(),
+            anyValue(TaskProgress(taskType = "", status = "", batchNumber = 0, processedCount = 0, totalCount = 0)),
+            Mockito.anyLong()
+        )).thenAnswer { invocation ->
+            processedCounts.add(invocation.getArgument<TaskProgress>(1).processedCount)
+            true
+        }
+
+        val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+
+        // gate rejection is exactly one skip with the PERSONALIZATION_INCOMPLETE label, not a failure
+        assertEquals(1, result.skipped)
+        val outcome = result.outcome!!
+        assertEquals(0, outcome.failure)
+        assertEquals(
+            1,
+            outcome.skippedReasons[BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE]?.count ?: 0
+        )
+        assertEquals(
+            "个性化字段缺失",
+            outcome.skippedReasons[BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE]?.label
+        )
+        // the batch continues: the following recipient is still sent
+        assertEquals(1, result.sent)
+        Mockito.verify(manualExpertMailService, Mockito.times(2)).sendManualMail(
+            anyLong(),
+            anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+        )
+        // single progress advancement per recipient: 2 recipients ⇒ processedCount never exceeds 2
+        // (pre-fix double counting reached 3 for the gate-blocked recipient)
+        assertEquals(2L, processedCounts.maxOrNull())
+        assertEquals(2L, processedCounts.last())
     }
 
     // ──── Material Reminder Batch Tests ────

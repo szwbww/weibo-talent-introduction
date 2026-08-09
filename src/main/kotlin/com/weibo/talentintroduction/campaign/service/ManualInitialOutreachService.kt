@@ -324,7 +324,8 @@ class ManualInitialOutreachService(
                         BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE,
                         "个性化字段缺失（${e.missingKeys.joinToString(",")}）：$email"
                     )
-                    roundSent++; processedTotal++; roundProcessed++; roundRejected++
+                    // 计数由循环公共收尾路径（processedTotal/roundSent/roundProcessed）统一推进一次，
+                    // 此处不再自增，避免与收尾路径重复计数（V-1）。
                 } catch (e: Exception) {
                     log.error("Failed to send material reminder to contact {}", contactId, e)
                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送异常 ($email): ${e.message}")
