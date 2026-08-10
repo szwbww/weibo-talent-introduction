@@ -409,8 +409,10 @@
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt` | 修改 | 改 1 加 1 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt` | 修改 | 改 1 加 4 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleServiceTest.kt` | 修改 | 加 2 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` | 修改 | 测试适配：补 `senderAccountBindingService.resolveForSend` 桩（A3 授权；不新增用例、不改既有断言语义） |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt` | 修改 | 编译修复：构造实参尾部追加 `Mockito.mock(SenderAccountBindingService::class.java)`（A4 授权） |
 
-文件数 8 ≤ 10 ✓　子系统 1（后端发送链路）≤ 2 ✓　新增存储字段 0 ✓
+文件数 10 ≤ 10 ✓　子系统 1（后端发送链路）≤ 2 ✓　新增存储字段 0 ✓
 
 ## 验证命令
 
