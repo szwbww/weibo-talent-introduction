@@ -24,6 +24,8 @@ data class ExpertContact(
     val country: String? = null,
     val boundSenderAccountCode: String? = null,
     val senderAccountBoundAt: LocalDateTime? = null,
+    val senderAccountChanged: Boolean = false,
+    val senderAccountChangedAt: LocalDateTime? = null,
     val operatorStatus: String = "NOT_CONTACTED",
     val needsManualAttention: Boolean = false,
     val followUpMarked: Boolean = false,

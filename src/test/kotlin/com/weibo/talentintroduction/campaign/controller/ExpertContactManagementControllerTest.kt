@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.controller
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -19,7 +20,8 @@ class ExpertContactManagementControllerTest {
         manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java),
         meetingScheduleService = Mockito.mock(com.weibo.talentintroduction.campaign.service.MeetingScheduleService::class.java),
         expertOperatorStatusService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService::class.java),
-        expertIndexLevelOperationService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService::class.java)
+        expertIndexLevelOperationService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService::class.java),
+        senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     )
 
     @Test

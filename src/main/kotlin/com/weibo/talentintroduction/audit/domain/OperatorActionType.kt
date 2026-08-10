@@ -14,5 +14,8 @@ enum class OperatorActionType(val summary: String) {
     AI_REPLY_DRAFT_BLOCKED("AI 草稿生成-被阻止"),
     AI_REPLY_SEND_BLOCKED("AI 回复发送被阻止"),
     AI_REPLY_REVIEW_CONFIRMED("AI 回复人工审核确认"),
-    AI_TRAINING_REPLY_EVALUATED("AI 训练回复评估")
+    AI_TRAINING_REPLY_EVALUATED("AI 训练回复评估"),
+    CHANGE_SENDER_ACCOUNT("变更发送账号"),
+    MIGRATE_SENDER_ACCOUNT("迁移发送账号"),
+    CLEAR_SENDER_CHANGE_MARK("清除发送账号变更标记")
 }

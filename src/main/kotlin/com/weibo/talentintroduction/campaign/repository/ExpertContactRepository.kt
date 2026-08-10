@@ -76,6 +76,41 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
     """)
     fun updateBindingById(id: Long, accountCode: String?, boundAt: LocalDateTime?): Int
 
+    @Modifying
+    @Query("""
+        UPDATE expert_contact
+           SET bound_sender_account_code = :accountCode,
+               sender_account_bound_at = :changedAt,
+               sender_account_changed = true,
+               sender_account_changed_at = :changedAt
+         WHERE id = :id
+    """)
+    fun rebindSenderAccountById(id: Long, accountCode: String, changedAt: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE expert_contact
+           SET bound_sender_account_code = :toAccountCode,
+               sender_account_bound_at = :migratedAt
+         WHERE bound_sender_account_code = :fromAccountCode
+    """)
+    fun migrateBindingByAccount(
+        fromAccountCode: String,
+        toAccountCode: String,
+        migratedAt: LocalDateTime
+    ): Int
+
+    @Modifying
+    @Query("""
+        UPDATE expert_contact
+           SET sender_account_changed = false,
+               sender_account_changed_at = NULL
+         WHERE id = :id
+    """)
+    fun clearSenderChangeMarkById(id: Long): Int
+
+    fun findAllByBoundSenderAccountCode(boundSenderAccountCode: String): List<ExpertContact>
+
     @Query("""
         SELECT bound_sender_account_code AS account_code, COUNT(*) AS bound_count
           FROM expert_contact

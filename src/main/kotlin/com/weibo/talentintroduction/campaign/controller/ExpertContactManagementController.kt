@@ -23,6 +23,10 @@ import com.weibo.talentintroduction.mail.service.ManualMailOption
 import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.ManualMailSendResult
 import com.weibo.talentintroduction.mail.service.BatchMailSendResult
+import com.weibo.talentintroduction.mail.service.MigrateCommand
+import com.weibo.talentintroduction.mail.service.MigrateResult
+import com.weibo.talentintroduction.mail.service.RebindCommand
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.campaign.service.AutoReplySummary
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -42,7 +46,8 @@ class ExpertContactManagementController(
     private val manualExpertMailService: ManualExpertMailService,
     private val meetingScheduleService: MeetingScheduleService,
     private val expertOperatorStatusService: ExpertOperatorStatusService,
-    private val expertIndexLevelOperationService: ExpertIndexLevelOperationService
+    private val expertIndexLevelOperationService: ExpertIndexLevelOperationService,
+    private val senderAccountBindingService: SenderAccountBindingService
 ) {
     @GetMapping
     fun listContacts(
@@ -161,6 +166,22 @@ class ExpertContactManagementController(
             contactId, request.targetLevel, request.operatorName, request.note
         ).toResponse()
 
+    @PostMapping("/{contactId}/sender-account")
+    fun rebindSenderAccount(
+        @PathVariable contactId: Long,
+        @RequestBody request: RebindSenderAccountRequest
+    ): ExpertContactResponse =
+        senderAccountBindingService.rebind(contactId, request.toCommand()).toResponse()
+
+    @PostMapping("/{contactId}/sender-account/clear-change-mark")
+    fun clearSenderChangeMark(
+        @PathVariable contactId: Long,
+        @RequestBody request: ClearSenderChangeMarkRequest
+    ): ExpertContactResponse =
+        senderAccountBindingService
+            .clearChangeMark(contactId, request.operatorName, request.note)
+            .toResponse()
+
     @GetMapping("/mail-send-options")
     fun listMailSendOptions(): List<ManualMailOption> =
         manualExpertMailService.listSendOptions()
@@ -175,6 +196,10 @@ class ExpertContactManagementController(
     @PostMapping("/batch-mail")
     fun sendBatchMail(@RequestBody request: BatchMailSendRequest): BatchMailSendResult =
         manualExpertMailService.sendBatchMail(request.contactIds, request.toCommand())
+
+    @PostMapping("/sender-account/migrate")
+    fun migrateSenderAccount(@RequestBody request: MigrateSenderAccountRequest): MigrateResult =
+        senderAccountBindingService.migrateAccount(request.toCommand())
 
     @PostMapping("/{contactId}/meeting-schedules")
     fun createMeetingSchedule(
@@ -262,6 +287,24 @@ data class ChangeIndexLevelRequest(
     val operatorName: String? = null,
     val note: String? = null
 )
+
+data class RebindSenderAccountRequest(
+    val senderAccountCode: String,
+    val operatorName: String? = null,
+    val note: String? = null
+) { fun toCommand() = RebindCommand(senderAccountCode, operatorName, note) }
+
+data class ClearSenderChangeMarkRequest(
+    val operatorName: String? = null,
+    val note: String? = null
+)
+
+data class MigrateSenderAccountRequest(
+    val fromAccountCode: String,
+    val toAccountCode: String,
+    val operatorName: String? = null,
+    val reason: String? = null
+) { fun toCommand() = MigrateCommand(fromAccountCode, toAccountCode, operatorName, reason) }
 
 data class ManualMailSendRequest(
     val optionType: String,
