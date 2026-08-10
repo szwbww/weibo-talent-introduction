@@ -31,6 +31,7 @@ import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -52,6 +53,7 @@ import java.time.LocalDateTime
 class ManualInitialOutreachServiceTest {
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
     private val senderAccountAssignmentService = Mockito.mock(SenderAccountAssignmentService::class.java)
+    private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val introductionMailComposer = Mockito.mock(IntroductionMailComposer::class.java)
     private val mailDeliveryService = Mockito.mock(MailDeliveryService::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
@@ -103,7 +105,8 @@ class ManualInitialOutreachServiceTest {
         senderWarmupService = senderWarmupService,
         autoReplySettingService = autoReplySettingService,
         manualExpertMailService = manualExpertMailService,
-        taskExecutionService = taskExecutionService
+        taskExecutionService = taskExecutionService,
+        senderAccountBindingService = senderAccountBindingService
     )
 
     private fun fastConfig(
@@ -141,6 +144,9 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(listOf(account("chen")))
         Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(listOf(account("chen")))
         Mockito.`when`(mailSenderAccountService.listEnabledAccounts()).thenReturn(listOf(account("chen")))
+        // Default: binding resolution returns selected account
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(Mockito.anyString(), anyValue(LocalDateTime.now())))
+            .thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 12, 0, 0))
         // Default: self-check always passes (from cache, no probe)
         Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")))).thenReturn(
             SelfCheckResult("chen", passed = true, message = null, fromCache = true)
@@ -248,6 +254,72 @@ class ManualInitialOutreachServiceTest {
             body = eqValue("Body"),
             attemptId = Mockito.anyLong()
         )
+    }
+
+    @Test
+    fun `new contact is created with binding`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(
+            eqValue("chen"),
+            anyValue(LocalDateTime.now())
+        )).thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 9, 30, 0))
+
+        val result = service.runBulkOutreach(12345L)
+
+        assertEquals(1, result.total)
+        assertEquals(1, result.sent)
+        val contactCaptor = org.mockito.ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(captureValue(contactCaptor, ExpertContact(
+            campaignId = 0L, orcidId = "", expertEmail = "", expertName = null
+        )))
+        assertEquals("chen", contactCaptor.value.boundSenderAccountCode)
+        assertNotNull(contactCaptor.value.senderAccountBoundAt)
+    }
+
+    @Test
+    fun `existing contact binding is not overwritten`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        val existingContact = ExpertContact(
+            id = 999L, campaignId = 10L, orcidId = "0001", expertEmail = "a@b.com",
+            expertName = null, currentStatus = "NEW",
+            boundSenderAccountCode = "old-account",
+            senderAccountBoundAt = LocalDateTime.of(2026, 1, 1, 12, 0)
+        )
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(existingContact))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001")))
+            .thenReturn(listOf(expert("0001", "a@b.com")))
+        stubScrolledExperts(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
+
+        val result = service.runBulkOutreach(12345L)
+
+        assertEquals(1, result.total)
+        assertEquals(1, result.sent)
+        Mockito.verify(expertContactRepository, Mockito.never()).updateBindingById(
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.any()
+        )
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
     }
 
     @Test

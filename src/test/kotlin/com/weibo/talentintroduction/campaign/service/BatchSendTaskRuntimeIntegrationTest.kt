@@ -31,6 +31,7 @@ import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.ProviderResolver
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -666,7 +667,8 @@ class BatchSendTaskRuntimeIntegrationTest {
             SenderWarmupService(WarmupProperties(false, listOf(WarmupStep(1, 20))), objectMapper),
             Mockito.mock(AutoReplySettingService::class.java),
             Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java),
-            Mockito.mock(TaskExecutionService::class.java)
+            Mockito.mock(TaskExecutionService::class.java),
+            Mockito.mock(SenderAccountBindingService::class.java)
         )
         return ManualOutreachHarness(service, expertSearchService, expertContactRepository, mailRecordRepository)
     }

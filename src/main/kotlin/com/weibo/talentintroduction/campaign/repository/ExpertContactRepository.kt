@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import org.springframework.data.jdbc.repository.query.Modifying
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
+import java.time.LocalDateTime
 
 interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
     fun existsByCampaignIdAndOrcidId(campaignId: Long, orcidId: String): Boolean
@@ -65,4 +66,13 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
     @Modifying
     @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
     fun updateCountryById(id: Long, country: String?): Int
+
+    @Modifying
+    @Query("""
+        UPDATE expert_contact
+           SET bound_sender_account_code = :accountCode,
+               sender_account_bound_at = :boundAt
+         WHERE id = :id
+    """)
+    fun updateBindingById(id: Long, accountCode: String?, boundAt: LocalDateTime?): Int
 }

@@ -15,7 +15,9 @@ import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -32,6 +34,7 @@ class InitialOutreachServiceTest {
     private val txHelper = Mockito.mock(ManualOutreachTxHelper::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
+    private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val schedulingProperties = MailSchedulingProperties(
         initialOutreachSendIntervalMs = 0,
         initialOutreachSendJitterMs = 0
@@ -46,7 +49,8 @@ class InitialOutreachServiceTest {
         txHelper = txHelper,
         emailSuppressionService = emailSuppressionService,
         autoReplySettingService = autoReplySettingService,
-        schedulingProperties = schedulingProperties
+        schedulingProperties = schedulingProperties,
+        senderAccountBindingService = senderAccountBindingService
     )
 
     private var contactIdSeq = 100L
@@ -56,6 +60,8 @@ class InitialOutreachServiceTest {
         contactIdSeq = 100L
         Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(Mockito.anyString(), anyValue(LocalDateTime.now())))
+            .thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 12, 0, 0))
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
             val contact = invocation.getArgument<ExpertContact>(0)
             if (contact.id == null) contact.copy(id = contactIdSeq++) else contact
@@ -254,6 +260,33 @@ class InitialOutreachServiceTest {
     }
 
     @Test
+    fun `sendInitialBatch binds selected account on contact creation`() {
+        val experts = listOf(expert("0001"))
+        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-1", "SENT"))
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(
+            eqValue("chen"),
+            anyValue(LocalDateTime.now())
+        )).thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 9, 30, 0))
+
+        service.sendInitialBatch(campaignId = 1L, size = 1)
+
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(captureValue(contactCaptor, ExpertContact(
+            campaignId = 0L, orcidId = "", expertEmail = "", expertName = null
+        )))
+        assertEquals("chen", contactCaptor.value.boundSenderAccountCode)
+        assertNotNull(contactCaptor.value.senderAccountBoundAt)
+    }
+
+    @Test
     fun `sendInitialBatch sleeps between successful sends when interval configured`() {
         val intervalService = InitialOutreachService(
             expertSearchService = expertSearchService,
@@ -267,7 +300,8 @@ class InitialOutreachServiceTest {
             schedulingProperties = MailSchedulingProperties(
                 initialOutreachSendIntervalMs = 100,
                 initialOutreachSendJitterMs = 0
-            )
+            ),
+            senderAccountBindingService = senderAccountBindingService
         )
         val experts = listOf(expert("0001"), expert("0002"))
         Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))

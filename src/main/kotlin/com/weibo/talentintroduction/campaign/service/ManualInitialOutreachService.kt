@@ -37,6 +37,7 @@ import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountExcepti
 import com.weibo.talentintroduction.mail.service.PersonalizationGateException
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
@@ -76,7 +77,8 @@ class ManualInitialOutreachService(
     private val senderWarmupService: SenderWarmupService,
     private val autoReplySettingService: AutoReplySettingService,
     private val manualExpertMailService: ManualExpertMailService,
-    private val taskExecutionService: TaskExecutionService
+    private val taskExecutionService: TaskExecutionService,
+    private val senderAccountBindingService: SenderAccountBindingService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -572,12 +574,16 @@ class ManualInitialOutreachService(
                     // 1. Create or reuse contact (occupy the slot) — I-7
                     val contact = existingContact ?: run {
                         val now = LocalDateTime.now()
+                        val (boundCode, boundAt) = senderAccountBindingService
+                            .bindingFieldsFor(account.accountCode, now)
                         expertContactRepository.save(ExpertContact(
                             campaignId = campaignId, orcidId = normOrcid,
                             expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
                             currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
                             country = expert.country,
                             autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
+                            boundSenderAccountCode = boundCode,
+                            senderAccountBoundAt = boundAt,
                             createdAt = now, updatedAt = now
                         ))
                     }

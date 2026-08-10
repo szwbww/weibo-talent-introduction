@@ -22,6 +22,8 @@ data class ExpertContact(
     val applicationIndexed: Boolean = false,
     val currentIndexLevel: String = "CANDIDATE",
     val country: String? = null,
+    val boundSenderAccountCode: String? = null,
+    val senderAccountBoundAt: LocalDateTime? = null,
     val operatorStatus: String = "NOT_CONTACTED",
     val needsManualAttention: Boolean = false,
     val followUpMarked: Boolean = false,

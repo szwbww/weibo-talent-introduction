@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -25,7 +26,8 @@ class InitialOutreachService(
     private val txHelper: ManualOutreachTxHelper,
     private val emailSuppressionService: EmailSuppressionService,
     private val autoReplySettingService: AutoReplySettingService,
-    private val schedulingProperties: MailSchedulingProperties
+    private val schedulingProperties: MailSchedulingProperties,
+    private val senderAccountBindingService: SenderAccountBindingService
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
@@ -47,6 +49,8 @@ class InitialOutreachService(
 
             val account = senderAccountAssignmentService.selectAccount(expert, assignments)
             val now = LocalDateTime.now()
+            val (boundCode, boundAt) = senderAccountBindingService
+                .bindingFieldsFor(account.accountCode, now)
             val contact = expertContactRepository.save(
                 ExpertContact(
                     campaignId = campaignId,
@@ -56,6 +60,8 @@ class InitialOutreachService(
                     currentStatus = "NEW",
                     country = expert.country,
                     autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
+                    boundSenderAccountCode = boundCode,
+                    senderAccountBoundAt = boundAt,
                     createdAt = now,
                     updatedAt = now
                 )
