@@ -117,6 +117,7 @@
 | `static/app.js` / `static/index.html` / `static/styles.css` | — | — | — | — | **P5 独占** |
 | `test/.../SenderAccountBindingServiceTest.kt` | **新建** 10 例 | — | — | +12 例 | — |
 | `test/.../MailSenderAccountServiceTest.kt` | — | 改 1 加 1（见 M-4） | — | — | — |
+| `test/.../MailSenderAccountServiceTest.kt` | — | 改 1 加 1（见 M-4） | — | — | 构造实参 +1（编译修复） |
 | `test/.../ManualExpertMailServiceTest.kt` | — | 改 1 加 4（见 M-4） | — | — | — |
 | `test/.../MeetingScheduleServiceTest.kt` | — | +2 例 | — | — | — |
 | `test/.../SenderAccountAssignmentServiceTest.kt` | — | — | +6 例（既有零改动） | — | — |
