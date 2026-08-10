@@ -420,8 +420,9 @@ class BoundSenderAccountUnavailableException(
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingServiceTest.kt` | 新增 | 10 例 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt` | 修改 | +1 例 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` | 修改 | +2 例 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | 修改 | 编译修复：构造实参尾部追加 `Mockito.mock(SenderAccountBindingService::class.java)`（A2 修订授权，该文件在 `:655` 位置传参构造本服务） |
 
-文件数 9 ≤ 10 ✓　子系统 1（后端）≤ 2 ✓　新增共享存储字段：1 个逻辑字段（绑定，含其时间戳）✓
+文件数 10 ≤ 10 ✓　子系统 1（后端）≤ 2 ✓　新增共享存储字段：1 个逻辑字段（绑定，含其时间戳）✓
 
 ## 验证命令
 
