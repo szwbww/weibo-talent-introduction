@@ -111,6 +111,7 @@
 | `campaign/service/ManualInitialOutreachService.kt` | `:573-582` 新建分支的构造 | `:272`（材料提醒轮解析）+ `:550-582`（首封轮调序） | 两轮外层取快照 + 两处 `selectAccount` 传参 | — | — |
 | `audit/domain/OperatorActionType.kt` | — | — | — | 尾部加 3 个枚举 | — |
 | `campaign/controller/ExpertContactManagementController.kt` | — | — | — | 3 个端点 + 3 个请求体 | `ExpertContactResponse` 加 2 字段 + 映射 |
+| `test/.../ExpertContactManagementControllerTest.kt` | — | — | — | 构造实参 +1（编译修复） | — |
 | `expert/controller/ExpertIndexController.kt` | — | — | — | — | `ExpertIndexResponse` + `from(...)` |
 | `mail/controller/MailSenderAccountController.kt` | — | — | — | — | DTO 加 `boundExpertCount` + 8 处 `toResponse` |
 | `static/app.js` / `static/index.html` / `static/styles.css` | — | — | — | — | **P5 独占** |
