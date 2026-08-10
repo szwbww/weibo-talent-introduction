@@ -9,20 +9,20 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-10T16:30:00+08:00
-- Current child: p2
+- Current child: p3
 - Waiting role: VERIFIER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
 - Resume from: N/A
-- Active agents: p2 implementer = P2Implementer-2 (epoch 2); p2 verifier = P2Verifier
+- Active agents: p3 implementer = P3Implementer; p3 verifier = P3Verifier
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | p1 | docs/plans/2026-08-10/sender-binding-01-schema-and-establish.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | none | 2 | LIGHT_PASS_WITH_NOTES | e6662677cc715421566006bbb90e3d47a75302b6 | d957683635a304d7b2f7611053250546f720e638 | 0 | — | d957683635a304d7b2f7611053250546f720e638 | 49911a77af1c9297cc5268887a2fd248c7f95f11 | 基座：字段/回填/建立点/解析服务，10 文件；epoch 1 = PLAN_CONFLICT（未列入清单的 BatchSendTaskRuntimeIntegrationTest.kt 编译依赖），A1/A2 修订后恢复；RECORD_ONLY: O-1（-Dtest=A+B surefire 语法怪癖）/ O-2（T1.3 措辞 bindOnCreate vs bindIfAbsent）见 verify-log |
-| p2 | docs/plans/2026-08-10/sender-binding-02-send-path-consistency.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p1 | 2 | LIGHT_PASS_WITH_NOTES | d957683635a304d7b2f7611053250546f720e638 | 5dc9f95cb4782c68b53dd0ecdbaa89853ecb9a3b | 0 | — | 5dc9f95cb4782c68b53dd0ecdbaa89853ecb9a3b | — | 事故直接修复，10 文件；epoch 1 = PLAN_CONFLICT（未授权测试文件），A3/A4/A5 修订后恢复并回退可空参数变通；RECORD_ONLY: O-1（p1 fix-log.md EOF 空行）见 verify-log |
-| p3 | docs/plans/2026-08-10/sender-binding-03-assignment-stock-balance.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p1,p2 | 1 | PENDING | — | — | 0 | — | — | — | 打分计入存量，7 文件 |
+| p2 | docs/plans/2026-08-10/sender-binding-02-send-path-consistency.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p1 | 2 | LIGHT_PASS_WITH_NOTES | d957683635a304d7b2f7611053250546f720e638 | 5dc9f95cb4782c68b53dd0ecdbaa89853ecb9a3b | 0 | — | 5dc9f95cb4782c68b53dd0ecdbaa89853ecb9a3b | f9bfb6f60fa932c4589367d5411d29a17b424e0f | 事故直接修复，10 文件；epoch 1 = PLAN_CONFLICT（未授权测试文件），A3/A4/A5 修订后恢复并回退可空参数变通；RECORD_ONLY: O-1（p1 fix-log.md EOF 空行）见 verify-log |
+| p3 | docs/plans/2026-08-10/sender-binding-03-assignment-stock-balance.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p1,p2 | 1 | LIGHT_PASS_WITH_NOTES | 5dc9f95cb4782c68b53dd0ecdbaa89853ecb9a3b | 66e19ecf43a5bb44487adea2b9ce687612938d6e | 0 | — | 66e19ecf43a5bb44487adea2b9ce687612938d6e | — | 打分计入存量，7 文件；桩 arity 偏差判定为 matcher 数适配（无断言变化）；RECORD_ONLY: O-1/O-2 见 verify-log |
 | p4 | docs/plans/2026-08-10/sender-binding-04-rebind-api-and-audit.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p1,p2 | 1 | PENDING | — | — | 0 | — | — | — | 换绑/迁移/审计，7 文件 |
 | p5 | docs/plans/2026-08-10/sender-binding-05-frontend-visibility.md | commit:2df2fca0e3ba5fda932a08c028f34bd0cc424d30 | p3,p4 | 1 | PENDING | — | — | 0 | — | — | — | 前端可见性，8 文件 |
 
