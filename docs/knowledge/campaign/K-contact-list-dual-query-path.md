@@ -2,8 +2,8 @@
 id: K-contact-list-dual-query-path
 domain: campaign
 created: 2026-06-29
-last_used: 2026-07-11
-hit_count: 3
+last_used: 2026-08-10
+hit_count: 4
 source: create-p:expert-contact-reply-mode-filter
 severity: P1
 ---

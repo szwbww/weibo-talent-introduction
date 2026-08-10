@@ -2,8 +2,8 @@
 id: K-expert-filter-registration-sites
 domain: frontend
 created: 2026-07-11
-last_used: 2026-07-14
-hit_count: 3
+last_used: 2026-08-10
+hit_count: 4
 source: create-p:discipline-filter-batch-send
 ---
 

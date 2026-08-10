@@ -2,8 +2,8 @@
 id: K-auto-send-paused-reason-prefix-routing
 domain: mail
 created: 2026-07-04
-last_used: 2026-07-04
-hit_count: 2
+last_used: 2026-08-10
+hit_count: 3
 source: create-p:postmaster-reputation-auto-pause
 severity: P1
 ---

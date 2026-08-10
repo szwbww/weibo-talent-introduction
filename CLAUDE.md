@@ -111,6 +111,9 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - LLM 多层超时/取消改造须显式区分单次预算、总预算、重试上限和取消提交边界，详见 `docs/knowledge/llm/K-llm-attempt-total-budget-cancel.md`。
 - 人工富文本外发的 raw text/HTML 必须在每次发送时先校验占位符，再用最终 sender/contact 渲染，之后才允许 SMTP、mail_record 与审计；前端 adoption 标记不能决定此安全边界。(K-manual-rich-render-before-send)
 - 改变 QA `replyBody` 出站形态须覆盖 QaMatchService/QaReplyComposer、PendingMailOperationService、LlmStitchService、MailComposeTemplateService.resolveBlocks 全集。(K-qa-replybody-outbound-sites)
+- 「这封邮件用哪个发件账号」全仓有 7 个决策点，分属分发型选号（InitialOutreach / ManualInitialOutreach 首封轮与材料提醒轮）、全局选号（ManualExpertMailService / MeetingScheduleService）、线程归属（PendingMailOperationService / AutoMailReplyService 用收信账号）三类；改账号归属须逐点核对，线程归属那两处永远不跟着改。(K-sender-account-selection-sites)
+- 人工发送刻意脱离每日配额与自动暂停：`selectAccountForManualSending` 走不含额度判定的 `isManualSendable`，且发送后不自增 `todaySentCount`；改配额语义须同时覆盖"选号入口"与"发送后自增"两侧，只改其一必然不一致。(K-operator-send-quota-paths)
+- 面向运营的业务异常必须继承 `IllegalArgumentException` / `IllegalStateException`，否则 `GlobalExceptionHandler` 一律映射为 500 `INTERNAL_ERROR`；因 `error(...)` 也抛 `IllegalStateException`，自定义子类的 catch 分支须排在通用 `catch (e: Exception)` 之前。(K-custom-exception-http-status-mapping)
 
 ---
 

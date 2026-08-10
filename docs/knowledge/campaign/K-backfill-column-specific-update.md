@@ -2,8 +2,8 @@
 id: K-backfill-column-specific-update
 domain: campaign
 created: 2026-06-29
-last_used: 2026-06-29
-hit_count: 1
+last_used: 2026-08-10
+hit_count: 2
 source: fix-v:01-contact-country-foundation:fix-1
 severity: P1
 ---
