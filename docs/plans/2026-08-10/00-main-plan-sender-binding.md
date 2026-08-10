@@ -121,6 +121,7 @@
 | `test/.../SenderAccountAssignmentServiceTest.kt` | — | — | +6 例（既有零改动） | — | — |
 | `test/.../InitialOutreachServiceTest.kt` | +1 例 | — | +1 例 | — | — |
 | `test/.../ManualInitialOutreachServiceTest.kt` | +2 例 | — | +1 例 | — | — |
+| `test/.../BatchSendTaskRuntimeIntegrationTest.kt` | 构造实参 +1（编译修复） | — | — | — | — |
 | `test/js/senderBindingDisplay.test.js` | — | — | — | — | **新建** 6 例 |
 
 - **`MailSenderAccountService.kt` 的双计划约束**：P2 只改私有谓词 `isManualSendable`（`:227-228`），
