@@ -439,7 +439,9 @@ data class ExpertContactResponse(
     val followUpMarked: Boolean = false,
     val followUpMarkedAt: String? = null,
     val latestManualReviewReasonType: String? = null,
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val boundSenderAccountCode: String? = null,
+    val senderAccountChanged: Boolean = false
 )
 
 data class MailRecordResponse(
@@ -547,7 +549,9 @@ private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = nul
         followUpMarked = followUpMarked,
         followUpMarkedAt = followUpMarkedAt?.toString(),
         latestManualReviewReasonType = latestManualReviewReasonType,
-        updatedAt = updatedAt?.toString()
+        updatedAt = updatedAt?.toString(),
+        boundSenderAccountCode = boundSenderAccountCode,
+        senderAccountChanged = senderAccountChanged
     )
 
 private fun MailRecord.toResponse(): MailRecordResponse =

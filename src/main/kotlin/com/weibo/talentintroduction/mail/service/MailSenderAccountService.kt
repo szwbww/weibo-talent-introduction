@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.springframework.stereotype.Service
@@ -15,10 +16,15 @@ class MailSenderAccountService(
     private val smtpSenderFactory: SmtpSenderFactory,
     private val warmup: SenderWarmupService,
     private val connectivityService: MailAccountConnectivityService,
-    private val campaignRepository: CampaignRepository
+    private val campaignRepository: CampaignRepository,
+    private val expertContactRepository: ExpertContactRepository
 ) {
     fun listAccounts(): List<MailSenderAccount> =
         repository.findAllByOrderByAccountCodeAsc()
+
+    fun bindingCountsByAccount(): Map<String, Long> =
+        expertContactRepository.countBindingsByAccount()
+            .associate { it.accountCode to it.boundCount }
 
     fun effectiveDailyLimitFor(account: MailSenderAccount): Int =
         warmup.effectiveDailyLimit(account)

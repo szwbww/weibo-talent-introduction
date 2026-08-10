@@ -1688,6 +1688,7 @@ async function loadAccounts() {
                     : ""
             }</td>
             <td>${statusCell}</td>
+            <td>${account.boundExpertCount ?? 0}</td>
             <td class="actions">${actions.join("")}</td>
         </tr>
     `;
@@ -4604,6 +4605,8 @@ async function loadContacts() {
             employment: "",
             keyword: "",
             tags: c.tags || [],
+            boundSenderAccountCode: c.boundSenderAccountCode || null,
+            senderAccountChanged: c.senderAccountChanged === true,
             updatedAt: c.updatedAt || null,
             hIndex: null,
             citationCount: null,
@@ -4653,6 +4656,8 @@ async function loadContacts() {
             employment: e.employment,
             keyword: e.keyword,
             tags: e.tags || [],
+            boundSenderAccountCode: e.boundSenderAccountCode || null,
+            senderAccountChanged: e.senderAccountChanged === true,
             updatedAt: e.updatedAt || null,
             hIndex: e.hIndex ?? null,
             citationCount: e.citationCount ?? null,
@@ -4722,6 +4727,10 @@ function renderContactListItems() {
         const enrichedBadge = contact.enrichedAt
             ? `<span class="academic-badge academic-enriched" title="数据已补充 ${escapeHtml(contact.enrichedAt)}">已补充</span>`
             : "";
+        const bindingText = `<span>账号：${escapeHtml(contact.boundSenderAccountCode || "未绑定")}</span>`;
+        const senderChangedTag = contact.senderAccountChanged
+            ? `<span class="expert-row-tags"><span class="expert-tag tag-sender-changed">发送账号已变更</span></span>`
+            : "";
         const hoverInfo = [
             contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
             contact.keyword || ""
@@ -4743,11 +4752,13 @@ function renderContactListItems() {
                     </div>
                     ${badge(status, statusType)}
                 </div>
-                ${contact.employment || tagsHtml || hIndexBadge || enrichedBadge ? `
+                ${contact.employment || tagsHtml || hIndexBadge || enrichedBadge || bindingText ? `
                 <div class="expert-row-sub">
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
+                    ${bindingText}
                     ${hIndexBadge}${enrichedBadge}
                     ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
+                    ${senderChangedTag}
                 </div>` : ""}
             </div>
         </div>
@@ -7017,6 +7028,23 @@ async function loadContactDetail(contactId) {
                     </div>
                 </div>
 
+                <!-- Sender Binding Card -->
+                <div class="metadata-card">
+                    <div class="metadata-card-header">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        <span>绑定发件账号</span>
+                    </div>
+                    <div class="metadata-card-value">
+                        <span>${escapeHtml(contact.boundSenderAccountCode || "未绑定")}</span>
+                        ${contact.senderAccountChanged ? `<span class="badge warn">已变更</span>` : ""}
+                        <div class="sender-binding-editor">
+                            <select id="senderBindingSelect"></select>
+                            <button class="button" data-action="rebind-sender-account" data-id="${contact.id}">保存</button>
+                            ${contact.senderAccountChanged ? `<button class="button" data-action="clear-sender-change-mark" data-id="${contact.id}">清除标记</button>` : ""}
+                        </div>
+                    </div>
+                </div>
+
                 <div class="metadata-card">
                     <div class="metadata-card-header">
                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -7145,6 +7173,18 @@ async function loadContactDetail(contactId) {
 
         </div>
     `;
+    const sel = $("#senderBindingSelect");
+    if (sel) {
+        const accounts = state.accounts && state.accounts.length
+            ? state.accounts
+            : await api("/api/mail/sender-accounts").catch(() => []);
+        const options = (Array.isArray(accounts) ? accounts : []).filter(a => a.enabled && a.accountCode !== "SIMULATOR_NOOP");
+        sel.innerHTML = options.map(a =>
+            `<option value="${escapeHtml(a.accountCode)}"${
+                a.accountCode === contact.boundSenderAccountCode ? " selected" : ""
+            }>${escapeHtml(a.accountCode)} · ${escapeHtml(a.senderEmail)}</option>`
+        ).join("");
+    }
     requestAnimationFrame(() => {
         contactDetail.scrollTop = 0;
         if (window.innerWidth <= 1024) {
@@ -8361,6 +8401,28 @@ async function handleContactAction(element) {
         });
         showStatus("邮件已发送");
         await loadContactDetail(id);
+        return;
+    }
+    if (action === "rebind-sender-account") {
+        const code = $("#senderBindingSelect")?.value;
+        if (!code) { showStatus("请选择发件账号", "error"); return; }
+        await api(`/api/expert-contacts/${id}/sender-account`, {
+            method: "POST",
+            body: JSON.stringify({ senderAccountCode: code, operatorName: null, note: null })
+        });
+        showStatus("发件账号已变更");
+        await loadContactDetail(id);   // I-4
+        await loadContacts();
+        return;
+    }
+    if (action === "clear-sender-change-mark") {
+        await api(`/api/expert-contacts/${id}/sender-account/clear-change-mark`, {
+            method: "POST",
+            body: JSON.stringify({ operatorName: null, note: null })
+        });
+        showStatus("已清除变更标记");
+        await loadContactDetail(id);
+        await loadContacts();
         return;
     }
     if (action === "expert-add-tag-open") {

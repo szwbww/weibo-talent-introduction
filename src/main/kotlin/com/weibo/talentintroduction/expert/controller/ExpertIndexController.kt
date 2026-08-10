@@ -80,6 +80,8 @@ class ExpertIndexController(
                 contactStatus = contact?.currentStatus,
                 needsManualAttention = contact?.needsManualAttention ?: false,
                 autoReplyEnabled = contact?.autoReplyEnabled ?: true,
+                boundSenderAccountCode = contact?.boundSenderAccountCode,
+                senderAccountChanged = contact?.senderAccountChanged ?: false,
                 operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED"
             )
         }
@@ -364,6 +366,8 @@ data class ExpertIndexResponse(
     val contactStatus: String?,
     val needsManualAttention: Boolean = false,
     val autoReplyEnabled: Boolean = true,
+    val boundSenderAccountCode: String? = null,
+    val senderAccountChanged: Boolean = false,
     val tags: List<String> = emptyList(),
     val updatedAt: String? = null,
     val hIndex: Int? = null,
@@ -383,6 +387,8 @@ data class ExpertIndexResponse(
             contactStatus: String?,
             needsManualAttention: Boolean = false,
             autoReplyEnabled: Boolean = true,
+            boundSenderAccountCode: String? = null,
+            senderAccountChanged: Boolean = false,
             operatorStatus: String? = null
         ): ExpertIndexResponse =
             ExpertIndexResponse(
@@ -406,6 +412,8 @@ data class ExpertIndexResponse(
                 contactStatus = contactStatus,
                 needsManualAttention = needsManualAttention,
                 autoReplyEnabled = autoReplyEnabled,
+                boundSenderAccountCode = boundSenderAccountCode,
+                senderAccountChanged = senderAccountChanged,
                 tags = expert.tags.orEmpty(),
                 updatedAt = expert.updatedAt,
                 hIndex = expert.hIndex,

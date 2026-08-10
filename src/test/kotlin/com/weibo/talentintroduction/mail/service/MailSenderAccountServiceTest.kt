@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -28,7 +29,8 @@ class MailSenderAccountServiceTest {
         smtpSenderFactory,
         warmupService,
         connectivityService,
-        campaignRepository
+        campaignRepository,
+        Mockito.mock(ExpertContactRepository::class.java)
     )
 
     @Test
@@ -684,7 +686,8 @@ class MailSenderAccountServiceTest {
             smtpSenderFactory,
             enabledWarmup,
             connectivityService,
-            campaignRepository
+            campaignRepository,
+            Mockito.mock(ExpertContactRepository::class.java)
         )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
@@ -720,7 +723,8 @@ class MailSenderAccountServiceTest {
             smtpSenderFactory,
             enabledWarmup,
             connectivityService,
-            campaignRepository
+            campaignRepository,
+            Mockito.mock(ExpertContactRepository::class.java)
         )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
@@ -755,7 +759,8 @@ class MailSenderAccountServiceTest {
             smtpSenderFactory,
             enabledWarmup,
             connectivityService,
-            campaignRepository
+            campaignRepository,
+            Mockito.mock(ExpertContactRepository::class.java)
         )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
@@ -795,7 +800,8 @@ class MailSenderAccountServiceTest {
             smtpSenderFactory,
             enabledWarmup,
             connectivityService,
-            campaignRepository
+            campaignRepository,
+            Mockito.mock(ExpertContactRepository::class.java)
         )
         val now = java.time.LocalDateTime.of(2026, 6, 20, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(

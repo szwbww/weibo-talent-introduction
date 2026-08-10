@@ -26,35 +26,49 @@ class MailSenderAccountController(
     private val selfCheckService: SenderAccountSelfCheckService
 ) {
     @GetMapping
-    fun listAccounts(): List<MailSenderAccountResponse> =
-        service.listAccounts().map { toResponse(it) }
+    fun listAccounts(): List<MailSenderAccountResponse> {
+        val counts = service.bindingCountsByAccount()
+        return service.listAccounts().map { toResponse(it, counts[it.accountCode] ?: 0L) }
+    }
 
     @GetMapping("/{accountCode}")
-    fun getAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        toResponse(service.getAccount(accountCode))
+    fun getAccount(@PathVariable accountCode: String): MailSenderAccountResponse {
+        val account = service.getAccount(accountCode)
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
+    }
 
     @PostMapping
-    fun createAccount(@RequestBody request: MailSenderAccountCreateRequest): MailSenderAccountResponse =
-        toResponse(service.createAccount(request.toCommand()))
+    fun createAccount(@RequestBody request: MailSenderAccountCreateRequest): MailSenderAccountResponse {
+        val account = service.createAccount(request.toCommand())
+        return toResponse(account, service.bindingCountsByAccount()[account.accountCode] ?: 0L)
+    }
 
     @PutMapping("/{accountCode}")
     fun updateAccount(
         @PathVariable accountCode: String,
         @RequestBody request: MailSenderAccountUpdateRequest
-    ): MailSenderAccountResponse =
-        toResponse(service.updateAccount(accountCode, request.toCommand()))
+    ): MailSenderAccountResponse {
+        val account = service.updateAccount(accountCode, request.toCommand())
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
+    }
 
     @PostMapping("/{accountCode}/enable")
-    fun enableAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        toResponse(service.setEnabled(accountCode, true))
+    fun enableAccount(@PathVariable accountCode: String): MailSenderAccountResponse {
+        val account = service.setEnabled(accountCode, true)
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
+    }
 
     @PostMapping("/{accountCode}/disable")
-    fun disableAccount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        toResponse(service.setEnabled(accountCode, false))
+    fun disableAccount(@PathVariable accountCode: String): MailSenderAccountResponse {
+        val account = service.setEnabled(accountCode, false)
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
+    }
 
     @PostMapping("/{accountCode}/reset-today-sent-count")
-    fun resetTodaySentCount(@PathVariable accountCode: String): MailSenderAccountResponse =
-        toResponse(service.resetTodaySentCount(accountCode))
+    fun resetTodaySentCount(@PathVariable accountCode: String): MailSenderAccountResponse {
+        val account = service.resetTodaySentCount(accountCode)
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
+    }
 
     @PostMapping("/{accountCode}/test-connectivity")
     fun testConnectivity(@PathVariable accountCode: String): MailAccountConnectivityResult =
@@ -63,7 +77,8 @@ class MailSenderAccountController(
     @PostMapping("/{accountCode}/resume-auto-send")
     fun resumeAutoSend(@PathVariable accountCode: String): MailSenderAccountResponse {
         service.resumeAutoSend(accountCode)
-        return toResponse(service.getAccount(accountCode))
+        val account = service.getAccount(accountCode)
+        return toResponse(account, service.bindingCountsByAccount()[accountCode] ?: 0L)
     }
 
     @PostMapping("/{accountCode}/self-check")
@@ -76,7 +91,7 @@ class MailSenderAccountController(
         service.deleteAccount(accountCode)
     }
 
-    private fun toResponse(account: MailSenderAccount): MailSenderAccountResponse =
+    private fun toResponse(account: MailSenderAccount, boundExpertCount: Long = 0): MailSenderAccountResponse =
         MailSenderAccountResponse(
             id = account.id,
             accountCode = account.accountCode,
@@ -98,6 +113,7 @@ class MailSenderAccountController(
             todaySentCount = account.todaySentCount,
             lastSentAt = account.lastSentAt?.toString(),
             enabled = account.enabled,
+            boundExpertCount = boundExpertCount,
             autoSendPaused = account.autoSendPaused,
             autoSendPausedReason = account.autoSendPausedReason,
             autoSendPausedAt = account.autoSendPausedAt?.toString(),
@@ -220,6 +236,7 @@ data class MailSenderAccountResponse(
     val todaySentCount: Int,
     val lastSentAt: String?,
     val enabled: Boolean,
+    val boundExpertCount: Long = 0,
     val autoSendPaused: Boolean,
     val autoSendPausedReason: String?,
     val autoSendPausedAt: String?,
