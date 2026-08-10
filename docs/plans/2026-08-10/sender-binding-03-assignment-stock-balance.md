@@ -1,7 +1,7 @@
 # P3：分发打分计入存量绑定（决策 ③ 强一致均衡）
 
 > 依赖 P1（绑定列）与 P2（绑定优先解析）。
-> 系列索引与全局不变量见 [sender-binding-00-index.md](sender-binding-00-index.md)。
+> 主计划（跨计划约束 M-1..M-8、全局不变量 G-1..G-3）见 [00-main-plan-sender-binding.md](00-main-plan-sender-binding.md)。
 
 ## 需求描述
 

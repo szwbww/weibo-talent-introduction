@@ -1,6 +1,6 @@
 # P1：专家—发送账号绑定基座（字段 / 回填 / 建立点 / 解析服务）
 
-> 系列索引与全局不变量 G-1..G-3、验证命令来源见 [sender-binding-00-index.md](sender-binding-00-index.md)。
+> 主计划（跨计划约束 M-1..M-8、全局不变量 G-1..G-3）见 [00-main-plan-sender-binding.md](00-main-plan-sender-binding.md)。
 
 ## 需求描述
 

@@ -1,7 +1,8 @@
 # P4：换绑接口 + 审计留痕 + 变更标记（决策 ④）
 
-> 依赖 P1（绑定列 + 解析服务）、P2（绑定优先解析）。P3 与本计划无依赖，可并行。
-> 系列索引与全局不变量见 [sender-binding-00-index.md](sender-binding-00-index.md)。
+> 依赖 P1（绑定列 + 解析服务）、P2（绑定优先解析）。与 P3 无技术依赖、**相对顺序可换**，
+> 但按主计划 M-1 **禁止与 P3 并行执行**（二者都要改 `ExpertContactRepository.kt`）。
+> 主计划（跨计划约束 M-1..M-8、全局不变量 G-1..G-3）见 [00-main-plan-sender-binding.md](00-main-plan-sender-binding.md)。
 
 ## 需求描述
 

@@ -1,8 +1,8 @@
 # P2：发送路径按绑定强一致解析 + enabled 门禁
 
 > 依赖 P1 已落地（`bound_sender_account_code` 列、`SenderAccountBindingService`）。
-> 系列索引、全局不变量 G-1..G-3、与既有知识的冲突口径见
-> [sender-binding-00-index.md](sender-binding-00-index.md)。
+> 主计划（跨计划约束 M-1..M-8、全局不变量 G-1..G-3、既有知识冲突口径）见
+> [00-main-plan-sender-binding.md](00-main-plan-sender-binding.md)。
 
 ## 需求描述
 

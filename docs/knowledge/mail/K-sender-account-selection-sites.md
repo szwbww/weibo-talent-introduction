@@ -37,4 +37,4 @@ C 类**不得**跟着改——回复必须留在原线程的收信账号，否�
 关联：[[K-dual-outreach-paths]]（1 与 2 共用 composer 与 assignment）、
 [[K-operator-send-quota-paths]]（B 类的额度判定差异）、
 [[K-sender-account-enabled-scope]]（enabled 的四类路径语义）。
-计划：`docs/plans/2026-08-10/sender-binding-00-index.md`
+计划：`docs/plans/2026-08-10/00-main-plan-sender-binding.md`

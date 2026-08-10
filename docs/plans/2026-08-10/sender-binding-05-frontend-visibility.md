@@ -1,7 +1,7 @@
 # P5：前端可见性（专家列表徽标 / 详情换绑 / 账号列表绑定数）
 
 > 依赖 P1（绑定列）、P3（`countBindingsByAccount` 查询）、P4（换绑接口与标记列）。
-> 系列索引与全局不变量见 [sender-binding-00-index.md](sender-binding-00-index.md)。
+> 主计划（跨计划约束 M-1..M-8、全局不变量 G-1..G-3）见 [00-main-plan-sender-binding.md](00-main-plan-sender-binding.md)。
 
 ## 需求描述
 
