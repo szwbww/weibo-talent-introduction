@@ -456,8 +456,9 @@ data class MigrateSenderAccountRequest(
 | 5 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt` | 修改 | rebind / migrate / clearChangeMark + 命令类型 |
 | 6 | `src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt` | 修改 | 3 个端点 + 3 个请求体 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingServiceTest.kt` | 修改 | +12 例 |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt` | 修改 | 编译修复：`:17` 命名参数构造补 `senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)`（A6 授权，不改断言） |
 
-文件数 7 ≤ 10 ✓　子系统 1（后端）≤ 2 ✓
+文件数 8 ≤ 10 ✓　子系统 1（后端）≤ 2 ✓
 新增共享存储字段：1 个逻辑字段（变更标记，含其时间戳）✓
 
 ## 验证命令
