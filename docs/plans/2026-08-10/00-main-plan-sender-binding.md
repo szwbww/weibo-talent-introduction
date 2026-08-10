@@ -120,7 +120,8 @@
 | `test/.../MeetingScheduleServiceTest.kt` | — | +2 例 | — | — | — |
 | `test/.../SenderAccountAssignmentServiceTest.kt` | — | — | +6 例（既有零改动） | — | — |
 | `test/.../InitialOutreachServiceTest.kt` | +1 例 | — | +1 例 | — | — |
-| `test/.../ManualInitialOutreachServiceTest.kt` | +2 例 | — | +1 例 | — | — |
+| `test/.../ManualInitialOutreachServiceTest.kt` | +2 例 | 桩适配（A3） | +1 例 | — | — |
+| `test/.../ManualExpertMailServiceGateTest.kt` | — | 构造实参 +1（编译修复） | — | — | — |
 | `test/.../BatchSendTaskRuntimeIntegrationTest.kt` | 构造实参 +1（编译修复） | — | — | — | — |
 | `test/js/senderBindingDisplay.test.js` | — | — | — | — | **新建** 6 例 |
 
