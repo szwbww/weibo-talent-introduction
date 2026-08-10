@@ -33,6 +33,7 @@ class ManualExpertMailServiceTest {
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
+    private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val mailContentService = MailContentService()
     private val service = ManualExpertMailService(
         expertContactRepository,
@@ -43,7 +44,8 @@ class ManualExpertMailServiceTest {
         mailDeliveryService,
         mailComposeTemplateService,
         mailContentService,
-        conversationStateService
+        conversationStateService,
+        senderAccountBindingService
     )
 
     private val contact = ExpertContact(
@@ -348,9 +350,49 @@ class ManualExpertMailServiceTest {
     }
 
     @Test
-    fun `sendManualMail succeeds when selectAccountForManualSending returns disabled account`() {
-        val disabledAccount = stubAccount().copy(enabled = false)
-        stubTemplateSend(disabledAccount)
+    fun `sendManualMail throws when bound account is disabled`() {
+        val boundContact = contact.copy(
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(boundContact))
+        Mockito.`when`(
+            senderAccountBindingService.resolveForSend(
+                anyValue(boundContact),
+                eqValue(true),
+                eqValue(false)
+            )
+        ).thenThrow(BoundSenderAccountUnavailableException(1, "sender", "DISABLED"))
+
+        val ex = assertThrows<BoundSenderAccountUnavailableException> {
+            service.sendManualMail(
+                1,
+                ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+            )
+        }
+
+        assertEquals("DISABLED", ex.reason)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+    }
+
+    @Test
+    fun `sendManualMail uses bound account and never calls selectAccountForManualSending`() {
+        val boundContact = contact.copy(
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        val boundAccount = stubAccount()
+        stubTemplateSend(boundAccount)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(boundContact))
+        Mockito.`when`(
+            senderAccountBindingService.resolveForSend(
+                anyValue(boundContact),
+                eqValue(true),
+                eqValue(false)
+            )
+        ).thenReturn(boundAccount)
 
         val result = service.sendManualMail(
             1,
@@ -359,9 +401,84 @@ class ManualExpertMailServiceTest {
 
         assertEquals("SUCCESS", result.sendStatus)
         assertEquals("sender", result.senderAccountCode)
-        Mockito.verify(mailSenderAccountService).selectAccountForManualSending()
+        Mockito.verify(senderAccountBindingService).resolveForSend(anyValue(boundContact), eqValue(true), eqValue(false))
+        Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForManualSending()
+        Mockito.verify(senderAccountBindingService, Mockito.never()).bindIfAbsent(
+            anyValue(1L), anyValue("sender"), anyValue(LocalDateTime.now())
+        )
         Mockito.verify(mailDeliveryService).send(
-            eqValue(disabledAccount),
+            eqValue(boundAccount),
+            anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+    }
+
+    @Test
+    fun `sendManualMail throws when requested code conflicts with binding`() {
+        val boundContact = contact.copy(
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(boundContact))
+
+        val ex = assertThrows<IllegalArgumentException> {
+            service.sendManualMail(
+                1,
+                ManualMailSendCommand(
+                    optionType = "COMPOSE_TEMPLATE",
+                    optionValue = "10",
+                    senderAccountCode = "other"
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("发件账号与专家绑定不一致"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(stubAccount()), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+    }
+
+    @Test
+    fun `sendManualMail falls back to selection and binds when contact has no binding`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        Mockito.verify(mailSenderAccountService).selectAccountForManualSending()
+        Mockito.verify(senderAccountBindingService).bindIfAbsent(
+            eqValue(1L), eqValue("sender"), anyValue(LocalDateTime.now())
+        )
+    }
+
+    @Test
+    fun `sendManualMail allows auto-paused bound account`() {
+        val boundContact = contact.copy(
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        val pausedAccount = stubAccount().copy(autoSendPaused = true)
+        stubTemplateSend(pausedAccount)
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(boundContact))
+        Mockito.`when`(
+            senderAccountBindingService.resolveForSend(
+                anyValue(boundContact),
+                eqValue(true),
+                eqValue(false)
+            )
+        ).thenReturn(pausedAccount)
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        assertEquals("SUCCESS", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(pausedAccount),
             anyValue(ComposedMail("stub", "stub", "stub"))
         )
     }

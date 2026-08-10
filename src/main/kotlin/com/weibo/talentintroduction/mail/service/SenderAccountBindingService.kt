@@ -22,12 +22,16 @@ class SenderAccountBindingService(
     }
 
     /** 绑定的唯一读取入口（I-6/I-7）。 */
-    fun resolveForSend(contact: ExpertContact, manual: Boolean): MailSenderAccount {
+    fun resolveForSend(
+        contact: ExpertContact,
+        manual: Boolean,
+        ignoreWarmup: Boolean = false
+    ): MailSenderAccount {
         val contactId = contact.id ?: error("Expert contact id is required")
         val code = contact.boundSenderAccountCode?.takeIf { it.isNotBlank() }
             ?: throw SenderAccountNotBoundException(contactId)
         val account = mailSenderAccountService.getAccount(code)
-        requireAvailable(contactId, account, manual)
+        requireAvailable(contactId, account, manual, ignoreWarmup)
         return account
     }
 
@@ -37,7 +41,12 @@ class SenderAccountBindingService(
         expertContactRepository.updateBindingById(contactId, code, at)
     }
 
-    private fun requireAvailable(contactId: Long, account: MailSenderAccount, manual: Boolean) {
+    private fun requireAvailable(
+        contactId: Long,
+        account: MailSenderAccount,
+        manual: Boolean,
+        ignoreWarmup: Boolean
+    ) {
         if (account.accountCode == MailSenderAccountService.SIMULATOR_ACCOUNT_CODE) {
             throw BoundSenderAccountUnavailableException(contactId, account.accountCode, "SIMULATOR")
         }
@@ -48,7 +57,7 @@ class SenderAccountBindingService(
         if (account.autoSendPaused) {
             throw BoundSenderAccountUnavailableException(contactId, account.accountCode, "AUTO_SEND_PAUSED")
         }
-        if (account.todaySentCount >= warmup.effectiveDailyLimit(account)) {
+        if (account.todaySentCount >= warmup.effectiveDailyLimit(account, ignoreWarmup = ignoreWarmup)) {
             throw BoundSenderAccountUnavailableException(contactId, account.accountCode, "DAILY_LIMIT_REACHED")
         }
     }

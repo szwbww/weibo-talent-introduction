@@ -11,6 +11,8 @@ import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.OutboundMessageIdFactory
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import org.springframework.stereotype.Service
@@ -24,6 +26,7 @@ class MeetingScheduleService(
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailSenderAccountService: MailSenderAccountService,
+    private val senderAccountBindingService: SenderAccountBindingService,
     private val mailDeliveryService: MailDeliveryService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val conversationStateService: ConversationStateService
@@ -106,7 +109,13 @@ class MeetingScheduleService(
             )
         )
 
-        val account = mailSenderAccountService.selectAccountForSending()
+        val account = try {
+            senderAccountBindingService.resolveForSend(contact, manual = true)
+        } catch (e: SenderAccountNotBoundException) {
+            val fallback = mailSenderAccountService.selectAccountForSending()
+            senderAccountBindingService.bindIfAbsent(contactId, fallback.accountCode, LocalDateTime.now())
+            fallback
+        }
         val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_CONFIRMATION",
             variables = mapOf(

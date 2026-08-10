@@ -28,6 +28,7 @@ class ManualExpertMailService(
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val mailContentService: MailContentService,
     private val conversationStateService: ConversationStateService,
+    private val senderAccountBindingService: SenderAccountBindingService,
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
     private val mailVariableService: MailVariableService? = null
 ) {
@@ -52,10 +53,7 @@ class ManualExpertMailService(
             .orElseThrow { error("Expert contact not found: $contactId") }
         require(contact.expertEmail.isNotBlank()) { "Expert email is required" }
 
-        val account = command.senderAccountCode
-            ?.takeIf { it.isNotBlank() }
-            ?.let(mailSenderAccountService::getManualSendAccount)
-            ?: mailSenderAccountService.selectAccountForManualSending()
+        val account = resolveAccount(contact, command.senderAccountCode)
         val composed = compose(contact, account, command)
         personalizationGateService.requireNoPlaceholderResidue(
             composed.mail.subject,
@@ -141,6 +139,29 @@ class ManualExpertMailService(
             failed = failed,
             errors = errors
         )
+    }
+
+    private fun resolveAccount(contact: ExpertContact, requestedCode: String?): MailSenderAccount {
+        val contactId = contact.id ?: error("Expert contact id is required")
+        val requested = requestedCode?.takeIf { it.isNotBlank() }
+        val bound = contact.boundSenderAccountCode?.takeIf { it.isNotBlank() }
+
+        // I-3: 显式指定必须与绑定一致
+        if (requested != null && bound != null && requested != bound) {
+            throw IllegalArgumentException(
+                "发件账号与专家绑定不一致：请求 $requested，绑定 $bound（contactId=$contactId）"
+            )
+        }
+        // I-1: 有绑定一律走绑定解析（含 enabled 门禁）
+        if (bound != null) {
+            return senderAccountBindingService.resolveForSend(contact, manual = true)
+        }
+        // 无绑定兜底：显式 code 优先，否则选号；两者都要补写绑定（IP-1）
+        val account = requested
+            ?.let(mailSenderAccountService::getManualSendAccount)
+            ?: mailSenderAccountService.selectAccountForManualSending()
+        senderAccountBindingService.bindIfAbsent(contactId, account.accountCode, LocalDateTime.now())
+        return account
     }
 
     private fun compose(

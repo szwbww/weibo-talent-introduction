@@ -225,7 +225,8 @@ class MailSenderAccountService(
             account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun isManualSendable(account: MailSenderAccount): Boolean =
-        account.accountCode != SIMULATOR_ACCOUNT_CODE
+        account.enabled &&
+            account.accountCode != SIMULATOR_ACCOUNT_CODE
 
     private fun selectionScore(account: MailSenderAccount): Double {
         val effectiveLimit = warmup.effectiveDailyLimit(account)

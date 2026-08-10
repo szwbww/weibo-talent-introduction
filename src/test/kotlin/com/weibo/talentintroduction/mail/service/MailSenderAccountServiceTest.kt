@@ -59,7 +59,7 @@ class MailSenderAccountServiceTest {
     }
 
     @Test
-    fun `selectAccountForManualSending includes disabled accounts`() {
+    fun `selectAccountForManualSending excludes disabled accounts`() {
         Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
             listOf(
                 account("disabled", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, enabled = false),
@@ -69,7 +69,23 @@ class MailSenderAccountServiceTest {
 
         val selected = service.selectAccountForManualSending()
 
-        assertEquals("disabled", selected.accountCode)
+        assertEquals("ok", selected.accountCode)
+    }
+
+    @Test
+    fun `selectAccountForManualSending throws when all accounts disabled`() {
+        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
+            listOf(
+                account("disabled-a", strategyWeight = 200, dailySendLimit = 100, todaySentCount = 0, enabled = false),
+                account("disabled-b", strategyWeight = 80, dailySendLimit = 100, todaySentCount = 0, enabled = false)
+            )
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.selectAccountForManualSending()
+        }
+
+        assertTrue(ex.message!!.contains("manual send"))
     }
 
     @Test

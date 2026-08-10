@@ -38,3 +38,9 @@ C 类**不得**跟着改——回复必须留在原线程的收信账号，否�
 [[K-operator-send-quota-paths]]（B 类的额度判定差异）、
 [[K-sender-account-enabled-scope]]（enabled 的四类路径语义）。
 计划：`docs/plans/2026-08-10/00-main-plan-sender-binding.md`
+
+> 2026-08-10（sender-binding-02-send-path-consistency，P2 落地后）A/B 两类**已有 contact 的发送路径**已收口到唯一解析 seam
+> `SenderAccountBindingService.resolveForSend(contact, manual, ignoreWarmup=false)`：A 类 2/3 与 B 类 4/5 均改为
+> 「绑定优先 → `SenderAccountNotBoundException` 才走原选号兜底（兜底成功后 `bindIfAbsent` 补写绑定）」；
+> A 类 1（新建 contact）仍在建行时固化绑定；C 类（回复线程）保持原样（G-1），选号兜底入口不变
+> （`selectAccount` / `selectAccountForManualSending` / `selectAccountForSending`）。

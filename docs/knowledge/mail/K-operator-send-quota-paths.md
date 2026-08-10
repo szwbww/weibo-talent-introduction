@@ -14,3 +14,5 @@ severity: P2
 正确做法：让"人工发送脱离配额"需同时改两处——选号兜底换不含上限判定的方法 + 移除发送后自增；不可只改其一。
 
 补充（create-p:manual-batch-bypass-warmup, 2026-06-29）：额度"读判定"全集（区别于上面的"写"全集）= `SenderWarmupService.{effectiveDailyLimit,dailyState,remainingCapacity,isWarmupActive}` ←被← `MailSenderAccountService.{isSendable/listSendableAccounts,selectAccountForSending,remainingDailyCapacity,todayTotalCapacity,warmupActiveCount,effectiveDailyLimitFor,selectionScore}` + `SenderAccountAssignmentService.{selectAccount,assignmentScore}` + `ManualInitialOutreachService` 批量引擎（runRoundGate→listSendableAccounts、:204 remainingCapacity、:252 selectAccount、classify*/buildAccountStats）。要"按模式放宽额度上界"（如手动绕过预热但保留 dailySendLimit）推荐模式：给 `effectiveDailyLimit` 加 `ignoreWarmup=false` 形参（true 时首行 `return dailySendLimit`），逐层下传，判别条件用 `mode==MANUAL`（startManual/executeOneRound 均为 MANUAL，startAuto 为 AUTO）；默认 false 保证 AUTO/账号管理页/单封人工发送零回归。注意 `dailyState` 的 WARMUP_LIMIT_REACHED 分支在 ignoreWarmup 下自然失效。
+
+> 2026-08-10（sender-binding-02-send-path-consistency，P2 落地后）：本批次未改变上述写路径与额度判定决策——`resolveForSend` 仅把 `ignoreWarmup` 透传到 `effectiveDailyLimit`，人工路径依旧不判额度/暂停。

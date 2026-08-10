@@ -32,6 +32,7 @@ import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -307,6 +308,10 @@ class ManualInitialOutreachServiceTest {
         stubScrolledExperts(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue())).thenReturn(account)
+        // A3: 已绑定 contact → resolveForSend 返回账号（I-1：不重选号、不补写绑定）
+        Mockito.`when`(senderAccountBindingService.resolveForSend(
+            anyValue(existingContact), eqValue(false), eqValue(true)
+        )).thenReturn(account)
         Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
         Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
 
@@ -1346,6 +1351,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(senderAccountAssignmentService.selectAccount(
             anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
         )).thenReturn(acc)
+        stubReminderResolveForSendNotBound()
         Mockito.`when`(manualExpertMailService.sendManualMail(
             anyLong(),
             anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1529,6 +1535,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 eqValue(contactId),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1576,6 +1583,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
 
             val cmdCaptor = org.mockito.ArgumentCaptor.forClass(
                 com.weibo.talentintroduction.mail.service.ManualMailSendCommand::class.java
@@ -1624,6 +1632,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 eqValue(contactId),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1674,6 +1683,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1731,6 +1741,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1788,6 +1799,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1845,6 +1857,7 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue()
             )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2467,6 +2480,18 @@ class ManualInitialOutreachServiceTest {
 
     private fun <T> captureValue(captor: org.mockito.ArgumentCaptor<T>, defaultValue: T): T =
         captor.capture() ?: defaultValue
+
+    /**
+     * A3 测试适配：材料提醒轮（manual=true）的 resolveForSend 桩。
+     * 未绑定 contact → 抛 SenderAccountNotBoundException，生产代码走 selectAccount 兜底 + bindIfAbsent（I-1/IP-1）。
+     */
+    private fun stubReminderResolveForSendNotBound() {
+        Mockito.`when`(senderAccountBindingService.resolveForSend(
+            anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
+            eqValue(true),
+            eqValue(false)
+        )).thenThrow(SenderAccountNotBoundException(0L))
+    }
 
     private fun anyBooleanValue(): Boolean = Mockito.anyBoolean() ?: false
 }

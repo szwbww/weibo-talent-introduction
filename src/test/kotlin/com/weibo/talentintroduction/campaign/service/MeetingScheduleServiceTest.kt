@@ -14,6 +14,9 @@ import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.ComposedMail
 import com.weibo.talentintroduction.mail.service.DeliveredMail
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
+import com.weibo.talentintroduction.mail.service.BoundSenderAccountUnavailableException
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
@@ -33,6 +36,7 @@ class MeetingScheduleServiceTest {
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
+    private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val mailDeliveryService = Mockito.mock(MailDeliveryService::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
@@ -44,6 +48,7 @@ class MeetingScheduleServiceTest {
         mailRecordRepository = mailRecordRepository,
         mailSenderAccountRepository = mailSenderAccountRepository,
         mailSenderAccountService = mailSenderAccountService,
+        senderAccountBindingService = senderAccountBindingService,
         mailDeliveryService = mailDeliveryService,
         mailComposeTemplateService = mailComposeTemplateService,
         conversationStateService = conversationStateService
@@ -121,6 +126,9 @@ class MeetingScheduleServiceTest {
         Mockito.`when`(meetingScheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule))
         Mockito.`when`(meetingScheduleRepository.save(Mockito.any(MeetingSchedule::class.java)))
             .thenAnswer { invocation -> invocation.getArgument<MeetingSchedule>(0) }
+        // 无绑定 contact → resolveForSend 抛 NotBound，走 selectAccountForSending 兜底（I-1/IP-1）
+        Mockito.`when`(senderAccountBindingService.resolveForSend(eqValue(contact), eqValue(true), eqValue(false)))
+            .thenThrow(SenderAccountNotBoundException(contactId))
         Mockito.`when`(mailSenderAccountService.selectAccountForSending()).thenReturn(account)
         Mockito.`when`(
             mailComposeTemplateService.renderByCode(
@@ -198,6 +206,139 @@ class MeetingScheduleServiceTest {
         Mockito.verify(mailSenderAccountRepository).save(accountCaptor.capture())
         assertEquals(1, accountCaptor.value.todaySentCount)
         assertNotNull(accountCaptor.value.lastSentAt)
+    }
+
+    @Test
+    fun `confirmMeetingAndEmail uses bound account`() {
+        val contactId = 1L
+        val scheduleId = 500L
+        val contact = ExpertContact(
+            id = contactId,
+            campaignId = 10L,
+            orcidId = "orcid-1",
+            expertEmail = "expert@example.com",
+            expertName = "Dr. Expert",
+            currentStatus = ConversationStatus.MEETING_SCHEDULING.name,
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        val schedule = MeetingSchedule(
+            id = scheduleId,
+            expertContactId = contactId,
+            meetingStatus = "PENDING"
+        )
+        val account = MailSenderAccount(
+            accountCode = "sender",
+            senderEmail = "sender@example.com",
+            senderName = "Sender",
+            senderTitle = "Recruiter",
+            senderDisplayName = "Sender Display",
+            teamName = "HR Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "sender@example.com",
+            smtpPassword = "pwd",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "sender@example.com",
+            imapPassword = "pwd"
+        )
+
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(contact))
+        Mockito.`when`(meetingScheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule))
+        Mockito.`when`(meetingScheduleRepository.save(Mockito.any(MeetingSchedule::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<MeetingSchedule>(0) }
+        // I-1: 有绑定 contact 一律走 resolveForSend，不得重新选号
+        Mockito.`when`(senderAccountBindingService.resolveForSend(eqValue(contact), eqValue(true), eqValue(false)))
+            .thenReturn(account)
+        Mockito.`when`(
+            mailComposeTemplateService.renderByCode(
+                eqValue("MEETING_CONFIRMATION"),
+                anyValue(emptyMap<String, String>()),
+                eqValue(expectedSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Meeting Confirmed",
+                body = "Confirmed meeting link",
+                mailType = "MEETING_CONFIRMATION"
+            )
+        )
+        Mockito.`when`(
+            mailDeliveryService.send(
+                eqValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+            )
+        ).thenReturn(DeliveredMail("msg-123", "SENT"))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContact>(0) }
+        Mockito.`when`(mailSenderAccountRepository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<MailSenderAccount>(0) }
+
+        val confirmed = service.confirmMeetingAndEmail(
+            contactId = contactId,
+            scheduleId = scheduleId,
+            command = ConfirmMeetingCommand(
+                chinaTime = "2026-06-01 10:00 AM",
+                meetingTool = "Teams",
+                meetingLink = "https://teams.microsoft.com/123",
+                note = "Test notes"
+            )
+        )
+
+        assertEquals("CONFIRMED", confirmed.meetingStatus)
+        Mockito.verify(senderAccountBindingService).resolveForSend(eqValue(contact), eqValue(true), eqValue(false))
+        Mockito.verify(mailSenderAccountService, Mockito.never()).selectAccountForSending()
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+    }
+
+    @Test
+    fun `confirmMeetingAndEmail throws when bound account disabled`() {
+        val contactId = 1L
+        val scheduleId = 500L
+        val contact = ExpertContact(
+            id = contactId,
+            campaignId = 10L,
+            orcidId = "orcid-1",
+            expertEmail = "expert@example.com",
+            expertName = "Dr. Expert",
+            currentStatus = ConversationStatus.MEETING_SCHEDULING.name,
+            boundSenderAccountCode = "sender",
+            senderAccountBoundAt = LocalDateTime.now()
+        )
+        val schedule = MeetingSchedule(
+            id = scheduleId,
+            expertContactId = contactId,
+            meetingStatus = "PENDING"
+        )
+
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(contact))
+        Mockito.`when`(meetingScheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule))
+        Mockito.`when`(meetingScheduleRepository.save(Mockito.any(MeetingSchedule::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<MeetingSchedule>(0) }
+        Mockito.`when`(senderAccountBindingService.resolveForSend(eqValue(contact), eqValue(true), eqValue(false)))
+            .thenThrow(BoundSenderAccountUnavailableException(contactId, "sender", "DISABLED"))
+
+        val ex = assertThrows(BoundSenderAccountUnavailableException::class.java) {
+            service.confirmMeetingAndEmail(
+                contactId = contactId,
+                scheduleId = scheduleId,
+                command = ConfirmMeetingCommand(
+                    chinaTime = "2026-06-01 10:00 AM",
+                    meetingTool = "Teams",
+                    meetingLink = "https://teams.microsoft.com/123",
+                    note = "Test notes"
+                )
+            )
+        }
+
+        assertEquals("DISABLED", ex.reason)
+        Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
     @Test

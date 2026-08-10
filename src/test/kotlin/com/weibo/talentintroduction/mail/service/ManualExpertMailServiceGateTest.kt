@@ -61,6 +61,7 @@ class ManualExpertMailServiceGateTest {
         mailComposeTemplateService,
         MailContentService(),
         conversationStateService,
+        Mockito.mock(SenderAccountBindingService::class.java),
         personalizationGateService = PersonalizationGateService(),
         mailVariableService = mailVariableService
     )

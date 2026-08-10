@@ -25,6 +25,7 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.AccountDailyState
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
+import com.weibo.talentintroduction.mail.service.BoundSenderAccountUnavailableException
 import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -38,6 +39,7 @@ import com.weibo.talentintroduction.mail.service.PersonalizationGateException
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
@@ -271,20 +273,32 @@ class ManualInitialOutreachService(
                 }
 
                 val account = try {
-                    senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup)
-                } catch (e: NoAvailableSenderAccountException) {
-                    log.warn("No available account mid-reminder-round after {} processed", processedTotal)
-                    stopReason = "NO_AVAILABLE_ACCOUNT"
-                    finalStatus = "PAUSED"
-                    midRoundStop = true
-                    break
-                } catch (e: Exception) {
-                    log.error("System error selecting account for reminder", e)
-                    stopReason = "SYSTEM_ERROR"
-                    finalStatus = "FAILED"
-                    errors.add("系统错误: ${e.message ?: "Unknown error"}")
-                    midRoundStop = true
-                    break
+                    senderAccountBindingService.resolveForSend(contact, manual = true)
+                } catch (e: SenderAccountNotBoundException) {
+                    try {
+                        val picked = senderAccountAssignmentService
+                            .selectAccount(expert, assignments, ignoreWarmup)
+                        senderAccountBindingService
+                            .bindIfAbsent(contactId, picked.accountCode, LocalDateTime.now())
+                        picked
+                    } catch (ex: NoAvailableSenderAccountException) {
+                        stopReason = "NO_AVAILABLE_ACCOUNT"
+                        finalStatus = "PAUSED"
+                        midRoundStop = true
+                        break
+                    }
+                } catch (e: BoundSenderAccountUnavailableException) {
+                    // I-4: 单专家跳过，不中断整批
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.SEND_EXCEPTION,
+                        "绑定账号不可用（${e.accountCode}/${e.reason}）：$email"
+                    )
+                    processedTotal++; roundSent++; roundProcessed++; roundRejected++
+                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                        "RUNNING", "正在发送材料提醒：$email", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected,
+                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                    continue
                 }
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
@@ -549,22 +563,40 @@ class ManualInitialOutreachService(
                     continue
                 }
 
-                // Select account (I-3 predicate enforced inside selectAccount)
-                val account = try {
-                    senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup)
-                } catch (e: NoAvailableSenderAccountException) {
-                    log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
-                    stopReason = "NO_AVAILABLE_ACCOUNT"
-                    finalStatus = "PAUSED"
-                    midRoundStop = true
-                    break
-                } catch (e: Exception) {
-                    log.error("System error selecting account", e)
-                    stopReason = "SYSTEM_ERROR"
-                    finalStatus = "FAILED"
-                    errors.add("系统错误: ${e.message ?: "Unknown error"}")
-                    midRoundStop = true
-                    break
+                // I-1: 绑定优先于选号 —— 已有 contact 先解析绑定；无绑定才走 selectAccount 兜底
+                val account = if (existingContact != null && existingContact.boundSenderAccountCode != null) {
+                    try {
+                        senderAccountBindingService
+                            .resolveForSend(existingContact, manual = false, ignoreWarmup = ignoreWarmup)
+                    } catch (e: BoundSenderAccountUnavailableException) {
+                        // I-4: 单专家跳过，不中断整批
+                        accumulator.recordSkipped(
+                            BatchOutcomeReasonCodes.SEND_EXCEPTION,
+                            "绑定账号不可用（${e.accountCode}/${e.reason}）：${expert.email}"
+                        )
+                        processedTotal++; roundSent++; roundProcessed++; roundRejected++
+                        updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                            "RUNNING", "绑定账号不可用：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                        continue
+                    }
+                } else {
+                    try {
+                        senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup)
+                    } catch (e: NoAvailableSenderAccountException) {
+                        log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
+                        stopReason = "NO_AVAILABLE_ACCOUNT"
+                        finalStatus = "PAUSED"
+                        midRoundStop = true
+                        break
+                    } catch (e: Exception) {
+                        log.error("System error selecting account", e)
+                        stopReason = "SYSTEM_ERROR"
+                        finalStatus = "FAILED"
+                        errors.add("系统错误: ${e.message ?: "Unknown error"}")
+                        midRoundStop = true
+                        break
+                    }
                 }
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
