@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -23,6 +24,9 @@ class MailSenderAccountContextTest {
         })
         .withBean(CampaignRepository::class.java, Supplier {
             Mockito.mock(CampaignRepository::class.java)
+        })
+        .withBean(ExpertContactRepository::class.java, Supplier {
+            Mockito.mock(ExpertContactRepository::class.java)
         })
         .withBean(WarmupProperties::class.java, Supplier {
             WarmupProperties(enabled = false)
