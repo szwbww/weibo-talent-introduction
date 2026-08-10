@@ -75,4 +75,34 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
          WHERE id = :id
     """)
     fun updateBindingById(id: Long, accountCode: String?, boundAt: LocalDateTime?): Int
+
+    @Query("""
+        SELECT bound_sender_account_code AS account_code, COUNT(*) AS bound_count
+          FROM expert_contact
+         WHERE bound_sender_account_code IS NOT NULL
+           AND bound_sender_account_code <> ''
+           AND bound_sender_account_code <> 'SIMULATOR_NOOP'
+         GROUP BY bound_sender_account_code
+    """)
+    fun countBindingsByAccount(): List<AccountBindingCount>
+
+    @Query("""
+        SELECT bound_sender_account_code AS account_code,
+               COALESCE(LOWER(TRIM(country)), '') AS distribution_key,
+               COUNT(*) AS bound_count
+          FROM expert_contact
+         WHERE bound_sender_account_code IS NOT NULL
+           AND bound_sender_account_code <> ''
+           AND bound_sender_account_code <> 'SIMULATOR_NOOP'
+         GROUP BY bound_sender_account_code, COALESCE(LOWER(TRIM(country)), '')
+    """)
+    fun countBindingsByAccountAndCountry(): List<AccountCountryBindingCount>
 }
+
+data class AccountBindingCount(val accountCode: String, val boundCount: Long)
+
+data class AccountCountryBindingCount(
+    val accountCode: String,
+    val distributionKey: String?,
+    val boundCount: Long
+)

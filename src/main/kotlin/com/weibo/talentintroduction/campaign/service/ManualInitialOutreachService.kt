@@ -198,6 +198,7 @@ class ManualInitialOutreachService(
         var wasCancelled = false
         val errors = mutableListOf<String>()
         val assignments = mutableListOf<SenderExpertAssignment>()
+        val stock = senderAccountAssignmentService.loadBindingStock()
         val runAccountStats = mutableMapOf<String, AccountRunStat>()
         var dailySentTotal = alreadySentToday
         var roundNumber = 0
@@ -277,7 +278,7 @@ class ManualInitialOutreachService(
                 } catch (e: SenderAccountNotBoundException) {
                     try {
                         val picked = senderAccountAssignmentService
-                            .selectAccount(expert, assignments, ignoreWarmup)
+                            .selectAccount(expert, assignments, ignoreWarmup, stock)
                         senderAccountBindingService
                             .bindIfAbsent(contactId, picked.accountCode, LocalDateTime.now())
                         picked
@@ -487,6 +488,7 @@ class ManualInitialOutreachService(
         var wasCancelled = false
         val errors = mutableListOf<String>()
         val assignments = mutableListOf<SenderExpertAssignment>()
+        val stock = senderAccountAssignmentService.loadBindingStock()
         val runAccountStats = mutableMapOf<String, AccountRunStat>()
         var dailySentTotal = alreadySentToday
         var roundNumber = 0
@@ -582,7 +584,7 @@ class ManualInitialOutreachService(
                     }
                 } else {
                     try {
-                        senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup)
+                        senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup, stock)
                     } catch (e: NoAvailableSenderAccountException) {
                         log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
                         stopReason = "NO_AVAILABLE_ACCOUNT"

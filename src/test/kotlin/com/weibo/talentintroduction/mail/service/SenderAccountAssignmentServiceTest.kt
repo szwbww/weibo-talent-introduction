@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -16,7 +17,11 @@ import java.time.LocalDateTime
 class SenderAccountAssignmentServiceTest {
     private val repository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val warmupService = SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule())
-    private val service = SenderAccountAssignmentService(repository, warmupService)
+    private val service = SenderAccountAssignmentService(
+        repository,
+        warmupService,
+        Mockito.mock(ExpertContactRepository::class.java)
+    )
 
     @Test
     fun `avoids repeatedly assigning same country segment to same account`() {
@@ -98,7 +103,8 @@ class SenderAccountAssignmentServiceTest {
         val repository = Mockito.mock(MailSenderAccountRepository::class.java)
         val service = SenderAccountAssignmentService(
             repository,
-            SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule())
+            SenderWarmupService(WarmupProperties(enabled = false), ObjectMapper().registerKotlinModule()),
+            Mockito.mock(ExpertContactRepository::class.java)
         )
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(
@@ -130,7 +136,11 @@ class SenderAccountAssignmentServiceTest {
             ),
             ObjectMapper().registerKotlinModule()
         )
-        val serviceWithWarmup = SenderAccountAssignmentService(repository, enabledWarmup)
+        val serviceWithWarmup = SenderAccountAssignmentService(
+            repository,
+            enabledWarmup,
+            Mockito.mock(ExpertContactRepository::class.java)
+        )
         val now = LocalDateTime.of(2026, 6, 24, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(
@@ -163,7 +173,11 @@ class SenderAccountAssignmentServiceTest {
             ),
             ObjectMapper().registerKotlinModule()
         )
-        val serviceWithWarmup = SenderAccountAssignmentService(repository, enabledWarmup)
+        val serviceWithWarmup = SenderAccountAssignmentService(
+            repository,
+            enabledWarmup,
+            Mockito.mock(ExpertContactRepository::class.java)
+        )
         val now = LocalDateTime.of(2026, 6, 24, 12, 0)
         Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
             listOf(
@@ -185,6 +199,156 @@ class SenderAccountAssignmentServiceTest {
                 ignoreWarmup = true
             )
         }
+    }
+
+    @Test
+    fun `empty stock keeps score identical to legacy behavior`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 50),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+
+        val legacy = service.selectAccount(
+            expert = expert(country = "United States")
+        )
+        val withEmptyStock = service.selectAccount(
+            expert = expert(country = "United States"),
+            stock = SenderBindingStock.EMPTY
+        )
+
+        assertEquals("zoe", legacy.accountCode)
+        assertEquals(legacy.accountCode, withEmptyStock.accountCode)
+    }
+
+    @Test
+    fun `account with larger bound stock is deprioritized`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 100),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+        val stock = SenderBindingStock(
+            totalByAccount = mapOf("chen" to 900L, "zoe" to 100L),
+            segmentByAccount = emptyMap(),
+            segmentTotals = emptyMap()
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States"),
+            stock = stock
+        )
+
+        assertEquals("zoe", selected.accountCode)
+    }
+
+    @Test
+    fun `stock penalty does not override strategy weight entirely`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 1000),
+                account("zoe", strategyWeight = 10)
+            )
+        )
+        val stock = SenderBindingStock(
+            totalByAccount = mapOf("chen" to 900L, "zoe" to 100L),
+            segmentByAccount = emptyMap(),
+            segmentTotals = emptyMap()
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "United States"),
+            stock = stock
+        )
+
+        assertEquals("chen", selected.accountCode)
+    }
+
+    @Test
+    fun `country segment stock is considered`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 100),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+        val stock = SenderBindingStock(
+            totalByAccount = mapOf("chen" to 500L, "zoe" to 500L),
+            segmentByAccount = mapOf(
+                "chen" to "germany" to 450L,
+                "zoe" to "germany" to 50L
+            ),
+            segmentTotals = mapOf("germany" to 500L)
+        )
+
+        val selected = service.selectAccount(
+            expert = expert(country = "Germany"),
+            stock = stock
+        )
+
+        assertEquals("zoe", selected.accountCode)
+    }
+
+    @Test
+    fun `unknown country falls into unknown segment`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 100),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+        val stock = SenderBindingStock(
+            totalByAccount = mapOf("chen" to 100L, "zoe" to 100L),
+            segmentByAccount = mapOf(
+                "chen" to "unknown" to 90L,
+                "zoe" to "unknown" to 10L
+            ),
+            segmentTotals = mapOf("unknown" to 100L)
+        )
+
+        val nullCountry = service.selectAccount(
+            expert = expert(country = "United States").copy(country = null),
+            stock = stock
+        )
+        val blankCountry = service.selectAccount(
+            expert = expert(country = "  "),
+            stock = stock
+        )
+
+        assertEquals("zoe", nullCountry.accountCode)
+        assertEquals("zoe", blankCountry.accountCode)
+    }
+
+    @Test
+    fun `zero segment total yields zero segment penalty`() {
+        Mockito.`when`(repository.findAllByEnabledTrue()).thenReturn(
+            listOf(
+                account("chen", strategyWeight = 100),
+                account("zoe", strategyWeight = 100)
+            )
+        )
+        val stock = SenderBindingStock(
+            totalByAccount = mapOf("chen" to 100L, "zoe" to 100L),
+            segmentByAccount = mapOf(
+                "chen" to "germany" to 90L,
+                "zoe" to "germany" to 10L
+            ),
+            segmentTotals = mapOf("germany" to 100L)
+        )
+
+        // 全新国别没有段存量 → 段惩罚恒为 0（I-4 除零保护）
+        assertEquals(0.0, stock.segmentShare("chen", "france"))
+        assertEquals(0.0, stock.segmentShare("zoe", "france"))
+
+        // 总量相同且段惩罚为 0 → 两账号打平，取首个账号
+        val selected = service.selectAccount(
+            expert = expert(country = "France"),
+            stock = stock
+        )
+
+        assertEquals("chen", selected.accountCode)
     }
 
     private fun account(

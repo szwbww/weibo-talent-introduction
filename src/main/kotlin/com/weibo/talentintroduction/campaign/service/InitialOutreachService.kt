@@ -32,6 +32,7 @@ class InitialOutreachService(
     fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
+        val stock = senderAccountAssignmentService.loadBindingStock()
         val sentResults = mutableListOf<InitialOutreachSendResult>()
         var skipped = 0
 
@@ -47,7 +48,7 @@ class InitialOutreachService(
                 return@forEachIndexed
             }
 
-            val account = senderAccountAssignmentService.selectAccount(expert, assignments)
+            val account = senderAccountAssignmentService.selectAccount(expert, assignments, stock = stock)
             val now = LocalDateTime.now()
             val (boundCode, boundAt) = senderAccountBindingService
                 .bindingFieldsFor(account.accountCode, now)
