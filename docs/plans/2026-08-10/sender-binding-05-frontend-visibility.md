@@ -472,8 +472,9 @@ DB 分支（`~:4595-4615`）与 ES 分支（`~:4620-4665`）各加两行：
 | 7 | `src/main/resources/static/styles.css` | 修改 | S-1 一块 + S-3 两块 |
 | 8 | `src/test/js/senderBindingDisplay.test.js` | 新增 | 6 例 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt` | 修改 | 编译修复：5 处位置传参构造（:25/:681/:717/:752/:792）追加 1 个 `Mockito.mock(ExpertContactRepository::class.java)` 实参（A8 授权；M-4 锁定测试 :35-46/:48-57 逐字不变） |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountContextTest.kt` | 修改 | 装配修复：ApplicationContextRunner 补 1 个 `.withBean(ExpertContactRepository::class.java, Supplier { Mockito.mock(...) })` 注册（A10 授权；不改断言） |
 
-文件数 9 ≤ 10 ✓　子系统 2（后端 DTO / 前端）≤ 2 ✓　新增存储字段 0 ✓
+文件数 10 ≤ 10 ✓　子系统 2（后端 DTO / 前端）≤ 2 ✓　新增存储字段 0 ✓
 
 ## 验证命令
 
