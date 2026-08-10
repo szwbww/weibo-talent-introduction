@@ -375,13 +375,62 @@ class SmtpMailDeliveryServiceTest {
         assertEquals(1, headers.size)
     }
 
-    private fun testAccount(): MailSenderAccount =
+    @Test
+    fun `send uses display name in From when senderDisplayName is present`() {
+        val message = captureSent(testAccount(senderDisplayName = "QF Tech Talent"))
+
+        assertEquals("QF Tech Talent <test@example.com>", message.getHeader("From", null))
+    }
+
+    @Test
+    fun `send falls back to bare address when senderDisplayName is null`() {
+        val message = captureSent(testAccount(senderDisplayName = null))
+
+        assertEquals("test@example.com", message.getHeader("From", null))
+    }
+
+    @Test
+    fun `send falls back to bare address when senderDisplayName is blank`() {
+        val message = captureSent(testAccount(senderDisplayName = "   "))
+
+        assertEquals("test@example.com", message.getHeader("From", null))
+    }
+
+    @Test
+    fun `send encodes non-ASCII display name`() {
+        val message = captureSent(testAccount(senderDisplayName = "李雷"))
+
+        val from = message.getHeader("From", null)
+        assertTrue(from.startsWith("=?UTF-8?"), "expected RFC 2047 encoded word, got: $from")
+        assertTrue(!from.contains("李雷"), "raw non-ASCII bytes must not appear in From: $from")
+        assertTrue(from.endsWith("<test@example.com>"), "address part must be preserved: $from")
+    }
+
+    private fun captureSent(account: MailSenderAccount): MimeMessage {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+            account,
+            ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
+        )
+
+        return captured.single()
+    }
+
+    private fun testAccount(senderDisplayName: String? = null): MailSenderAccount =
         MailSenderAccount(
             accountCode = "test_acct",
             senderEmail = "test@example.com",
             senderName = "Test",
             senderTitle = null,
-            senderDisplayName = null,
+            senderDisplayName = senderDisplayName,
             teamName = null,
             countryName = null,
             smtpHost = "smtp.example.com",

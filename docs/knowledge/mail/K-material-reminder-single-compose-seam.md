@@ -2,8 +2,8 @@
 id: K-material-reminder-single-compose-seam
 domain: mail
 created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
+last_used: 2026-08-10
+hit_count: 1
 source: create-p:material-reminder-01-threading
 ---
 

@@ -27,7 +27,14 @@ class SmtpMailDeliveryService(
             sender.createMimeMessage()
         }
 
-        message.setFrom(account.senderEmail)
+        // J-2: 仅在 senderDisplayName trim 后非空时使用显示名；非 ASCII 由三参构造器
+        // 完成 RFC 2047 编码，禁止手工拼接。为空时逐字退回裸地址形态。
+        val displayName = account.senderDisplayName?.trim()?.takeIf { it.isNotEmpty() }
+        if (displayName != null) {
+            message.setFrom(javax.mail.internet.InternetAddress(account.senderEmail, displayName, "UTF-8"))
+        } else {
+            message.setFrom(account.senderEmail)
+        }
         message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
         message.subject = mail.subject
         mail.inReplyTo?.takeIf { it.isNotBlank() }?.let { message.setHeader("In-Reply-To", it) }

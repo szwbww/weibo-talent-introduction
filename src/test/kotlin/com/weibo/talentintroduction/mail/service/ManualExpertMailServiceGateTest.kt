@@ -192,7 +192,8 @@ class ManualExpertMailServiceGateTest {
             val vars = invocation.getArgument<Map<String, String>>(1)
             ComposeTemplateRenderResult(
                 subject = "Subject: ${vars["primaryResearchField"]}",
-                body = "Unsubscribe: ${vars["unsubscribeUrl"]}\nField: ${vars["primaryResearchField"]}",
+                body = "Unsubscribe: ${vars["unsubscribeUrl"]}" +
+                    "\n\nField: ${vars["primaryResearchField"]} & <Lab>\nSecond line",
                 mailType = "INTRODUCTION"
             )
         }
@@ -209,7 +210,19 @@ class ManualExpertMailServiceGateTest {
         )
         // real signed unsubscribe link (I-1)
         assertTrue(captor.value.text!!.startsWith("Unsubscribe: https://example.com/u/unsubscribe?token="))
-        assertTrue(captor.value.body!!.startsWith("Unsubscribe: https://example.com/u/unsubscribe?token="))
+        // I-1: text/plain 部分逐字保留纯文本，不转义、不加标签
+        assertTrue(captor.value.text!!.contains("Field: Machine Learning & <Lab>"))
+        assertTrue(!captor.value.text!!.contains("<p>"))
+        // I-1/I-2: text/html 部分必须是转换后的 HTML，禁止以裸文本开头
+        assertTrue(!captor.value.body!!.startsWith("Unsubscribe: "))
+        assertTrue(captor.value.body!!.startsWith("<p>Unsubscribe: https://example.com/u/unsubscribe?token="))
+        // I-2: 空行 -> 相邻 <p>；单换行 -> <br>；& 与 < > 被实体转义
+        assertTrue(
+            captor.value.body!!.contains(
+                "</p><p>Field: Machine Learning &amp; &lt;Lab&gt;<br>Second line</p>"
+            )
+        )
+        assertTrue(captor.value.body!!.endsWith("</p>"))
         // derived primary research field = first segment of researchFields (I-7)
         assertTrue(captor.value.text!!.contains("Field: Machine Learning"))
         assertTrue(captor.value.subject.contains("Machine Learning"))
