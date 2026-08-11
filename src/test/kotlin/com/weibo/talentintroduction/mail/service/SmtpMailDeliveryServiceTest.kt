@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -19,6 +20,12 @@ import javax.mail.SendFailedException
 
 class SmtpMailDeliveryServiceTest {
     private val mailContentService = MailContentService()
+    private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+
+    init {
+        Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
+    }
+
     private val enabledTokenService = UnsubscribeTokenService(
         UnsubscribeProperties(
             baseUrl = "https://outreach.example.com",
@@ -112,7 +119,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("bad@example.com", "Subject", "Body", messageId = "msg-1")
         )
@@ -135,7 +142,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
 
-        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService).send(account, mail)
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
 
         assertEquals("SENT", delivered.status)
         val message = captured.single()
@@ -161,7 +168,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
 
-        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService).send(account, mail)
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
 
         assertEquals("SENT", delivered.status)
         val message = captured.single()
@@ -184,7 +191,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
         )
@@ -206,7 +213,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Plain body", html = false)
         )
@@ -228,7 +235,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val htmlBody = "<p>Hello <strong>world</strong></p>"
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", htmlBody, html = true)
         )
@@ -253,7 +260,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -280,7 +287,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -311,7 +318,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body")
         )
@@ -333,7 +340,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -361,7 +368,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -406,6 +413,58 @@ class SmtpMailDeliveryServiceTest {
         assertTrue(from.endsWith("<test@example.com>"), "address part must be preserved: $from")
     }
 
+    @Test
+    fun `send throws RecipientSuppressedException before touching smtp when recipient suppressed`() {
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val account = testAccount()
+        Mockito.`when`(emailSuppressionService.isSuppressed("blocked@example.com")).thenReturn(true)
+
+        assertThrows(RecipientSuppressedException::class.java) {
+            SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+                account,
+                ComposedMail("blocked@example.com", "Subject", "Body")
+            )
+        }
+
+        // I-1: 拦截必须发生在接触任何 SMTP 资源之前 —— getSender 零调用。
+        Mockito.verify(factory, Mockito.never()).getSender(anyValue(testAccount()))
+    }
+
+    @Test
+    fun `send proceeds when recipient suppressed but allowSuppressedRecipient is true`() {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        val account = testAccount()
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+        Mockito.`when`(emailSuppressionService.isSuppressed("blocked@example.com")).thenReturn(true)
+
+        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+            account,
+            ComposedMail(
+                to = "blocked@example.com",
+                subject = "Subject",
+                body = "Body",
+                allowSuppressedRecipient = true
+            )
+        )
+
+        assertEquals("SENT", delivered.status)
+        assertEquals(1, captured.size)
+    }
+
+    @Test
+    fun `RecipientSuppressedException is an IllegalStateException`() {
+        val ex = RecipientSuppressedException("blocked@example.com")
+
+        assertTrue(ex is IllegalStateException)
+        assertEquals("收件人已退订，禁止外发：blocked@example.com", ex.message)
+    }
+
     private fun captureSent(account: MailSenderAccount): MimeMessage {
         val captured = mutableListOf<MimeMessage>()
         val factory = Mockito.mock(SmtpSenderFactory::class.java)
@@ -416,13 +475,15 @@ class SmtpMailDeliveryServiceTest {
         }
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
         )
 
         return captured.single()
     }
+
+    private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 
     private fun testAccount(senderDisplayName: String? = null): MailSenderAccount =
         MailSenderAccount(

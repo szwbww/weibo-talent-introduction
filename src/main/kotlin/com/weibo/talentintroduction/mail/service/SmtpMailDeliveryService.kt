@@ -11,9 +11,16 @@ import javax.mail.SendFailedException
 class SmtpMailDeliveryService(
     private val smtpSenderFactory: SmtpSenderFactory,
     private val unsubscribeTokenService: UnsubscribeTokenService,
-    private val mailContentService: MailContentService
+    private val mailContentService: MailContentService,
+    private val emailSuppressionService: EmailSuppressionService
 ) : MailDeliveryService {
     override fun send(account: MailSenderAccount, mail: ComposedMail): DeliveredMail {
+        // I-1: 兜底 fail-closed 拦截。必须位于接触任何 SMTP 资源（getSender）之前；
+        // 命中且未显式 override 时抛异常，绝不返回 DeliveredMail（I-2）。
+        if (!mail.allowSuppressedRecipient && emailSuppressionService.isSuppressed(mail.to)) {
+            throw RecipientSuppressedException(mail.to)
+        }
+
         val sender = smtpSenderFactory.getSender(account)
 
         val mailSession = sender.session

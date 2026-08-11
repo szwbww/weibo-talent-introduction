@@ -91,6 +91,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     private val manualReplySendAttemptService = Mockito.mock(ManualReplySendAttemptService::class.java)
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
+    private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -112,7 +113,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         mailVariableService,
         manualReplySendAttemptService,
         trustReplyWorkbenchService,
-        unsupportedAnswerIndexService
+        unsupportedAnswerIndexService,
+        emailSuppressionService
     )
 
     private val contact = ExpertContact(
@@ -248,6 +250,52 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verifyNoInteractions(mailDeliveryService, manualReplySendAttemptService)
+    }
+
+    @Test
+    fun `sendManualRichReply rejects suppressed recipient before claiming an attempt`() {
+        Mockito.`when`(emailSuppressionService.isSuppressed(contact.expertEmail)).thenReturn(true)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Hello",
+                htmlBody = "<p>Thank you for your patience.</p>",
+                textBody = "Thank you for your patience.",
+                operatorName = "op"
+            )
+        }
+
+        // I-5 + IP-3: 前置拦截在 prepareAndClaim 之前 —— 400 而非 409「发送状态未知」。
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("收件人已退订，禁止外发：${contact.expertEmail}", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `sendManualRichReply never finalizes DELIVERY_UNKNOWN for suppressed recipient`() {
+        Mockito.`when`(emailSuppressionService.isSuppressed(contact.expertEmail)).thenReturn(true)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Hello",
+                htmlBody = "<p>Thank you for your patience.</p>",
+                textBody = "Thank you for your patience.",
+                operatorName = "op"
+            )
+        }
+
+        // I-2/I-5: 抑制拒发绝不走 finalizeFailure —— attempt 行不得被烧成 DELIVERY_UNKNOWN。
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+            anyValue(sendPayload()),
+            Mockito.anyLong(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any()
+        )
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
     }
 
     @Test

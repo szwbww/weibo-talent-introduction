@@ -310,14 +310,16 @@ data class ManualMailSendRequest(
     val optionType: String,
     val optionValue: String,
     val senderAccountCode: String?,
-    val sourceInboundId: Long? = null
+    val sourceInboundId: Long? = null,
+    val allowSuppressed: Boolean = false
 ) {
     fun toCommand(): ManualMailSendCommand =
         ManualMailSendCommand(
             optionType = optionType,
             optionValue = optionValue,
             senderAccountCode = senderAccountCode,
-            sourceInboundId = sourceInboundId
+            sourceInboundId = sourceInboundId,
+            allowSuppressed = allowSuppressed
         )
 }
 

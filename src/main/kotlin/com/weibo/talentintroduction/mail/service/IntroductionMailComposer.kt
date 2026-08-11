@@ -74,5 +74,7 @@ data class ComposedMail(
     val text: String? = null,
     val messageId: String? = null,
     val inReplyTo: String? = null,
-    val references: String? = null
+    val references: String? = null,
+    /** 显式绕过抑制名单拦截。只允许人工单发路径按操作端请求置 true；批量与自动路径恒为 false。见 plan I-4。 */
+    val allowSuppressedRecipient: Boolean = false
 )

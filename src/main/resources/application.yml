@@ -8,6 +8,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # 迁移中的 ${...} 是邮件模板变量（数据），不是 Flyway 占位符。
+    # 开启替换会导致含 ${} 的正文迁移抛 "No value provided for placeholder expressions"。
+    placeholder-replacement: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

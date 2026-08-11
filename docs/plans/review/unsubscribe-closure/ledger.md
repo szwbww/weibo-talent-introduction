@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-11/unsubscribe-closure-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-11/unsubscribe-closure-master.md (sha256 `ec9a06e8b23f4a7eeca03bad32fae1c900e980588a23c603a44c78d3cb8b89f8`)
+- Governing master identity: worktree sha256 `ec9a06e8b23f4a7eeca03bad32fae1c900e980588a23c603a44c78d3cb8b89f8`; recorded `commit 16c476b`
+- Invoked master identity: SAME (`ec9a06e8b23f4a7eeca03bad32fae1c900e980588a23c603a44c78d3cb8b89f8`)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/unsubscribe-closure/ledger.md (sha256 `02450be342da2ffdd76ecb50245d44c09b06761f9688cb4b0691b22d1b37a79a`)
+- Fast-p handoff: docs/plans/fast/unsubscribe-closure/human-review-handoff.md (sha256 `e03b397fb12f20ead831a3e99a82f933f22bc0aa1d962445cde044ee2c7d7d50`)
+- Master base: 8e8ddfcd6c02c754de3e50b3c02004a2900e5be5
+- Final code head: cfe8936c2dcf049672ebaca036430aeabcc1cc7d
+- Evidence parent before next commit: 4c0d9bf8ca32d69967ad69dffc419abfbc4a602c
+- Previous evidence commit: N/A
+- Branch: fast/unsubscribe-closure
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-closure
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: `discover_fast_p.py` SELECTED; branch/worktree match; READY_FOR_HUMAN_REVIEW; children 01 LIGHT_PASS, 02 LIGHT_PASS_WITH_NOTES, 02b LIGHT_PASS; base/head ancestry valid.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh; distinct from Impl01, Impl02, Impl02b, Verify01, Verify02, Verify02b)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md — Epoch 1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human must complete every pending manual item and explicitly accept final code head `cfe8936c2dcf049672ebaca036430aeabcc1cc7d`.

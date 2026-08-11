@@ -73,7 +73,8 @@ class PendingMailOperationService(
     private val mailVariableService: MailVariableService,
     private val manualReplySendAttemptService: ManualReplySendAttemptService,
     private val trustReplyWorkbenchService: TrustReplyWorkbenchService,
-    private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService
+    private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService,
+    private val emailSuppressionService: EmailSuppressionService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
@@ -247,6 +248,14 @@ class PendingMailOperationService(
             throw ResponseStatusException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "inReplyTo exceeds 255 characters"
+            )
+        }
+
+        // I-5: 幂等占位（prepareAndClaim）之前必须判抑制，禁止把发送尝试烧成 DELIVERY_UNKNOWN。
+        if (emailSuppressionService.isSuppressed(contact.expertEmail)) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "收件人已退订，禁止外发：${contact.expertEmail}"
             )
         }
 
