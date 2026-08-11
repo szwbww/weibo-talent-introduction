@@ -71,9 +71,24 @@ class EmailSuppressionService(
     }
 
     /** 独立退订关键词判定，不复用 InboundIntentClassifier。 */
-    fun looksLikeUnsubscribe(body: String?): Boolean {
-        val b = body?.lowercase(Locale.ROOT) ?: return false
+    fun looksLikeUnsubscribe(body: String?): Boolean = containsUnsubscribePhrase(body)
+
+    private fun containsUnsubscribePhrase(text: String?): Boolean {
+        val b = text?.lowercase(Locale.ROOT) ?: return false
         return UNSUBSCRIBE_PHRASES.any { b.contains(it) }
+    }
+
+    /** 主题触发的退订只接受精确相等，禁止 contains。见 plan I-1。 */
+    private fun subjectRequestsUnsubscribe(subject: String?): Boolean {
+        val s = subject?.trim()?.lowercase(Locale.ROOT) ?: return false
+        return s in SUBJECT_UNSUBSCRIBE_PHRASES
+    }
+
+    /** 主题优先，其次正文；都不命中返回 null。见 plan I-2。 */
+    fun detectUnsubscribeSource(subject: String?, body: String?): SuppressionSource? = when {
+        subjectRequestsUnsubscribe(subject) -> SuppressionSource.MAILTO
+        containsUnsubscribePhrase(body) -> SuppressionSource.INBOUND_REPLY
+        else -> null
     }
 
     companion object {
@@ -90,6 +105,8 @@ class EmailSuppressionService(
             "退订",
             "不要再发"
         )
+
+        private val SUBJECT_UNSUBSCRIBE_PHRASES = setOf("unsubscribe", "退订", "取消订阅")
     }
 }
 

@@ -81,6 +81,42 @@ class EmailSuppressionServiceTest {
     }
 
     @Test
+    fun `detectUnsubscribeSource returns MAILTO for exact unsubscribe subject`() {
+        assertEquals(SuppressionSource.MAILTO, service.detectUnsubscribeSource("unsubscribe", null))
+        assertEquals(SuppressionSource.MAILTO, service.detectUnsubscribeSource(" Unsubscribe ", ""))
+        assertEquals(SuppressionSource.MAILTO, service.detectUnsubscribeSource("退订", null))
+        assertEquals(SuppressionSource.MAILTO, service.detectUnsubscribeSource("取消订阅", ""))
+    }
+
+    @Test
+    fun `detectUnsubscribeSource prefers subject over body`() {
+        assertEquals(
+            SuppressionSource.MAILTO,
+            service.detectUnsubscribeSource("unsubscribe", "please remove me from this list")
+        )
+    }
+
+    @Test
+    fun `detectUnsubscribeSource falls back to body with INBOUND_REPLY`() {
+        assertEquals(SuppressionSource.INBOUND_REPLY, service.detectUnsubscribeSource("Re: Talent Program", "Please unsubscribe me"))
+        assertEquals(SuppressionSource.INBOUND_REPLY, service.detectUnsubscribeSource("Re: Talent Program", "请退订"))
+    }
+
+    @Test
+    fun `detectUnsubscribeSource rejects subject that merely contains the phrase`() {
+        assertEquals(null, service.detectUnsubscribeSource("Re: unsubscribe policy question", "Could you share the timeline?"))
+        assertEquals(null, service.detectUnsubscribeSource("Question about unsubscribe", "I need more details"))
+        assertEquals(null, service.detectUnsubscribeSource("关于退订的问题", "项目时间表能否再详细说明一下？"))
+    }
+
+    @Test
+    fun `detectUnsubscribeSource returns null when neither matches`() {
+        assertEquals(null, service.detectUnsubscribeSource("Re: Talent Program", "Could you share the program details?"))
+        assertEquals(null, service.detectUnsubscribeSource(null, null))
+        assertEquals(null, service.detectUnsubscribeSource(null, "I'm not available"))
+    }
+
+    @Test
     fun `remove is idempotent and normalizes email`() {
         Mockito.`when`(repository.deleteByEmail("a@x.com")).thenReturn(0, 1)
 

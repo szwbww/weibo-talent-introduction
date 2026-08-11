@@ -135,7 +135,7 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
-            captureUnsubscribeIfPresent(received.from, cleanedBody)
+            captureUnsubscribeIfPresent(received.from, received.subject, cleanedBody)
             confirmProcessed(
                 account = account,
                 received = received,
@@ -194,7 +194,7 @@ class AutoMailReplyService(
                     createdAt = LocalDateTime.now()
                 )
             )
-            captureUnsubscribeIfPresent(received.from, cleanedBody)
+            captureUnsubscribeIfPresent(received.from, received.subject, cleanedBody)
             if (disabledContact.currentStatus == ConversationStatus.MANUAL_HANDOFF.name) {
                 if (!disabledContact.needsManualAttention) {
                     expertContactRepository.save(disabledContact.copy(needsManualAttention = true))
@@ -307,7 +307,7 @@ class AutoMailReplyService(
                 createdAt = LocalDateTime.now()
             )
         )
-        captureUnsubscribeIfPresent(received.from, cleanedBody)
+        captureUnsubscribeIfPresent(received.from, received.subject, cleanedBody)
 
         if (intent.intentCode == InboundIntentCode.MEETING_TIME_PROVIDED || intent.intentCode == InboundIntentCode.MEETING_REQUESTED) {
             meetingScheduleService.extractAndCreate(contactId, inboundMailRecord)
@@ -834,14 +834,13 @@ class AutoMailReplyService(
         return true
     }
 
-    private fun captureUnsubscribeIfPresent(senderEmail: String, cleanedBody: String?) {
-        if (emailSuppressionService.looksLikeUnsubscribe(cleanedBody)) {
-            emailSuppressionService.suppress(
-                senderEmail,
-                SuppressionSource.INBOUND_REPLY,
-                "inbound reply unsubscribe"
-            )
-        }
+    private fun captureUnsubscribeIfPresent(senderEmail: String, subject: String?, cleanedBody: String?) {
+        val source = emailSuppressionService.detectUnsubscribeSource(subject, cleanedBody) ?: return
+        emailSuppressionService.suppress(
+            senderEmail,
+            source,
+            if (source == SuppressionSource.MAILTO) "mailto unsubscribe" else "inbound reply unsubscribe"
+        )
     }
 
     private fun markManualReview(

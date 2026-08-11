@@ -995,6 +995,22 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `mailto unsubscribe mail with empty body is suppressed with MAILTO source`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(body = "", subject = "unsubscribe")
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(emailSuppressionService.detectUnsubscribeSource("unsubscribe", ""))
+            .thenReturn(SuppressionSource.MAILTO)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        Mockito.verify(emailSuppressionService)
+            .suppress("expert@example.com", SuppressionSource.MAILTO, "mailto unsubscribe")
+    }
+
+    @Test
     fun `repeated QA auto replies for same contact get distinct message ids`() {
         val account = account("sender")
         val contact = introSentContact()
