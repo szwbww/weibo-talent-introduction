@@ -214,6 +214,33 @@ class InitialOutreachServiceTest {
     }
 
     @Test
+    fun `sendInitialBatch skips only suppressed emails with zero sends and no FAILED records`() {
+        val suppressedExpert1 = expert("0001").copy(email = "blocked1@example.com")
+        val suppressedExpert2 = expert("0002").copy(email = "blocked2@example.com")
+        val experts = listOf(suppressedExpert1, suppressedExpert2)
+        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(emailSuppressionService.isSuppressed("blocked1@example.com")).thenReturn(true)
+        Mockito.`when`(emailSuppressionService.isSuppressed("blocked2@example.com")).thenReturn(true)
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 2)
+
+        assertEquals(2, result.skipped)
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertTrue(result.results.none { it.status == "FAILED" })
+        // IP-2: 前置检查（:46）先命中 —— 退订邮箱绝不被记为发送失败，也绝不触达投递层。
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(account("chen")),
+            anyValue(ComposedMail("", "", ""))
+        )
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+    }
+
+    @Test
     fun `sendInitialBatch counts existing contact and suppression skips separately`() {
         val suppressedExpert = expert("0001").copy(email = "blocked@example.com")
         val existingExpert = expert("0002")

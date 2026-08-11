@@ -99,3 +99,10 @@ data class SuppressionPage(
     val size: Int,
     val total: Long
 )
+
+/**
+ * 收件人已在抑制名单中，拒绝外发。继承 IllegalStateException 以便
+ * GlobalExceptionHandler 映射为 400 BAD_REQUEST（见 plan I-3）。
+ */
+class RecipientSuppressedException(email: String) :
+    IllegalStateException("收件人已退订，禁止外发：$email")

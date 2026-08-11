@@ -178,7 +178,8 @@ class ManualExpertMailService(
             ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(
                 contact,
                 account,
-                command.optionValue.toLong()
+                command.optionValue.toLong(),
+                command.allowSuppressed
             )
         }
     }
@@ -186,7 +187,8 @@ class ManualExpertMailService(
     private fun composeComposeTemplate(
         contact: ExpertContact,
         account: MailSenderAccount,
-        templateId: Long
+        templateId: Long,
+        allowSuppressed: Boolean
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         require(template.enabled) { "Compose template is disabled: $templateId" }
@@ -249,7 +251,8 @@ class ManualExpertMailService(
                 text = rendered.body,
                 messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
                 inReplyTo = anchorMessageId,                                                // I-1
-                references = references                                                     // I-1
+                references = references,                                                     // I-1
+                allowSuppressedRecipient = allowSuppressed                                   // I-4
             ),
             matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
             qaRuleIds = rendered.qaRuleIds
@@ -313,7 +316,8 @@ data class ManualMailSendCommand(
     val optionType: String,
     val optionValue: String,
     val senderAccountCode: String?,
-    val sourceInboundId: Long? = null
+    val sourceInboundId: Long? = null,
+    val allowSuppressed: Boolean = false
 )
 
 data class ManualMailSendResult(
