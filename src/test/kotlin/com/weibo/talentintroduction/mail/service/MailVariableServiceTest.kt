@@ -579,4 +579,35 @@ class MailVariableServiceTest {
         assertEquals("Focus: Machine Learning", rendered)
         assertFalse(rendered.contains("\${"))
     }
+
+    // ── cold outreach unsubscribe line (plan 01 T-4) ──
+
+    private val unsubscribeLine =
+        "\n\n---\nIf you would prefer not to receive further emails from us, you can unsubscribe here: \${unsubscribeUrl}"
+
+    @Test
+    fun `cold outreach unsubscribe line renders a real url`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val rendered = serviceWithUnsubscribe.renderForContact(unsubscribeLine, account, contact)
+
+        assertTrue(rendered.contains("/u/unsubscribe?token="), "expected a real unsubscribe url")
+        assertFalse(rendered.contains("\${unsubscribeUrl}"), "placeholder must be replaced")
+    }
+
+    @Test
+    fun `cold outreach unsubscribe line renders empty when token service disabled`() {
+        val serviceWithDisabledUnsubscribe = MailVariableService(
+            expertSearchService,
+            mailComposeTemplateService,
+            UnsubscribeTokenService(UnsubscribeProperties(baseUrl = "", secret = ""))
+        )
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+
+        val rendered = serviceWithDisabledUnsubscribe.renderForContact(unsubscribeLine, account, contact)
+
+        assertFalse(rendered.contains("\${unsubscribeUrl}"), "placeholder must not survive rendering")
+    }
 }
