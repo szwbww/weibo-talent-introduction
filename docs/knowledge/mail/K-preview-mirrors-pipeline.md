@@ -2,8 +2,8 @@
 id: K-preview-mirrors-pipeline
 domain: mail
 created: 2026-06-28
-last_used: 2026-08-01
-hit_count: 27
+last_used: 2026-08-11
+hit_count: 28
 source: create-p:auto-reply-dry-run-preview
 severity: P1
 ---

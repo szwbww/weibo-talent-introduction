@@ -2,8 +2,8 @@
 id: K-ops-plan-code-scope-boundary
 domain: mail
 created: 2026-07-03
-last_used: 2026-07-03
-hit_count: 0
+last_used: 2026-08-11
+hit_count: 1
 source: fix-v:google-spam-mitigation:fix-1
 severity: P1
 ---

@@ -19,6 +19,10 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 # Run a single test method
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=QaMatchServiceTest#methodName
 
+# Run the Flyway migration integration tests (opt-in; needs local Docker)
+# They are gated by @EnabledIfSystemProperty(named = "migrationIt", matches = "true") and skipped otherwise.
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
+
 # Run locally (needs MySQL; RabbitMQ only if mail-queue enabled)
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn spring-boot:run
 ```
@@ -114,6 +118,10 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 「这封邮件用哪个发件账号」全仓有 7 个决策点，分属分发型选号（InitialOutreach / ManualInitialOutreach 首封轮与材料提醒轮）、全局选号（ManualExpertMailService / MeetingScheduleService）、线程归属（PendingMailOperationService / AutoMailReplyService 用收信账号）三类；改账号归属须逐点核对，线程归属那两处永远不跟着改。(K-sender-account-selection-sites)
 - 人工发送刻意脱离每日配额与自动暂停：`selectAccountForManualSending` 走不含额度判定的 `isManualSendable`，且发送后不自增 `todaySentCount`；改配额语义须同时覆盖"选号入口"与"发送后自增"两侧，只改其一必然不一致。(K-operator-send-quota-paths)
 - 面向运营的业务异常必须继承 `IllegalArgumentException` / `IllegalStateException`，否则 `GlobalExceptionHandler` 一律映射为 500 `INTERNAL_ERROR`；因 `error(...)` 也抛 `IllegalStateException`，自定义子类的 catch 分支须排在通用 `catch (e: Exception)` 之前。(K-custom-exception-http-status-mapping)
+- 迁移里的 `${...}` 是邮件模板变量（数据）不是 Flyway 占位符，但生产 `application.yml` 未关 `placeholder-replacement`（默认 true）；存量库已过 V2/V9/V56/V71 故侥幸未炸，**新增含 `${}` 的迁移会导致生产启动即抛 "No value provided for placeholder expressions"**，必须同提交加 `spring.flyway.placeholder-replacement: false` 并加配置回归断言。(K-flyway-placeholder-replacement)
+- `mail_template` 表已无任何代码读取方；正文 SSOT 是 `mail_compose_template_block.custom_text`。内容类迁移只改后者，不得沿用 V56/V71 的双写。(K-mail-template-table-dead)
+- `unsubscribeUrl` 只由 `MailVariableService.buildVariables()` 产出；会议邮件族的 4 个渲染入口（`AutoMailReplyService:990`、`AutoReplyPreviewService:205`、`MeetingInvitationMailComposer:16`、`MeetingScheduleService:118`）不注入它。`renderText()` 只替换 map 中存在的 key，缺失即**字面量外发**，不是空串。(K-unsubscribe-variable-injection-sites)
+- `mailDeliveryService.send` 有 7 个调用点，抑制名单（退订）检查只覆盖 4 条；漏的 3 条（`MeetingScheduleService:141`、`ManualExpertMailService:63`、`PendingMailOperationService:270`）全是操作端同步路径。抑制拦截禁止表达为投递失败（会误标 `EMAIL_INVALID`、误限流账号），须抛继承 `IllegalStateException` 的异常；发送期策略参数要加在 `ComposedMail` 带默认值的字段上，不要改 `MailDeliveryService.send()` 签名（9 个测试文件依赖）。但 `PendingMailOperationService:270` 的 send 被 `:359 catch (deliveryEx: Exception)` 包住，异常会被改写成 `DELIVERY_UNKNOWN` + 409「发送状态未知」并烧掉幂等 claim，该路径必须在 `prepareAndClaim`(`:253`) 之前单独前置拦截。(K-suppression-check-call-sites)
 
 ---
 

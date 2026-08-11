@@ -2,8 +2,8 @@
 id: K-preview-runtime-gates-visible
 domain: mail
 created: 2026-06-28
-last_used: 2026-08-01
-hit_count: 4
+last_used: 2026-08-11
+hit_count: 5
 source: fix-v:auto-reply-dry-run-preview:fix-1
 severity: P1
 ---
