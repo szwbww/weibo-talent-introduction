@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-10/00-main-plan-sender-binding.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-10/00-main-plan-sender-binding.md (sha256: bf141ace2cc1cd4a41cb582d4909a83435cfec054ea93614f74d53aa6940f41f)
+- Governing master identity: worktree sha256 bf141ace2cc1cd4a41cb582d4909a83435cfec054ea93614f74d53aa6940f41f; recorded commit 89a216412bc53bebd93300ada6bf817a7c6c39c7
+- Invoked master identity: sha256 2ff8965505bdacdec86c32c628975b4cb88ebc45ab4eca49c1dcd69af6eb2413
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A11; master rule M-2; M-2 所有权矩阵同步：MailSenderAccountContextTest.kt 的 P5 列; HUMAN:批准 A10+A11（推荐），2026-08-10T18:20+08:00
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11; recorded in docs/plans/fast/sender-binding/ledger.md (sha256: ed216a3bb33bc2d4599913694d5b8e12eb8360a5b15b98f5aa2f29c3537c3285)
+- Fast-p ledger: docs/plans/fast/sender-binding/ledger.md (sha256: ed216a3bb33bc2d4599913694d5b8e12eb8360a5b15b98f5aa2f29c3537c3285)
+- Fast-p handoff: docs/plans/fast/sender-binding/human-review-handoff.md (sha256: ccdeaae1a3350f093e01a74f6ea301e0b97d20d73197efcfefe73fd7fc4e1286)
+- Master base: e6662677cc715421566006bbb90e3d47a75302b6
+- Final code head: 60e8e3c04400643dbd27abc6a826cf20df250d19
+- Evidence parent before next commit: b199d1ce34c31838bbc72b448123144ffdd7a032
+- Previous evidence commit: N/A
+- Branch: fast/sender-binding
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/sender-binding
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; invoked sha256 2ff8965505bdacdec86c32c628975b4cb88ebc45ab4eca49c1dcd69af6eb2413; worktree sha256 bf141ace2cc1cd4a41cb582d4909a83435cfec054ea93614f74d53aa6940f41f; recorded master identity commit 89a216412bc53bebd93300ada6bf817a7c6c39c7; fast final code head 60e8e3c04400643dbd27abc6a826cf20df250d19
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh; created after final code head; no inherited implementation or lightweight-verification context)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Complete mandatory master manual checks J-1 through J-4 and explicitly sign off code head 60e8e3c04400643dbd27abc6a826cf20df250d19.
