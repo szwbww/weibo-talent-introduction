@@ -131,3 +131,76 @@ slice, or a renderer bean to `TokenTestConfig`) — i.e., a plan amendment addin
 
 - PLAN_CONFLICT → obtain human/controller decision: amend the plan (authorize the IllegalTokenTest
   wiring fix) or accept an explicit deviation; then re-run this child to commit.
+
+---
+
+# Epoch 2 — Execution Result: READY_FOR_VERIFICATION
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master/docs/plans/2026-08-12/unsubscribe-08-branded-page.md`
+- Plan SHA-256: `0b54bf790b316b63903e33f24198b7c411174aeeb62fb74fab98bbbd07a79da0` (commit `b893912f380a6a6ed47aa31557551c9d5c43897a`, amended by A3)
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master/docs/plans/2026-08-12/unsubscribe-08-branded-page.md@0b54bf790b316b63903e33f24198b7c411174aeeb62fb74fab98bbbd07a79da0`
+- Execution epoch: RESUME (epoch 1 = PLAN_CONFLICT, resolved by A3)
+- Approval basis: current invocation (fast-p master run, child 08, epoch 2)
+- Executor: Impl08b (worker agent)
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master`
+- Target branch: `fast/unsubscribe-link-and-page-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master@fast/unsubscribe-link-and-page-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/unsubscribe-link-and-page-master`
+- Pre-execution code SHA (HEAD): `b893912f380a6a6ed47aa31557551c9d5c43897a` (docs-only; T-1..T-6 present uncommitted in working tree from epoch 1)
+- Post-execution code SHA: `44d6aa23ebdb43581af427708f8348423e2c33a7`
+- Evidence HEAD: `44d6aa23ebdb43581af427708f8348423e2c33a7` (product commit only; no separate evidence commit required)
+- Implementation boundary: `b893912..44d6aa2` — exactly the 7 authorized files
+
+## Resume Verification
+
+- Working tree before this epoch: epoch-1 implementation of T-1..T-6 present uncommitted (2 modified + 4 new files). All 6 files diffed against the amended plan and verified consistent — no re-implementation needed.
+- S-1 CSS block re-verified byte-identical to plan (4302/4302 bytes) this epoch.
+- T-7 applied this epoch: `UnsubscribeControllerIllegalTokenTest.kt` += import `UnsubscribePageRenderer` and `@MockBean private lateinit var renderer: UnsubscribePageRenderer` (same idiom as the existing `suppressionService` mock). Test methods and `TokenTestConfig` untouched.
+
+## Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| T-1 UnsubscribeProperties +5 fields | IMPLEMENTED | `src/main/kotlin/com/weibo/talentintroduction/config/UnsubscribeProperties.kt` | diff verified vs plan; suite green |
+| T-2 application.yml +5 entries | IMPLEMENTED | `src/main/resources/application.yml` | diff verified vs plan; suite green |
+| T-3 UnsubscribePageRenderer (@Service, S-1..S-5) | IMPLEMENTED | `src/main/kotlin/com/weibo/talentintroduction/mail/service/UnsubscribePageRenderer.kt` | 11/11 renderer tests; CSS byte-identical (4302/4302) |
+| T-4 UnsubscribeController inject renderer | IMPLEMENTED | `src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeController.kt` | 5/5 controller tests; `oneClick()` zero changes |
+| T-5 UnsubscribeControllerTest updates | IMPLEMENTED | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeControllerTest.kt` | 5/5; single-method 1/1 |
+| T-6 UnsubscribePageRendererTest | IMPLEMENTED | `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnsubscribePageRendererTest.kt` | 11/11 |
+| T-7 (A3) IllegalTokenTest @MockBean renderer | IMPLEMENTED | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeControllerIllegalTokenTest.kt` | 3/3; context loads (epoch 1: context load failed, 3 errors) |
+
+## Commands (fresh, JDK 11 zulu-11.0.15, this invocation)
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test -Dtest=UnsubscribePageRendererTest` | PASS | exit 0; surefire `Tests run: 11, Failures: 0, Errors: 0`; JS 485/485; BUILD SUCCESS |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test -Dtest=UnsubscribeControllerTest` | PASS | exit 0; surefire `Tests run: 5, Failures: 0, Errors: 0`; JS 485/485; BUILD SUCCESS |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test -Dtest=UnsubscribeControllerIllegalTokenTest` | PASS | exit 0; surefire `Tests run: 3, Failures: 0, Errors: 0`; BUILD SUCCESS |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test "-Dtest=UnsubscribeControllerTest#GET valid token returns confirm html with context-path-safe action"` | PASS | exit 0; `Tests run: 1, Failures: 0, Errors: 0`; BUILD SUCCESS |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test` (full gate) | PASS | exit 0; `Tests run: 2333, Failures: 0, Errors: 0, Skipped: 4`; JS 485/485; BUILD SUCCESS |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0; `Tests run: 2333, Failures: 0, Errors: 0, Skipped: 4`; BUILD SUCCESS |
+| `git diff --check` | PASS | exit 0, no output (tracked diff); no trailing whitespace in the 2 new files |
+
+## Commit
+
+- `44d6aa23ebdb43581af427708f8348423e2c33a7` — `feat(fast-p): implement unsubscribe-08-branded-page`
+- Staged exactly the 7 authorized files (+314 -21). `docs/plans/fast/...` (brief.md, ledger.md) and `docs/plans/2026-08-12/unsubscribe-link-and-page-master.md` left uncommitted (controller-owned). Not pushed.
+
+## Deviations (epoch 2)
+
+- None introduced this epoch. Epoch-1 documented interpretations carried forward per brief (maskEmail last-`@` split incl. multi-`@` full mask; `{{brandShortName}}` → `brandName`; UnsubscribeControllerTest real renderer via nested @TestConfiguration). T-7 applied exactly as A3 specifies; no other file touched.
+
+## Freshness
+
+- Plan identity rechecked: YES (sha256 `0b54bf79…` unchanged before commit)
+- Worktree identity rechecked: YES (with --expect-root/--expect-branch/--expect-git-dir, pre- and post-commit)
+- Reported commits reachable from target branch: YES (`44d6aa2` is HEAD of `fast/unsubscribe-link-and-page-master`)
+- Required commands run this invocation: YES (all 7, after T-7 applied)
+- Historical evidence used only as baseline: YES
+
+## Remaining Blocker
+
+- None.
+
+## Next Action
+
+- READY_FOR_VERIFICATION → run `verify-p`

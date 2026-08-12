@@ -1,17 +1,18 @@
-# Fast-P Child Brief — unsubscribe-08-branded-page
+# Fast-P Child Brief — unsubscribe-08-branded-page (Epoch 2, resumed after A3)
 
 - Master: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md (sha256 29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594)
-- Child plan: docs/plans/2026-08-12/unsubscribe-08-branded-page.md (sha256 0292ba353f3ba717d7f87299d86ad14cbc73a25c3221d7da9b70cfeea652e995)
+- Child plan: docs/plans/2026-08-12/unsubscribe-08-branded-page.md (commit b893912f380a6a6ed47aa31557551c9d5c43897a — amended by A3)
+- Amendment A3: authorizes `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeControllerIllegalTokenTest.kt` (T-7: add `@MockBean UnsubscribePageRenderer` so the @WebMvcTest slice context loads). Plan identity is now commit:b893912f380a6a6ed47aa31557551c9d5c43897a; do not use the old sha256.
 - Depends on: none
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master
 - Branch: fast/unsubscribe-link-and-page-master
-- Child base: 0482bcd497eefba9ce4f44f61a5624ae25d0efe1
-- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-08-branded-page`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单.
-- Downstream interfaces for later children: none. Child 06/07 may have edited the same worktree first — do not amend their commits; base your work on the current HEAD. The style contract S-1 CSS block is authoritative verbatim source; do not reformat it.
-- Evidence: official site stylesheet `/Users/lukai/IdeaProjects/qingfeitalent-local/assets/css/site.css` is available for sampling cross-check, but S-1 in the plan is the only style authority.
+- Child base: d2c5bda11fb7df7052d8f25134b336481d3268dd (child 07 terminal code head)
+- Resume state: Epoch 1 implementer (Impl08) completed T-1..T-6 in the working tree, UNCOMMITTED (2 modified + 4 new files, all 7 authorized files now). Verify the working-tree state against the amended plan before proceeding; do not re-implement from scratch unless the working tree diverges from the plan. The S-1 CSS block was verified byte-identical vs the plan (4302/4302) — do not reformat.
+- Known in-scope interpretation from epoch 1 (keep, do not relitigate): maskEmail follows T-6 acceptance (`a@b@c.com` -> `•••@c.com`, last-@ split, full mask when local contains '@'); S-3 `{{brandShortName}}` interpolates `brandName`; UnsubscribeControllerTest wires the real renderer via nested @TestConfiguration (Boot 2.x rejects @Bean for @ConstructorBinding class).
+- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-08-branded-page`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单 (now 7 files). Only allowed inline style: `style="margin:0"` on the confirm form.
+- Downstream interfaces for later children: none (last child).
 
 The complete approved contract is the child plan below, verbatim.
-
 
 # Plan 08 — 退订页品牌化（确认页 + 成功页两态）
 
@@ -393,7 +394,6 @@ data class UnsubscribeProperties(
 - `POST confirm valid token unsubscribes`：断言字符串由 `You have been unsubscribed` 改为 `You&#39;ve been unsubscribed`；`verify(suppressionService).suppress(...)` 三实参断言逐字保留（must-NOT-change 6）。
 
 **T-6** 新建 `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnsubscribePageRendererTest.kt`：
-
 - **I-1**：`confirmPage()` 输出中「Keep me subscribed」所在标签是 `<a`，且整页只有 **1 个** `<form`、**1 个** `<button`。
 - **I-2**：`confirmPage(token = "a\"><script>x</script>", ...)` 的输出**不含** `<script>`，且含 `&quot;` 与 `&lt;script&gt;`。
 - **I-3**：输出含逐字 `action="unsubscribe/confirm"`，不含 `action="/u/`。
@@ -402,6 +402,10 @@ data class UnsubscribeProperties(
 - **I-6**：`confirmPage()` 与 `successPage()` 的输出各自**恰好含 1 个** `<style`，且两者的 `<style>…</style>` 内容**逐字相等**；两者都含 `class="qf-foot"`。
 - **S-1 契约一致性**：断言输出含 `--color-bg:#05070f`、`background:var(--gradient-brand)`、`linear-gradient(100deg,#60a5fa,#3b82f6 55%,#6366f1)`、`font:700 11px/1 var(--font-mono)`、`@media (max-width:480px)` 五个逐字片段；并反向断言输出**不含** `#0B1B2E`、`#1E6FB8`、`#5DCAA5`（已作废的初稿预览色）。
 - **S-5**：`footerLine2` 配空串时输出的页脚不含多余 `<br>`。
+
+**T-7**（fast-p 修正 A3，2026-08-12 人工批准）改 `UnsubscribeControllerIllegalTokenTest.kt`：
+- 背景：T-4 给 `UnsubscribeController` 构造注入 `@Service UnsubscribePageRenderer` 后，既有的 `@WebMvcTest` 切片类 `UnsubscribeControllerIllegalTokenTest.kt`（`@WebMvcTest(UnsubscribeController::class)` + `@Import(TokenTestConfig)`）没有 renderer bean；`@WebMvcTest` 按类型排除 `@Service` bean，Spring 5.3.31 的 Kotlin 构造无默认参数回退，上下文加载报 `NoSuchBeanDefinitionException: UnsubscribePageRenderer`，其 3 个用例全部 error —— 而本计划「验证命令」要求该类保持通过（base 提交 eaf308b 引入，不在原清单内）。
+- 修正：该类内追加 `@MockBean private lateinit var renderer: UnsubscribePageRenderer`（与该文件既有的 `suppressionService` mock 同一范式；非法 token 用例在 `verify` 返回 null 后即返回 400，从不触达 renderer）。仅此一处，其余用例与 `TokenTestConfig` 逐字保留。
 
 ## 变更文件清单
 
@@ -413,8 +417,9 @@ data class UnsubscribeProperties(
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeController.kt` | 主代码 | 注入 renderer；`page()`/`confirm()` 改返回体；删 `confirmHtml()` |
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeControllerTest.kt` | 测试 | T-5 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnsubscribePageRendererTest.kt` | 新建测试 | T-6 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnsubscribeControllerIllegalTokenTest.kt` | 测试 | T-7（fast-p 修正 A3）：追加 `@MockBean UnsubscribePageRenderer` |
 
-合计 6 个文件 ≤ 10 ✅；子系统 2 个 ✅；无新增共享存储字段 ✅。
+合计 7 个文件 ≤ 10 ✅；子系统 2 个 ✅；无新增共享存储字段 ✅。
 
 ## 验证命令
 
