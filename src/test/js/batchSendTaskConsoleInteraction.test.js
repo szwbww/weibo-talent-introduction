@@ -277,6 +277,8 @@ describe("batch send task console interactions", () => {
     it("toggles multiple region picker values in BATCH_REGION_OPTIONS order (I-1)", () => {
         const regionOptionsSrc = appSource.match(/var BATCH_REGION_OPTIONS = \[[\s\S]*?\];/);
         assert.ok(regionOptionsSrc, "BATCH_REGION_OPTIONS must be defined");
+        const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
+        assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
         const readRegions = extractFn("readBatchRegionPickerValue");
         const setRegions = extractFn("setBatchRegionPickerValue");
         const toggleRegion = extractFn("toggleBatchRegionPickerValue");
@@ -289,6 +291,7 @@ describe("batch send task console interactions", () => {
             renderBatchRegionPicker: (id) => rendered.push(id)
         };
         vm.createContext(sandbox);
+        vm.runInContext(regionLabelsSrc[0], sandbox);
         vm.runInContext(regionOptionsSrc[0], sandbox);
         vm.runInContext(readRegions, sandbox);
         vm.runInContext(setRegions, sandbox);
@@ -315,8 +318,11 @@ describe("batch send task console interactions", () => {
     it("BATCH_REGION_OPTIONS values are the 9 English region constants verbatim (G-1)", () => {
         const regionOptionsSrc = appSource.match(/var BATCH_REGION_OPTIONS = \[[\s\S]*?\];/);
         assert.ok(regionOptionsSrc, "BATCH_REGION_OPTIONS must be defined");
+        const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
+        assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
         const sandbox = {};
         vm.createContext(sandbox);
+        vm.runInContext(regionLabelsSrc[0], sandbox);
         vm.runInContext(regionOptionsSrc[0], sandbox);
 
         assert.deepStrictEqual(
@@ -325,9 +331,74 @@ describe("batch send task console interactions", () => {
         );
         assert.deepStrictEqual(
             Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => o.label)),
-            Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => o.value)),
-            "label equals value until child 05 localizes the display text"
+            Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => sandbox.REGION_LABELS[o.value])),
+            "labels must come from the single REGION_LABELS authority (child 05 I-2)"
         );
+    });
+
+    it("REGION_LABELS keys are the 9 English region constants verbatim (I-1/I-2)", () => {
+        const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
+        assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(regionLabelsSrc[0], sandbox);
+
+        const expectedKeys = ["China", "Asia (Japan & Korea)", "Asia (Other)", "Europe", "North America", "South America", "Africa", "Oceania", "Other"];
+        assert.deepStrictEqual(Object.keys(sandbox.REGION_LABELS), expectedKeys);
+        assert.strictEqual(sandbox.REGION_LABELS["China"], "中国");
+        assert.strictEqual(sandbox.REGION_LABELS["Asia (Japan & Korea)"], "亚洲（日韩）");
+        assert.strictEqual(sandbox.REGION_LABELS["Other"], "其他");
+    });
+
+    it("regionLabel returns the raw value for unknown regions (I-2)", () => {
+        const regionLabelSrc = extractFn("regionLabel");
+        assert.ok(regionLabelSrc, "regionLabel must exist");
+        const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
+        assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(regionLabelsSrc[0], sandbox);
+        vm.runInContext(regionLabelSrc, sandbox);
+
+        assert.strictEqual(sandbox.regionLabel("Mars"), "Mars");
+        assert.strictEqual(sandbox.regionLabel("Europe"), "欧洲");
+        assert.strictEqual(sandbox.regionLabel(""), "");
+        assert.strictEqual(sandbox.regionLabel(null), "");
+    });
+
+    it("saveBatchConfigEditor sends English region constants even though the UI shows Chinese (I-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => ["China", "Europe"],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "地区任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].regions, ["China", "Europe"],
+            "payload regions must stay English constants (I-1)");
     });
 
     it("saveBatchConfigEditor assembles cron from frequency+time, not the cron input (I-2)", async () => {

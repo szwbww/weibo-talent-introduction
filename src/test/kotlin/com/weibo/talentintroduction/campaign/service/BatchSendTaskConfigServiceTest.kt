@@ -308,6 +308,32 @@ class BatchSendTaskConfigServiceTest {
     }
 
     @Test
+    fun `create persists UNCLASSIFIED discipline and view returns it (I-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("未分类任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 14L)
+        }
+
+        val view = service().create(createCmd(name = "未分类任务", discipline = "UNCLASSIFIED"))
+
+        assertEquals("UNCLASSIFIED", view.discipline)
+        verify(repository).save(captor.capture())
+        assertEquals("UNCLASSIFIED", captor.value.discipline)
+    }
+
+    @Test
+    fun `create rejects unknown discipline value (I-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法学科")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "非法学科", discipline = "OTHER_STUFF"))
+        }
+        assertTrue(ex.message!!.contains("discipline must be one of"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
     fun `create rejects illegal funnel cron and numeric ranges`() {
         `when`(repository.findByConfigNameAndDeletedAtIsNull(anyString())).thenReturn(null)
 

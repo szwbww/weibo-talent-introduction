@@ -1081,7 +1081,7 @@ class ManualInitialOutreachService(
             filters.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@${config.emailDomain}"))))
         }
         if (config.discipline.isNotBlank()) {
-            filters.add(mapOf("term" to mapOf("disciplineCategory" to config.discipline)))
+            filters.add(ExpertSearchService.disciplineFilter(config.discipline))
         }
         return filters
     }
@@ -1214,7 +1214,7 @@ class ManualInitialOutreachService(
         } else {
             val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
             scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
-            scope.discipline?.let { base.add(mapOf("term" to mapOf("disciplineCategory" to it))) }
+            scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
             base
         }
         if (scope.tags.isNotEmpty()) {

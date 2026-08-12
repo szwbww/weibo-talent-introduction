@@ -50,9 +50,9 @@ class ExpertSearchService(
                 mapOf("exists" to mapOf("field" to field))
             }
 
-        private val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")
+        val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")
 
-        private fun disciplineFilter(discipline: String): Map<String, Any> {
+        fun disciplineFilter(discipline: String): Map<String, Any> {
             require(discipline in ALLOWED_DISCIPLINES) { "Invalid discipline: $discipline" }
             return when (discipline) {
                 "UNCLASSIFIED" -> mapOf(

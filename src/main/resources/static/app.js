@@ -3906,7 +3906,7 @@ async function loadRegions(level, { filters = {} } = {}) {
             regions.forEach(d => {
                 const opt = document.createElement("option");
                 opt.value = d.region;
-                opt.textContent = `${d.region} (${d.count})`;
+                opt.textContent = `${regionLabel(d.region)} (${d.count})`;
                 filterDropdown.appendChild(opt);
             });
             filterDropdown.value = currentFilterVal;
@@ -10272,7 +10272,7 @@ function renderMonitoringRegionDistribution() {
     `;
     table.querySelector("tbody").innerHTML = rows.map((row) => `
         <tr>
-            <td><strong>${escapeHtml(row.region)}</strong></td>
+            <td><strong>${escapeHtml(regionLabel(row.region))}</strong></td>
             <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
             <td>${escapeHtml(row.sentCount ?? 0)}</td>
             <td>${escapeHtml(formatPercent(row.replyRate))}</td>
@@ -13104,9 +13104,9 @@ function renderBatchConfigRow(c) {
     var scopeParts = [];
     if (c.funnelLevel) scopeParts.push("漏斗: " + escapeHtml(c.funnelLevel));
     if (Array.isArray(c.tags) && c.tags.length > 0) scopeParts.push("标签: " + escapeHtml(c.tags.join(", ")));
-    if (Array.isArray(c.regions) && c.regions.length > 0) scopeParts.push("地区: " + escapeHtml(c.regions.join(", ")));
+    if (Array.isArray(c.regions) && c.regions.length > 0) scopeParts.push("地区: " + c.regions.map(regionLabel).join("、"));
     if (c.emailDomain) scopeParts.push("服务商: " + escapeHtml(c.emailDomain));
-    if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : escapeHtml(c.discipline)));
+    if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : c.discipline === "UNCLASSIFIED" ? "未分类" : escapeHtml(c.discipline)));
     var scopeHtml = scopeParts.length > 0
         ? scopeParts.map(function(s, i) {
             var cls = i === 0 ? "batch-task-scope-line" : "batch-task-scope-line";
@@ -13442,16 +13442,35 @@ function bindBatchTagPicker(valueId) {
 
 // ── Region multi-select (same widget family as the tag picker) ───────────────────────
 
+// 地区显示标签。key 必须与 CountryContinentMapping.REGION_ORDER 的 9 个英文常量逐字一致；
+// 这里只影响展示，value/传参/存储一律用英文常量（见 docs/knowledge/expert/K-region-constant-not-display-label.md）。
+var REGION_LABELS = {
+    "China": "中国",
+    "Asia (Japan & Korea)": "亚洲（日韩）",
+    "Asia (Other)": "亚洲（其他）",
+    "Europe": "欧洲",
+    "North America": "北美洲",
+    "South America": "南美洲",
+    "Africa": "非洲",
+    "Oceania": "大洋洲",
+    "Other": "其他"
+};
+
+function regionLabel(value) {
+    if (!value) return "";
+    return REGION_LABELS[value] || value;   // 未知值原样回退（I-2）
+}
+
 var BATCH_REGION_OPTIONS = [
-    { value: "China", label: "China" },
-    { value: "Asia (Japan & Korea)", label: "Asia (Japan & Korea)" },
-    { value: "Asia (Other)", label: "Asia (Other)" },
-    { value: "Europe", label: "Europe" },
-    { value: "North America", label: "North America" },
-    { value: "South America", label: "South America" },
-    { value: "Africa", label: "Africa" },
-    { value: "Oceania", label: "Oceania" },
-    { value: "Other", label: "Other" }
+    { value: "China", label: REGION_LABELS["China"] },
+    { value: "Asia (Japan & Korea)", label: REGION_LABELS["Asia (Japan & Korea)"] },
+    { value: "Asia (Other)", label: REGION_LABELS["Asia (Other)"] },
+    { value: "Europe", label: REGION_LABELS["Europe"] },
+    { value: "North America", label: REGION_LABELS["North America"] },
+    { value: "South America", label: REGION_LABELS["South America"] },
+    { value: "Africa", label: REGION_LABELS["Africa"] },
+    { value: "Oceania", label: REGION_LABELS["Oceania"] },
+    { value: "Other", label: REGION_LABELS["Other"] }
 ];
 
 function readBatchRegionPickerValue(valueId) {
@@ -13892,6 +13911,7 @@ function formatManualDiffValue(key, value) {
         if (!value) return "全部学科";
         if (value === "STEM") return "仅理工科";
         if (value === "HUMANITIES") return "仅文社科";
+        if (value === "UNCLASSIFIED") return "未分类";
         return String(value);
     }
     if (key === "tags") {

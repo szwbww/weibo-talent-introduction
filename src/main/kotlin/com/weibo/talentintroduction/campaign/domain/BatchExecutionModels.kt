@@ -53,7 +53,14 @@ data class RecipientScope(
     val discipline: String?
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        if (!discipline.isNullOrBlank() && profile.disciplineCategory != discipline) return false
+        if (!discipline.isNullOrBlank()) {
+            val matched = if (discipline == "UNCLASSIFIED") {
+                profile.disciplineCategory.isNullOrBlank()
+            } else {
+                profile.disciplineCategory == discipline
+            }
+            if (!matched) return false
+        }
         if (!emailDomain.isNullOrBlank()) {
             val email = profile.email
             if (email.isNullOrBlank() || !email.endsWith("@$emailDomain")) return false

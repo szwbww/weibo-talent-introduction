@@ -2700,6 +2700,114 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `run builds must_not exists filter for UNCLASSIFIED on MATERIAL_REMINDER else branch (I-3)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            discipline = "UNCLASSIFIED",
+            templateId = 42L
+        )
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(
+            mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "disciplineCategory")))))
+        )
+        expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
+        // I-3: the else branch must go through disciplineFilter — must_not exists, never a term.
+        assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
+        assertTrue(expectedFilters.none { it.containsKey("term") })
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `run keeps must_not exists discipline filter on INTRODUCTION CANDIDATE branch (I-3)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            discipline = "UNCLASSIFIED"
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED").toMutableList()
+        // Regression: the INTRODUCTION+CANDIDATE branch already routed through disciplineFilter; must stay correct.
+        assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
+        assertTrue(expectedFilters.none { it.containsKey("term") })
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `countPending keeps retryable without disciplineCategory when discipline is UNCLASSIFIED (I-4)`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "UNCLASSIFIED"))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val unclassContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "UNC1", expertEmail = "u@x.com", expertName = "U", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(unclassContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        // disciplineCategory defaults to null in the test helper — the retry path must treat missing field as UNCLASSIFIED.
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("UNC1"))).thenReturn(
+            listOf(expert("UNC1", "u@x.com"))
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val summary = service.countPending()
+        assertEquals(0, summary.pending)
+        assertEquals(1, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+    }
+
+    @Test
+    fun `countPending filters retryable with STEM disciplineCategory when discipline is UNCLASSIFIED (I-4)`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "UNCLASSIFIED"))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val stemContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "STEM1", expertEmail = "s@x.com", expertName = "S", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(stemContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("STEM1"))).thenReturn(
+            listOf(expert("STEM1", "s@x.com").copy(disciplineCategory = "STEM"))
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val summary = service.countPending()
+        assertEquals(0, summary.pending)
+        assertEquals(0, summary.retryable)
+        assertEquals(0, summary.totalSendable)
+    }
+
+    @Test
     fun `retryable contact kept when country region matches scope regions`() {
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)

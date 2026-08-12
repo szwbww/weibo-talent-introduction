@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.context.ApplicationEventPublisher
@@ -555,7 +556,9 @@ class BatchSendTaskConfigService(
             BatchSendType.MATERIAL_REMINDER.name
         )
         val ALLOWED_FUNNEL_LEVELS = setOf("CANDIDATE", "APPLICATION")
-        val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES")
+        // I-5: single authority is ExpertSearchService.ALLOWED_DISCIPLINES (already includes UNCLASSIFIED);
+        // keeping a second literal here would risk divergence (see plan 05 A-4).
+        val ALLOWED_DISCIPLINES = ExpertSearchService.ALLOWED_DISCIPLINES
     }
 }
 
