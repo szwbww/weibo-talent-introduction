@@ -49,6 +49,7 @@ class BatchSendControlServiceTest {
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+    private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T = captor.capture() ?: defaultValue
 
     @BeforeEach
     fun setUp() {
@@ -634,5 +635,59 @@ class BatchSendControlServiceTest {
         control.startManual()
 
         Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
+    }
+
+    @Test
+    fun `startManual rejects snapshot with roundsPerRun below 1 with 422`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10, roundsPerRun = 0,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+            )
+        )
+
+        val response = control.startManual(request)
+
+        // I-5: roundsPerRun = 0 must fail validation before any launch
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        assertTrue((response.body?.get("message") as String).contains("roundsPerRun must be >= 1"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `legacy KV fallback derives roundsPerRun from dailyCap and roundSize`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+        Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(null)
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(
+            BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
+        )
+
+        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java)
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            captureValue(
+                captor,
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            ),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            anyValue(0),
+            eqValue(false)
+        )
+
+        val response = control.startManual()
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // I-6/X-1: legacy KV fallback derives roundsPerRun = ceil(dailyCap / roundSize)
+        assertEquals(10, captor.value.roundsPerRun)
     }
 }

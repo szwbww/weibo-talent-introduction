@@ -1433,6 +1433,142 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(senderAccountAssignmentService, Mockito.times(1)).loadBindingStock()
     }
 
+    // ──── roundsPerRun (execution round budget) tests ────
+
+    private fun introSnapshot(
+        roundSize: Int,
+        roundsPerRun: Int,
+        perRoundIntervalMs: Long = 0,
+        dailyCap: Int = 1000
+    ) = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+        mailType = "INTRODUCTION",
+        dailyCap = dailyCap,
+        roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
+        perMailIntervalMs = 0,
+        perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = 30
+    )
+
+    private fun stubIntroSendPipeline(account: MailSenderAccount, experts: List<ExpertProfile>) {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(experts)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+    }
+
+    /**
+     * ES paging stub that serves a fresh page slice on every call. The lazy
+     * [OutreachTargetIterator] refetches from offset 0 and dedups via seenOrcids,
+     * so a flat drop/take stub can only ever surface one page (roundSize * 2).
+     */
+    private fun stubIntroChunkedExperts(experts: List<ExpertProfile>, pageSize: Int) {
+        val chunks = experts.chunked(pageSize)
+        var callIndex = 0
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { invocation ->
+            val from = invocation.getArgument<Int>(2)
+            val size = invocation.getArgument<Int>(3)
+            val chunk = chunks.getOrNull(callIndex) ?: emptyList()
+            callIndex++
+            chunk.drop(from).take(size)
+        }
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+        )).thenReturn(experts.size.toLong())
+    }
+
+    @Test
+    fun `roundsPerRun bounds a single execution at rounds times round size`() {
+        val account = account("chen")
+        val experts = (1..100).map { expert("E%04d".format(it), "e$it@test.com") }
+        stubIntroSendPipeline(account, experts)
+        // roundSize=20 ⇒ iterator pageSize=40; serve fresh pages so all 100 targets are reachable
+        stubIntroChunkedExperts(experts, pageSize = 40)
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 2),
+            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+        )
+
+        // Observable outcome 2: roundsPerRun(2) × roundSize(20) = 40 mails max for this run
+        assertEquals(40, result.sent)
+        assertEquals(100, result.total)
+        // I-1/I-2: budget exhausted is a normal completion, not a pause
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(40)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `roundsPerRun not exhausted does not report ROUNDS_PER_RUN_REACHED`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..10).map { expert("F%04d".format(it), "f$it@test.com") }
+        )
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 5),
+            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+        )
+
+        // Only 10 targets exist; the run ends after one partial round without touching the round budget
+        assertEquals(10, result.sent)
+        assertNotEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+    }
+
+    @Test
+    fun `oneRoundOnly takes precedence over roundsPerRun`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..100).map { expert("G%04d".format(it), "g$it@test.com") }
+        )
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 5),
+            12345L, ExecutionMode.MANUAL, alreadySentToday = 0, oneRoundOnly = true
+        )
+
+        // I-4: oneRoundOnly wins even when roundsPerRun = 5
+        assertEquals(20, result.sent)
+        assertEquals("ONE_ROUND_DONE", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(20)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `no round interval sleep after roundsPerRun budget is spent`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..50).map { expert("H%04d".format(it), "h$it@test.com") }
+        )
+
+        val start = System.currentTimeMillis()
+        val result = service.run(
+            introSnapshot(roundSize = 5, roundsPerRun = 1, perRoundIntervalMs = 120000),
+            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+        )
+        val elapsedMs = System.currentTimeMillis() - start
+
+        // B-2: the 120s round interval must not be slept once the budget (1 round) is spent
+        assertEquals(5, result.sent)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertTrue(elapsedMs < 5000, "expected no 120s round-interval sleep, took ${elapsedMs}ms")
+    }
+
     // ──── Material Reminder Batch Tests ────
 
     @org.junit.jupiter.api.Nested
@@ -1731,6 +1867,66 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
+        fun `material reminder roundsPerRun bounds a single execution at rounds times round size`() {
+            val targets = (1..100).map { i ->
+                val contactId = (300 + i).toLong()
+                val orcid = "M$i".padStart(4, '0')
+                val email = "m$i@test.com"
+                val contact = ExpertContact(
+                    id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                    expertName = "M$i", currentStatus = "WAITING_REPLY"
+                )
+                val ep = expert(orcid, email)
+                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                    .thenReturn(emptyList())
+                Pair(contact, ep)
+            }
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(100L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(targets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(targets.map { it.first })
+
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+            )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "MATERIAL_REMINDER",
+                dailyCap = 1000,
+                roundSize = 20,
+                roundsPerRun = 2,
+                perMailIntervalMs = 0,
+                perRoundIntervalMs = 0,
+                selfCheckTtlMinutes = 30,
+                templateId = 10L
+            )
+            val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, alreadySentToday = 0, oneRoundOnly = false)
+
+            // B-2 symmetry: material loop honors the same per-run round budget
+            assertEquals(40, result.sent)
+            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+            assertEquals("COMPLETED", result.finalStatus)
+        }
+
+        @Test
         fun `runMaterialReminderBatch seeds dailyCap from persisted SENT count (R1)`() {
             val targets = (1..5).map { i ->
                 val contactId = (200 + i).toLong()
@@ -1784,7 +1980,9 @@ class ManualInitialOutreachServiceTest {
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
             assertEquals(1, result.sent)
-            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+            // I-6: toSnapshot derives roundsPerRun = ceil(3/10) = 1, so the round budget (B-2, checked
+            // at round head) terminates the run at the same iteration the dailyCap quota would.
+            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
             assertEquals("COMPLETED", result.finalStatus)
         }
 
@@ -1842,7 +2040,9 @@ class ManualInitialOutreachServiceTest {
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
             assertEquals(2, result.sent)
-            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+            // I-6: derived roundsPerRun = ceil(2/10) = 1 terminates via the round budget (B-2) —
+            // the dailyCap quota would only be hit at the same round head.
+            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         }
 
         @Test

@@ -52,6 +52,7 @@ import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
+import kotlin.math.ceil
 
 enum class ExecutionMode { AUTO, MANUAL }
 
@@ -189,7 +190,7 @@ class ManualInitialOutreachService(
             val emptyReason = if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
             updateProgress(executionId, 0, 0, 0, 0, 0, 0,
                 emptyFinal, "没有需要发送材料提醒的专家", emptyList(), mode, 0, config, emptyMap(),
-                stopReason = emptyReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                stopReason = emptyReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
             return emptyResult(emptyFinal, emptyReason)
         }
 
@@ -212,6 +213,14 @@ class ManualInitialOutreachService(
                 log.info("Material reminder batch cancelled after {} processed", processedTotal)
                 wasCancelled = true
                 stopReason = "CANCELLED"
+                break
+            }
+
+            // Round budget (I-1/I-2): roundsPerRun bounds rounds started in THIS run only.
+            if (roundNumber >= snapshot.roundsPerRun) {
+                log.info("Reminder rounds per run exhausted after {} rounds (roundsPerRun={})", roundNumber, snapshot.roundsPerRun)
+                stopReason = "ROUNDS_PER_RUN_REACHED"
+                finalStatus = "COMPLETED"
                 break
             }
 
@@ -269,7 +278,7 @@ class ManualInitialOutreachService(
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "已跳过抑制邮箱：$email", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected,
-                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
 
@@ -298,7 +307,7 @@ class ManualInitialOutreachService(
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "正在发送材料提醒：$email", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected,
-                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                        sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
 
@@ -364,7 +373,7 @@ class ManualInitialOutreachService(
                 updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                     "RUNNING", "正在发送材料提醒：$email", errors, mode, roundNumber, config, runAccountStats,
                     roundNumber, roundProcessed, roundPassed, roundRejected,
-                    sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                    sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
                 if (intervalMs > 0 && roundSent < roundQuota && targetIndex < targets.size) {
@@ -377,7 +386,7 @@ class ManualInitialOutreachService(
             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                 "RUNNING", "第${roundNumber}轮完成，已发送 ${accumulator.success} 封材料提醒", errors, mode, roundNumber, config, runAccountStats,
                 roundNumber, roundProcessed, roundPassed, roundRejected,
-                sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+                sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
             if (oneRoundOnly) {
                 log.info("oneRoundOnly=true, returning after reminder round {}", roundNumber)
@@ -386,7 +395,8 @@ class ManualInitialOutreachService(
                 break
             }
 
-            if (config.perRoundIntervalMs > 0 && targetIndex < targets.size) {
+            // Round interval — skip when the roundsPerRun budget is already spent
+            if (config.perRoundIntervalMs > 0 && targetIndex < targets.size && roundNumber < snapshot.roundsPerRun) {
                 try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }
         }
@@ -399,7 +409,7 @@ class ManualInitialOutreachService(
         val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup)
         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
             resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
-            stopReason = stopReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup)
+            stopReason = stopReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
         return buildResult(totalEstimate, accumulator, wasCancelled, resolvedFinalStatus, stopReason)
     }
@@ -471,7 +481,7 @@ class ManualInitialOutreachService(
             val accumulator = OutcomeAccumulator(0)
             updateProgressWithAccumulator(executionId, accumulator, 0, 0,
                 emptyFinal, "没有需要发送的专家", emptyList(), mode, 0, config, emptyMap(),
-                stopReason = emptyReason, ignoreWarmup = ignoreWarmup)
+                stopReason = emptyReason, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
             return emptyResult(emptyFinal, emptyReason)
         }
 
@@ -502,6 +512,14 @@ class ManualInitialOutreachService(
                 log.info("Cancelled after {} processed", processedTotal)
                 wasCancelled = true
                 stopReason = "CANCELLED"
+                break
+            }
+
+            // Round budget (I-1/I-2): roundsPerRun bounds rounds started in THIS run only.
+            if (roundNumber >= snapshot.roundsPerRun) {
+                log.info("Rounds per run exhausted after {} rounds (roundsPerRun={})", roundNumber, snapshot.roundsPerRun)
+                stopReason = "ROUNDS_PER_RUN_REACHED"
+                finalStatus = "COMPLETED"
                 break
             }
 
@@ -561,7 +579,7 @@ class ManualInitialOutreachService(
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "已跳过抑制邮箱：${email ?: ""}", errors, mode, roundNumber, config, runAccountStats,
-                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
 
@@ -579,7 +597,7 @@ class ManualInitialOutreachService(
                         processedTotal++; roundSent++; roundProcessed++; roundRejected++
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "绑定账号不可用：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
-                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                         continue
                     }
                 } else {
@@ -648,7 +666,7 @@ class ManualInitialOutreachService(
                         roundProcessed++
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "个性化字段缺失：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
-                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                         continue
                     } catch (e: Exception) {
                         log.error("Template compose failed for ORCID: {}", normOrcid, e)
@@ -660,7 +678,7 @@ class ManualInitialOutreachService(
                         roundProcessed++
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "模板渲染失败：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
-                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                         continue
                     }
 
@@ -788,7 +806,7 @@ class ManualInitialOutreachService(
                 // Update progress (I-8: per-account stats)
                 updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                     "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
-                    roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                    roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
                 // Throttle per mail (I-6 + dynamic rate limiter)
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
@@ -802,7 +820,7 @@ class ManualInitialOutreachService(
             // 5. Round end progress (I-8)
             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                 "RUNNING", "第${roundNumber}轮完成，已发送 ${accumulator.success} 封", errors, mode, roundNumber, config, runAccountStats,
-                roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup)
+                roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
             // 6. oneRoundOnly (manual button) — return after one round (L3-2: back to PAUSED)
             if (oneRoundOnly) {
@@ -812,8 +830,8 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // 7. Round interval (I-6)
-            if (config.perRoundIntervalMs > 0 && targetIterator.hasNext()) {
+            // 7. Round interval (I-6) — skip when the roundsPerRun budget is already spent
+            if (config.perRoundIntervalMs > 0 && targetIterator.hasNext() && roundNumber < snapshot.roundsPerRun) {
                 try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }
         }
@@ -827,7 +845,7 @@ class ManualInitialOutreachService(
         val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup)
         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
             resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
-            stopReason = stopReason, ignoreWarmup = ignoreWarmup)
+            stopReason = stopReason, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
         return buildResult(totalEstimate, accumulator, wasCancelled, resolvedFinalStatus, stopReason)
     }
@@ -869,6 +887,7 @@ class ManualInitialOutreachService(
         }
         "NO_AVAILABLE_ACCOUNT" -> "批量发送已暂停：无可用邮箱账号，请检查并恢复账号。"
         "DAILY_CAP_REACHED" -> "已达到本批次每日上限"
+        "ROUNDS_PER_RUN_REACHED" -> "本次调度轮次已用完"
         "ONE_ROUND_DONE" -> "手动单轮发送已完成"
         "CANCELLED" -> "发送任务已被取消"
         else -> when (finalStatus) {
@@ -1039,13 +1058,15 @@ class ManualInitialOutreachService(
         batchRejected: Int = 0,
         stopReason: String? = null,
         sendType: BatchSendType = BatchSendType.INTRODUCTION,
-        ignoreWarmup: Boolean = false
+        ignoreWarmup: Boolean = false,
+        roundsPerRun: Int = 0
     ) {
         val details = mutableMapOf<String, Any>(
             "executionMode" to mode.name,
             "sendType" to sendType.name,
             "status" to status,
             "roundNumber" to roundNumber,
+            "roundsPerRun" to roundsPerRun,
             "dailyCap" to config.dailyCap,
             "dailySentTotal" to sent,
             "sentTotal" to sent,
@@ -1230,6 +1251,7 @@ class ManualInitialOutreachService(
             mailType = sendType.name,
             dailyCap = dailyCap,
             roundSize = roundSize,
+            roundsPerRun = maxOf(1, ceil(dailyCap.toDouble() / roundSize).toInt()),
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
             selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -1307,7 +1329,8 @@ class ManualInitialOutreachService(
         batchRejected: Int = 0,
         stopReason: String? = null,
         sendType: BatchSendType = BatchSendType.INTRODUCTION,
-        ignoreWarmup: Boolean = false
+        ignoreWarmup: Boolean = false,
+        roundsPerRun: Int = 0
     ) {
         val breakdown = accumulator.toBreakdown()
         val details = mutableMapOf<String, Any>(
@@ -1315,6 +1338,7 @@ class ManualInitialOutreachService(
             "sendType" to sendType.name,
             "status" to status,
             "roundNumber" to roundNumber,
+            "roundsPerRun" to roundsPerRun,
             "dailyCap" to config.dailyCap,
             "dailySentTotal" to breakdown.success,
             "sentTotal" to breakdown.success,

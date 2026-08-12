@@ -55,6 +55,7 @@ class BatchSendTaskConfigService(
                 cron = normalized.cron,
                 dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
+                roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
                 perRoundIntervalMs = normalized.perRoundIntervalMs,
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
@@ -86,6 +87,7 @@ class BatchSendTaskConfigService(
                 cron = normalized.cron,
                 dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
+                roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
                 perRoundIntervalMs = normalized.perRoundIntervalMs,
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
@@ -164,6 +166,7 @@ class BatchSendTaskConfigService(
                 cron = request.cron,
                 dailyCap = request.dailyCap,
                 roundSize = request.roundSize,
+                roundsPerRun = existing.roundsPerRun,
                 perMailIntervalMs = request.perMailIntervalMs,
                 perRoundIntervalMs = request.perRoundIntervalMs,
                 selfCheckTtlMinutes = request.selfCheckTtlMinutes,
@@ -227,6 +230,7 @@ class BatchSendTaskConfigService(
 
         require(fields.dailyCap > 0) { "dailyCap must be > 0" }
         require(fields.roundSize > 0) { "roundSize must be > 0" }
+        require(fields.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
         require(fields.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
         require(fields.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
         require(fields.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
@@ -257,6 +261,7 @@ class BatchSendTaskConfigService(
             cron = fields.cron.trim(),
             dailyCap = fields.dailyCap,
             roundSize = fields.roundSize,
+            roundsPerRun = fields.roundsPerRun,
             perMailIntervalMs = fields.perMailIntervalMs,
             perRoundIntervalMs = fields.perRoundIntervalMs,
             selfCheckTtlMinutes = fields.selfCheckTtlMinutes,
@@ -337,6 +342,7 @@ class BatchSendTaskConfigService(
             cron = row.cron,
             dailyCap = row.dailyCap,
             roundSize = row.roundSize,
+            roundsPerRun = row.roundsPerRun,
             perMailIntervalMs = row.perMailIntervalMs,
             perRoundIntervalMs = row.perRoundIntervalMs,
             selfCheckTtlMinutes = row.selfCheckTtlMinutes,
@@ -389,6 +395,7 @@ class BatchSendTaskConfigService(
         val cron: String,
         val dailyCap: Int,
         val roundSize: Int,
+        val roundsPerRun: Int,
         val perMailIntervalMs: Long,
         val perRoundIntervalMs: Long,
         val selfCheckTtlMinutes: Int,
@@ -406,6 +413,7 @@ class BatchSendTaskConfigService(
         val cron: String,
         val dailyCap: Int,
         val roundSize: Int,
+        val roundsPerRun: Int,
         val perMailIntervalMs: Long,
         val perRoundIntervalMs: Long,
         val selfCheckTtlMinutes: Int,
@@ -422,6 +430,7 @@ class BatchSendTaskConfigService(
         cron = cron,
         dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -438,6 +447,7 @@ class BatchSendTaskConfigService(
         cron = cron,
         dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -454,6 +464,7 @@ class BatchSendTaskConfigService(
         cron = cron,
         dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,

@@ -47,6 +47,7 @@ class BatchSendTaskConfigServiceTest {
         cron: String = "0 0 9 * * ?",
         dailyCap: Int = 100,
         roundSize: Int = 10,
+        roundsPerRun: Int = 1,
         perMailIntervalMs: Long = 1000,
         perRoundIntervalMs: Long = 60000,
         selfCheckTtlMinutes: Int = 30,
@@ -61,6 +62,7 @@ class BatchSendTaskConfigServiceTest {
         cron = cron,
         dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -77,6 +79,7 @@ class BatchSendTaskConfigServiceTest {
         cron: String = "0 0 9 * * ?",
         dailyCap: Int = 100,
         roundSize: Int = 10,
+        roundsPerRun: Int = 1,
         perMailIntervalMs: Long = 1000,
         perRoundIntervalMs: Long = 60000,
         selfCheckTtlMinutes: Int = 30,
@@ -91,6 +94,7 @@ class BatchSendTaskConfigServiceTest {
         cron = cron,
         dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -107,6 +111,7 @@ class BatchSendTaskConfigServiceTest {
         mailType: String = "INTRODUCTION",
         autoEnabled: Boolean = false,
         cron: String = "0 0 9 * * ?",
+        roundsPerRun: Int = 1,
         tagsJson: String = "[]",
         funnelLevel: String? = null,
         emailDomain: String? = null,
@@ -122,6 +127,7 @@ class BatchSendTaskConfigServiceTest {
         cron = cron,
         dailyCap = 100,
         roundSize = 10,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = 1000,
         perRoundIntervalMs = 60000,
         selfCheckTtlMinutes = 30,
@@ -509,5 +515,97 @@ class BatchSendTaskConfigServiceTest {
         assertEquals("0 30 8 * * ?", updated.cron)
         assertEquals(200, updated.dailyCap)
         verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))
+    }
+
+    @Test
+    fun `create rejects roundsPerRun below 1`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull(anyString())).thenReturn(null)
+
+        val zero = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "r0", roundsPerRun = 0))
+        }
+        assertTrue(zero.message!!.contains("roundsPerRun must be >= 1"))
+
+        val negative = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "r-", roundsPerRun = -2))
+        }
+        assertTrue(negative.message!!.contains("roundsPerRun must be >= 1"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create persists roundsPerRun and getById returns it in the view`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 11L)
+        }
+
+        val view = service().create(createCmd(roundsPerRun = 3))
+
+        assertEquals(3, view.roundsPerRun)
+        verify(repository).save(captor.capture())
+        assertEquals(3, captor.value.roundsPerRun)
+
+        // get() row→View mapping carries the field too
+        `when`(repository.findByIdAndDeletedAtIsNull(11L)).thenReturn(captor.value.copy(id = 11L))
+        assertEquals(3, service().get(11L).roundsPerRun)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing roundsPerRun when request omits it`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "ox.ac.uk",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // X-4: roundsPerRun is not part of the legacy typed request; the entity value must survive.
+        assertEquals(7, captor.value.roundsPerRun)
+    }
+
+    @Test
+    fun `update changing only roundsPerRun publishes reload event with unchanged cron`() {
+        val existing = row(id = 5L, name = "每日介绍")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val eventCaptor = ArgumentCaptor.forClass(BatchSendCronChangedEvent::class.java)
+        `when`(repository.save(any())).thenAnswer { it.arguments[0] }
+
+        val view = service().update(5L, updateCmd(roundsPerRun = 9))
+
+        assertEquals(9, view.roundsPerRun)
+        verify(eventPublisher).publishEvent(eventCaptor.capture())
+        // X-2: cron unchanged ⇒ BatchSendScheduler.reload() sees scheduledCrons[id] == cron and skips re-registration.
+        assertEquals("0 0 9 * * ?", eventCaptor.value.oldCron)
+        assertEquals("0 0 9 * * ?", eventCaptor.value.newCron)
     }
 }

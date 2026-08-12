@@ -21,6 +21,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import javax.annotation.PostConstruct
+import kotlin.math.ceil
 
 @Service
 class BatchSendControlService(
@@ -320,6 +321,7 @@ class BatchSendControlService(
             autoEnabled = config.autoEnabled,
             pauseReason = state.pauseReason,
             roundNumber = details?.asInt("roundNumber") ?: 0,
+            roundsPerRun = details?.asInt("roundsPerRun") ?: 0,
             dailyCap = details?.asInt("dailyCap") ?: 0,
             dailySentTotal = details?.asInt("dailySentTotal") ?: 0,
             sentTotal = details?.asInt("sentTotal") ?: 0,
@@ -449,6 +451,7 @@ class BatchSendControlService(
         return try {
             require(snapshot.dailyCap > 0) { "dailyCap must be > 0" }
             require(snapshot.roundSize > 0) { "roundSize must be > 0" }
+            require(snapshot.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
             require(snapshot.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
             require(snapshot.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
             require(snapshot.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
@@ -595,6 +598,7 @@ class BatchSendControlService(
             mailType = sendType.name,
             dailyCap = dailyCap,
             roundSize = roundSize,
+            roundsPerRun = maxOf(1, ceil(dailyCap.toDouble() / roundSize).toInt()),
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
             selfCheckTtlMinutes = selfCheckTtlMinutes,
@@ -707,6 +711,7 @@ data class BatchSendStatusView(
     val autoEnabled: Boolean,
     val pauseReason: String,
     val roundNumber: Int,
+    val roundsPerRun: Int = 0,
     val dailyCap: Int,
     val dailySentTotal: Int,
     val sentTotal: Int,
