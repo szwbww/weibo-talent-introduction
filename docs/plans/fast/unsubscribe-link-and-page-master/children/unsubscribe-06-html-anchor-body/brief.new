@@ -1,0 +1,14 @@
+# Fast-P Child Brief — unsubscribe-06-html-anchor-body
+
+- Master: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md (sha256 29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594)
+- Child plan: docs/plans/2026-08-12/unsubscribe-06-html-anchor-body.md (sha256 a1c3d2b48698baadc8aa14826d94987971f81c7af1084b42d1929550c8c62bd0)
+- Depends on: none
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master
+- Branch: fast/unsubscribe-link-and-page-master
+- Child base: 0482bcd497eefba9ce4f44f61a5624ae25d0efe1
+- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-06-html-anchor-body`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单.
+- Downstream interfaces for later children: none (child 07/08 have no code dependency on this child).
+
+The complete approved contract is the child plan below, verbatim.
+
+
