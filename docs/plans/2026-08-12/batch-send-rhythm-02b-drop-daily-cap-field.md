@@ -153,8 +153,9 @@ ALTER TABLE batch_send_task_config DROP COLUMN daily_cap;
 | 10 | `src/test/kotlin/.../campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | 修改 | 删 helper 形参与断言 |
 | 11 | `src/test/kotlin/.../task/service/BatchSendSchedulerTest.kt` | 修改 | 删 `:32` 一行 |
 | 12 | `src/test/kotlin/.../mail/controller/BatchSendConfigControllerTest.kt` | 修改 | 删 `:52` / `:73` 两行 |
+| 13 | `src/test/kotlin/.../mail/controller/MailAutomationControllerTest.kt` | 修改 | 删 `BatchSendStatusView` 构造的 `dailyCap = 1000` 实参、`assertEquals(1000, result.dailyCap)` 断言、`dailyCap = 0` 实参（**A1 增补**：见修正记录） |
 
-**文件数 12 —— 见本文档开头「Phase 2 范围检查：已记录的偏离」。独立子系统 1（批量发送配置）✅　新增字段 0 ✅**
+**文件数 13（12 + A1 增补 1）—— 见本文档开头「Phase 2 范围检查：已记录的偏离」与「修正记录」A1。独立子系统 1（批量发送配置）✅　新增字段 0 ✅**
 
 > **不得**修改：`BatchSendSettingService.kt`、`app.js`、`index.html`、`V72`、`V91`。
 
@@ -256,4 +257,9 @@ git diff --check
 
 ## 修正记录
 
-（暂无）
+### A1（fast-p 修订，2026-08-12，HUMAN 批准）
+
+- **变更**：变更文件清单新增第 13 项 `src/test/kotlin/.../mail/controller/MailAutomationControllerTest.kt`（修改）。
+- **依据**：主计划 00 的测试文件全集（「测试 12 个文件：Kotlin 8 个（…`MailAutomationControllerTest` 3 处…）」）将本文件列入日限额下线范围；本计划初稿的 12 文件清单遗漏了它。02b 删除 `BatchSendStatusView.dailyCap` 后该文件 3 处引用（构造实参 `dailyCap = 1000`、`assertEquals(1000, result.dailyCap)`、`dailyCap = 0` 实参）编译失败，必须同步删除。
+- **性质**：纯机械删除，零行为变更，与 I-1 一致；不改 KV 层。
+- **批准**：HUMAN:"Approve A1, resume 02b verification" 2026-08-12T13:19:28Z
