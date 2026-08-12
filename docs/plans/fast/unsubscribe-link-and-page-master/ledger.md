@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md (sha256 29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594)
 - Amendments: A1, A2
 - Master base: 0482bcd497eefba9ce4f44f61a5624ae25d0efe1
@@ -10,18 +10,18 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-12 11:31:52 +0800
 - Current child: unsubscribe-08-branded-page
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: child 08 plan amendment A3 required — T-4 injects @Service UnsubscribePageRenderer into UnsubscribeController; pre-existing @WebMvcTest UnsubscribeControllerIllegalTokenTest.kt (not authorized) has no renderer bean and @WebMvcTest excludes @Service beans -> 3 context-load errors; plan's required command demands that class pass. Uniquely determined repair: add @MockBean UnsubscribePageRenderer (same idiom as existing suppressionService mock; illegal-token tests never reach the renderer).
+- Resume from: 1e8237db6412a91af94eec648b7a60720cbdc27c (implementation present uncommitted in worktree, 6 files)
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | unsubscribe-06-html-anchor-body | docs/plans/2026-08-12/unsubscribe-06-html-anchor-body.md | commit:8941887ee0cb6a8ad37a00e564a557d1c265a1c0 | none | 2 | LIGHT_PASS_WITH_NOTES | 0482bcd497eefba9ce4f44f61a5624ae25d0efe1 | 04f88337da5824389767a3ef504eb92e6de083f4 | 0 | — | 04f88337da5824389767a3ef504eb92e6de083f4 | — | Epoch 1 paused for A1; RECORD_ONLY O-1: pre-existing out-of-scope body=mail.body at AutoMailReplyService.kt:977 (MEETING_INVITATION, unchanged from base) |
 | unsubscribe-07-opaque-token | docs/plans/2026-08-12/unsubscribe-07-opaque-token.md | commit:69c9fa2afae5d7eca9947685aff247925a6ec3ce | none | 2 | LIGHT_PASS | 04f88337da5824389767a3ef504eb92e6de083f4 | d2c5bda11fb7df7052d8f25134b336481d3268dd | 0 | — | d2c5bda11fb7df7052d8f25134b336481d3268dd | — | Epoch 1 paused for A2; A2 code form translated (windowed any) as indexOfSlice not in Kotlin stdlib — semantically identical, adjudicated PASS by verifier |
-| unsubscribe-08-branded-page | docs/plans/2026-08-12/unsubscribe-08-branded-page.md | sha256:0292ba353f3ba717d7f87299d86ad14cbc73a25c3221d7da9b70cfeea652e995 | none | 1 | PENDING | — | — | 0 | — | — | — | Branded unsubscribe page |
+| unsubscribe-08-branded-page | docs/plans/2026-08-12/unsubscribe-08-branded-page.md | sha256:0292ba353f3ba717d7f87299d86ad14cbc73a25c3221d7da9b70cfeea652e995 | none | 1 | PAUSED_FOR_HUMAN | — | — | 0 | — | — | — | Epoch 1 paused for A3: @WebMvcTest slice lacks renderer bean; implementation uncommitted in worktree |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
