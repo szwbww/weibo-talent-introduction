@@ -2,8 +2,8 @@
 id: K-unsubscribe-variable-injection-sites
 domain: mail
 created: 2026-08-11
-last_used: 2026-08-11
-hit_count: 0
+last_used: 2026-08-12
+hit_count: 1
 source: create-p:unsubscribe-01-body-link
 severity: P1
 ---

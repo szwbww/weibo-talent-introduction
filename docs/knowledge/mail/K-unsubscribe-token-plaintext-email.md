@@ -3,7 +3,7 @@ id: K-unsubscribe-token-plaintext-email
 domain: mail
 created: 2026-08-12
 last_used: 2026-08-12
-hit_count: 0
+hit_count: 1
 source: create-p:unsubscribe-07-opaque-token
 severity: P1
 ---

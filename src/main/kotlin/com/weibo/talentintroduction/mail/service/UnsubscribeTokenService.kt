@@ -7,6 +7,7 @@ import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.time.LocalDateTime
 import java.util.Base64
 import java.util.Locale
 import javax.crypto.Mac
@@ -29,7 +30,7 @@ class UnsubscribeTokenService(
         repo.findByEmail(n)?.let { return it.token }
         val token = newToken()
         return try {
-            repo.save(UnsubscribeToken(email = n, token = token)).token
+            repo.save(UnsubscribeToken(email = n, token = token, createdAt = LocalDateTime.now())).token
         } catch (e: DuplicateKeyException) {
             repo.findByEmail(n)?.token ?: throw e
         }
