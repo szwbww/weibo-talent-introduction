@@ -104,3 +104,62 @@ The governing/invoked master identities are 29f401c80efaba9649fb720d8b2856d8dedc
 - FAIL + INITIAL: repair-p produced the bounded repair artifact named above. Human approval is required before execution.
 
 No product code was modified.
+
+## Epoch 2 — 2026-08-12 16:04:56 +0800
+
+- Master/governing identity: `docs/plans/2026-08-12/unsubscribe-link-and-page-master.md`, sha256 `29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594`; invoked SAME; `CONSISTENT`; A1/A2/A3 unchanged.
+- Boundary: `0482bcd497eefba9ce4f44f61a5624ae25d0efe1..0a8723a14f6e1035f9e56e9cfb75427b4c0774b8`; repair delta `44d6aa23ebdb43581af427708f8348423e2c33a7..0a8723a14f6e1035f9e56e9cfb75427b4c0774b8`.
+- Reviewer: `/root/post_repair_reviewer`; result: PASS; convergence: PROGRESSING; repair planning: N/A.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| Plan 06 focused suite | PASS | 65 tests, 0 failures/errors |
+| Plan 07 focused suite | PASS | 98 tests, 0 failures/errors |
+| Plan 08 focused suite + exact controller method | PASS | renderer 11; controller 5; illegal-token 3; method pass |
+| `mvn test` with JDK 11 | PASS | 2,333 tests, 0 failures, 0 errors, 4 skipped |
+| `mvn clean package` with JDK 11 | PASS | BUILD SUCCESS; WAR produced; 03:17 |
+| `git diff --check` | PASS | exit 0 |
+| Docker/Flyway IT | N/A | Docker unavailable; plan-default skipped |
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| 06-I-1..I-6 and headers/threading | PASS | composer/content/migration paths inspected; focused tests pass |
+| 07-I-1..I-7 and compatibility | PASS | token/storage paths inspected; focused/dependent tests pass |
+| 08-I-1..I-4 and controller/config contract | PASS | controller/renderer/config paths inspected; focused tests pass |
+| 08-I-5 masking and required bounds | PASS | renderer `:86-94`; test `:90-95` directly covers `@b.com` and `a@` |
+| 08-I-6 shared shell/style | PASS | `renderShell()` at renderer `:25,35,38`; style equality test pass |
+| Manual acceptance | PENDING | human-only deployment/client/visual/context-path/migration checks |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | authorized repair changed only `UnsubscribePageRendererTest.kt`; direct empty-local/empty-domain assertions pass |
+
+### Findings
+
+- P1: N/A.
+- P2: N/A.
+- Observations: unchanged `AutoMailReplyService.kt:977` remains out-of-scope plain-text MEETING_INVITATION; unrelated compiler warnings non-blocking.
+
+### Evidence Boundaries
+
+- Docker-gated Flyway execution unavailable under plan-default skip.
+- Gmail/client rendering, deployed context-path, visual parity, and production migration remain manual acceptance.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| Plan 06 AutoMailReply record | I-2 covers seven INTRODUCTION writes only. | OBSERVATION — no violation | unchanged from base; non-HTML MEETING_INVITATION path |
+| Plan 08 test-coverage lead | I-5 requires four masking bounds. | RESOLVED | authorized repair added `@b.com`/`a@` assertions; fresh suites pass |
+
+### Next Action
+
+- Obtain all manual acceptance results and explicit sign-off for `0a8723a14f6e1035f9e56e9cfb75427b4c0774b8`.
+
+No product code was modified by aggregate re-review.
