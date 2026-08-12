@@ -204,7 +204,7 @@ class BatchSendTaskRuntimeIntegrationTest {
             ctx.capturedSnapshots.add(invocation.getArgument(0))
             ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED")
         }.`when`(ctx.manualInitialOutreachService).run(
-            anyValue(baseSnapshot()), eqValue(101L), eqValue(ExecutionMode.AUTO), anyValue(0), anyValue(false)
+            anyValue(baseSnapshot()), eqValue(101L), eqValue(ExecutionMode.AUTO), anyValue(false)
         )
 
         ctx.control.startScheduled(1L)
@@ -297,34 +297,41 @@ class BatchSendTaskRuntimeIntegrationTest {
     // ─── I-5: daily cap ────────────────────────────────────────────────────────
 
     @Test
-    fun `same config second run uses sumSuccessCountTodayByBatchConfigId for alreadySentToday`() {
+    fun `same config second run no longer queries today sum (I-2)`() {
         val ctx = dailyCapContextWithTodaySum(5L, 7)
         val config = enabledConfig(5L, dailyCap = 10)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
 
-        ctx.control.startManualFromConfig(5L)
+        val response = ctx.control.startManualFromConfig(5L)
 
-        assertEquals(7, ctx.capturedAlreadySent.single())
+        // I-2: launch succeeds even though today-sum (7) is close to dailyCap (10)
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertTrue(
+            Mockito.mockingDetails(ctx.taskExecutionService).invocations
+                .none { it.method.name == "sumSuccessCountTodayByBatchConfigId" }
+        )
     }
 
     @Test
-    fun `config daily cap reached blocks launch via sumSuccessCountToday`() {
+    fun `config daily cap reached no longer blocks launch via sumSuccessCountToday (I-2)`() {
         val ctx = dailyCapContextWithTodaySum(5L, 10)
         val config = enabledConfig(5L, dailyCap = 10)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
 
         val response = ctx.control.startManualFromConfig(5L)
 
-        assertEquals(HttpStatus.CONFLICT, response.statusCode)
-        assertTrue(response.body?.get("message").toString().contains("上限"))
-        Mockito.verifyNoInteractions(ctx.manualInitialOutreachService)
+        // I-2: sum(10) >= dailyCap(10) no longer rejects the launch
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertTrue(
+            Mockito.mockingDetails(ctx.taskExecutionService).invocations
+                .none { it.method.name == "sumSuccessCountTodayByBatchConfigId" }
+        )
     }
 
     @Test
     fun `independent manual does not query config daily sum`() {
         val ctx = dailyCapContext()
         ctx.control.startManual(ManualBatchExecutionRequest(null, null, baseSnapshot(dailyCap = 5)))
-        assertEquals(0, ctx.capturedAlreadySent.single())
         assertTrue(
             Mockito.mockingDetails(ctx.taskExecutionService).invocations
                 .none { it.method.name == "sumSuccessCountTodayByBatchConfigId" }
@@ -418,8 +425,7 @@ class BatchSendTaskRuntimeIntegrationTest {
         val taskExecutionService: TaskExecutionService,
         val manualInitialOutreachService: ManualInitialOutreachService,
         val configRepository: BatchSendTaskConfigRepository,
-        val control: BatchSendControlService,
-        val capturedAlreadySent: MutableList<Int>
+        val control: BatchSendControlService
     )
 
     private data class ManualOutreachHarness(
@@ -436,7 +442,6 @@ class BatchSendTaskRuntimeIntegrationTest {
             eqValue(configId),
             anyValue(LocalDateTime.now())
         )
-        val capturedAlreadySent = mutableListOf<Int>()
         val progressStore = Mockito.mock(TaskProgressStore::class.java)
         val manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java)
         val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
@@ -475,12 +480,10 @@ class BatchSendTaskRuntimeIntegrationTest {
             anyValue(null as Long?),
             anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
         )
-        Mockito.doAnswer { invocation ->
-            capturedAlreadySent.add(invocation.getArgument(3))
-            ManualOutreachResult(1, 1, 0, 0, false)
-        }.`when`(manualInitialOutreachService).run(
-            anyValue(baseSnapshot()), eqValue(50L), anyValue(ExecutionMode.MANUAL), anyValue(0), anyValue(false)
-        )
+        Mockito.doReturn(ManualOutreachResult(1, 1, 0, 0, false))
+            .`when`(manualInitialOutreachService).run(
+                anyValue(baseSnapshot()), eqValue(50L), anyValue(ExecutionMode.MANUAL), anyValue(false)
+            )
 
         val control = BatchSendControlService(
             progressStore, taskExecutionService, manualInitialOutreachService,
@@ -488,7 +491,7 @@ class BatchSendTaskRuntimeIntegrationTest {
             mailSenderAccountService, Mockito.mock(MailComposeTemplateService::class.java),
             objectMapper, manualOutreachExecutor
         )
-        return DailyCapContext(taskExecutionService, manualInitialOutreachService, configRepository, control, capturedAlreadySent)
+        return DailyCapContext(taskExecutionService, manualInitialOutreachService, configRepository, control)
     }
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
@@ -546,7 +549,7 @@ class BatchSendTaskRuntimeIntegrationTest {
         )
         Mockito.doReturn(ManualOutreachResult(1, 1, 0, 0, false))
             .`when`(manualInitialOutreachService).run(
-                anyValue(baseSnapshot()), eqValue(101L), anyValue(ExecutionMode.AUTO), anyValue(0), anyValue(false)
+                anyValue(baseSnapshot()), eqValue(101L), anyValue(ExecutionMode.AUTO), anyValue(false)
             )
 
         val control = BatchSendControlService(
@@ -568,7 +571,6 @@ class BatchSendTaskRuntimeIntegrationTest {
         val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
         val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
         val manualOutreachExecutor = Mockito.mock(Executor::class.java)
-        val capturedAlreadySent = mutableListOf<Int>()
 
         Mockito.doAnswer { invocation ->
             invocation.getArgument<Runnable>(0).run()
@@ -602,12 +604,10 @@ class BatchSendTaskRuntimeIntegrationTest {
             anyValue(null as Long?),
             anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
         )
-        Mockito.doAnswer { invocation ->
-            capturedAlreadySent.add(invocation.getArgument(3))
-            ManualOutreachResult(1, 1, 0, 0, false)
-        }.`when`(manualInitialOutreachService).run(
-            anyValue(baseSnapshot()), eqValue(50L), anyValue(ExecutionMode.MANUAL), anyValue(0), anyValue(false)
-        )
+        Mockito.doReturn(ManualOutreachResult(1, 1, 0, 0, false))
+            .`when`(manualInitialOutreachService).run(
+                anyValue(baseSnapshot()), eqValue(50L), anyValue(ExecutionMode.MANUAL), anyValue(false)
+            )
 
         val control = BatchSendControlService(
             progressStore, taskExecutionService, manualInitialOutreachService,
@@ -615,7 +615,7 @@ class BatchSendTaskRuntimeIntegrationTest {
             mailSenderAccountService, Mockito.mock(MailComposeTemplateService::class.java),
             objectMapper, manualOutreachExecutor
         )
-        return DailyCapContext(taskExecutionService, manualInitialOutreachService, configRepository, control, capturedAlreadySent)
+        return DailyCapContext(taskExecutionService, manualInitialOutreachService, configRepository, control)
     }
 
     private fun enabledConfig(

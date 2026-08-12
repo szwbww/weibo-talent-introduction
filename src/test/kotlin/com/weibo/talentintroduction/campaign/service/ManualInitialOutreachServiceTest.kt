@@ -589,13 +589,13 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `runScheduledBatch respects dailyCap and stops full run with COMPLETED`() {
+    fun `runScheduledBatch ignores dailyCap and sends all experts (I-1)`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        // 5 experts, dailyCap=2, roundSize=10 → only 2 sent (L3-2/I-6)
+        // 5 experts, dailyCap=2, roundSize=10 → dailyCap no longer truncates; all 5 sent in one round (I-1)
         stubScrolledExperts(listOf(
             expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com"),
             expert("0004", "g@h.com"), expert("0005", "i@j.com")
@@ -613,12 +613,48 @@ class ManualInitialOutreachServiceTest {
 
         val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
 
-        // I-6/L3-2: at most dailyCap=2 mails sent
-        assertEquals(2, result.sent)
+        // I-1: dailyCap=2 is no longer read; the round sends all 5 experts
+        assertEquals(5, result.sent)
         assertEquals(5, result.total)
-        // Full run hitting dailyCap → COMPLETED (IDLE for next day)
         assertEquals("COMPLETED", result.finalStatus)
-        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("","","")))
+        assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
+        Mockito.verify(mailDeliveryService, Mockito.times(5)).send(anyValue(account), anyValue(ComposedMail("","","")))
+    }
+
+    @Test
+    fun `runScheduledBatch stops at account capacity with DAILY_LIMIT_REACHED (I-5)`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        // 20 experts, roundSize=10, roundsPerRun=5 → round 1 sends 3 (account capacity 3), round 2 hits DAILY_LIMIT_REACHED
+        stubScrolledExperts((1..20).map { expert("N%04d".format(it), "n$it@test.com") })
+        for (i in 1..20) {
+            Mockito.`when`(expertContactRepository.existsByOrcidId("N%04d".format(i))).thenReturn(false)
+        }
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        // dailyCap=50 → toSnapshot derives roundsPerRun = ceil(50/10) = 5
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 50))
+        // runRoundGate lists sendable accounts twice per round: round 1 has capacity 3, round 2 has capacity 0
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue()))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 0)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 0)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 3)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 3)))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        // I-5: account capacity is the only daily-volume bound — exactly 3 sent, then DAILY_LIMIT_REACHED
+        assertEquals(3, result.sent)
+        assertEquals("DAILY_LIMIT_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(3)).send(anyValue(account), anyValue(ComposedMail("","","")))
     }
 
     @Test
@@ -1310,12 +1346,6 @@ class ManualInitialOutreachServiceTest {
                     selfCheckTtlMinutes = 30, templateId = 10L
                 )
             )
-        Mockito.`when`(
-            mailRecordRepository.countSentByMailTypeSince(
-                Mockito.anyString(),
-                anyValue(LocalDateTime.now())
-            )
-        ).thenReturn(0L)
 
         val blockedId = 701L
         val sentId = 702L
@@ -1497,7 +1527,7 @@ class ManualInitialOutreachServiceTest {
 
         val result = service.run(
             introSnapshot(roundSize = 20, roundsPerRun = 2),
-            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
         )
 
         // Observable outcome 2: roundsPerRun(2) × roundSize(20) = 40 mails max for this run
@@ -1519,7 +1549,7 @@ class ManualInitialOutreachServiceTest {
 
         val result = service.run(
             introSnapshot(roundSize = 20, roundsPerRun = 5),
-            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
         )
 
         // Only 10 targets exist; the run ends after one partial round without touching the round budget
@@ -1538,7 +1568,7 @@ class ManualInitialOutreachServiceTest {
 
         val result = service.run(
             introSnapshot(roundSize = 20, roundsPerRun = 5),
-            12345L, ExecutionMode.MANUAL, alreadySentToday = 0, oneRoundOnly = true
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = true
         )
 
         // I-4: oneRoundOnly wins even when roundsPerRun = 5
@@ -1559,7 +1589,7 @@ class ManualInitialOutreachServiceTest {
         val start = System.currentTimeMillis()
         val result = service.run(
             introSnapshot(roundSize = 5, roundsPerRun = 1, perRoundIntervalMs = 120000),
-            12345L, ExecutionMode.AUTO, alreadySentToday = 0, oneRoundOnly = false
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
         )
         val elapsedMs = System.currentTimeMillis() - start
 
@@ -1586,12 +1616,6 @@ class ManualInitialOutreachServiceTest {
         fun setUpReminder() {
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(reminderConfig())
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
         }
 
         @Test
@@ -1815,7 +1839,7 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `runMaterialReminderBatch respects dailyCap from REMINDER config (I-9)`() {
+        fun `runMaterialReminderBatch ignores dailyCap and sends all round targets (I-1)`() {
             val targets = (1..5).map { i ->
                 val contactId = (100 + i).toLong()
                 val orcid = "R10$i"
@@ -1861,9 +1885,10 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            // dailyCap=2 → at most 2 sent even though 5 targets available
-            assertEquals(2, result.sent)
+            // I-1: dailyCap=2 no longer truncates; all 5 targets sent in the single round (roundSize=10)
+            assertEquals(5, result.sent)
             assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
         }
 
         @Test
@@ -1918,7 +1943,7 @@ class ManualInitialOutreachServiceTest {
                 selfCheckTtlMinutes = 30,
                 templateId = 10L
             )
-            val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, alreadySentToday = 0, oneRoundOnly = false)
+            val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
             // B-2 symmetry: material loop honors the same per-run round budget
             assertEquals(40, result.sent)
@@ -1927,7 +1952,7 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `runMaterialReminderBatch seeds dailyCap from persisted SENT count (R1)`() {
+        fun `runMaterialReminderBatch no longer seeds from persisted SENT count (I-3)`() {
             val targets = (1..5).map { i ->
                 val contactId = (200 + i).toLong()
                 val orcid = "D10$i"
@@ -1944,13 +1969,7 @@ class ManualInitialOutreachServiceTest {
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 3, roundSize = 10)
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(capConfig)
-            // Already sent 2 today → remaining quota = 1
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(2L)
+            // I-3: persisted SENT count is no longer queried; it must not reduce the sendable targets
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(5L)
@@ -1979,15 +1998,14 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            assertEquals(1, result.sent)
-            // I-6: toSnapshot derives roundsPerRun = ceil(3/10) = 1, so the round budget (B-2, checked
-            // at round head) terminates the run at the same iteration the dailyCap quota would.
-            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+            // I-3: with the persisted-SENT seed removed, all 5 targets are sent in the single round
+            assertEquals(5, result.sent)
             assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
         }
 
         @Test
-        fun `runMaterialReminderBatch does not count FAILED toward dailyCap seed (R1)`() {
+        fun `runMaterialReminderBatch sends all targets regardless of FAILED history (I-3)`() {
             val targets = (1..3).map { i ->
                 val contactId = (300 + i).toLong()
                 val orcid = "F10$i"
@@ -2004,13 +2022,7 @@ class ManualInitialOutreachServiceTest {
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(capConfig)
-            // FAILED records must not reduce remaining quota — seed stays 0
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
+            // I-3: no persisted-SENT seed at all; sendable targets are bounded by round size / account capacity only
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -2039,14 +2051,14 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            assertEquals(2, result.sent)
-            // I-6: derived roundsPerRun = ceil(2/10) = 1 terminates via the round budget (B-2) —
-            // the dailyCap quota would only be hit at the same round head.
-            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+            // I-3/I-1: all 3 targets sent in the single round; dailyCap=2 never read
+            assertEquals(3, result.sent)
+            assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
         }
 
         @Test
-        fun `runMaterialReminderBatch second invocation cannot exceed dailyCap (R1)`() {
+        fun `runMaterialReminderBatch second invocation sends again without dailyCap gate (I-1)`() {
             fun stubTargets(prefix: String, baseId: Long, count: Int) =
                 (1..count).map { i ->
                     val contactId = baseId + i
@@ -2066,12 +2078,6 @@ class ManualInitialOutreachServiceTest {
                 .thenReturn(capConfig)
 
             val firstTargets = stubTargets("A", 400, 3)
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -2098,16 +2104,10 @@ class ManualInitialOutreachServiceTest {
             }
 
             val first = service.runMaterialReminderBatch(1L, ExecutionMode.MANUAL, false)
-            assertEquals(2, first.sent)
+            assertEquals(3, first.sent)
 
-            // Second invocation sees 2 already SENT today → remaining 0
+            // I-1: second invocation is not gated by prior sends; all targets sendable again
             val secondTargets = stubTargets("B", 500, 3)
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(2L)
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -2119,8 +2119,10 @@ class ManualInitialOutreachServiceTest {
 
             val second = service.runMaterialReminderBatch(2L, ExecutionMode.MANUAL, false)
 
-            assertEquals(0, second.sent)
-            assertEquals("DAILY_CAP_REACHED", second.stopReason)
+            // I-1: same-day re-invocation sends again; only account capacity / roundsPerRun bound the run
+            assertEquals(3, second.sent)
+            assertEquals("COMPLETED", second.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", second.stopReason)
         }
     }
 

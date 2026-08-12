@@ -92,7 +92,6 @@ class BatchSendControlServiceTest {
         Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(legacyIntroConfig)
         Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("MATERIAL_REMINDER")).thenReturn(null)
         Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(legacyIntroConfig)
-        Mockito.doReturn(0).`when`(taskExecutionService).sumSuccessCountTodayByBatchConfigId(anyValue(1L), anyValue(LocalDateTime.now()))
 
         // Default runAndRecordWithResult: invoke onStarted(99L) and run the block
         Mockito.doAnswer { invocation ->
@@ -126,7 +125,6 @@ class BatchSendControlServiceTest {
                 )),
                 anyValue(0L),
                 anyValue(ExecutionMode.MANUAL),
-                anyValue(0),
                 anyValue(false)
             )
     }
@@ -145,7 +143,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(false)
         )
 
@@ -187,7 +184,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.AUTO),
-            anyValue(0),
             eqValue(false)
         )
 
@@ -318,7 +314,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(true)
         )
 
@@ -342,7 +337,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(true)
         )
 
@@ -372,7 +366,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
         Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(true))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(true))
 
         val response = control.runManualOnce()
 
@@ -389,7 +383,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
 
         Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -543,7 +537,7 @@ class BatchSendControlServiceTest {
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
         Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -564,7 +558,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
         Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
 
         control.startManual()
 
@@ -606,6 +600,56 @@ class BatchSendControlServiceTest {
     }
 
     @Test
+    fun `startScheduled still accepts when today sum far exceeds dailyCap (I-2)`() {
+        val config = com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+            id = 5L,
+            configName = "INTRODUCTION",
+            mailType = "INTRODUCTION",
+            autoEnabled = true,
+            cron = "0 0 0 * * ?",
+            dailyCap = 10,
+            roundSize = 10,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            legacyCode = null
+        )
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
+        // dailyCap gate is gone: a today-sum far above dailyCap must not reject the launch
+        Mockito.doReturn(999999).`when`(taskExecutionService).sumSuccessCountTodayByBatchConfigId(
+            eqValue(5L), anyValue(LocalDateTime.now())
+        )
+
+        val response = control.startScheduled(5L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // I-2: the 5 launch entry points must never query the today-sum
+        Mockito.verify(taskExecutionService, Mockito.never()).sumSuccessCountTodayByBatchConfigId(
+            Mockito.anyLong(), anyValue(LocalDateTime.now())
+        )
+    }
+
+    @Test
+    fun `startManual(request) returns 409 with account-capacity message when remaining daily capacity is zero`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+            )
+        )
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(eqValue(true))).thenReturn(0)
+
+        val response = control.startManual(request)
+
+        // must-NOT-change: account-capacity precheck still rejects manual launch with the exact message
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertEquals("今日发送额度已用尽（含预热限制），暂不可手动发送", response.body?.get("message"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
     fun `execution with WARMUP_LIMIT_REACHED result transitions to IDLE`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
@@ -614,7 +658,7 @@ class BatchSendControlServiceTest {
                 total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "WARMUP_LIMIT_REACHED"
             ))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -630,7 +674,7 @@ class BatchSendControlServiceTest {
                 total = 5, sent = 5, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "DAILY_LIMIT_REACHED"
             ))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
 
         control.startManual()
 
@@ -680,7 +724,6 @@ class BatchSendControlServiceTest {
             ),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(false)
         )
 
