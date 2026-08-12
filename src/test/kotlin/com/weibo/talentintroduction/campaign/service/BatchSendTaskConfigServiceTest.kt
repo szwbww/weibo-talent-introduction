@@ -45,7 +45,6 @@ class BatchSendTaskConfigServiceTest {
         name: String = "每日介绍",
         autoEnabled: Boolean = false,
         cron: String = "0 0 9 * * ?",
-        dailyCap: Int = 100,
         roundSize: Int = 10,
         roundsPerRun: Int = 1,
         perMailIntervalMs: Long = 1000,
@@ -60,7 +59,6 @@ class BatchSendTaskConfigServiceTest {
         configName = name,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
@@ -77,7 +75,6 @@ class BatchSendTaskConfigServiceTest {
         name: String = "每日介绍",
         autoEnabled: Boolean = false,
         cron: String = "0 0 9 * * ?",
-        dailyCap: Int = 100,
         roundSize: Int = 10,
         roundsPerRun: Int = 1,
         perMailIntervalMs: Long = 1000,
@@ -92,7 +89,6 @@ class BatchSendTaskConfigServiceTest {
         configName = name,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
@@ -125,7 +121,6 @@ class BatchSendTaskConfigServiceTest {
         mailType = mailType,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = 100,
         roundSize = 10,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = 1000,
@@ -307,9 +302,6 @@ class BatchSendTaskConfigServiceTest {
             service().create(createCmd(name = "b", cron = "not-a-cron"))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            service().create(createCmd(name = "c", dailyCap = 0))
-        }
-        assertThrows(IllegalArgumentException::class.java) {
             service().create(createCmd(name = "d", roundSize = 0))
         }
         assertThrows(IllegalArgumentException::class.java) {
@@ -355,14 +347,13 @@ class BatchSendTaskConfigServiceTest {
 
         val view = service().update(
             5L,
-            updateCmd(name = "新名", funnelLevel = "CANDIDATE", tags = listOf("t1"), dailyCap = 200)
+            updateCmd(name = "新名", funnelLevel = "CANDIDATE", tags = listOf("t1"))
         )
 
         assertEquals(5L, view.id)
         assertEquals("新名", view.configName)
         assertEquals("CANDIDATE", view.funnelLevel)
         assertEquals(listOf("t1"), view.tags)
-        assertEquals(200, view.dailyCap)
         verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))
     }
 
@@ -433,7 +424,7 @@ class BatchSendTaskConfigServiceTest {
     fun `getLegacyConfig reads active legacy_code entity as BatchSendConfig`() {
         val entity = BatchSendTaskConfig(
             id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
-            autoEnabled = true, cron = "0 0 7 * * ?", dailyCap = 55, roundSize = 10,
+            autoEnabled = true, cron = "0 0 7 * * ?", roundSize = 10,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             emailDomain = "edu.cn", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
@@ -445,7 +436,7 @@ class BatchSendTaskConfigServiceTest {
         assertEquals(BatchSendType.INTRODUCTION, config.sendType)
         assertTrue(config.autoEnabled)
         assertEquals("0 0 7 * * ?", config.cron)
-        assertEquals(55, config.dailyCap)
+        assertEquals(0, config.dailyCap)
         assertEquals("edu.cn", config.emailDomain)
         assertEquals("STEM", config.discipline)
     }
@@ -472,7 +463,7 @@ class BatchSendTaskConfigServiceTest {
     fun `updateLegacyConfig writes entity row preserves name funnel tags and publishes reload`() {
         val existing = BatchSendTaskConfig(
             id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
-            autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 50,
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
@@ -508,12 +499,10 @@ class BatchSendTaskConfigServiceTest {
         assertEquals("CANDIDATE", captor.value.funnelLevel)
         assertEquals("""["保留标签"]""", captor.value.tagsJson)
         assertEquals("0 30 8 * * ?", captor.value.cron)
-        assertEquals(200, captor.value.dailyCap)
         assertEquals("ox.ac.uk", captor.value.emailDomain)
         assertEquals("HUMANITIES", captor.value.discipline)
         assertTrue(captor.value.autoEnabled)
         assertEquals("0 30 8 * * ?", updated.cron)
-        assertEquals(200, updated.dailyCap)
         verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))
     }
 
@@ -556,7 +545,7 @@ class BatchSendTaskConfigServiceTest {
     fun `updateLegacyConfig preserves existing roundsPerRun when request omits it`() {
         val existing = BatchSendTaskConfig(
             id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
-            autoEnabled = false, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 50,
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,

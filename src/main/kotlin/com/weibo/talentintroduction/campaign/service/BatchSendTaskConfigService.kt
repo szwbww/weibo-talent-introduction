@@ -53,7 +53,6 @@ class BatchSendTaskConfigService(
                 mailType = normalized.mailType,
                 autoEnabled = normalized.autoEnabled,
                 cron = normalized.cron,
-                dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
                 roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
@@ -85,7 +84,6 @@ class BatchSendTaskConfigService(
                 mailType = normalized.mailType,
                 autoEnabled = normalized.autoEnabled,
                 cron = normalized.cron,
-                dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
                 roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
@@ -164,7 +162,6 @@ class BatchSendTaskConfigService(
                 configName = existing.configName,
                 autoEnabled = request.autoEnabled,
                 cron = request.cron,
-                dailyCap = request.dailyCap,
                 roundSize = request.roundSize,
                 roundsPerRun = existing.roundsPerRun,
                 perMailIntervalMs = request.perMailIntervalMs,
@@ -181,7 +178,7 @@ class BatchSendTaskConfigService(
             sendType = sendType,
             autoEnabled = view.autoEnabled,
             cron = view.cron,
-            dailyCap = view.dailyCap,
+            dailyCap = LEGACY_DAILY_CAP_UNUSED,
             roundSize = view.roundSize,
             perMailIntervalMs = view.perMailIntervalMs,
             perRoundIntervalMs = view.perRoundIntervalMs,
@@ -208,7 +205,7 @@ class BatchSendTaskConfigService(
             sendType = sendType,
             autoEnabled = row.autoEnabled,
             cron = row.cron,
-            dailyCap = row.dailyCap,
+            dailyCap = LEGACY_DAILY_CAP_UNUSED,
             roundSize = row.roundSize,
             perMailIntervalMs = row.perMailIntervalMs,
             perRoundIntervalMs = row.perRoundIntervalMs,
@@ -228,7 +225,6 @@ class BatchSendTaskConfigService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "Config name already exists: $configName")
         }
 
-        require(fields.dailyCap > 0) { "dailyCap must be > 0" }
         require(fields.roundSize > 0) { "roundSize must be > 0" }
         require(fields.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
         require(fields.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
@@ -259,7 +255,6 @@ class BatchSendTaskConfigService(
             mailType = mailType,
             autoEnabled = fields.autoEnabled,
             cron = fields.cron.trim(),
-            dailyCap = fields.dailyCap,
             roundSize = fields.roundSize,
             roundsPerRun = fields.roundsPerRun,
             perMailIntervalMs = fields.perMailIntervalMs,
@@ -340,7 +335,6 @@ class BatchSendTaskConfigService(
             mailType = row.mailType,
             autoEnabled = row.autoEnabled,
             cron = row.cron,
-            dailyCap = row.dailyCap,
             roundSize = row.roundSize,
             roundsPerRun = row.roundsPerRun,
             perMailIntervalMs = row.perMailIntervalMs,
@@ -393,7 +387,6 @@ class BatchSendTaskConfigService(
         val configName: String,
         val autoEnabled: Boolean,
         val cron: String,
-        val dailyCap: Int,
         val roundSize: Int,
         val roundsPerRun: Int,
         val perMailIntervalMs: Long,
@@ -411,7 +404,6 @@ class BatchSendTaskConfigService(
         val mailType: String,
         val autoEnabled: Boolean,
         val cron: String,
-        val dailyCap: Int,
         val roundSize: Int,
         val roundsPerRun: Int,
         val perMailIntervalMs: Long,
@@ -428,7 +420,6 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
@@ -445,7 +436,6 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
@@ -462,7 +452,6 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
@@ -476,6 +465,11 @@ class BatchSendTaskConfigService(
     )
 
     private companion object {
+        /**
+         * 日限额已下线，此值仅为旧 typed API 保持字段形态，不参与任何判定。
+         */
+        const val LEGACY_DAILY_CAP_UNUSED = 0
+
         val ALLOWED_MAIL_TYPES = setOf(
             BatchSendType.INTRODUCTION.name,
             BatchSendType.MATERIAL_REMINDER.name

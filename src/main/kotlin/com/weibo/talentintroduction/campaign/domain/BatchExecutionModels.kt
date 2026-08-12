@@ -7,7 +7,6 @@ import java.time.LocalDateTime
 /** Immutable launch snapshot consumed once per execution (I-1). */
 data class BatchExecutionSnapshot(
     val mailType: String,
-    val dailyCap: Int,
     val roundSize: Int,
     val roundsPerRun: Int = 1,
     val perMailIntervalMs: Long,
@@ -195,7 +194,6 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     }
     return BatchExecutionSnapshot(
         mailType = mailType,
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,

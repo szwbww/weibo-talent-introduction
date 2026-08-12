@@ -43,7 +43,7 @@ class BatchSendControlServiceTest {
 
     private fun anySnapshot(): com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot =
         anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-            mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+            mailType = "INTRODUCTION", roundSize = 10,
             perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
         ))
 
@@ -82,7 +82,6 @@ class BatchSendControlServiceTest {
             mailType = "INTRODUCTION",
             autoEnabled = true,
             cron = "0 0 0 * * ?",
-            dailyCap = 100,
             roundSize = 10,
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
@@ -120,7 +119,7 @@ class BatchSendControlServiceTest {
         Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
             .`when`(manualInitialOutreachService).run(
                 anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-                    mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                    mailType = "INTRODUCTION", roundSize = 10,
                     perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
                 )),
                 anyValue(0L),
@@ -204,7 +203,6 @@ class BatchSendControlServiceTest {
             mailType = "INTRODUCTION",
             autoEnabled = false,
             cron = "0 0 0 * * ?",
-            dailyCap = 100,
             roundSize = 10,
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
@@ -474,7 +472,6 @@ class BatchSendControlServiceTest {
             details = mapOf(
                 "executionMode" to "AUTO",
                 "roundNumber" to 3,
-                "dailyCap" to 1000,
                 "dailySentTotal" to 42,
                 "sentTotal" to 42,
                 "failedTotal" to 2,
@@ -502,7 +499,6 @@ class BatchSendControlServiceTest {
         assertEquals("NO_AVAILABLE_ACCOUNT", status.pauseReason)
         // I-8: per-account stats from progress
         assertEquals(3, status.roundNumber)
-        assertEquals(1000, status.dailyCap)
         assertEquals(42, status.dailySentTotal)
         assertEquals(1, status.accounts.size)
         assertEquals("chen", status.accounts[0].accountCode)
@@ -607,7 +603,6 @@ class BatchSendControlServiceTest {
             mailType = "INTRODUCTION",
             autoEnabled = true,
             cron = "0 0 0 * * ?",
-            dailyCap = 10,
             roundSize = 10,
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
@@ -635,7 +630,7 @@ class BatchSendControlServiceTest {
             sourceConfigId = null,
             sourceUpdatedAt = null,
             snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-                mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                mailType = "INTRODUCTION", roundSize = 10,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
             )
         )
@@ -687,7 +682,7 @@ class BatchSendControlServiceTest {
             sourceConfigId = null,
             sourceUpdatedAt = null,
             snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-                mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10, roundsPerRun = 0,
+                mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 0,
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
             )
         )
@@ -718,7 +713,7 @@ class BatchSendControlServiceTest {
             captureValue(
                 captor,
                 com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-                    mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                    mailType = "INTRODUCTION", roundSize = 10,
                     perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
                 )
             ),

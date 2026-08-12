@@ -149,7 +149,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `startScheduled writes SCHEDULED trigger sourceConfigId and batch_config_id`() {
         val ctx = controlContext()
-        val config = enabledConfig(1L, dailyCap = 80)
+        val config = enabledConfig(1L)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(config)
 
         val response = ctx.control.startScheduled(1L)
@@ -159,14 +159,13 @@ class BatchSendTaskRuntimeIntegrationTest {
         assertEquals(1L, ctx.capturedBatchConfigIds.single())
         val request = ctx.objectMapper.convertValue(ctx.capturedRequests.single(), ManualBatchExecutionRequest::class.java)
         assertEquals(1L, request.sourceConfigId)
-        assertEquals(80, request.snapshot.dailyCap)
         assertEquals(config.updatedAt, request.sourceUpdatedAt)
     }
 
     @Test
     fun `startManualFromConfig writes MANUAL trigger and config batch_config_id`() {
         val ctx = controlContext()
-        val config = enabledConfig(2L, dailyCap = 60)
+        val config = enabledConfig(2L)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(config)
 
         val response = ctx.control.startManualFromConfig(2L)
@@ -176,13 +175,12 @@ class BatchSendTaskRuntimeIntegrationTest {
         assertEquals(2L, ctx.capturedBatchConfigIds.single())
         val request = ctx.objectMapper.convertValue(ctx.capturedRequests.single(), ManualBatchExecutionRequest::class.java)
         assertEquals(2L, request.sourceConfigId)
-        assertEquals(60, request.snapshot.dailyCap)
     }
 
     @Test
     fun `independent manual has null batch_config_id and null sourceConfigId`() {
         val ctx = controlContext()
-        val request = ManualBatchExecutionRequest(null, null, baseSnapshot(dailyCap = 25))
+        val request = ManualBatchExecutionRequest(null, null, baseSnapshot())
 
         val response = ctx.control.startManual(request)
 
@@ -190,17 +188,16 @@ class BatchSendTaskRuntimeIntegrationTest {
         assertNull(ctx.capturedBatchConfigIds.single())
         val stored = ctx.objectMapper.convertValue(ctx.capturedRequests.single(), ManualBatchExecutionRequest::class.java)
         assertNull(stored.sourceConfigId)
-        assertEquals(25, stored.snapshot.dailyCap)
     }
 
     @Test
     fun `mid-run config edit does not change snapshot passed to run`() {
         val ctx = controlContext()
-        val original = enabledConfig(1L, dailyCap = 50, discipline = "STEM", tagsJson = """["alpha"]""")
+        val original = enabledConfig(1L, discipline = "STEM", tagsJson = """["alpha"]""")
         val configHolder = mutableListOf(original)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(1L)).thenAnswer { configHolder.last() }
         Mockito.doAnswer { invocation ->
-            configHolder[0] = original.copy(dailyCap = 999, discipline = "HUMANITIES", tagsJson = """["beta"]""")
+            configHolder[0] = original.copy(discipline = "HUMANITIES", tagsJson = """["beta"]""")
             ctx.capturedSnapshots.add(invocation.getArgument(0))
             ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED")
         }.`when`(ctx.manualInitialOutreachService).run(
@@ -210,7 +207,6 @@ class BatchSendTaskRuntimeIntegrationTest {
         ctx.control.startScheduled(1L)
 
         val captured = ctx.capturedSnapshots.single()
-        assertEquals(50, captured.dailyCap)
         assertEquals("STEM", captured.discipline)
         assertEquals(listOf("alpha"), captured.tags)
     }
@@ -299,7 +295,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `same config second run no longer queries today sum (I-2)`() {
         val ctx = dailyCapContextWithTodaySum(5L, 7)
-        val config = enabledConfig(5L, dailyCap = 10)
+        val config = enabledConfig(5L)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
 
         val response = ctx.control.startManualFromConfig(5L)
@@ -315,7 +311,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `config daily cap reached no longer blocks launch via sumSuccessCountToday (I-2)`() {
         val ctx = dailyCapContextWithTodaySum(5L, 10)
-        val config = enabledConfig(5L, dailyCap = 10)
+        val config = enabledConfig(5L)
         Mockito.`when`(ctx.configRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
 
         val response = ctx.control.startManualFromConfig(5L)
@@ -331,7 +327,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `independent manual does not query config daily sum`() {
         val ctx = dailyCapContext()
-        ctx.control.startManual(ManualBatchExecutionRequest(null, null, baseSnapshot(dailyCap = 5)))
+        ctx.control.startManual(ManualBatchExecutionRequest(null, null, baseSnapshot()))
         assertTrue(
             Mockito.mockingDetails(ctx.taskExecutionService).invocations
                 .none { it.method.name == "sumSuccessCountTodayByBatchConfigId" }
@@ -621,7 +617,6 @@ class BatchSendTaskRuntimeIntegrationTest {
     private fun enabledConfig(
         id: Long = 1L,
         cron: String = "0 0 0 * * ?",
-        dailyCap: Int = 100,
         templateId: Long? = null,
         funnelLevel: String? = null,
         tagsJson: String = "[]",
@@ -629,21 +624,20 @@ class BatchSendTaskRuntimeIntegrationTest {
         discipline: String? = null
     ) = BatchSendTaskConfig(
         id = id, configName = "cfg-$id", mailType = "INTRODUCTION", autoEnabled = true, cron = cron,
-        dailyCap = dailyCap, roundSize = 10, perMailIntervalMs = 0, perRoundIntervalMs = 0,
+        roundSize = 10, perMailIntervalMs = 0, perRoundIntervalMs = 0,
         selfCheckTtlMinutes = 30, funnelLevel = funnelLevel, tagsJson = tagsJson,
         emailDomain = emailDomain, discipline = discipline, templateId = templateId,
         updatedAt = LocalDateTime.of(2026, 7, 14, 10, 0)
     )
 
     private fun baseSnapshot(
-        dailyCap: Int = 100,
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
         emailDomain: String? = null,
         discipline: String? = null,
         templateId: Long? = null
     ) = BatchExecutionSnapshot(
-        mailType = "INTRODUCTION", dailyCap = dailyCap, roundSize = 10,
+        mailType = "INTRODUCTION", roundSize = 10,
         perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
         funnelLevel = funnelLevel, tags = tags, emailDomain = emailDomain,
         discipline = discipline, templateId = templateId

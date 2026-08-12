@@ -291,7 +291,6 @@ class BatchSendControlService(
             pauseReason = state.pauseReason,
             roundNumber = details?.asInt("roundNumber") ?: 0,
             roundsPerRun = details?.asInt("roundsPerRun") ?: 0,
-            dailyCap = details?.asInt("dailyCap") ?: 0,
             dailySentTotal = details?.asInt("dailySentTotal") ?: 0,
             sentTotal = details?.asInt("sentTotal") ?: 0,
             failedTotal = details?.asInt("failedTotal") ?: 0,
@@ -416,7 +415,6 @@ class BatchSendControlService(
 
     private fun validateSnapshotFields(snapshot: BatchExecutionSnapshot): ResponseEntity<Map<String, Any>>? {
         return try {
-            require(snapshot.dailyCap > 0) { "dailyCap must be > 0" }
             require(snapshot.roundSize > 0) { "roundSize must be > 0" }
             require(snapshot.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
             require(snapshot.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
@@ -562,7 +560,6 @@ class BatchSendControlService(
     private fun BatchSendConfig.toLegacySnapshot(oneRoundOnly: Boolean): BatchExecutionSnapshot =
         BatchExecutionSnapshot(
             mailType = sendType.name,
-            dailyCap = dailyCap,
             roundSize = roundSize,
             roundsPerRun = maxOf(1, ceil(dailyCap.toDouble() / roundSize).toInt()),
             perMailIntervalMs = perMailIntervalMs,
@@ -677,7 +674,6 @@ data class BatchSendStatusView(
     val pauseReason: String,
     val roundNumber: Int,
     val roundsPerRun: Int = 0,
-    val dailyCap: Int,
     val dailySentTotal: Int,
     val sentTotal: Int,
     val failedTotal: Int,

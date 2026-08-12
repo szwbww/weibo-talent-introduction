@@ -746,7 +746,6 @@ class ManualInitialOutreachServiceTest {
         val details = finalProgress.details
         assertNotNull(details)
         assertEquals("MANUAL", details!!["executionMode"])
-        assertEquals(1000, details["dailyCap"])
         // accounts array present with per-account row
         @Suppress("UNCHECKED_CAST")
         val accounts = details["accounts"] as? List<AccountStatRow>
@@ -1468,11 +1467,9 @@ class ManualInitialOutreachServiceTest {
     private fun introSnapshot(
         roundSize: Int,
         roundsPerRun: Int,
-        perRoundIntervalMs: Long = 0,
-        dailyCap: Int = 1000
+        perRoundIntervalMs: Long = 0
     ) = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
         mailType = "INTRODUCTION",
-        dailyCap = dailyCap,
         roundSize = roundSize,
         roundsPerRun = roundsPerRun,
         perMailIntervalMs = 0,
@@ -1935,7 +1932,6 @@ class ManualInitialOutreachServiceTest {
 
             val snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
                 mailType = "MATERIAL_REMINDER",
-                dailyCap = 1000,
                 roundSize = 20,
                 roundsPerRun = 2,
                 perMailIntervalMs = 0,
@@ -2445,7 +2441,6 @@ class ManualInitialOutreachServiceTest {
                 mailType = mailType,
                 autoEnabled = true,
                 cron = if (mailType == "INTRODUCTION") "0 0 0 * * ?" else "0 0 8 * * ?",
-                dailyCap = 1000,
                 roundSize = 50,
                 perMailIntervalMs = 0,
                 perRoundIntervalMs = 0,

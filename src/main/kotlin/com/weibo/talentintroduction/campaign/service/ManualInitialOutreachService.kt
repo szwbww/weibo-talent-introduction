@@ -1042,7 +1042,6 @@ class ManualInitialOutreachService(
             "status" to status,
             "roundNumber" to roundNumber,
             "roundsPerRun" to roundsPerRun,
-            "dailyCap" to config.dailyCap,
             "dailySentTotal" to sent,
             "sentTotal" to sent,
             "failedTotal" to failed,
@@ -1224,7 +1223,6 @@ class ManualInitialOutreachService(
     private fun BatchSendConfig.toSnapshot(oneRoundOnly: Boolean = false): BatchExecutionSnapshot =
         BatchExecutionSnapshot(
             mailType = sendType.name,
-            dailyCap = dailyCap,
             roundSize = roundSize,
             roundsPerRun = maxOf(1, ceil(dailyCap.toDouble() / roundSize).toInt()),
             perMailIntervalMs = perMailIntervalMs,
@@ -1243,7 +1241,7 @@ class ManualInitialOutreachService(
             sendType = sendType,
             autoEnabled = false,
             cron = "0 0 0 * * ?",
-            dailyCap = dailyCap,
+            dailyCap = 0,
             roundSize = roundSize,
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
@@ -1314,7 +1312,6 @@ class ManualInitialOutreachService(
             "status" to status,
             "roundNumber" to roundNumber,
             "roundsPerRun" to roundsPerRun,
-            "dailyCap" to config.dailyCap,
             "dailySentTotal" to breakdown.success,
             "sentTotal" to breakdown.success,
             "failedTotal" to breakdown.failure,
