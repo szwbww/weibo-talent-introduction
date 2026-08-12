@@ -176,7 +176,7 @@ describe("batch send task console interactions", () => {
             batchManualSourceUpdatedAt: element("2026-07-15T08:00:00")
         };
         const calls = { cleared: 0, sourceInfo: 0, loaded: [] };
-        const currentValues = { funnelLevel: "APPLICATION", tags: ["AI"], dailyCap: 60 };
+        const currentValues = { funnelLevel: "APPLICATION", tags: ["AI"], roundsPerRun: 1 };
         const sandbox = {
             batchTaskState: {
                 manualSource: { id: 7, configName: "材料提醒任务" },
@@ -272,5 +272,224 @@ describe("batch send task console interactions", () => {
         assert.strictEqual(sandbox.formatManualDiffValue("discipline", null), "全部学科");
         assert.strictEqual(sandbox.formatManualDiffValue("templateId", null), "系统默认介绍邮件模板");
         assert.strictEqual(sandbox.formatManualDiffValue("tags", []), "(无)");
+    });
+
+    it("toggles multiple region picker values in BATCH_REGION_OPTIONS order (I-1)", () => {
+        const regionOptionsSrc = appSource.match(/var BATCH_REGION_OPTIONS = \[[\s\S]*?\];/);
+        assert.ok(regionOptionsSrc, "BATCH_REGION_OPTIONS must be defined");
+        const readRegions = extractFn("readBatchRegionPickerValue");
+        const setRegions = extractFn("setBatchRegionPickerValue");
+        const toggleRegion = extractFn("toggleBatchRegionPickerValue");
+        assert.ok(readRegions && setRegions && toggleRegion, "region picker helpers must exist");
+
+        const hidden = element("");
+        const rendered = [];
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchConfigEditorRegions" ? hidden : null },
+            renderBatchRegionPicker: (id) => rendered.push(id)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(regionOptionsSrc[0], sandbox);
+        vm.runInContext(readRegions, sandbox);
+        vm.runInContext(setRegions, sandbox);
+        vm.runInContext(toggleRegion, sandbox);
+
+        sandbox.toggleBatchRegionPickerValue("batchConfigEditorRegions", "China");
+        sandbox.toggleBatchRegionPickerValue("batchConfigEditorRegions", "Europe");
+        const expectedOrder = Array.from(sandbox.BATCH_REGION_OPTIONS
+            .filter((o) => o.value === "China" || o.value === "Europe")
+            .map((o) => o.value));
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchRegionPickerValue("batchConfigEditorRegions")),
+            expectedOrder,
+            "toggled values must come back in BATCH_REGION_OPTIONS order"
+        );
+        sandbox.toggleBatchRegionPickerValue("batchConfigEditorRegions", "China");
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchRegionPickerValue("batchConfigEditorRegions")),
+            ["Europe"]
+        );
+        assert.strictEqual(rendered.length, 3);
+    });
+
+    it("BATCH_REGION_OPTIONS values are the 9 English region constants verbatim (G-1)", () => {
+        const regionOptionsSrc = appSource.match(/var BATCH_REGION_OPTIONS = \[[\s\S]*?\];/);
+        assert.ok(regionOptionsSrc, "BATCH_REGION_OPTIONS must be defined");
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(regionOptionsSrc[0], sandbox);
+
+        assert.deepStrictEqual(
+            Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => o.value)),
+            ["China", "Asia (Japan & Korea)", "Asia (Other)", "Europe", "North America", "South America", "Africa", "Oceania", "Other"]
+        );
+        assert.deepStrictEqual(
+            Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => o.label)),
+            Array.from(sandbox.BATCH_REGION_OPTIONS.map((o) => o.value)),
+            "label equals value until child 05 localizes the display text"
+        );
+    });
+
+    it("saveBatchConfigEditor assembles cron from frequency+time, not the cron input (I-2)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "每日任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "0 0 9 ? * MON#2";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.strictEqual(apiBodies[0].cron, "0 30 7 * * ?", "daily mode must assemble cron from frequency+time");
+        assert.ok(!("dailyCap" in apiBodies[0]), "payload must no longer carry dailyCap");
+    });
+
+    it("saveBatchConfigEditor takes the cron input as the single source in custom mode (I-2)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "自定义任务";
+        el("batchConfigEditorFrequency").value = "custom";
+        el("batchConfigEditorTime").value = "08:00";
+        el("batchConfigEditorCron").value = "0 0 9 ? * MON#2";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.strictEqual(apiBodies[0].cron, "0 0 9 ? * MON#2", "custom mode must take the cron input verbatim");
+    });
+
+    it("showBatchConfigEditor echoes a daily cron as daily frequency (I-2)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+    });
+
+    it("showBatchConfigEditor echoes an unmatched cron as custom with the raw expression (I-2)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 ? * MON#2", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9 ? * MON#2");
+    });
+
+    it("updateBatchConfigVolumeHint renders rounds × size (S-2)", () => {
+        const updateHint = extractFn("updateBatchConfigVolumeHint");
+        assert.ok(updateHint, "updateBatchConfigVolumeHint must exist");
+
+        const hint = { innerHTML: "" };
+        const sandbox = {
+            document: {
+                getElementById: (id) => id === "batchConfigEditorVolumeHint" ? hint
+                    : id === "batchConfigEditorRoundsPerRun" ? { value: "2" }
+                    : id === "batchConfigEditorRoundSize" ? { value: "20" } : null
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(updateHint, sandbox);
+
+        sandbox.updateBatchConfigVolumeHint();
+
+        assert.ok(hint.innerHTML.includes("40"), "2 rounds × 20 per round must render as 40");
+        assert.ok(hint.innerHTML.includes("单次调度最多发送"), "hint must carry the fixed copy");
+    });
+
+    it("cronToDisplayText falls back to the raw expression for custom cron (X-4)", () => {
+        const display = extractFn("cronToDisplayText");
+        assert.ok(display, "cronToDisplayText must exist");
+        const sandbox = { escapeHtml: (v) => String(v == null ? "" : v) };
+        vm.createContext(sandbox);
+        vm.runInContext(display, sandbox);
+
+        assert.strictEqual(sandbox.cronToDisplayText("0 0 9 ? * MON#2"), "0 0 9 ? * MON#2");
+        assert.strictEqual(sandbox.cronToDisplayText("0 0 9 * * ?"), "每天 09:00");
+        assert.strictEqual(sandbox.cronToDisplayText("0 0 9 ? * MON"), "周一 09:00");
+        assert.strictEqual(sandbox.cronToDisplayText(""), "—");
     });
 });

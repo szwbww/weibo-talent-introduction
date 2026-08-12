@@ -1119,7 +1119,7 @@
                             <th>收件范围</th>
                             <th>模板</th>
                             <th>执行计划</th>
-                            <th>最近执行</th>
+                            <th>执行时间</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -1187,6 +1187,18 @@
                                 <div id="batchConfigEditorTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                             </div>
                         </div>
+                        <div class="batch-config-field">
+                            <span class="batch-config-field-label">地区</span>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorRegions">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorRegionsChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorRegionsSearch" class="batch-tag-picker-search" placeholder="搜索并选择地区" autocomplete="off" aria-controls="batchConfigEditorRegionsDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorRegions" value="">
+                                <div id="batchConfigEditorRegionsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
                         <label class="batch-config-field">
                             <span class="batch-config-field-label">邮箱服务商</span>
                             <select id="batchConfigEditorEmailDomain" class="bsc-input bsc-select">
@@ -1211,8 +1223,8 @@
                     </div>
                     <div class="batch-config-editor-grid batch-config-editor-grid-controls">
                         <label class="batch-config-field">
-                            <span class="batch-config-field-label">日限额（封）</span>
-                            <input type="number" id="batchConfigEditorDailyCap" class="bsc-input" min="1" value="1000">
+                            <span class="batch-config-field-label">执行轮次（轮）</span>
+                            <input type="number" id="batchConfigEditorRoundsPerRun" class="bsc-input" min="1" value="1">
                         </label>
                         <label class="batch-config-field">
                             <span class="batch-config-field-label">每轮数量（封）</span>
@@ -1231,6 +1243,7 @@
                             <input type="number" id="batchConfigEditorSelfCheckTtlMin" class="bsc-input" min="1" value="30">
                         </label>
                     </div>
+                    <div class="batch-config-editor-hint" id="batchConfigEditorVolumeHint"></div>
                 </section>
 
                 <section class="batch-config-editor-section">
@@ -1245,11 +1258,20 @@
                                 <option value="hourly">每小时</option>
                                 <option value="daily" selected>每天</option>
                                 <option value="weekly">每周一</option>
+                                <option value="custom">自定义 cron</option>
                             </select>
                         </label>
                         <label class="batch-config-field" id="batchConfigEditorTimeField">
                             <span class="batch-config-field-label">执行时间</span>
                             <input type="time" id="batchConfigEditorTime" class="bsc-input" value="09:00">
+                        </label>
+                        <label class="batch-config-field" id="batchConfigEditorCronField" hidden>
+                            <span class="batch-config-field-label">cron 表达式（6 段：秒 分 时 日 月 周）</span>
+                            <div class="batch-cron-row">
+                                <input type="text" id="batchConfigEditorCron" class="bsc-input" placeholder="0 0 9 * * ?" autocomplete="off">
+                                <button type="button" class="button secondary" id="batchConfigEditorCronTestBtn">测试</button>
+                            </div>
+                            <div class="batch-cron-preview" id="batchConfigEditorCronPreview" hidden></div>
                         </label>
                     </div>
                 </section>
@@ -1349,12 +1371,6 @@
                     <span>仅影响本次执行，不修改原定时任务</span>
                 </div>
                 <div class="batch-config-editor-grid batch-config-editor-grid-controls">
-                    <label class="batch-config-field" id="manualFieldDailyCap">
-                        <span class="batch-config-field-label">日限额（封）</span>
-                        <input type="number" id="batchManualDailyCap" class="bsc-input" min="1" value="1000">
-                        <span class="batch-config-diff-badge" hidden>已修改</span>
-                        <div class="batch-config-diff-original" hidden></div>
-                    </label>
                     <label class="batch-config-field" id="manualFieldRoundSize">
                         <span class="batch-config-field-label">每轮数量（封）</span>
                         <input type="number" id="batchManualRoundSize" class="bsc-input" min="1" value="50">
