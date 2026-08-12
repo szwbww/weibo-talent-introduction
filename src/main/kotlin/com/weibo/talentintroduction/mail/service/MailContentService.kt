@@ -4,15 +4,21 @@ import org.springframework.stereotype.Service
 
 @Service
 class MailContentService {
-    fun plainTextToHtml(plain: String): String {
+    fun plainTextToHtml(plain: String, linkedUrls: Collection<String>): String {
         if (plain.isBlank()) return ""
+        val targets = linkedUrls.filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
         return plain.split(Regex("\\n\\s*\\n"))
             .map { paragraph ->
-                val inner = escapeHtml(paragraph.trim()).replace("\n", "<br>")
+                var inner = escapeHtml(paragraph.trim()).replace("\n", "<br>")
+                targets.forEach { url ->
+                    inner = inner.replace(url, "<a href=\"$url\">$UNSUBSCRIBE_ANCHOR_TEXT</a>")
+                }
                 "<p>$inner</p>"
             }
             .joinToString("")
     }
+
+    fun plainTextToHtml(plain: String): String = plainTextToHtml(plain, emptyList())
 
     fun htmlToPlainText(html: String): String =
         html.replace(Regex("(?is)<(script|style).*?>.*?</\\1>"), "")
@@ -30,6 +36,10 @@ class MailContentService {
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
+
+    companion object {
+        const val UNSUBSCRIBE_ANCHOR_TEXT = "Unsubscribe"
+    }
 
     private fun unescapeHtmlEntities(text: String): String {
         val namedEntities = mapOf(

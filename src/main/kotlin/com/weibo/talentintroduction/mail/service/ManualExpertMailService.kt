@@ -240,7 +240,7 @@ class ManualExpertMailService(
         // I-1: rendered.body 是已完成变量替换的纯文本单源。text/plain 逐字使用它，
         // text/html 必须由 plainTextToHtml() 做一次安全转换（段落/换行/转义），
         // 禁止把纯文本直接标记为 HTML（renderHtmlForContact 只替换变量，不产生标签）。
-        val html = mailContentService.plainTextToHtml(rendered.body)
+        val html = mailContentService.plainTextToHtml(rendered.body, listOfNotNull(variables["unsubscribeUrl"]))
         return ManualComposedMail(
             mailType = rendered.mailType ?: "COMPOSE_TEMPLATE",
             mail = ComposedMail(
