@@ -563,4 +563,79 @@ describe("batch send task console interactions", () => {
         assert.strictEqual(sandbox.cronToDisplayText("0 0 9 ? * MON"), "周一 09:00");
         assert.strictEqual(sandbox.cronToDisplayText(""), "—");
     });
+
+    it("deepCloneConfig preserves roundsPerRun from the selected source config (V-1)", () => {
+        const clone = extractFn("deepCloneConfig");
+        assert.ok(clone, "deepCloneConfig must exist");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(clone, sandbox);
+
+        const withRounds = sandbox.deepCloneConfig({ id: 7, configName: "每日介绍", roundsPerRun: 2, roundSize: 20 });
+        assert.strictEqual(withRounds.roundsPerRun, 2, "roundsPerRun must survive the clone");
+        assert.strictEqual(withRounds.roundSize, 20, "roundSize must survive the clone");
+
+        const withoutRounds = sandbox.deepCloneConfig({ configName: "旧任务", roundSize: 20 });
+        assert.strictEqual(withoutRounds.roundsPerRun, 1, "missing roundsPerRun must default to 1");
+    });
+
+    it("independent manual draft defaults roundsPerRun to 1 (V-1)", () => {
+        const defaults = extractFn("fillManualFormDefaults");
+        assert.ok(defaults, "fillManualFormDefaults must exist");
+
+        const sandbox = {
+            batchTaskState: {},
+            fillManualFormFromDraft: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(defaults, sandbox);
+
+        sandbox.fillManualFormDefaults();
+
+        assert.strictEqual(sandbox.batchTaskState.manualDraft.roundsPerRun, 1,
+            "independent manual draft must carry roundsPerRun 1");
+    });
+
+    it("configured-source manual confirmation renders the round count, not undefined (V-1)", () => {
+        const applySource = extractFn("applyBatchManualSource");
+        const confirm = extractFn("showBatchManualConfirm");
+        assert.ok(applySource, "applyBatchManualSource must exist");
+        assert.ok(confirm, "showBatchManualConfirm must exist");
+
+        const elements = {
+            batchManualSourceQuery: element(),
+            batchManualSourceId: element(),
+            batchManualSourceUpdatedAt: element(),
+            batchManualConfirmTitle: element(),
+            batchManualConfirmBody: element(),
+            batchManualConfirmDialog: element()
+        };
+        const sandbox = {
+            batchTaskState: { manualSource: null, manualDraft: null },
+            document: { getElementById: (id) => elements[id] || null },
+            deepCloneConfig: null, // filled below with the real implementation
+            updateManualSourceInfo: () => {},
+            fillManualFormFromDraft: () => {},
+            computeManualDiffs: () => [],
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("deepCloneConfig"), sandbox);
+        vm.runInContext(applySource, sandbox);
+        vm.runInContext(confirm, sandbox);
+
+        sandbox.applyBatchManualSource({ id: 7, configName: "每日介绍", roundsPerRun: 2, roundSize: 20 });
+        assert.strictEqual(sandbox.batchTaskState.manualSource.roundsPerRun, 2,
+            "manualSource must retain the configured round count");
+        assert.strictEqual(sandbox.batchTaskState.manualDraft.roundsPerRun, 2,
+            "manualDraft must retain the configured round count");
+
+        sandbox.showBatchManualConfirm();
+
+        assert.ok(elements.batchManualConfirmBody.innerHTML.includes("轮次: 2 轮"),
+            "confirmation summary must render 轮次: 2 轮, not undefined");
+        assert.ok(!elements.batchManualConfirmBody.innerHTML.includes("undefined"),
+            "confirmation summary must not contain undefined");
+    });
 });
