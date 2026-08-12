@@ -46,7 +46,7 @@ class UnsubscribeController(
         <head><meta charset="UTF-8"><title>Unsubscribe</title></head>
         <body>
         <p>Confirm that you want to unsubscribe from future emails.</p>
-        <form method="post" action="/u/unsubscribe/confirm">
+        <form method="post" action="unsubscribe/confirm">
           <input type="hidden" name="token" value="$token">
           <button type="submit">Unsubscribe</button>
         </form>

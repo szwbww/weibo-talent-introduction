@@ -61,13 +61,13 @@ class UnsubscribeControllerTest {
     }
 
     @Test
-    fun `GET valid token returns confirm html`() {
+    fun `GET valid token returns confirm html with context-path-safe action`() {
         doReturn("user@example.com").`when`(tokenService).verify("good-token")
 
         mockMvc.perform(get("/u/unsubscribe").param("token", "good-token"))
             .andExpect(status().isOk)
             .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString("/u/unsubscribe/confirm")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("action=\"unsubscribe/confirm\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("good-token")))
 
         verifyNoInteractions(suppressionService)
