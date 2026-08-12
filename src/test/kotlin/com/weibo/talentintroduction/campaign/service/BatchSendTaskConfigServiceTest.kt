@@ -6,10 +6,12 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCom
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -19,6 +21,7 @@ import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
 import org.mockito.Mockito.any
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.context.ApplicationEventPublisher
@@ -32,14 +35,23 @@ class BatchSendTaskConfigServiceTest {
     private val repository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val eventPublisher = Mockito.mock(ApplicationEventPublisher::class.java)
+    private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val objectMapper = ObjectMapper()
 
     private fun service() = BatchSendTaskConfigService(
         repository = repository,
         mailComposeTemplateService = mailComposeTemplateService,
         objectMapper = objectMapper,
-        eventPublisher = eventPublisher
+        eventPublisher = eventPublisher,
+        taskExecutionService = taskExecutionService
     )
+
+    // Repo-standard Mockito helpers for Kotlin-declared (non-null parameter) mock methods:
+    // the matcher placeholders return null and must be coalesced with a default.
+    private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T =
+        captor.capture() ?: defaultValue
 
     private fun createCmd(
         name: String = "每日介绍",
@@ -702,5 +714,92 @@ class BatchSendTaskConfigServiceTest {
         verify(repository).save(captor.capture())
         // X-2/K-batch-config-legacy-adapter-field-preservation: legacy request has no regions dimension; entity value must survive.
         assertEquals("""["Europe"]""", captor.value.regionsJson)
+    }
+
+    // ── 04a: nextFireTime / lastExecutedAt / cron preview ─────────────────────────
+
+    @Test
+    fun `nextFireTime is populated for autoEnabled config with valid cron`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(row(id = 1L, autoEnabled = true, cron = "0 0 9 * * ?"))
+
+        val view = service().get(1L)
+
+        assertNotNull(view.nextFireTime)
+        assertTrue(view.nextFireTime!!.isAfter(LocalDateTime.now().minusSeconds(1)))
+    }
+
+    @Test
+    fun `nextFireTime is null when autoEnabled is false`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L, autoEnabled = false))
+
+        val view = service().get(1L)
+
+        assertNull(view.nextFireTime)
+    }
+
+    @Test
+    fun `invalid cron degrades to null nextFireTime without throwing`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(row(id = 1L, autoEnabled = true, cron = "这不是cron"))
+
+        val view = service().get(1L)
+
+        assertNull(view.nextFireTime)
+    }
+
+    @Test
+    fun `list queries lastExecutedAt exactly once with all ids`() {
+        val rows = listOf(
+            row(id = 1L, updatedAt = LocalDateTime.of(2026, 7, 14, 12, 0)),
+            row(id = 2L, name = "b", updatedAt = LocalDateTime.of(2026, 7, 14, 11, 0)),
+            row(id = 3L, name = "c", updatedAt = LocalDateTime.of(2026, 7, 14, 10, 0))
+        )
+        `when`(repository.findAllActiveOrderByUpdatedAtDescIdDesc()).thenReturn(rows)
+        `when`(taskExecutionService.lastExecutedAtByBatchConfigIds(anyValue(emptyList<Long>()))).thenReturn(emptyMap())
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(Collection::class.java) as ArgumentCaptor<Collection<Long>>
+
+        val views = service().list(null)
+
+        assertEquals(3, views.size)
+        verify(taskExecutionService, times(1))
+            .lastExecutedAtByBatchConfigIds(captureValue(captor, emptyList<Long>()))
+        assertEquals(listOf(1L, 2L, 3L), captor.value.toList())
+    }
+
+    @Test
+    fun `list with zero configs calls aggregation with empty ids and does not throw`() {
+        `when`(repository.findAllActiveOrderByUpdatedAtDescIdDesc()).thenReturn(emptyList())
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(Collection::class.java) as ArgumentCaptor<Collection<Long>>
+
+        val views = service().list(null)
+
+        assertEquals(0, views.size)
+        verify(taskExecutionService, times(1))
+            .lastExecutedAtByBatchConfigIds(captureValue(captor, emptyList<Long>()))
+        assertTrue(captor.value.isEmpty())
+    }
+
+    @Test
+    fun `previewCron returns 5 strictly increasing times for valid cron`() {
+        val result = service().previewCron("0 0 9 * * ?")
+
+        assertTrue(result.valid)
+        assertNull(result.message)
+        assertEquals(5, result.nextFireTimes.size)
+        for (i in 1 until result.nextFireTimes.size) {
+            assertTrue(result.nextFireTimes[i].isAfter(result.nextFireTimes[i - 1]))
+        }
+    }
+
+    @Test
+    fun `previewCron returns valid false with message for invalid cron without throwing`() {
+        val result = service().previewCron("bogus")
+
+        assertFalse(result.valid)
+        assertTrue(!result.message.isNullOrEmpty())
+        assertEquals(emptyList<LocalDateTime>(), result.nextFireTimes)
     }
 }

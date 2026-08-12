@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendStatusView
+import com.weibo.talentintroduction.campaign.service.CronPreviewResult
 import com.weibo.talentintroduction.campaign.service.ExecutionLiveView
 import com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService
 import com.weibo.talentintroduction.campaign.service.BatchSendType
@@ -78,6 +79,14 @@ class BatchSendConfigController(
         batchSendTaskConfigService.softDelete(id)
         return ResponseEntity.noContent().build()
     }
+
+    /**
+     * POST (not GET) so cron expressions with '?' '*' do not need query-string escaping.
+     * Always 200: invalid cron is a normal editor state, not an error (I-3).
+     */
+    @PostMapping("/cron/preview")
+    fun previewCron(@RequestBody request: CronPreviewRequest): ResponseEntity<CronPreviewResult> =
+        ResponseEntity.ok(batchSendTaskConfigService.previewCron(request.cron, request.count ?: 5))
 
     @PostMapping("/configs/{id}/execute")
     fun executeConfig(@PathVariable id: Long): ResponseEntity<Map<String, Any>> =
@@ -393,6 +402,11 @@ class BatchSendConfigController(
 
 data class BatchSendTaskConfigEnabledRequest(
     val enabled: Boolean
+)
+
+data class CronPreviewRequest(
+    val cron: String,
+    val count: Int? = null
 )
 
 data class BatchConfigExecutionSummary(

@@ -40,6 +40,17 @@ class TaskExecutionService(
     }
 
     /**
+     * Batch last-execution start time per config (I-4): a single aggregated query covering
+     * MANUAL + SCHEDULED executions. Independent manual runs (batch_config_id = null) are
+     * excluded naturally. An empty input is a no-op (IN () is invalid SQL).
+     */
+    fun lastExecutedAtByBatchConfigIds(batchConfigIds: Collection<Long>): Map<Long, LocalDateTime> {
+        if (batchConfigIds.isEmpty()) return emptyMap()
+        return repository.findLastStartedAtByBatchConfigIds(batchConfigIds)
+            .associate { it.batchConfigId to it.lastStartedAt }
+    }
+
+    /**
      * Natural-day success sum for a config (Asia/Shanghai day boundary).
      * Used by dailyCap across auto + config-sourced manual runs (I-5).
      */

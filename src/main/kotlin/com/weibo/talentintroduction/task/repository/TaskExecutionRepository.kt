@@ -6,6 +6,16 @@ import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
 import java.time.LocalDateTime
 
+/**
+ * One aggregated row per batch config: the most recent execution start time (I-4/I-5).
+ * Covers MANUAL + SCHEDULED executions; rows with batch_config_id = null (independent
+ * manual runs) are excluded naturally by the WHERE clause.
+ */
+data class BatchConfigLastExecution(
+    val batchConfigId: Long,
+    val lastStartedAt: LocalDateTime
+)
+
 interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
     fun findAllByOrderByStartedAtDesc(): List<TaskExecution>
 
@@ -40,6 +50,20 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
         """
     )
     fun findRecentByBatchConfigId(batchConfigId: Long, limit: Int): List<TaskExecution>
+
+    /**
+     * I-4/I-5: single aggregated query for the last execution start time per batch config.
+     * Callers MUST guard against an empty [batchConfigIds] (IN () is invalid SQL).
+     */
+    @Query(
+        """
+        SELECT batch_config_id AS batch_config_id, MAX(started_at) AS last_started_at
+        FROM task_execution
+        WHERE batch_config_id IN (:batchConfigIds)
+        GROUP BY batch_config_id
+        """
+    )
+    fun findLastStartedAtByBatchConfigIds(batchConfigIds: Collection<Long>): List<BatchConfigLastExecution>
 
     @Query(
         """

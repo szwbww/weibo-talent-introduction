@@ -29,9 +29,12 @@ class BatchSendConfigControllerTest {
     private val repository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
     private val templateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
     private val eventPublisher = Mockito.mock(ApplicationEventPublisher::class.java)
+    private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val objectMapper = ObjectMapper()
+        .registerModule(com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+        .registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
     private val taskConfigService = BatchSendTaskConfigService(
-        repository, templateService, objectMapper, eventPublisher
+        repository, templateService, objectMapper, eventPublisher, taskExecutionService
     )
     private val templateRepository = Mockito.mock(MailComposeTemplateRepository::class.java)
 
@@ -40,7 +43,7 @@ class BatchSendConfigControllerTest {
         templateRepository = templateRepository,
         batchSendControlService = Mockito.mock(BatchSendControlService::class.java),
         manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java),
-        taskExecutionService = Mockito.mock(TaskExecutionService::class.java),
+        taskExecutionService = taskExecutionService,
         progressLogRepository = Mockito.mock(TaskProgressLogRepository::class.java),
         objectMapper = objectMapper
     )
@@ -224,5 +227,39 @@ class BatchSendConfigControllerTest {
             assertEquals(HttpStatus.NOT_FOUND, ex.status)
         }
         Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+    }
+
+    // ── 04a: cron preview + nextFireTime/lastExecutedAt in the configs response ───
+
+    @Test
+    fun `POST cron preview returns 200 with valid true and 5 times for legal expression`() {
+        val response = controller().previewCron(CronPreviewRequest(cron = "0 0 9 * * ?"))
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(true, response.body!!.valid)
+        assertEquals(5, response.body!!.nextFireTimes.size)
+    }
+
+    @Test
+    fun `POST cron preview returns 200 with valid false for illegal expression`() {
+        val response = controller().previewCron(CronPreviewRequest(cron = "每天九点"))
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(false, response.body!!.valid)
+        assertTrue(!response.body!!.message.isNullOrEmpty())
+        assertEquals(0, response.body!!.nextFireTimes.size)
+    }
+
+    @Test
+    fun `GET configs response json contains nextFireTime and lastExecutedAt keys`() {
+        Mockito.`when`(repository.findAllActiveOrderByUpdatedAtDescIdDesc())
+            .thenReturn(listOf(introEntity(autoEnabled = true)))
+
+        val response = controller().listConfigs(null)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        val json = objectMapper.writeValueAsString(response.body)
+        assertTrue(json.contains("nextFireTime"))
+        assertTrue(json.contains("lastExecutedAt"))
     }
 }
