@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
+import com.weibo.talentintroduction.mail.service.UnsubscribePageRenderer
 import com.weibo.talentintroduction.mail.service.UnsubscribeTokenService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.verifyNoInteractions
@@ -25,6 +26,9 @@ class UnsubscribeControllerIllegalTokenTest {
 
     @MockBean
     private lateinit var suppressionService: EmailSuppressionService
+
+    @MockBean
+    private lateinit var renderer: UnsubscribePageRenderer
 
     @Test
     fun `POST illegal base64 token returns 400 without suppress`() {
