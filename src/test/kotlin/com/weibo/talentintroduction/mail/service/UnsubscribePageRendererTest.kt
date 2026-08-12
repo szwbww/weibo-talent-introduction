@@ -90,6 +90,9 @@ class UnsubscribePageRendererTest {
         assertTrue(render.confirmPage("t", "a@b.com").contains("•••@b.com"))
         assertTrue(render.confirmPage("t", "noatsign").contains("<p class=\"qf-pill\">•••</p>"))
         assertTrue(render.confirmPage("t", "a@b@c.com").contains("•••@c.com"))
+        // I-5 empty-local and empty-domain bounds (repair V-1)
+        assertTrue(render.confirmPage("t", "@b.com").contains("•••@b.com"))
+        assertTrue(render.confirmPage("t", "a@").contains("<p class=\"qf-pill\">•••</p>"))
     }
 
     @Test
