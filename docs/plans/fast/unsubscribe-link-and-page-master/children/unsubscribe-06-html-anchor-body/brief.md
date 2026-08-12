@@ -1,16 +1,17 @@
-# Fast-P Child Brief — unsubscribe-06-html-anchor-body
+# Fast-P Child Brief — unsubscribe-06-html-anchor-body (Epoch 2, resumed after A1)
 
 - Master: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md (sha256 29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594)
-- Child plan: docs/plans/2026-08-12/unsubscribe-06-html-anchor-body.md (sha256 a1c3d2b48698baadc8aa14826d94987971f81c7af1084b42d1929550c8c62bd0)
+- Child plan: docs/plans/2026-08-12/unsubscribe-06-html-anchor-body.md (commit 8941887ee0cb6a8ad37a00e564a557d1c265a1c0 — amended by A1)
+- Amendment A1: authorizes `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt` (T-11: update :219 assertion to anchored prefix). Plan identity is now commit:8941887ee0cb6a8ad37a00e564a557d1c265a1c0; do not use the old sha256.
 - Depends on: none
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master
 - Branch: fast/unsubscribe-link-and-page-master
 - Child base: 0482bcd497eefba9ce4f44f61a5624ae25d0efe1
-- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-06-html-anchor-body`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单.
+- Resume state: Epoch 1 implementer (Impl06) completed T-1..T-10 in the working tree, UNCOMMITTED (7 modified + 2 new files, all 10 authorized files now). Verify the working-tree state against the amended plan before proceeding; do not re-implement from scratch unless the working tree diverges from the plan.
+- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-06-html-anchor-body`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单 (now 10 files).
 - Downstream interfaces for later children: none (child 07/08 have no code dependency on this child).
 
 The complete approved contract is the child plan below, verbatim.
-
 
 # Plan 06 — 冷外联正文的退订链接改为 HTML 锚文本
 
@@ -272,6 +273,11 @@ WHERE t.template_code IN ('INTRODUCTION', 'MATERIAL_REMINDER')
 - 断言 `V88` 含 `LIKE '%you can unsubscribe here:` 幂等守卫。
 - 断言 `V88` 去注释后不含 `mail_template`（沿用 `UnsubscribeBodyLinkMigrationTest.kt:39-44` 的过滤写法）。
 
+**T-11**（fast-p 修正 A1，2026-08-12 人工批准）改 `ManualExpertMailServiceGateTest.kt` 的 `:219` 断言：
+- 现有断言 `captor.value.body!!.startsWith("<p>Unsubscribe: https://example.com/u/unsubscribe?token=")` 断言 HTML 版正文以裸 URL 开头，与 T-6 的锚化行为直接冲突（T-6 落地后 HTML 版以 `<p>Unsubscribe: <a href="…">Unsubscribe</a>` 开头），而本计划「验证命令」要求该测试类保持通过。
+- 修正为：`assertTrue(captor.value.body!!.startsWith("<p>Unsubscribe: <a href=\"https://example.com/u/unsubscribe?token="))`。
+- 该测试类内其余断言（text 纯文本、实体转义、I-1 门禁）逐字保留。
+
 ## 变更文件清单
 
 | # | 文件 | 类型 | 改动 |
@@ -285,8 +291,9 @@ WHERE t.template_code IN ('INTRODUCTION', 'MATERIAL_REMINDER')
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt` | 测试 | T-8 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt` | 测试 | T-9 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnsubscribeWordingMigrationTest.kt` | 新建测试 | T-10 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt` | 测试 | T-11（fast-p 修正 A1）：`:219` 断言改为锚文本前缀 |
 
-合计 9 个文件 ≤ 10 ✅；子系统 2 个 ✅；无新增共享存储字段 ✅。
+合计 10 个文件 ≤ 10 ✅；子系统 2 个 ✅；无新增共享存储字段 ✅。
 
 ## 验证命令
 

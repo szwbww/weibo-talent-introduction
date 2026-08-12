@@ -105,3 +105,81 @@ Required authorization: add `src/test/kotlin/com/weibo/talentintroduction/mail/s
 ## Next Action
 
 PLAN_CONFLICT → obtain a human decision / plan amendment (add the GateTest file to 变更文件清单), then re-run this child from the current working tree (implementation is in place; only the one-line test update + green-gate re-run + single commit remain).
+
+
+---
+
+# Execution Report (Epoch 2) — unsubscribe-06-html-anchor-body (after amendment A1)
+
+## Execution Result: READY_FOR_VERIFICATION
+
+- Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master/docs/plans/2026-08-12/unsubscribe-06-html-anchor-body.md
+- Plan SHA-256: 05d4181f8d740b33fff2729bb7e17d360dda7ad12b3998f2c7597cb3ccc4203e (commit 8941887ee0cb6a8ad37a00e564a557d1c265a1c0, amended by A1)
+- Execution ID: <plan path>@05d4181f8d740b33fff2729bb7e17d360dda7ad12b3998f2c7597cb3ccc4203e
+- Execution epoch: RESUME (epoch 1 was PLAN_CONFLICT, no commit; A1 added the 10th authorized file)
+- Executor: Impl06b
+- Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master
+- Target branch: fast/unsubscribe-link-and-page-master
+- Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master@fast/unsubscribe-link-and-page-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/unsubscribe-link-and-page-master
+- Pre-execution code SHA: 8941887ee0cb6a8ad37a00e564a557d1c265a1c0 (working tree carried epoch-1 T-1..T-10 uncommitted)
+- Post-execution code SHA: 04f8833 (implementation commit, HEAD)
+- Evidence HEAD: 04f8833
+- Implementation boundary: working tree (T-1..T-10 from epoch 1, verified against amended plan) + T-11 (A1)
+
+## Task Status
+
+| Task | Status | Files | Evidence |
+|---|---|---|---|
+| T-1 two-arg plainTextToHtml + UNSUBSCRIBE_ANCHOR_TEXT | IMPLEMENTED (epoch 1, re-verified) | MailContentService.kt | diff matches plan verbatim; T-8 13/13 pass |
+| T-2 MailContentService injection (default) | IMPLEMENTED (epoch 1, re-verified) | IntroductionMailComposer.kt | diff matches plan |
+| T-3 html/text ComposedMail + plain to gate | IMPLEMENTED (epoch 1, re-verified) | IntroductionMailComposer.kt | diff matches plan; T-9 12/12 pass |
+| T-4 InitialOutreachService 2 sites | IMPLEMENTED (epoch 1, re-verified) | InitialOutreachService.kt | :95/:105 = mail.text ?: mail.body |
+| T-5 ManualInitialOutreachService 5 sites | IMPLEMENTED (epoch 1, re-verified) | ManualInitialOutreachService.kt | :695/:709/:723/:747/:763 |
+| T-6 MATERIAL_REMINDER two-arg overload | IMPLEMENTED (epoch 1, re-verified) | ManualExpertMailService.kt | :243 two-arg call |
+| T-7 V88 migration | IMPLEMENTED (epoch 1, re-verified) | V88__rewrite_unsubscribe_line_wording.sql | file matches plan verbatim |
+| T-8 MailContentServiceTest cases | IMPLEMENTED (epoch 1, re-verified) | MailContentServiceTest.kt | 13/13 pass |
+| T-9 IntroductionMailComposerTest cases | IMPLEMENTED (epoch 1, re-verified) | IntroductionMailComposerTest.kt | 12/12 pass |
+| T-10 UnsubscribeWordingMigrationTest | IMPLEMENTED (epoch 1, re-verified) | UnsubscribeWordingMigrationTest.kt | 5/5 pass |
+| T-11 GateTest :219 anchored prefix (A1) | IMPLEMENTED (this epoch) | ManualExpertMailServiceGateTest.kt | assertion now startsWith("<p>Unsubscribe: <a href=\"https://example.com/u/unsubscribe?token=") |
+
+## Commands (all run freshly in this invocation, JDK 11)
+
+| Command | Result | Evidence |
+|---|---|---|
+| JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test -Dtest=MailContentServiceTest,IntroductionMailComposerTest,UnsubscribeWordingMigrationTest,UnsubscribeBodyLinkMigrationTest,SmtpMailDeliveryServiceTest,ManualExpertMailServiceGateTest | PASS (0) | BUILD SUCCESS. MailContentServiceTest 13, IntroductionMailComposerTest 12, UnsubscribeWordingMigrationTest 5, UnsubscribeBodyLinkMigrationTest 6, SmtpMailDeliveryServiceTest 24, ManualExpertMailServiceGateTest 5. Failures 0, Errors 0. |
+| JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test (full regression gate) | PASS (0) | BUILD SUCCESS, Tests run: 2309, Failures: 0, Errors: 0, Skipped: 4; JS 485/485 pass. |
+| JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn clean package | PASS (0) | BUILD SUCCESS, war repackaged. |
+| JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true | SKIPPED | Docker unavailable (`docker info` exit 1); plan marks this command 默认跳过 (needs local Docker). |
+| git diff --check | PASS (0) | No output. |
+
+## Acceptance-criteria checks (I-1..I-6)
+
+- I-1: `text` and `plainTextToHtml` first arg share local `plain` in IntroductionMailComposer.kt; T-9 asserts mail.text == rendered.body. PASS
+- I-2: exactly 7 `body = mail.text ?: mail.body` sites (:95/:105/:695/:709/:723/:747/:763); 0 remaining in the two authorized services (only AutoMailReplyService.kt:977, MEETING_INVITATION html=false, out of scope). PASS
+- I-3: escape-before-anchor + non-target-URL cases pass; no Regex("https\?://") in MailContentService.kt. PASS
+- I-4: empty-collection == single-arg and no href="" cases pass; href="" grep = 0. PASS
+- I-5: requireNoPlaceholderResidue(mail.subject, plain) at :46. PASS
+- I-6: T-10 all pass. PASS
+- Cross-path: SmtpMailDeliveryServiceTest 24/24 (header cases :133/:159/:183 + multipart explicit-text :252). PASS
+
+## Deviations
+
+- Six focused test classes run as one combined -Dtest= invocation (same tests/semantics; full mvn test re-runs all anyway).
+- FlywayMigrationIntegrationTest skipped — Docker unavailable on this machine (plan-marked 默认跳过).
+- docs/plans/fast/* and docs/plans/2026-08-12/* left uncommitted (controller-owned); only the 10 authorized implementation files committed.
+
+## Freshness
+
+- Plan identity rechecked: YES (sha256 05d4181f… unchanged across invocation)
+- Worktree identity rechecked: YES (root@branch@git-dir unchanged; HEAD now 04f8833)
+- Reported commits reachable from target branch: YES (04f8833 is HEAD, branch --contains confirms)
+- Required commands run this invocation: YES (all except Docker-gated migration IT)
+- Historical evidence used only as baseline: YES (epoch-1 report used as baseline; all commands re-run freshly)
+
+## Remaining Blocker
+
+None.
+
+## Next Action
+
+READY_FOR_VERIFICATION → run verify-p against plan identity 05d4181f… (amended A1, 10-file scope), commit 04f8833.
