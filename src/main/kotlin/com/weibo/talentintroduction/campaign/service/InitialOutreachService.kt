@@ -92,7 +92,7 @@ class InitialOutreachService(
                     accountCode = account.accountCode,
                     deliveredMessageId = delivered.messageId,
                     subject = mail.subject,
-                    body = mail.body,
+                    body = mail.text ?: mail.body,
                     attemptId = 0L
                 )
             } else {
@@ -102,7 +102,7 @@ class InitialOutreachService(
                     messageId = delivered.messageId,
                     errorSummary = delivered.errorDetail ?: delivered.status,
                     subject = mail.subject,
-                    body = mail.body,
+                    body = mail.text ?: mail.body,
                     attemptId = null
                 )
             }

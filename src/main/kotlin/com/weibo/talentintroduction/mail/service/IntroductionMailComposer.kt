@@ -11,7 +11,8 @@ class IntroductionMailComposer(
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val mailVariableService: MailVariableService,
-    private val personalizationGateService: PersonalizationGateService = PersonalizationGateService()
+    private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
+    private val mailContentService: MailContentService = MailContentService()
 ) {
     fun compose(accountCode: String, expert: ExpertProfile, templateId: Long? = null): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
@@ -33,13 +34,16 @@ class IntroductionMailComposer(
         val domain = account.senderEmail.substringAfter("@")
         val messageId = "<intro-${expert.orcidId}-${UUID.randomUUID()}@$domain>"
 
+        val plain = rendered.body
         val mail = ComposedMail(
             to = expert.email ?: error("Expert email is required for introduction mail"),
             subject = rendered.subject,
-            body = rendered.body,
+            body = mailContentService.plainTextToHtml(plain, listOfNotNull(variables["unsubscribeUrl"])),
+            html = true,
+            text = plain,
             messageId = messageId
         )
-        personalizationGateService.requireNoPlaceholderResidue(mail.subject, mail.body)
+        personalizationGateService.requireNoPlaceholderResidue(mail.subject, plain)
         return mail
     }
 

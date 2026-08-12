@@ -1,11 +1,13 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -125,7 +127,9 @@ class IntroductionMailComposerTest {
 
         assertEquals("expert@example.com", mail.to)
         assertEquals("Research Collaboration Opportunity", mail.subject)
-        assertEquals("Rendered body", mail.body)
+        assertEquals("<p>Rendered body</p>", mail.body)
+        assertTrue(mail.html)
+        assertEquals("Rendered body", mail.text)
         assertNotNull(mail.messageId)
         assertTrue(mail.messageId!!.matches(Regex("<intro-0000-0001-[0-9a-f-]+@qftechtalent\\.com>")))
 
@@ -192,7 +196,7 @@ class IntroductionMailComposerTest {
         )
 
         assertEquals("Custom intro", mail.subject)
-        assertEquals("Custom body", mail.body)
+        assertEquals("<p>Custom body</p>", mail.body)
 
         val variablesCaptor = ArgumentCaptor.forClass(Map::class.java as Class<Map<String, String>>)
         val seedCaptor = ArgumentCaptor.forClass(Int::class.java)
@@ -367,7 +371,7 @@ class IntroductionMailComposerTest {
         val mail = composer.compose("chenjj", expert)
 
         assertEquals("Stable subject", mail.subject)
-        assertEquals("Stable body", mail.body)
+        assertEquals("<p>Stable body</p>", mail.body)
         assertNotNull(mail.messageId)
         assertTrue(mail.messageId!!.contains("polygenelubricants"))
     }
@@ -519,6 +523,86 @@ class IntroductionMailComposerTest {
 
         val mail = composer.compose("chenjj", sparseExpert())
 
-        assertEquals("Intro Body", mail.body)
+        assertEquals("<p>Intro Body</p>", mail.body)
+        assertEquals("Intro Body", mail.text)
+        assertFalse(mail.body!!.contains("href=\""), "no unsubscribe url configured means no anchor")
+    }
+
+    // ── unsubscribe-06: html anchor body (I-1, I-3, I-4, I-5) ──
+
+    @Test
+    fun `compose returns html multipart with plain text part and no empty anchor`() {
+        stubEnabledAccount()
+        Mockito.`when`(templateService.renderByCode(eqValue("INTRODUCTION"), anyValue(emptyMap()), Mockito.anyInt()))
+            .thenReturn(
+                ComposeTemplateRenderResult(
+                    subject = "Intro Subject",
+                    body = "First paragraph.\n\nSecond paragraph.",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        Mockito.`when`(templateService.effectiveRequiredKeys(10L)).thenReturn(emptyList())
+
+        val mail = composer.compose("chenjj", sparseExpert())
+
+        assertTrue(mail.html)
+        assertEquals("First paragraph.\n\nSecond paragraph.", mail.text)
+        assertEquals("<p>First paragraph.</p><p>Second paragraph.</p>", mail.body)
+        assertFalse(mail.body!!.contains("href=\"\""))
+        assertFalse(mail.body!!.contains("href=\""), "no unsubscribe url configured means no anchor")
+    }
+
+    @Test
+    fun `compose anchors unsubscribe url in html when token service is injected`() {
+        val tokenService = UnsubscribeTokenService(
+            UnsubscribeProperties(baseUrl = "https://example.com", secret = "secret")
+        )
+        val variableService = MailVariableService(
+            expertSearchService,
+            templateService,
+            unsubscribeTokenService = tokenService
+        )
+        val anchoredComposer = IntroductionMailComposer(
+            accountService,
+            templateService,
+            variableService
+        )
+        stubEnabledAccount()
+        val url = tokenService.unsubscribeUrl("expert@example.com")
+        Mockito.`when`(templateService.renderByCode(eqValue("INTRODUCTION"), anyValue(emptyMap()), Mockito.anyInt()))
+            .thenReturn(
+                ComposeTemplateRenderResult(
+                    subject = "Intro Subject",
+                    body = "Rendered body with $url",
+                    mailType = "INTRODUCTION"
+                )
+            )
+
+        val mail = anchoredComposer.compose("chenjj", sparseExpert())
+
+        assertTrue(mail.html)
+        assertTrue(mail.body!!.contains("<a href=\"$url\">Unsubscribe</a>"))
+        assertEquals("Rendered body with $url", mail.text)
+        assertTrue(mail.text!!.contains("https://example.com/u/unsubscribe?token="))
+    }
+
+    @Test
+    fun `compose keeps introduction message id shape and no thread headers`() {
+        stubEnabledAccount()
+        Mockito.`when`(templateService.renderByCode(eqValue("INTRODUCTION"), anyValue(emptyMap()), Mockito.anyInt()))
+            .thenReturn(
+                ComposeTemplateRenderResult(
+                    subject = "Intro Subject",
+                    body = "Intro Body",
+                    mailType = "INTRODUCTION"
+                )
+            )
+
+        val mail = composer.compose("chenjj", sparseExpert())
+
+        assertTrue(mail.messageId!!.matches(Regex("^<intro-.*@.*>$")))
+        assertTrue(mail.messageId!!.contains("0000-0001"))
+        assertEquals(null, mail.inReplyTo)
+        assertEquals(null, mail.references)
     }
 }

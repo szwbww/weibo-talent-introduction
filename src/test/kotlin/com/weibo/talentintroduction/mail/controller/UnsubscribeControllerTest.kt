@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.SuppressionSource
+import com.weibo.talentintroduction.mail.service.UnsubscribePageRenderer
 import com.weibo.talentintroduction.mail.service.UnsubscribeTokenService
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.eq
@@ -11,7 +13,9 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.mock.mockito.MockBean
+import org.springframework.context.annotation.Bean
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -29,6 +33,13 @@ class UnsubscribeControllerTest {
 
     @MockBean
     private lateinit var suppressionService: EmailSuppressionService
+
+    @TestConfiguration
+    class RendererConfig {
+        @Bean
+        fun unsubscribePageRenderer(): UnsubscribePageRenderer =
+            UnsubscribePageRenderer(UnsubscribeProperties())
+    }
 
     private fun eqValue(value: String): String = eq(value) ?: value
 
@@ -69,6 +80,8 @@ class UnsubscribeControllerTest {
             .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("action=\"unsubscribe/confirm\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("good-token")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("class=\"qf-btn qf-btn-primary\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("Confirm unsubscribe")))
 
         verifyNoInteractions(suppressionService)
     }
@@ -89,7 +102,7 @@ class UnsubscribeControllerTest {
         mockMvc.perform(post("/u/unsubscribe/confirm").param("token", "good-token"))
             .andExpect(status().isOk)
             .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString("You have been unsubscribed")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("You&#39;ve been unsubscribed")))
 
         verify(suppressionService).suppress(
             eqValue("user@example.com"),

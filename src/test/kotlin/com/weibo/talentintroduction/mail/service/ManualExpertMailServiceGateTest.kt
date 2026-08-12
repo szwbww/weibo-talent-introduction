@@ -216,7 +216,7 @@ class ManualExpertMailServiceGateTest {
         assertTrue(!captor.value.text!!.contains("<p>"))
         // I-1/I-2: text/html 部分必须是转换后的 HTML，禁止以裸文本开头
         assertTrue(!captor.value.body!!.startsWith("Unsubscribe: "))
-        assertTrue(captor.value.body!!.startsWith("<p>Unsubscribe: https://example.com/u/unsubscribe?token="))
+        assertTrue(captor.value.body!!.startsWith("<p>Unsubscribe: <a href=\"https://example.com/u/unsubscribe?token="))
         // I-2: 空行 -> 相邻 <p>；单换行 -> <br>；& 与 < > 被实体转义
         assertTrue(
             captor.value.body!!.contains(

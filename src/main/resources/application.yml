@@ -86,6 +86,11 @@ talent-introduction:
   unsubscribe:
     base-url: ${UNSUBSCRIBE_BASE_URL:}
     secret: ${UNSUBSCRIBE_SECRET:}
+    brand-name: ${UNSUBSCRIBE_BRAND_NAME:Qingfei Talent}
+    brand-logo-url: ${UNSUBSCRIBE_BRAND_LOGO_URL:}
+    site-url: ${UNSUBSCRIBE_SITE_URL:https://www.qingfeitalent.com}
+    footer-line1: ${UNSUBSCRIBE_FOOTER_LINE1:Jiangsu Qingfei Talent Technology Co., Ltd · Nanjing}
+    footer-line2: ${UNSUBSCRIBE_FOOTER_LINE2:QFtechtalent@qftechtalent.com}
   warmup:
     enabled: ${WARMUP_ENABLED:false}
   backfill:
