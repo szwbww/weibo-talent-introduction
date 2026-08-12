@@ -14,6 +14,7 @@ data class BatchExecutionSnapshot(
     val selfCheckTtlMinutes: Int,
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
+    val regions: List<String> = emptyList(),
     val emailDomain: String? = null,
     val discipline: String? = null,
     val templateId: Long? = null,
@@ -47,6 +48,7 @@ data class RecipientScope(
     val mailType: String,
     val funnelLevels: Set<String>,
     val tags: List<String>,
+    val regions: List<String>,
     val emailDomain: String?,
     val discipline: String?
 ) {
@@ -59,6 +61,11 @@ data class RecipientScope(
         if (tags.isNotEmpty()) {
             val expertTags = profile.tags.orEmpty()
             if (tags.none { it in expertTags }) return false
+        }
+        if (regions.isNotEmpty()) {
+            val expertRegion = com.weibo.talentintroduction.expert.domain
+                .CountryContinentMapping.toRegion(profile.country)
+            if (expertRegion !in regions) return false
         }
         return true
     }
@@ -75,6 +82,7 @@ data class RecipientScope(
                 mailType = snapshot.mailType,
                 funnelLevels = levels,
                 tags = snapshot.tags,
+                regions = snapshot.regions,
                 emailDomain = snapshot.emailDomain?.trim()?.takeIf { it.isNotEmpty() },
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() }
             )
@@ -192,6 +200,14 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     } catch (_: Exception) {
         emptyList()
     }
+    val regions = try {
+        objectMapper.readValue(regionsJson, object : TypeReference<List<String>>() {})
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    } catch (_: Exception) {
+        emptyList()
+    }
     return BatchExecutionSnapshot(
         mailType = mailType,
         roundSize = roundSize,
@@ -201,6 +217,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId,

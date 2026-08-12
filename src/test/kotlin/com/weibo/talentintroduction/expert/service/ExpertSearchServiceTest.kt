@@ -1477,4 +1477,88 @@ class ExpertSearchServiceTest {
         assertNotNull(institutionFilter, "institution filter missing from: $filter")
         assertFalse((institutionFilter as Map<*, *>).containsKey("bool"))
     }
+
+    @Test
+    fun `regionsFilter empty list returns null meaning unrestricted`() {
+        assertNull(ExpertSearchService.regionsFilter(emptyList()))
+    }
+
+    @Test
+    fun `regionsFilter single region equals regionFilter verbatim`() {
+        assertEquals(
+            ExpertSearchService.regionFilter("China"),
+            ExpertSearchService.regionsFilter(listOf("China"))
+        )
+    }
+
+    @Test
+    fun `regionsFilter multiple regions builds one should clause with minimum_should_match 1`() {
+        val filter = ExpertSearchService.regionsFilter(listOf("China", "Europe"))
+        assertNotNull(filter)
+        val bool = (filter as Map<*, *>)["bool"] as Map<*, *>
+        val should = bool["should"] as List<*>
+        assertEquals(2, should.size)
+        assertEquals(1, bool["minimum_should_match"])
+    }
+
+    @Test
+    fun `regionsFilter rejects unknown region with IllegalArgumentException`() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            ExpertSearchService.regionsFilter(listOf("Mars"))
+        }
+    }
+
+    @Test
+    fun `searchExperts with Other region keeps double-branch should structure (regression I-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@example.com", "country": "GB"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(10, ExpertIndexLevel.CANDIDATE, region = "Other")
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val query = requestPayload["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+
+        // REGION_OTHER special case: bool.should of two bool branches
+        // (must exists country / nationality + must_not terms known values) + minimum_should_match 1.
+        val regionFilter = filter.firstOrNull { item ->
+            val map = item as Map<*, *>
+            val innerBool = map["bool"] as? Map<*, *> ?: return@firstOrNull false
+            val should = innerBool["should"] as? List<*> ?: return@firstOrNull false
+            should.size == 2 &&
+                should.all { sub ->
+                    val subBool = (sub as Map<*, *>)["bool"] as? Map<*, *> ?: return@all false
+                    val must = subBool["must"] as? List<*> ?: return@all false
+                    val mustNot = subBool["must_not"] as? List<*> ?: return@all false
+                    val existsField = ((must[0] as Map<*, *>)["exists"] as? Map<*, *>)?.get("field")
+                    (existsField == "country" || existsField == "nationality") &&
+                        mustNot.any { (it as Map<*, *>)["terms"] != null }
+                }
+        }
+        assertNotNull(regionFilter, "Other region filter missing from: $filter")
+        val innerBool = (regionFilter as Map<*, *>)["bool"] as Map<*, *>
+        assertEquals(1, innerBool["minimum_should_match"])
+    }
 }

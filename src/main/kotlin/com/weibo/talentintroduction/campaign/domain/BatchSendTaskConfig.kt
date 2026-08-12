@@ -19,6 +19,7 @@ data class BatchSendTaskConfig(
     val selfCheckTtlMinutes: Int,
     val funnelLevel: String? = null,
     val tagsJson: String = "[]",
+    val regionsJson: String = "[]",
     val emailDomain: String? = null,
     val discipline: String? = null,
     val templateId: Long? = null,
@@ -41,6 +42,7 @@ data class BatchSendTaskConfigView(
     val selfCheckTtlMinutes: Int,
     val funnelLevel: String?,
     val tags: List<String>,
+    val regions: List<String> = emptyList(),
     val emailDomain: String?,
     val discipline: String?,
     val templateId: Long?,
@@ -59,6 +61,7 @@ data class BatchSendTaskConfigCreateCommand(
     val selfCheckTtlMinutes: Int,
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
+    val regions: List<String> = emptyList(),
     val emailDomain: String? = null,
     val discipline: String? = null,
     val templateId: Long? = null
@@ -75,6 +78,7 @@ data class BatchSendTaskConfigUpdateCommand(
     val selfCheckTtlMinutes: Int,
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
+    val regions: List<String> = emptyList(),
     val emailDomain: String? = null,
     val discipline: String? = null,
     val templateId: Long? = null

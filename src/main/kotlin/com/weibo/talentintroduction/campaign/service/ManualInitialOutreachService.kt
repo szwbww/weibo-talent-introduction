@@ -970,6 +970,7 @@ class ManualInitialOutreachService(
             mailType = BatchSendType.INTRODUCTION.name,
             funnelLevels = setOf("CANDIDATE"),
             tags = emptyList(),
+            regions = emptyList(),
             emailDomain = emailDomain,
             discipline = discipline
         )
@@ -1102,6 +1103,8 @@ class ManualInitialOutreachService(
             mailType = BatchSendType.MATERIAL_REMINDER.name,
             funnelLevels = setOf("APPLICATION"),
             tags = listOf("承诺回复材料"),
+            // 统计路径输入为 BatchSendConfig（KV 层，无地区维度），故不携带地区；发送路径经 fromSnapshot 携带
+            regions = emptyList(),
             emailDomain = config.emailDomain.ifBlank { null },
             discipline = config.discipline.ifBlank { null }
         )
@@ -1217,6 +1220,7 @@ class ManualInitialOutreachService(
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
+        ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
         return filters
     }
 

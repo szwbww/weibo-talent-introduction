@@ -64,6 +64,55 @@ class ExpertSearchService(
             }
         }
 
+        fun regionFilter(region: String): Map<String, Any> {
+            if (region == CountryContinentMapping.REGION_OTHER) {
+                val knownValues = CountryContinentMapping.allKnownEsTermValues().toList()
+                return mapOf(
+                    "bool" to mapOf(
+                        "should" to listOf(
+                            mapOf(
+                                "bool" to mapOf(
+                                    "must" to listOf(mapOf("exists" to mapOf("field" to "country"))),
+                                    "must_not" to listOf(mapOf("terms" to mapOf("country" to knownValues)))
+                                )
+                            ),
+                            mapOf(
+                                "bool" to mapOf(
+                                    "must" to listOf(mapOf("exists" to mapOf("field" to "nationality"))),
+                                    "must_not" to listOf(mapOf("terms" to mapOf("nationality" to knownValues)))
+                                )
+                            )
+                        ),
+                        "minimum_should_match" to 1
+                    )
+                )
+            }
+
+            val countryValues = CountryContinentMapping.countriesForRegion(region).toList()
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to listOf(
+                        mapOf("terms" to mapOf("country" to countryValues)),
+                        mapOf("terms" to mapOf("nationality" to countryValues))
+                    ),
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
+        /** 多选地区：并集（should + minimum_should_match 1）。空列表返回 null 表示不限制。 */
+        fun regionsFilter(regions: List<String>): Map<String, Any>? {
+            if (regions.isEmpty()) return null
+            regions.forEach { require(it in CountryContinentMapping.allRegions()) { "Invalid region: $it" } }
+            if (regions.size == 1) return regionFilter(regions.first())
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to regions.map { regionFilter(it) },
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
         fun notContactedWithEmailFilters(
             emailDomain: String? = null,
             discipline: String? = null
@@ -806,42 +855,6 @@ class ExpertSearchService(
         }
 
         return filters
-    }
-
-    private fun regionFilter(region: String): Map<String, Any> {
-        if (region == CountryContinentMapping.REGION_OTHER) {
-            val knownValues = CountryContinentMapping.allKnownEsTermValues().toList()
-            return mapOf(
-                "bool" to mapOf(
-                    "should" to listOf(
-                        mapOf(
-                            "bool" to mapOf(
-                                "must" to listOf(mapOf("exists" to mapOf("field" to "country"))),
-                                "must_not" to listOf(mapOf("terms" to mapOf("country" to knownValues)))
-                            )
-                        ),
-                        mapOf(
-                            "bool" to mapOf(
-                                "must" to listOf(mapOf("exists" to mapOf("field" to "nationality"))),
-                                "must_not" to listOf(mapOf("terms" to mapOf("nationality" to knownValues)))
-                            )
-                        )
-                    ),
-                    "minimum_should_match" to 1
-                )
-            )
-        }
-
-        val countryValues = CountryContinentMapping.countriesForRegion(region).toList()
-        return mapOf(
-            "bool" to mapOf(
-                "should" to listOf(
-                    mapOf("terms" to mapOf("country" to countryValues)),
-                    mapOf("terms" to mapOf("nationality" to countryValues))
-                ),
-                "minimum_should_match" to 1
-            )
-        )
     }
 
     fun aggregateEmailDomains(

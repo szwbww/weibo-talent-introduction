@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.Campaign
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
@@ -2642,6 +2643,147 @@ class ManualInitialOutreachServiceTest {
 
             assertEquals("MATERIAL_REMINDER", status.activeSendType)
         }
+    }
+
+    @Test
+    fun `run passes regions to ES filter on INTRODUCTION CANDIDATE branch (branch A)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Europe")
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `run passes regions to ES filter on MATERIAL_REMINDER branch (branch B)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            regions = listOf("Europe"),
+            templateId = 42L
+        )
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
+        ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `retryable contact kept when country region matches scope regions`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "GER1", expertEmail = "g@x.com", expertName = "G", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("GER1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("GER1", "g@x.com").copy(country = "Germany")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Europe")
+        )
+        // No sendable accounts → stop at round gate; target count proves the retryable survived matchesExpert.
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.total)
+    }
+
+    @Test
+    fun `retryable contact filtered when country region outside scope regions`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "GER1", expertEmail = "g@x.com", expertName = "G", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("GER1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("GER1", "g@x.com").copy(country = "Germany")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("China")
+        )
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+    }
+
+    @Test
+    fun `retryable contact with null country kept when Other region selected`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "NUL1", expertEmail = "n@x.com", expertName = "N", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("NUL1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("NUL1", "n@x.com").copy(country = null)))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Other")
+        )
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.total)
     }
 
     // ──── Helpers ────

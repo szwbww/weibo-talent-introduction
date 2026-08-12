@@ -52,6 +52,7 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes: Int = 30,
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
+        regions: List<String> = emptyList(),
         emailDomain: String? = null,
         discipline: String? = null,
         templateId: Long? = null
@@ -66,6 +67,7 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -82,6 +84,7 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes: Int = 30,
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
+        regions: List<String> = emptyList(),
         emailDomain: String? = null,
         discipline: String? = null,
         templateId: Long? = null
@@ -96,6 +99,7 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -596,5 +600,107 @@ class BatchSendTaskConfigServiceTest {
         // X-2: cron unchanged ⇒ BatchSendScheduler.reload() sees scheduledCrons[id] == cron and skips re-registration.
         assertEquals("0 0 9 * * ?", eventCaptor.value.oldCron)
         assertEquals("0 0 9 * * ?", eventCaptor.value.newCron)
+    }
+
+    @Test
+    fun `create persists legal multi-select regions and get returns them in allRegions order`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("地区任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 30L)
+        }
+
+        val view = service().create(createCmd(name = "地区任务", regions = listOf("China", "Europe")))
+
+        assertEquals(listOf("China", "Europe"), view.regions)
+        verify(repository).save(captor.capture())
+        assertEquals("""["China","Europe"]""", captor.value.regionsJson)
+
+        // row → View mapping carries the field too (I-3: snapshot path reads regionsJson)
+        `when`(repository.findByIdAndDeletedAtIsNull(30L)).thenReturn(captor.value.copy(id = 30L))
+        assertEquals(listOf("China", "Europe"), service().get(30L).regions)
+    }
+
+    @Test
+    fun `create rejects non-constant region value with region must be one of message`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法地区")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "非法地区", regions = listOf("中国")))
+        }
+        assertTrue(ex.message!!.contains("region must be one of"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create normalizes duplicate and whitespace-padded regions`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("地区去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 31L)
+        }
+
+        val view = service().create(
+            createCmd(name = "地区去重", regions = listOf("China", "China", " Europe "))
+        )
+
+        assertEquals(listOf("China", "Europe"), view.regions)
+        verify(repository).save(captor.capture())
+        assertEquals("""["China","Europe"]""", captor.value.regionsJson)
+    }
+
+    @Test
+    fun `create with empty regions persists empty json and view returns empty list`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无地区")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 32L)
+        }
+
+        val view = service().create(createCmd(name = "无地区"))
+
+        assertEquals(emptyList<String>(), view.regions)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.regionsJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing regionsJson entity value`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", regionsJson = """["Europe"]""",
+            emailDomain = null, discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "ox.ac.uk",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // X-2/K-batch-config-legacy-adapter-field-preservation: legacy request has no regions dimension; entity value must survive.
+        assertEquals("""["Europe"]""", captor.value.regionsJson)
     }
 }

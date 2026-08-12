@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -425,6 +426,9 @@ class BatchSendControlService(
                     "funnelLevel must be CANDIDATE, APPLICATION, or empty"
                 }
             }
+            snapshot.regions.forEach { region ->
+                require(region in CountryContinentMapping.allRegions()) { "Invalid region: $region" }
+            }
             null
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
@@ -567,6 +571,7 @@ class BatchSendControlService(
             selfCheckTtlMinutes = selfCheckTtlMinutes,
             funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
             tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
+            regions = emptyList(),
             emailDomain = emailDomain.ifBlank { null },
             discipline = discipline.ifBlank { null },
             templateId = templateId,

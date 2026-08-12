@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCom
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
@@ -60,6 +61,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
                 templateId = normalized.templateId,
@@ -91,6 +93,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
                 templateId = normalized.templateId,
@@ -169,6 +172,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = request.selfCheckTtlMinutes,
                 funnelLevel = existing.funnelLevel,
                 tags = parseTags(existing.tagsJson),
+                regions = parseRegions(existing.regionsJson),
                 emailDomain = request.emailDomain.ifBlank { null },
                 discipline = request.discipline.ifBlank { null },
                 templateId = request.templateId
@@ -248,6 +252,8 @@ class BatchSendTaskConfigService(
 
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
+        val regions = normalizeRegions(fields.regions)
+        val regionsJson = objectMapper.writeValueAsString(regions)
         val mailType = resolveMailType(fields.templateId)
 
         return NormalizedConfig(
@@ -262,6 +268,7 @@ class BatchSendTaskConfigService(
             selfCheckTtlMinutes = fields.selfCheckTtlMinutes,
             funnelLevel = funnelLevel,
             tagsJson = tagsJson,
+            regionsJson = regionsJson,
             emailDomain = emailDomain,
             discipline = discipline,
             templateId = fields.templateId
@@ -327,6 +334,31 @@ class BatchSendTaskConfigService(
             emptyList()
         }
 
+    /**
+     * I-1: regions must be English domain constants; invalid values are rejected (422),
+     * never silently yielding zero ES hits. Empty list = no restriction.
+     */
+    private fun normalizeRegions(regions: List<String>): List<String> {
+        val cleaned = regions.map { it.trim() }.filter { it.isNotEmpty() }
+        cleaned.forEach { region ->
+            require(region in CountryContinentMapping.allRegions()) {
+                "region must be one of ${CountryContinentMapping.allRegions()}"
+            }
+        }
+        return cleaned.distinct().sortedBy { CountryContinentMapping.allRegions().indexOf(it) }
+    }
+
+    private fun parseRegions(regionsJson: String): List<String> =
+        try {
+            objectMapper.readValue(regionsJson, object : TypeReference<List<String>>() {})
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sortedBy { CountryContinentMapping.allRegions().indexOf(it) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
     private fun toView(row: BatchSendTaskConfig): BatchSendTaskConfigView {
         val id = row.id ?: error("Batch send task config id is required")
         return BatchSendTaskConfigView(
@@ -342,6 +374,7 @@ class BatchSendTaskConfigService(
             selfCheckTtlMinutes = row.selfCheckTtlMinutes,
             funnelLevel = row.funnelLevel,
             tags = parseTags(row.tagsJson),
+            regions = parseRegions(row.regionsJson),
             emailDomain = row.emailDomain,
             discipline = row.discipline,
             templateId = row.templateId,
@@ -394,6 +427,7 @@ class BatchSendTaskConfigService(
         val selfCheckTtlMinutes: Int,
         val funnelLevel: String?,
         val tags: List<String>,
+        val regions: List<String>,
         val emailDomain: String?,
         val discipline: String?,
         val templateId: Long?
@@ -411,6 +445,7 @@ class BatchSendTaskConfigService(
         val selfCheckTtlMinutes: Int,
         val funnelLevel: String?,
         val tagsJson: String,
+        val regionsJson: String,
         val emailDomain: String?,
         val discipline: String?,
         val templateId: Long?
@@ -427,6 +462,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -443,6 +479,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -459,6 +496,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = parseTags(tagsJson),
+        regions = parseRegions(regionsJson),
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
