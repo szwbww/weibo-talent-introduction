@@ -1,16 +1,17 @@
-# Fast-P Child Brief — unsubscribe-07-opaque-token
+# Fast-P Child Brief — unsubscribe-07-opaque-token (Epoch 2, resumed after A2)
 
 - Master: docs/plans/2026-08-12/unsubscribe-link-and-page-master.md (sha256 29f401c80efaba9649fb720d8b2856d8dedc1b45956c36d5cd76eb7628108594)
-- Child plan: docs/plans/2026-08-12/unsubscribe-07-opaque-token.md (sha256 33cf962a667a6993bc3b51ba5a64ff40e7ef360cfccda39134f40f50186cfd9e)
+- Child plan: docs/plans/2026-08-12/unsubscribe-07-opaque-token.md (commit 69c9fa2afae5d7eca9947685aff247925a6ec3ce — amended by A2)
+- Amendment A2: T-5's I-1 assertion changed from decoded-contains-no-'@' (flaky, 11.8%) to decoded-bytes-contain-no-email-byte-subsequence (deterministic, code form given in the plan). Plan identity is now commit:69c9fa2afae5d7eca9947685aff247925a6ec3ce; do not use the old sha256.
 - Depends on: none
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/unsubscribe-link-and-page-master
 - Branch: fast/unsubscribe-link-and-page-master
-- Child base: 0482bcd497eefba9ce4f44f61a5624ae25d0efe1
-- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-07-opaque-token`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单.
-- Downstream interfaces for later children: none (child 08 does not assume any token shape). Child 06 may have edited the same worktree first — do not amend its commits; base your work on the current HEAD.
+- Child base: 04f88337da5824389767a3ef504eb92e6de083f4 (child 06 terminal code head)
+- Resume state: Epoch 1 implementer (Impl07) completed T-1..T-6 in the working tree, UNCOMMITTED (2 modified + 4 new files, all 6 authorized files). Verify the working-tree state against the amended plan before proceeding; do not re-implement from scratch unless the working tree diverges from the plan.
+- Global constraints: JDK 11 only (JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home); one writer at a time; commit message `feat(fast-p): implement unsubscribe-07-opaque-token`; skip linters/formatters; no project-wide test suite beyond the plan's required commands; do not touch files outside the plan's 变更文件清单 (6 files). The nullable-repository constructor pattern is mandatory (I-6/E-7): the other 8 test construction sites must stay untouched.
+- Downstream interfaces for later children: none (child 08 does not assume any token shape).
 
 The complete approved contract is the child plan below, verbatim.
-
 
 # Plan 07 — 退订 token 改为不透明随机 id
 
@@ -256,7 +257,17 @@ private fun verifyLegacy(token: String): String? {
 
 - fake repository（内存 map 实现 `UnsubscribeTokenRepository`，或 Mockito mock）装配下：
   - `sign()` 产出 43 字符、只含 `A-Za-z0-9-_` 的串；`Base64.getUrlDecoder().decode(token)` 长度为 32。
-  - `sign()` **不含** `.`；对 token 做 `Base64.getUrlDecoder().decode` 后转 UTF-8 字符串**不含** `@`（I-1 的可断言形式）。
+  - `sign()` **不含** `.`；`Base64.getUrlDecoder().decode(token)` 的 32 字节**不包含归一化邮箱的 UTF-8 字节连续子序列**（I-1 的可断言形式）。注意：**禁止**用「解码后字符串不含 `@`」作断言 —— 32 个随机字节中出现 `0x40` 的概率约 11.8%，正确实现也会以该概率误报（fast-p 修正 A2，2026-08-12 人工批准，实测触发于 `UnsubscribeTokenServiceTest:118`）。落地形态（fast-p 修正 A2）：
+
+```kotlin
+val token = repoService.sign("user@example.com")
+val decoded = Base64.getUrlDecoder().decode(token)
+val emailBytes = "user@example.com".toByteArray(Charsets.UTF_8)
+assertFalse(
+    decoded.toList().indexOfSlice(emailBytes.toList()) >= 0,
+    "token must not encode the recipient email"
+)
+```
   - 同一邮箱两次 `sign()` 返回**同一 token**，且 repository 只发生一次 save（I-2）。
   - `sign("A@X.com")` 与 `sign("a@x.com ")` 返回同一 token（must-NOT-change 6）。
   - `verify(sign(email))` 回到归一化邮箱（通道 ①）。
@@ -322,7 +333,7 @@ git diff --check
 
 ## 验收标准
 
-- **I-1**：T-5 的"解码后不含 `@`"与"不含 `.`"用例通过；`grep -n "enc(n)" src/main/kotlin/.../UnsubscribeTokenService.kt` 只出现在 `legacySign` 内。
+- **I-1**：T-5 的「解码字节不含邮箱字节子序列」与「不含 `.`」用例通过（fast-p 修正 A2 替换了原「解码后不含 `@`」断言）；`grep -n "enc(n)" src/main/kotlin/.../UnsubscribeTokenService.kt` 只出现在 `legacySign` 内。
 - **I-2**：T-5 的幂等用例与 `DuplicateKeyException` 回读用例通过；T-6 断言 `uk_email` 存在。
 - **I-3**：T-5 的双通道用例通过；人工核对 `verify()` 方法体首行即 `repository?.findByToken(...)`。
 - **I-4**：`grep -n "SecureRandom" src/main/kotlin/.../UnsubscribeTokenService.kt` 命中；`grep -n "UUID\|java.util.Random" src/main/kotlin/.../UnsubscribeTokenService.kt` 为 0 行；T-5 断言解码后字节长度 32。
