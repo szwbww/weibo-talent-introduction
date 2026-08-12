@@ -210,3 +210,17 @@ Plan 06（未排期）  token 有效期 exp
 - DKIM `h=` 是否覆盖两个退订头 —— 项目不自签，取决于 SMTP 服务商配置，属运维项（参考 `K-deliverability-dns-live-verification`、`K-ops-plan-code-scope-boundary`：运维项不得与代码计划混在一起）。
 - 会议邮件正文是否加退订行 —— 运营内容决策。
 - 抑制名单的运营管理界面改造 —— 已有 `EmailSuppressionController` 与前端入口，本次不动。
+
+## 修正记录
+
+由后续计划族 [`docs/plans/2026-08-12/unsubscribe-link-and-page-master.md`](../2026-08-12/unsubscribe-link-and-page-master.md) 产生的修订，记录于此以便后续验证轮次在源头看到：
+
+| 日期 | 被修订项 | 修订内容 | 理由 | 决定它的计划 |
+|---|---|---|---|---|
+| 2026-08-12 | 本文件「Plan 06 token exp」 | **取消**，由新计划族 Plan 07「不透明随机 token」取代 | 改为服务端映射后，过期语义应落在 `unsubscribe_token.expires_at` 列上，而非自签载荷；exp 单列为 Plan 07 之后的后续计划 | `2026-08-12/unsubscribe-07-opaque-token.md` |
+| 2026-08-12 | 本文件 `:202`（Plan 05 锚点：`action` 硬编码根路径） | **已修复，关闭** | `UnsubscribeControllerTest.kt:73` 已断言 `action="unsubscribe/confirm"`（相对路径） | 复核发现，非计划改动 |
+| 2026-08-12 | 本文件 `:203`（Plan 05 锚点：`value="$token"` 未转义） | **移交** 新计划族 Plan 08 的 I-2 | Plan 08 重写整个页面渲染，转义在同一处顺带落地 | `2026-08-12/unsubscribe-08-branded-page.md` |
+| 2026-08-12 | `unsubscribe-01-body-link.md:30`（out of scope：HTML 版正文退订链接样式） | **解除**，由新计划族 Plan 06 承接 | Gmail 实测确认裸 URL 展示问题成立，需求方决策改 HTML multipart | `2026-08-12/unsubscribe-06-html-anchor-body.md` |
+| 2026-08-12 | 本文件 E-5（Flyway 占位符替换在生产是开启状态） | **状态更新**：Plan 01 已落地，`application.yml:8-13` 现为 `placeholder-replacement: false`，回归断言在 `UnsubscribeBodyLinkMigrationTest.kt:46` | 复核结果 | 复核发现，非计划改动 |
+
+未受影响、状态不变：Plan 02 / 02b（抑制收口、mailto 通道）、Plan 03（header 收窄）、Plan 04（会议邮件变量注入）、Plan 05 剩余项（`enabled()` 启动期告警、人工发信 override 前端勾选框）。

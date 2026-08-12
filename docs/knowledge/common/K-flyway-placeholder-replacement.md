@@ -1,14 +1,20 @@
 ---
 id: K-flyway-placeholder-replacement
 domain: common
-created: 2026-08-11
-last_used: 2026-08-11
-hit_count: 0
+created: 2026-08-12
+last_used: 2026-08-12
+hit_count: 1
 source: create-p:unsubscribe-01-body-link
 severity: P1
 ---
 
-经验：本仓库的迁移文件里存在**大量 `${...}`，它们是邮件模板变量（数据），不是 Flyway 占位符**。而 `src/main/resources/application.yml` 的 `spring.flyway` 段**没有**设置 `placeholder-replacement`，Spring Boot 2.7.18 默认为 `true`。
+> **2026-08-12 复验更正（create-p:unsubscribe-06-html-anchor-body）**：本条描述的隐患**已修复**。
+> `src/main/resources/application.yml:8-13` 现已显式写入 `placeholder-replacement: false`（含说明注释），
+> 并有回归断言 `UnsubscribeBodyLinkMigrationTest.kt:46`。
+> 本条语义因此从「待修复隐患」转为「**必须维持的约束**」：新增含 `${...}` 的迁移现在是安全的，
+> 但任何人清理 yml 时删掉该项，问题会立刻以「部署即挂」的形式回归。下方原文保留，用于说明该配置为何存在。
+
+经验：本仓库的迁移文件里存在**大量 `${...}`，它们是邮件模板变量（数据），不是 Flyway 占位符**。而 `src/main/resources/application.yml` 的 `spring.flyway` 段（**修复前**）没有设置 `placeholder-replacement`，Spring Boot 2.7.18 默认为 `true`。
 
 证据（不对称是关键）：
 
