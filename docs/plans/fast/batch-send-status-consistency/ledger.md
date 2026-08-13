@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-13/README.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-08-13/README.md (commit 37ebb355894783cbf4f380484359bf6218d62949)
 - Amendments: A1,A2,A3,A4,A5
 - Master base: 37ebb355894783cbf4f380484359bf6218d62949
@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-13T03:40:00Z
-- Current child: 06
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -18,13 +18,14 @@
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01 | docs/plans/2026-08-13/01-operator-status-single-writer.md | commit:634e5eaa76198b14c8a96dc5702845b03718afc7 | none | 1 | LIGHT_VERIFYING | 37ebb355894783cbf4f380484359bf6218d62949 | — | 0 | — | — | — | 与 02 同发布列车 |
-| 02 | docs/plans/2026-08-13/02-single-writer-guard-test.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 01 | 1 | LIGHT_VERIFYING | 2c719223638b93f49f5a31355801ff06198ce25f | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | 0 | — | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | — | 与 01 同发布列车。RECORD_ONLY O-1：排除表超 7 处 DTO 噪声，另加 4 处显式排除（ES 脚本/读路径/注释行），与 I-1 闭包一致 |
-| 03 | docs/plans/2026-08-13/03-es-mapping-contract-convergence.md | commit:c70313733db4b8ac11c9bdbe9da4047cd1c2c84e | none | 1 | LIGHT_VERIFYING | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 0 | — | bdf853ceb2536772f9b1fcd4f0283877536e4376 | — | 解锁 05。RECORD_ONLY O-1：守卫测试必要去旧排除（不破坏闭包）；O-2：CANDIDATE/RAW enrichedAt 保留 date，逐字段降级兜底 |
-| 04 | docs/plans/2026-08-13/04-operator-status-reconciler.md | commit:d12f9fc88fcabf258e6fc2288869027c40402045 | 01 | 2 | LIGHT_VERIFYING | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 9df711a | 0 | — | 9df711a | — | A4 授权守卫行号更新。RECORD_ONLY O-1：COMPLETED 仅豁免期望值异常，ES-DB 事实比对仍适用（已文档化）；O-2：控制器新构造参数用尾随可空默认值（先例一致，端点行为不变） |
-| 05 | docs/plans/2026-08-13/05-recipient-scope-status-filter.md | commit:e590785798990381c86daff1642abd6b7e51c177 | 01,03 | 2 | IMPLEMENTING | 9df711aa2f0017450dfb531a3aa03376c94c4f5d | — | 0 | — | — | — | 依赖 01 数据可信 + 03 APPLICATION mapping；A2 起 Flyway IT 跳过；A5 授权守卫排除项更新（:345 + 10 映射行） |
-| 06 | docs/plans/2026-08-13/06-recipient-count-preview.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 05 | 1 | LIGHT_PASS | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | 0 | — | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | — | LIGHT_PASS 无 notes |
+|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
+| 01 | docs/plans/2026-08-13/01-operator-status-single-writer.md | commit:634e5eaa76198b14c8a96dc5702845b03718afc7 | none | 1 | LIGHT_PASS_WITH_NOTES | 37ebb355894783cbf4f380484359bf6218d62949 | 2c719223638b93f49f5a31355801ff06198ce25f | 0 | — | 2c719223638b93f49f5a31355801ff06198ce25f | b1e5656e51d6366485d8855240c85793dbba5c4d | 与 02 同发布列车；A1 起 Flyway IT 跳过。RECORD_ONLY O-1：I-1 单调守卫使 INVITED→MATERIALS_RECEIVED/REPLIED 自动路径 no-op（计划强制，验收未覆盖，P-D 发布列车提示人工知晓） |
+| 02 | docs/plans/2026-08-13/02-single-writer-guard-test.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 2c719223638b93f49f5a31355801ff06198ce25f | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | 0 | — | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | 5ad2f91ba6f6892a1018a4c849a5910084b4059d | 与 01 同发布列车。RECORD_ONLY O-1：排除表超 7 处 DTO 噪声，另加 4 处显式排除（ES 脚本/读路径/注释行），与 I-1 闭包一致 |
+| 03 | docs/plans/2026-08-13/03-es-mapping-contract-convergence.md | commit:c70313733db4b8ac11c9bdbe9da4047cd1c2c84e | none | 1 | LIGHT_PASS_WITH_NOTES | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 0 | — | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 204428155e228e79dc46e529ff8097c32df27a8e | A3 扩权。RECORD_ONLY O-1：守卫测试必要去旧排除（不破坏闭包）；O-2：CANDIDATE/RAW enrichedAt 保留 date，逐字段降级兜底 |
+| 04 | docs/plans/2026-08-13/04-operator-status-reconciler.md | commit:d12f9fc88fcabf258e6fc2288869027c40402045 | 01 | 2 | LIGHT_PASS_WITH_NOTES | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 9df711aa2f0017450dfb531a3aa03376c94c4f5d | 0 | — | 9df711aa2f0017450dfb531a3aa03376c94c4f5d | fc9cd7545fffeee0eb9b37779f6cf4c73e702e56 | A4 授权守卫行号更新。RECORD_ONLY O-1：COMPLETED 仅豁免期望值异常，ES-DB 事实比对仍适用（已文档化）；O-2：控制器新构造参数尾随可空默认值（先例一致，端点行为不变） |
+| 05 | docs/plans/2026-08-13/05-recipient-scope-status-filter.md | commit:e590785798990381c86daff1642abd6b7e51c177 | 01,03 | 2 | LIGHT_PASS | 9df711aa2f0017450dfb531a3aa03376c94c4f5d | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | 0 | — | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | 1e45491dbcf6307493af801b1b328f5ac87e7999 | A2 起 Flyway IT 跳过；A5 授权守卫排除项更新。LIGHT_PASS 无 notes |
+| 06 | docs/plans/2026-08-13/06-recipient-count-preview.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 05 | 1 | LIGHT_PASS | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | 0 | — | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | b476e978a05df9dfd4cb4118ee4e9e9d6bca45c4 | LIGHT_PASS 无 notes |
+
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
