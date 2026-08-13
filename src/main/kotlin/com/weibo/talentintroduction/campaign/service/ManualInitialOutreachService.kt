@@ -415,6 +415,33 @@ class ManualInitialOutreachService(
     }
 
     /**
+     * Side-effect-free recipient preview (P-F / 06). Same target computation as the execution
+     * path (I-1): RecipientScope.fromSnapshot + buildRetryableTargets + countEsTargets for
+     * INTRODUCTION, buildMaterialReminderSnapshot(scope, config).targets.size for MATERIAL_REMINDER.
+     * Reads the campaign read-only via findByCampaignCode (I-3): never getOrCreateManualCampaign().
+     */
+    fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
+        BatchSendType.MATERIAL_REMINDER.name -> {
+            val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
+            val scope = RecipientScope.fromSnapshot(snapshot)
+            val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
+            PendingOutreachSummary(pending = materialSnapshot.targets.size, retryable = 0, totalSendable = materialSnapshot.targets.size)
+        }
+        else -> {
+            val scope = RecipientScope.fromSnapshot(snapshot)
+            var retryable = 0
+            val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
+            if (campaign != null) {
+                val campaignId = campaign.id ?: error("Campaign ID is null")
+                val (retryableTargets, _) = buildRetryableTargets(campaignId, scope)
+                retryable = retryableTargets.size
+            }
+            val esEstimate = countEsTargets(scope)
+            PendingOutreachSummary(pending = esEstimate, retryable = retryable, totalSendable = esEstimate + retryable)
+        }
+    }
+
+    /**
      * Round-based scheduled batch outreach (I-1/I-2/I-3/I-4/I-5/I-6/I-7/I-8, L3-1/L3-2).
      *
      * - Streams targets via [OutreachTargetIterator] (I-7 preserved: ES operatorStatus filter,

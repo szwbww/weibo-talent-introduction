@@ -233,6 +233,118 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `countBySnapshot matches execution path totalEstimate for same snapshot (I-1)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+
+        // 2 retryable NEW contacts without SENT introduction, both present in ES scope
+        val retryableContacts = listOf(
+            ExpertContact(id = 1L, campaignId = 10L, orcidId = "R001", expertEmail = "r1@b.com", expertName = "R1", currentStatus = "NEW"),
+            ExpertContact(id = 2L, campaignId = 10L, orcidId = "R002", expertEmail = "r2@b.com", expertName = "R2", currentStatus = "NEW")
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(retryableContacts)
+        for (contact in retryableContacts) {
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)).thenReturn(emptyList())
+        }
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("R001", "R002"))).thenReturn(listOf(
+            expert("R001", "r1@b.com"), expert("R002", "r2@b.com")
+        ))
+
+        // 3 ES-only candidates
+        stubScrolledExperts(listOf(expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.retryable)
+        assertEquals(3, preview.pending)
+        assertEquals(5, preview.totalSendable)
+
+        // Execution path (same snapshot) must report the same total; no accounts → stops at the round gate
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(preview.totalSendable, result.total)
+        Mockito.verifyNoInteractions(taskExecutionService)
+    }
+
+    @Test
+    fun `countBySnapshot without manual campaign returns zero retryable and creates no row (I-3)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+
+        val summary = service.countBySnapshot(snapshot)
+
+        assertEquals(1, summary.pending)
+        assertEquals(0, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+        Mockito.verify(campaignRepository, Mockito.never()).save(Mockito.any(Campaign::class.java))
+        Mockito.verify(expertContactRepository, Mockito.never())
+            .findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(Mockito.anyLong(), Mockito.anyString())
+        Mockito.verifyNoInteractions(taskExecutionService)
+    }
+
+    @Test
+    fun `countBySnapshot MATERIAL_REMINDER reuses material snapshot targets (I-1)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            templateId = 42L
+        )
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())))
+            .thenReturn(2L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { invocation ->
+            val from = invocation.getArgument<Int>(2)
+            val size = invocation.getArgument<Int>(3)
+            listOf(expert("M001", "m1@b.com"), expert("M002", "m2@b.com")).drop(from).take(size)
+        }
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("M001", "M002")))
+            .thenReturn(listOf(
+                ExpertContact(id = 21L, campaignId = 5L, orcidId = "M001", expertEmail = "m1@b.com", expertName = "M1", currentStatus = "CONTACTED"),
+                ExpertContact(id = 22L, campaignId = 5L, orcidId = "M002", expertEmail = "m2@b.com", expertName = "M2", currentStatus = "CONTACTED")
+            ))
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(2, preview.totalSendable)
+
+        // Execution path (same snapshot) must agree; no accounts → stops at the round gate
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12346L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(preview.totalSendable, result.total)
+        Mockito.verifyNoInteractions(taskExecutionService)
+    }
+
+    @Test
     fun `runBulkOutreach sends mail successfully`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
