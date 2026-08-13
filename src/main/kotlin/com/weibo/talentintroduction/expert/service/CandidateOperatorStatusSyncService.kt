@@ -10,15 +10,15 @@ class CandidateOperatorStatusSyncService(
     private val expertIndexWriterService: ExpertIndexWriterService
 ) {
     fun reconcileAll(): BulkSyncResult {
-        if (!expertIndexService.checkCandidateOperatorStatusMapping()) {
+        if (!expertIndexService.checkOperatorStatusMapping()) {
             throw IllegalStateException(
-                "CANDIDATE 索引缺少 keyword 类型的 operatorStatus mapping 声明，请先更新 mapping"
+                "RAW/CANDIDATE/APPLICATION 索引缺少 keyword 类型的 operatorStatus mapping 声明，请先更新 mapping"
             )
         }
         val latestUpdates = expertContactRepository.findAllByOrderByUpdatedAtDesc()
             .filter { !it.orcidId.isNullOrBlank() }
             .map { it.orcidId!!.trim() to (it.operatorStatus ?: "NOT_CONTACTED") }
             .distinctBy { it.first.lowercase() }
-        return expertIndexWriterService.syncCandidateOperatorStatusBatch(latestUpdates)
+        return expertIndexWriterService.syncOperatorStatusBatch(latestUpdates)
     }
 }

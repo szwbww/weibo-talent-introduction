@@ -39,7 +39,7 @@ class ExpertOperatorStatusService(
             operatorName = operatorName,
             note = note
         )
-        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, target.name)
+        expertIndexWriterService.syncOperatorStatus(updated.orcidId, target.name)
         return updated
     }
 
@@ -62,7 +62,7 @@ class ExpertOperatorStatusService(
             return contact
         }
         val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))
-        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, targetStatus.name)
+        expertIndexWriterService.syncOperatorStatus(updated.orcidId, targetStatus.name)
         return updated
     }
 }

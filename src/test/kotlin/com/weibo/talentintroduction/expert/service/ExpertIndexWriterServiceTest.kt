@@ -439,21 +439,60 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
-    fun `syncCandidateOperatorStatus sends correct update post request`() {
-        Mockito.`when`(
-            restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+    fun `syncOperatorStatus sends update posts to all three layers`() {
+        // IP-3: document exists in all three layers → _update posted to each
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/$index/_doc/0001"),
+                    eq(HttpMethod.HEAD),
+                    any(),
+                    eq(Void::class.java)
+                )
+            ).thenReturn(ResponseEntity(HttpStatus.OK))
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/$index/_update/0001"),
+                    eq(HttpMethod.POST),
+                    any(),
+                    eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(mapper.readTree("""{"result": "updated"}"""), HttpStatus.OK))
+        }
+
+        val result = service.syncOperatorStatus("0001", "CONTACTED")
+        assertEquals(3L, result.matched)
+        assertTrue(result.ok)
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.verify(restTemplate).exchange(
+                eq("https://es.example.com:9200/$index/_update/0001"),
                 eq(HttpMethod.POST),
                 any(),
                 eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
-        ).thenReturn(ResponseEntity(mapper.readTree("""{"updated": 1}"""), HttpStatus.OK))
+        }
+    }
 
-        val result = service.syncCandidateOperatorStatus("0001", "CONTACTED")
-        assertEquals(1L, result.matched)
+    @Test
+    fun `syncOperatorStatus returns matched zero when document missing from all layers`() {
+        // All three layers HEAD 404 → layers skipped, matched stays 0
+        // (doc ids are normalized to uppercase: MISSING-ORCID)
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/$index/_doc/MISSING-ORCID"),
+                    eq(HttpMethod.HEAD),
+                    any(),
+                    eq(Void::class.java)
+                )
+            ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        }
+
+        val result = service.syncOperatorStatus("missing-orcid", "REPLIED")
+        assertEquals(0L, result.matched)
         assertTrue(result.ok)
-        Mockito.verify(restTemplate).exchange(
-            eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/_update/"),
             eq(HttpMethod.POST),
             any(),
             eq(com.fasterxml.jackson.databind.JsonNode::class.java)
@@ -461,41 +500,35 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
-    fun `syncCandidateOperatorStatus returns matched zero when no docs updated`() {
+    fun `syncOperatorStatus returns failure when elasticsearch throws`() {
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/$index/_doc/0001"),
+                    eq(HttpMethod.HEAD),
+                    any(),
+                    eq(Void::class.java)
+                )
+            ).thenReturn(ResponseEntity(HttpStatus.OK))
+        }
         Mockito.`when`(
             restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
-                eq(HttpMethod.POST),
-                any(),
-                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-            )
-        ).thenReturn(ResponseEntity(mapper.readTree("""{"updated": 0}"""), HttpStatus.OK))
-
-        val result = service.syncCandidateOperatorStatus("missing-orcid", "REPLIED")
-        assertEquals(0L, result.matched)
-        assertTrue(result.ok)
-    }
-
-    @Test
-    fun `syncCandidateOperatorStatus returns failure when elasticsearch throws`() {
-        Mockito.`when`(
-            restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_candidate/_update_by_query"),
+                eq("https://es.example.com:9200/orcid_info/_update/0001"),
                 eq(HttpMethod.POST),
                 any(),
                 eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
         ).thenThrow(RuntimeException("ES unavailable"))
 
-        val result = service.syncCandidateOperatorStatus("0001", "REPLIED")
+        val result = service.syncOperatorStatus("0001", "REPLIED")
         assertEquals(0L, result.matched)
         assertFalse(result.ok)
         assertEquals("ES unavailable", result.error)
     }
 
     @Test
-    fun `syncCandidateOperatorStatusBatch sends correct bulk request`() {
-        // Mock the _search to resolve orcidId → _id mapping
+    fun `syncOperatorStatusBatch sends bulk updates to all three layers`() {
+        // Mock the _search to resolve orcidId → _id mapping on every layer
         val searchResponse = mapper.readTree(
             """
             {
@@ -509,14 +542,16 @@ class ExpertIndexWriterServiceTest {
             }
             """.trimIndent()
         )
-        Mockito.`when`(
-            restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
-                eq(HttpMethod.POST),
-                any(),
-                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-            )
-        ).thenReturn(ResponseEntity(searchResponse, HttpStatus.OK))
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/$index/_search"),
+                    eq(HttpMethod.POST),
+                    any(),
+                    eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(searchResponse, HttpStatus.OK))
+        }
 
         val responseNode = mapper.readTree(
             """
@@ -540,20 +575,21 @@ class ExpertIndexWriterServiceTest {
             )
         ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
 
-        val result = service.syncCandidateOperatorStatusBatch(listOf(
+        val result = service.syncOperatorStatusBatch(listOf(
             "0001" to "CONTACTED",
             "0002" to "REPLIED",
             "0003" to "REPLIED"
         ))
 
-        assertEquals(3, result.total)
-        assertEquals(1, result.success)
-        assertEquals(1, result.skipped)
-        assertEquals(1, result.failure)
-        assertEquals(1, result.errors.size)
-        assertTrue(result.errors[0].contains("conflict"))
+        // Three layers × (1 success + 1 skipped 404 + 1 failure 500)
+        assertEquals(9, result.total)
+        assertEquals(3, result.success)
+        assertEquals(3, result.skipped)
+        assertEquals(3, result.failure)
+        assertEquals(3, result.errors.size)
+        assertTrue(result.errors.all { it.contains("conflict") })
 
-        Mockito.verify(restTemplate).exchange(
+        Mockito.verify(restTemplate, Mockito.times(3)).exchange(
             eq("https://es.example.com:9200/_bulk"),
             eq(HttpMethod.POST),
             any(),

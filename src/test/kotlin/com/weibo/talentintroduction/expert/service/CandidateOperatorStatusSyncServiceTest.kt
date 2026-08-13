@@ -19,19 +19,19 @@ class CandidateOperatorStatusSyncServiceTest {
 
     @Test
     fun `reconcileAll throws when mapping check fails`() {
-        Mockito.`when`(expertIndexService.checkCandidateOperatorStatusMapping()).thenReturn(false)
+        Mockito.`when`(expertIndexService.checkOperatorStatusMapping()).thenReturn(false)
 
         val ex = assertThrows(IllegalStateException::class.java) {
             service.reconcileAll()
         }
-        assertTrue(ex.message!!.contains("CANDIDATE 索引缺少 keyword"))
+        assertTrue(ex.message!!.contains("operatorStatus mapping 声明"))
         Mockito.verify(expertIndexWriterService, Mockito.never())
-            .syncCandidateOperatorStatusBatch(Mockito.anyList())
+            .syncOperatorStatusBatch(Mockito.anyList())
     }
 
     @Test
     fun `reconcileAll uses latest contact per orcid`() {
-        Mockito.`when`(expertIndexService.checkCandidateOperatorStatusMapping()).thenReturn(true)
+        Mockito.`when`(expertIndexService.checkOperatorStatusMapping()).thenReturn(true)
         val contact1 = com.weibo.talentintroduction.campaign.domain.ExpertContact(
             id = 1L, orcidId = "orcid-1", operatorStatus = "CONTACTED",
             campaignId = 1L, expertEmail = "test1@example.com", expertName = "Test 1"
@@ -42,7 +42,7 @@ class CandidateOperatorStatusSyncServiceTest {
         )
         Mockito.`when`(expertContactRepository.findAllByOrderByUpdatedAtDesc())
             .thenReturn(listOf(contact2, contact1))
-        Mockito.`when`(expertIndexWriterService.syncCandidateOperatorStatusBatch(listOf("orcid-1" to "REPLIED")))
+        Mockito.`when`(expertIndexWriterService.syncOperatorStatusBatch(listOf("orcid-1" to "REPLIED")))
             .thenReturn(BulkSyncResult(total = 1, success = 1))
 
         val result = service.reconcileAll()

@@ -95,7 +95,13 @@ class ExpertIndexService(
                 )
                 log.info("Updated {} mapping fields for index $index", fields)
             } catch (e: HttpClientErrorException) {
-                log.warn("Failed to update mapping for index {} (HTTP {}): {} fields", index, e.statusCode, fields)
+                // I-2: PUT _mapping is atomic per batch — one conflicting field rejects the whole batch.
+                // Degrade to per-field PUT so conflict-free fields still land; log per-field result.
+                log.warn(
+                    "Batch mapping PUT failed for index {} (HTTP {}), degrading to per-field PUT: {}",
+                    index, e.statusCode, e.message
+                )
+                pushFieldsIndividually(index, props["properties"] as? Map<*, *> ?: emptyMap<Any?, Any?>())
             }
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) {
@@ -108,32 +114,52 @@ class ExpertIndexService(
         }
     }
 
-    private val phase5NewFields = setOf(
-        "hIndex", "citationCount", "lastPublicationYear",
-        "researchFields", "disciplineCategory", "institution", "emailSource", "emailVerifiedLevel",
-        "dataSource", "externalIds", "discoveredAt", "filterResult", "filterRejectReason",
-        "updatedAt", "worksCount",
-        "tags", "operatorStatus"
-    )
+    private fun pushFieldsIndividually(index: String, declaredFields: Map<*, *>) {
+        val successful = mutableListOf<String>()
+        val conflicts = mutableListOf<String>()
+        for ((key, value) in declaredFields) {
+            val fieldName = key.toString()
+            try {
+                val singleFieldBody = mapOf("properties" to mapOf(fieldName to value))
+                val putMappingUrl = "${properties.baseUrl}/$index/_mapping"
+                restTemplate.exchange(
+                    putMappingUrl,
+                    HttpMethod.PUT,
+                    HttpEntity(singleFieldBody, headers()),
+                    JsonNode::class.java
+                )
+                successful.add(fieldName)
+            } catch (e: HttpClientErrorException) {
+                conflicts.add(fieldName)
+                log.warn(
+                    "Field mapping conflict for index {} field {} (HTTP {}): {}",
+                    index, fieldName, e.statusCode, e.message
+                )
+            } catch (e: Exception) {
+                conflicts.add(fieldName)
+                log.warn("Failed to push field mapping for index {} field {}: {}", index, fieldName, e.message)
+            }
+        }
+        log.info(
+            "index={} 推送 {} 字段：成功 {}，冲突 {}（{}）",
+            index, declaredFields.size, successful.size, conflicts.size, conflicts.joinToString(", ")
+        )
+    }
 
     private fun loadMappingProperties(resource: String): Map<String, Any>? {
+        // I-1: the es/*.json file is the single declaration source for index mappings.
+        // No field-name whitelist lives in Kotlin; every property declared in JSON is pushed.
         return try {
             val bytes = ClassPathResource(resource).inputStream.readBytes()
             val root = objectMapper.readTree(bytes)
             val allProps = root.path("mappings").path("properties")
-            val newProps = objectMapper.createObjectNode()
-            allProps.fields().forEachRemaining { (key, value) ->
-                if (key in phase5NewFields) {
-                    newProps.replace(key, value.deepCopy())
-                }
-            }
-            val fields = newProps.size()
+            val fields = allProps.size()
             if (fields == 0) {
-                log.debug("No Phase 5 fields found in mapping resource $resource")
+                log.debug("No properties found in mapping resource $resource")
                 null
             } else {
-                log.info("Prepared {} new mapping fields from $resource", fields)
-                mapOf("properties" to objectMapper.convertValue(newProps, Map::class.java)!!)
+                log.info("Prepared {} mapping fields from $resource", fields)
+                mapOf("properties" to objectMapper.convertValue(allProps, Map::class.java)!!)
             }
         } catch (e: Exception) {
             log.warn("Failed to load mapping from {}: {}", resource, e.message)
@@ -141,33 +167,38 @@ class ExpertIndexService(
         }
     }
 
-    fun checkCandidateOperatorStatusMapping(): Boolean {
-        val candidateIndex = indexName(ExpertIndexLevel.CANDIDATE)
-        val url = "${properties.baseUrl}/$candidateIndex/_mapping/field/operatorStatus"
-        return try {
-            val response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                HttpEntity(null, headers()),
-                JsonNode::class.java
-            ).body ?: return false
-            var isKeyword = false
-            response.fields().forEachRemaining { (_, indexNode) ->
-                val type = indexNode.path("mappings")
-                    .path("operatorStatus")
-                    .path("mapping")
-                    .path("operatorStatus")
-                    .path("type")
-                    .asText()
-                if (type == "keyword") {
-                    isKeyword = true
+    fun checkOperatorStatusMapping(): Boolean {
+        // IP-3: operatorStatus is written to all three layers (RAW/CANDIDATE/APPLICATION),
+        // so the mapping precondition must hold on all three.
+        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+            val index = indexName(level)
+            val url = "${properties.baseUrl}/$index/_mapping/field/operatorStatus"
+            try {
+                val response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    HttpEntity(null, headers()),
+                    JsonNode::class.java
+                ).body ?: return false
+                var isKeyword = false
+                response.fields().forEachRemaining { (_, indexNode) ->
+                    val type = indexNode.path("mappings")
+                        .path("operatorStatus")
+                        .path("mapping")
+                        .path("operatorStatus")
+                        .path("type")
+                        .asText()
+                    if (type == "keyword") {
+                        isKeyword = true
+                    }
                 }
+                if (!isKeyword) return false
+            } catch (e: Exception) {
+                log.warn("Failed to check operatorStatus mapping for index {}", index, e)
+                return false
             }
-            isKeyword
-        } catch (e: Exception) {
-            log.warn("Failed to check candidate operatorStatus mapping", e)
-            false
         }
+        return true
     }
 
     private fun headers(): HttpHeaders =

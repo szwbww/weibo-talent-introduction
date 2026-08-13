@@ -41,7 +41,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.changeStatus(1L, "REPLIED", "admin", "manual verification")
 
         assertEquals("REPLIED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -65,7 +65,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.updateAutomatically(c, OperatorStatus.REPLIED, "inbound reply")
 
         assertEquals("REPLIED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -88,7 +88,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.updateAutomatically(c, OperatorStatus.MATERIALS_RECEIVED, "materials arrived")
 
         assertEquals("MATERIALS_RECEIVED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "MATERIALS_RECEIVED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "MATERIALS_RECEIVED")
     }
 
     @Test
@@ -136,6 +136,6 @@ class ExpertOperatorStatusServiceTest {
 
         assertEquals("CONTACTED", result.operatorStatus)
         Mockito.verify(expertContactRepository).save(Mockito.any(ExpertContact::class.java))
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "CONTACTED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "CONTACTED")
     }
 }

@@ -57,9 +57,10 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 410, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 332, "operatorStatus = source.nullableText"),
-        // ── ES 侧写入（P-B 守卫范围，本计划 out of scope）──
-        // ES 索引脚本写入 operatorStatus（ctx._source.operatorStatus = ...），非 expert_contact 表写入
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt", 84, "ctx._source.operatorStatus = params.status"),
+        // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
+        // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
+        // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status
+        // 已随 syncCandidateOperatorStatus 移除 → 原 :84 排除项失效，按新契约删除（未弱化白名单闭包断言）。
         // ── SQL 只读上下文（SELECT @Query，非写入）──
         // SELECT @Query 的 WHERE 比较（读过滤条件），不是对列的赋值
         NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 47, "operator_status = :operatorStatus"),

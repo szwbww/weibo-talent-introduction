@@ -102,7 +102,7 @@ class BounceCollectionService(
         )
 
         if (signal.bounceType == "HARD" && originalContact != null) {
-            expertIndexWriterService.syncCandidateOperatorStatus(
+            expertIndexWriterService.syncOperatorStatus(
                 originalContact.orcidId,
                 "EMAIL_INVALID"
             )

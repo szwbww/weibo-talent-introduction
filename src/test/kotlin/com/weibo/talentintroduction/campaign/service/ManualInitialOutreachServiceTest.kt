@@ -854,7 +854,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, firstRun.failed)
         assertEquals(0, firstRun.sent)
 
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0001", "EMAIL_INVALID")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0001", "EMAIL_INVALID")
         Mockito.verify(expertContactRepository, Mockito.atLeastOnce()).save(
             Mockito.argThat { contact: ExpertContact -> contact.operatorStatus == "EMAIL_INVALID" }
         )
@@ -1737,7 +1737,7 @@ class ManualInitialOutreachServiceTest {
             assertEquals(1, result.sent)
             // I-5: no tag/index modifications
             Mockito.verify(expertIndexWriterService, Mockito.never())
-                .syncCandidateOperatorStatus(Mockito.anyString(), Mockito.anyString())
+                .syncOperatorStatus(Mockito.anyString(), Mockito.anyString())
             // Does not use txHelper (no contact creation/status change for reminder)
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),

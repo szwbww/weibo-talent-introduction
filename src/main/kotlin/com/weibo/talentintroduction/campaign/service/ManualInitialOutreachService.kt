@@ -705,7 +705,7 @@ class ManualInitialOutreachService(
                                 expertContactRepository.save(
                                     contact.copy(operatorStatus = "EMAIL_INVALID", updatedAt = LocalDateTime.now())
                                 )
-                                expertIndexWriterService.syncCandidateOperatorStatus(normOrcid, "EMAIL_INVALID")
+                                expertIndexWriterService.syncOperatorStatus(normOrcid, "EMAIL_INVALID")
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 stat.failed++
                                 roundRejected++
