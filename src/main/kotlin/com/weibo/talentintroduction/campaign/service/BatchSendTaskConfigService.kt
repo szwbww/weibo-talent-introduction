@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
@@ -70,6 +71,7 @@ class BatchSendTaskConfigService(
                 regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
+                operatorStatus = normalized.operatorStatus,
                 templateId = normalized.templateId,
                 createdAt = now,
                 updatedAt = now
@@ -102,6 +104,7 @@ class BatchSendTaskConfigService(
                 regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
+                operatorStatus = normalized.operatorStatus,
                 templateId = normalized.templateId,
                 updatedAt = now
             ),
@@ -181,6 +184,7 @@ class BatchSendTaskConfigService(
                 regions = parseRegions(existing.regionsJson),
                 emailDomain = request.emailDomain.ifBlank { null },
                 discipline = request.discipline.ifBlank { null },
+                operatorStatus = existing.operatorStatus,
                 templateId = request.templateId
             )
         )
@@ -255,6 +259,14 @@ class BatchSendTaskConfigService(
                 "discipline must be one of $ALLOWED_DISCIPLINES or ALL/empty"
             }
         }
+        // I-3: 状态白名单引用 OperatorStatus.entries（单一权威，照 ALLOWED_DISCIPLINES 范式），
+        // 不另抄字符串集合，避免与枚举漂移。
+        val operatorStatus = normalizeOptionalFilter(fields.operatorStatus)
+        if (operatorStatus != null) {
+            require(operatorStatus in ALLOWED_OPERATOR_STATUSES) {
+                "operatorStatus must be one of $ALLOWED_OPERATOR_STATUSES or ALL/empty"
+            }
+        }
 
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
@@ -277,6 +289,7 @@ class BatchSendTaskConfigService(
             regionsJson = regionsJson,
             emailDomain = emailDomain,
             discipline = discipline,
+            operatorStatus = operatorStatus,
             templateId = fields.templateId
         )
     }
@@ -383,6 +396,7 @@ class BatchSendTaskConfigService(
             regions = parseRegions(row.regionsJson),
             emailDomain = row.emailDomain,
             discipline = row.discipline,
+            operatorStatus = row.operatorStatus,
             templateId = row.templateId,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
@@ -473,6 +487,7 @@ class BatchSendTaskConfigService(
         val regions: List<String>,
         val emailDomain: String?,
         val discipline: String?,
+        val operatorStatus: String?,
         val templateId: Long?
     )
 
@@ -491,6 +506,7 @@ class BatchSendTaskConfigService(
         val regionsJson: String,
         val emailDomain: String?,
         val discipline: String?,
+        val operatorStatus: String?,
         val templateId: Long?
     )
 
@@ -508,6 +524,7 @@ class BatchSendTaskConfigService(
         regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
+        operatorStatus = operatorStatus,
         templateId = templateId
     )
 
@@ -525,6 +542,7 @@ class BatchSendTaskConfigService(
         regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
+        operatorStatus = operatorStatus,
         templateId = templateId
     )
 
@@ -542,6 +560,7 @@ class BatchSendTaskConfigService(
         regions = parseRegions(regionsJson),
         emailDomain = emailDomain,
         discipline = discipline,
+        operatorStatus = operatorStatus,
         templateId = templateId
     )
 
@@ -559,6 +578,9 @@ class BatchSendTaskConfigService(
         // I-5: single authority is ExpertSearchService.ALLOWED_DISCIPLINES (already includes UNCLASSIFIED);
         // keeping a second literal here would risk divergence (see plan 05 A-4).
         val ALLOWED_DISCIPLINES = ExpertSearchService.ALLOWED_DISCIPLINES
+        // I-3: 状态白名单单一权威是 OperatorStatus 枚举本身（照 :ALLOWED_DISCIPLINES 范式），
+        // 不另抄字符串集合，避免与枚举漂移（NOT_CONTACTED 的 must_not-exists 语义见 ExpertSearchService）。
+        val ALLOWED_OPERATOR_STATUSES = OperatorStatus.entries.map { it.name }.toSet()
     }
 }
 

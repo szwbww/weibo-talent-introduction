@@ -13233,6 +13233,7 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorFunnelLevel", config ? (config.funnelLevel || "") : "");
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
+    setVal("batchConfigEditorOperatorStatus", config ? (config.operatorStatus || "") : "");
     setVal("batchConfigEditorRoundsPerRun", config ? config.roundsPerRun : "1");
     setVal("batchConfigEditorRoundSize", config ? config.roundSize : "50");
     setBatchRegionPickerValue("batchConfigEditorRegions", config && Array.isArray(config.regions) ? config.regions : []);
@@ -13664,6 +13665,7 @@ async function saveBatchConfigEditor() {
         regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
         emailDomain: val("batchConfigEditorEmailDomain") || null,
         discipline: val("batchConfigEditorDiscipline") || null,
+        operatorStatus: val("batchConfigEditorOperatorStatus") || null,
         templateId: templateId
     };
 
@@ -13745,6 +13747,7 @@ function deepCloneConfig(c) {
         tags: Array.isArray(c.tags) ? c.tags.slice() : [],
         emailDomain: c.emailDomain || "",
         discipline: c.discipline || "",
+        operatorStatus: c.operatorStatus || "",
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -13763,6 +13766,7 @@ function fillManualFormDefaults() {
         tags: [],
         emailDomain: "",
         discipline: "",
+        operatorStatus: "",
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -13784,6 +13788,7 @@ function fillManualFormFromDraft() {
     setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
     setVal("batchManualEmailDomain", d.emailDomain || "");
     setVal("batchManualDiscipline", d.discipline || "");
+    setVal("batchManualOperatorStatus", d.operatorStatus || "");
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
@@ -13878,6 +13883,7 @@ function readManualFormValues() {
         tags: readBatchTagPickerValue("batchManualTags"),
         emailDomain: val("batchManualEmailDomain") || null,
         discipline: val("batchManualDiscipline") || null,
+        operatorStatus: val("batchManualOperatorStatus") || null,
         roundSize: parseNum("batchManualRoundSize"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
         perRoundIntervalMs: parseNumSec("batchManualPerRoundIntervalSec"),
@@ -13892,6 +13898,7 @@ function normalizeManualSnapshot(v) {
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
         emailDomain: (v.emailDomain || "").trim() || null,
         discipline: (v.discipline || "").trim() || null,
+        operatorStatus: (v.operatorStatus || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
         perRoundIntervalMs: Number.isFinite(v.perRoundIntervalMs) ? v.perRoundIntervalMs : null,
@@ -13916,6 +13923,11 @@ function formatManualDiffValue(key, value) {
         if (value === "UNCLASSIFIED") return "未分类";
         return String(value);
     }
+    if (key === "operatorStatus") {
+        if (!value) return "全部状态";
+        var matched = operatorStatusOptions.find(function(o) { return o[0] === value; });
+        return matched ? matched[1] : String(value);
+    }
     if (key === "tags") {
         var tags = Array.isArray(value) ? value : [];
         return tags.length > 0 ? tags.join(", ") : "(无)";
@@ -13935,6 +13947,7 @@ function computeManualDiffs() {
         { key: "tags", label: "标签" },
         { key: "emailDomain", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
+        { key: "operatorStatus", label: "专家状态" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -13979,6 +13992,7 @@ function computeAndRenderDiffs() {
         tags: "manualFieldTags",
         emailDomain: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
+        operatorStatus: "manualFieldOperatorStatus",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -14008,7 +14022,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -14085,6 +14099,7 @@ async function confirmManualExecution() {
         tags: values.tags,
         emailDomain: values.emailDomain,
         discipline: values.discipline,
+        operatorStatus: values.operatorStatus,
         templateId: values.templateId
     };
 
@@ -14567,6 +14582,23 @@ function formatDuration(ms) {
 
 // ── Event Bindings (called once after DOM ready) ─────────────────────────────────────
 
+/**
+ * 两个批量发送面板的"专家状态"下拉：option 取自 operatorStatusOptions（唯一标签权威）
+ * + 一个"全部"空值（= 不限）。样式复用 .batch-config-field + .bsc-input（styles.css 零改动）。
+ */
+function fillBatchOperatorStatusSelectOptions() {
+    var ids = ["batchConfigEditorOperatorStatus", "batchManualOperatorStatus"];
+    ids.forEach(function(id) {
+        var select = document.getElementById(id);
+        if (!select) return;
+        var html = '<option value="">全部状态</option>';
+        html += operatorStatusOptions.map(function(o) {
+            return '<option value="' + o[0] + '">' + escapeHtml(o[1]) + '</option>';
+        }).join("");
+        select.innerHTML = html;
+    });
+}
+
 function bindBatchSendTaskEvents() {
     // Tab switching
     $$(".batch-send-tab").forEach(function(tab) {
@@ -14602,6 +14634,9 @@ function bindBatchSendTaskEvents() {
     bindBatchTagPicker("batchConfigEditorTags");
     bindBatchTagPicker("batchManualTags");
     bindBatchRegionPicker("batchConfigEditorRegions");
+
+    // 专家状态下拉选项（operatorStatusOptions 单一来源）
+    fillBatchOperatorStatusSelectOptions();
 
     // Cron preview test button
     var cronTestBtn = document.getElementById("batchConfigEditorCronTestBtn");
