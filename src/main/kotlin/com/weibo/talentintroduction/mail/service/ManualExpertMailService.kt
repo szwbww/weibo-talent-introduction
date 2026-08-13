@@ -1,8 +1,10 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -29,6 +31,7 @@ class ManualExpertMailService(
     private val mailContentService: MailContentService,
     private val conversationStateService: ConversationStateService,
     private val senderAccountBindingService: SenderAccountBindingService,
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
     private val mailVariableService: MailVariableService? = null
 ) {
@@ -98,7 +101,7 @@ class ManualExpertMailService(
 
         mailSenderAccountRepository.save(account.copy(lastSentAt = now))
 
-        conversationStateService.transition(
+        val transitioned = conversationStateService.transition(
             contact = contact,
             toStatus = nextStatus(contact.currentStatus, composed.mailType),
             reason = "MANUAL_MAIL_${composed.mailType}",
@@ -107,6 +110,16 @@ class ManualExpertMailService(
         ) {
             it.copy(
                 lastMailAt = now,
+            )
+        }
+
+        // I-3/I-4: 唯一自动写入口收敛 —— transition 之后调用（顺序不可颠倒），
+        // 用 transition 返回值（已含最新 lastMailAt）；白名单外 mailType 零调用。
+        operatorStatusFor(composed.mailType)?.let { target ->
+            expertOperatorStatusService.updateAutomatically(
+                transitioned,
+                target,
+                "MANUAL_MAIL_${composed.mailType}"
             )
         }
 
@@ -281,6 +294,14 @@ class ManualExpertMailService(
             "MATERIAL_REMINDER" -> ConversationStatus.fromName(currentStatus)
             "COMPOSE_TEMPLATE" -> ConversationStatus.fromName(currentStatus)
             else -> ConversationStatus.fromName(currentStatus)
+        }
+
+    /** I-4: mailType → operatorStatus 白名单；白名单外返回 null（零调用，不动状态）。 */
+    private fun operatorStatusFor(mailType: String): OperatorStatus? =
+        when (mailType) {
+            "INTRODUCTION" -> OperatorStatus.CONTACTED
+            "MEETING_INVITATION" -> OperatorStatus.INVITED
+            else -> null
         }
 
     private fun senderVariables(account: MailSenderAccount): Map<String, String> =

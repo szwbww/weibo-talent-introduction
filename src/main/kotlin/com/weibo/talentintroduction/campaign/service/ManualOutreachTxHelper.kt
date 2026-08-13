@@ -2,9 +2,9 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
-import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -18,7 +18,7 @@ class ManualOutreachTxHelper(
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailSendAttemptRepository: MailSendAttemptRepository,
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertOperatorStatusService: ExpertOperatorStatusService
 ) {
     /**
      * Atomically records a successful send: transition contact NEW→INTRO_SENT,
@@ -36,15 +36,23 @@ class ManualOutreachTxHelper(
         val now = LocalDateTime.now()
 
         // 1. Transition contact state: NEW → INTRO_SENT
-        conversationStateService.transition(
+        val transitioned = conversationStateService.transition(
             contact = contact,
             toStatus = ConversationStatus.INTRO_SENT,
             reason = "MANUAL_BULK_OUTREACH",
             source = "MANUAL",
             now = now
         ) {
-            it.copy(operatorStatus = "CONTACTED", lastMailAt = now)
+            it.copy(lastMailAt = now)
         }
+
+        // 1b. I-3: operator_status 收敛到唯一自动写入口（transition 之后调用，
+        // 用 transition 返回值；目标集按构造必为 NOT_CONTACTED，I-1 单调判断恒真）
+        expertOperatorStatusService.updateAutomatically(
+            transitioned,
+            OperatorStatus.CONTACTED,
+            "MANUAL_BULK_OUTREACH"
+        )
 
         // 2. Create mail record
         mailRecordRepository.save(
@@ -79,9 +87,6 @@ class ManualOutreachTxHelper(
                 updatedAt = now
             ))
         }
-
-        // 5. Sync to ES Candidate index
-        expertIndexWriterService.syncCandidateOperatorStatus(contact.orcidId, "CONTACTED")
     }
 
     /**

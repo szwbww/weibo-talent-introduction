@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.OutcomeAccumulator
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.config.UnsubscribeProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -62,6 +63,7 @@ class ManualExpertMailServiceGateTest {
         MailContentService(),
         conversationStateService,
         Mockito.mock(SenderAccountBindingService::class.java),
+        Mockito.mock(ExpertOperatorStatusService::class.java),
         personalizationGateService = PersonalizationGateService(),
         mailVariableService = mailVariableService
     )
