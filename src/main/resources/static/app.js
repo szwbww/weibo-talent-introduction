@@ -6766,7 +6766,7 @@ function renderMailItem(mail) {
             </div>
             <div class="mail-subject">${escapeHtml(mail.subject || "无主题")}</div>
             ${mail.sendStatus === "FAILED" && mail.errorSummary ? `
-                <div class="mail-error-summary" style="margin-top: 4px; font-size: 0.9em; color: var(--color-status-error, #d93838);">
+                <div class="mail-error-summary" style="margin-top: 4px; font-size: 0.9em; color: var(--error);">
                     <strong>失败原因：</strong>${escapeHtml(mail.errorSummary)}
                 </div>
             ` : ""}

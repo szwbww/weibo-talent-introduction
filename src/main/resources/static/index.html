@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260805-trust-reply-configurable-pages-01">
+    <link rel="stylesheet" href="styles.css?v=20260813-theme-tokens-dark-01">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -298,7 +298,7 @@
                             <th>今日发信上限</th>
                             <th>当前状态</th>
                             <th>绑定专家数</th>
-                            <th style="text-align: right;">管理操作</th>
+                            <th class="u-text-right">管理操作</th>
                         </tr>
                         </thead>
                         <tbody id="accountsTable"></tbody>
@@ -341,7 +341,7 @@
                                 <th>优先级</th>
                                 <th>回复策略</th>
                                 <th>状态</th>
-                                <th style="text-align: right;">操作</th>
+                                <th class="u-text-right">操作</th>
                             </tr>
                             </thead>
                             <tbody id="qaRulesTable"></tbody>
@@ -396,7 +396,7 @@
                                 <th>邮件主题</th>
                                 <th>内容块</th>
                                 <th>状态</th>
-                                <th style="text-align: right;">管理操作</th>
+                                <th class="u-text-right">管理操作</th>
                             </tr>
                             </thead>
                             <tbody id="composeTemplatesTable"></tbody>
@@ -431,7 +431,7 @@
                             <th>来源</th>
                             <th>原因</th>
                             <th>加入时间</th>
-                            <th style="text-align: right;">管理操作</th>
+                            <th class="u-text-right">管理操作</th>
                         </tr>
                         </thead>
                         <tbody id="suppressionsTable"></tbody>
@@ -814,7 +814,7 @@
                                 <th>来源</th>
                                 <th>关键词</th>
                                 <th>标准回复要点</th>
-                                <th style="text-align: right;">操作</th>
+                                <th class="u-text-right">操作</th>
                             </tr>
                             </thead>
                             <tbody id="aiTrainingQaTable"></tbody>
@@ -1029,7 +1029,7 @@
 
                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
                     <button class="button secondary" onclick="closeTaskModal()">取消</button>
-                    <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, #4facfe 100%); border: none; color: white;">开始执行</button>
+                    <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, var(--info) 100%); border: none; color: white;">开始执行</button>
                 </div>
             </div>
 
@@ -1041,7 +1041,7 @@
                         <span id="taskModalPercent" class="task-progress-percent" style="font-weight: 600; font-size: 13px;">0%</span>
                     </div>
                     <div class="task-progress-track" style="height: 8px; background-color: var(--panel-border); border-radius: 4px; overflow: hidden; position: relative;">
-                        <div id="taskModalFill" class="task-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, #4facfe 100%); transition: width 0.3s ease;"></div>
+                        <div id="taskModalFill" class="task-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, var(--info) 100%); transition: width 0.3s ease;"></div>
                     </div>
                     <div id="taskModalMessage" class="task-progress-detail" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">初始化中...</div>
                 </div>
@@ -1062,18 +1062,18 @@
                     <span class="task-modal-logs-title-indicator"></span>
                     执行记录（点击行展开批次明细）
                 </h4>
-                <div class="task-modal-log-table-wrapper" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-sm); background-color: var(--surface);">
-                    <table class="data-table compact" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <div class="task-modal-log-table-wrapper">
+                    <table class="data-table compact">
                         <thead>
-                        <tr style="background-color: var(--panel-bg); border-bottom: 1px solid var(--panel-border);">
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted); width: 24px;"></th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">开始时间</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">触发</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">状态</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">总处理</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">通过</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">拒绝</th>
-                            <th style="padding: 10px; text-align: left; font-weight: 600; color: var(--text-muted);">耗时</th>
+                        <tr>
+                            <th style="width: 24px;"></th>
+                            <th>开始时间</th>
+                            <th>触发</th>
+                            <th>状态</th>
+                            <th>总处理</th>
+                            <th>通过</th>
+                            <th>拒绝</th>
+                            <th>耗时</th>
                         </tr>
                         </thead>
                         <tbody id="taskModalRunBody"></tbody>
@@ -1083,7 +1083,7 @@
 
             <!-- Error Logs (visible on errors) -->
             <div class="task-modal-errors" id="taskModalErrors" hidden style="border: 1px solid var(--error-border); border-radius: var(--radius-sm); background-color: var(--error-bg); overflow: hidden; margin-top: 10px;">
-                <h4 style="margin: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--error); border-bottom: 1px solid var(--error-border); background-color: rgba(255, 59, 48, 0.05);">错误日志</h4>
+                <h4 style="margin: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--error); border-bottom: 1px solid var(--error-border); background-color: var(--error-bg);">错误日志</h4>
                 <pre id="taskModalErrorContent" class="task-error-log-content" style="margin: 0; padding: 12px; font-size: 11px; max-height: 150px; overflow-y: auto; color: var(--error); white-space: pre-wrap; font-family: var(--font-mono);"></pre>
             </div>
         </div>
@@ -1430,11 +1430,11 @@
             <div id="batchLogMetrics" class="batch-log-metrics"></div>
             <div id="batchLogIntegrityWarning" class="batch-log-integrity-warning" hidden></div>
             <div id="batchLogFailureSection">
-                <h4 style="margin:14px 0 6px;font-size:13px;color:#e11d48;">失败原因</h4>
+                <h4 style="margin:14px 0 6px;font-size:13px;color:var(--error);">失败原因</h4>
                 <div id="batchLogFailureReasons" class="batch-reason-list"></div>
             </div>
             <div id="batchLogSkippedSection">
-                <h4 style="margin:14px 0 6px;font-size:13px;color:#d97706;">跳过原因</h4>
+                <h4 style="margin:14px 0 6px;font-size:13px;color:var(--warning);">跳过原因</h4>
                 <div id="batchLogSkippedReasons" class="batch-reason-list"></div>
             </div>
             <div id="batchLogErrorSamples">
@@ -1445,7 +1445,7 @@
                 <h4 style="margin:14px 0 6px;font-size:13px;">批次时间线</h4>
                 <div id="batchLogTimeline" class="batch-timeline"></div>
             </div>
-            <div id="batchLogStatusInfo" style="margin-top:12px;color:#94a3b8;font-size:12px;"></div>
+            <div id="batchLogStatusInfo" style="margin-top:12px;color:var(--text-muted);font-size:12px;"></div>
         </aside>
     </div>
 </div>
@@ -1616,7 +1616,7 @@
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="qaRuleEditorTitle">
         <div class="panel-head modal-head">
             <h2 id="qaRuleEditorTitle">QA 问答自动路由配置</h2>
-            <button class="button secondary" id="qaRuleModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <button class="button secondary modal-close-x" id="qaRuleModalCloseBtn" type="button">×</button>
         </div>
         <form id="qaRuleForm" class="form-grid">
             <label class="span-2">事实标题<input name="displayName" placeholder="如：项目组织方身份" required></label>
@@ -1671,7 +1671,7 @@
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="aiTrainingQaEditorTitle">
         <div class="panel-head modal-head">
             <h2 id="aiTrainingQaEditorTitle">添加 QA 条目</h2>
-            <button class="button secondary" id="aiTrainingQaModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <button class="button secondary modal-close-x" id="aiTrainingQaModalCloseBtn" type="button">×</button>
         </div>
         <form id="aiTrainingQaForm" class="form-grid">
             <label class="span-2">主题<input name="topic" required placeholder="如：中介角色定位"></label>
@@ -1691,7 +1691,7 @@
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="replySnippetEditorTitle">
         <div class="panel-head modal-head">
             <h2 id="replySnippetEditorTitle">新建回复片段</h2>
-            <button class="button secondary" id="replySnippetModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <button class="button secondary modal-close-x" id="replySnippetModalCloseBtn" type="button">×</button>
         </div>
         <form id="replySnippetForm" class="form-grid">
             <label class="span-2">片段类型
@@ -1801,7 +1801,7 @@
     <section class="panel editor-panel modal-panel" role="dialog" aria-modal="true" aria-labelledby="suppressionEditorTitle">
         <div class="panel-head modal-head">
             <h2 id="suppressionEditorTitle">手动加入退订名单</h2>
-            <button class="button secondary" id="suppressionModalCloseBtn" type="button" style="border: none; padding: 4px 8px; font-size: 18px; cursor: pointer;">×</button>
+            <button class="button secondary modal-close-x" id="suppressionModalCloseBtn" type="button">×</button>
         </div>
         <form id="suppressionForm" class="form-grid">
             <label class="span-2">邮箱地址<input name="email" type="email" placeholder="expert@example.com" required></label>
