@@ -1,0 +1,21 @@
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 00 (手动执行面板补齐 regions / roundsPerRun) — plan path: /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/fast/manual-panel-missing-fields/children/00/brief.md (sha256 05928bb7e125bf80b77cf01ab71f284423aed38af6cfb0a3582e66417c434596, matches execution.md Plan SHA; brief file lives in main-repo tree, per execution.md "Deviations" note, not inside the worktree)
+Boundary: ff89fb50b6c9425e0649db2db7ea9eb614a002bd..93d3f0217fc720e911dcbe469792dc1ac9ae36c2
+Verifier: Verifier00
+
+### Four Gates
+|Gate|Result|Evidence|
+|---|---|---|
+|Authorized scope|PASS|`git diff --name-status ff89fb5..93d3f02` = exactly 2 files: M src/main/resources/static/app.js, M src/main/resources/static/index.html (both authorized). styles.css absent from diff (zero change); no backend, no test files, no new files. Commit 93d3f02 message "feat(fast-p): implement 00" matches brief §执行契约 item 5; single commit, HEAD of fast/manual-panel-missing-fields, parent = ff89fb5 (base). Worktree untracked: only docs/plans/fast/manual-panel-missing-fields/ (evidence, controller-committed per brief 禁止项) |
+|Plan and invariants|PASS|I-1: `regions` grep hits inside all 7 functions — readManualFormValues app.js:13893, normalizeManualSnapshot :13909, confirmManualExecution snapshot literal :14107 (and `roundsPerRun` :14097 with `Number.isFinite ? v : 1` fallback), deepCloneConfig :13756, fillManualFormDefaults :13775, fillManualFormFromDraft :13797, computeManualDiffs :13954. I-2: deepCloneConfig copies `regions` (:13756, Array.isArray slice) and pre-existing `roundsPerRun: c.roundsPerRun \|\| 1` (:13760). S-1: index.html:1348-1362 picker structurally identical to batchConfigEditorRegions reference (:1190-1201) — same classes batch-tag-picker/control/chips/search/chevron/dropdown, placeholder 搜索并选择地区, aria attrs; ids batchManualRegions*/data-tag-picker=batchManualRegions; wrapped in `.batch-config-field` + `.batch-config-field-label` + diff-badge/diff-original matching manualFieldTags convention; placed after 标签 (:1338). S-2: index.html:1390-1395 `input type=number id=batchManualRoundsPerRun class=bsc-input min=1 value=1` before 每轮数量 (manualFieldRoundSize :1396), mirrors batchConfigEditorRoundsPerRun (:1228). No inline style, no new class anywhere in diff. Outcome-3 wiring: fieldMap `regions: "manualFieldRegions"` (:13999) + clearAllDiffMarkers includes manualFieldRegions (:14030) + notifyBatchRegionPickerChanged (:13392) + bindBatchRegionPicker("batchManualRegions") (:14627) |
+|Required commands|PASS|(fresh runs by verifier, zulu-11) `mvn clean package` exit 0, BUILD SUCCESS, surefire Tests run: 2378, Failures: 0, Errors: 0, Skipped: 4; node-test tests 496 / pass 496 / fail 0; WAR produced — matches baseline. `mvn test` (standalone, fresh) exit 0, BUILD SUCCESS, JS 496 pass / 0 fail. `git diff --check` exit 0, clean |
+|Downstream interfaces|PASS|No later child (brief 依赖: none). IP-1: frontend snapshot literal keys regions/roundsPerRun (app.js:14097,14107) match BatchExecutionSnapshot fields `roundsPerRun: Int = 1` (BatchExecutionModels.kt:11) and `regions: List<String> = emptyList()` (:17); RecipientScope.regions (:51) consumed by ExpertSearchService.regionsFilter (:104). IP-2: deepCloneConfig output → computeManualDiffs via normalizeManualSnapshot both carry the fields (:13756, :13909). No new classes; styles.css zero diff |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- O-1 (deviation, documented in execution.md): two cross-references guarded with codebase-idiomatic `typeof X === "function"` — `readBatchRegionPickerValue` in readManualFormValues (app.js:13893) and `notifyBatchRegionPickerChanged` in toggleBatchRegionPickerValue (app.js:13528-13530). Both helpers are unconditionally defined in app.js (readBatchRegionPickerValue ~:13481, notifyBatchRegionPickerChanged :13392), so production behavior is unchanged; guards exist only to keep pre-existing unmodifiable vm-sandbox JS tests (expertTagBatchFix.test.js, batchSendTaskConsoleInteraction.test.js) green (496 pass confirmed). Consistent with existing trustReplyUnauthorized idiom (app.js:162). Outside the light gate (no plan-requirement violation; I-1 acceptance grep still holds in all 7 functions).
+
+### Required Action
+- COMPLETE_CHILD

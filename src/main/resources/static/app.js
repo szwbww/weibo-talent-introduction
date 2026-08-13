@@ -13389,6 +13389,13 @@ function notifyBatchTagPickerChanged(valueId) {
     computeAndRenderDiffs();
 }
 
+function notifyBatchRegionPickerChanged(valueId) {
+    if (valueId !== "batchManualRegions") return;
+    if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+    batchTaskState.manualDraft.regions = readBatchRegionPickerValue(valueId);
+    computeAndRenderDiffs();
+}
+
 function toggleBatchTagPickerValue(valueId, tag) {
     var selected = readBatchTagPickerValue(valueId);
     var normalizedTag = String(tag || "").trim();
@@ -13518,6 +13525,9 @@ function toggleBatchRegionPickerValue(valueId, value) {
     if (index >= 0) selected.splice(index, 1);
     else selected.push(normalized);
     setBatchRegionPickerValue(valueId, selected);
+    if (typeof notifyBatchRegionPickerChanged === "function") {
+        notifyBatchRegionPickerChanged(valueId);
+    }
 }
 
 function openBatchRegionPicker(valueId) {
@@ -13743,6 +13753,7 @@ function deepCloneConfig(c) {
         mailType: c.mailType || "INTRODUCTION",
         funnelLevel: c.funnelLevel || "",
         tags: Array.isArray(c.tags) ? c.tags.slice() : [],
+        regions: Array.isArray(c.regions) ? c.regions.slice() : [],
         emailDomain: c.emailDomain || "",
         discipline: c.discipline || "",
         roundSize: c.roundSize || 50,
@@ -13761,6 +13772,7 @@ function fillManualFormDefaults() {
         mailType: "INTRODUCTION",
         funnelLevel: "",
         tags: [],
+        regions: [],
         emailDomain: "",
         discipline: "",
         roundSize: 50,
@@ -13782,9 +13794,11 @@ function fillManualFormFromDraft() {
     setVal("batchManualTemplateId", d.templateId ? String(d.templateId) : "");
     setVal("batchManualFunnelLevel", d.funnelLevel || "");
     setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
+    setBatchRegionPickerValue("batchManualRegions", Array.isArray(d.regions) ? d.regions : []);
     setVal("batchManualEmailDomain", d.emailDomain || "");
     setVal("batchManualDiscipline", d.discipline || "");
     setVal("batchManualRoundSize", d.roundSize);
+    setVal("batchManualRoundsPerRun", d.roundsPerRun);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
     setVal("batchManualSelfCheckTtlMin", d.selfCheckTtlMinutes);
@@ -13876,9 +13890,11 @@ function readManualFormValues() {
         mailType: resolveBatchTemplateMailType(templateId),
         funnelLevel: val("batchManualFunnelLevel") || null,
         tags: readBatchTagPickerValue("batchManualTags"),
+        regions: typeof readBatchRegionPickerValue === "function" ? readBatchRegionPickerValue("batchManualRegions") : [],
         emailDomain: val("batchManualEmailDomain") || null,
         discipline: val("batchManualDiscipline") || null,
         roundSize: parseNum("batchManualRoundSize"),
+        roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
         perRoundIntervalMs: parseNumSec("batchManualPerRoundIntervalSec"),
         selfCheckTtlMinutes: parseNum("batchManualSelfCheckTtlMin")
@@ -13890,9 +13906,11 @@ function normalizeManualSnapshot(v) {
         templateId: v.templateId || null,
         funnelLevel: (v.funnelLevel || "").trim() || null,
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
+        regions: (Array.isArray(v.regions) ? v.regions.slice() : []).map(function(r) { return r.trim(); }).filter(function(r) { return r.length > 0; }).sort().filter(function(r, i, arr) { return arr.indexOf(r) === i; }),
         emailDomain: (v.emailDomain || "").trim() || null,
         discipline: (v.discipline || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
+        roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
         perRoundIntervalMs: Number.isFinite(v.perRoundIntervalMs) ? v.perRoundIntervalMs : null,
         selfCheckTtlMinutes: Number.isFinite(v.selfCheckTtlMinutes) ? v.selfCheckTtlMinutes : null
@@ -13933,6 +13951,7 @@ function computeManualDiffs() {
         { key: "templateId", label: "模板" },
         { key: "funnelLevel", label: "漏斗层级" },
         { key: "tags", label: "标签" },
+        { key: "regions", label: "地区" },
         { key: "emailDomain", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
         { key: "roundsPerRun", label: "执行轮次" },
@@ -13977,6 +13996,7 @@ function computeAndRenderDiffs() {
         templateId: "manualFieldTemplate",
         funnelLevel: "manualFieldFunnelLevel",
         tags: "manualFieldTags",
+        regions: "manualFieldRegions",
         emailDomain: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
         roundsPerRun: "manualFieldRoundsPerRun",
@@ -14007,7 +14027,7 @@ function computeAndRenderDiffs() {
 }
 
 function clearAllDiffMarkers() {
-    var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldEmailDomain",
+    var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
         "manualFieldDiscipline", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
@@ -14077,12 +14097,14 @@ async function confirmManualExecution() {
     var values = readManualFormValues();
     var snapshot = {
         mailType: values.mailType,
+        roundsPerRun: Number.isFinite(values.roundsPerRun) ? values.roundsPerRun : 1,
         roundSize: Number.isFinite(values.roundSize) ? values.roundSize : 50,
         perMailIntervalMs: Number.isFinite(values.perMailIntervalMs) ? values.perMailIntervalMs : 1000,
         perRoundIntervalMs: Number.isFinite(values.perRoundIntervalMs) ? values.perRoundIntervalMs : 60000,
         selfCheckTtlMinutes: Number.isFinite(values.selfCheckTtlMinutes) ? values.selfCheckTtlMinutes : 30,
         funnelLevel: values.funnelLevel,
         tags: values.tags,
+        regions: values.regions,
         emailDomain: values.emailDomain,
         discipline: values.discipline,
         templateId: values.templateId
@@ -14602,6 +14624,7 @@ function bindBatchSendTaskEvents() {
     bindBatchTagPicker("batchConfigEditorTags");
     bindBatchTagPicker("batchManualTags");
     bindBatchRegionPicker("batchConfigEditorRegions");
+    bindBatchRegionPicker("batchManualRegions");
 
     // Cron preview test button
     var cronTestBtn = document.getElementById("batchConfigEditorCronTestBtn");

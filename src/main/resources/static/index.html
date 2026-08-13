@@ -1344,6 +1344,20 @@
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
+                    <div class="batch-config-field" id="manualFieldRegions">
+                        <span class="batch-config-field-label">地区</span>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualRegions">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualRegionsChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualRegionsSearch" class="batch-tag-picker-search" placeholder="搜索并选择地区" autocomplete="off" aria-controls="batchManualRegionsDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualRegions" value="">
+                            <div id="batchManualRegionsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
                     <label class="batch-config-field" id="manualFieldEmailDomain">
                         <span class="batch-config-field-label">邮箱服务商</span>
                         <select id="batchManualEmailDomain" class="bsc-input bsc-select">
@@ -1372,6 +1386,12 @@
                     <span>仅影响本次执行，不修改原定时任务</span>
                 </div>
                 <div class="batch-config-editor-grid batch-config-editor-grid-controls">
+                    <label class="batch-config-field" id="manualFieldRoundsPerRun">
+                        <span class="batch-config-field-label">执行轮次（轮）</span>
+                        <input type="number" id="batchManualRoundsPerRun" class="bsc-input" min="1" value="1">
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
                     <label class="batch-config-field" id="manualFieldRoundSize">
                         <span class="batch-config-field-label">每轮数量（封）</span>
                         <input type="number" id="batchManualRoundSize" class="bsc-input" min="1" value="50">
