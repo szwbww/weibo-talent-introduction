@@ -1,0 +1,21 @@
+ affinity:
+  nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution: []
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                  - node-97r8
+                  - node-35mx
+                  - node-a1qj
+                  - node-ui2a
+                  - node-0qmg
+                  - node-naxa
+                  - node-89q5
+                  - node-dlqv
+                  - node-4f1i
+                  - node-nupu
+                  - node-oqwz
+            matchFields: []
