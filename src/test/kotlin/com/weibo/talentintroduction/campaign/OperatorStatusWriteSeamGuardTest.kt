@@ -52,9 +52,9 @@ class OperatorStatusWriteSeamGuardTest {
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 549, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 85, "operatorStatus = contact?.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 90, "operatorStatus = contact?.operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 410, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 431, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 332, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──

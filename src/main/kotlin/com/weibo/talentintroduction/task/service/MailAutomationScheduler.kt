@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.task.service
 
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
+import com.weibo.talentintroduction.campaign.service.OperatorStatusReconcileService
 import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
@@ -18,6 +19,7 @@ class MailAutomationScheduler(
     private val batchAutoMailReplyService: BatchAutoMailReplyService,
     private val initialOutreachService: InitialOutreachService,
     private val candidateOperatorStatusSyncService: CandidateOperatorStatusSyncService,
+    private val operatorStatusReconcileService: OperatorStatusReconcileService,
     private val taskExecutionService: TaskExecutionService
 ) {
     @Scheduled(cron = "\${talent-introduction.scheduling.auto-reply-all-cron:-}")
@@ -71,6 +73,18 @@ class MailAutomationScheduler(
             "operator-status-sync"
         ) {
             candidateOperatorStatusSyncService.reconcileAll()
+        }
+    }
+
+    @Scheduled(cron = "\${talent-introduction.scheduling.operator-status-reconcile-cron:-}")
+    fun scheduleOperatorStatusReconcile() {
+        // 走 runAndRecordWithResult 使对账报告（ReconcileReport）落入 task_execution.result_summary，可在任务面板查看
+        taskExecutionService.runAndRecordWithResult(
+            "OPERATOR_STATUS_RECONCILE",
+            "SCHEDULED",
+            "operator-status-reconcile"
+        ) {
+            operatorStatusReconcileService.reconcile()
         }
     }
 

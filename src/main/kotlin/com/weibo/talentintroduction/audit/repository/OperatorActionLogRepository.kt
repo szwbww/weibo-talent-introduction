@@ -60,4 +60,18 @@ interface OperatorActionLogRepository : CrudRepository<OperatorActionLog, Long> 
         """
     )
     fun findLatestAiDraftByInboundProcessingId(inboundProcessingId: Long): OperatorActionLog?
+
+    /**
+     * 04 P-C 对账 I-2 判别器：存在 `action_type='CHANGE_OPERATOR_STATUS'` 审计日志的 contact id 集合。
+     * 有该日志 = 被人工覆盖过（changeStatus 写审计、updateAutomatically 不写），其状态视为人工权威。
+     * 调用方需保证 [contactIds] 非空（IN () 非法）。
+     */
+    @Query(
+        """
+        SELECT DISTINCT expert_contact_id FROM operator_action_log
+        WHERE action_type = 'CHANGE_OPERATOR_STATUS'
+          AND expert_contact_id IN (:contactIds)
+        """
+    )
+    fun findContactIdsWithChangeOperatorStatusLogs(contactIds: Collection<Long>): List<Long>
 }
