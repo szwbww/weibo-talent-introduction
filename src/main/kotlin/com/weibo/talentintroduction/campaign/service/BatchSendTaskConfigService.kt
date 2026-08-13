@@ -8,6 +8,9 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCom
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
@@ -24,7 +27,8 @@ class BatchSendTaskConfigService(
     private val repository: BatchSendTaskConfigRepository,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val objectMapper: ObjectMapper,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val taskExecutionService: TaskExecutionService
 ) {
 
     fun list(query: String?): List<BatchSendTaskConfigView> {
@@ -34,13 +38,16 @@ class BatchSendTaskConfigService(
         } else {
             repository.findAllActiveByConfigNameContainingOrderByUpdatedAtDescIdDesc(trimmed)
         }
-        return rows.map { toView(it) }
+        // I-4: one aggregated query for all last-executed timestamps, never one per row.
+        val ids = rows.mapNotNull { it.id }
+        val lastExecutedMap = taskExecutionService.lastExecutedAtByBatchConfigIds(ids)
+        return rows.map { toView(it, lastExecutedMap[it.id]) }
     }
 
     fun get(id: Long): BatchSendTaskConfigView {
         val row = repository.findByIdAndDeletedAtIsNull(id)
             ?: throw NoSuchElementException("Batch send task config not found: $id")
-        return toView(row)
+        return toView(row, taskExecutionService.lastExecutedAtByBatchConfigIds(listOf(id))[id])
     }
 
     @Transactional
@@ -53,13 +60,14 @@ class BatchSendTaskConfigService(
                 mailType = normalized.mailType,
                 autoEnabled = normalized.autoEnabled,
                 cron = normalized.cron,
-                dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
+                roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
                 perRoundIntervalMs = normalized.perRoundIntervalMs,
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
                 templateId = normalized.templateId,
@@ -84,13 +92,14 @@ class BatchSendTaskConfigService(
                 mailType = normalized.mailType,
                 autoEnabled = normalized.autoEnabled,
                 cron = normalized.cron,
-                dailyCap = normalized.dailyCap,
                 roundSize = normalized.roundSize,
+                roundsPerRun = normalized.roundsPerRun,
                 perMailIntervalMs = normalized.perMailIntervalMs,
                 perRoundIntervalMs = normalized.perRoundIntervalMs,
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                regionsJson = normalized.regionsJson,
                 emailDomain = normalized.emailDomain,
                 discipline = normalized.discipline,
                 templateId = normalized.templateId,
@@ -99,7 +108,7 @@ class BatchSendTaskConfigService(
             configName = normalized.configName
         )
         publishReload(normalized.cron)
-        return toView(saved)
+        return toView(saved, taskExecutionService.lastExecutedAtByBatchConfigIds(listOf(id))[id])
     }
 
     @Transactional
@@ -123,7 +132,7 @@ class BatchSendTaskConfigService(
             )
         )
         publishReload(saved.cron)
-        return toView(saved)
+        return toView(saved, taskExecutionService.lastExecutedAtByBatchConfigIds(listOf(id))[id])
     }
 
     @Transactional
@@ -162,13 +171,14 @@ class BatchSendTaskConfigService(
                 configName = existing.configName,
                 autoEnabled = request.autoEnabled,
                 cron = request.cron,
-                dailyCap = request.dailyCap,
                 roundSize = request.roundSize,
+                roundsPerRun = existing.roundsPerRun,
                 perMailIntervalMs = request.perMailIntervalMs,
                 perRoundIntervalMs = request.perRoundIntervalMs,
                 selfCheckTtlMinutes = request.selfCheckTtlMinutes,
                 funnelLevel = existing.funnelLevel,
                 tags = parseTags(existing.tagsJson),
+                regions = parseRegions(existing.regionsJson),
                 emailDomain = request.emailDomain.ifBlank { null },
                 discipline = request.discipline.ifBlank { null },
                 templateId = request.templateId
@@ -178,7 +188,7 @@ class BatchSendTaskConfigService(
             sendType = sendType,
             autoEnabled = view.autoEnabled,
             cron = view.cron,
-            dailyCap = view.dailyCap,
+            dailyCap = LEGACY_DAILY_CAP_UNUSED,
             roundSize = view.roundSize,
             perMailIntervalMs = view.perMailIntervalMs,
             perRoundIntervalMs = view.perRoundIntervalMs,
@@ -205,7 +215,7 @@ class BatchSendTaskConfigService(
             sendType = sendType,
             autoEnabled = row.autoEnabled,
             cron = row.cron,
-            dailyCap = row.dailyCap,
+            dailyCap = LEGACY_DAILY_CAP_UNUSED,
             roundSize = row.roundSize,
             perMailIntervalMs = row.perMailIntervalMs,
             perRoundIntervalMs = row.perRoundIntervalMs,
@@ -225,8 +235,8 @@ class BatchSendTaskConfigService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "Config name already exists: $configName")
         }
 
-        require(fields.dailyCap > 0) { "dailyCap must be > 0" }
         require(fields.roundSize > 0) { "roundSize must be > 0" }
+        require(fields.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
         require(fields.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
         require(fields.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
         require(fields.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
@@ -248,6 +258,8 @@ class BatchSendTaskConfigService(
 
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
+        val regions = normalizeRegions(fields.regions)
+        val regionsJson = objectMapper.writeValueAsString(regions)
         val mailType = resolveMailType(fields.templateId)
 
         return NormalizedConfig(
@@ -255,13 +267,14 @@ class BatchSendTaskConfigService(
             mailType = mailType,
             autoEnabled = fields.autoEnabled,
             cron = fields.cron.trim(),
-            dailyCap = fields.dailyCap,
             roundSize = fields.roundSize,
+            roundsPerRun = fields.roundsPerRun,
             perMailIntervalMs = fields.perMailIntervalMs,
             perRoundIntervalMs = fields.perRoundIntervalMs,
             selfCheckTtlMinutes = fields.selfCheckTtlMinutes,
             funnelLevel = funnelLevel,
             tagsJson = tagsJson,
+            regionsJson = regionsJson,
             emailDomain = emailDomain,
             discipline = discipline,
             templateId = fields.templateId
@@ -327,7 +340,32 @@ class BatchSendTaskConfigService(
             emptyList()
         }
 
-    private fun toView(row: BatchSendTaskConfig): BatchSendTaskConfigView {
+    /**
+     * I-1: regions must be English domain constants; invalid values are rejected (422),
+     * never silently yielding zero ES hits. Empty list = no restriction.
+     */
+    private fun normalizeRegions(regions: List<String>): List<String> {
+        val cleaned = regions.map { it.trim() }.filter { it.isNotEmpty() }
+        cleaned.forEach { region ->
+            require(region in CountryContinentMapping.allRegions()) {
+                "region must be one of ${CountryContinentMapping.allRegions()}"
+            }
+        }
+        return cleaned.distinct().sortedBy { CountryContinentMapping.allRegions().indexOf(it) }
+    }
+
+    private fun parseRegions(regionsJson: String): List<String> =
+        try {
+            objectMapper.readValue(regionsJson, object : TypeReference<List<String>>() {})
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sortedBy { CountryContinentMapping.allRegions().indexOf(it) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+    private fun toView(row: BatchSendTaskConfig, lastExecutedAt: LocalDateTime? = null): BatchSendTaskConfigView {
         val id = row.id ?: error("Batch send task config id is required")
         return BatchSendTaskConfigView(
             id = id,
@@ -335,19 +373,57 @@ class BatchSendTaskConfigService(
             mailType = row.mailType,
             autoEnabled = row.autoEnabled,
             cron = row.cron,
-            dailyCap = row.dailyCap,
             roundSize = row.roundSize,
+            roundsPerRun = row.roundsPerRun,
             perMailIntervalMs = row.perMailIntervalMs,
             perRoundIntervalMs = row.perRoundIntervalMs,
             selfCheckTtlMinutes = row.selfCheckTtlMinutes,
             funnelLevel = row.funnelLevel,
             tags = parseTags(row.tagsJson),
+            regions = parseRegions(row.regionsJson),
             emailDomain = row.emailDomain,
             discipline = row.discipline,
             templateId = row.templateId,
             createdAt = row.createdAt,
-            updatedAt = row.updatedAt
+            updatedAt = row.updatedAt,
+            nextFireTime = computeNextFireTime(row.autoEnabled, row.cron),
+            lastExecutedAt = lastExecutedAt
         )
+    }
+
+    /**
+     * I-1/I-2/I-3: same Spring 6-field cron implementation as the scheduler's CronTrigger.
+     * Disabled configs and invalid cron degrade to null — a single dirty row must never
+     * 500 the config list (X-4).
+     */
+    private fun computeNextFireTime(autoEnabled: Boolean, cron: String): LocalDateTime? {
+        if (!autoEnabled) return null
+        return runCatching { CronExpression.parse(cron).next(LocalDateTime.now()) }.getOrNull()
+    }
+
+    /** cron 预览：只读校验 + 最近 N 次触发时间。非法表达式返回 valid=false，不抛异常（I-3）。 */
+    fun previewCron(cron: String, count: Int = 5): CronPreviewResult {
+        val trimmed = cron.trim()
+        if (trimmed.isEmpty()) return CronPreviewResult(false, "cron 表达式不能为空", emptyList())
+        val expr = runCatching { CronExpression.parse(trimmed) }.getOrElse { e ->
+            return CronPreviewResult(
+                false,
+                "不是合法的 Spring cron 表达式（6 段，秒 分 时 日 月 周）：${e.message}",
+                emptyList()
+            )
+        }
+        val times = mutableListOf<LocalDateTime>()
+        var cursor = LocalDateTime.now()
+        repeat(count.coerceIn(1, 20)) {
+            val next = expr.next(cursor) ?: return@repeat
+            times.add(next)
+            cursor = next
+        }
+        return if (times.isEmpty()) {
+            CronPreviewResult(false, "该表达式在可预见的未来没有触发时间", emptyList())
+        } else {
+            CronPreviewResult(true, null, times)
+        }
     }
 
     private fun publishReload(cron: String) {
@@ -387,13 +463,14 @@ class BatchSendTaskConfigService(
         val configName: String,
         val autoEnabled: Boolean,
         val cron: String,
-        val dailyCap: Int,
         val roundSize: Int,
+        val roundsPerRun: Int,
         val perMailIntervalMs: Long,
         val perRoundIntervalMs: Long,
         val selfCheckTtlMinutes: Int,
         val funnelLevel: String?,
         val tags: List<String>,
+        val regions: List<String>,
         val emailDomain: String?,
         val discipline: String?,
         val templateId: Long?
@@ -404,13 +481,14 @@ class BatchSendTaskConfigService(
         val mailType: String,
         val autoEnabled: Boolean,
         val cron: String,
-        val dailyCap: Int,
         val roundSize: Int,
+        val roundsPerRun: Int,
         val perMailIntervalMs: Long,
         val perRoundIntervalMs: Long,
         val selfCheckTtlMinutes: Int,
         val funnelLevel: String?,
         val tagsJson: String,
+        val regionsJson: String,
         val emailDomain: String?,
         val discipline: String?,
         val templateId: Long?
@@ -420,13 +498,14 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -436,13 +515,14 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
@@ -452,24 +532,39 @@ class BatchSendTaskConfigService(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
         perMailIntervalMs = perMailIntervalMs,
         perRoundIntervalMs = perRoundIntervalMs,
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = parseTags(tagsJson),
+        regions = parseRegions(regionsJson),
         emailDomain = emailDomain,
         discipline = discipline,
         templateId = templateId
     )
 
     private companion object {
+        /**
+         * 日限额已下线，此值仅为旧 typed API 保持字段形态，不参与任何判定。
+         */
+        const val LEGACY_DAILY_CAP_UNUSED = 0
+
         val ALLOWED_MAIL_TYPES = setOf(
             BatchSendType.INTRODUCTION.name,
             BatchSendType.MATERIAL_REMINDER.name
         )
         val ALLOWED_FUNNEL_LEVELS = setOf("CANDIDATE", "APPLICATION")
-        val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES")
+        // I-5: single authority is ExpertSearchService.ALLOWED_DISCIPLINES (already includes UNCLASSIFIED);
+        // keeping a second literal here would risk divergence (see plan 05 A-4).
+        val ALLOWED_DISCIPLINES = ExpertSearchService.ALLOWED_DISCIPLINES
     }
 }
+
+/** 只读 cron 预览结果：valid=false 表示表达式非法/永不触发，message 为原因（I-3，永不抛异常）。 */
+data class CronPreviewResult(
+    val valid: Boolean,
+    val message: String?,
+    val nextFireTimes: List<LocalDateTime>
+)

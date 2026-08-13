@@ -43,12 +43,13 @@ class BatchSendControlServiceTest {
 
     private fun anySnapshot(): com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot =
         anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-            mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+            mailType = "INTRODUCTION", roundSize = 10,
             perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
         ))
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+    private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T = captor.capture() ?: defaultValue
 
     @BeforeEach
     fun setUp() {
@@ -81,7 +82,6 @@ class BatchSendControlServiceTest {
             mailType = "INTRODUCTION",
             autoEnabled = true,
             cron = "0 0 0 * * ?",
-            dailyCap = 100,
             roundSize = 10,
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
@@ -91,7 +91,6 @@ class BatchSendControlServiceTest {
         Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(legacyIntroConfig)
         Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("MATERIAL_REMINDER")).thenReturn(null)
         Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(legacyIntroConfig)
-        Mockito.doReturn(0).`when`(taskExecutionService).sumSuccessCountTodayByBatchConfigId(anyValue(1L), anyValue(LocalDateTime.now()))
 
         // Default runAndRecordWithResult: invoke onStarted(99L) and run the block
         Mockito.doAnswer { invocation ->
@@ -120,12 +119,11 @@ class BatchSendControlServiceTest {
         Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
             .`when`(manualInitialOutreachService).run(
                 anyValue(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
-                    mailType = "INTRODUCTION", dailyCap = 100, roundSize = 10,
+                    mailType = "INTRODUCTION", roundSize = 10,
                     perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
                 )),
                 anyValue(0L),
                 anyValue(ExecutionMode.MANUAL),
-                anyValue(0),
                 anyValue(false)
             )
     }
@@ -144,7 +142,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(false)
         )
 
@@ -186,7 +183,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.AUTO),
-            anyValue(0),
             eqValue(false)
         )
 
@@ -207,7 +203,6 @@ class BatchSendControlServiceTest {
             mailType = "INTRODUCTION",
             autoEnabled = false,
             cron = "0 0 0 * * ?",
-            dailyCap = 100,
             roundSize = 10,
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
@@ -317,7 +312,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(true)
         )
 
@@ -341,7 +335,6 @@ class BatchSendControlServiceTest {
             anySnapshot(),
             eqValue(99L),
             eqValue(ExecutionMode.MANUAL),
-            anyValue(0),
             eqValue(true)
         )
 
@@ -371,7 +364,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
 
         Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(true))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(true))
 
         val response = control.runManualOnce()
 
@@ -388,7 +381,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
 
         Mockito.doReturn(ManualOutreachResult(total = 5, sent = 0, failed = 0, skippedNoAccount = 5, wasCancelled = false, finalStatus = "PAUSED", stopReason = "NO_AVAILABLE_ACCOUNT"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -479,7 +472,6 @@ class BatchSendControlServiceTest {
             details = mapOf(
                 "executionMode" to "AUTO",
                 "roundNumber" to 3,
-                "dailyCap" to 1000,
                 "dailySentTotal" to 42,
                 "sentTotal" to 42,
                 "failedTotal" to 2,
@@ -507,7 +499,6 @@ class BatchSendControlServiceTest {
         assertEquals("NO_AVAILABLE_ACCOUNT", status.pauseReason)
         // I-8: per-account stats from progress
         assertEquals(3, status.roundNumber)
-        assertEquals(1000, status.dailyCap)
         assertEquals(42, status.dailySentTotal)
         assertEquals(1, status.accounts.size)
         assertEquals("chen", status.accounts[0].accountCode)
@@ -542,7 +533,7 @@ class BatchSendControlServiceTest {
                 perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
         )
         Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -563,7 +554,7 @@ class BatchSendControlServiceTest {
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
             .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
         Mockito.doReturn(ManualOutreachResult(0, 0, 0, 0, false, "COMPLETED"))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
 
         control.startManual()
 
@@ -605,6 +596,55 @@ class BatchSendControlServiceTest {
     }
 
     @Test
+    fun `startScheduled still accepts when today sum far exceeds dailyCap (I-2)`() {
+        val config = com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+            id = 5L,
+            configName = "INTRODUCTION",
+            mailType = "INTRODUCTION",
+            autoEnabled = true,
+            cron = "0 0 0 * * ?",
+            roundSize = 10,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            legacyCode = null
+        )
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
+        // dailyCap gate is gone: a today-sum far above dailyCap must not reject the launch
+        Mockito.doReturn(999999).`when`(taskExecutionService).sumSuccessCountTodayByBatchConfigId(
+            eqValue(5L), anyValue(LocalDateTime.now())
+        )
+
+        val response = control.startScheduled(5L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // I-2: the 5 launch entry points must never query the today-sum
+        Mockito.verify(taskExecutionService, Mockito.never()).sumSuccessCountTodayByBatchConfigId(
+            Mockito.anyLong(), anyValue(LocalDateTime.now())
+        )
+    }
+
+    @Test
+    fun `startManual(request) returns 409 with account-capacity message when remaining daily capacity is zero`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+            )
+        )
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(eqValue(true))).thenReturn(0)
+
+        val response = control.startManual(request)
+
+        // must-NOT-change: account-capacity precheck still rejects manual launch with the exact message
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertEquals("今日发送额度已用尽（含预热限制），暂不可手动发送", response.body?.get("message"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
     fun `execution with WARMUP_LIMIT_REACHED result transitions to IDLE`() {
         Mockito.`when`(batchSendSettingService.getRuntimeStatus())
             .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
@@ -613,7 +653,7 @@ class BatchSendControlServiceTest {
                 total = 5, sent = 2, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "WARMUP_LIMIT_REACHED"
             ))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
 
         control.startAuto()
 
@@ -629,10 +669,63 @@ class BatchSendControlServiceTest {
                 total = 5, sent = 5, failed = 0, skippedNoAccount = 0, wasCancelled = false,
                 finalStatus = "COMPLETED", stopReason = "DAILY_LIMIT_REACHED"
             ))
-            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), anyValue(0), eqValue(false))
+            .`when`(manualInitialOutreachService).run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
 
         control.startManual()
 
         Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
+    }
+
+    @Test
+    fun `startManual rejects snapshot with roundsPerRun below 1 with 422`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 0,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+            )
+        )
+
+        val response = control.startManual(request)
+
+        // I-5: roundsPerRun = 0 must fail validation before any launch
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        assertTrue((response.body?.get("message") as String).contains("roundsPerRun must be >= 1"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `legacy KV fallback derives roundsPerRun from dailyCap and roundSize`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+        Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(null)
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(
+            BatchSendConfig(autoEnabled = true, cron = "0 0 0 * * ?", dailyCap = 100, roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30)
+        )
+
+        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java)
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            captureValue(
+                captor,
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            ),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            eqValue(false)
+        )
+
+        val response = control.startManual()
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // I-6/X-1: legacy KV fallback derives roundsPerRun = ceil(dailyCap / roundSize)
+        assertEquals(10, captor.value.roundsPerRun)
     }
 }

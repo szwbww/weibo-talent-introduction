@@ -410,7 +410,6 @@ class MailAutomationControllerTest {
             autoEnabled = false,
             pauseReason = "NO_AVAILABLE_ACCOUNT",
             roundNumber = 3,
-            dailyCap = 1000,
             dailySentTotal = 42,
             sentTotal = 42,
             failedTotal = 2,
@@ -428,7 +427,6 @@ class MailAutomationControllerTest {
         assertEquals("AUTO", result.mode)
         assertEquals("NO_AVAILABLE_ACCOUNT", result.pauseReason)
         assertEquals(3, result.roundNumber)
-        assertEquals(1000, result.dailyCap)
         assertEquals(42, result.dailySentTotal)
         assertEquals(1, result.accounts.size)
         assertEquals("chen", result.accounts[0].accountCode)
@@ -440,7 +438,7 @@ class MailAutomationControllerTest {
     fun `getBatchSendStatus returns IDLE status when flow not started`() {
         val statusView = BatchSendStatusView(
             status = "IDLE", mode = "NONE", autoEnabled = false, pauseReason = "",
-            roundNumber = 0, dailyCap = 0, dailySentTotal = 0,
+            roundNumber = 0, dailySentTotal = 0,
             sentTotal = 0, failedTotal = 0,
             accounts = emptyList(), executionId = null, message = null
         )

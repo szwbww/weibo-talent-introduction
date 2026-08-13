@@ -468,19 +468,8 @@ function createFormValuesSandbox() {
 }
 
 describe("readManualFormValues NaN-on-empty (P1-1)", () => {
-    it("empty dailyCap field returns NaN, not 1000", () => {
-        var sb = createFormValuesSandbox();
-        sb.document.getElementById("batchManualDailyCap").value = "";
-        var values = sb.readManualFormValues();
-        assert.ok(Number.isNaN(values.dailyCap), "empty dailyCap must be NaN");
-    });
-
-    it("zero dailyCap returns 0 (valid number), not 1000", () => {
-        var sb = createFormValuesSandbox();
-        sb.document.getElementById("batchManualDailyCap").value = "0";
-        var values = sb.readManualFormValues();
-        assert.strictEqual(values.dailyCap, 0, "zero dailyCap must be 0, not default");
-    });
+    // 04b removed the manual tab's daily cap input entirely (the manual tab keeps no
+    // roundsPerRun field either), so the dailyCap cases are retired with it.
 
     it("zero selfCheckTtlMinutes returns 0 (valid number), not 30", () => {
         var sb = createFormValuesSandbox();
@@ -491,12 +480,10 @@ describe("readManualFormValues NaN-on-empty (P1-1)", () => {
 
     it("valid values are returned as-is (intervals in ms)", () => {
         var sb = createFormValuesSandbox();
-        sb.document.getElementById("batchManualDailyCap").value = "500";
         sb.document.getElementById("batchManualRoundSize").value = "25";
         sb.document.getElementById("batchManualPerMailIntervalSec").value = "2";
         sb.document.getElementById("batchManualSelfCheckTtlMin").value = "15";
         var values = sb.readManualFormValues();
-        assert.strictEqual(values.dailyCap, 500);
         assert.strictEqual(values.roundSize, 25);
         assert.strictEqual(values.perMailIntervalMs, 2000, "2 sec must return 2000 ms");
         assert.strictEqual(values.selfCheckTtlMinutes, 15);

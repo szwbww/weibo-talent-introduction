@@ -1143,7 +1143,6 @@ function updateTaskModalFromProgress(progress, generation) {
             status: "RUNNING",
             mode: d.executionMode || "MANUAL",
             roundNumber: d.roundNumber ?? 0,
-            dailyCap: d.dailyCap ?? 0,
             dailySentTotal: d.dailySentTotal ?? 0,
             sentTotal: d.sentTotal ?? 0,
             failedTotal: d.failedTotal ?? 0,
@@ -3907,7 +3906,7 @@ async function loadRegions(level, { filters = {} } = {}) {
             regions.forEach(d => {
                 const opt = document.createElement("option");
                 opt.value = d.region;
-                opt.textContent = `${d.region} (${d.count})`;
+                opt.textContent = `${regionLabel(d.region)} (${d.count})`;
                 filterDropdown.appendChild(opt);
             });
             filterDropdown.value = currentFilterVal;
@@ -5965,7 +5964,6 @@ function renderBatchSendAccountTable(statusView) {
     }
 
     if (summary) {
-        const cap = statusView?.dailyCap ?? 0;
         const daily = statusView?.dailySentTotal ?? 0;
         const sent = statusView?.sentTotal ?? 0;
         const failed = statusView?.failedTotal ?? 0;
@@ -5975,7 +5973,7 @@ function renderBatchSendAccountTable(statusView) {
             ? ` · 当前模板 <strong>${escapeHtml(templateName)}</strong>`
             : "";
         const typeLabel = batchSendType === "MATERIAL_REMINDER" ? "材料提醒邮件" : "介绍邮件";
-        const summaryHtml = `[${typeLabel}] 轮次 <strong>${round}</strong> · 每日 <strong>${daily}/${cap}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>${templatePart}`;
+        const summaryHtml = `[${typeLabel}] 轮次 <strong>${round}</strong> · 每日 <strong>${daily}</strong> · 累计成功 <strong>${sent}</strong> · 失败 <strong>${failed}</strong>${templatePart}`;
         // 内容未变化时跳过重写，避免轮询导致汇总行闪烁。
         if (summary.__lastHtml !== summaryHtml) {
             summary.__lastHtml = summaryHtml;
@@ -10274,7 +10272,7 @@ function renderMonitoringRegionDistribution() {
     `;
     table.querySelector("tbody").innerHTML = rows.map((row) => `
         <tr>
-            <td><strong>${escapeHtml(row.region)}</strong></td>
+            <td><strong>${escapeHtml(regionLabel(row.region))}</strong></td>
             <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
             <td>${escapeHtml(row.sentCount ?? 0)}</td>
             <td>${escapeHtml(formatPercent(row.replyRate))}</td>
@@ -13106,8 +13104,9 @@ function renderBatchConfigRow(c) {
     var scopeParts = [];
     if (c.funnelLevel) scopeParts.push("漏斗: " + escapeHtml(c.funnelLevel));
     if (Array.isArray(c.tags) && c.tags.length > 0) scopeParts.push("标签: " + escapeHtml(c.tags.join(", ")));
+    if (Array.isArray(c.regions) && c.regions.length > 0) scopeParts.push("地区: " + c.regions.map(regionLabel).join("、"));
     if (c.emailDomain) scopeParts.push("服务商: " + escapeHtml(c.emailDomain));
-    if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : escapeHtml(c.discipline)));
+    if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : c.discipline === "UNCLASSIFIED" ? "未分类" : escapeHtml(c.discipline)));
     var scopeHtml = scopeParts.length > 0
         ? scopeParts.map(function(s, i) {
             var cls = i === 0 ? "batch-task-scope-line" : "batch-task-scope-line";
@@ -13123,7 +13122,10 @@ function renderBatchConfigRow(c) {
         '<td class="batch-task-scope">' + scopeHtml.substring(0, 300) + '</td>' +
         '<td>' + (c.templateId ? '<span class="badge ok">已指定</span>' : '<span class="badge">默认</span>') + '</td>' +
         '<td>' + escapeHtml(planHtml) + '</td>' +
-        '<td><span class="muted" style="font-size:11px;">' + (c.updatedAt ? formatDateTime(c.updatedAt) : "—") + '</span></td>' +
+        '<td>' +
+            '<span class="batch-task-scope-line">下次 ' + (c.nextFireTime ? formatDateTime(c.nextFireTime) : "—") + '</span>' +
+            '<span class="batch-task-scope-line">最近 ' + (c.lastExecutedAt ? formatDateTime(c.lastExecutedAt) : "—") + '</span>' +
+        '</td>' +
         '<td>' + statusHtml + '</td>' +
         '<td class="batch-task-actions">' +
             '<button class="button small" onclick="openManualTabFromConfig(' + c.id + ')">手动</button>' +
@@ -13150,10 +13152,9 @@ function cronToDisplayText(cron) {
     var sec = parts[0], min = parts[1], hour = parts[2], dom = parts[3], mon = parts[4], dow = parts[5];
     if (hour === "*" || hour === "*/1") return "每小时";
     var time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0");
-    if (dow && dow !== "?" && dow !== "*") {
-        var dowLabel = { "MON": "周一", "TUE": "周二", "WED": "周三", "THU": "周四", "FRI": "周五", "SAT": "周六", "SUN": "周日" }[dow] || dow;
-        return dowLabel + " " + time;
-    }
+    var dowLabel = { "MON": "周一", "TUE": "周二", "WED": "周三", "THU": "周四", "FRI": "周五", "SAT": "周六", "SUN": "周日" }[dow];
+    if (dowLabel) return dowLabel + " " + time;
+    if (dow && dow !== "?" && dow !== "*") return escapeHtml(cron);
     return "每天 " + time;
 }
 
@@ -13232,32 +13233,34 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorFunnelLevel", config ? (config.funnelLevel || "") : "");
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
-    setVal("batchConfigEditorDailyCap", config ? config.dailyCap : "1000");
+    setVal("batchConfigEditorRoundsPerRun", config ? config.roundsPerRun : "1");
     setVal("batchConfigEditorRoundSize", config ? config.roundSize : "50");
+    setBatchRegionPickerValue("batchConfigEditorRegions", config && Array.isArray(config.regions) ? config.regions : []);
     setVal("batchConfigEditorPerMailIntervalSec", config ? Math.round((config.perMailIntervalMs || 1000) / 1000) : "1");
     setVal("batchConfigEditorPerRoundIntervalSec", config ? Math.round((config.perRoundIntervalMs || 60000) / 1000) : "60");
     setVal("batchConfigEditorSelfCheckTtlMin", config ? config.selfCheckTtlMinutes : "30");
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
 
-    // Parse cron to frequency + time
+    // Parse cron to frequency + time; anything not matching the three known modes is "custom"
     var freq = "daily", time = "09:00";
     if (config && config.cron) {
         var cronParts = config.cron.trim().split(/\s+/);
         if (cronParts.length >= 5) {
             var hour = cronParts[2], min = cronParts[1], dow = cronParts[5];
             if (hour === "*" || hour === "*/1") { freq = "hourly"; time = ""; }
-            else if (dow && dow !== "?" && dow !== "*") { freq = "weekly"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
-            else { freq = "daily"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
+            else if (dow === "MON" || dow === "TUE" || dow === "WED" || dow === "THU" || dow === "FRI" || dow === "SAT" || dow === "SUN") { freq = "weekly"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
+            else if (!dow || dow === "?" || dow === "*") { freq = "daily"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
+            else { freq = "custom"; setVal("batchConfigEditorCron", config.cron); }
         }
     }
     setVal("batchConfigEditorFrequency", freq);
     setVal("batchConfigEditorTime", time);
-    var timeField = document.getElementById("batchConfigEditorTimeField");
-    if (timeField) timeField.style.display = freq === "hourly" ? "none" : "";
+    syncBatchConfigEditorScheduleFields();
 
     // Fill template selector and provider dropdown
     fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
     fillBatchConfigEditorProviderSelect(config ? config.emailDomain : "");
+    updateBatchConfigVolumeHint();
 }
 
 function fillBatchConfigEditorTemplateSelector(selectedId) {
@@ -13437,6 +13440,175 @@ function bindBatchTagPicker(valueId) {
     renderBatchTagPicker(valueId);
 }
 
+// ── Region multi-select (same widget family as the tag picker) ───────────────────────
+
+// 地区显示标签。key 必须与 CountryContinentMapping.REGION_ORDER 的 9 个英文常量逐字一致；
+// 这里只影响展示，value/传参/存储一律用英文常量（见 docs/knowledge/expert/K-region-constant-not-display-label.md）。
+var REGION_LABELS = {
+    "China": "中国",
+    "Asia (Japan & Korea)": "亚洲（日韩）",
+    "Asia (Other)": "亚洲（其他）",
+    "Europe": "欧洲",
+    "North America": "北美洲",
+    "South America": "南美洲",
+    "Africa": "非洲",
+    "Oceania": "大洋洲",
+    "Other": "其他"
+};
+
+function regionLabel(value) {
+    if (!value) return "";
+    return REGION_LABELS[value] || value;   // 未知值原样回退（I-2）
+}
+
+var BATCH_REGION_OPTIONS = [
+    { value: "China", label: REGION_LABELS["China"] },
+    { value: "Asia (Japan & Korea)", label: REGION_LABELS["Asia (Japan & Korea)"] },
+    { value: "Asia (Other)", label: REGION_LABELS["Asia (Other)"] },
+    { value: "Europe", label: REGION_LABELS["Europe"] },
+    { value: "North America", label: REGION_LABELS["North America"] },
+    { value: "South America", label: REGION_LABELS["South America"] },
+    { value: "Africa", label: REGION_LABELS["Africa"] },
+    { value: "Oceania", label: REGION_LABELS["Oceania"] },
+    { value: "Other", label: REGION_LABELS["Other"] }
+];
+
+function readBatchRegionPickerValue(valueId) {
+    var input = document.getElementById(valueId);
+    return String(input ? input.value : "").split(",").map(function(v) { return v.trim(); }).filter(Boolean);
+}
+
+function setBatchRegionPickerValue(valueId, regions) {
+    var input = document.getElementById(valueId);
+    if (!input) return;
+    input.value = (Array.isArray(regions) ? regions : []).join(",");
+    renderBatchRegionPicker(valueId);
+}
+
+function renderBatchRegionPicker(valueId) {
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!search || !chips || !dropdown) return;
+    var selected = readBatchRegionPickerValue(valueId);
+    var query = search.value.trim().toLowerCase();
+    var filtered = BATCH_REGION_OPTIONS.filter(function(opt) {
+        return !query || opt.value.toLowerCase().includes(query) || opt.label.toLowerCase().includes(query);
+    });
+
+    chips.innerHTML = selected.map(function(value) {
+        var opt = BATCH_REGION_OPTIONS.find(function(o) { return o.value === value; }) || { value: value, label: value };
+        return '<span class="batch-tag-picker-chip">' + escapeHtml(opt.label) +
+            '<button type="button" data-remove-tag="' + escapeHtml(value) + '" aria-label="移除地区 ' + escapeHtml(opt.label) + '">×</button></span>';
+    }).join("");
+    dropdown.innerHTML = filtered.length > 0 ? filtered.map(function(opt) {
+        var checked = selected.indexOf(opt.value) >= 0;
+        return '<button type="button" class="batch-tag-picker-option' + (checked ? ' is-selected' : '') +
+            '" role="option" aria-selected="' + checked + '" data-tag="' + escapeHtml(opt.value) + '">' +
+            '<span class="batch-tag-picker-check" aria-hidden="true">' + (checked ? '✓' : '') + '</span>' +
+            '<span>' + escapeHtml(opt.label) + '</span></button>';
+    }).join("") : '<div class="batch-tag-picker-empty">没有匹配地区</div>';
+}
+
+function toggleBatchRegionPickerValue(valueId, value) {
+    var selected = readBatchRegionPickerValue(valueId);
+    var normalized = String(value || "").trim();
+    if (!normalized) return;
+    var index = selected.indexOf(normalized);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(normalized);
+    setBatchRegionPickerValue(valueId, selected);
+}
+
+function openBatchRegionPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    renderBatchRegionPicker(valueId);
+    if (dropdown) dropdown.hidden = false;
+    if (search) search.setAttribute("aria-expanded", "true");
+}
+
+function closeBatchRegionPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    if (dropdown) dropdown.hidden = true;
+    if (search) search.setAttribute("aria-expanded", "false");
+}
+
+function bindBatchRegionPicker(valueId) {
+    var picker = document.querySelector('[data-tag-picker="' + valueId + '"]');
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!picker || !search || !chips || !dropdown) return;
+    search.addEventListener("focus", function() { openBatchRegionPicker(valueId); });
+    search.addEventListener("input", function() { openBatchRegionPicker(valueId); });
+    search.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") closeBatchRegionPicker(valueId);
+    });
+    chips.addEventListener("click", function(event) {
+        var button = event.target.closest("[data-remove-tag]");
+        if (button) toggleBatchRegionPickerValue(valueId, button.dataset.removeTag);
+    });
+    dropdown.addEventListener("click", function(event) {
+        var option = event.target.closest("[data-tag]");
+        if (option) toggleBatchRegionPickerValue(valueId, option.dataset.tag);
+    });
+    document.addEventListener("click", function(event) {
+        if (!picker.contains(event.target)) closeBatchRegionPicker(valueId);
+    });
+    renderBatchRegionPicker(valueId);
+}
+
+// ── Cron preview + schedule field visibility + volume hint ───────────────────────────
+
+function syncBatchConfigEditorScheduleFields() {
+    var freqSelect = document.getElementById("batchConfigEditorFrequency");
+    var timeField = document.getElementById("batchConfigEditorTimeField");
+    var cronField = document.getElementById("batchConfigEditorCronField");
+    if (!freqSelect) return;
+    var freq = freqSelect.value || "daily";
+    if (timeField) timeField.style.display = (freq === "daily" || freq === "weekly") ? "" : "none";
+    if (cronField) cronField.hidden = freq !== "custom";
+}
+
+async function previewBatchCron() {
+    var input = document.getElementById("batchConfigEditorCron");
+    var box = document.getElementById("batchConfigEditorCronPreview");
+    var btn = document.getElementById("batchConfigEditorCronTestBtn");
+    if (!input || !box) return;
+    btn.disabled = true;
+    try {
+        var res = await api("/api/mail/batch-send/cron/preview", {
+            method: "POST", body: JSON.stringify({ cron: input.value, count: 5 })
+        });
+        box.hidden = false;
+        if (res.valid) {
+            box.classList.remove("is-error");
+            box.innerHTML = '<span class="batch-cron-preview-title">最近 5 次执行时间</span>' +
+                res.nextFireTimes.map(function(t) {
+                    return '<span class="batch-cron-preview-item">' + escapeHtml(formatDateTime(t)) + '</span>';
+                }).join("");
+        } else {
+            box.classList.add("is-error");
+            box.textContent = res.message || "cron 表达式不合法";
+        }
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function updateBatchConfigVolumeHint() {
+    var hint = document.getElementById("batchConfigEditorVolumeHint");
+    if (!hint) return;
+    var roundsEl = document.getElementById("batchConfigEditorRoundsPerRun");
+    var sizeEl = document.getElementById("batchConfigEditorRoundSize");
+    var rounds = Number(roundsEl ? roundsEl.value : 0) || 0;
+    var size = Number(sizeEl ? sizeEl.value : 0) || 0;
+    hint.innerHTML = "单次调度最多发送 <strong>" + (rounds * size) +
+        "</strong> 封（执行轮次 × 每轮数量）；跨调度总量由发件账号每日限额兜底。";
+}
+
 function fillBatchConfigEditorProviderSelect(selected) {
     var select = document.getElementById("batchConfigEditorEmailDomain");
     if (!select) return;
@@ -13463,6 +13635,10 @@ async function saveBatchConfigEditor() {
     var cron;
     if (freq === "hourly") cron = "0 0 * * * ?";
     else if (freq === "weekly") cron = "0 " + min + " " + hour + " ? * MON";
+    else if (freq === "custom") {
+        cron = (val("batchConfigEditorCron") || "").trim();
+        if (!cron) { showStatus("请填写 cron 表达式", "error"); return; }
+    }
     else cron = "0 " + min + " " + hour + " * * ?";
 
     var tags = readBatchTagPickerValue("batchConfigEditorTags");
@@ -13478,20 +13654,21 @@ async function saveBatchConfigEditor() {
         configName: name,
         autoEnabled: Boolean(batchTaskState.editorAutoEnabled),
         cron: cron,
-        dailyCap: Number(val("batchConfigEditorDailyCap")) || 1000,
+        roundsPerRun: Number(val("batchConfigEditorRoundsPerRun")) || 1,
         roundSize: Number(val("batchConfigEditorRoundSize")) || 50,
         perMailIntervalMs: (Number(val("batchConfigEditorPerMailIntervalSec")) || 0) * 1000,
         perRoundIntervalMs: (Number(val("batchConfigEditorPerRoundIntervalSec")) || 0) * 1000,
         selfCheckTtlMinutes: Number(val("batchConfigEditorSelfCheckTtlMin")) || 30,
         funnelLevel: val("batchConfigEditorFunnelLevel") || null,
         tags: tags,
+        regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
         emailDomain: val("batchConfigEditorEmailDomain") || null,
         discipline: val("batchConfigEditorDiscipline") || null,
         templateId: templateId
     };
 
     if (payload.roundSize < 1) { showStatus("每轮数量需 ≥ 1", "error"); return; }
-    if (payload.dailyCap < payload.roundSize) { showStatus("每批上限需 ≥ 每轮数量", "error"); return; }
+    if (payload.roundsPerRun < 1) { showStatus("执行轮次需 ≥ 1", "error"); return; }
     if (payload.perMailIntervalMs < 0) { showStatus("每封间隔需 ≥ 0", "error"); return; }
     if (payload.perRoundIntervalMs < 0) { showStatus("每轮间隔需 ≥ 0", "error"); return; }
     if (payload.selfCheckTtlMinutes < 1) { showStatus("自检 TTL 需 ≥ 1", "error"); return; }
@@ -13568,8 +13745,8 @@ function deepCloneConfig(c) {
         tags: Array.isArray(c.tags) ? c.tags.slice() : [],
         emailDomain: c.emailDomain || "",
         discipline: c.discipline || "",
-        dailyCap: c.dailyCap || 1000,
         roundSize: c.roundSize || 50,
+        roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
         perRoundIntervalMs: c.perRoundIntervalMs || 60000,
         selfCheckTtlMinutes: c.selfCheckTtlMinutes || 30,
@@ -13586,8 +13763,8 @@ function fillManualFormDefaults() {
         tags: [],
         emailDomain: "",
         discipline: "",
-        dailyCap: 1000,
         roundSize: 50,
+        roundsPerRun: 1,
         perMailIntervalMs: 1000,
         perRoundIntervalMs: 60000,
         selfCheckTtlMinutes: 30,
@@ -13607,7 +13784,6 @@ function fillManualFormFromDraft() {
     setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
     setVal("batchManualEmailDomain", d.emailDomain || "");
     setVal("batchManualDiscipline", d.discipline || "");
-    setVal("batchManualDailyCap", d.dailyCap);
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
@@ -13702,7 +13878,6 @@ function readManualFormValues() {
         tags: readBatchTagPickerValue("batchManualTags"),
         emailDomain: val("batchManualEmailDomain") || null,
         discipline: val("batchManualDiscipline") || null,
-        dailyCap: parseNum("batchManualDailyCap"),
         roundSize: parseNum("batchManualRoundSize"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
         perRoundIntervalMs: parseNumSec("batchManualPerRoundIntervalSec"),
@@ -13717,7 +13892,6 @@ function normalizeManualSnapshot(v) {
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
         emailDomain: (v.emailDomain || "").trim() || null,
         discipline: (v.discipline || "").trim() || null,
-        dailyCap: Number.isFinite(v.dailyCap) ? v.dailyCap : null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
         perRoundIntervalMs: Number.isFinite(v.perRoundIntervalMs) ? v.perRoundIntervalMs : null,
@@ -13739,6 +13913,7 @@ function formatManualDiffValue(key, value) {
         if (!value) return "全部学科";
         if (value === "STEM") return "仅理工科";
         if (value === "HUMANITIES") return "仅文社科";
+        if (value === "UNCLASSIFIED") return "未分类";
         return String(value);
     }
     if (key === "tags") {
@@ -13760,7 +13935,7 @@ function computeManualDiffs() {
         { key: "tags", label: "标签" },
         { key: "emailDomain", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
-        { key: "dailyCap", label: "日限额" },
+        { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
         { key: "perRoundIntervalMs", label: "每轮间隔" },
@@ -13804,7 +13979,7 @@ function computeAndRenderDiffs() {
         tags: "manualFieldTags",
         emailDomain: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
-        dailyCap: "manualFieldDailyCap",
+        roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
         perRoundIntervalMs: "manualFieldPerRoundIntervalSec",
@@ -13833,7 +14008,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldDailyCap", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -13873,7 +14048,7 @@ function showBatchManualConfirm() {
         body.innerHTML =
             '<div class="batch-manual-confirm-summary">' +
             '<strong>' + escapeHtml(source.configName) + '</strong><br>' +
-            '日限额: ' + source.dailyCap + ' 封 · 每轮: ' + source.roundSize + ' 封<br>' +
+            '轮次: ' + source.roundsPerRun + ' 轮 · 每轮: ' + source.roundSize + ' 封<br>' +
             '来源配置: ' + escapeHtml(source.configName) +
             '</div>';
     } else {
@@ -13881,8 +14056,7 @@ function showBatchManualConfirm() {
         body.innerHTML =
             '<div class="batch-manual-confirm-summary">' +
             '未关联定时配置，本次参数不会保存。<br>' +
-            '日限额: ' + escapeHtml(String(document.getElementById("batchManualDailyCap")?.value || "1000")) +
-            ' 封 · 每轮: ' + escapeHtml(String(document.getElementById("batchManualRoundSize")?.value || "50")) + ' 封' +
+            '每轮: ' + escapeHtml(String(document.getElementById("batchManualRoundSize")?.value || "50")) + ' 封<br>' +
             '</div>' +
             '<p class="batch-manual-confirm-warning">此为独立执行，不关联任何定时配置。</p>';
     }
@@ -13903,7 +14077,6 @@ async function confirmManualExecution() {
     var values = readManualFormValues();
     var snapshot = {
         mailType: values.mailType,
-        dailyCap: Number.isFinite(values.dailyCap) ? values.dailyCap : 1000,
         roundSize: Number.isFinite(values.roundSize) ? values.roundSize : 50,
         perMailIntervalMs: Number.isFinite(values.perMailIntervalMs) ? values.perMailIntervalMs : 1000,
         perRoundIntervalMs: Number.isFinite(values.perRoundIntervalMs) ? values.perRoundIntervalMs : 60000,
@@ -13939,9 +14112,6 @@ async function confirmManualExecution() {
 
 function handleManualExecute() {
     var raw = readManualFormValues();
-    if (!Number.isFinite(raw.dailyCap) || raw.dailyCap < 1) {
-        showStatus("日限额须为 ≥ 1 的有效数字", "error"); return;
-    }
     if (!Number.isFinite(raw.roundSize) || raw.roundSize < 1) {
         showStatus("每轮数量须为 ≥ 1 的有效数字", "error"); return;
     }
@@ -13953,9 +14123,6 @@ function handleManualExecute() {
     }
     if (!Number.isFinite(raw.perRoundIntervalMs) || raw.perRoundIntervalMs < 0) {
         showStatus("每轮间隔须为 ≥ 0 的有效数字（秒）", "error"); return;
-    }
-    if (raw.dailyCap < raw.roundSize) {
-        showStatus("日限额需 ≥ 每轮数量", "error"); return;
     }
     showBatchManualConfirm();
 }
@@ -14426,17 +14593,25 @@ function bindBatchSendTaskEvents() {
     var editorSaveBtn = document.getElementById("batchConfigEditorSaveBtn");
     if (editorSaveBtn) editorSaveBtn.addEventListener("click", saveBatchConfigEditor);
 
-    // Frequency change -> time field visibility
+    // Frequency change -> time/cron field visibility
     var freqSelect = document.getElementById("batchConfigEditorFrequency");
     if (freqSelect) {
-        freqSelect.addEventListener("change", function() {
-            var timeField = document.getElementById("batchConfigEditorTimeField");
-            if (timeField) timeField.style.display = freqSelect.value === "hourly" ? "none" : "";
-        });
+        freqSelect.addEventListener("change", syncBatchConfigEditorScheduleFields);
     }
 
     bindBatchTagPicker("batchConfigEditorTags");
     bindBatchTagPicker("batchManualTags");
+    bindBatchRegionPicker("batchConfigEditorRegions");
+
+    // Cron preview test button
+    var cronTestBtn = document.getElementById("batchConfigEditorCronTestBtn");
+    if (cronTestBtn) cronTestBtn.addEventListener("click", previewBatchCron);
+
+    // Volume hint follows roundsPerRun / roundSize inputs
+    var roundsInput = document.getElementById("batchConfigEditorRoundsPerRun");
+    var roundSizeInput = document.getElementById("batchConfigEditorRoundSize");
+    if (roundsInput) roundsInput.addEventListener("input", updateBatchConfigVolumeHint);
+    if (roundSizeInput) roundSizeInput.addEventListener("input", updateBatchConfigVolumeHint);
 
     // Manual source search — autocomplete
     var sourceQuery = document.getElementById("batchManualSourceQuery");

@@ -71,7 +71,7 @@ describe("batch manual execution log drawer", () => {
             openBatchExecutionLogs: (executionId) => { calls.openExecution.push(executionId); },
             openBatchConfigLogs: (configId, executionId) => { calls.openConfig.push({ configId, executionId }); },
             readManualFormValues: () => ({
-                mailType: "INTRODUCTION", dailyCap: 5, roundSize: 2,
+                mailType: "INTRODUCTION", roundsPerRun: 1, roundSize: 2,
                 perMailIntervalMs: 3000, perRoundIntervalMs: 60000,
                 selfCheckTtlMinutes: 30, funnelLevel: "CANDIDATE",
                 tags: [], emailDomain: null, discipline: null, templateId: 1
@@ -105,7 +105,7 @@ describe("batch manual execution log drawer", () => {
             openBatchExecutionLogs: (executionId) => { calls.openExecution.push(executionId); },
             openBatchConfigLogs: (configId, executionId) => { calls.openConfig.push({ configId, executionId }); },
             readManualFormValues: () => ({
-                mailType: "INTRODUCTION", dailyCap: 5, roundSize: 2,
+                mailType: "INTRODUCTION", roundsPerRun: 1, roundSize: 2,
                 perMailIntervalMs: 3000, perRoundIntervalMs: 60000,
                 selfCheckTtlMinutes: 30, funnelLevel: "CANDIDATE",
                 tags: [], emailDomain: null, discipline: null, templateId: 1

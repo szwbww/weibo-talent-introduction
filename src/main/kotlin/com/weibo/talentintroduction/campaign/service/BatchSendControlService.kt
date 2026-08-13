@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -21,6 +22,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import javax.annotation.PostConstruct
+import kotlin.math.ceil
 
 @Service
 class BatchSendControlService(
@@ -62,11 +64,6 @@ class BatchSendControlService(
         val snapshot = config.toExecutionSnapshot(objectMapper)
         validateSnapshotFields(snapshot)?.let { return it }
         validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return it }
-        val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(configId)
-        if (alreadySent >= snapshot.dailyCap) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})"))
-        }
         val request = ManualBatchExecutionRequest(
             sourceConfigId = configId,
             sourceUpdatedAt = config.updatedAt,
@@ -77,8 +74,7 @@ class BatchSendControlService(
             batchConfigId = configId,
             triggerType = "SCHEDULED",
             mode = ExecutionMode.AUTO,
-            requestPayload = request,
-            alreadySentToday = alreadySent
+            requestPayload = request
         )
     }
 
@@ -87,15 +83,6 @@ class BatchSendControlService(
         validateSnapshotFields(request.snapshot)?.let { return it }
         validateTemplateAtLaunch(request.snapshot.mailType, request.snapshot.templateId)?.let { return it }
         val batchConfigId = request.sourceConfigId
-        val alreadySent = if (batchConfigId != null) {
-            taskExecutionService.sumSuccessCountTodayByBatchConfigId(batchConfigId)
-        } else {
-            0
-        }
-        if (alreadySent >= request.snapshot.dailyCap) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "今日发送额度已达上限 ($alreadySent/${request.snapshot.dailyCap})"))
-        }
         val capacityError = checkRemainingAccountCapacity()
         if (capacityError != null) return capacityError
         return launchFromSnapshot(
@@ -104,7 +91,6 @@ class BatchSendControlService(
             triggerType = "MANUAL",
             mode = ExecutionMode.MANUAL,
             requestPayload = request,
-            alreadySentToday = alreadySent,
             oneRoundOnly = request.snapshot.oneRoundOnly
         )
     }
@@ -136,10 +122,6 @@ class BatchSendControlService(
             val snapshot = config.toExecutionSnapshot(objectMapper)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
-            if (alreadySent >= snapshot.dailyCap) {
-                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
-            }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -147,7 +129,6 @@ class BatchSendControlService(
                 triggerType = "SCHEDULED",
                 mode = ExecutionMode.AUTO,
                 requestPayload = request,
-                alreadySentToday = alreadySent,
                 legacySendType = sendType,
                 manageRuntimeStatus = true
             )
@@ -171,10 +152,6 @@ class BatchSendControlService(
             val snapshot = config.toExecutionSnapshot(objectMapper)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
-            if (alreadySent >= snapshot.dailyCap) {
-                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
-            }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -182,7 +159,6 @@ class BatchSendControlService(
                 triggerType = "MANUAL",
                 mode = ExecutionMode.MANUAL,
                 requestPayload = request,
-                alreadySentToday = alreadySent,
                 legacySendType = sendType,
                 manageRuntimeStatus = true
             )
@@ -280,10 +256,6 @@ class BatchSendControlService(
             val snapshot = config.toExecutionSnapshot(objectMapper, oneRoundOnly = true)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            val alreadySent = taskExecutionService.sumSuccessCountTodayByBatchConfigId(legacy.id)
-            if (alreadySent >= snapshot.dailyCap) {
-                return conflict("今日发送额度已达配置上限 ($alreadySent/${snapshot.dailyCap})")
-            }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -291,7 +263,6 @@ class BatchSendControlService(
                 triggerType = "MANUAL",
                 mode = ExecutionMode.MANUAL,
                 requestPayload = request,
-                alreadySentToday = alreadySent,
                 oneRoundOnly = true,
                 legacySendType = sendType,
                 manageRuntimeStatus = true,
@@ -320,7 +291,7 @@ class BatchSendControlService(
             autoEnabled = config.autoEnabled,
             pauseReason = state.pauseReason,
             roundNumber = details?.asInt("roundNumber") ?: 0,
-            dailyCap = details?.asInt("dailyCap") ?: 0,
+            roundsPerRun = details?.asInt("roundsPerRun") ?: 0,
             dailySentTotal = details?.asInt("dailySentTotal") ?: 0,
             sentTotal = details?.asInt("sentTotal") ?: 0,
             failedTotal = details?.asInt("failedTotal") ?: 0,
@@ -341,7 +312,6 @@ class BatchSendControlService(
         triggerType: String,
         mode: ExecutionMode,
         requestPayload: Any,
-        alreadySentToday: Int,
         oneRoundOnly: Boolean = snapshot.oneRoundOnly,
         legacySendType: BatchSendType? = null,
         manageRuntimeStatus: Boolean = false,
@@ -393,7 +363,6 @@ class BatchSendControlService(
                             snapshot = snapshot,
                             executionId = executionId!!,
                             mode = mode,
-                            alreadySentToday = alreadySentToday,
                             oneRoundOnly = oneRoundOnly
                         )
                     }
@@ -447,8 +416,8 @@ class BatchSendControlService(
 
     private fun validateSnapshotFields(snapshot: BatchExecutionSnapshot): ResponseEntity<Map<String, Any>>? {
         return try {
-            require(snapshot.dailyCap > 0) { "dailyCap must be > 0" }
             require(snapshot.roundSize > 0) { "roundSize must be > 0" }
+            require(snapshot.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }
             require(snapshot.perMailIntervalMs >= 0) { "perMailIntervalMs must be >= 0" }
             require(snapshot.perRoundIntervalMs >= 0) { "perRoundIntervalMs must be >= 0" }
             require(snapshot.selfCheckTtlMinutes >= 1) { "selfCheckTtlMinutes must be >= 1" }
@@ -456,6 +425,9 @@ class BatchSendControlService(
                 require(level in setOf("CANDIDATE", "APPLICATION")) {
                     "funnelLevel must be CANDIDATE, APPLICATION, or empty"
                 }
+            }
+            snapshot.regions.forEach { region ->
+                require(region in CountryContinentMapping.allRegions()) { "Invalid region: $region" }
             }
             null
         } catch (e: IllegalArgumentException) {
@@ -580,7 +552,6 @@ class BatchSendControlService(
             triggerType = triggerType,
             mode = mode,
             requestPayload = mapOf("legacySendType" to sendType.name, "snapshot" to snapshot),
-            alreadySentToday = 0,
             oneRoundOnly = oneRoundOnly,
             legacySendType = sendType,
             manageRuntimeStatus = true,
@@ -593,13 +564,14 @@ class BatchSendControlService(
     private fun BatchSendConfig.toLegacySnapshot(oneRoundOnly: Boolean): BatchExecutionSnapshot =
         BatchExecutionSnapshot(
             mailType = sendType.name,
-            dailyCap = dailyCap,
             roundSize = roundSize,
+            roundsPerRun = maxOf(1, ceil(dailyCap.toDouble() / roundSize).toInt()),
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
             selfCheckTtlMinutes = selfCheckTtlMinutes,
             funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
             tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
+            regions = emptyList(),
             emailDomain = emailDomain.ifBlank { null },
             discipline = discipline.ifBlank { null },
             templateId = templateId,
@@ -694,7 +666,6 @@ class BatchSendControlService(
         private val idleSafeOneRoundStopReasons = setOf(
             "ONE_ROUND_DONE",
             "EMPTY_SNAPSHOT",
-            "DAILY_CAP_REACHED",
             "DAILY_LIMIT_REACHED",
             "WARMUP_LIMIT_REACHED"
         )
@@ -707,7 +678,7 @@ data class BatchSendStatusView(
     val autoEnabled: Boolean,
     val pauseReason: String,
     val roundNumber: Int,
-    val dailyCap: Int,
+    val roundsPerRun: Int = 0,
     val dailySentTotal: Int,
     val sentTotal: Int,
     val failedTotal: Int,

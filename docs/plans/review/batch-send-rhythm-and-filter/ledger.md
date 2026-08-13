@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-12/batch-send-rhythm-and-filter-00-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
+- Master plan: docs/plans/2026-08-12/batch-send-rhythm-and-filter-00-master.md (sha256: 3878a03be2c8d51cd0c97e6d4eb06749cbe25a30c29931f23b1a1e2aba08fa14)
+- Governing master identity: worktree sha256 3878a03be2c8d51cd0c97e6d4eb06749cbe25a30c29931f23b1a1e2aba08fa14; recorded commit a6c27bbbca02a3b018d8a16aeb11822abd905e19
+- Invoked master identity: sha256 3878a03be2c8d51cd0c97e6d4eb06749cbe25a30c29931f23b1a1e2aba08fa14 (SAME)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 — docs/plans/2026-08-12/batch-send-rhythm-02b-drop-daily-cap-field.md; master rule “00 主计划测试文件全集（需求 1：Kotlin 8 个 test 文件，含 MailAutomationControllerTest 3 处）”; reason “02b 清单遗漏 MailAutomationControllerTest.kt；删 BatchSendStatusView.dailyCap 必断其 3 处引用，机械删除”; approval HUMAN:"Approve A1, resume 02b verification" 2026-08-12T13:19:28Z
+- Fast-p ledger: docs/plans/fast/batch-send-rhythm-and-filter/ledger.md (sha256: d051fd7a3e203380758d75b8dea615b96444e450e3ba2f5e0df32c3a2a46c040)
+- Fast-p handoff: docs/plans/fast/batch-send-rhythm-and-filter/human-review-handoff.md (sha256: e47321a03db9a0defeda49740e3e3616a48cecbe4d35d18681f67a3ae333257d)
+- Master base: a6c27bbbca02a3b018d8a16aeb11822abd905e19
+- Final code head: fc136629fc9645334f71a3024c2b6fa96c909dee
+- Evidence parent before next commit: 5bddf281c102a2c6345ab13dc6f80b21398d445c
+- Previous evidence commit: 5bddf281c102a2c6345ab13dc6f80b21398d445c
+- Branch: fast/batch-send-rhythm-and-filter
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/batch-send-rhythm-and-filter
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: `discover_fast_p.py` SELECTED exactly one registered worktree; worktree master sha256 3878a03be2c8d51cd0c97e6d4eb06749cbe25a30c29931f23b1a1e2aba08fa14; recorded identity commit a6c27bbbca02a3b018d8a16aeb11822abd905e19; base a6c27bbbca02a3b018d8a16aeb11822abd905e19; code head c6a02f84eba853aea5484b7ec102edddd85f5138.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_rereviewer (fresh after fc136629fc9645334f71a3024c2b6fa96c909dee; distinct from prior reviewer and executor; no inherited implementation/light-verification context)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/batch-send-rhythm-and-filter/machine-verification.md#epoch-2
+- Repair artifact: docs/plans/fix/batch-send-rhythm-and-filter-00-master/repair.md
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN-originated `$execute-p docs/plans/fix/batch-send-rhythm-and-filter-00-master/repair.md` (2026-08-13)
+- Repair executor: Main
+- Repair code head: fc136629fc9645334f71a3024c2b6fa96c909dee
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: pending human manual acceptance and explicit sign-off for fc136629fc9645334f71a3024c2b6fa96c909dee; MySQL IT is HUMAN-SKIPPED per 2026-08-13 instruction.

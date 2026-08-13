@@ -29,9 +29,12 @@ class BatchSendConfigControllerTest {
     private val repository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
     private val templateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
     private val eventPublisher = Mockito.mock(ApplicationEventPublisher::class.java)
+    private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val objectMapper = ObjectMapper()
+        .registerModule(com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+        .registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
     private val taskConfigService = BatchSendTaskConfigService(
-        repository, templateService, objectMapper, eventPublisher
+        repository, templateService, objectMapper, eventPublisher, taskExecutionService
     )
     private val templateRepository = Mockito.mock(MailComposeTemplateRepository::class.java)
 
@@ -40,14 +43,13 @@ class BatchSendConfigControllerTest {
         templateRepository = templateRepository,
         batchSendControlService = Mockito.mock(BatchSendControlService::class.java),
         manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java),
-        taskExecutionService = Mockito.mock(TaskExecutionService::class.java),
+        taskExecutionService = taskExecutionService,
         progressLogRepository = Mockito.mock(TaskProgressLogRepository::class.java),
         objectMapper = objectMapper
     )
 
     private fun introEntity(
         cron: String = "0 0 0 * * ?",
-        dailyCap: Int = 100,
         autoEnabled: Boolean = false
     ) = BatchSendTaskConfig(
         id = 10L,
@@ -55,7 +57,6 @@ class BatchSendConfigControllerTest {
         mailType = "INTRODUCTION",
         autoEnabled = autoEnabled,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = 50,
         perMailIntervalMs = 1000,
         perRoundIntervalMs = 60000,
@@ -68,7 +69,6 @@ class BatchSendConfigControllerTest {
 
     private fun reminderEntity(
         cron: String = "0 0 8 * * ?",
-        dailyCap: Int = 60,
         templateId: Long = 99L
     ) = BatchSendTaskConfig(
         id = 20L,
@@ -76,7 +76,6 @@ class BatchSendConfigControllerTest {
         mailType = "MATERIAL_REMINDER",
         autoEnabled = false,
         cron = cron,
-        dailyCap = dailyCap,
         roundSize = 30,
         perMailIntervalMs = 3000,
         perRoundIntervalMs = 120000,
@@ -90,13 +89,13 @@ class BatchSendConfigControllerTest {
 
     @Test
     fun `GET config reads INTRODUCTION legacy entity not KV`() {
-        Mockito.`when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(introEntity(cron = "0 15 6 * * ?", dailyCap = 77))
+        Mockito.`when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(introEntity(cron = "0 15 6 * * ?"))
 
         val response = controller().getConfig()
 
         assertEquals(HttpStatus.OK, response.statusCode)
         assertEquals("0 15 6 * * ?", response.body!!.cron)
-        assertEquals(77, response.body!!.dailyCap)
+        assertEquals(0, response.body!!.dailyCap)
         Mockito.verify(repository).findByLegacyCode("INTRODUCTION")
     }
 
@@ -128,18 +127,17 @@ class BatchSendConfigControllerTest {
 
         assertEquals(HttpStatus.OK, response.statusCode)
         assertEquals("0 0 9 * * ?", response.body!!.cron)
-        assertEquals(333, response.body!!.dailyCap)
+        assertEquals(0, response.body!!.dailyCap)
         assertTrue(response.body!!.autoEnabled)
         Mockito.verify(repository).save(captor.capture())
         assertEquals(10L, captor.value.id)
-        assertEquals(333, captor.value.dailyCap)
         assertEquals("0 0 9 * * ?", captor.value.cron)
         Mockito.verify(eventPublisher).publishEvent(Mockito.any(com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent::class.java))
     }
 
     @Test
     fun `GET and PUT types INTRODUCTION config use entity adapter`() {
-        val existing = introEntity(cron = "0 0 1 * * ?", dailyCap = 11)
+        val existing = introEntity(cron = "0 0 1 * * ?")
         Mockito.`when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
         Mockito.`when`(repository.findByIdAndDeletedAtIsNull(10L)).thenReturn(existing)
         Mockito.`when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
@@ -148,7 +146,7 @@ class BatchSendConfigControllerTest {
         }
 
         val got = controller().getConfigByType(BatchSendType.INTRODUCTION)
-        assertEquals(11, got.body!!.dailyCap)
+        assertEquals(0, got.body!!.dailyCap)
 
         val put = controller().updateConfigByType(
             BatchSendType.INTRODUCTION,
@@ -162,7 +160,7 @@ class BatchSendConfigControllerTest {
                 selfCheckTtlMinutes = 30
             )
         )
-        assertEquals(22, put.body!!.dailyCap)
+        assertEquals(0, put.body!!.dailyCap)
         assertEquals("0 5 5 * * ?", put.body!!.cron)
         Mockito.verify(repository, Mockito.atLeastOnce()).findByLegacyCode("INTRODUCTION")
         Mockito.verify(repository).save(Mockito.any())
@@ -198,7 +196,7 @@ class BatchSendConfigControllerTest {
 
         val got = controller().getConfigByType(BatchSendType.MATERIAL_REMINDER)
         assertEquals(BatchSendType.MATERIAL_REMINDER, got.body!!.sendType)
-        assertEquals(60, got.body!!.dailyCap)
+        assertEquals(0, got.body!!.dailyCap)
 
         val put = controller().updateConfigByType(
             BatchSendType.MATERIAL_REMINDER,
@@ -213,7 +211,7 @@ class BatchSendConfigControllerTest {
                 templateId = 99L
             )
         )
-        assertEquals(80, put.body!!.dailyCap)
+        assertEquals(0, put.body!!.dailyCap)
         assertEquals("0 0 10 * * ?", put.body!!.cron)
         assertTrue(put.body!!.autoEnabled)
         Mockito.verify(repository).save(Mockito.any())
@@ -229,5 +227,39 @@ class BatchSendConfigControllerTest {
             assertEquals(HttpStatus.NOT_FOUND, ex.status)
         }
         Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+    }
+
+    // ── 04a: cron preview + nextFireTime/lastExecutedAt in the configs response ───
+
+    @Test
+    fun `POST cron preview returns 200 with valid true and 5 times for legal expression`() {
+        val response = controller().previewCron(CronPreviewRequest(cron = "0 0 9 * * ?"))
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(true, response.body!!.valid)
+        assertEquals(5, response.body!!.nextFireTimes.size)
+    }
+
+    @Test
+    fun `POST cron preview returns 200 with valid false for illegal expression`() {
+        val response = controller().previewCron(CronPreviewRequest(cron = "每天九点"))
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(false, response.body!!.valid)
+        assertTrue(!response.body!!.message.isNullOrEmpty())
+        assertEquals(0, response.body!!.nextFireTimes.size)
+    }
+
+    @Test
+    fun `GET configs response json contains nextFireTime and lastExecutedAt keys`() {
+        Mockito.`when`(repository.findAllActiveOrderByUpdatedAtDescIdDesc())
+            .thenReturn(listOf(introEntity(autoEnabled = true)))
+
+        val response = controller().listConfigs(null)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        val json = objectMapper.writeValueAsString(response.body)
+        assertTrue(json.contains("nextFireTime"))
+        assertTrue(json.contains("lastExecutedAt"))
     }
 }

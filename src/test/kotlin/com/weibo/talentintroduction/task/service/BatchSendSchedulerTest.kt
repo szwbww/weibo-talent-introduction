@@ -29,7 +29,6 @@ class BatchSendSchedulerTest {
             mailType = "INTRODUCTION",
             autoEnabled = true,
             cron = cron,
-            dailyCap = 1000,
             roundSize = 50,
             perMailIntervalMs = 1000,
             perRoundIntervalMs = 60000,

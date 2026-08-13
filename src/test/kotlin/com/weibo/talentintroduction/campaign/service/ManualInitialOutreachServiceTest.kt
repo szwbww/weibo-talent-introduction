@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.Campaign
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
@@ -589,13 +590,13 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `runScheduledBatch respects dailyCap and stops full run with COMPLETED`() {
+    fun `runScheduledBatch ignores dailyCap and sends all experts (I-1)`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        // 5 experts, dailyCap=2, roundSize=10 → only 2 sent (L3-2/I-6)
+        // 5 experts, dailyCap=2, roundSize=10 → dailyCap no longer truncates; all 5 sent in one round (I-1)
         stubScrolledExperts(listOf(
             expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com"),
             expert("0004", "g@h.com"), expert("0005", "i@j.com")
@@ -613,12 +614,48 @@ class ManualInitialOutreachServiceTest {
 
         val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
 
-        // I-6/L3-2: at most dailyCap=2 mails sent
-        assertEquals(2, result.sent)
+        // I-1: dailyCap=2 is no longer read; the round sends all 5 experts
+        assertEquals(5, result.sent)
         assertEquals(5, result.total)
-        // Full run hitting dailyCap → COMPLETED (IDLE for next day)
         assertEquals("COMPLETED", result.finalStatus)
-        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("","","")))
+        assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
+        Mockito.verify(mailDeliveryService, Mockito.times(5)).send(anyValue(account), anyValue(ComposedMail("","","")))
+    }
+
+    @Test
+    fun `runScheduledBatch stops at account capacity with DAILY_LIMIT_REACHED (I-5)`() {
+        val account = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+
+        // 20 experts, roundSize=10, roundsPerRun=5 → round 1 sends 3 (account capacity 3), round 2 hits DAILY_LIMIT_REACHED
+        stubScrolledExperts((1..20).map { expert("N%04d".format(it), "n$it@test.com") })
+        for (i in 1..20) {
+            Mockito.`when`(expertContactRepository.existsByOrcidId("N%04d".format(i))).thenReturn(false)
+        }
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY))).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail("msg", "SENT"))
+
+        // dailyCap=50 → toSnapshot derives roundsPerRun = ceil(50/10) = 5
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 50))
+        // runRoundGate lists sendable accounts twice per round: round 1 has capacity 3, round 2 has capacity 0
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue()))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 0)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 0)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 3)))
+            .thenReturn(listOf(account.copy(dailySendLimit = 3, todaySentCount = 3)))
+
+        val result = service.runScheduledBatch(12345L, ExecutionMode.AUTO, oneRoundOnly = false)
+
+        // I-5: account capacity is the only daily-volume bound — exactly 3 sent, then DAILY_LIMIT_REACHED
+        assertEquals(3, result.sent)
+        assertEquals("DAILY_LIMIT_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(3)).send(anyValue(account), anyValue(ComposedMail("","","")))
     }
 
     @Test
@@ -710,7 +747,6 @@ class ManualInitialOutreachServiceTest {
         val details = finalProgress.details
         assertNotNull(details)
         assertEquals("MANUAL", details!!["executionMode"])
-        assertEquals(1000, details["dailyCap"])
         // accounts array present with per-account row
         @Suppress("UNCHECKED_CAST")
         val accounts = details["accounts"] as? List<AccountStatRow>
@@ -1310,12 +1346,6 @@ class ManualInitialOutreachServiceTest {
                     selfCheckTtlMinutes = 30, templateId = 10L
                 )
             )
-        Mockito.`when`(
-            mailRecordRepository.countSentByMailTypeSince(
-                Mockito.anyString(),
-                anyValue(LocalDateTime.now())
-            )
-        ).thenReturn(0L)
 
         val blockedId = 701L
         val sentId = 702L
@@ -1433,6 +1463,140 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(senderAccountAssignmentService, Mockito.times(1)).loadBindingStock()
     }
 
+    // ──── roundsPerRun (execution round budget) tests ────
+
+    private fun introSnapshot(
+        roundSize: Int,
+        roundsPerRun: Int,
+        perRoundIntervalMs: Long = 0
+    ) = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+        mailType = "INTRODUCTION",
+        roundSize = roundSize,
+        roundsPerRun = roundsPerRun,
+        perMailIntervalMs = 0,
+        perRoundIntervalMs = perRoundIntervalMs,
+        selfCheckTtlMinutes = 30
+    )
+
+    private fun stubIntroSendPipeline(account: MailSenderAccount, experts: List<ExpertProfile>) {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(experts)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(account)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+    }
+
+    /**
+     * ES paging stub that serves a fresh page slice on every call. The lazy
+     * [OutreachTargetIterator] refetches from offset 0 and dedups via seenOrcids,
+     * so a flat drop/take stub can only ever surface one page (roundSize * 2).
+     */
+    private fun stubIntroChunkedExperts(experts: List<ExpertProfile>, pageSize: Int) {
+        val chunks = experts.chunked(pageSize)
+        var callIndex = 0
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { invocation ->
+            val from = invocation.getArgument<Int>(2)
+            val size = invocation.getArgument<Int>(3)
+            val chunk = chunks.getOrNull(callIndex) ?: emptyList()
+            callIndex++
+            chunk.drop(from).take(size)
+        }
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+        )).thenReturn(experts.size.toLong())
+    }
+
+    @Test
+    fun `roundsPerRun bounds a single execution at rounds times round size`() {
+        val account = account("chen")
+        val experts = (1..100).map { expert("E%04d".format(it), "e$it@test.com") }
+        stubIntroSendPipeline(account, experts)
+        // roundSize=20 ⇒ iterator pageSize=40; serve fresh pages so all 100 targets are reachable
+        stubIntroChunkedExperts(experts, pageSize = 40)
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 2),
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
+        )
+
+        // Observable outcome 2: roundsPerRun(2) × roundSize(20) = 40 mails max for this run
+        assertEquals(40, result.sent)
+        assertEquals(100, result.total)
+        // I-1/I-2: budget exhausted is a normal completion, not a pause
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(40)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `roundsPerRun not exhausted does not report ROUNDS_PER_RUN_REACHED`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..10).map { expert("F%04d".format(it), "f$it@test.com") }
+        )
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 5),
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
+        )
+
+        // Only 10 targets exist; the run ends after one partial round without touching the round budget
+        assertEquals(10, result.sent)
+        assertNotEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertEquals("COMPLETED", result.finalStatus)
+    }
+
+    @Test
+    fun `oneRoundOnly takes precedence over roundsPerRun`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..100).map { expert("G%04d".format(it), "g$it@test.com") }
+        )
+
+        val result = service.run(
+            introSnapshot(roundSize = 20, roundsPerRun = 5),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = true
+        )
+
+        // I-4: oneRoundOnly wins even when roundsPerRun = 5
+        assertEquals(20, result.sent)
+        assertEquals("ONE_ROUND_DONE", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        Mockito.verify(mailDeliveryService, Mockito.times(20)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `no round interval sleep after roundsPerRun budget is spent`() {
+        val account = account("chen")
+        stubIntroSendPipeline(
+            account,
+            (1..50).map { expert("H%04d".format(it), "h$it@test.com") }
+        )
+
+        val start = System.currentTimeMillis()
+        val result = service.run(
+            introSnapshot(roundSize = 5, roundsPerRun = 1, perRoundIntervalMs = 120000),
+            12345L, ExecutionMode.AUTO, oneRoundOnly = false
+        )
+        val elapsedMs = System.currentTimeMillis() - start
+
+        // B-2: the 120s round interval must not be slept once the budget (1 round) is spent
+        assertEquals(5, result.sent)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertTrue(elapsedMs < 5000, "expected no 120s round-interval sleep, took ${elapsedMs}ms")
+    }
+
     // ──── Material Reminder Batch Tests ────
 
     @org.junit.jupiter.api.Nested
@@ -1450,12 +1614,6 @@ class ManualInitialOutreachServiceTest {
         fun setUpReminder() {
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(reminderConfig())
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
         }
 
         @Test
@@ -1679,7 +1837,7 @@ class ManualInitialOutreachServiceTest {
         }
 
         @Test
-        fun `runMaterialReminderBatch respects dailyCap from REMINDER config (I-9)`() {
+        fun `runMaterialReminderBatch ignores dailyCap and sends all round targets (I-1)`() {
             val targets = (1..5).map { i ->
                 val contactId = (100 + i).toLong()
                 val orcid = "R10$i"
@@ -1725,13 +1883,73 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            // dailyCap=2 → at most 2 sent even though 5 targets available
-            assertEquals(2, result.sent)
+            // I-1: dailyCap=2 no longer truncates; all 5 targets sent in the single round (roundSize=10)
+            assertEquals(5, result.sent)
+            assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
+        }
+
+        @Test
+        fun `material reminder roundsPerRun bounds a single execution at rounds times round size`() {
+            val targets = (1..100).map { i ->
+                val contactId = (300 + i).toLong()
+                val orcid = "M$i".padStart(4, '0')
+                val email = "m$i@test.com"
+                val contact = ExpertContact(
+                    id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
+                    expertName = "M$i", currentStatus = "WAITING_REPLY"
+                )
+                val ep = expert(orcid, email)
+                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+                    .thenReturn(emptyList())
+                Pair(contact, ep)
+            }
+
+            Mockito.`when`(expertSearchService.countExperts(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            )).thenReturn(100L)
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+            )).thenReturn(targets.map { it.second })
+            Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+                .thenReturn(targets.map { it.first })
+
+            val acc = account("chen")
+            Mockito.`when`(senderAccountAssignmentService.selectAccount(
+                anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+            )).thenReturn(acc)
+            stubReminderResolveForSendNotBound()
+            Mockito.`when`(manualExpertMailService.sendManualMail(
+                anyLong(),
+                anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+            )).thenAnswer { invocation ->
+                val cid = invocation.getArgument<Long>(0)
+                com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                    contactId = cid, senderAccountCode = "chen",
+                    mailType = "MATERIAL_REMINDER", subject = "Subj",
+                    sendStatus = "SENT", messageId = "msg-$cid"
+                )
+            }
+
+            val snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "MATERIAL_REMINDER",
+                roundSize = 20,
+                roundsPerRun = 2,
+                perMailIntervalMs = 0,
+                perRoundIntervalMs = 0,
+                selfCheckTtlMinutes = 30,
+                templateId = 10L
+            )
+            val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+            // B-2 symmetry: material loop honors the same per-run round budget
+            assertEquals(40, result.sent)
+            assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
             assertEquals("COMPLETED", result.finalStatus)
         }
 
         @Test
-        fun `runMaterialReminderBatch seeds dailyCap from persisted SENT count (R1)`() {
+        fun `runMaterialReminderBatch no longer seeds from persisted SENT count (I-3)`() {
             val targets = (1..5).map { i ->
                 val contactId = (200 + i).toLong()
                 val orcid = "D10$i"
@@ -1748,13 +1966,7 @@ class ManualInitialOutreachServiceTest {
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 3, roundSize = 10)
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(capConfig)
-            // Already sent 2 today → remaining quota = 1
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(2L)
+            // I-3: persisted SENT count is no longer queried; it must not reduce the sendable targets
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(5L)
@@ -1783,13 +1995,14 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            assertEquals(1, result.sent)
-            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+            // I-3: with the persisted-SENT seed removed, all 5 targets are sent in the single round
+            assertEquals(5, result.sent)
             assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
         }
 
         @Test
-        fun `runMaterialReminderBatch does not count FAILED toward dailyCap seed (R1)`() {
+        fun `runMaterialReminderBatch sends all targets regardless of FAILED history (I-3)`() {
             val targets = (1..3).map { i ->
                 val contactId = (300 + i).toLong()
                 val orcid = "F10$i"
@@ -1806,13 +2019,7 @@ class ManualInitialOutreachServiceTest {
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
             Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
                 .thenReturn(capConfig)
-            // FAILED records must not reduce remaining quota — seed stays 0
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
+            // I-3: no persisted-SENT seed at all; sendable targets are bounded by round size / account capacity only
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -1841,12 +2048,14 @@ class ManualInitialOutreachServiceTest {
 
             val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            assertEquals(2, result.sent)
-            assertEquals("DAILY_CAP_REACHED", result.stopReason)
+            // I-3/I-1: all 3 targets sent in the single round; dailyCap=2 never read
+            assertEquals(3, result.sent)
+            assertEquals("COMPLETED", result.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", result.stopReason)
         }
 
         @Test
-        fun `runMaterialReminderBatch second invocation cannot exceed dailyCap (R1)`() {
+        fun `runMaterialReminderBatch second invocation sends again without dailyCap gate (I-1)`() {
             fun stubTargets(prefix: String, baseId: Long, count: Int) =
                 (1..count).map { i ->
                     val contactId = baseId + i
@@ -1866,12 +2075,6 @@ class ManualInitialOutreachServiceTest {
                 .thenReturn(capConfig)
 
             val firstTargets = stubTargets("A", 400, 3)
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(0L)
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -1898,16 +2101,10 @@ class ManualInitialOutreachServiceTest {
             }
 
             val first = service.runMaterialReminderBatch(1L, ExecutionMode.MANUAL, false)
-            assertEquals(2, first.sent)
+            assertEquals(3, first.sent)
 
-            // Second invocation sees 2 already SENT today → remaining 0
+            // I-1: second invocation is not gated by prior sends; all targets sendable again
             val secondTargets = stubTargets("B", 500, 3)
-            Mockito.`when`(
-                mailRecordRepository.countSentByMailTypeSince(
-                    Mockito.anyString(),
-                    anyValue(LocalDateTime.now())
-                )
-            ).thenReturn(2L)
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(3L)
@@ -1919,8 +2116,10 @@ class ManualInitialOutreachServiceTest {
 
             val second = service.runMaterialReminderBatch(2L, ExecutionMode.MANUAL, false)
 
-            assertEquals(0, second.sent)
-            assertEquals("DAILY_CAP_REACHED", second.stopReason)
+            // I-1: same-day re-invocation sends again; only account capacity / roundsPerRun bound the run
+            assertEquals(3, second.sent)
+            assertEquals("COMPLETED", second.finalStatus)
+            assertNotEquals("DAILY_CAP_REACHED", second.stopReason)
         }
     }
 
@@ -2243,7 +2442,6 @@ class ManualInitialOutreachServiceTest {
                 mailType = mailType,
                 autoEnabled = true,
                 cron = if (mailType == "INTRODUCTION") "0 0 0 * * ?" else "0 0 8 * * ?",
-                dailyCap = 1000,
                 roundSize = 50,
                 perMailIntervalMs = 0,
                 perRoundIntervalMs = 0,
@@ -2445,6 +2643,255 @@ class ManualInitialOutreachServiceTest {
 
             assertEquals("MATERIAL_REMINDER", status.activeSendType)
         }
+    }
+
+    @Test
+    fun `run passes regions to ES filter on INTRODUCTION CANDIDATE branch (branch A)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Europe")
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `run passes regions to ES filter on MATERIAL_REMINDER branch (branch B)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            regions = listOf("Europe"),
+            templateId = 42L
+        )
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
+        ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `run builds must_not exists filter for UNCLASSIFIED on MATERIAL_REMINDER else branch (I-3)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            discipline = "UNCLASSIFIED",
+            templateId = 42L
+        )
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(
+            mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "disciplineCategory")))))
+        )
+        expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
+        // I-3: the else branch must go through disciplineFilter — must_not exists, never a term.
+        assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
+        assertTrue(expectedFilters.none { it.containsKey("term") })
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `run keeps must_not exists discipline filter on INTRODUCTION CANDIDATE branch (I-3)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            discipline = "UNCLASSIFIED"
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED").toMutableList()
+        // Regression: the INTRODUCTION+CANDIDATE branch already routed through disciplineFilter; must stay correct.
+        assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
+        assertTrue(expectedFilters.none { it.containsKey("term") })
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `countPending keeps retryable without disciplineCategory when discipline is UNCLASSIFIED (I-4)`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "UNCLASSIFIED"))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val unclassContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "UNC1", expertEmail = "u@x.com", expertName = "U", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(unclassContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        // disciplineCategory defaults to null in the test helper — the retry path must treat missing field as UNCLASSIFIED.
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("UNC1"))).thenReturn(
+            listOf(expert("UNC1", "u@x.com"))
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val summary = service.countPending()
+        assertEquals(0, summary.pending)
+        assertEquals(1, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+    }
+
+    @Test
+    fun `countPending filters retryable with STEM disciplineCategory when discipline is UNCLASSIFIED (I-4)`() {
+        Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig().copy(discipline = "UNCLASSIFIED"))
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val stemContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "STEM1", expertEmail = "s@x.com", expertName = "S", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(stemContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("STEM1"))).thenReturn(
+            listOf(expert("STEM1", "s@x.com").copy(disciplineCategory = "STEM"))
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val summary = service.countPending()
+        assertEquals(0, summary.pending)
+        assertEquals(0, summary.retryable)
+        assertEquals(0, summary.totalSendable)
+    }
+
+    @Test
+    fun `retryable contact kept when country region matches scope regions`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "GER1", expertEmail = "g@x.com", expertName = "G", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("GER1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("GER1", "g@x.com").copy(country = "Germany")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Europe")
+        )
+        // No sendable accounts → stop at round gate; target count proves the retryable survived matchesExpert.
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.total)
+    }
+
+    @Test
+    fun `retryable contact filtered when country region outside scope regions`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "GER1", expertEmail = "g@x.com", expertName = "G", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("GER1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("GER1", "g@x.com").copy(country = "Germany")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("China")
+        )
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+    }
+
+    @Test
+    fun `retryable contact with null country kept when Other region selected`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "NUL1", expertEmail = "n@x.com", expertName = "N", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("NUL1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("NUL1", "n@x.com").copy(country = null)))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            regions = listOf("Other")
+        )
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.total)
     }
 
     // ──── Helpers ────

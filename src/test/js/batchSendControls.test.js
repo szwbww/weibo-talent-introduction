@@ -217,7 +217,7 @@ describe("Batch Send Controls (phase 04)", () => {
             const sb = createBatchSendSandbox();
             sb.applyBatchSendControls({
                 status: "RUNNING", mode: "AUTO", pauseReason: "",
-                roundNumber: 2, dailyCap: 1000, dailySentTotal: 120,
+                roundNumber: 2, dailySentTotal: 120,
                 sentTotal: 120, failedTotal: 3,
                 accounts: [
                     { accountCode: "acct1", todaySent: 60, dailyLimit: 100, success: 60, failed: 2, paused: false },
@@ -236,10 +236,11 @@ describe("Batch Send Controls (phase 04)", () => {
             assert.strictEqual(sb.__store.get("batchSendStatusBadge").textContent, "介绍 运行中");
             // progress panel shown because RUNNING
             assert.strictEqual(sb.__store.get("batchSendProgressPanel").hidden, false);
-            // summary row rendered with round/daily/sent/failed
+            // summary row rendered with round/daily/sent/failed (dailyCap removed in 04b)
             const summaryHtml = sb.__store.get("batchSendSummaryRow").innerHTML;
             assert.ok(summaryHtml.includes("轮次"));
-            assert.ok(summaryHtml.includes("120/1000"));
+            assert.ok(summaryHtml.includes("每日 <strong>120</strong>"));
+            assert.ok(!summaryHtml.includes("1000"), "summary must no longer show the removed dailyCap");
             // account table renders both accounts; paused one shows 自动暂停 badge with reason tooltip
             const tableHtml = sb.__store.get("batchSendAccountTable").innerHTML;
             assert.ok(tableHtml.includes("acct1"));
@@ -305,78 +306,18 @@ describe("Batch Send Controls (phase 04)", () => {
         });
     });
 
-    describe("config form seconds <-> milliseconds conversion", () => {
-        function setForm(sb, fields) {
-            setConfigForm(sb, fields);
-        }
-
-        it("seconds are converted to ms on read (1s -> 1000ms, 60s -> 60000ms)", () => {
-            const sb = createBatchSendSandbox();
-            setForm(sb, {
-                batchSendAutoEnabled: true,
-                batchSendFrequency: "daily",
-                batchSendTime: "00:00",
-                batchSendDailyCap: "1000",
-                batchSendRoundSize: "50",
-                batchSendPerMailIntervalSec: "1",
-                batchSendPerRoundIntervalSec: "60",
-                batchSendSelfCheckTtlMin: "30",
-                batchSendEmailDomain: "gmail.com"
-            });
-            const payload = sb.readBatchSendConfigForm();
-            assert.strictEqual(payload.autoEnabled, true);
-            assert.strictEqual(payload.cron, "0 0 0 * * ?");
-            assert.strictEqual(payload.dailyCap, 1000);
-            assert.strictEqual(payload.roundSize, 50);
-            assert.strictEqual(payload.perMailIntervalMs, 1000);
-            assert.strictEqual(payload.perRoundIntervalMs, 60000);
-            assert.strictEqual(payload.selfCheckTtlMinutes, 30);
-            assert.strictEqual(payload.emailDomain, "gmail.com");
-        });
-
-        it("dailyCap < roundSize throws", () => {
-            const sb = createBatchSendSandbox();
-            setForm(sb, {
-                batchSendAutoEnabled: true,
-                batchSendFrequency: "daily",
-                batchSendTime: "00:00",
-                batchSendDailyCap: "10",
-                batchSendRoundSize: "50",
-                batchSendPerMailIntervalSec: "1",
-                batchSendPerRoundIntervalSec: "60",
-                batchSendSelfCheckTtlMin: "30"
-            });
-            assert.throws(() => sb.readBatchSendConfigForm(), /每批上限/);
-        });
-
-        it("blank time falls back to default 09:00 cron", () => {
-            const sb = createBatchSendSandbox();
-            setForm(sb, {
-                batchSendAutoEnabled: true,
-                batchSendFrequency: "daily",
-                batchSendTime: "",
-                batchSendDailyCap: "1000",
-                batchSendRoundSize: "50",
-                batchSendPerMailIntervalSec: "1",
-                batchSendPerRoundIntervalSec: "60",
-                batchSendSelfCheckTtlMin: "30"
-            });
-            assert.strictEqual(sb.readBatchSendConfigForm().cron, "0 0 9 * * ?");
-        });
-
-        it("non-numeric interval throws", () => {
-            const sb = createBatchSendSandbox();
-            setForm(sb, {
-                batchSendAutoEnabled: true,
-                batchSendFrequency: "daily",
-                batchSendTime: "00:00",
-                batchSendDailyCap: "1000",
-                batchSendRoundSize: "50",
-                batchSendPerMailIntervalSec: "abc",
-                batchSendPerRoundIntervalSec: "60",
-                batchSendSelfCheckTtlMin: "30"
-            });
-            assert.throws(() => sb.readBatchSendConfigForm(), /数字/);
+    describe("daily cap UI removal (04b)", () => {
+        it("index.html no longer exposes batchSendDailyCap or batchConfigEditorDailyCap inputs", () => {
+            const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+            const indexHtmlSource = fs.readFileSync(indexHtmlPath, "utf-8");
+            assert.ok(
+                !indexHtmlSource.includes('id="batchSendDailyCap"'),
+                "batchSendDailyCap must be removed from index.html"
+            );
+            assert.ok(
+                !indexHtmlSource.includes('id="batchConfigEditorDailyCap"'),
+                "batchConfigEditorDailyCap must be removed from index.html"
+            );
         });
     });
 

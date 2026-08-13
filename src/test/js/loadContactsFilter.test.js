@@ -275,3 +275,66 @@ describe("loadContacts level change keeps batchSendEmailDomain full (I-5)", () =
         assert.ok(!filteredProviderUrl.includes("emailDomain"));
     });
 });
+
+describe("loadRegions localizes option labels but keeps English values (child 05)", () => {
+    function createRegionLoadSandbox() {
+        const options = [];
+        const filterDropdown = {
+            value: "",
+            innerHTML: "",
+            appendChild(opt) { options.push(opt); }
+        };
+        const sandbox = {
+            $: (sel) => sel === "#expertRegionFilter" ? filterDropdown : null,
+            document: {
+                createElement(tag) {
+                    return { tagName: tag.toUpperCase(), value: "", textContent: "" };
+                }
+            },
+            api: async () => [{ region: "Europe", count: 10 }],
+            URLSearchParams,
+            console: { error() {} }
+        };
+        vm.createContext(sandbox);
+        const regionLabelsSrc = appJsSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
+        assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
+        vm.runInContext(regionLabelsSrc[0], sandbox);
+        vm.runInContext(extractFn("regionLabel"), sandbox);
+        vm.runInContext(extractFn("loadRegions"), sandbox);
+        sandbox.__options = options;
+        return sandbox;
+    }
+
+    it("loadRegions renders Chinese labels while option values stay English (I-1/S-1)", async () => {
+        const sb = createRegionLoadSandbox();
+        await sb.loadRegions("CANDIDATE", { filters: {} });
+        assert.strictEqual(sb.__options.length, 1);
+        assert.strictEqual(sb.__options[0].value, "Europe", "option value must be the English constant");
+        assert.match(sb.__options[0].textContent, /^欧洲/, "option text must start with the Chinese label");
+    });
+
+    it("selecting the Chinese-labeled option sends the English region constant to /api/experts (I-1)", async () => {
+        const sb = createContactsSandbox();
+        const urls = [];
+        sb.$("#expertIndexLevel").value = "CANDIDATE";
+        sb.$("#expertIndexSize").value = "50";
+        sb.$("#contactStatusFilter").value = "";
+        sb.$("#contactNeedsAttentionFilter").value = "";
+        sb.$("#expertRegionFilter").value = "Europe"; // UI shows 欧洲, select value stays English
+        sb.$("#expertTagFilter").value = "";
+        sb.$("#expertEmailDomainFilter").value = "";
+        sb.api = async (url) => {
+            urls.push(url);
+            if (url.includes("/api/experts/regions")) return [{ region: "Europe", count: 10 }];
+            return { experts: [], totalHits: 0 };
+        };
+        await sb.loadContacts();
+        const expertsUrl = urls.find((u) => u.includes("/api/experts?"));
+        assert.ok(expertsUrl, "expected an /api/experts call");
+        assert.strictEqual(
+            new URLSearchParams(expertsUrl.split("?")[1]).get("region"),
+            "Europe",
+            "query param must be the English constant, not the Chinese label"
+        );
+    });
+});
