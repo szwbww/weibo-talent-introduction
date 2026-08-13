@@ -18,6 +18,10 @@
 
 > 知识条目 T-6（`docs/knowledge/es-index/K-es-dynamic-false.md` 就地修正 + 新增 `K-es-mapping-single-declaration-source.md`）随计划 Phase 6 处理，计入本计划交付但不在上表。`CandidateOperatorStatusSyncService.kt` 的调用点改动随 T-3 提交；若需独立修改该文件，文件数 8 仍 ≤10。
 
+> **Amendments A3（HUMAN 批准 2026-08-13，扩权）**：授权文件扩至下列（仅实际受影响者才改，未受影响保持零改动）：
+> - 测试（断言旧契约，随计划更新为新契约，不弱化验收标准）：`src/test/kotlin/…/expert/ExpertIndexServiceTest.kt`、`src/test/kotlin/…/expert/ExpertIndexWriterServiceTest.kt`、`src/test/kotlin/…/expert/CandidateOperatorStatusSyncServiceTest.kt`、`src/test/kotlin/…/campaign/service/ExpertOperatorStatusServiceTest.kt`、`src/test/kotlin/…/campaign/service/ManualInitialOutreachServiceTest.kt`、`src/test/kotlin/…/campaign/service/ManualOutreachTxHelperTest.kt`
+> - T-3 改名调用方：`src/main/kotlin/…/mail/service/BounceCollectionService.kt`、`…/campaign/service/ManualInitialOutreachService.kt`、`…/campaign/service/ExpertOperatorStatusService.kt`（实际调用点以 grep 实测为准）
+
 **禁止**：任何前端文件；其他后端/资源/测试文件；`docs/plans/fast/*`。
 
 ## 关键不变量（详见计划文件）
