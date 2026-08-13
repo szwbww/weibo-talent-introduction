@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-13T03:40:00Z
 - Current child: 06
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -24,7 +24,7 @@
 | 03 | docs/plans/2026-08-13/03-es-mapping-contract-convergence.md | commit:c70313733db4b8ac11c9bdbe9da4047cd1c2c84e | none | 1 | LIGHT_VERIFYING | e36cf27e6580ce3f5b178b518fe4e490f779ea68 | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 0 | — | bdf853ceb2536772f9b1fcd4f0283877536e4376 | — | 解锁 05。RECORD_ONLY O-1：守卫测试必要去旧排除（不破坏闭包）；O-2：CANDIDATE/RAW enrichedAt 保留 date，逐字段降级兜底 |
 | 04 | docs/plans/2026-08-13/04-operator-status-reconciler.md | commit:d12f9fc88fcabf258e6fc2288869027c40402045 | 01 | 2 | LIGHT_VERIFYING | bdf853ceb2536772f9b1fcd4f0283877536e4376 | 9df711a | 0 | — | 9df711a | — | A4 授权守卫行号更新。RECORD_ONLY O-1：COMPLETED 仅豁免期望值异常，ES-DB 事实比对仍适用（已文档化）；O-2：控制器新构造参数用尾随可空默认值（先例一致，端点行为不变） |
 | 05 | docs/plans/2026-08-13/05-recipient-scope-status-filter.md | commit:e590785798990381c86daff1642abd6b7e51c177 | 01,03 | 2 | IMPLEMENTING | 9df711aa2f0017450dfb531a3aa03376c94c4f5d | — | 0 | — | — | — | 依赖 01 数据可信 + 03 APPLICATION mapping；A2 起 Flyway IT 跳过；A5 授权守卫排除项更新（:345 + 10 映射行） |
-| 06 | docs/plans/2026-08-13/06-recipient-count-preview.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 05 | 1 | IMPLEMENTING | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | — | 0 | — | — | — | — |
+| 06 | docs/plans/2026-08-13/06-recipient-count-preview.md | commit:37ebb355894783cbf4f380484359bf6218d62949 | 05 | 1 | LIGHT_PASS | b3ae95ac31ad4e24c3a4670d66e65850ab80d8cf | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | 0 | — | 82e07a65655ac8e85edfa4b1a413f7acb139e43e | — | LIGHT_PASS 无 notes |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
