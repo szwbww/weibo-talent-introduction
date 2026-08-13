@@ -134,6 +134,19 @@ class ExpertSearchService(
             }
             return filters
         }
+
+        /**
+         * I-3: NOT_CONTACTED 语义唯一 —— 复用 [notContactedWithEmailFilters] 的 must_not exists
+         * 表达（= ES 文档无 operatorStatus 字段），其余状态走 term。三处批量发送旁路
+         * （buildEsFiltersForLevel / buildMaterialReminderEsFilters / matchesExpert）共用此实现，
+         * 禁止在别处另写 `term operatorStatus=NOT_CONTACTED`。
+         */
+        fun operatorStatusFilter(status: String): List<Map<String, Any>> {
+            if (status == "NOT_CONTACTED") {
+                return notContactedWithEmailFilters(null)
+            }
+            return listOf(mapOf("term" to mapOf("operatorStatus" to status)))
+        }
     }
 
     fun searchExperts(

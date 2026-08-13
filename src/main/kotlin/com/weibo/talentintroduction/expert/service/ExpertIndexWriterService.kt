@@ -63,139 +63,148 @@ class ExpertIndexWriterService(
         }
     }
 
-    fun syncCandidateOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
-        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+    fun syncOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
+        // IP-3: operatorStatus must reach all three layers; follow the
+        // ExpertDiscoveryService.updateExpertAcademicFields pattern — skip layers whose
+        // document does not exist (HEAD check), then _update by doc id.
         val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
         val now = LocalDateTime.now().format(dateFormatter)
-        return try {
-            val body: Map<String, Any>
-            if (operatorStatus == "NOT_CONTACTED") {
-                body = mapOf(
-                    "query" to mapOf("term" to mapOf("orcidId" to normalizedOrcidId)),
-                    "script" to mapOf(
-                        "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
-                        "params" to mapOf("updatedAt" to now)
-                    )
-                )
-            } else {
-                body = mapOf(
-                    "query" to mapOf("term" to mapOf("orcidId" to normalizedOrcidId)),
-                    "script" to mapOf(
-                        "source" to "ctx._source.operatorStatus = params.status; ctx._source.updatedAt = params.now",
-                        "params" to mapOf("status" to operatorStatus, "now" to now)
-                    )
-                )
-            }
-            val updateUrl = "${properties.baseUrl}/$candidateIndex/_update_by_query"
-            val resp = restTemplate.exchange(
-                updateUrl, HttpMethod.POST,
-                HttpEntity(body, headers()),
-                JsonNode::class.java
-            ).body
-            val updated = resp?.path("updated")?.asLong(0) ?: 0
-            if (updated == 0L) {
-                log.warn("syncCandidateOperatorStatus matched 0 docs in candidate index for orcid={}", normalizedOrcidId)
-                SingleSyncResult(matched = 0, ok = true)
-            } else {
-                SingleSyncResult(matched = updated, ok = true)
-            }
-        } catch (e: Exception) {
-            log.warn("Failed to sync operatorStatus for orcid={}: {}", normalizedOrcidId, e.message, e)
-            SingleSyncResult(matched = 0, ok = false, error = e.message)
-        }
-    }
-
-    fun syncCandidateOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
-        val overallResult = BulkSyncResult()
-        if (updates.isEmpty()) return overallResult
-        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
-        val now = LocalDateTime.now().format(dateFormatter)
-        val batches = updates.chunked(500)
-        for (batch in batches) {
+        var updated = 0L
+        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+            if (!documentExistsInIndex(level, normalizedOrcidId)) continue
             try {
-                // Resolve orcidId → _id mapping via terms query
-                val orcidIds = batch.map { ExpertIdNormalizer.normalize(it.first) }.distinct()
-                val idMapping = resolveOrcidToDocIds(candidateIndex, orcidIds)
-
-                val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, operatorStatus) ->
-                    val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
-                    val docId = idMapping[normalizedOrcidId] ?: return@joinToString ""
-                    val meta = mapOf("update" to mapOf("_id" to docId, "_index" to candidateIndex))
-                    val data = if (operatorStatus == "NOT_CONTACTED") {
-                        mapOf(
-                            "script" to mapOf(
-                                "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
-                                "params" to mapOf("updatedAt" to now)
-                            )
+                val index = expertIndexService.indexName(level)
+                val body: Map<String, Any> = if (operatorStatus == "NOT_CONTACTED") {
+                    mapOf(
+                        "script" to mapOf(
+                            "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
+                            "params" to mapOf("updatedAt" to now)
                         )
-                    } else {
-                        mapOf(
-                            "doc" to mapOf(
-                                "operatorStatus" to operatorStatus,
-                                "updatedAt" to now
-                            ),
-                            "doc_as_upsert" to false
+                    )
+                } else {
+                    mapOf(
+                        "doc" to mapOf(
+                            "operatorStatus" to operatorStatus,
+                            "updatedAt" to now
                         )
-                    }
-                    "${objectMapper.writeValueAsString(meta)}\n${objectMapper.writeValueAsString(data)}"
+                    )
                 }
-
-                // Count orcidIds not found in ES as skipped
-                for ((orcidId, _) in batch) {
-                    if (!idMapping.containsKey(ExpertIdNormalizer.normalize(orcidId))) {
-                        overallResult.total++
-                        overallResult.skipped++
-                    }
-                }
-
-                if (bulkBody.isBlank()) {
-                    log.debug("No _id mappings found for batch of {} orcidIds", batch.size)
-                    continue
-                }
-
-                val bulkUrl = "${properties.baseUrl}/_bulk"
-                val bulkHeaders = HttpHeaders().apply {
-                    contentType = MediaType.valueOf("application/x-ndjson")
-                    set(HttpHeaders.AUTHORIZATION, basicAuthHeader())
-                }
-                val responseNode = restTemplate.exchange(
-                    bulkUrl, HttpMethod.POST,
-                    HttpEntity(bulkBody, bulkHeaders),
+                val updateUrl = "${properties.baseUrl}/$index/_update/$normalizedOrcidId"
+                val resp = restTemplate.exchange(
+                    updateUrl, HttpMethod.POST,
+                    HttpEntity(body, headers()),
                     JsonNode::class.java
                 ).body
-                if (responseNode != null) {
-                    val items = responseNode.path("items")
-                    if (items.isArray) {
-                        for (item in items) {
-                            val updateNode = item.path("update")
-                            val status = updateNode.path("status").asInt(200)
-                            val docId = updateNode.path("_id").asText("")
+                val result = resp?.path("result")?.asText("")
+                if (result == "updated" || result == "noop") {
+                    updated++
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to sync operatorStatus for orcid={} in index {}: {}", normalizedOrcidId, level, e.message, e)
+                return SingleSyncResult(matched = updated, ok = false, error = e.message)
+            }
+        }
+        if (updated == 0L) {
+            log.warn("syncOperatorStatus matched 0 docs across raw/candidate/application for orcid={}", normalizedOrcidId)
+        }
+        return SingleSyncResult(matched = updated, ok = true)
+    }
+
+    fun syncOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
+        // IP-3: sync operatorStatus on all three layers (RAW/CANDIDATE/APPLICATION);
+        // per layer resolve orcidId → _id and bulk-update, aggregating results.
+        val overallResult = BulkSyncResult()
+        if (updates.isEmpty()) return overallResult
+        val now = LocalDateTime.now().format(dateFormatter)
+        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+            val index = expertIndexService.indexName(level)
+            val batches = updates.chunked(500)
+            for (batch in batches) {
+                try {
+                    // Resolve orcidId → _id mapping via terms query
+                    val orcidIds = batch.map { ExpertIdNormalizer.normalize(it.first) }.distinct()
+                    val idMapping = resolveOrcidToDocIds(index, orcidIds)
+
+                    val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, operatorStatus) ->
+                        val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
+                        val docId = idMapping[normalizedOrcidId] ?: return@joinToString ""
+                        val meta = mapOf("update" to mapOf("_id" to docId, "_index" to index))
+                        val data = if (operatorStatus == "NOT_CONTACTED") {
+                            mapOf(
+                                "script" to mapOf(
+                                    "source" to "if (ctx._source.containsKey('operatorStatus')) { ctx._source.remove('operatorStatus'); ctx._source.updatedAt = params.updatedAt; }",
+                                    "params" to mapOf("updatedAt" to now)
+                                )
+                            )
+                        } else {
+                            mapOf(
+                                "doc" to mapOf(
+                                    "operatorStatus" to operatorStatus,
+                                    "updatedAt" to now
+                                ),
+                                "doc_as_upsert" to false
+                            )
+                        }
+                        "${objectMapper.writeValueAsString(meta)}\n${objectMapper.writeValueAsString(data)}"
+                    }
+
+                    // Count orcidIds not found in this layer as skipped
+                    for ((orcidId, _) in batch) {
+                        if (!idMapping.containsKey(ExpertIdNormalizer.normalize(orcidId))) {
                             overallResult.total++
-                            if (status in 200..299) {
-                                overallResult.success++
-                            } else if (status == 404) {
-                                overallResult.skipped++
-                            } else {
-                                overallResult.failure++
-                                val errReason = updateNode.path("error").path("reason").asText("Unknown error")
-                                overallResult.errors.add("docId=$docId error: $errReason")
+                            overallResult.skipped++
+                        }
+                    }
+
+                    if (bulkBody.isBlank()) {
+                        log.debug("No _id mappings found for batch of {} orcidIds in index {}", batch.size, index)
+                        continue
+                    }
+
+                    val bulkUrl = "${properties.baseUrl}/_bulk"
+                    val bulkHeaders = HttpHeaders().apply {
+                        contentType = MediaType.valueOf("application/x-ndjson")
+                        set(HttpHeaders.AUTHORIZATION, basicAuthHeader())
+                    }
+                    val responseNode = restTemplate.exchange(
+                        bulkUrl, HttpMethod.POST,
+                        HttpEntity(bulkBody, bulkHeaders),
+                        JsonNode::class.java
+                    ).body
+                    if (responseNode != null) {
+                        val items = responseNode.path("items")
+                        if (items.isArray) {
+                            for (item in items) {
+                                val updateNode = item.path("update")
+                                val status = updateNode.path("status").asInt(200)
+                                val docId = updateNode.path("_id").asText("")
+                                overallResult.total++
+                                if (status in 200..299) {
+                                    overallResult.success++
+                                } else if (status == 404) {
+                                    overallResult.skipped++
+                                } else {
+                                    overallResult.failure++
+                                    val errReason = updateNode.path("error").path("reason").asText("Unknown error")
+                                    overallResult.errors.add("docId=$docId error: $errReason")
+                                }
                             }
+                        } else {
+                            overallResult.total += batch.size
+                            overallResult.failure += batch.size
+                            overallResult.errors.add("Bulk response items path is not an array")
                         }
                     } else {
                         overallResult.total += batch.size
                         overallResult.failure += batch.size
-                        overallResult.errors.add("Bulk response items path is not an array")
+                        overallResult.errors.add("Empty bulk response from ES")
                     }
-                } else {
+                } catch (e: Exception) {
+                    log.warn("Failed to batch sync operatorStatus for index {}: {}", index, e.message, e)
                     overallResult.total += batch.size
                     overallResult.failure += batch.size
-                    overallResult.errors.add("Empty bulk response from ES")
+                    overallResult.errors.add("Bulk request failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                log.warn("Failed to batch sync operatorStatus", e)
-                overallResult.total += batch.size
-                overallResult.failure += batch.size
-                overallResult.errors.add("Bulk request failed: ${e.message}")
             }
         }
         return overallResult

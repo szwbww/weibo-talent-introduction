@@ -15,6 +15,7 @@ data class MailSchedulingProperties(
     val initialOutreachSendIntervalMs: Long = 30000,
     val initialOutreachSendJitterMs: Long = 60000,
     val operatorStatusSyncCron: String = "-",
+    val operatorStatusReconcileCron: String = "-",
     val aiQaExtractionCron: String = "-",
     val aiQaExtractionMaxContacts: Int = 20
 )

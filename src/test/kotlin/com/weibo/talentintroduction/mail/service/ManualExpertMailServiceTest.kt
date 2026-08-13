@@ -1,8 +1,10 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -34,6 +36,7 @@ class ManualExpertMailServiceTest {
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
     private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
+    private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
     private val mailContentService = MailContentService()
     private val service = ManualExpertMailService(
         expertContactRepository,
@@ -45,7 +48,8 @@ class ManualExpertMailServiceTest {
         mailComposeTemplateService,
         mailContentService,
         conversationStateService,
-        senderAccountBindingService
+        senderAccountBindingService,
+        expertOperatorStatusService
     )
 
     private val contact = ExpertContact(
@@ -857,5 +861,162 @@ class ManualExpertMailServiceTest {
             captor.capture() ?: ComposedMail("stub", "stub", "stub")
         )
         assertTrue(Regex("""^<reminder-\d+-[0-9a-f-]{36}@.+>$""").matches(captor.value.messageId!!))
+    }
+
+    @Test
+    fun `sendManualMail advances operator status to CONTACTED for INTRODUCTION`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact),
+            eqValue(OperatorStatus.CONTACTED),
+            eqValue("MANUAL_MAIL_INTRODUCTION")
+        )
+    }
+
+    @Test
+    fun `sendManualMail advances operator status to INVITED for MEETING_INVITATION`() {
+        val account = stubAccount()
+        stubMeetingInvitationSend(account)
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "30", senderAccountCode = null)
+        )
+
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact),
+            eqValue(OperatorStatus.INVITED),
+            eqValue("MANUAL_MAIL_MEETING_INVITATION")
+        )
+    }
+
+    @Test
+    fun `sendManualMail leaves operator status untouched for COMPOSE_TEMPLATE`() {
+        val account = stubAccount()
+        stubComposeTemplateSend(account)
+
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "40", senderAccountCode = null)
+        )
+
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
+    }
+
+    private fun stubMeetingInvitationSend(account: MailSenderAccount) {
+        val delivered = DeliveredMail(messageId = "msg-meeting", status = "SUCCESS")
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.getById(30L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 30,
+                templateCode = "MEETING_INVITATION",
+                templateName = "Meeting Invitation",
+                subject = "Meeting Invitation Subject",
+                description = null,
+                mailType = "MEETING_INVITATION",
+                subjectVariants = null,
+                enabled = true,
+                blocks = emptyList(),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+        Mockito.`when`(
+            mailComposeTemplateService.render(
+                eqValue(30L),
+                anyValue(emptyMap<String, String>()),
+                eqValue(expectedSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Meeting Invitation Subject",
+                body = "Meeting Invitation Body",
+                mailType = "MEETING_INVITATION"
+            )
+        )
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 300) }
+        Mockito.`when`(conversationStateService.transition(
+            anyValue(contact),
+            eqValue(ConversationStatus.MEETING_SCHEDULING),
+            eqValue("MANUAL_MAIL_MEETING_INVITATION"),
+            eqValue("MANUAL_MAIL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { contact }
+        )).thenAnswer { invocation ->
+            val base = invocation.getArgument<ExpertContact>(0)
+            val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
+            mutator(base)
+        }
+        Mockito.`when`(mailSenderAccountRepository.save(anyValue(account)))
+            .thenAnswer { it.getArgument<MailSenderAccount>(0) }
+    }
+
+    private fun stubComposeTemplateSend(account: MailSenderAccount) {
+        val delivered = DeliveredMail(messageId = "msg-compose", status = "SUCCESS")
+        val expectedSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.getById(40L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 40,
+                templateCode = "COMPOSE_TEMPLATE",
+                templateName = "Compose Template",
+                subject = "Compose Subject",
+                description = null,
+                mailType = "COMPOSE_TEMPLATE",
+                subjectVariants = null,
+                enabled = true,
+                blocks = emptyList(),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+        Mockito.`when`(
+            mailComposeTemplateService.render(
+                eqValue(40L),
+                anyValue(emptyMap<String, String>()),
+                eqValue(expectedSeed)
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Compose Subject",
+                body = "Compose Body",
+                mailType = "COMPOSE_TEMPLATE"
+            )
+        )
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(delivered)
+        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 400) }
+        Mockito.`when`(conversationStateService.transition(
+            anyValue(contact),
+            eqValue(ConversationStatus.INTRO_SENT),
+            eqValue("MANUAL_MAIL_COMPOSE_TEMPLATE"),
+            eqValue("MANUAL_MAIL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { contact }
+        )).thenAnswer { invocation ->
+            val base = invocation.getArgument<ExpertContact>(0)
+            val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
+            mutator(base)
+        }
+        Mockito.`when`(mailSenderAccountRepository.save(anyValue(account)))
+            .thenAnswer { it.getArgument<MailSenderAccount>(0) }
     }
 }

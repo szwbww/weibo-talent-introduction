@@ -39,7 +39,7 @@ class ExpertOperatorStatusService(
             operatorName = operatorName,
             note = note
         )
-        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, target.name)
+        expertIndexWriterService.syncOperatorStatus(updated.orcidId, target.name)
         return updated
     }
 
@@ -49,17 +49,20 @@ class ExpertOperatorStatusService(
         targetStatus: OperatorStatus,
         reason: String
     ): ExpertContact {
+        // I-2: EMAIL_INVALID 是枚举外的旁路终态，无条件短路（不进 ordinal 比较）
+        if (contact.operatorStatus == "EMAIL_INVALID") {
+            return contact
+        }
         val current = OperatorStatus.entries.firstOrNull { it.name == contact.operatorStatus }
         if (current == OperatorStatus.COMPLETED) {
             return contact
         }
-        if (targetStatus == OperatorStatus.REPLIED &&
-            current != null &&
-            current.ordinal > OperatorStatus.REPLIED.ordinal) {
+        // I-1: 单调不回退 —— 自动写入只沿 ordinal 正向推进
+        if (current != null && current.ordinal >= targetStatus.ordinal) {
             return contact
         }
         val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))
-        expertIndexWriterService.syncCandidateOperatorStatus(updated.orcidId, targetStatus.name)
+        expertIndexWriterService.syncOperatorStatus(updated.orcidId, targetStatus.name)
         return updated
     }
 }

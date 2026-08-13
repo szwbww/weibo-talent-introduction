@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.expert.controller
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.OperatorStatusReconcileService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
@@ -43,7 +44,11 @@ class ExpertIndexController(
     private val taskExecutionService: TaskExecutionService,
     private val progressStore: TaskProgressStore,
     private val eligibilityFilterService: EligibilityFilterService,
-    private val introductionMailComposer: IntroductionMailComposer
+    private val introductionMailComposer: IntroductionMailComposer,
+    // 尾部可空默认参数（照 ManualExpertMailService.mailVariableService 先例）：
+    // 生产由 Spring 注入 @Service bean；既有 ExpertIndexControllerTest 以 9 个位置参数直接构造，
+    // 加默认值后无需改动该未授权测试文件。端点内 requireNotNull 兜底（生产必非空）。
+    private val operatorStatusReconcileService: OperatorStatusReconcileService? = null
 ) {
     @GetMapping
     fun listExperts(
@@ -212,6 +217,22 @@ class ExpertIndexController(
             ))
         } catch (ex: IllegalStateException) {
             ResponseEntity.badRequest().body(mapOf("message" to (ex.message ?: "同步失败")))
+        }
+    }
+
+    @PostMapping("/reconcile-operator-status")
+    fun reconcileOperatorStatus(): ResponseEntity<Any> {
+        return try {
+            val (_, result) = taskExecutionService.runAndRecordWithResult(
+                "OPERATOR_STATUS_RECONCILE",
+                "MANUAL",
+                "reconcile-operator-status"
+            ) {
+                requireNotNull(operatorStatusReconcileService) { "OperatorStatusReconcileService 未注入" }.reconcile()
+            }
+            ResponseEntity.ok(result)
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.badRequest().body(mapOf("message" to (ex.message ?: "对账失败")))
         }
     }
 

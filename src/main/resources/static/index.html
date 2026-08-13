@@ -1213,6 +1213,12 @@
                                 <option value="UNCLASSIFIED">未分类</option>
                             </select>
                         </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">专家状态</span>
+                            <select id="batchConfigEditorOperatorStatus" class="bsc-input bsc-select">
+                                <option value="">全部状态</option>
+                            </select>
+                        </label>
                     </div>
                 </section>
 
@@ -1244,6 +1250,7 @@
                         </label>
                     </div>
                     <div class="batch-config-editor-hint" id="batchConfigEditorVolumeHint"></div>
+                    <div class="batch-config-editor-hint" id="batchConfigEditorRecipientHint"></div>
                 </section>
 
                 <section class="batch-config-editor-section">
@@ -1377,7 +1384,16 @@
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </label>
+                    <label class="batch-config-field" id="manualFieldOperatorStatus">
+                        <span class="batch-config-field-label">专家状态</span>
+                        <select id="batchManualOperatorStatus" class="bsc-input bsc-select">
+                            <option value="">全部状态</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
                 </div>
+                <div class="batch-config-editor-hint" id="batchManualRecipientHint"></div>
             </section>
 
             <section class="batch-manual-section">

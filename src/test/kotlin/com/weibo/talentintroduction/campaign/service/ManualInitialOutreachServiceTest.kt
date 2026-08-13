@@ -3,9 +3,11 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.Campaign
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
@@ -39,6 +41,7 @@ import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.task.service.TaskProgress
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -227,6 +230,118 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, summary.retryable)
         assertEquals(1, summary.totalSendable)
         Mockito.verify(campaignRepository, Mockito.never()).save(Mockito.any(Campaign::class.java))
+    }
+
+    @Test
+    fun `countBySnapshot matches execution path totalEstimate for same snapshot (I-1)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+
+        // 2 retryable NEW contacts without SENT introduction, both present in ES scope
+        val retryableContacts = listOf(
+            ExpertContact(id = 1L, campaignId = 10L, orcidId = "R001", expertEmail = "r1@b.com", expertName = "R1", currentStatus = "NEW"),
+            ExpertContact(id = 2L, campaignId = 10L, orcidId = "R002", expertEmail = "r2@b.com", expertName = "R2", currentStatus = "NEW")
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(retryableContacts)
+        for (contact in retryableContacts) {
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)).thenReturn(emptyList())
+        }
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("R001", "R002"))).thenReturn(listOf(
+            expert("R001", "r1@b.com"), expert("R002", "r2@b.com")
+        ))
+
+        // 3 ES-only candidates
+        stubScrolledExperts(listOf(expert("0001", "a@b.com"), expert("0002", "c@d.com"), expert("0003", "e@f.com")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.retryable)
+        assertEquals(3, preview.pending)
+        assertEquals(5, preview.totalSendable)
+
+        // Execution path (same snapshot) must report the same total; no accounts → stops at the round gate
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(preview.totalSendable, result.total)
+        Mockito.verifyNoInteractions(taskExecutionService)
+    }
+
+    @Test
+    fun `countBySnapshot without manual campaign returns zero retryable and creates no row (I-3)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+
+        val summary = service.countBySnapshot(snapshot)
+
+        assertEquals(1, summary.pending)
+        assertEquals(0, summary.retryable)
+        assertEquals(1, summary.totalSendable)
+        Mockito.verify(campaignRepository, Mockito.never()).save(Mockito.any(Campaign::class.java))
+        Mockito.verify(expertContactRepository, Mockito.never())
+            .findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(Mockito.anyLong(), Mockito.anyString())
+        Mockito.verifyNoInteractions(taskExecutionService)
+    }
+
+    @Test
+    fun `countBySnapshot MATERIAL_REMINDER reuses material snapshot targets (I-1)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            templateId = 42L
+        )
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())))
+            .thenReturn(2L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { invocation ->
+            val from = invocation.getArgument<Int>(2)
+            val size = invocation.getArgument<Int>(3)
+            listOf(expert("M001", "m1@b.com"), expert("M002", "m2@b.com")).drop(from).take(size)
+        }
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("M001", "M002")))
+            .thenReturn(listOf(
+                ExpertContact(id = 21L, campaignId = 5L, orcidId = "M001", expertEmail = "m1@b.com", expertName = "M1", currentStatus = "CONTACTED"),
+                ExpertContact(id = 22L, campaignId = 5L, orcidId = "M002", expertEmail = "m2@b.com", expertName = "M2", currentStatus = "CONTACTED")
+            ))
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(2, preview.totalSendable)
+
+        // Execution path (same snapshot) must agree; no accounts → stops at the round gate
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12346L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(preview.totalSendable, result.total)
+        Mockito.verifyNoInteractions(taskExecutionService)
     }
 
     @Test
@@ -854,7 +969,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, firstRun.failed)
         assertEquals(0, firstRun.sent)
 
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0001", "EMAIL_INVALID")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0001", "EMAIL_INVALID")
         Mockito.verify(expertContactRepository, Mockito.atLeastOnce()).save(
             Mockito.argThat { contact: ExpertContact -> contact.operatorStatus == "EMAIL_INVALID" }
         )
@@ -1737,7 +1852,7 @@ class ManualInitialOutreachServiceTest {
             assertEquals(1, result.sent)
             // I-5: no tag/index modifications
             Mockito.verify(expertIndexWriterService, Mockito.never())
-                .syncCandidateOperatorStatus(Mockito.anyString(), Mockito.anyString())
+                .syncOperatorStatus(Mockito.anyString(), Mockito.anyString())
             // Does not use txHelper (no contact creation/status change for reminder)
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
@@ -2892,6 +3007,199 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(1, result.total)
+    }
+
+    @Test
+    fun `ES CANDIDATE branch replaces not-contacted base with term filter when explicit non-NOT_CONTACTED status set (I-2)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            operatorStatus = "CONTACTED"
+        )
+        // I-2: 显式非 NOT_CONTACTED 状态必须替换 must_not exists 基座，否则 term 与 must_not 并存恒为空。
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `ES NOT_CONTACTED on CANDIDATE keeps must_not exists and never emits term operatorStatus (I-3)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            operatorStatus = "NOT_CONTACTED"
+        )
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        // I-3: NOT_CONTACTED 的唯一语义是 must_not exists operatorStatus，绝不写 term operatorStatus=NOT_CONTACTED。
+        assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
+        assertTrue(expectedFilters.none { it.containsKey("term") })
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `ES APPLICATION branch applies operatorStatus term filter (I-2)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "APPLICATION",
+            tags = listOf("承诺回复材料"),
+            operatorStatus = "CONTACTED",
+            templateId = 42L
+        )
+        val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        expectedFilters.add(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")))
+        expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `retryable contact with REPLIED status excluded when scope status is NOT_CONTACTED (I-1 retry bypass)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "RPL1", expertEmail = "r@x.com", expertName = "R", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        // A-3 形态：无 SENT 介绍信、current_status=NEW，但 operator_status=REPLIED（会进入重试目标集合的形态）
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("RPL1"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("RPL1", "r@x.com").copy(operatorStatus = "REPLIED")))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            operatorStatus = "NOT_CONTACTED"
+        )
+        stubScrolledExperts(emptyList())
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+    }
+
+    @Test
+    fun `empty operatorStatus leaves ES filters unchanged (must-not-change)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+        // 留空 = 不限：过滤条件与升级前逐字一致（不多不少）。
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(0L)
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.total)
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves operatorStatus when only cron changes (I-4)`() {
+        val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
+        val templateService = Mockito.mock(MailComposeTemplateService::class.java)
+        val eventPublisher = Mockito.mock(org.springframework.context.ApplicationEventPublisher::class.java)
+        val execService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        val configService = BatchSendTaskConfigService(
+            repository = configRepository,
+            mailComposeTemplateService = templateService,
+            objectMapper = ObjectMapper(),
+            eventPublisher = eventPublisher,
+            taskExecutionService = execService
+        )
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = "[]", regionsJson = "[]",
+            emailDomain = null, discipline = null, operatorStatus = "NOT_CONTACTED",
+            templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(configRepository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        Mockito.`when`(configRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        Mockito.`when`(configRepository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = org.mockito.ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        Mockito.`when`(configRepository.save(Mockito.any(BatchSendTaskConfig::class.java))).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+        Mockito.`when`(execService.lastExecutedAtByBatchConfigIds(Mockito.anyList())).thenReturn(emptyMap())
+
+        configService.updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "ox.ac.uk",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        // I-4: 旧 typed API 只改 cron，operatorStatus 必须显式保留（漏写会命中 Kotlin 默认值静默重置）。
+        Mockito.verify(configRepository).save(captor.capture())
+        assertEquals("NOT_CONTACTED", captor.value.operatorStatus)
     }
 
     // ──── Helpers ────

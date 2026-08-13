@@ -205,12 +205,19 @@ APPLICATION 层生效 / 留空时行为不变。
 | 9 | `test/…/campaign/service/ManualInitialOutreachServiceTest.kt` | 改 |
 | 10 | `docs/knowledge/campaign/K-recipient-scope-status-filter.md` | 新增 |
 
+> **Amendments A5（HUMAN 批准 2026-08-13，扩权）**：本计划对 `ExpertSearchService.kt` / `BatchExecutionModels.kt` /
+> `BatchSendTaskConfigService.kt` 的授权编辑使子计划 02 守卫测试 `OperatorStatusWriteSeamGuardTest.kt` 的
+> `EXCLUDED_NOISE_SITES` 排除项失配：`ExpertSearchService.kt` 钉死点 `:332` 偏移至 `:345`，且新增
+> 10 处 DTO/配置映射行（非 DB 写入）需登记排除。授权该守卫测试排除项更新（行号修正 + 新映射行登记，
+> 均附 file:line+context；`ALLOWED_WRITE_SITES` 白名单闭包与断言**不动**），随本计划提交。
+
 ## 验证命令
 
 ```bash
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualInitialOutreachServiceTest
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
+# ↑ Flyway IT 按 HUMAN 指令 2026-08-13 跳过（本机 pre-existing V82 drift-gate 失败，与本计划无关；见 Amendments A2）
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
 git diff --check
 ```

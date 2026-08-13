@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
@@ -87,6 +88,15 @@ class BatchSendConfigController(
     @PostMapping("/cron/preview")
     fun previewCron(@RequestBody request: CronPreviewRequest): ResponseEntity<CronPreviewResult> =
         ResponseEntity.ok(batchSendTaskConfigService.previewCron(request.cron, request.count ?: 5))
+
+    /**
+     * Recipient-count preview (P-F / 06): input is the launch snapshot itself (I-2), computed
+     * with the exact execution-path target code (I-1) and no side effects (I-3).
+     * POST (not GET) — the snapshot carries tags/regions arrays that do not fit a query string.
+     */
+    @PostMapping("/recipients/preview")
+    fun previewRecipients(@RequestBody snapshot: BatchExecutionSnapshot): ResponseEntity<PendingOutreachSummary> =
+        ResponseEntity.ok(manualInitialOutreachService.countBySnapshot(snapshot))
 
     @PostMapping("/configs/{id}/execute")
     fun executeConfig(@PathVariable id: Long): ResponseEntity<Map<String, Any>> =

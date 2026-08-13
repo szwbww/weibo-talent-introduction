@@ -27,7 +27,7 @@ class ExpertIndexServiceTest {
     private val service = ExpertIndexService(properties, restTemplate, mapper)
 
     @Test
-    fun `mapping update sends only Phase5 new fields not legacy fields`() {
+    fun `mapping update sends all JSON-declared fields`() {
         // HEAD returns OK for all indices → PUT _mapping called
         Mockito.`when`(
             restTemplate.exchange(
@@ -54,7 +54,8 @@ class ExpertIndexServiceTest {
         val body = captured.body as Map<*, *>
         val properties = body["properties"] as Map<*, *>
 
-        // Phase 5 fields present
+        // I-1: JSON is the single declaration source — every JSON-declared field is pushed,
+        // no Kotlin-side field-name whitelist exists anymore.
         assertFieldExists(properties, "hIndex")
         assertFieldExists(properties, "citationCount")
         assertFieldExists(properties, "lastPublicationYear")
@@ -68,15 +69,15 @@ class ExpertIndexServiceTest {
         assertFieldExists(properties, "filterResult")
         assertFieldExists(properties, "filterRejectReason")
 
-        // Legacy fields NOT present
-        assertFieldMissing(properties, "country")
-        assertFieldMissing(properties, "email")
-        assertFieldMissing(properties, "givenNames")
-        assertFieldMissing(properties, "familyNames")
-        assertFieldMissing(properties, "orcidId")
-        assertFieldMissing(properties, "keyword")
-        assertFieldMissing(properties, "degree")
-        assertFieldMissing(properties, "age")
+        // Legacy fields are pushed too — previously blocked by the whitelist
+        assertFieldExists(properties, "country")
+        assertFieldExists(properties, "email")
+        assertFieldExists(properties, "givenNames")
+        assertFieldExists(properties, "familyNames")
+        assertFieldExists(properties, "orcidId")
+        assertFieldExists(properties, "keyword")
+        assertFieldExists(properties, "degree")
+        assertFieldExists(properties, "age")
     }
 
     @Test
@@ -130,7 +131,7 @@ class ExpertIndexServiceTest {
     }
 
     @Test
-    fun `PUT returns 400 does not block remaining indices`() {
+    fun `PUT returns 400 degrades to per-field PUT and does not block remaining indices`() {
         // All three indices exist
         Mockito.`when`(
             restTemplate.exchange(
@@ -141,12 +142,14 @@ class ExpertIndexServiceTest {
             )
         ).thenReturn(ResponseEntity(HttpStatus.OK))
 
-        // First mapping PUT returns 400
+        // First batch mapping PUT (RAW) returns 400 → per-field degradation kicks in;
+        // CANDIDATE/APPLICATION batch PUTs succeed
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java)
         Mockito.`when`(
             restTemplate.exchange(
                 Mockito.contains("/_mapping"),
                 Mockito.eq(HttpMethod.PUT),
-                Mockito.any(),
+                entityCaptor.capture(),
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
         ).thenThrow(HttpClientErrorException(HttpStatus.BAD_REQUEST))
@@ -154,17 +157,21 @@ class ExpertIndexServiceTest {
 
         service.bootstrapMappings()
 
-        // Verify all three PUTs were attempted (1st fails, 2nd+3rd succeed)
-        Mockito.verify(restTemplate, Mockito.times(3)).exchange(
-            Mockito.contains("/_mapping"),
-            Mockito.eq(HttpMethod.PUT),
-            Mockito.any(),
-            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
+        val captured = entityCaptor.allValues
+        val batchPuts = captured.count {
+            ((it.body as Map<*, *>)["properties"] as Map<*, *>).size > 1
+        }
+        val singleFieldPuts = captured.count {
+            ((it.body as Map<*, *>)["properties"] as Map<*, *>).size == 1
+        }
+        // I-2: all three indices still get their batch PUT attempt
+        org.junit.jupiter.api.Assertions.assertEquals(3, batchPuts, "each index must get one batch PUT attempt")
+        // I-2: the failing RAW batch degrades to one PUT per JSON-declared field (32 in orcid_info_raw.json)
+        org.junit.jupiter.api.Assertions.assertEquals(32, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
     }
 
     @Test
-    fun `bootstrapMappings puts operatorStatus keyword only for candidate index`() {
+    fun `bootstrapMappings pushes operatorStatus keyword for candidate and application but not raw`() {
         Mockito.`when`(
             restTemplate.exchange(
                 Mockito.anyString(),
@@ -208,9 +215,13 @@ class ExpertIndexServiceTest {
                 org.junit.jupiter.api.Assertions.assertEquals("keyword", opStatusField["type"])
             } else if (url.contains("orcid_info_application")) {
                 appFound = true
-                assertFieldMissing(properties, "operatorStatus")
+                // A-1: APPLICATION declares operatorStatus in its JSON → it is now pushed
+                assertFieldExists(properties, "operatorStatus")
+                val opStatusField = properties["operatorStatus"] as Map<*, *>
+                org.junit.jupiter.api.Assertions.assertEquals("keyword", opStatusField["type"])
             } else if (url.contains("orcid_info") && !url.contains("candidate") && !url.contains("application")) {
                 rawFound = true
+                // I-1: RAW JSON does not declare operatorStatus → not pushed
                 assertFieldMissing(properties, "operatorStatus")
             }
         }
@@ -221,7 +232,7 @@ class ExpertIndexServiceTest {
     }
 
     @Test
-    fun `checkCandidateOperatorStatusMapping returns true when keyword type matches`() {
+    fun `checkOperatorStatusMapping returns true when all three layers have keyword`() {
         val responseJson = """
             {
               "orcid_info_candidate": {
@@ -239,22 +250,39 @@ class ExpertIndexServiceTest {
         """.trimIndent()
         val node = mapper.readTree(responseJson)
 
-        Mockito.`when`(
-            restTemplate.exchange(
-                Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
-                Mockito.eq(HttpMethod.GET),
-                Mockito.any(),
-                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-            )
-        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            Mockito.`when`(
+                restTemplate.exchange(
+                    Mockito.eq("https://es.example.com:9200/$index/_mapping/field/operatorStatus"),
+                    Mockito.eq(HttpMethod.GET),
+                    Mockito.any(),
+                    Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+        }
 
-        val result = service.checkCandidateOperatorStatusMapping()
+        val result = service.checkOperatorStatusMapping()
         org.junit.jupiter.api.Assertions.assertTrue(result)
     }
 
     @Test
-    fun `checkCandidateOperatorStatusMapping returns false when type is not keyword`() {
-        val responseJson = """
+    fun `checkOperatorStatusMapping returns false when type is not keyword on one layer`() {
+        val keywordJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "operatorStatus": {
+                    "mapping": {
+                      "operatorStatus": {
+                        "type": "keyword"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val textJson = """
             {
               "orcid_info_candidate": {
                 "mappings": {
@@ -269,8 +297,15 @@ class ExpertIndexServiceTest {
               }
             }
         """.trimIndent()
-        val node = mapper.readTree(responseJson)
 
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
         Mockito.`when`(
             restTemplate.exchange(
                 Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
@@ -278,23 +313,53 @@ class ExpertIndexServiceTest {
                 Mockito.any(),
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
-        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+        ).thenReturn(ResponseEntity(mapper.readTree(textJson), HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_application/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
 
-        val result = service.checkCandidateOperatorStatusMapping()
+        val result = service.checkOperatorStatusMapping()
         org.junit.jupiter.api.Assertions.assertFalse(result)
     }
 
     @Test
-    fun `checkCandidateOperatorStatusMapping returns false when field is missing`() {
-        val responseJson = """
+    fun `checkOperatorStatusMapping returns false when field is missing on one layer`() {
+        val keywordJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "operatorStatus": {
+                    "mapping": {
+                      "operatorStatus": {
+                        "type": "keyword"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val missingJson = """
             {
               "orcid_info_candidate": {
                 "mappings": {}
               }
             }
         """.trimIndent()
-        val node = mapper.readTree(responseJson)
 
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
         Mockito.`when`(
             restTemplate.exchange(
                 Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
@@ -302,14 +367,46 @@ class ExpertIndexServiceTest {
                 Mockito.any(),
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
-        ).thenReturn(ResponseEntity(node, HttpStatus.OK))
+        ).thenReturn(ResponseEntity(mapper.readTree(missingJson), HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_application/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
 
-        val result = service.checkCandidateOperatorStatusMapping()
+        val result = service.checkOperatorStatusMapping()
         org.junit.jupiter.api.Assertions.assertFalse(result)
     }
 
     @Test
-    fun `checkCandidateOperatorStatusMapping returns false when HTTP error occurs`() {
+    fun `checkOperatorStatusMapping returns false when HTTP error occurs on one layer`() {
+        val keywordJson = """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "operatorStatus": {
+                    "mapping": {
+                      "operatorStatus": {
+                        "type": "keyword"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
         Mockito.`when`(
             restTemplate.exchange(
                 Mockito.eq("https://es.example.com:9200/orcid_info_candidate/_mapping/field/operatorStatus"),
@@ -318,8 +415,16 @@ class ExpertIndexServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
         ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_application/_mapping/field/operatorStatus"),
+                Mockito.eq(HttpMethod.GET),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.readTree(keywordJson), HttpStatus.OK))
 
-        val result = service.checkCandidateOperatorStatusMapping()
+        val result = service.checkOperatorStatusMapping()
         org.junit.jupiter.api.Assertions.assertFalse(result)
     }
 

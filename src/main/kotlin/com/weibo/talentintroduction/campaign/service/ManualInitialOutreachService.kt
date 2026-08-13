@@ -415,6 +415,33 @@ class ManualInitialOutreachService(
     }
 
     /**
+     * Side-effect-free recipient preview (P-F / 06). Same target computation as the execution
+     * path (I-1): RecipientScope.fromSnapshot + buildRetryableTargets + countEsTargets for
+     * INTRODUCTION, buildMaterialReminderSnapshot(scope, config).targets.size for MATERIAL_REMINDER.
+     * Reads the campaign read-only via findByCampaignCode (I-3): never getOrCreateManualCampaign().
+     */
+    fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
+        BatchSendType.MATERIAL_REMINDER.name -> {
+            val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
+            val scope = RecipientScope.fromSnapshot(snapshot)
+            val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
+            PendingOutreachSummary(pending = materialSnapshot.targets.size, retryable = 0, totalSendable = materialSnapshot.targets.size)
+        }
+        else -> {
+            val scope = RecipientScope.fromSnapshot(snapshot)
+            var retryable = 0
+            val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
+            if (campaign != null) {
+                val campaignId = campaign.id ?: error("Campaign ID is null")
+                val (retryableTargets, _) = buildRetryableTargets(campaignId, scope)
+                retryable = retryableTargets.size
+            }
+            val esEstimate = countEsTargets(scope)
+            PendingOutreachSummary(pending = esEstimate, retryable = retryable, totalSendable = esEstimate + retryable)
+        }
+    }
+
+    /**
      * Round-based scheduled batch outreach (I-1/I-2/I-3/I-4/I-5/I-6/I-7/I-8, L3-1/L3-2).
      *
      * - Streams targets via [OutreachTargetIterator] (I-7 preserved: ES operatorStatus filter,
@@ -705,7 +732,7 @@ class ManualInitialOutreachService(
                                 expertContactRepository.save(
                                     contact.copy(operatorStatus = "EMAIL_INVALID", updatedAt = LocalDateTime.now())
                                 )
-                                expertIndexWriterService.syncCandidateOperatorStatus(normOrcid, "EMAIL_INVALID")
+                                expertIndexWriterService.syncOperatorStatus(normOrcid, "EMAIL_INVALID")
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 stat.failed++
                                 roundRejected++
@@ -1072,7 +1099,10 @@ class ManualInitialOutreachService(
         return records.any { it.direction == "OUTBOUND" && it.mailType == "MATERIAL_REMINDER" && it.sendStatus == "SENT" }
     }
 
-    private fun buildMaterialReminderEsFilters(config: BatchSendConfig): List<Map<String, Any>> {
+    private fun buildMaterialReminderEsFilters(
+        config: BatchSendConfig,
+        operatorStatus: String? = null
+    ): List<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>(
             mapOf("term" to mapOf("tags" to "承诺回复材料")),
             mapOf("exists" to mapOf("field" to "email"))
@@ -1082,6 +1112,10 @@ class ManualInitialOutreachService(
         }
         if (config.discipline.isNotBlank()) {
             filters.add(ExpertSearchService.disciplineFilter(config.discipline))
+        }
+        // I-1 第 3 条旁路：材料提醒查询与 ES 目标查询同口径按状态过滤（I-3 同款表达）。
+        if (!operatorStatus.isNullOrBlank()) {
+            filters.addAll(ExpertSearchService.operatorStatusFilter(operatorStatus))
         }
         return filters
     }
@@ -1210,11 +1244,24 @@ class ManualInitialOutreachService(
 
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
         val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE") {
-            ExpertSearchService.notContactedWithEmailFilters(scope.emailDomain, scope.discipline).toMutableList()
+            if (scope.operatorStatus == null || scope.operatorStatus == "NOT_CONTACTED") {
+                // I-3: 留空（不限）与 NOT_CONTACTED 都走 notContactedWithEmailFilters 的 must_not exists 表达。
+                ExpertSearchService.notContactedWithEmailFilters(scope.emailDomain, scope.discipline).toMutableList()
+            } else {
+                // I-2: 显式非 NOT_CONTACTED 状态与 notContactedWithEmailFilters 的 must_not exists operatorStatus
+                // 冲突（term 与 must_not 并存恒为空），必须换成状态无关基座 + operatorStatusFilter。
+                val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+                scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
+                scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
+                base.addAll(ExpertSearchService.operatorStatusFilter(scope.operatorStatus))
+                base
+            }
         } else {
             val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
             scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
             scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
+            // I-2: else 分支（APPLICATION / MATERIAL_REMINDER）同样按状态过滤（I-3 同款表达）。
+            scope.operatorStatus?.let { base.addAll(ExpertSearchService.operatorStatusFilter(it)) }
             base
         }
         if (scope.tags.isNotEmpty()) {

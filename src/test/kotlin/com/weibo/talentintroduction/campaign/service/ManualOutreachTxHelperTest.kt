@@ -1,9 +1,10 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
-import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.OperatorStatus
+import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -15,21 +16,19 @@ import org.mockito.Mockito
 import java.time.LocalDateTime
 import java.util.Optional
 
-import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
-
 class ManualOutreachTxHelperTest {
     private val conversationStateService = Mockito.mock(ConversationStateService::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val mailSendAttemptRepository = Mockito.mock(MailSendAttemptRepository::class.java)
-    private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
+    private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
 
     private val helper = ManualOutreachTxHelper(
         conversationStateService = conversationStateService,
         mailRecordRepository = mailRecordRepository,
         mailSenderAccountRepository = mailSenderAccountRepository,
         mailSendAttemptRepository = mailSendAttemptRepository,
-        expertIndexWriterService = expertIndexWriterService
+        expertOperatorStatusService = expertOperatorStatusService
     )
 
     private fun <T> anyValue(defaultValue: T): T =
@@ -113,8 +112,57 @@ class ManualOutreachTxHelperTest {
         Mockito.verify(mailSendAttemptRepository).save(captureValue(attemptCaptor, MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))
         assertEquals(MailSendAttemptStatus.SENT, attemptCaptor.value.status)
 
-        // 5. Verify ES sync called
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0001", "CONTACTED")
+        // 5. Verify operator status advanced through the single automatic writer
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact),
+            eqValue(OperatorStatus.CONTACTED),
+            eqValue("MANUAL_BULK_OUTREACH")
+        )
+    }
+
+    @Test
+    fun `recordSuccess converges operator status via updateAutomatically without direct ES sync`() {
+        val contact = ExpertContact(
+            id = 200L,
+            campaignId = 10L,
+            orcidId = "0002",
+            expertEmail = "b@c.com",
+            expertName = "Name",
+            currentStatus = "NEW",
+            operatorStatus = "NOT_CONTACTED"
+        )
+
+        Mockito.`when`(conversationStateService.transition(
+            anyValue(contact),
+            eqValue(ConversationStatus.INTRO_SENT),
+            eqValue("MANUAL_BULK_OUTREACH"),
+            eqValue("MANUAL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { contact }
+        )).thenAnswer { invocation ->
+            val base = invocation.getArgument<ExpertContact>(0)
+            val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
+            mutator(base.copy(currentStatus = "INTRO_SENT"))
+        }
+
+        Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
+        Mockito.`when`(mailSenderAccountRepository.incrementTodaySentCount(eqValue("chen"), anyValue(LocalDateTime.now()))).thenReturn(1)
+        Mockito.`when`(mailSendAttemptRepository.findById(88L)).thenReturn(
+            Optional.of(MailSendAttempt(
+                id = 88L, orcidId = "0002", mailType = "INTRODUCTION",
+                accountCode = "chen", messageId = "msg456",
+                status = MailSendAttemptStatus.PREPARED
+            ))
+        )
+        Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+
+        helper.recordSuccess(contact, "chen", "msg456", "Subject", "Body", 88L)
+
+        Mockito.verify(expertOperatorStatusService).updateAutomatically(
+            anyValue(contact),
+            eqValue(OperatorStatus.CONTACTED),
+            eqValue("MANUAL_BULK_OUTREACH")
+        )
     }
 
     @Test

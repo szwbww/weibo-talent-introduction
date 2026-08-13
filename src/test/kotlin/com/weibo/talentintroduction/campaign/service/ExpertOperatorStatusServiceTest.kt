@@ -41,7 +41,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.changeStatus(1L, "REPLIED", "admin", "manual verification")
 
         assertEquals("REPLIED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -65,7 +65,7 @@ class ExpertOperatorStatusServiceTest {
         val result = service.updateAutomatically(c, OperatorStatus.REPLIED, "inbound reply")
 
         assertEquals("REPLIED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "REPLIED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "REPLIED")
     }
 
     @Test
@@ -80,14 +80,62 @@ class ExpertOperatorStatusServiceTest {
     }
 
     @Test
-    fun `updateAutomatically allows MATERIALS_RECEIVED after INVITED`() {
-        val c = contact("INVITED")
+    fun `updateAutomatically allows MATERIALS_RECEIVED after REPLIED`() {
+        val c = contact("REPLIED")
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
 
         val result = service.updateAutomatically(c, OperatorStatus.MATERIALS_RECEIVED, "materials arrived")
 
         assertEquals("MATERIALS_RECEIVED", result.operatorStatus)
-        Mockito.verify(expertIndexWriterService).syncCandidateOperatorStatus("0000-0001", "MATERIALS_RECEIVED")
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "MATERIALS_RECEIVED")
+    }
+
+    @Test
+    fun `updateAutomatically does not downgrade REPLIED to CONTACTED`() {
+        val c = contact("REPLIED")
+
+        val result = service.updateAutomatically(c, OperatorStatus.CONTACTED, "manual outreach")
+
+        assertEquals("REPLIED", result.operatorStatus)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+    }
+
+    @Test
+    fun `updateAutomatically does not downgrade INVITED to CONTACTED`() {
+        val c = contact("INVITED")
+
+        val result = service.updateAutomatically(c, OperatorStatus.CONTACTED, "manual outreach")
+
+        assertEquals("INVITED", result.operatorStatus)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+    }
+
+    @Test
+    fun `updateAutomatically never overwrites EMAIL_INVALID for any enum target`() {
+        for (target in OperatorStatus.entries) {
+            val c = contact("EMAIL_INVALID")
+
+            val result = service.updateAutomatically(c, target, "manual outreach")
+
+            assertEquals("EMAIL_INVALID", result.operatorStatus)
+        }
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+    }
+
+    @Test
+    fun `updateAutomatically advances NOT_CONTACTED to CONTACTED and syncs ES once`() {
+        val c = contact("NOT_CONTACTED")
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val result = service.updateAutomatically(c, OperatorStatus.CONTACTED, "manual outreach")
+
+        assertEquals("CONTACTED", result.operatorStatus)
+        Mockito.verify(expertContactRepository).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "CONTACTED")
     }
 }

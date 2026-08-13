@@ -17,6 +17,7 @@ data class BatchExecutionSnapshot(
     val regions: List<String> = emptyList(),
     val emailDomain: String? = null,
     val discipline: String? = null,
+    val operatorStatus: String? = null,
     val templateId: Long? = null,
     val oneRoundOnly: Boolean = false
 )
@@ -50,9 +51,20 @@ data class RecipientScope(
     val tags: List<String>,
     val regions: List<String>,
     val emailDomain: String?,
-    val discipline: String?
+    val discipline: String?,
+    val operatorStatus: String? = null
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
+        // I-1 第 2 条旁路（重试路径）：状态口径必须与 ES 的 operatorStatusFilter 一致
+        // （NOT_CONTACTED = ES 文档无 operatorStatus 字段；其余状态 = term 相等）。
+        if (!operatorStatus.isNullOrBlank()) {
+            val matched = if (operatorStatus == "NOT_CONTACTED") {
+                profile.operatorStatus.isNullOrBlank()
+            } else {
+                profile.operatorStatus == operatorStatus
+            }
+            if (!matched) return false
+        }
         if (!discipline.isNullOrBlank()) {
             val matched = if (discipline == "UNCLASSIFIED") {
                 profile.disciplineCategory.isNullOrBlank()
@@ -91,7 +103,8 @@ data class RecipientScope(
                 tags = snapshot.tags,
                 regions = snapshot.regions,
                 emailDomain = snapshot.emailDomain?.trim()?.takeIf { it.isNotEmpty() },
-                discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() }
+                discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
+                operatorStatus = snapshot.operatorStatus?.trim()?.takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -227,6 +240,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         regions = regions,
         emailDomain = emailDomain,
         discipline = discipline,
+        operatorStatus = operatorStatus,
         templateId = templateId,
         oneRoundOnly = oneRoundOnly
     )
