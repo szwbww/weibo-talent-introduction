@@ -19,6 +19,11 @@
 | 9 | `src/test/kotlin/…/campaign/service/ManualInitialOutreachServiceTest.kt` | 改 |
 | 10 | `docs/knowledge/campaign/K-recipient-scope-status-filter.md` | 新增 |
 
+> **Amendments A5（HUMAN 批准 2026-08-13）**：授权 `src/test/kotlin/…/campaign/OperatorStatusWriteSeamGuardTest.kt`
+> 排除项更新——`ExpertSearchService.kt` 钉死点 `:332`→`:345`，新增 BatchExecutionModels.kt /
+> BatchSendTaskConfigService.kt 的 10 处配置映射排除项（均附 file:line+context；
+> `ALLOWED_WRITE_SITES` 白名单闭包与断言**不动**）。该守卫更新随本计划提交。
+
 **禁止**：`styles.css`（零 diff）；其他文件；`docs/plans/fast/*`。
 
 ## 关键不变量（详见计划文件）
