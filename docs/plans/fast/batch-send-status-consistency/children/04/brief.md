@@ -16,6 +16,10 @@
 | 6 | `src/test/kotlin/…/campaign/service/OperatorStatusReconcileServiceTest.kt` | 新增 |
 | 7 | `docs/knowledge/campaign/K-operator-status-reconcile.md` | 新增 |
 
+> **Amendments A4（HUMAN 批准 2026-08-13）**：授权 `src/test/kotlin/…/campaign/OperatorStatusWriteSeamGuardTest.kt` 内
+> **两行** `EXCLUDED_NOISE_SITES` 排除项行号更新（85→90、410→431，上下文不变；白名单闭包与断言不动），
+> 因本计划 T-2 对 `ExpertIndexController.kt` 的授权编辑使行号偏移。该守卫更新随本计划提交。
+
 **禁止**：任何写路径改动（本计划只读不写）；其他文件；`docs/plans/fast/*`。
 
 ## 关键不变量（详见计划文件）
