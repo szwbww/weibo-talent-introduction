@@ -172,6 +172,11 @@ fun scheduleOperatorStatusSync() {
 | 6 | `test/…/campaign/service/OperatorStatusReconcileServiceTest.kt` | 新增 |
 | 7 | `docs/knowledge/campaign/K-operator-status-reconcile.md` | 新增 |
 
+> **Amendments A4（HUMAN 批准 2026-08-13，扩权）**：T-2 对 `ExpertIndexController.kt` 的授权编辑使行号偏移
+> （DTO 噪声点 85→90、410→431），子计划 02 的守卫测试 `OperatorStatusWriteSeamGuardTest.kt` 按行号钉死的
+> `EXCLUDED_NOISE_SITES` 排除项失配导致全量测试失败。授权该守卫测试内**两行排除项行号更新**
+> （85→90、410→431，上下文不变，白名单闭包与断言不动），随本计划提交。
+
 ## 验证命令
 
 ```bash
