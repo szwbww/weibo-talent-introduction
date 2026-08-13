@@ -272,7 +272,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualExpertMailServiceGateTest
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualOutreachTxHelperTest
 
-# 迁移集成测试（需本地 Docker，默认 skip）
+# 迁移集成测试（HUMAN 指令 2026-08-13 起跳过：本机 pre-existing V82 drift-gate 失败，与本计划无关；见 Amendments A1）
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
 
 # 构建

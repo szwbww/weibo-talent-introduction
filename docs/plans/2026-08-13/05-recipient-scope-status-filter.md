@@ -211,6 +211,7 @@ APPLICATION 层生效 / 留空时行为不变。
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualInitialOutreachServiceTest
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
+# ↑ Flyway IT 按 HUMAN 指令 2026-08-13 跳过（本机 pre-existing V82 drift-gate 失败，与本计划无关；见 Amendments A2）
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
 git diff --check
 ```
