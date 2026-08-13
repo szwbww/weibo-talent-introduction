@@ -37,7 +37,8 @@
 ```bash
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualInitialOutreachServiceTest
-JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
+# FlywayMigrationIntegrationTest：Amendments A2（HUMAN 指令 2026-08-13）起跳过——本机该 IT 在
+# pre-existing V82 drift-gate 失败（与 05 无关）；不再属于必跑命令
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
 git diff --check
 ```
