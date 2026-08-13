@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-13/00-manual-panel-missing-fields.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-08-13/00-manual-panel-missing-fields.md (commit ff89fb50b6c9425e0649db2db7ea9eb614a002bd)
 - Amendments: N/A
 - Master base: ff89fb50b6c9425e0649db2db7ea9eb614a002bd
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 00 | docs/plans/2026-08-13/00-manual-panel-missing-fields.md | commit:ff89fb50b6c9425e0649db2db7ea9eb614a002bd | none | 1 | LIGHT_PASS_WITH_NOTES | ff89fb50b6c9425e0649db2db7ea9eb614a002bd | 93d3f0217fc720e911dcbe469792dc1ac9ae36c2 | 0 | — | 93d3f0217fc720e911dcbe469792dc1ac9ae36c2 | — | 单子计划 run；无下游子计划。RECORD_ONLY O-1：readManualFormValues/toggleBatchRegionPickerValue 用 typeof-function 守卫（readBatchRegionPickerValue/notifyBatchRegionPickerChanged），生产行为不变，仅为保住既有 vm-sandbox JS 测试；execution.md 已记录 |
+| 00 | docs/plans/2026-08-13/00-manual-panel-missing-fields.md | commit:ff89fb50b6c9425e0649db2db7ea9eb614a002bd | none | 1 | LIGHT_PASS_WITH_NOTES | ff89fb50b6c9425e0649db2db7ea9eb614a002bd | 93d3f0217fc720e911dcbe469792dc1ac9ae36c2 | 0 | — | 93d3f0217fc720e911dcbe469792dc1ac9ae36c2 | f222cdd201aeea813dd79796852618305ad5ef13 | 单子计划 run；无下游子计划。RECORD_ONLY O-1：readManualFormValues/toggleBatchRegionPickerValue 用 typeof-function 守卫（readBatchRegionPickerValue/notifyBatchRegionPickerChanged），生产行为不变，仅为保住既有 vm-sandbox JS 测试；execution.md 已记录 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
