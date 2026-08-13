@@ -253,6 +253,19 @@ curl -s -u "$ES_USER:$ES_PASS" "$ES_BASE/orcid_info_application/_count" \
 > `CandidateOperatorStatusSyncService.kt` 的调用点改动随 T-3 一并提交——
 > 若执行时发现需独立修改该文件，文件数变为 8，仍 ≤10。
 
+> **Amendments A3（HUMAN 批准 2026-08-13，扩权）**：T-1/T-2/T-3 落地必然破坏断言旧契约的既有测试，
+> 与 T-3 改名必然波及生产调用方，原清单未授权这些文件。经实证（ExpertIndexServiceTest:211 断言
+> APPLICATION 不得含 operatorStatus；:25-73/:93-135 断言旧白名单行为；:224-253 与
+> ExpertIndexWriterServiceTest:442-546 断言单层写入；4 个生产调用方按旧方法名编译），
+> 授权文件扩至下列文件，随本计划一并更新为**新契约**（更新断言，不弱化计划验收标准）：
+> - 测试：`ExpertIndexServiceTest.kt`、`ExpertIndexWriterServiceTest.kt`、
+>   `CandidateOperatorStatusSyncServiceTest.kt`、`ExpertOperatorStatusServiceTest.kt`、
+>   `ManualInitialOutreachServiceTest.kt`、`ManualOutreachTxHelperTest.kt`
+> - T-3 改名调用方：`BounceCollectionService.kt`、`ManualInitialOutreachService.kt`、
+>   `ExpertOperatorStatusService.kt`（实际调用点以 grep 实测为准，ManualOutreachTxHelper 经
+>   P-A 收敛后可能已无 syncCandidateOperatorStatus 调用）
+> 上述任一文件若实际不受影响则保持零改动。其余禁止项不变。
+
 ## 验证命令
 
 ```bash
