@@ -81,6 +81,7 @@ function createSandbox(overrides = {}) {
 }
 
 function makePanel() {
+    const blocksPills = [];
     const element = () => ({
         value: "",
         textContent: "",
@@ -93,12 +94,17 @@ function makePanel() {
         ".expert-mail-preview-subject": element(),
         '[data-role="mail-preview-body"]': element(),
         '[data-role="mail-preview-to"]': element(),
-        ".expert-mail-preview-meta": element()
+        ".expert-mail-preview-meta": element(),
+        '[data-role="mail-preview-blocks"]': {
+            textContent: "",
+            appendChild: (child) => blocksPills.push(child)
+        }
     };
     return {
         dataset: {},
         innerHTML: "",
-        querySelector: (sel) => els[sel] || null
+        querySelector: (sel) => els[sel] || null,
+        blocksPills
     };
 }
 
@@ -143,6 +149,7 @@ describe("expert detail mail preview tab", () => {
             }
         });
         sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
         vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
         const panel = makePanel();
         panel.querySelector('[data-role="mail-preview-template"]').value = "1";
@@ -171,6 +178,7 @@ describe("expert detail mail preview tab", () => {
                 { id: 98, blockOrder: 1, blockType: "REPLY_SNIPPET", refId: 7, refDisplayName: "尊语 #1", customText: null }
             ]
         }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
         vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
         const panel = makePanel();
         panel.querySelector('[data-role="mail-preview-template"]').value = "1";
@@ -196,6 +204,7 @@ describe("expert detail mail preview tab", () => {
             }
         });
         sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
         vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
         const panel = makePanel();
         panel.querySelector('[data-role="mail-preview-template"]').value = "1";
@@ -209,6 +218,51 @@ describe("expert detail mail preview tab", () => {
         const fnSource = extractFn("renderExpertMailPreview");
         assert.ok(!/compose-templates\/\$\{[^}]*\}\/preview/.test(fnSource));
         assert.ok(!/\/api\/compose-templates\/[^"']*\/preview"/.test(fnSource));
+    });
+
+    it("renderExpertMailPreview exposes the server-provided refDisplayName for preview blocks (V-1)", async () => {
+        const { sandbox } = createSandbox({
+            api: async () => ({
+                subject: "S",
+                body: "B",
+                blocks: [
+                    { blockOrder: 0, blockType: "REPLY_SNIPPET", refId: 7, refDisplayName: "尊语 #1", included: true }
+                ],
+                fallbackKeys: [],
+                toEmail: "e@x.com",
+                variables: []
+            })
+        });
+        sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
+        vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
+        const panel = makePanel();
+        panel.querySelector('[data-role="mail-preview-template"]').value = "1";
+
+        await sandbox.renderExpertMailPreview(panel, "0000-0001");
+
+        assert.equal(panel.blocksPills.length, 1);
+        assert.equal(panel.blocksPills[0].className, "compose-block-pill");
+        assert.equal(panel.blocksPills[0].textContent, "尊语 #1");
+    });
+
+    it("renderExpertMailPreview derives variantIndex from the trimmed ORCID via Java hashCode (V-2)", async () => {
+        let captured = null;
+        const { sandbox } = createSandbox({
+            api: async (url, options) => {
+                captured = JSON.parse(options.body);
+                return { subject: "S", body: "B", blocks: [], fallbackKeys: [], toEmail: "e@x.com", variables: [] };
+            }
+        });
+        sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
+        vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
+        const panel = makePanel();
+        panel.querySelector('[data-role="mail-preview-template"]').value = "1";
+
+        await sandbox.renderExpertMailPreview(panel, "0000-0002");
+
+        assert.equal(captured.variantIndex, -2035179089);
     });
 
     it("openTemplateEditorForExpert loads templates before setView; no setView when template missing (I-3)", async () => {

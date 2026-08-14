@@ -8053,6 +8053,7 @@ async function loadExpertMailPreview(panel, orcidId) {
             </div>
             <div class="expert-mail-preview-subject"></div>
             <div class="pre" data-role="mail-preview-body"></div>
+            <div data-role="mail-preview-blocks"></div>
             <div class="expert-mail-preview-meta">
                 <span data-role="mail-preview-to"></span>
             </div>
@@ -8062,6 +8063,15 @@ async function loadExpertMailPreview(panel, orcidId) {
         panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
         panel.dataset.loaded = "";
     }
+}
+
+function javaStringHashCode(value) {
+    let hash = 0;
+    const seed = String(value == null ? "" : value).trim();
+    for (let i = 0; i < seed.length; i++) {
+        hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+    }
+    return hash;
 }
 
 async function renderExpertMailPreview(panel, orcidId) {
@@ -8081,7 +8091,7 @@ async function renderExpertMailPreview(panel, orcidId) {
         contactId: null,
         expertEmail: null,
         senderAccountCode: null,
-        variantIndex: 0
+        variantIndex: javaStringHashCode(orcidId)
     };
     const requestId = ++expertMailPreviewRequestId;
     try {
@@ -8104,6 +8114,16 @@ async function renderExpertMailPreview(panel, orcidId) {
                 badgeEl.className = "badge warn";
                 badgeEl.textContent = `兜底: ${key}`;
                 metaEl.appendChild(badgeEl);
+            });
+        }
+        const blocksEl = panel.querySelector('[data-role="mail-preview-blocks"]');
+        if (blocksEl) {
+            blocksEl.textContent = "";
+            (result.blocks || []).forEach((block) => {
+                const pillEl = document.createElement("span");
+                pillEl.className = "compose-block-pill";
+                pillEl.textContent = block.refDisplayName ?? "";
+                blocksEl.appendChild(pillEl);
             });
         }
     } catch (error) {
