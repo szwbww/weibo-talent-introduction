@@ -3,7 +3,7 @@ id: K-contacts-layout-width-preference
 domain: frontend
 created: 2026-08-14
 last_used: 2026-08-14
-hit_count: 0
+hit_count: 1
 source: create-p:03-expert-layout-wide-default
 ---
 

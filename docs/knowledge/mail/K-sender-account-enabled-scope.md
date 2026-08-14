@@ -2,8 +2,8 @@
 id: K-sender-account-enabled-scope
 domain: mail
 created: 2026-07-06
-last_used: 2026-08-10
-hit_count: 8
+last_used: 2026-08-14
+hit_count: 9
 source: create-p:pending-reply-account-consistency-and-disabled-receive
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 ---

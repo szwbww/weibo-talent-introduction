@@ -2,8 +2,8 @@
 id: K-sender-account-selection-sites
 domain: mail
 created: 2026-08-10
-last_used: 2026-08-10
-hit_count: 0
+last_used: 2026-08-14
+hit_count: 1
 source: create-p:sender-binding-01..05
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-ui-removal-retires-obsolete-contract-tests
 domain: frontend
 created: 2026-07-17
-last_used: 2026-08-07
-hit_count: 8
+last_used: 2026-08-14
+hit_count: 9
 source: fix-v:qa-refactor-02-fact-card-foundation:fix-1
 severity: P1
 ---
