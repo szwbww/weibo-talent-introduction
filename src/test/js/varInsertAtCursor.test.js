@@ -38,7 +38,7 @@ function createSandbox(activeElement) {
         EXPERT_VAR_KEY_SET: new Set([
             "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
             "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
-            "degree", "recentWorkTitle", "patentTitle"
+            "degree", "recentWorkTitle", "patentTitle", "primaryResearchField"
         ]),
         SENDER_VAR_KEY_SET: new Set([
             "senderEmail", "senderName", "senderTitle", "teamName", "countryName", "senderDisplayName"
@@ -51,7 +51,8 @@ function createSandbox(activeElement) {
         "insertVarAtCursor",
         "placeholderDefaultFallback",
         "renderVarChipButtons",
-        "renderVarInsertMenuContent"
+        "renderVarInsertMenuContent",
+        "calculateExpertVariableCoverage"
     ].forEach((name) => {
         vm.runInContext(extractFn(name), sandbox);
     });
@@ -103,5 +104,23 @@ describe("insertVarAtCursor unfocused append (I-2)", () => {
 
         assert.match(html, /data-var-key="unsubscribeUrl"/);
         assert.match(html, /退订链接/);
+    });
+});
+
+describe("template variable coverage", () => {
+    it("counts only expert variables, not sender or system variables", () => {
+        const sandbox = createSandbox(null);
+
+        const coverage = sandbox.calculateExpertVariableCoverage([
+            { key: "expertName", filled: true },
+            { key: "researchFields", filled: false },
+            { key: "primaryResearchField", filled: true },
+            { key: "senderName", filled: false },
+            { key: "unsubscribeUrl", filled: true }
+        ]);
+
+        assert.strictEqual(coverage.filled, 2);
+        assert.strictEqual(coverage.total, 3);
+        assert.strictEqual(coverage.percent, 67);
     });
 });

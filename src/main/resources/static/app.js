@@ -2163,7 +2163,7 @@ function resolveVarTextarea(targetId) {
 const EXPERT_VAR_KEY_SET = new Set([
     "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
     "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
-    "degree", "recentWorkTitle", "patentTitle"
+    "degree", "recentWorkTitle", "patentTitle", "primaryResearchField"
 ]);
 const SENDER_VAR_KEY_SET = new Set([
     "senderEmail", "senderName", "senderTitle", "teamName", "countryName", "senderDisplayName"
@@ -6592,14 +6592,12 @@ async function loadTemplatePreview(panel, orcidId) {
     try {
         const level = $("#expertIndexLevel")?.value || "CANDIDATE";
         const vars = await api(`/api/experts/template-variables?orcidId=${encodeURIComponent(orcidId)}&level=${level}`);
-        const filled = vars.filter((v) => v.filled).length;
-        const total = vars.length;
-        const coveragePercent = total > 0 ? Math.round(filled / total * 100) : 0;
+        const coverage = calculateExpertVariableCoverage(vars);
         panel.innerHTML = `
             <div class="tpl-var-summary">
-                <span class="tpl-var-coverage">变量覆盖: ${filled}/${total} (${coveragePercent}%)</span>
+                <span class="tpl-var-coverage">专家变量覆盖: ${coverage.filled}/${coverage.total} (${coverage.percent}%)</span>
                 <div class="tpl-var-progress-track">
-                    <div class="tpl-var-progress-fill" style="width: ${coveragePercent}%"></div>
+                    <div class="tpl-var-progress-fill" style="width: ${coverage.percent}%"></div>
                 </div>
             </div>
             <div class="tpl-var-grid">
@@ -6615,6 +6613,17 @@ async function loadTemplatePreview(panel, orcidId) {
         panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
         panel.dataset.loaded = "";
     }
+}
+
+function calculateExpertVariableCoverage(vars) {
+    const expertVars = vars.filter((variable) => EXPERT_VAR_KEY_SET.has(variable.key));
+    const filled = expertVars.filter((variable) => variable.filled).length;
+    const total = expertVars.length;
+    return {
+        filled,
+        total,
+        percent: total > 0 ? Math.round(filled / total * 100) : 0
+    };
 }
 
 async function showExpertDetail(expert) {
