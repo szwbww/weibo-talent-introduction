@@ -62,6 +62,7 @@ data class ReplySnippetCreateRequest(
     val content: String,
     val displayOrder: Int = 100,
     val variantGroup: String? = null,
+    val name: String? = null,
     val isDefault: Boolean = false,
     val enabled: Boolean = true,
     val variants: List<String> = emptyList()
@@ -72,6 +73,7 @@ data class ReplySnippetCreateRequest(
             content = content,
             displayOrder = displayOrder,
             variantGroup = variantGroup,
+            name = name,
             isDefault = isDefault,
             enabled = enabled,
             variants = variants
@@ -82,6 +84,7 @@ data class ReplySnippetUpdateRequest(
     val content: String,
     val displayOrder: Int,
     val variantGroup: String? = null,
+    val name: String? = null,
     val isDefault: Boolean,
     val enabled: Boolean,
     val variants: List<String> = emptyList()
@@ -91,6 +94,7 @@ data class ReplySnippetUpdateRequest(
             content = content,
             displayOrder = displayOrder,
             variantGroup = variantGroup,
+            name = name,
             isDefault = isDefault,
             enabled = enabled,
             variants = variants
@@ -103,6 +107,7 @@ data class ReplySnippetResponse(
     val content: String,
     val displayOrder: Int,
     val variantGroup: String?,
+    val name: String?,
     val isDefault: Boolean,
     val enabled: Boolean,
     val variants: List<String> = emptyList()
@@ -118,6 +123,7 @@ private fun ReplySnippet.toResponse(variants: List<String> = emptyList()): Reply
         content = content,
         displayOrder = displayOrder,
         variantGroup = variantGroup,
+        name = name,
         isDefault = isDefault,
         enabled = enabled,
         variants = variants

@@ -2900,6 +2900,15 @@ const replySnippetTypeLabels = {
     CUSTOM: "自定义内容"
 };
 
+function replySnippetDisplayLabel(snippet) {
+    const trimmedName = (snippet.name || "").trim();
+    if (trimmedName) return trimmedName;
+    const firstLine = (snippet.content || "").split("\n").map((line) => line.trim()).find((line) => line.length > 0);
+    if (firstLine != null) return firstLine.length > 40 ? firstLine.slice(0, 40) + "…" : firstLine;
+    const typeLabel = replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType;
+    return typeLabel + " #" + snippet.id;
+}
+
 const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING", "CUSTOM"];
 
 async function loadReplySnippets() {
@@ -3529,6 +3538,7 @@ function renderReplySnippetRow(snippet, showDefault) {
         : "<td></td>";
     return `
         <tr>
+            <td>${snippet.name ? escapeHtml(snippet.name) : '<span class="muted">未命名</span>'}</td>
             <td class="muted-cell">${escapeHtml((snippet.content || "").slice(0, 120))}</td>
             <td>${snippet.displayOrder}</td>
             ${variantCell}
@@ -3550,7 +3560,7 @@ function renderReplySnippetTypePanel(type, snippets) {
     const defaultHeader = showDefault ? "<th>默认</th>" : "";
     const rows = snippets
         .map((snippet) => renderReplySnippetRow(snippet, showDefault))
-        .join("") || `<tr><td colspan="${showDefault ? 6 : 5}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
+        .join("") || `<tr><td colspan="${showDefault ? 7 : 6}" class="muted" style="text-align:center;padding:20px;">暂无片段</td></tr>`;
     return `
         <section class="panel" style="margin-bottom:16px;">
             <div class="panel-head">
@@ -3560,6 +3570,7 @@ function renderReplySnippetTypePanel(type, snippets) {
                 <table>
                     <thead>
                         <tr>
+                            <th>名称</th>
                             <th>内容</th>
                             <th>排序</th>
                             <th>变体</th>
@@ -3621,6 +3632,7 @@ function fillReplySnippetForm(snippet, presetType) {
         ? `编辑片段：${replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType}`
         : "新建回复片段";
     form.id.value = snippet?.id || "";
+    form.name.value = snippet?.name || "";
     form.snippetType.value = snippet?.snippetType || presetType || "SALUTATION";
     form.snippetType.disabled = Boolean(snippet?.id);
     form.content.value = snippet?.content || "";
@@ -3653,6 +3665,7 @@ async function saveReplySnippet(event) {
     const payload = {
         content: values.content,
         displayOrder: numberValue(values.displayOrder, 100),
+        name: values.name,
         isDefault: form.isDefault.checked,
         enabled: form.enabled.checked,
         variants: collectContentVariants(variantsContainer)
@@ -8056,7 +8069,7 @@ function composeTemplateBlockRowHtml(index, block) {
     const blockType = block.blockType || "CUSTOM_TEXT";
     const enabledSnippets = (state.replySnippets || []).filter((snippet) => snippet.enabled);
     const snippetOptions = enabledSnippets.map((snippet) => {
-        const label = `${replySnippetTypeLabels[snippet.snippetType] || snippet.snippetType} #${snippet.id}`;
+        const label = replySnippetDisplayLabel(snippet);
         return `<option value="${snippet.id}" ${String(block.refId) === String(snippet.id) ? "selected" : ""}>${escapeHtml(label)}</option>`;
     }).join("");
     return `

@@ -198,6 +198,7 @@ class ReplySnippetService(
                 content = command.content.trim(),
                 displayOrder = command.displayOrder,
                 variantGroup = command.variantGroup?.trim()?.takeIf { it.isNotBlank() },
+                name = command.name?.trim()?.takeIf { it.isNotBlank() },
                 isDefault = command.isDefault,
                 enabled = command.enabled,
                 createdAt = now,
@@ -234,6 +235,7 @@ class ReplySnippetService(
                 content = command.content.trim(),
                 displayOrder = command.displayOrder,
                 variantGroup = command.variantGroup?.trim()?.takeIf { it.isNotBlank() },
+                name = command.name?.trim()?.takeIf { it.isNotBlank() },
                 isDefault = command.isDefault,
                 enabled = command.enabled
             )
@@ -383,6 +385,7 @@ data class ReplySnippetCreateCommand(
     val content: String,
     val displayOrder: Int = 100,
     val variantGroup: String? = null,
+    val name: String? = null,
     val isDefault: Boolean = false,
     val enabled: Boolean = true,
     val variants: List<String> = emptyList()
@@ -392,6 +395,7 @@ data class ReplySnippetUpdateCommand(
     val content: String,
     val displayOrder: Int,
     val variantGroup: String? = null,
+    val name: String? = null,
     val isDefault: Boolean,
     val enabled: Boolean,
     val variants: List<String> = emptyList()

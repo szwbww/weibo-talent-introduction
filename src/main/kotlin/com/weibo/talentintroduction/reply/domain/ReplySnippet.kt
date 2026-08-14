@@ -14,6 +14,7 @@ data class ReplySnippet(
     val isDefault: Boolean = false,
     val enabled: Boolean = true,
     val variantGroup: String? = null,
+    val name: String? = null,
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null
 )
