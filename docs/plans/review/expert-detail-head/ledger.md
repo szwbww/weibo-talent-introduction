@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-14/expert-detail-head-main.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-08-14/expert-detail-head-main.md (sha256 2632e7f628b6ad8e21ee6af36b9411821590bfeb8a0017230b50abdc1895975e)
 - Governing master identity: sha256 2632e7f628b6ad8e21ee6af36b9411821590bfeb8a0017230b50abdc1895975e; recorded commit 90498efb768f74a2371e895d984bde1ac4743c49
 - Invoked master identity: SAME (sha256 2632e7f628b6ad8e21ee6af36b9411821590bfeb8a0017230b50abdc1895975e)
@@ -12,26 +12,26 @@
 - Fast-p handoff: docs/plans/fast/expert-detail-head/human-review-handoff.md (sha256 519aa754f8c24dc93a2b55284cf696afdc4c02c874bcf44920d359e98d03a8d7)
 - Ordered child plans/evidence: p1 docs/plans/2026-08-14/expert-detail-head-p1-preview-sender-account.md (commit 95a21a14995101aad17eb15b2c75387655335acb; brief/execution/verify-log/fix-log under docs/plans/fast/expert-detail-head/children/p1-preview-sender-account/); p2 docs/plans/2026-08-14/expert-detail-head-p2-head-layout-c.md (commit 95a21a14995101aad17eb15b2c75387655335acb; brief/execution/verify-log/fix-log under docs/plans/fast/expert-detail-head/children/p2-head-layout-c/)
 - Master base: 90498efb768f74a2371e895d984bde1ac4743c49
-- Final code head: 7b914c44e6410aa8c49c51d3bd25e8eb1f893322
-- Evidence parent before next commit: 9576699278308c061525cbdf262554637ac4b71d
-- Previous evidence commit: N/A
+- Final code head: 82af050103285614a177d2ab4822be6f43861585
+- Evidence parent before next commit: b8bf5c1e8d09ccf68765dd8439ca515db6623956
+- Previous evidence commit: 74df33bd6b1f4fb19be9333827a2d5e96a173c8e
 - Branch: fast/expert-detail-head
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/expert-detail-head
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED; master base 90498efb768f74a2371e895d984bde1ac4743c49; fast final code head 7b914c44e6410aa8c49c51d3bd25e8eb1f893322; matching READY_FOR_HUMAN_REVIEW ledger/handoff; 2 terminal children; valid ancestry
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer_retry
-- Reviewer attempt: 2
-- Machine result: FAIL
-- Machine report epoch: docs/plans/review/expert-detail-head/machine-verification.md#epoch-1
+- Reviewer: AggregateReviewerE2
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/expert-detail-head/machine-verification.md#epoch-2
 - Repair artifact: docs/plans/fix/expert-detail-head-main/repair.md
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN `$execute-p docs/plans/fix/expert-detail-head-main/repair.md` (2026-08-15)
+- Repair executor: Main
+- Repair code head: 82af050103285614a177d2ab4822be6f43861585
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Approve the bounded V-1 repair with `$execute-p docs/plans/fix/expert-detail-head-main/repair.md`.
+- Blocker/next action: Epoch 2 machine PASS on 90498efb768f74a2371e895d984bde1ac4743c49..82af050103285614a177d2ab4822be6f43861585; run P1 A-1..A-9 and P2 A-1..A-15 manual acceptance, then human sign-off of boundary 82af050103285614a177d2ab4822be6f43861585.
 
 ## Reviewer Dispatches
 
