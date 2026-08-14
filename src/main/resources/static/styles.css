@@ -8180,6 +8180,40 @@ tr td {
     font-size: 13px;
 }
 
+/* === 专家详情 · 邮件预览 === */
+.expert-mail-preview-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.expert-mail-preview-toolbar select {
+    flex: 1;
+    min-width: 180px;
+    height: 32px;
+}
+.expert-mail-preview-subject {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+.expert-mail-preview-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
 .preview-drawer-shell { position: fixed; inset: 0; z-index: var(--z-drawer); }
 .preview-drawer-shell[hidden] { display: none; }
 .preview-drawer-backdrop { position: absolute; inset: 0; border: none; background: rgba(15, 23, 42, 0.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default; opacity: 0; transition: opacity 0.2s ease; }

@@ -6500,7 +6500,8 @@ function renderDetailSubTabs(activeTab = "academic") {
     const tabs = [
         { key: "academic", label: "学术档案" },
         { key: "contact", label: "联系详情" },
-        { key: "template", label: "模板预览" }
+        { key: "template", label: "模板预览" },
+        { key: "mail-preview", label: "邮件预览" }
     ];
     return `
     <div class="detail-sub-tabs">
@@ -6571,6 +6572,12 @@ function activateDetailSubTab(btn) {
         const panel = detail.querySelector('[data-panel="template"]');
         if (panel && !panel.dataset.loaded) {
             loadTemplatePreview(panel, state.selectedExpertOrcid);
+        }
+    }
+    if (tabKey === "mail-preview") {
+        const panel = detail.querySelector('[data-panel="mail-preview"]');
+        if (panel && !panel.dataset.loaded) {
+            loadExpertMailPreview(panel, state.selectedExpertOrcid);
         }
     }
 }
@@ -6723,6 +6730,9 @@ async function showExpertDetail(expert) {
             </div>
             <div class="detail-tab-panel" data-panel="template" hidden>
                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
+            </div>
+            <div class="detail-tab-panel" data-panel="mail-preview" hidden>
+                <div class="tpl-var-empty">切换到本标签页以加载邮件预览。</div>
             </div>
         </div>
     `;
@@ -7180,6 +7190,9 @@ async function loadContactDetail(contactId) {
             </div>
             <div class="detail-tab-panel" data-panel="template" hidden>
                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
+            </div>
+            <div class="detail-tab-panel" data-panel="mail-preview" hidden>
+                <div class="tpl-var-empty">切换到本标签页以加载邮件预览。</div>
             </div>
 
         </div>
@@ -8007,6 +8020,120 @@ async function loadComposeTemplatePreviewOptions() {
 async function loadComposeTemplates() {
     state.composeTemplates = await api("/api/compose-templates");
     renderComposeTemplatesTable();
+}
+
+async function ensureComposeTemplatesLoaded() {
+    if (Array.isArray(state.composeTemplates) && state.composeTemplates.length > 0) return;
+    await loadComposeTemplates();
+}
+
+let expertMailPreviewRequestId = 0;
+
+async function loadExpertMailPreview(panel, orcidId) {
+    if (!orcidId) {
+        panel.innerHTML = `<div class="tpl-var-empty">无 ORCID，无法预览邮件。</div>`;
+        return;
+    }
+    panel.innerHTML = `<div class="tpl-var-loading">加载邮件预览中...</div>`;
+    panel.dataset.loaded = "true";
+    try {
+        await ensureComposeTemplatesLoaded();
+        const templates = state.composeTemplates || [];
+        const preferred = templates.find((t) => t.enabled) || templates[0];
+        panel.innerHTML = `
+            <div class="expert-mail-preview-toolbar">
+                <select data-role="mail-preview-template">
+                    ${templates.map((t) => {
+                        const suffix = t.enabled ? "" : "（已禁用）";
+                        const selected = preferred && String(t.id) === String(preferred.id) ? " selected" : "";
+                        return `<option value="${t.id}"${selected}>${escapeHtml(t.templateName)}${suffix}</option>`;
+                    }).join("") || '<option value="">暂无模板</option>'}
+                </select>
+                <button type="button" class="button small" data-role="mail-preview-open-editor">在模板编辑器中打开</button>
+            </div>
+            <div class="expert-mail-preview-subject"></div>
+            <div class="pre" data-role="mail-preview-body"></div>
+            <div class="expert-mail-preview-meta">
+                <span data-role="mail-preview-to"></span>
+            </div>
+        `;
+        await renderExpertMailPreview(panel, orcidId);
+    } catch (e) {
+        panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
+        panel.dataset.loaded = "";
+    }
+}
+
+async function renderExpertMailPreview(panel, orcidId) {
+    const templateId = panel.querySelector('[data-role="mail-preview-template"]')?.value || "";
+    const template = (state.composeTemplates || []).find((t) => String(t.id) === String(templateId));
+    if (!template) return;
+    const payload = {
+        subject: template.subject || "",
+        blocks: (template.blocks || []).map((block) => ({
+            blockOrder: block.blockOrder,
+            blockType: block.blockType,
+            refId: block.refId ?? null,
+            customText: block.customText ?? null
+        })),
+        strictPlaceholders: false,
+        orcidId,
+        contactId: null,
+        expertEmail: null,
+        senderAccountCode: null,
+        variantIndex: 0
+    };
+    const requestId = ++expertMailPreviewRequestId;
+    try {
+        const result = await api("/api/compose-templates/preview-draft", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        if (requestId !== expertMailPreviewRequestId) return;
+        const subjectEl = panel.querySelector(".expert-mail-preview-subject");
+        if (subjectEl) subjectEl.textContent = result.subject || "";
+        const bodyEl = panel.querySelector('[data-role="mail-preview-body"]');
+        if (bodyEl) bodyEl.textContent = result.body || "";
+        const toEl = panel.querySelector('[data-role="mail-preview-to"]');
+        if (toEl) toEl.textContent = `收件人: ${result.toEmail || "未知"}`;
+        const metaEl = panel.querySelector(".expert-mail-preview-meta");
+        if (metaEl) {
+            metaEl.querySelectorAll(".badge.warn").forEach((badgeEl) => badgeEl.remove());
+            (result.fallbackKeys || []).forEach((key) => {
+                const badgeEl = document.createElement("span");
+                badgeEl.className = "badge warn";
+                badgeEl.textContent = `兜底: ${key}`;
+                metaEl.appendChild(badgeEl);
+            });
+        }
+    } catch (error) {
+        if (requestId !== expertMailPreviewRequestId) return;
+        throw error;
+    }
+}
+
+async function openTemplateEditorForExpert(templateId, orcidId) {
+    await ensureComposeTemplatesLoaded();
+    const template = (state.composeTemplates || []).find((t) => Number(t.id) === Number(templateId));
+    if (!template) {
+        showStatus("模板不存在，请刷新后重试", "error");
+        return;
+    }
+    const expert = (state.contacts || []).find((item) => item.orcidId === orcidId);
+    setView("mail-templates");
+    switchMailTemplatesSubTab("compose-templates");
+    openComposeTemplateEditor(template);
+    await loadComposeTemplatePreviewOptions();
+    const label = composeTemplatePreviewExpertLabel({
+        displayName: expert?.displayName,
+        expertEmail: expert?.email
+    });
+    const expertInput = $("#previewComposeExpertInput");
+    if (expertInput) expertInput.value = label;
+    state.previewDrawer.orcidId = orcidId || null;
+    state.previewDrawer.contactId = expert?.contactId ?? null;
+    state.previewDrawer.expertEmail = expert?.email || null;
+    await openComposeTemplatePreview();
 }
 
 function renderComposeTemplatesTable() {
@@ -10878,8 +11005,26 @@ function bindEvents() {
             activateDetailSubTab(subTabBtn);
             return;
         }
+        const openEditorBtn = event.target.closest('[data-role="mail-preview-open-editor"]');
+        if (openEditorBtn) {
+            const panel = openEditorBtn.closest(".detail-tab-panel");
+            const select = panel?.querySelector('[data-role="mail-preview-template"]');
+            openTemplateEditorForExpert(select?.value, state.selectedExpertOrcid)
+                .catch((error) => showStatus(error.message, "error"));
+            return;
+        }
         const button = event.target.closest("button[data-action]");
         if (button) handleContactAction(button).catch((error) => showStatus(error.message, "error"));
+    });
+    $("#contactDetail").addEventListener("change", (event) => {
+        const select = event.target.closest('[data-role="mail-preview-template"]');
+        if (!select) return;
+        const panel = select.closest(".detail-tab-panel");
+        if (!panel) return;
+        renderExpertMailPreview(panel, state.selectedExpertOrcid).catch((error) => {
+            panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(error.message)}</div>`;
+            panel.dataset.loaded = "";
+        });
     });
     $("#aiAnalysisModal")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
