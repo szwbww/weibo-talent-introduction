@@ -58,8 +58,8 @@ describe("contact head layout C (P2 S-8)", () => {
         assert.ok(actionsTemplate.length > 0, "action-bar template region must be found");
         assert.ok(!actionsTemplate.includes('style="'), "new action-bar template must not introduce inline styles");
         assert.ok(
-            fnSource.includes('data-original="${contact.boundSenderAccountCode || ""}'),
-            "data-original must be written from contact.boundSenderAccountCode (I-3)"
+            fnSource.includes('data-original="${boundSenderAccountCode}"'),
+            "data-original must be written from the trimmed binding value (I-3/R-1)"
         );
         assert.ok(fnSource.includes('id="senderBindingSelect" data-original="'),
             "data-original must be on the senderBindingSelect element");
@@ -122,6 +122,40 @@ describe("contact head layout C (P2 S-8)", () => {
         assert.strictEqual(note.hidden, false);
         assert.strictEqual(sendBtn.disabled, true);
         assert.strictEqual(pill.dataset.dirty, "true");
+    });
+
+    it("whitespace-only boundSenderAccountCode renders unbound and empty (R-1/V-1)", () => {
+        const fnSource = extractFn("loadContactDetail");
+        const assignStart = fnSource.indexOf('$("#contactHeadActions").innerHTML = `');
+        assert.ok(assignStart !== -1, "header template assignment must exist");
+        const tmplStart = fnSource.indexOf("`", assignStart) + 1;
+        const tmplEnd = fnSource.indexOf("`;", tmplStart);
+        assert.ok(tmplStart !== -1 && tmplEnd !== -1 && tmplEnd > tmplStart, "header template literal must be extractable");
+        const headerTemplate = fnSource.slice(tmplStart, tmplEnd);
+
+        const derivationMatch = fnSource.match(/const boundSenderAccountCode = ([^;]+);/);
+        assert.ok(derivationMatch, "loadContactDetail must derive a trimmed boundSenderAccountCode local");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(`
+            const contact = { boundSenderAccountCode: "   ", id: 5, senderAccountChanged: false, operatorStatus: "", currentIndexLevel: "", autoReplyEnabled: false };
+            const state = { contactHeadExpanded: false };
+            const options = [];
+            const operatorStatusOptions = [];
+            const indexLevelOptions = [];
+            const renderMailSendOptionGroups = () => "";
+            const optionsFromArray = () => "";
+            const boundSenderAccountCode = ${derivationMatch[1]};
+            var html = \`${headerTemplate}\`;
+        `, sandbox);
+
+        // whitespace-only binding must render exactly as unbound (I-9): gray dot + 未绑定 + empty data-original
+        assert.ok(sandbox.html.includes('class="sender-binding-dot is-unbound"'), "whitespace-only binding must render the unbound dot");
+        assert.ok(sandbox.html.includes('>未绑定<'), "whitespace-only binding must render 未绑定 label");
+        assert.ok(sandbox.html.includes('id="senderBindingSelect" data-original=""'), "whitespace-only binding must render empty data-original");
+        assert.ok(!sandbox.html.includes('data-original="   "'), "whitespace-only binding must not leak whitespace into data-original");
+        assert.ok(!sandbox.html.includes('sender-binding-dot"></span>'), "whitespace-only binding must not render a bound dot");
     });
 
     it("send-manual-mail keeps senderAccountCode null and never reads the select (I-1)", async () => {

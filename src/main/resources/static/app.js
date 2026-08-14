@@ -6998,20 +6998,21 @@ async function loadContactDetail(contactId) {
     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
     const name = contact.expertName || contact.expertEmail || expert.displayName || "?";
     const initial = name.charAt(0).toUpperCase();
+    const boundSenderAccountCode = (contact.boundSenderAccountCode || "").trim();
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
         <div class="contact-head-main-row">
             <span class="dropdown sender-binding">
                 <button type="button" class="sender-binding-pill" id="senderBindingToggle"
                         aria-haspopup="true" aria-expanded="false" data-dirty="false">
-                    <span class="sender-binding-dot${contact.boundSenderAccountCode ? "" : " is-unbound"}"></span>
+                    <span class="sender-binding-dot${boundSenderAccountCode ? "" : " is-unbound"}"></span>
                     <span>发件</span>
-                    <b id="senderBindingCurrentLabel">${contact.boundSenderAccountCode || "未绑定"}</b>
+                    <b id="senderBindingCurrentLabel">${boundSenderAccountCode || "未绑定"}</b>
                     <span class="sender-binding-caret" aria-hidden="true">▾</span>
                 </button>
                 <div class="dropdown-menu sender-binding-pop" id="senderBindingPop" hidden>
                     <span class="sender-binding-pop-label">绑定发件账号</span>
-                    <select id="senderBindingSelect" data-original="${contact.boundSenderAccountCode || ""}" aria-label="绑定发件账号"></select>
+                    <select id="senderBindingSelect" data-original="${boundSenderAccountCode}" aria-label="绑定发件账号"></select>
                     <p class="sender-binding-pop-hint">改绑会记录一条审计并给该专家打「已变更」标记；会话进行中时，旧账号仍负责接收该专家的回信。</p>
                     <div class="sender-binding-pop-foot">
                         <button type="button" class="button primary small" data-action="rebind-sender-account" data-id="${contact.id}">保存绑定</button>
@@ -7054,7 +7055,7 @@ async function loadContactDetail(contactId) {
         const options = (Array.isArray(accounts) ? accounts : []).filter(a => a.enabled && a.accountCode !== "SIMULATOR_NOOP");
         sel.innerHTML = options.map(a =>
             `<option value="${escapeHtml(a.accountCode)}"${
-                a.accountCode === contact.boundSenderAccountCode ? " selected" : ""
+                a.accountCode === boundSenderAccountCode ? " selected" : ""
             }>${escapeHtml(a.accountCode)} · ${escapeHtml(a.senderEmail)}</option>`
         ).join("");
     }
