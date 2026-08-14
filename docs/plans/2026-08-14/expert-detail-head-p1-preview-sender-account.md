@@ -238,7 +238,7 @@ git diff --check
 
 **通过判据**
 
-- `node --test src/test/js/expertMailPreviewTab.test.js`：退出码 0，`# fail 0`，`# tests` 从基线 **13** 增至 **16**（基线 2026-08-14 实测）。
+- `node --test src/test/js/expertMailPreviewTab.test.js`：退出码 0，`# fail 0`，`# tests` 从基线 **10** 增至 **13**（基线 2026-08-14 实测；与 T3「现有 10 个用例一字不改 + 新增 3 个」一致）。
 - `node --check`：退出码 0，无输出。
 - `mvn test -Dtest=MailComposeTemplateServiceTest`：`Tests run: N, Failures: 0, Errors: 0`。
 - 全量 `mvn test`：`Failures: 0, Errors: 0`。

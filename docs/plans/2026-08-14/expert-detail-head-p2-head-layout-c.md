@@ -801,7 +801,7 @@ git diff --check
 
 **通过判据**
 
-- 前四条：退出码 0 且输出含 `# fail 0`。第三条的 `# tests` 应为「基线 24（`expertProfileAbsence` 11 + `senderBindingDisplay` 6 + `expertMailPreviewTab` 13，其中 `expertMailPreviewTab` 若已含 P1 的 +3 则为 16）+ 本计划新增 13」。**落地时以实跑输出为准，不得倒推**。
+- 前四条：退出码 0 且输出含 `# fail 0`。第三条的 `# tests` 应为「基线 27（`expertProfileAbsence` 11 + `senderBindingDisplay` 6 + `expertMailPreviewTab` 10，其中 `expertMailPreviewTab` 若已含 P1 的 +3 则为 13）+ 本计划新增 13」。**落地时以实跑输出为准，不得倒推**。
 - `node --check`：退出码 0，无输出。
 - `mvn test`：`Tests run: N, Failures: 0, Errors: 0`；输出中须出现 `node --test` 的执行记录（确认 `skipNodeTests` 未生效）。
 - `git diff --check`：无输出。

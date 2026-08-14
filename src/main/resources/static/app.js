@@ -23,6 +23,7 @@ const state = {
     contactsPage: 0,
     contactsTotalHits: 0,
     mailSendOptions: [],
+    contactHeadExpanded: false,
     selectedAccount: null,
     accountEditorMode: null,
     currentEditAccount: null,
@@ -3961,7 +3962,29 @@ async function loadExpertTagOptions(level, { filters = {} } = {}) {
     }
 }
 
-function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor", profileMissing = false) {
+function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor", profileMissing = false, layout = "section") {
+    if (layout === "inline") {
+        if (profileMissing === true) {
+            return `
+        <span class="expert-tag-editor is-inline" id="${escapeHtml(editorId)}" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}" data-layout="inline" data-profile-missing="true">
+            <span class="expert-tag-nodoc" title="该专家在 ES 中无画像文档，标签功能不可用">ES 无画像</span>
+        </span>
+    `;
+        }
+        const inlineChips = (tags || []).map((tag, index) => `
+        <span class="expert-tag tag-${escapeHtml(tag)}"${index >= 3 ? " hidden" : ""}>
+            ${escapeHtml(expertTagLabels[tag] || tag)}
+            <button type="button" class="expert-tag-remove" data-action="expert-remove-tag" data-tag="${escapeHtml(tag)}" title="删除标签">×</button>
+        </span>
+    `).join("") || `<span class="muted">暂无标签</span>`;
+        return `
+        <span class="expert-tag-editor is-inline" id="${escapeHtml(editorId)}" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}" data-layout="inline">
+            <span class="inbound-tag-editor-chips">${inlineChips}</span>
+            <button type="button" class="button small expert-tag-add-btn" data-action="expert-add-tag-open" title="添加标签" aria-label="添加标签">＋</button>
+            ${tags && tags.length > 3 ? `<button type="button" class="button small expert-tag-more-btn" data-action="expert-tags-expand">+${tags.length - 3}</button>` : ""}
+        </span>
+    `;
+    }
     if (profileMissing === true) {
         return `
         <div class="detail-section expert-tag-editor" id="${escapeHtml(editorId)}" data-orcid="${escapeHtml(orcidId)}" data-level="${escapeHtml(level)}" data-profile-missing="true">
@@ -4077,7 +4100,8 @@ async function mutateExpertTag(orcidId, level, tag, action) {
 function updateExpertTagEditor(orcidId, tags, level, editorId = "expertTagEditor") {
     const editor = document.getElementById(editorId);
     if (!editor || editor.dataset.orcid !== orcidId) return;
-    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId);
+    const layout = editor.dataset.layout === "inline" ? "inline" : "section";
+    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId, false, layout);
 }
 
 function setTagEditorLoading(editor, loading, message = "处理中...") {
@@ -6656,9 +6680,8 @@ async function showExpertDetail(expert) {
                         <span>${escapeHtml(expert.email || "邮箱未知")}</span>
                     </p>
                 </div>
+                ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline") : ""}
             </div>
-
-            ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false) : ""}
 
             ${renderDetailSubTabs("academic")}
 
@@ -6975,10 +6998,40 @@ async function loadContactDetail(contactId) {
     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
     const name = contact.expertName || contact.expertEmail || expert.displayName || "?";
     const initial = name.charAt(0).toUpperCase();
+    const boundSenderAccountCode = (contact.boundSenderAccountCode || "").trim();
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
-        <div class="contact-head-status-row">
-            <span class="contact-head-label">状态与层级:</span>
+        <div class="contact-head-main-row">
+            <span class="dropdown sender-binding">
+                <button type="button" class="sender-binding-pill" id="senderBindingToggle"
+                        aria-haspopup="true" aria-expanded="false" data-dirty="false">
+                    <span class="sender-binding-dot${boundSenderAccountCode ? "" : " is-unbound"}"></span>
+                    <span>发件</span>
+                    <b id="senderBindingCurrentLabel">${boundSenderAccountCode || "未绑定"}</b>
+                    <span class="sender-binding-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="dropdown-menu sender-binding-pop" id="senderBindingPop" hidden>
+                    <span class="sender-binding-pop-label">绑定发件账号</span>
+                    <select id="senderBindingSelect" data-original="${boundSenderAccountCode}" aria-label="绑定发件账号"></select>
+                    <p class="sender-binding-pop-hint">改绑会记录一条审计并给该专家打「已变更」标记；会话进行中时，旧账号仍负责接收该专家的回信。</p>
+                    <div class="sender-binding-pop-foot">
+                        <button type="button" class="button primary small" data-action="rebind-sender-account" data-id="${contact.id}">保存绑定</button>
+                        ${contact.senderAccountChanged ? `<button type="button" class="button small" data-action="clear-sender-change-mark" data-id="${contact.id}">清除标记</button>` : ""}
+                    </div>
+                </div>
+            </span>
+            <span class="contact-head-dirty-note" id="senderBindingDirtyNote" hidden>⚠ 账号未保存</span>
+            <span class="contact-head-divider"></span>
+            <select id="manualMailOption" aria-label="选择要发送的邮件">${renderMailSendOptionGroups(options)}</select>
+            <button class="button primary" id="sendManualMailBtn" data-action="send-manual-mail" data-id="${contact.id}">
+                <span>发送邮件</span>
+            </button>
+            <span class="contact-head-divider"></span>
+            <button type="button" class="button contact-head-more-toggle" id="contactHeadMoreToggle"
+                    data-action="toggle-contact-head-more" aria-expanded="${state.contactHeadExpanded === true}">⚙ 更多</button>
+        </div>
+        <div class="contact-head-status-row" id="contactHeadMoreRow" ${state.contactHeadExpanded === true ? "" : "hidden"}>
+            <span class="contact-head-label">状态</span>
             <select id="operatorStatusSelect" data-contact-id="${contact.id}" data-original="${contact.operatorStatus || ""}" aria-label="专家状态">
                 ${optionsFromArray(operatorStatusOptions, false, "请选择状态", contact.operatorStatus || "")}
             </select>
@@ -6993,16 +7046,20 @@ async function loadContactDetail(contactId) {
                 保存变更
             </button>
         </div>
-        <div class="contact-head-mail-row">
-            <span class="contact-head-label">手动发送邮件:</span>
-            <select id="manualMailOption" aria-label="选择要发送的邮件">
-                ${renderMailSendOptionGroups(options)}
-            </select>
-            <button class="button primary" data-action="send-manual-mail" data-id="${contact.id}">
-                <span>发送邮件</span>
-            </button>
-        </div>
     `;
+    const sel = $("#senderBindingSelect");
+    if (sel) {
+        const accounts = state.accounts && state.accounts.length
+            ? state.accounts
+            : await api("/api/mail/sender-accounts").catch(() => []);
+        const options = (Array.isArray(accounts) ? accounts : []).filter(a => a.enabled && a.accountCode !== "SIMULATOR_NOOP");
+        sel.innerHTML = options.map(a =>
+            `<option value="${escapeHtml(a.accountCode)}"${
+                a.accountCode === boundSenderAccountCode ? " selected" : ""
+            }>${escapeHtml(a.accountCode)} · ${escapeHtml(a.senderEmail)}</option>`
+        ).join("");
+    }
+    updateSenderBindingDirtyState();
 
     const banner = renderManualAttentionBanner(contact);
     const contactDetail = $("#contactDetail");
@@ -7030,9 +7087,8 @@ async function loadContactDetail(contactId) {
                         <span>${escapeHtml(contact.expertEmail)}</span>
                     </p>
                 </div>
+                ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline")}
             </div>
-
-            ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false)}
 
             ${renderDetailSubTabs("contact")}
 
@@ -7055,23 +7111,6 @@ async function loadContactDetail(contactId) {
                     </div>
                     <div class="metadata-card-value">
                         ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "MANUAL_HANDOFF" ? "warn" : "ok")}
-                    </div>
-                </div>
-
-                <!-- Sender Binding Card -->
-                <div class="metadata-card">
-                    <div class="metadata-card-header">
-                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><polyline points="22,6 12,13 2,6"/></svg>
-                        <span>绑定发件账号</span>
-                    </div>
-                    <div class="metadata-card-value">
-                        <span>${escapeHtml(contact.boundSenderAccountCode || "未绑定")}</span>
-                        ${contact.senderAccountChanged ? `<span class="badge warn">已变更</span>` : ""}
-                        <div class="sender-binding-editor">
-                            <select id="senderBindingSelect"></select>
-                            <button class="button" data-action="rebind-sender-account" data-id="${contact.id}">保存</button>
-                            ${contact.senderAccountChanged ? `<button class="button" data-action="clear-sender-change-mark" data-id="${contact.id}">清除标记</button>` : ""}
-                        </div>
                     </div>
                 </div>
 
@@ -7206,18 +7245,6 @@ async function loadContactDetail(contactId) {
 
         </div>
     `;
-    const sel = $("#senderBindingSelect");
-    if (sel) {
-        const accounts = state.accounts && state.accounts.length
-            ? state.accounts
-            : await api("/api/mail/sender-accounts").catch(() => []);
-        const options = (Array.isArray(accounts) ? accounts : []).filter(a => a.enabled && a.accountCode !== "SIMULATOR_NOOP");
-        sel.innerHTML = options.map(a =>
-            `<option value="${escapeHtml(a.accountCode)}"${
-                a.accountCode === contact.boundSenderAccountCode ? " selected" : ""
-            }>${escapeHtml(a.accountCode)} · ${escapeHtml(a.senderEmail)}</option>`
-        ).join("");
-    }
     requestAnimationFrame(() => {
         contactDetail.scrollTop = 0;
         if (window.innerWidth <= 1024) {
@@ -8087,6 +8114,8 @@ async function renderExpertMailPreview(panel, orcidId) {
     const templateId = panel.querySelector('[data-role="mail-preview-template"]')?.value || "";
     const template = (state.composeTemplates || []).find((t) => String(t.id) === String(templateId));
     if (!template) return;
+    const previewContact = (state.contacts || []).find((item) => item.orcidId === orcidId);
+    const previewContactId = previewContact?.contactId ?? null;
     const payload = {
         subject: template.subject || "",
         blocks: (template.blocks || []).map((block) => ({
@@ -8097,7 +8126,7 @@ async function renderExpertMailPreview(panel, orcidId) {
         })),
         strictPlaceholders: false,
         orcidId,
-        contactId: null,
+        contactId: previewContactId,
         expertEmail: null,
         senderAccountCode: null,
         variantIndex: javaStringHashCode(orcidId)
@@ -8533,6 +8562,14 @@ function handleComposeTemplateBlockTypeChange(event) {
 async function handleContactAction(element) {
     const id = element.dataset.id;
     const action = element.dataset.action;
+    if (action === "toggle-contact-head-more") {
+        state.contactHeadExpanded = !state.contactHeadExpanded;
+        const row = $("#contactHeadMoreRow");
+        const toggle = $("#contactHeadMoreToggle");
+        if (row) row.hidden = !state.contactHeadExpanded;
+        if (toggle) toggle.setAttribute("aria-expanded", String(state.contactHeadExpanded));
+        return;
+    }
     if (action === "select-expert") {
         const orcidId = element.dataset.orcid;
         const expert = state.contacts.find((item) => item.orcidId === orcidId);
@@ -8590,6 +8627,14 @@ async function handleContactAction(element) {
         showStatus("已清除变更标记");
         await loadContactDetail(id);
         await loadContacts();
+        return;
+    }
+    if (action === "expert-tags-expand") {
+        const editor = element.closest(".expert-tag-editor");
+        if (!editor) return;
+        editor.dataset.expanded = "true";
+        editor.querySelectorAll(".expert-tag[hidden]").forEach((chip) => { chip.hidden = false; });
+        element.remove();
         return;
     }
     if (action === "expert-add-tag-open") {
@@ -8794,6 +8839,18 @@ async function handleIndexLevelChange(contactId, newLevel) {
         method: "POST",
         body: JSON.stringify({ targetLevel: newLevel, operatorName })
     });
+}
+
+function updateSenderBindingDirtyState() {
+    const select = $("#senderBindingSelect");
+    const pill = $("#senderBindingToggle");
+    const note = $("#senderBindingDirtyNote");
+    const sendBtn = $("#sendManualMailBtn");
+    if (!select) return;
+    const dirty = select.value !== (select.dataset.original || "");
+    if (pill) pill.dataset.dirty = dirty ? "true" : "false";
+    if (note) note.hidden = !dirty;
+    if (sendBtn) sendBtn.disabled = dirty;
 }
 
 function updateSaveButtonState() {
@@ -11139,11 +11196,43 @@ function bindEvents() {
             }
         }
     });
+    $("#contactHeadActions").addEventListener("click", (event) => {
+        const toggle = event.target.closest("#senderBindingToggle");
+        const pop = $("#senderBindingPop");
+        if (!pop) return;
+        if (toggle) {
+            event.stopPropagation();
+            pop.hidden = !pop.hidden;
+            toggle.setAttribute("aria-expanded", String(!pop.hidden));
+            return;
+        }
+        if (event.target.closest("#senderBindingPop")) {
+            event.stopPropagation();
+        }
+    });
+    document.addEventListener("click", () => {
+        const pop = $("#senderBindingPop");
+        if (pop && !pop.hidden) {
+            pop.hidden = true;
+            $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
+        }
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const pop = $("#senderBindingPop");
+        if (pop && !pop.hidden) {
+            pop.hidden = true;
+            $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
+        }
+    });
     $("#contactHeadActions").addEventListener("change", (event) => {
         const select = event.target.closest("select");
         if (!select) return;
         if (select.id === "operatorStatusSelect" || select.id === "indexLevelSelect" || select.id === "autoReplySelect") {
             updateSaveButtonState();
+        }
+        if (select.id === "senderBindingSelect") {
+            updateSenderBindingDirtyState();
         }
     });
     $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {

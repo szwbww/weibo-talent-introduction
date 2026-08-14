@@ -341,6 +341,8 @@ function createRendererSandbox() {
     vm.runInContext(extractFunction("renderMailboxExpertTagEditor"), sandbox);
     vm.runInContext(extractFunction("showExpertDetail"), sandbox);
     vm.runInContext(extractFunction("loadContactDetail"), sandbox);
+    // P2: loadContactDetail now initializes the sender-binding dirty gate after filling the select
+    vm.runInContext(extractFunction("updateSenderBindingDirtyState"), sandbox);
     vm.runInContext(extractFunction("showMailDetail"), sandbox);
     vm.runInContext(extractFunction("showUnmatchedDetail"), sandbox);
     return { sandbox, elements, statusCalls };
@@ -387,5 +389,58 @@ describe("expertProfileAbsence: rejected tag fetch degrades to S-1 and reports (
         assert.ok(panel.innerHTML.length > 0, "panel must be populated");
         assert.ok(panel.innerHTML.includes(NOTICE_TEXT), "panel must render the profile-missing notice");
         assert.deepStrictEqual(statusCalls, [["es down", "error"]], "failure must be reported via showStatus(error)");
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SUITE: P2 S-7 — inline layout mode for the detail-header name row
+// (plan T11: +1 describe / 4 cases; CSS existence folded into case 1)
+// ──────────────────────────────────────────────────────────────────────────
+
+describe("expertProfileAbsence: inline layout (P2 S-7)", () => {
+    it('layout="inline" + profileMissing=false renders the inline editor (S-7/I-6)', () => {
+        const sb = createSandbox();
+        const html = sb.renderExpertTagEditor(["承诺回复材料"], "0000-0001", "CANDIDATE", "expertTagEditor", false, "inline");
+
+        assert.ok(html.includes('class="expert-tag-editor is-inline"'), "inline root class must be present");
+        assert.ok(html.includes('data-layout="inline"'), "data-layout=inline must be present");
+        assert.ok(html.includes('data-action="expert-add-tag-open"'), "add-tag button must be present");
+        assert.ok(!html.includes("detail-section"), "inline output must NOT contain detail-section");
+        assert.ok(!html.includes("<h3>"), "inline output must NOT contain a section h3 heading");
+
+        // K-dom-stub-tests-hide-dangling-refs: the P2 inline classes must exist in styles.css
+        assert.ok(stylesCssSource.includes(".expert-tag-editor.is-inline"), ".expert-tag-editor.is-inline must exist in styles.css");
+        assert.ok(stylesCssSource.includes(".expert-tag-nodoc"), ".expert-tag-nodoc must exist in styles.css");
+        assert.ok(stylesCssSource.includes(".expert-tag-add-btn"), ".expert-tag-add-btn must exist in styles.css");
+    });
+
+    it('layout="inline" + profileMissing=true renders the nodoc pill without actions', () => {
+        const sb = createSandbox();
+        const html = sb.renderExpertTagEditor([], "0000-0001", "CANDIDATE", "expertTagEditor", true, "inline");
+
+        assert.ok(html.includes('data-profile-missing="true"'), "data-profile-missing=true must be present");
+        assert.ok(html.includes("expert-tag-nodoc"), "expert-tag-nodoc pill must be present");
+        assert.ok(html.includes("ES 无画像"), "nodoc pill text must be ES 无画像");
+        assert.ok(!html.includes("data-action="), "inline nodoc branch must NOT contain any data-action");
+    });
+
+    it("both inline outputs keep id/data-orcid/data-level (I-6)", () => {
+        const sb = createSandbox();
+        const htmlPresent = sb.renderExpertTagEditor([], "0000-0001", "CANDIDATE", "expertTagEditor", false, "inline");
+        const htmlMissing = sb.renderExpertTagEditor([], "0000-0001", "CANDIDATE", "expertTagEditor", true, "inline");
+
+        for (const html of [htmlPresent, htmlMissing]) {
+            assert.ok(html.includes('id="expertTagEditor"'), "editor id must be preserved");
+            assert.ok(html.includes('data-orcid="0000-0001"'), "data-orcid must be preserved");
+            assert.ok(html.includes('data-level="CANDIDATE"'), "data-level must be preserved");
+        }
+    });
+
+    it("non-inline layout values keep the S-2 output byte-identical (I-5)", () => {
+        const sb = createSandbox();
+        for (const layout of [undefined, "section", "whatever"]) {
+            const html = sb.renderExpertTagEditor([], "0000-0001", "CANDIDATE", "expertTagEditor", false, layout);
+            assert.strictEqual(normalizeWhitespace(html), S2_EXPECTED, "layout=" + layout + " must match S-2 verbatim");
+        }
     });
 });
