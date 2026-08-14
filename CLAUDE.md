@@ -127,6 +127,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - `ManualInitialOutreachService` 有两个结构同构但独立的轮次循环（`runIntroductionFromSnapshot` / `runMaterialFromSnapshot`），进度写入也是两个方法（`updateProgress` / `updateProgressWithAccumulator`）；改发送节奏必须对称落到两处，且新增 break 条件要同时守卫轮尾 `perRoundIntervalMs` sleep。(K-batch-send-round-loop-symmetry)
 - `BatchSendTaskConfigService.updateLegacyConfig()` 用只含旧字段的请求调用全量 update；`batch_send_task_config` 每新增一列都必须在此显式 `newField = existing.newField`，否则旧 typed API 一次调用就把新配置项静默重置为默认值。(K-batch-config-legacy-adapter-field-preservation)
 - `mailDeliveryService.send` 有 7 个调用点，抑制名单（退订）检查只覆盖 4 条；漏的 3 条（`MeetingScheduleService:141`、`ManualExpertMailService:63`、`PendingMailOperationService:270`）全是操作端同步路径。抑制拦截禁止表达为投递失败（会误标 `EMAIL_INVALID`、误限流账号），须抛继承 `IllegalStateException` 的异常；发送期策略参数要加在 `ComposedMail` 带默认值的字段上，不要改 `MailDeliveryService.send()` 签名（9 个测试文件依赖）。但 `PendingMailOperationService:270` 的 send 被 `:359 catch (deliveryEx: Exception)` 包住，异常会被改写成 `DELIVERY_UNKNOWN` + 409「发送状态未知」并烧掉幂等 claim，该路径必须在 `prepareAndClaim`(`:253`) 之前单独前置拦截。(K-suppression-check-call-sites)
+- 内容变体编辑器（`#qaRuleVariantsContainer` / `#replySnippetVariantsContainer`）的读取契约是「遍历容器内全部 `.content-variant-input` textarea」（`collectContentVariants` / `validateContentVariantInputs` / `updateContentVariantsCountBadge` / `saveQaRule` / `saveReplySnippet` 全依赖此）；改造该 UI 必须保持每个变体各有一个常驻 `.content-variant-input`，只用显隐控制可见性，严禁移出 DOM 或改由 JS 数组托管值，否则保存时静默丢变体。(K-content-variant-input-read-contract)
 
 ---
 

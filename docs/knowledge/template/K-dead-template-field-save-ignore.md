@@ -2,8 +2,8 @@
 id: K-dead-template-field-save-ignore
 domain: template
 created: 2026-07-09
-last_used: 2026-07-09
-hit_count: 1
+last_used: 2026-08-14
+hit_count: 2
 source: fix-v:cv-1-content-variant-engine:fix-1
 severity: P1
 ---

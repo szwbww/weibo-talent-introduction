@@ -2,8 +2,8 @@
 id: K-plan-quantified-claims-need-grep-receipts
 domain: audit
 created: 2026-08-12
-last_used: 2026-08-12
-hit_count: 0
+last_used: 2026-08-14
+hit_count: 1
 source: create-p:batch-send-rhythm-and-filter-00-master
 severity: P1
 ---

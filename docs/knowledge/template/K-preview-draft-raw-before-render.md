@@ -2,8 +2,8 @@
 id: K-preview-draft-raw-before-render
 domain: template
 created: 2026-07-08
-last_used: 2026-07-13
-hit_count: 5
+last_used: 2026-08-14
+hit_count: 6
 source: fix-v:compose-template-editor-server-preview:fix-1
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-variant-pool-dto-chain
 domain: template
 created: 2026-07-08
-last_used: 2026-07-09
-hit_count: 8
+last_used: 2026-08-14
+hit_count: 9
 source: create-p:variant-pool-frontend-ui
 ---
 
