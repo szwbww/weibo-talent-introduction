@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-14T04:46:00Z
-- Current child: p1-snippet-name
-- Waiting role: VERIFIER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,8 +19,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| p1-snippet-name | docs/plans/2026-08-14/expert-mail-preview-p1-snippet-name.md | commit:7a5dbdb | none | 1 | LIGHT_VERIFYING | 7a5dbdb | 15633f7a | 0 | — | 15633f7a |  | First: reply snippet name + unified labels. |
-| p2-detail-tab | docs/plans/2026-08-14/expert-mail-preview-p2-detail-tab.md | commit:7a5dbdb | p1 | 1 | PENDING |  |  | 0 | — |  |  | Depends on p1 refDisplayName fix. |
+| p1-snippet-name | docs/plans/2026-08-14/expert-mail-preview-p1-snippet-name.md | commit:7a5dbdb | none | 1 | LIGHT_PASS_WITH_NOTES | 7a5dbdb | 15633f7a | 0 | — | 15633f7a | 6ba9a66 | First: reply snippet name + unified labels. RECORD_ONLY: R-1 plan-audit gap (3rd site resolveBlocks) completed in-file; R-2 tier-3 defensive JS label-mapping vs Kotlin raw type; R-3 2 baseline JS failures in batchManualExecutionLog.test.js. |
+| p2-detail-tab | docs/plans/2026-08-14/expert-mail-preview-p2-detail-tab.md | commit:7a5dbdb | p1 | 1 | LIGHT_PASS_WITH_NOTES | 15633f7a | c2acd4f | 0 | — | c2acd4f |  | Depends on p1 refDisplayName fix. RECORD_ONLY: O-1 I-5 grep literal 2 vs actual 3 (lazy-load selector; equality 3==3 holds); O-2 test group 1 count method; O-3 master-vs-child wording on new-panel block description (panel renders per child spec; 3 name surfaces consistent); O-4 pre-existing duplicate scrollBackToContactsList. |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
