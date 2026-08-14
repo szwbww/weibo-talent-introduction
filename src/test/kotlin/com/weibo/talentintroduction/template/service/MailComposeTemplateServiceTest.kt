@@ -940,6 +940,187 @@ class MailComposeTemplateServiceTest {
         Mockito.verify(mailVariableService).renderPreview("\${unsubscribeUrl}", null, syntheticContact)
     }
 
+    @Test
+    fun `previewDraft falls back to the contact bound sender account when no explicit code`() {
+        val contact = ExpertContact(
+            id = 42,
+            campaignId = 1,
+            orcidId = "0000-0042",
+            expertEmail = "ada42@mit.edu",
+            expertName = "Ada42",
+            boundSenderAccountCode = "LiLei"
+        )
+        val account = MailSenderAccount(
+            accountCode = "LiLei",
+            senderEmail = "lilei@example.com",
+            senderName = "LiLei",
+            senderTitle = "Director",
+            senderDisplayName = "LiLei",
+            teamName = "Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "lilei@example.com",
+            smtpPassword = "secret",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "lilei@example.com",
+            imapPassword = "secret"
+        )
+        Mockito.`when`(expertContactRepository.findById(42)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getAccount("LiLei")).thenReturn(account)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Subject",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Subject", account, contact)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Body",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Body", account, contact)
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Subject",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = "Body")
+                ),
+                contactId = 42
+            )
+        )
+
+        assertEquals("Subject", result.subject)
+        assertEquals("Body", result.body)
+        Mockito.verify(mailVariableService).renderPreview("Subject", account, contact)
+        Mockito.verify(mailVariableService).renderPreview("Body", account, contact)
+    }
+
+    @Test
+    fun `previewDraft prefers the explicit sender account over the contact binding`() {
+        val contact = ExpertContact(
+            id = 42,
+            campaignId = 1,
+            orcidId = "0000-0042",
+            expertEmail = "ada42@mit.edu",
+            expertName = "Ada42",
+            boundSenderAccountCode = "LiLei"
+        )
+        val boundAccount = MailSenderAccount(
+            accountCode = "LiLei",
+            senderEmail = "lilei@example.com",
+            senderName = "LiLei",
+            senderTitle = "Director",
+            senderDisplayName = "LiLei",
+            teamName = "Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "lilei@example.com",
+            smtpPassword = "secret",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "lilei@example.com",
+            imapPassword = "secret"
+        )
+        val explicitAccount = MailSenderAccount(
+            accountCode = "WangFang",
+            senderEmail = "wangfang@example.com",
+            senderName = "WangFang",
+            senderTitle = "Director",
+            senderDisplayName = "WangFang",
+            teamName = "Team",
+            countryName = "China",
+            smtpHost = "smtp.example.com",
+            smtpPort = 465,
+            smtpUsername = "wangfang@example.com",
+            smtpPassword = "secret",
+            imapHost = "imap.example.com",
+            imapPort = 993,
+            imapUsername = "wangfang@example.com",
+            imapPassword = "secret"
+        )
+        Mockito.`when`(expertContactRepository.findById(42)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.getAccount("LiLei")).thenReturn(boundAccount)
+        Mockito.`when`(mailSenderAccountService.getAccount("WangFang")).thenReturn(explicitAccount)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Subject",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Subject", explicitAccount, contact)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Body",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Body", explicitAccount, contact)
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Subject",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = "Body")
+                ),
+                contactId = 42,
+                senderAccountCode = "WangFang"
+            )
+        )
+
+        assertEquals("Subject", result.subject)
+        assertEquals("Body", result.body)
+        Mockito.verify(mailVariableService).renderPreview("Subject", explicitAccount, contact)
+        Mockito.verify(mailVariableService).renderPreview("Body", explicitAccount, contact)
+        Mockito.verify(mailSenderAccountService, Mockito.never()).getAccount("LiLei")
+    }
+
+    @Test
+    fun `previewDraft resolves a null account when the contact has no binding`() {
+        val contact = ExpertContact(
+            id = 42,
+            campaignId = 1,
+            orcidId = "0000-0042",
+            expertEmail = "ada42@mit.edu",
+            expertName = "Ada42"
+        )
+        Mockito.`when`(expertContactRepository.findById(42)).thenReturn(Optional.of(contact))
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Subject",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Subject", null, contact)
+        Mockito.doReturn(
+            RenderPreviewResult(
+                rendered = "Body",
+                fallbackKeys = emptyList(),
+                variables = emptyList()
+            )
+        ).`when`(mailVariableService).renderPreview("Body", null, contact)
+
+        val result = service.previewDraft(
+            ComposeTemplatePreviewDraftRequest(
+                subject = "Subject",
+                blocks = listOf(
+                    ComposeDraftBlock(0, ComposeBlockType.CUSTOM_TEXT, customText = "Body")
+                ),
+                contactId = 42
+            )
+        )
+
+        assertEquals("Subject", result.subject)
+        assertEquals("Body", result.body)
+        Mockito.verify(mailVariableService).renderPreview("Subject", null, contact)
+        Mockito.verify(mailVariableService).renderPreview("Body", null, contact)
+    }
+
     private fun stubIntroSnippetTemplate(refId: Long) {
         Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
             .thenReturn(

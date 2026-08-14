@@ -219,7 +219,7 @@ class MailComposeTemplateService(
         val baseResolved = resolveBlocks(draftBlocks, variantSeed = variantSeed, renderVariables = false)
         val subjectTemplate = request.subject
         val contact = resolvePreviewContact(request.contactId, request.orcidId, request.expertEmail)
-        val account = resolvePreviewAccount(request.senderAccountCode)
+        val account = resolvePreviewAccount(request.senderAccountCode, contact)
 
         if (contact == null) {
             val texts = listOf(subjectTemplate) + baseResolved.rawTextsByOrder.values
@@ -298,11 +298,18 @@ class MailComposeTemplateService(
         )
     }
 
-    private fun resolvePreviewAccount(senderAccountCode: String?): MailSenderAccount? {
-        val code = senderAccountCode?.trim().orEmpty()
-        if (code.isBlank()) {
-            return null
-        }
+    /**
+     * 预览账号解析优先级（I-1）：显式请求值 > contact 已绑定账号 > null。
+     * 刻意使用 getAccount 而非 getEnabledAccount（I-5）：enabled=false 的现行语义是
+     * “禁止自动外发”，被绑定的禁用账号在预览中仍须能渲染出签名。
+     */
+    private fun resolvePreviewAccount(
+        senderAccountCode: String?,
+        contact: ExpertContact?
+    ): MailSenderAccount? {
+        val code = senderAccountCode?.trim()?.takeIf { it.isNotBlank() }
+            ?: contact?.boundSenderAccountCode?.trim()?.takeIf { it.isNotBlank() }
+            ?: return null
         return runCatching { mailSenderAccountService.getAccount(code) }.getOrNull()
     }
 

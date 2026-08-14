@@ -8087,6 +8087,8 @@ async function renderExpertMailPreview(panel, orcidId) {
     const templateId = panel.querySelector('[data-role="mail-preview-template"]')?.value || "";
     const template = (state.composeTemplates || []).find((t) => String(t.id) === String(templateId));
     if (!template) return;
+    const previewContact = (state.contacts || []).find((item) => item.orcidId === orcidId);
+    const previewContactId = previewContact?.contactId ?? null;
     const payload = {
         subject: template.subject || "",
         blocks: (template.blocks || []).map((block) => ({
@@ -8097,7 +8099,7 @@ async function renderExpertMailPreview(panel, orcidId) {
         })),
         strictPlaceholders: false,
         orcidId,
-        contactId: null,
+        contactId: previewContactId,
         expertEmail: null,
         senderAccountCode: null,
         variantIndex: javaStringHashCode(orcidId)

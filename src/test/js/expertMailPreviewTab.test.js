@@ -265,6 +265,74 @@ describe("expert detail mail preview tab", () => {
         assert.equal(captured.variantIndex, -2035179089);
     });
 
+    it("renderExpertMailPreview takes contactId from state.contacts into payload (I-3)", async () => {
+        let captured = null;
+        const { sandbox } = createSandbox({
+            api: async (url, options) => {
+                captured = JSON.parse(options.body);
+                return { subject: "S", body: "B", blocks: [], fallbackKeys: [], toEmail: "e@x.com", variables: [] };
+            }
+        });
+        sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        sandbox.state.contacts = [{ orcidId: "0000-0001", contactId: 42 }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
+        vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
+        const panel = makePanel();
+        panel.querySelector('[data-role="mail-preview-template"]').value = "1";
+
+        await sandbox.renderExpertMailPreview(panel, "0000-0001");
+
+        assert.ok(captured);
+        assert.equal(captured.contactId, 42);
+    });
+
+    it("renderExpertMailPreview sends contactId null when state.contacts has no matching orcid (I-3)", async () => {
+        let captured = null;
+        const { sandbox } = createSandbox({
+            api: async (url, options) => {
+                captured = JSON.parse(options.body);
+                return { subject: "S", body: "B", blocks: [], fallbackKeys: [], toEmail: "e@x.com", variables: [] };
+            }
+        });
+        sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        sandbox.state.contacts = [];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
+        vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
+        const panel = makePanel();
+        panel.querySelector('[data-role="mail-preview-template"]').value = "1";
+
+        await sandbox.renderExpertMailPreview(panel, "0000-0001");
+
+        assert.ok(captured);
+        assert.equal(captured.contactId, null);
+    });
+
+    it("renderExpertMailPreview resolves contactId without extra requests and keeps senderAccountCode null (I-2)", async () => {
+        const calls = [];
+        let captured = null;
+        const { sandbox } = createSandbox({
+            api: async (url, options) => {
+                calls.push({ url, method: options?.method || "GET" });
+                captured = JSON.parse(options.body);
+                return { subject: "S", body: "B", blocks: [], fallbackKeys: [], toEmail: "e@x.com", variables: [] };
+            }
+        });
+        sandbox.state.composeTemplates = [{ id: 1, templateName: "T1", enabled: true, subject: "Subj", blocks: [] }];
+        sandbox.state.contacts = [{ orcidId: "0000-0001", contactId: 42 }];
+        vm.runInContext(extractFn("javaStringHashCode"), sandbox);
+        vm.runInContext(extractFn("renderExpertMailPreview"), sandbox);
+        const panel = makePanel();
+        panel.querySelector('[data-role="mail-preview-template"]').value = "1";
+
+        await sandbox.renderExpertMailPreview(panel, "0000-0001");
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].url, "/api/compose-templates/preview-draft");
+        assert.equal(calls[0].method, "POST");
+        assert.equal(captured.contactId, 42);
+        assert.equal(captured.senderAccountCode, null);
+    });
+
     it("openTemplateEditorForExpert loads templates before setView; no setView when template missing (I-3)", async () => {
         const order = [];
         const templates = [{ id: 5, templateName: "T5", enabled: true, subject: "Subj", blocks: [] }];
