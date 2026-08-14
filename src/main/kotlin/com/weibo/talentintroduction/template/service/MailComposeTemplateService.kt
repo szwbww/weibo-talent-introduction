@@ -381,10 +381,24 @@ class MailComposeTemplateService(
             }
             ComposeBlockType.REPLY_SNIPPET -> {
                 replySnippetRepository.findById(refId).orElse(null)?.let { snippet ->
-                    "${snippet.snippetType} #${snippet.id}"
+                    snippet.name?.takeIf { it.isNotBlank() }
+                        ?: snippetContentExcerpt(snippet.content)
+                        ?: "${snippet.snippetType} #${snippet.id}"
                 }
             }
             else -> null
+        }
+    }
+
+    private fun snippetContentExcerpt(content: String?): String? {
+        val firstLine = content?.lineSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull { it.isNotEmpty() }
+            ?: return null
+        return if (firstLine.length > EXCERPT_MAX_CHARS) {
+            firstLine.take(EXCERPT_MAX_CHARS) + "…"
+        } else {
+            firstLine
         }
     }
 
@@ -488,7 +502,9 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "回复片段不存在", refId, null)
                         return@forEach
                     }
-                    val displayName = "${snippet.snippetType} #${snippet.id}"
+                    val displayName = snippet.name?.takeIf { it.isNotBlank() }
+                        ?: snippetContentExcerpt(snippet.content)
+                        ?: "${snippet.snippetType} #${snippet.id}"
                     if (!snippet.enabled) {
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
@@ -597,6 +613,8 @@ class MailComposeTemplateService(
     }
 
     companion object {
+        const val EXCERPT_MAX_CHARS = 40
+
         private val FALLBACK_PLACEHOLDER_REGEX = Regex("""\$\{(\w+)\|([^}]*)\}""")
 
         fun variantSeedFor(orcidId: String?, email: String?): Int {

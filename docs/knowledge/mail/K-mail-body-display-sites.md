@@ -2,8 +2,8 @@
 id: K-mail-body-display-sites
 domain: mail
 created: 2026-06-29
-last_used: 2026-07-13
-hit_count: 22
+last_used: 2026-08-14
+hit_count: 23
 source: create-p:translate-button-everywhere
 severity: P2
 ---
@@ -14,6 +14,7 @@ severity: P2
 ③ 未匹配来信详情 :~5600「原始正文」`.pre`。
 ④ 未匹配来信详情 :~5606「清洗后正文」`.pre`。
 ⑤ 自动回复预览 :~5160「回复正文」`.pre`（OUTBOUND 草稿 preview.replyBody）。
+⑥ 专家详情「邮件预览」标签页正文（`app.js` `.detail-tab-panel[data-panel="mail-preview"]` 内 `.pre[data-role="mail-preview-body"]`，数据源 `POST /api/compose-templates/preview-draft`，textContent 渲染）。
 非正文片段（通常应排除）：日志详情 `bodyPreviewText` :~4325/4332（截断预览）、列表表格 `cleanedBody.slice(0,80)` :~5909。
 正确做法：抽共享渲染器替换各 `<div class="pre">`，集中行为；行号会漂移，改前先 grep `class="pre"` 复核。
 关联：K-plaintext-reply-client-reflow（`.pre` 纯文本渲染契约）。

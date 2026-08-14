@@ -436,6 +436,109 @@ class ReplySnippetServiceTest {
         assertNotEquals(v1, vDifferentSlot)
     }
 
+    @Test
+    fun `create persists trimmed name`() {
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as ReplySnippet).copy(id = 1L) }
+        stubVariantPersistence()
+
+        service.create(
+            ReplySnippetCreateCommand(
+                snippetType = SnippetType.SALUTATION.name,
+                content = "Dear Professor,",
+                name = "  尊称-教授  "
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(ReplySnippet::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertEquals("尊称-教授", captor.value.name)
+    }
+
+    @Test
+    fun `create normalizes blank name to null`() {
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as ReplySnippet).copy(id = 1L) }
+        stubVariantPersistence()
+
+        service.create(
+            ReplySnippetCreateCommand(
+                snippetType = SnippetType.SALUTATION.name,
+                content = "Dear Professor,",
+                name = "   "
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(ReplySnippet::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertNull(captor.value.name)
+    }
+
+    @Test
+    fun `update clears name when blank`() {
+        val existing = snippet(id = 5L, snippetType = SnippetType.SALUTATION.name, content = "Dear Professor,", name = "旧名")
+        Mockito.`when`(repository.findById(5L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ReplySnippet }
+        stubVariantPersistence()
+
+        service.update(
+            5L,
+            ReplySnippetUpdateCommand(
+                content = "Dear Professor,",
+                displayOrder = 10,
+                name = "",
+                isDefault = false,
+                enabled = true
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(ReplySnippet::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertNull(captor.value.name)
+    }
+
+    @Test
+    fun `name does not affect frame version`() {
+        val base = snippet(
+            id = 1L,
+            snippetType = SnippetType.SALUTATION.name,
+            content = "Dear Professor,",
+            updatedAt = LocalDateTime.of(2026, 8, 1, 9, 0)
+        )
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(base))
+        val selection = ReplyFrameSelection(salutationSnippetId = 1L)
+        val versionWithoutName = service.resolveSelectableFrame(selection).version
+
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(base.copy(name = "尊称-教授")))
+        val versionWithName = service.resolveSelectableFrame(selection).version
+
+        assertEquals(versionWithoutName, versionWithName)
+    }
+
+    @Test
+    fun `setDefault preserves name`() {
+        val target = snippet(
+            id = 2L,
+            snippetType = SnippetType.SALUTATION.name,
+            isDefault = false,
+            enabled = true,
+            name = "标准开场-v1"
+        )
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(target))
+        Mockito.`when`(repository.findBySnippetTypeAndIsDefaultTrue(SnippetType.SALUTATION.name))
+            .thenReturn(emptyList())
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ReplySnippet }
+        stubVariantPersistence()
+
+        service.setDefault(2L)
+
+        val captor = ArgumentCaptor.forClass(ReplySnippet::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertEquals("标准开场-v1", captor.value.name)
+    }
+
     private fun stubVariantPersistence() {
         val stored = mutableListOf<ContentVariant>()
         Mockito.lenient().doAnswer {
@@ -469,6 +572,7 @@ class ReplySnippetServiceTest {
         enabled: Boolean = true,
         content: String = "Dear Professor,",
         displayOrder: Int = 10,
+        name: String? = null,
         updatedAt: LocalDateTime? = null
     ): ReplySnippet =
         ReplySnippet(
@@ -478,6 +582,7 @@ class ReplySnippetServiceTest {
             displayOrder = displayOrder,
             isDefault = isDefault,
             enabled = enabled,
+            name = name,
             updatedAt = updatedAt
         )
 }
