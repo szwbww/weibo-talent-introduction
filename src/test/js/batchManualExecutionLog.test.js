@@ -79,6 +79,7 @@ describe("batch manual execution log drawer", () => {
         };
         vm.createContext(sandbox);
         vm.runInContext(extractFn("confirmManualExecution"), sandbox);
+        vm.runInContext(extractFn("buildManualExecutionSnapshot"), sandbox);
 
         await sandbox.confirmManualExecution();
 
@@ -113,6 +114,7 @@ describe("batch manual execution log drawer", () => {
         };
         vm.createContext(sandbox);
         vm.runInContext(extractFn("confirmManualExecution"), sandbox);
+        vm.runInContext(extractFn("buildManualExecutionSnapshot"), sandbox);
 
         await sandbox.confirmManualExecution();
 
