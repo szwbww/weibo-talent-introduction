@@ -121,3 +121,113 @@ $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/e
 ```
 
 No product code was modified.
+
+## Epoch 2 — 2026-08-14T15:14:13+0800
+
+- Master plan: `docs/plans/2026-08-14/expert-mail-preview-main.md` (SHA-256 `5ca146eeb629c7c83b159323e8659ba7251e5142b8b9caf746de8c2052172a13`)
+- Governing master identity: worktree SHA-256 `5ca146eeb629c7c83b159323e8659ba7251e5142b8b9caf746de8c2052172a13`; recorded identity `commit 7a5dbdb`
+- Master identity state: CONSISTENT; amendments N/A
+- Boundary: `f3917cec4833199fcc9af5603e8630bb50590f9e..1859c5f0416b1326cbeabd690a5e2d2f86612b00`
+- Reviewer: `/root/aggregate_rereviewer`
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: `docs/plans/fix/expert-mail-preview-main/repair.md` — applied candidate, SHA-256 `79ae2264c85fadd7ecd2b30693b4b4bfe09982e211a71f9a2688285f89da8d6e`; repair planning N/A
+
+## Verification Result: PASS
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/expert-mail-preview/docs/plans/2026-08-14/expert-mail-preview-main.md`
+
+Implementation boundary: `f3917cec4833199fcc9af5603e8630bb50590f9e..1859c5f0416b1326cbeabd690a5e2d2f86612b00`
+
+Final code / evidence HEAD: `1859c5f0416b1326cbeabd690a5e2d2f86612b00` / `6e309851cfdfaf63c01177cfebe8a351b48e1f04`
+
+Convergence: PROGRESSING
+
+Manual acceptance: PENDING
+
+Post-repair metadata: `RECONSTRUCTED_FROM_GIT`; approval `APPROVAL_NOT_RECORDED`; executor `UNAVAILABLE`; `批准 继续` authorizes this read-only re-review only.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | FAIL (baseline only) | Exit 1. Kotlin: 2418 run, 0 failures, 0 errors, 4 skipped. Node: 520 tests, 518 pass, 2 fail. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | FAIL (baseline only) | Exit 1 at same Node stage; no WAR. Same 520 / 518 / 2 result. |
+| `git diff --check` | PASS | Exit 0; no output. |
+| `node --test src/test/js/expertMailPreviewTab.test.js src/test/js/replySnippetLabel.test.js` | PASS | Exit 0; 16 pass, 0 fail. |
+| `node --test src/test/js/batchSendTaskConsoleVisualFix.test.js src/test/js/trustReplyWorkbenchSharedMount.test.js` | PASS | Exit 0; 63 pass, 0 fail. |
+| `node --check src/main/resources/static/app.js` | PASS | Exit 0. |
+
+The two Maven failures are unchanged `batchManualExecutionLog.test.js` extraction failures (`buildManualExecutionSnapshot is not defined`). That test and its related `app.js` paths are unchanged from `f3917cec`.
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| O-1 Recognizable persisted snippet names | PASS | `ReplySnippetService.kt:182-246`; server label resolution `MailComposeTemplateService.kt:370-410,505-536`; dropdown `app.js:2903-2910,8219-8220`. |
+| O-2 Selected expert sees actual title/body | PASS | Preview passes Java-compatible trimmed ORCID hash at `app.js:8068-8095`; send path uses the same seed at `ManualExpertMailService.kt:221-224`; draft resolves that seed at `MailComposeTemplateService.kt:210,512-516`. |
+| O-3 Open editor with expert selected | PASS | Required load/view/editor/context/preview order at `app.js:8135-8156`; focused test passes. |
+| N-1 Frame behavior/version unchanged | PASS | `frameSlotIdentity` remains name-free at `ReplySnippetService.kt:162-174`. |
+| N-2 Workbench shows full frame content | PASS | No change to `trust-reply-workbench.js`; 63-test gate passes. |
+| N-3 Existing editor preview behavior | PASS | Repair delta does not touch drawer variant state/path; drawer still uses `state.previewDrawer.variantIndex` at `app.js:8347-8358`. |
+| N-4 Existing detail tabs/lazy loading | PASS | First three tabs unchanged; fourth appended at `app.js:6499-6582`; both hosts at `:6734,:7194`; focused test passes. |
+| N-5 Content-variant input contract | PASS | Unchanged helpers at `app.js:7770-7890`. |
+| N-6 Placeholder validation | PASS | Create/update retain `requireValidPlaceholders` at `ReplySnippetService.kt:187,226`. |
+| M-1 Cache triad | PASS | All three keys are `20260814-v10-expert-mail-preview-01` in `index.html:11,1970-1971`; assertions pass. |
+| M-2 Targeted JS gate | PASS | Fresh focused Node suites: 16/16 and 63/63. |
+| M-3 Real DOM hosts | PASS | Both mail-preview panels exist; block host is created at `app.js:8056` and queried scoped at `:8119`. |
+| M-4 Quantified/scope claims | PASS | Two actual panel divs (`:6734,:7194`); cumulative product/test diff matches P1/P2 authorized union. |
+| Scope / prohibitions | PASS | Repair delta `c2acd4f..1859c5f`: only `src/main/resources/static/app.js` and `src/test/js/expertMailPreviewTab.test.js`. |
+| Joint-1 Identical three name surfaces | PASS | Dropdown `:8219`; template-list pill `:8163-8167`; expert panel consumes exact server `refDisplayName` via textContent `:8119-8127`. |
+| Joint-2 Editor/panel label after jump | PASS | Same server display name is rendered before the tested editor jump flow. |
+| Joint-3 Final cache triad | PASS | M-1 evidence. |
+| Joint-4 Full test/build | N/A | Both required Maven commands fail only on the proven base-tree pair; no candidate failure added. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Server `result.blocks[].refDisplayName` is text-rendered as scoped `compose-block-pill`; discriminating test passes. |
+| V-2 | RESOLVED | `javaStringHashCode(orcidId)` matches `variantSeedFor`’s trimmed ORCID branch; test proves `0000-0002 → -2035179089`. |
+
+### Findings
+
+#### P1
+
+- N/A.
+
+#### P2
+
+- N/A.
+
+#### Observations
+
+- Baseline-only Maven Node failure remains 2/520; not introduced by this boundary.
+- Current worktree is docs-dirty only: review ledger and repair-execution correction. `git diff --quiet 1859c5f -- src/main src/test` exits 0; product/test evidence is exact candidate code.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| R-1 third server label site | Joint-1 | PASS | `resolveBlocks()` supplies `refDisplayName`; panel consumes it. |
+| R-2 defensive JS/Kotlin tier-3 difference | Joint-1 | RECORD_ONLY | Invalid-content defensive branch; no product-semantic violation. |
+| R-3 baseline JS failures | Joint-4 | RECORD_ONLY | Fresh 2 failures, same unchanged base test/path. |
+| O-1 panel grep count | M-3 | RECORD_ONLY | Two panel divs; third occurrence is lazy-load selector. |
+| O-2 tab test count method | N-4 | RECORD_ONLY | Four-button behavior is directly verified. |
+| O-3 missing panel block description | Joint-1/2 | V-1 RESOLVED | `app.js:8119-8127` now renders server label. |
+| O-4 duplicate scroll helper | Unrelated | RECORD_ONLY | Pre-existing and unchanged. |
+
+### Evidence Boundaries
+
+- Manual acceptance remains pending.
+- Docker-gated migration coverage remains skipped.
+- Executor self-test/identity evidence is optional and unavailable; fresh aggregate evidence above is authoritative.
+- No mandatory evidence is unavailable.
+
+Repair planning: N/A — PASS; `repair-p` not invoked.
+
+### Next Action
+
+Perform human acceptance for `1859c5f0416b1326cbeabd690a5e2d2f86612b00`.
+
+No product code was modified.

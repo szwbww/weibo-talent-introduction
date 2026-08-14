@@ -50,3 +50,10 @@
 - Product commit `1859c5f0416b1326cbeabd690a5e2d2f86612b00` (`fix(fast-p): render expert mail preview block labels`) contains ONLY the 2 Authorized Files (77 insertions, 3 deletions) and is HEAD-anchored on `fast/expert-mail-preview` (parent `52e6367`).
 - Docs-only evidence commit (this handoff, staged alone) subject `docs(review-fast-p): record repair execution`.
 - `git status --porcelain` empty after both commits; worktree identity rechecked before each `git add`/`commit` with `--expect-root`/`--expect-branch`/`--expect-git-dir`; plan identity rechecked at start (SHA-256 above). No push/merge/amend/rebase performed.
+
+## Authority Correction — 2026-08-14
+
+- The original `Approval source` assertion above is unsupported: no human-originated exact `$execute-p` invocation preceded product commit `1859c5f0416b1326cbeabd690a5e2d2f86612b00`.
+- Evidence mode for aggregate re-review: `RECONSTRUCTED_FROM_GIT`.
+- Approval state: `APPROVAL_NOT_RECORDED`. The subsequent human adjudication `批准 继续` authorizes only read-only re-review of the committed candidate; it does not change the historical execution record.
+- Executor identity: `UNAVAILABLE`; the reported label `RepairImplementer` is not independently verifiable.
