@@ -2,8 +2,8 @@
 id: K-batch-console-regression-contract
 domain: frontend
 created: 2026-07-14
-last_used: 2026-07-14
-hit_count: 5
+last_used: 2026-08-14
+hit_count: 7
 source: fix-v:batch-send-task-console-frontend:fix-1
 severity: P1
 ---

@@ -2,15 +2,15 @@
 id: K-public-page-not-admin-css
 domain: frontend
 created: 2026-08-12
-last_used: 2026-08-12
-hit_count: 0
+last_used: 2026-08-13
+hit_count: 1
 source: create-p:unsubscribe-08-branded-page
 severity: P2
 ---
 
 经验：本仓库有**两套互不兼容的视觉体系**，面向公网收件人的页面不要复用后台管理 UI 的样式表。
 
-- 后台管理 UI：`src/main/resources/static/styles.css`（9122 行），`:root` 设计基准是**浅色商务蓝**（`styles.css:1-40`）：`--primary: #2563eb`、`--bg-main: #f5f7fb`、`--panel-bg: #ffffff`、`--text-main: #1e293b`。
+- 后台管理 UI：`src/main/resources/static/styles.css`（9122 行），`:root` 设计基准是**浅色商务蓝**（`styles.css:1-40`）：`--primary: #1e40af`(2026-08-13 V6 改版后)、`--bg-main: #f5f7fb`、`--panel-bg: #ffffff`、`--text-main: #1e293b`。
 - 公网页面（退订页等）要对齐的是官网 `https://www.qingfeitalent.com` 的**深色**体系（`#0B1B2E` 底 / `#F2F6FA` 主文字 / `#1E6FB8` 主按钮）。
 
 两套基准同名变量语义冲突，复用只会打架；且把 9122 行后台 CSS 投给公网收件人属无谓暴露与体积浪费。
