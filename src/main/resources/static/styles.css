@@ -757,7 +757,7 @@ p {
 }
 
 .contacts-layout {
-    grid-template-columns: 260px 6px minmax(0, 1fr);
+    grid-template-columns: 500px 6px minmax(0, 1fr);
     align-items: stretch;
     flex: 1 1 auto;
     min-height: 320px;
@@ -3978,7 +3978,7 @@ tr td {
     }
 
     .contacts-layout {
-        grid-template-columns: 280px 6px minmax(0, 1fr);
+        grid-template-columns: 500px 6px minmax(0, 1fr);
     }
 }
 
@@ -4253,7 +4253,7 @@ tr td {
 }
 
 .modal-content {
-    background-color: var(--panel-bg);
+    background-color: var(--bg-sidebar);
     border-radius: var(--radius-lg);
     border: 1px solid var(--panel-border);
     box-shadow: var(--shadow-xl);

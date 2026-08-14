@@ -134,8 +134,12 @@ describe("batch send task console interactions", () => {
         assert.ok(readValues, "readManualFormValues must exist");
         assert.ok(readValues.includes("resolveBatchTemplateMailType"));
 
+        const snapshot = extractFn("buildManualExecutionSnapshot");
+        assert.ok(snapshot, "manual execution snapshot must exist");
+        assert.ok(snapshot.includes("mailType: values.mailType"));
+
         const confirmExecution = extractFn("confirmManualExecution");
-        assert.ok(confirmExecution.includes("mailType: values.mailType"));
+        assert.ok(confirmExecution.includes("var snapshot = buildManualExecutionSnapshot();"));
     });
 
     it("refreshes template selectors after asynchronous lookup loading", () => {
@@ -637,5 +641,95 @@ describe("batch send task console interactions", () => {
             "confirmation summary must render 轮次: 2 轮, not undefined");
         assert.ok(!elements.batchManualConfirmBody.innerHTML.includes("undefined"),
             "confirmation summary must not contain undefined");
+    });
+
+    it("schedules recipient previews when either region picker changes (I-1)", () => {
+        const notifyRegionChange = extractFn("notifyBatchRegionPickerChanged");
+        assert.ok(notifyRegionChange, "notifyBatchRegionPickerChanged must exist");
+
+        const scheduled = [];
+        const sandbox = {
+            batchTaskState: { manualDraft: {} },
+            readBatchRegionPickerValue: () => ["China"],
+            computeAndRenderDiffs: () => {},
+            scheduleRecipientPreview: (kind) => scheduled.push(kind)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(notifyRegionChange, sandbox);
+
+        sandbox.notifyBatchRegionPickerChanged("batchManualRegions");
+        sandbox.notifyBatchRegionPickerChanged("batchConfigEditorRegions");
+
+        assert.deepStrictEqual(scheduled, ["manual", "editor"]);
+        assert.deepStrictEqual(
+            Array.from(sandbox.batchTaskState.manualDraft.regions),
+            ["China"],
+            "manual region changes must still update the draft"
+        );
+    });
+
+    it("uses one complete manual snapshot for preview and execution (I-2)", () => {
+        const buildSnapshot = extractFn("buildManualExecutionSnapshot");
+        const confirmExecution = extractFn("confirmManualExecution");
+        assert.ok(buildSnapshot, "buildManualExecutionSnapshot must exist");
+        assert.ok(confirmExecution.includes("var snapshot = buildManualExecutionSnapshot();"),
+            "manual execution must reuse the preview snapshot builder");
+
+        const values = {
+            mailType: "INTRODUCTION",
+            roundSize: 30,
+            roundsPerRun: 2,
+            perMailIntervalMs: 3000,
+            perRoundIntervalMs: 120000,
+            selfCheckTtlMinutes: 30,
+            funnelLevel: "CANDIDATE",
+            tags: ["AI"],
+            regions: ["China"],
+            emailDomain: "university.edu",
+            discipline: "STEM",
+            operatorStatus: "NOT_CONTACTED",
+            templateId: 7
+        };
+        const sandbox = { readManualFormValues: () => values, Number };
+        vm.createContext(sandbox);
+        vm.runInContext(buildSnapshot, sandbox);
+
+        assert.deepStrictEqual(
+            JSON.parse(JSON.stringify(sandbox.buildManualExecutionSnapshot())),
+            values
+        );
+    });
+
+    it("renders the current recipient preview error but ignores an obsolete failure (I-3)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        assert.ok(refresh, "refreshRecipientPreview must exist");
+
+        const hint = element();
+        let rejectRequest;
+        const sandbox = {
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            buildManualRecipientSnapshot: () => ({}),
+            buildManualExecutionSnapshot: () => ({}),
+            document: { getElementById: () => hint },
+            api: () => new Promise((resolve, reject) => { rejectRequest = reject; }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        rejectRequest(new Error("roundSize must be a number"));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
+        assert.ok(hint.innerHTML.includes("计算中"), "error must use textContent, not unsafe HTML");
+
+        sandbox.refreshRecipientPreview("manual");
+        sandbox.recipientPreviewRequestSeq.manual += 1;
+        rejectRequest(new Error("obsolete"));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
     });
 });

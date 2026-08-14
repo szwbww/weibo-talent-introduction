@@ -11849,7 +11849,7 @@ function initLayoutResizer() {
     }
 
     function resetToDefault() {
-        setListWidth(260);
+        setListWidth(500);
     }
 
     // Double-click resizer to reset
@@ -13399,10 +13399,15 @@ function notifyBatchTagPickerChanged(valueId) {
 }
 
 function notifyBatchRegionPickerChanged(valueId) {
-    if (valueId !== "batchManualRegions") return;
-    if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
-    batchTaskState.manualDraft.regions = readBatchRegionPickerValue(valueId);
-    computeAndRenderDiffs();
+    var kind = valueId === "batchConfigEditorRegions" ? "editor" :
+        (valueId === "batchManualRegions" ? "manual" : null);
+    if (!kind) return;
+    if (kind === "manual") {
+        if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+        batchTaskState.manualDraft.regions = readBatchRegionPickerValue(valueId);
+        computeAndRenderDiffs();
+    }
+    scheduleRecipientPreview(kind);
 }
 
 function toggleBatchTagPickerValue(valueId, tag) {
@@ -13660,16 +13665,18 @@ function buildConfigEditorRecipientSnapshot() {
     };
 }
 
-function buildManualRecipientSnapshot() {
+function buildManualExecutionSnapshot() {
     var values = readManualFormValues();
     return {
         mailType: values.mailType,
+        roundsPerRun: Number.isFinite(values.roundsPerRun) ? values.roundsPerRun : 1,
         roundSize: Number.isFinite(values.roundSize) ? values.roundSize : 50,
         perMailIntervalMs: Number.isFinite(values.perMailIntervalMs) ? values.perMailIntervalMs : 1000,
         perRoundIntervalMs: Number.isFinite(values.perRoundIntervalMs) ? values.perRoundIntervalMs : 60000,
         selfCheckTtlMinutes: Number.isFinite(values.selfCheckTtlMinutes) ? values.selfCheckTtlMinutes : 30,
         funnelLevel: values.funnelLevel,
         tags: values.tags,
+        regions: values.regions,
         emailDomain: values.emailDomain,
         discipline: values.discipline,
         operatorStatus: values.operatorStatus,
@@ -13694,7 +13701,7 @@ function refreshRecipientPreview(kind) {
     var hint = document.getElementById(recipientPreviewHintId(kind));
     if (!hint) return;
     var seq = ++recipientPreviewRequestSeq[kind];
-    var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualRecipientSnapshot();
+    var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
     hint.innerHTML = "当前条件命中 <strong>计算中…</strong>";
     api("/api/mail/batch-send/recipients/preview", {
         method: "POST",
@@ -13707,10 +13714,12 @@ function refreshRecipientPreview(kind) {
         var total = Number(res.totalSendable != null ? res.totalSendable : (pending + retryable));
         hint.innerHTML = "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
             "、可重试 " + retryable + "）";
-    }).catch(function() {
-        // 失败不打断编辑：仅显示"预估不可用"，不弹报错（A-4）
+    }).catch(function(error) {
+        // 失败不打断编辑：保留接口错误原因，便于校正筛选参数（A-2）
         if (seq !== recipientPreviewRequestSeq[kind]) return;
-        hint.innerHTML = "预估不可用";
+        var message = error && error.message ? String(error.message) : "请求失败";
+        console.warn("Recipient preview failed", error);
+        hint.textContent = "预估失败：" + message;
     });
 }
 
@@ -14203,23 +14212,8 @@ async function confirmManualExecution() {
     if (okBtn) okBtn.disabled = true;
 
     var source = batchTaskState.manualSource;
-    // 与预估（recipients/preview）同源（I-2）：下方 snapshot 形状与 buildManualRecipientSnapshot() 保持一致。
-    var values = readManualFormValues();
-    var snapshot = {
-        mailType: values.mailType,
-        roundsPerRun: Number.isFinite(values.roundsPerRun) ? values.roundsPerRun : 1,
-        roundSize: Number.isFinite(values.roundSize) ? values.roundSize : 50,
-        perMailIntervalMs: Number.isFinite(values.perMailIntervalMs) ? values.perMailIntervalMs : 1000,
-        perRoundIntervalMs: Number.isFinite(values.perRoundIntervalMs) ? values.perRoundIntervalMs : 60000,
-        selfCheckTtlMinutes: Number.isFinite(values.selfCheckTtlMinutes) ? values.selfCheckTtlMinutes : 30,
-        funnelLevel: values.funnelLevel,
-        tags: values.tags,
-        regions: values.regions,
-        emailDomain: values.emailDomain,
-        discipline: values.discipline,
-        operatorStatus: values.operatorStatus,
-        templateId: values.templateId
-    };
+    // 与预估（recipients/preview）同源（I-2）：两条路径复用同一完整快照。
+    var snapshot = buildManualExecutionSnapshot();
 
     try {
         var response = await api("/api/mail/batch-send/manual-executions", {

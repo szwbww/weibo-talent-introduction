@@ -34,9 +34,18 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260813-v6-topnav-glass-01'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260813-v6-topnav-glass-01'));
-        assert.ok(html.includes('app.js?v=20260813-v6-topnav-glass-01'));
+        assert.ok(html.includes('styles.css?v=20260814-v8-expert-layout-default-01'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260814-v8-expert-layout-default-01'));
+        assert.ok(html.includes('app.js?v=20260814-v8-expert-layout-default-01'));
+    });
+
+    it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
+        const batchModal = css.match(/\.task-modal\.batch-send-task-modal\s*\{[\s\S]*?\n\}/)[0];
+        const genericModal = css.match(/\.modal-content\s*\{[\s\S]*?\n\}/)[0];
+        const overlay = css.match(/\.modal-overlay\s*\{[\s\S]*?\n\}/)[0];
+        assert.match(genericModal, /background-color:\s*var\(--bg-sidebar\);/);
+        assert.match(overlay, /background-color:\s*rgba\(15,\s*23,\s*42,\s*0\.4\);/);
+        assert.doesNotMatch(batchModal, /background-color:/);
     });
 
     it("removes send-type controls and template filtering from the config editor", () => {
