@@ -1198,12 +1198,18 @@
                                 <div id="batchConfigEditorRegionsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                             </div>
                         </div>
-                        <label class="batch-config-field">
+                        <div class="batch-config-field">
                             <span class="batch-config-field-label">邮箱服务商</span>
-                            <select id="batchConfigEditorEmailDomain" class="bsc-input bsc-select">
-                                <option value="">全部服务商</option>
-                            </select>
-                        </label>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorEmailDomains">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorEmailDomainsChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorEmailDomainsSearch" class="batch-tag-picker-search" placeholder="搜索并选择邮箱服务商" autocomplete="off" aria-controls="batchConfigEditorEmailDomainsDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorEmailDomains" value="">
+                                <div id="batchConfigEditorEmailDomainsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
                         <label class="batch-config-field">
                             <span class="batch-config-field-label">学科</span>
                             <select id="batchConfigEditorDiscipline" class="bsc-input bsc-select">
@@ -1365,14 +1371,20 @@
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
-                    <label class="batch-config-field" id="manualFieldEmailDomain">
+                    <div class="batch-config-field" id="manualFieldEmailDomain">
                         <span class="batch-config-field-label">邮箱服务商</span>
-                        <select id="batchManualEmailDomain" class="bsc-input bsc-select">
-                            <option value="">全部服务商</option>
-                        </select>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualEmailDomains">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualEmailDomainsChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualEmailDomainsSearch" class="batch-tag-picker-search" placeholder="搜索并选择邮箱服务商" autocomplete="off" aria-controls="batchManualEmailDomainsDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualEmailDomains" value="">
+                            <div id="batchManualEmailDomainsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
-                    </label>
+                    </div>
                     <label class="batch-config-field" id="manualFieldDiscipline">
                         <span class="batch-config-field-label">学科</span>
                         <select id="batchManualDiscipline" class="bsc-input bsc-select">

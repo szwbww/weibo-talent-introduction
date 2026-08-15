@@ -272,7 +272,7 @@ describe("batch send task console interactions", () => {
         vm.runInContext(formatDiffValue, sandbox);
 
         assert.strictEqual(sandbox.formatManualDiffValue("funnelLevel", null), "全部层级");
-        assert.strictEqual(sandbox.formatManualDiffValue("emailDomain", ""), "全部服务商");
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", []), "全部服务商");
         assert.strictEqual(sandbox.formatManualDiffValue("discipline", null), "全部学科");
         assert.strictEqual(sandbox.formatManualDiffValue("templateId", null), "系统默认介绍邮件模板");
         assert.strictEqual(sandbox.formatManualDiffValue("tags", []), "(无)");
@@ -385,6 +385,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => ["China", "Europe"],
+            readBatchMultiPickerValue: () => [],
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -420,6 +421,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -455,6 +457,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -492,7 +495,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -524,7 +527,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -556,7 +559,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -588,7 +591,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -620,7 +623,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -652,7 +655,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -685,7 +688,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -718,7 +721,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -751,7 +754,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -783,7 +786,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -819,7 +822,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -849,6 +852,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -886,7 +890,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -1049,7 +1053,7 @@ describe("batch send task console interactions", () => {
             funnelLevel: "CANDIDATE",
             tags: ["AI"],
             regions: ["China"],
-            emailDomain: "university.edu",
+            emailDomains: ["university.edu"],
             discipline: "STEM",
             operatorStatus: "NOT_CONTACTED",
             templateId: 7
@@ -1095,5 +1099,308 @@ describe("batch send task console interactions", () => {
         await new Promise((resolve) => setImmediate(resolve));
 
         assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
+    });
+
+    it("V1: setBatchMultiPickerValue + readBatchMultiPickerValue roundtrip keeps the comma contract (I2b-3)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(readValue && setValue, "multi picker helpers must exist");
+
+        const hidden = element("");
+        const rendered = [];
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchConfigEditorEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: (id) => rendered.push(id)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorEmailDomains", ["a.com", "b.com"]);
+
+        assert.strictEqual(hidden.value, "a.com,b.com", "values must be comma-joined in the hidden input (I2b-3)");
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchMultiPickerValue("batchConfigEditorEmailDomains")),
+            ["a.com", "b.com"]
+        );
+        assert.strictEqual(rendered.length, 1, "set must trigger a render");
+    });
+
+    it("V2: renderBatchMultiPicker draws one chip per value and marks selected options (S2b-1)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorEmailDomains: {
+                    options: () => [
+                        { value: "a.com", label: "a.com" },
+                        { value: "b.com", label: "b.com" },
+                        { value: "c.com", label: "c.com" }
+                    ],
+                    emptyText: "没有匹配服务商",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorEmailDomains": hidden,
+                    "batchConfigEditorEmailDomainsSearch": search,
+                    "batchConfigEditorEmailDomainsChips": chips,
+                    "batchConfigEditorEmailDomainsDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorEmailDomains", ["a.com", "b.com"]);
+
+        const chipCount = (chips.innerHTML.match(/class="batch-tag-picker-chip"/g) || []).length;
+        assert.strictEqual(chipCount, 2, "chips HTML must contain 2 .batch-tag-picker-chip (S2b-1)");
+        assert.ok(dropdown.innerHTML.includes("is-selected"), "selected options must carry is-selected");
+        assert.ok(dropdown.innerHTML.includes("✓"), "selected options must show the check mark");
+        assert.ok(dropdown.innerHTML.includes("c.com"), "unselected option must remain listed");
+    });
+
+    it("V3: renderBatchMultiPicker shows the registry emptyText when no option matches (I2b-1)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("a.com");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorEmailDomains: {
+                    options: () => [],
+                    emptyText: "没有匹配服务商",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorEmailDomains": hidden,
+                    "batchConfigEditorEmailDomainsSearch": search,
+                    "batchConfigEditorEmailDomainsChips": chips,
+                    "batchConfigEditorEmailDomainsDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.renderBatchMultiPicker("batchConfigEditorEmailDomains");
+
+        assert.strictEqual(dropdown.innerHTML, '<div class="batch-tag-picker-empty">没有匹配服务商</div>',
+            "empty state must use meta.emptyText");
+    });
+
+    it("V4: showBatchConfigEditor echoes emailDomains into the picker hidden input (IP-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            renderBatchMultiPicker: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [], emailDomains: ["a.com"] });
+        assert.strictEqual(el("batchConfigEditorEmailDomains").value, "a.com",
+            "config emailDomains must be echoed into the hidden input (IP-1)");
+
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(el("batchConfigEditorEmailDomains").value, "",
+            "new task must start with an empty emailDomains picker");
+    });
+
+    it("V5: saveBatchConfigEditor payload carries emailDomains from the picker (IP-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["a.com", "b.com"],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "多选服务商任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].emailDomains, ["a.com", "b.com"],
+            "payload emailDomains must come from the picker (IP-1)");
+        assert.ok(!("emailDomain" in apiBodies[0]), "payload must not carry the old emailDomain key");
+    });
+
+    it("V6: normalizeManualSnapshot sorts emailDomains so order never reads as changed (I2b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        assert.ok(normalize, "normalizeManualSnapshot must exist");
+
+        const sandbox = { Number };
+        vm.createContext(sandbox);
+        vm.runInContext(normalize, sandbox);
+
+        const a = sandbox.normalizeManualSnapshot({ emailDomains: ["b.com", "a.com"], tags: [], regions: [] });
+        const b = sandbox.normalizeManualSnapshot({ emailDomains: ["a.com", "b.com"], tags: [], regions: [] });
+
+        assert.deepStrictEqual(Array.from(a.emailDomains), ["a.com", "b.com"], "emailDomains must be sorted");
+        assert.deepStrictEqual(Array.from(a.emailDomains), Array.from(b.emailDomains),
+            "same set in different order must normalize identically (I2b-5)");
+    });
+
+    it("V7: formatManualDiffValue renders the emailDomains list or 全部服务商 (I2b-4 #2)", () => {
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        assert.ok(formatDiffValue, "formatManualDiffValue must exist");
+
+        const sandbox = {
+            batchTaskState: { preloadedTemplates: [] },
+            supportedBatchComposeTemplates: () => []
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(formatDiffValue, sandbox);
+
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", []), "全部服务商");
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", ["a.com", "b.com"]), "a.com、b.com");
+    });
+
+    it("V8: computeManualDiffs flags emailDomains only when the domain set differs (I2b-4 #3)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(emailDomains) {
+            return {
+                id: 1, templateId: null, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains, discipline: "", operatorStatus: "",
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceDomains, draftDomains) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceDomains) },
+                readManualFormValues: () => makeConfig(draftDomains),
+                supportedBatchComposeTemplates: () => [],
+                operatorStatusOptions: []
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const diffsWhenExtended = runDiffs(["a.com"], ["a.com", "b.com"]);
+        assert.ok(diffsWhenExtended.some((d) => d.key === "emailDomains"),
+            "draft with an extra domain must be flagged as diff (I2b-4 #3)");
+
+        const diffsWhenSame = runDiffs(["a.com"], ["a.com"]);
+        assert.ok(!diffsWhenSame.some((d) => d.key === "emailDomains"),
+            "identical domains must not be flagged as diff");
+    });
+
+    it("V9: renderBatchConfigRow joins emailDomains into the scope line (S2b-3)", () => {
+        const renderRow = extractFn("renderBatchConfigRow");
+        assert.ok(renderRow, "renderBatchConfigRow must exist");
+
+        function makeConfig(emailDomains) {
+            return {
+                id: 1, configName: "多选服务商任务", mailType: "INTRODUCTION", autoEnabled: false,
+                funnelLevel: null, tags: [], regions: [], emailDomains, discipline: null,
+                templateId: null, cron: null, nextFireTime: null, lastExecutedAt: null
+            };
+        }
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v),
+            regionLabel: (v) => v || "",
+            cronToDisplayText: () => "",
+            renderBatchConfigStatusToggle: () => ""
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(renderRow, sandbox);
+
+        const html = sandbox.renderBatchConfigRow(makeConfig(["a.com", "b.com"]));
+        assert.ok(html.includes("服务商: a.com, b.com"), "scope line must join domains with ', ' (S2b-3)");
+        assert.ok(/<span class="batch-task-scope-line">服务商: a.com, b.com<\/span>/.test(html),
+            "provider scope line must be wrapped in .batch-task-scope-line");
+
+        const emptyHtml = sandbox.renderBatchConfigRow(makeConfig([]));
+        assert.ok(!emptyHtml.includes("服务商:"), "empty emailDomains must not render a provider line");
+        assert.ok(emptyHtml.includes("无限制"), "empty filters must show 无限制");
+    });
+
+    it("V10: existing tag and region picker readers keep their exact behavior (I2b-2)", () => {
+        const readTags = extractFn("readBatchTagPickerValue");
+        const readRegions = extractFn("readBatchRegionPickerValue");
+        assert.ok(readTags && readRegions, "existing picker readers must exist");
+
+        const tagHidden = element("AI,STEM,AI");
+        const regionHidden = element("China,Europe");
+        const sandbox = {
+            document: {
+                getElementById: (id) => id === "batchManualTags" ? tagHidden : (id === "batchConfigEditorRegions" ? regionHidden : null)
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("normalizeBatchTags"), sandbox);
+        vm.runInContext(readTags, sandbox);
+        vm.runInContext(readRegions, sandbox);
+
+        assert.deepStrictEqual(Array.from(sandbox.readBatchTagPickerValue("batchManualTags")), ["AI", "STEM"],
+            "tag reader must trim and dedupe, preserving first-seen order");
+        assert.deepStrictEqual(Array.from(sandbox.readBatchRegionPickerValue("batchConfigEditorRegions")), ["China", "Europe"],
+            "region reader must split/trim/filter, preserving order");
     });
 });

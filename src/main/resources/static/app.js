@@ -13386,7 +13386,7 @@ function renderBatchConfigRow(c) {
     if (c.funnelLevel) scopeParts.push("漏斗: " + escapeHtml(c.funnelLevel));
     if (Array.isArray(c.tags) && c.tags.length > 0) scopeParts.push("标签: " + escapeHtml(c.tags.join(", ")));
     if (Array.isArray(c.regions) && c.regions.length > 0) scopeParts.push("地区: " + c.regions.map(regionLabel).join("、"));
-    if (c.emailDomain) scopeParts.push("服务商: " + escapeHtml(c.emailDomain));
+    if (Array.isArray(c.emailDomains) && c.emailDomains.length > 0) scopeParts.push("服务商: " + escapeHtml(c.emailDomains.join(", ")));
     if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : c.discipline === "UNCLASSIFIED" ? "未分类" : escapeHtml(c.discipline)));
     var scopeHtml = scopeParts.length > 0
         ? scopeParts.map(function(s, i) {
@@ -13560,7 +13560,7 @@ function showBatchConfigEditor(config) {
 
     // Fill template selector and provider dropdown
     fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
-    fillBatchConfigEditorProviderSelect(config ? config.emailDomain : "");
+    setBatchMultiPickerValue("batchConfigEditorEmailDomains", config && Array.isArray(config.emailDomains) ? config.emailDomains : []);
     updateBatchConfigVolumeHint();
     if (typeof scheduleRecipientPreview === "function") scheduleRecipientPreview("editor");
 }
@@ -13882,6 +13882,151 @@ function bindBatchRegionPicker(valueId) {
     renderBatchRegionPicker(valueId);
 }
 
+// ── Generic multi-select picker base (I2b-1) ────────────────────────────────────────
+// 供"邮箱服务商"等多值字段复用；P3b 的"专家状态"只向注册表加一项，不复制实现。
+// 值以逗号分隔存隐藏 input（I2b-3），同族元素契约 <valueId>Chips/Search/Dropdown。
+
+/* 通用多选 picker 注册表（I2b-1）。P3b 只往这里加一项，不再复制实现。
+   options 是函数以便延迟求值（服务商列表来自异步预加载）。 */
+var BATCH_MULTI_PICKER_REGISTRY = {
+    batchConfigEditorEmailDomains: {
+        options: function() { return batchProviderOptions(); },
+        emptyText: "没有匹配服务商",
+        previewKind: "editor"
+    },
+    batchManualEmailDomains: {
+        options: function() { return batchProviderOptions(); },
+        emptyText: "没有匹配服务商",
+        previewKind: "manual"
+    }
+};
+
+// 服务商选项：从预加载列表产出 [{value,label}]。兼容既有两种元素形态
+// （字符串 或 {domain}）—— 判断照搬 fillBatchConfigEditorProviderSelect。
+function batchProviderOptions() {
+    var providers = batchTaskState.preloadedProviders || [];
+    var options = [];
+    if (typeof providers[0] === "string") {
+        providers.forEach(function(p) {
+            options.push({ value: p, label: p });
+        });
+    } else {
+        providers.forEach(function(p) {
+            options.push({ value: p.domain || p, label: p.domain || p });
+        });
+    }
+    return options;
+}
+
+function readBatchMultiPickerValue(valueId) {
+    var input = document.getElementById(valueId);
+    return String(input ? input.value : "").split(",").map(function(v) { return v.trim(); }).filter(Boolean);
+}
+
+function setBatchMultiPickerValue(valueId, values) {
+    var input = document.getElementById(valueId);
+    if (!input) return;
+    input.value = (Array.isArray(values) ? values : []).join(",");
+    renderBatchMultiPicker(valueId);
+}
+
+function renderBatchMultiPicker(valueId) {
+    var meta = BATCH_MULTI_PICKER_REGISTRY[valueId];
+    if (!meta) return;
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!search || !chips || !dropdown) return;
+    var selected = readBatchMultiPickerValue(valueId);
+    var query = search.value.trim().toLowerCase();
+    var options = meta.options() || [];
+    var filtered = options.filter(function(opt) {
+        return !query || opt.value.toLowerCase().includes(query) || opt.label.toLowerCase().includes(query);
+    });
+
+    chips.innerHTML = selected.map(function(value) {
+        var opt = options.find(function(o) { return o.value === value; }) || { value: value, label: value };
+        return '<span class="batch-tag-picker-chip">' + escapeHtml(opt.label) +
+            '<button type="button" data-remove-tag="' + escapeHtml(value) + '" aria-label="移除 ' + escapeHtml(opt.label) + '">×</button></span>';
+    }).join("");
+    dropdown.innerHTML = filtered.length > 0 ? filtered.map(function(opt) {
+        var checked = selected.indexOf(opt.value) >= 0;
+        return '<button type="button" class="batch-tag-picker-option' + (checked ? ' is-selected' : '') +
+            '" role="option" aria-selected="' + checked + '" data-tag="' + escapeHtml(opt.value) + '">' +
+            '<span class="batch-tag-picker-check" aria-hidden="true">' + (checked ? '✓' : '') + '</span>' +
+            '<span>' + escapeHtml(opt.label) + '</span></button>';
+    }).join("") : '<div class="batch-tag-picker-empty">' + meta.emptyText + '</div>';
+}
+
+function notifyBatchMultiPickerChanged(valueId) {
+    var meta = BATCH_MULTI_PICKER_REGISTRY[valueId];
+    if (!meta) return;
+    if (meta.previewKind === "manual") {
+        if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+        batchTaskState.manualDraft.emailDomains = readBatchMultiPickerValue(valueId);
+        computeAndRenderDiffs();
+    }
+    scheduleRecipientPreview(meta.previewKind);
+}
+
+function toggleBatchMultiPickerValue(valueId, value) {
+    var meta = BATCH_MULTI_PICKER_REGISTRY[valueId];
+    if (!meta) return;
+    var selected = readBatchMultiPickerValue(valueId);
+    var normalized = String(value || "").trim();
+    if (!normalized) return;
+    var index = selected.indexOf(normalized);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(normalized);
+    setBatchMultiPickerValue(valueId, selected);
+    if (typeof notifyBatchMultiPickerChanged === "function") {
+        notifyBatchMultiPickerChanged(valueId);
+    }
+    if (typeof scheduleRecipientPreview === "function") {
+        scheduleRecipientPreview(meta.previewKind);
+    }
+}
+
+function openBatchMultiPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    renderBatchMultiPicker(valueId);
+    if (dropdown) dropdown.hidden = false;
+    if (search) search.setAttribute("aria-expanded", "true");
+}
+
+function closeBatchMultiPicker(valueId) {
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    var search = document.getElementById(valueId + "Search");
+    if (dropdown) dropdown.hidden = true;
+    if (search) search.setAttribute("aria-expanded", "false");
+}
+
+function bindBatchMultiPicker(valueId) {
+    var picker = document.querySelector('[data-tag-picker="' + valueId + '"]');
+    var search = document.getElementById(valueId + "Search");
+    var chips = document.getElementById(valueId + "Chips");
+    var dropdown = document.getElementById(valueId + "Dropdown");
+    if (!picker || !search || !chips || !dropdown) return;
+    search.addEventListener("focus", function() { openBatchMultiPicker(valueId); });
+    search.addEventListener("input", function() { openBatchMultiPicker(valueId); });
+    search.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") closeBatchMultiPicker(valueId);
+    });
+    chips.addEventListener("click", function(event) {
+        var button = event.target.closest("[data-remove-tag]");
+        if (button) toggleBatchMultiPickerValue(valueId, button.dataset.removeTag);
+    });
+    dropdown.addEventListener("click", function(event) {
+        var option = event.target.closest("[data-tag]");
+        if (option) toggleBatchMultiPickerValue(valueId, option.dataset.tag);
+    });
+    document.addEventListener("click", function(event) {
+        if (!picker.contains(event.target)) closeBatchMultiPicker(valueId);
+    });
+    renderBatchMultiPicker(valueId);
+}
+
 // ── Cron preview + schedule field visibility + volume hint ───────────────────────────
 
 function syncBatchConfigEditorScheduleFields() {
@@ -13953,7 +14098,7 @@ function buildConfigEditorRecipientSnapshot() {
         funnelLevel: val("batchConfigEditorFunnelLevel") || null,
         tags: readBatchTagPickerValue("batchConfigEditorTags"),
         regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
-        emailDomain: val("batchConfigEditorEmailDomain") || null,
+        emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatus: val("batchConfigEditorOperatorStatus") || null,
         templateId: templateId
@@ -13972,7 +14117,7 @@ function buildManualExecutionSnapshot() {
         funnelLevel: values.funnelLevel,
         tags: values.tags,
         regions: values.regions,
-        emailDomain: values.emailDomain,
+        emailDomains: values.emailDomains,
         discipline: values.discipline,
         operatorStatus: values.operatorStatus,
         templateId: values.templateId
@@ -14018,20 +14163,6 @@ function refreshRecipientPreview(kind) {
     });
 }
 
-function fillBatchConfigEditorProviderSelect(selected) {
-    var select = document.getElementById("batchConfigEditorEmailDomain");
-    if (!select) return;
-    var providers = batchTaskState.preloadedProviders || [];
-    var html = '<option value="">全部</option>';
-    if (typeof providers[0] === "string") {
-        html += providers.map(function(p) { return '<option value="' + escapeHtml(p) + '">' + escapeHtml(p) + '</option>'; }).join("");
-    } else {
-        html += providers.map(function(p) { return '<option value="' + escapeHtml(p.domain || p) + '">' + escapeHtml(p.domain || p) + '</option>'; }).join("");
-    }
-    select.innerHTML = html;
-    select.value = selected || "";
-}
-
 async function saveBatchConfigEditor() {
     var val = function(id) { var el = document.getElementById(id); return el ? el.value : ""; };
     var name = val("batchConfigEditorName").trim();
@@ -14071,7 +14202,7 @@ async function saveBatchConfigEditor() {
         funnelLevel: val("batchConfigEditorFunnelLevel") || null,
         tags: tags,
         regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
-        emailDomain: val("batchConfigEditorEmailDomain") || null,
+        emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatus: val("batchConfigEditorOperatorStatus") || null,
         templateId: templateId
@@ -14154,7 +14285,7 @@ function deepCloneConfig(c) {
         funnelLevel: c.funnelLevel || "",
         tags: Array.isArray(c.tags) ? c.tags.slice() : [],
         regions: Array.isArray(c.regions) ? c.regions.slice() : [],
-        emailDomain: c.emailDomain || "",
+        emailDomains: Array.isArray(c.emailDomains) ? c.emailDomains.slice() : [],
         discipline: c.discipline || "",
         operatorStatus: c.operatorStatus || "",
         roundSize: c.roundSize || 50,
@@ -14174,7 +14305,7 @@ function fillManualFormDefaults() {
         funnelLevel: "",
         tags: [],
         regions: [],
-        emailDomain: "",
+        emailDomains: [],
         discipline: "",
         operatorStatus: "",
         roundSize: 50,
@@ -14197,7 +14328,7 @@ function fillManualFormFromDraft() {
     setVal("batchManualFunnelLevel", d.funnelLevel || "");
     setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
     setBatchRegionPickerValue("batchManualRegions", Array.isArray(d.regions) ? d.regions : []);
-    setVal("batchManualEmailDomain", d.emailDomain || "");
+    setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
     setVal("batchManualOperatorStatus", d.operatorStatus || "");
     setVal("batchManualRoundSize", d.roundSize);
@@ -14206,13 +14337,7 @@ function fillManualFormFromDraft() {
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
     setVal("batchManualSelfCheckTtlMin", d.selfCheckTtlMinutes);
 
-    if (batchTaskState.manualSource) {
-        fillBatchManualTemplateSelector(d.templateId);
-        fillBatchManualProviderSelect(d.emailDomain);
-    } else {
-        fillBatchManualTemplateSelector(d.templateId);
-        fillBatchManualProviderSelect("");
-    }
+    fillBatchManualTemplateSelector(d.templateId);
 
     computeAndRenderDiffs();
     scheduleRecipientPreview("manual");
@@ -14225,20 +14350,6 @@ function fillBatchManualTemplateSelector(selectedId) {
     html += supportedBatchComposeTemplates().map(function(t) { return '<option value="' + t.id + '">' + escapeHtml(t.templateName) + '</option>'; }).join("");
     select.innerHTML = html;
     select.value = selectedId ? String(selectedId) : "";
-}
-
-function fillBatchManualProviderSelect(selected) {
-    var select = document.getElementById("batchManualEmailDomain");
-    if (!select) return;
-    var providers = batchTaskState.preloadedProviders || [];
-    var html = '<option value="">全部</option>';
-    if (typeof providers[0] === "string") {
-        html += providers.map(function(p) { return '<option value="' + escapeHtml(p) + '">' + escapeHtml(p) + '</option>'; }).join("");
-    } else {
-        html += providers.map(function(p) { return '<option value="' + escapeHtml(p.domain || p) + '">' + escapeHtml(p.domain || p) + '</option>'; }).join("");
-    }
-    select.innerHTML = html;
-    select.value = selected || "";
 }
 
 function updateManualSourceInfo() {
@@ -14295,7 +14406,7 @@ function readManualFormValues() {
         funnelLevel: val("batchManualFunnelLevel") || null,
         tags: readBatchTagPickerValue("batchManualTags"),
         regions: typeof readBatchRegionPickerValue === "function" ? readBatchRegionPickerValue("batchManualRegions") : [],
-        emailDomain: val("batchManualEmailDomain") || null,
+        emailDomains: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualEmailDomains") : [],
         discipline: val("batchManualDiscipline") || null,
         operatorStatus: val("batchManualOperatorStatus") || null,
         roundSize: parseNum("batchManualRoundSize"),
@@ -14312,7 +14423,7 @@ function normalizeManualSnapshot(v) {
         funnelLevel: (v.funnelLevel || "").trim() || null,
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
         regions: (Array.isArray(v.regions) ? v.regions.slice() : []).map(function(r) { return r.trim(); }).filter(function(r) { return r.length > 0; }).sort().filter(function(r, i, arr) { return arr.indexOf(r) === i; }),
-        emailDomain: (v.emailDomain || "").trim() || null,
+        emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
         discipline: (v.discipline || "").trim() || null,
         operatorStatus: (v.operatorStatus || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
@@ -14332,7 +14443,7 @@ function formatManualDiffValue(key, value) {
         return template ? template.templateName : "模板 #" + value;
     }
     if (key === "funnelLevel") return value || "全部层级";
-    if (key === "emailDomain") return value || "全部服务商";
+    if (key === "emailDomains") return (Array.isArray(value) && value.length > 0) ? value.join("、") : "全部服务商";
     if (key === "discipline") {
         if (!value) return "全部学科";
         if (value === "STEM") return "仅理工科";
@@ -14363,7 +14474,7 @@ function computeManualDiffs() {
         { key: "funnelLevel", label: "漏斗层级" },
         { key: "tags", label: "标签" },
         { key: "regions", label: "地区" },
-        { key: "emailDomain", label: "邮箱服务商" },
+        { key: "emailDomains", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
         { key: "operatorStatus", label: "专家状态" },
         { key: "roundsPerRun", label: "执行轮次" },
@@ -14409,7 +14520,7 @@ function computeAndRenderDiffs() {
         funnelLevel: "manualFieldFunnelLevel",
         tags: "manualFieldTags",
         regions: "manualFieldRegions",
-        emailDomain: "manualFieldEmailDomain",
+        emailDomains: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
         operatorStatus: "manualFieldOperatorStatus",
         roundsPerRun: "manualFieldRoundsPerRun",
@@ -15042,6 +15153,8 @@ function bindBatchSendTaskEvents() {
     bindBatchTagPicker("batchManualTags");
     bindBatchRegionPicker("batchConfigEditorRegions");
     bindBatchRegionPicker("batchManualRegions");
+    bindBatchMultiPicker("batchConfigEditorEmailDomains");
+    bindBatchMultiPicker("batchManualEmailDomains");
 
     // 专家状态下拉选项（operatorStatusOptions 单一来源）
     fillBatchOperatorStatusSelectOptions();
@@ -15058,7 +15171,7 @@ function bindBatchSendTaskEvents() {
 
     // Recipient preview (P-F / 06): filter selects → debounced estimate
     ["batchConfigEditorTemplateId", "batchConfigEditorFunnelLevel",
-     "batchConfigEditorEmailDomain", "batchConfigEditorDiscipline",
+     "batchConfigEditorDiscipline",
      "batchConfigEditorOperatorStatus"].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", function() { scheduleRecipientPreview("editor"); });
