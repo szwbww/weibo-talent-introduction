@@ -386,6 +386,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => ["China", "Europe"],
             readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -422,6 +423,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
             readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -458,6 +460,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
             readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -853,6 +856,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
             readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -1077,6 +1081,8 @@ describe("batch send task console interactions", () => {
         const sandbox = {
             recipientPreviewRequestSeq: { editor: 0, manual: 0 },
             recipientPreviewHintId: () => "batchManualRecipientHint",
+            batchGateState: { editor: { available: false }, manual: { available: false } },
+            gateToggleId: () => "batchManualGateFilter",
             buildManualRecipientSnapshot: () => ({}),
             buildManualExecutionSnapshot: () => ({}),
             document: { getElementById: () => hint },
@@ -1262,6 +1268,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
             readBatchMultiPickerValue: () => ["a.com", "b.com"],
+            gateToggleChecked: () => true,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -1280,6 +1287,8 @@ describe("batch send task console interactions", () => {
         assert.strictEqual(apiBodies.length, 1);
         assert.deepStrictEqual(apiBodies[0].emailDomains, ["a.com", "b.com"],
             "payload emailDomains must come from the picker (IP-1)");
+        assert.strictEqual(apiBodies[0].gateFilterEnabled, true,
+            "payload gateFilterEnabled must come from gateToggleChecked (P4b T4b-5)");
         assert.ok(!("emailDomain" in apiBodies[0]), "payload must not carry the old emailDomain key");
     });
 
@@ -1366,7 +1375,8 @@ describe("batch send task console interactions", () => {
             escapeHtml: (v) => String(v == null ? "" : v),
             regionLabel: (v) => v || "",
             cronToDisplayText: () => "",
-            renderBatchConfigStatusToggle: () => ""
+            renderBatchConfigStatusToggle: () => "",
+            batchGatePillHtml: () => ""
         };
         vm.createContext(sandbox);
         vm.runInContext(renderRow, sandbox);
@@ -1547,6 +1557,7 @@ describe("batch send task console interactions", () => {
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
             readBatchMultiPickerValue: () => ["CONTACTED"],
+            gateToggleChecked: () => true,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -1565,6 +1576,8 @@ describe("batch send task console interactions", () => {
         assert.strictEqual(apiBodies.length, 1);
         assert.deepStrictEqual(apiBodies[0].operatorStatuses, ["CONTACTED"],
             "payload operatorStatuses must come from the picker as English values (IP-1)");
+        assert.strictEqual(apiBodies[0].gateFilterEnabled, true,
+            "payload gateFilterEnabled must come from gateToggleChecked (P4b T4b-5)");
         assert.ok(!("operatorStatus" in apiBodies[0]), "payload must not carry the old operatorStatus key");
     });
 
@@ -1657,7 +1670,8 @@ describe("batch send task console interactions", () => {
             regionLabel: (v) => v || "",
             operatorStatusOptions: [["NOT_CONTACTED", "未联系"]],
             cronToDisplayText: () => "",
-            renderBatchConfigStatusToggle: () => ""
+            renderBatchConfigStatusToggle: () => "",
+            batchGatePillHtml: () => ""
         };
         vm.createContext(sandbox);
         vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
@@ -1694,5 +1708,435 @@ describe("batch send task console interactions", () => {
             Array.from(sandbox.readBatchMultiPickerValue("batchManualEmailDomains")),
             ["university.edu", "research.cn"]
         );
+    });
+
+    // ── P4b 邮件模版门禁过滤（G1-G14） ────────────────────────────────────────────
+
+    const BATCH_GATE_FILTERABLE_FIELDS_SRC = appSource.match(/var BATCH_GATE_FILTERABLE_FIELDS = \{[\s\S]*?\};/);
+
+    function gateStateHarness({ templateValue, gateApi, showStatus }) {
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                const classes = new Set();
+                elements[id] = {
+                    id, value: "", textContent: "", innerHTML: "", hidden: true, disabled: false, checked: false,
+                    classList: {
+                        add: (c) => classes.add(c),
+                        remove: (c) => classes.delete(c),
+                        contains: (c) => classes.has(c)
+                    },
+                    setAttribute() {},
+                    querySelectorAll() { return []; }
+                };
+            }
+            return elements[id];
+        }
+        const scheduled = [];
+        const gateApiCalls = [];
+        const dialogs = [];
+        const sandbox = {
+            batchGateState: {
+                editor: { available: false, fields: [], dropped: [] },
+                manual: { available: false, fields: [], dropped: [] }
+            },
+            document: { getElementById: (id) => el(id) },
+            api: async (url, options) => {
+                gateApiCalls.push(url);
+                if (gateApi instanceof Error) throw gateApi;
+                return gateApi ? gateApi(url, options) : { esFields: [] };
+            },
+            console: { error: () => {} },
+            showStatus: (msg) => { dialogs.push(msg); },
+            updateGateToggleLabel: () => {},
+            scheduleRecipientPreview: (k) => scheduled.push(k)
+        };
+        vm.createContext(sandbox);
+        assert.ok(BATCH_GATE_FILTERABLE_FIELDS_SRC, "BATCH_GATE_FILTERABLE_FIELDS must exist (I4b-4)");
+        vm.runInContext(BATCH_GATE_FILTERABLE_FIELDS_SRC[0], sandbox);
+        vm.runInContext(extractFn("gateToggleId"), sandbox);
+        vm.runInContext(extractFn("refreshBatchGateState"), sandbox);
+        el("batchConfigEditorTemplateId").value = templateValue || "";
+        return { sandbox, el, scheduled, gateApiCalls, dialogs };
+    }
+
+    it("G1: empty esFields disables the gate toggle with the warn hint (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: [] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, true, "toggle must be disabled (I4b-3)");
+        assert.strictEqual(checkbox.checked, false, "toggle must be unchecked (I4b-3)");
+        assert.strictEqual(keys.hidden, true, "chip area must stay hidden (I4b-3)");
+        assert.ok(hint.textContent.includes("未配置门禁字段"),
+            "hint must explain the template has no gate fields (I4b-3)");
+        assert.ok(hint.classList.contains("is-warn"), "hint must carry is-warn (S4b-1)");
+    });
+
+    it("G2: empty template id sends no gate-fields request and stays unavailable (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "", gateApi: async () => ({ esFields: ["institution"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        assert.strictEqual(h.gateApiCalls.length, 0, "no request may fire for an empty template (I4b-3)");
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").disabled, true);
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").checked, false);
+        assert.strictEqual(h.el("batchConfigEditorGateFilterKeys").hidden, true);
+    });
+
+    it("G3: a failing gate-fields request falls back to unavailable without a dialog (I4b-3)", async () => {
+        const errors = [];
+        const h = gateStateHarness({ templateValue: "5", gateApi: new Error("boom") });
+        h.sandbox.console.error = () => { errors.push("logged"); };
+        await h.sandbox.refreshBatchGateState("editor");
+
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").disabled, true, "must degrade to unavailable (I4b-3)");
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").checked, false);
+        assert.strictEqual(errors.length, 1, "console.error must be called exactly once (I4b-3)");
+        assert.strictEqual(h.dialogs.length, 0, "failure must not open a dialog (I4b-3)");
+    });
+
+    it("G4: filterable esFields enable the toggle and render one chip per field (I4b-4/S4b-1)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["institution", "researchFields"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, false, "toggle must be enabled (I4b-3)");
+        assert.strictEqual(keys.hidden, false, "chip area must be visible (I4b-3)");
+        assert.strictEqual((keys.innerHTML.match(/class="tag-chip active"/g) || []).length, 2,
+            "exactly 2 filterable chips must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("有机构"), "institution chip label must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("有研究方向"), "researchFields chip label must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("该模板必填字段"), "chip area label must render (S4b-1)");
+        assert.ok(!hint.classList.contains("is-warn"), "available state must not keep is-warn");
+    });
+
+    it("G5: non-filterable esFields are flagged as dropped alongside the chips (I4b-4)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["institution", "keyword", "hIndex"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        assert.strictEqual((keys.innerHTML.match(/class="tag-chip active"/g) || []).length, 1,
+            "only the filterable field must render as a chip (I4b-4)");
+        assert.ok(keys.innerHTML.includes("batch-gate-keys-dropped"), "dropped note must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("keyword"), "dropped field keyword must be named (I4b-4)");
+        assert.ok(keys.innerHTML.includes("hIndex"), "dropped field hIndex must be named (I4b-4)");
+        assert.ok(keys.innerHTML.includes("另有 2 个必填字段无法预筛"),
+            "dropped count must be stated (I4b-4)");
+    });
+
+    it("G6: esFields with no filterable overlap stay unavailable with the all-dropped hint (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["keyword"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, true, "all-dropped must disable the toggle (I4b-3)");
+        assert.strictEqual(checkbox.checked, false);
+        assert.strictEqual(keys.hidden, true);
+        assert.ok(hint.textContent.includes("该模板的必填字段均无法预筛"),
+            "all-dropped hint text required (I4b-3 step 5)");
+        assert.ok(hint.textContent.includes("keyword"), "dropped field must be named in the hint");
+    });
+
+    it("G7: unavailable gate state sends a single preview request (I4b-6)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: false }, manual: { available: false } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : null },
+            api: async (url, opts) => { bodies.push(JSON.parse(opts.body)); return { pending: 5, retryable: 3 }; },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 1, "unavailable state must send exactly one request (I4b-6)");
+        assert.strictEqual(bodies[0].gateFilterEnabled, false, "the single request must gate off (I4b-6)");
+        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>8</strong>"),
+            "single-request total must render (5+3)");
+        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
+            "no exclusion line may render without dual requests");
+    });
+
+    it("G8: available gate with toggle off sends two requests and renders the warnline (I4b-1)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: async (url, opts) => {
+                bodies.push(JSON.parse(opts.body));
+                return bodies.length === 1 ? { pending: 10, retryable: 5 } : { pending: 4, retryable: 3 };
+            },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 2, "available state must send two requests (I4b-1)");
+        assert.strictEqual(bodies[0].gateFilterEnabled, false, "first request must be gate off (I4b-1)");
+        assert.strictEqual(bodies[1].gateFilterEnabled, true, "second request must be gate on (I4b-1)");
+        assert.ok(hint.innerHTML.includes("batch-gate-warnline"),
+            "off toggle with an excluded count must render the warnline (I4b-1)");
+        assert.ok(hint.innerHTML.includes("其中 8 位缺少该模板必填字段"),
+            "excluded count must be off-total minus on-total (15-7=8) (I4b-1)");
+    });
+
+    it("G9: available gate with toggle on renders the excluded span with the gated total (I4b-1)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = true;
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: async (url, opts) => {
+                bodies.push(JSON.parse(opts.body));
+                return bodies.length === 1 ? { totalSendable: 100 } : { totalSendable: 60 };
+            },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 2);
+        assert.ok(hint.innerHTML.includes("batch-gate-excluded"),
+            "on toggle must render the excluded span (I4b-1)");
+        assert.ok(hint.innerHTML.includes("门禁过滤已排除"), "exclusion copy must render (I4b-1)");
+        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>60</strong>"),
+            "total must come from the gate-on response (I4b-1)");
+        assert.ok(hint.innerHTML.includes(">40<"), "excluded = 100-60 = 40 (I4b-1)");
+    });
+
+    it("G10: a stale dual-response round is discarded by seq and never renders (I4b-2)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const pending = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");   // round 1 (seq 1): pending[0] off, pending[1] on
+        sandbox.refreshRecipientPreview("manual");   // round 2 (seq 2): pending[2] off, pending[3] on
+        assert.strictEqual(pending.length, 4, "two rounds must issue four requests (I4b-2)");
+
+        pending[2].resolve({ pending: 1, retryable: 1 });   // round 2 off → total 2
+        pending[3].resolve({ pending: 1, retryable: 0 });   // round 2 on  → total 1, excluded 1
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.ok(hint.innerHTML.includes("batch-gate-warnline"), "fresh round must render");
+        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"), "fresh excluded count must render");
+
+        pending[0].resolve({ pending: 50, retryable: 50 }); // round 1 off → total 100
+        pending[1].resolve({ pending: 25, retryable: 25 }); // round 1 on  → total 50, excluded 50
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"),
+            "stale round must not overwrite the fresh render (I4b-2)");
+        assert.ok(!hint.innerHTML.includes("其中 50 位"), "stale excluded count must not render (I4b-2)");
+    });
+
+    it("G11: a rejected dual request renders the failure, never a partial result (I4b-2)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const pending = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        pending[0].resolve({ pending: 10, retryable: 5 });   // off succeeds
+        pending[1].reject(new Error("boom"));                // on fails
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(hint.textContent, "预估失败：boom",
+            "any failing request must render the failure (I4b-2)");
+        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
+            "no half-rendered result may appear (I4b-2)");
+    });
+
+    it("G12: gateFilterEnabled participates in manual diffs with 开启/关闭 values (I4b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(gateFilterEnabled) {
+            return {
+                id: 1, templateId: 1, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains: [], discipline: "", operatorStatuses: [],
+                gateFilterEnabled,
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceGate, draftGate) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceGate) },
+                readManualFormValues: () => makeConfig(draftGate),
+                supportedBatchComposeTemplates: () => []
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const onValue = runDiffs(false, true);
+        assert.ok(onValue.some((d) => d.key === "gateFilterEnabled" && d.label === "邮件模版门禁过滤"),
+            "draft on with source off must be flagged (I4b-5)");
+        assert.strictEqual(onValue.find((d) => d.key === "gateFilterEnabled").oldDisplay, "关闭");
+        assert.strictEqual(onValue.find((d) => d.key === "gateFilterEnabled").newDisplay, "开启");
+
+        const sameValue = runDiffs(false, false);
+        assert.ok(!sameValue.some((d) => d.key === "gateFilterEnabled"),
+            "identical gate state must not be flagged (I4b-5)");
+
+        const formatSandbox = { supportedBatchComposeTemplates: () => [] };
+        vm.createContext(formatSandbox);
+        vm.runInContext(formatDiffValue, formatSandbox);
+        assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", true), "开启");
+        assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", false), "关闭");
+    });
+
+    it("G13: batchGatePillHtml renders the three list states (S4b-2)", () => {
+        const pillHtml = extractFn("batchGatePillHtml");
+        assert.ok(pillHtml, "batchGatePillHtml must exist (S4b-2)");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(pillHtml, sandbox);
+
+        const na = sandbox.batchGatePillHtml({ templateId: null, gateFilterEnabled: true });
+        assert.ok(na.includes("is-na"), "empty template must render the is-na pill (S4b-2)");
+        assert.ok(na.includes("模板无门禁字段"), "is-na pill copy required (S4b-2)");
+
+        const on = sandbox.batchGatePillHtml({ templateId: 1, gateFilterEnabled: true });
+        assert.ok(on.includes("batch-gate-pill") && !on.includes("is-off") && !on.includes("is-na"),
+            "gate on must render the blue pill only (S4b-2)");
+        assert.ok(on.includes("门禁过滤 · 开"), "gate on pill copy must be 「门禁过滤 · 开」(P4b T4b-5 deviation)");
+
+        const off = sandbox.batchGatePillHtml({ templateId: 1, gateFilterEnabled: false });
+        assert.ok(off.includes("is-off"), "gate off must render the is-off pill (S4b-2)");
+        assert.ok(off.includes("门禁过滤 · 关"), "gate off pill copy required (S4b-2)");
+    });
+
+    it("G14: regression — P2b (V1-V9) and P3b (W1-W9) behaviors stay green", () => {
+        // P2b V1: email-domain comma contract unchanged
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(readValue && setValue, "multi picker helpers must remain (V1)");
+        const hidden = element("");
+        const sandbox1 = {
+            document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: () => {}
+        };
+        vm.createContext(sandbox1);
+        vm.runInContext(setValue, sandbox1);
+        vm.runInContext(readValue, sandbox1);
+        sandbox1.setBatchMultiPickerValue("batchManualEmailDomains", ["a.com", "b.com"]);
+        assert.strictEqual(hidden.value, "a.com,b.com", "comma contract must be unchanged (V1)");
+        assert.deepStrictEqual(
+            Array.from(sandbox1.readBatchMultiPickerValue("batchManualEmailDomains")),
+            ["a.com", "b.com"]
+        );
+
+        // P3b W1: status options derive from the existing constant
+        const statusOptionsSrc = appSource.match(/const operatorStatusOptions = \[[\s\S]*?\];/);
+        assert.ok(statusOptionsSrc, "operatorStatusOptions constant must remain (W1)");
+        const fnSrc = extractFn("batchOperatorStatusOptions");
+        assert.ok(fnSrc, "batchOperatorStatusOptions must remain (W1)");
+        const sandbox2 = {};
+        vm.createContext(sandbox2);
+        vm.runInContext(statusOptionsSrc[0], sandbox2);
+        vm.runInContext(fnSrc, sandbox2);
+        const options = sandbox2.batchOperatorStatusOptions();
+        assert.ok(options.length >= 3, "status options must not be empty (W1)");
+        options.forEach((o) => {
+            assert.match(o.value, /^[A-Z_]+$/, "value must stay an English enum name (W1)");
+            assert.notStrictEqual(o.value, o.label, "value and label must stay distinct (W1)");
+        });
     });
 });

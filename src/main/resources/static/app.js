@@ -13381,6 +13381,15 @@ function renderBatchConfigTable() {
     tbody.innerHTML = configs.map(function(c) { return renderBatchConfigRow(c); }).join("");
 }
 
+/* S4b-2 列表 pill 三态。⚠️ 列表行渲染不发 gate-fields 请求（N 行会打 N 次）：
+   is-na 退化判定为 c.templateId 为空；蓝 pill 文案为「门禁过滤 · 开」而非「门禁过滤 · N 字段」，
+   因为列表拿不到该行的 esFields（有意偏离预览稿，见 P4b T4b-5）。 */
+function batchGatePillHtml(c) {
+    if (!c.templateId) return '<span class="batch-gate-pill is-na">模板无门禁字段</span>';
+    if (c.gateFilterEnabled) return '<span class="batch-gate-pill">门禁过滤 · 开</span>';
+    return '<span class="batch-gate-pill is-off">门禁过滤 · 关</span>';
+}
+
 function renderBatchConfigRow(c) {
     var scopeParts = [];
     if (c.funnelLevel) scopeParts.push("漏斗: " + escapeHtml(c.funnelLevel));
@@ -13395,6 +13404,9 @@ function renderBatchConfigRow(c) {
             return '<span class="' + cls + '">' + s + '</span>';
         }).join("")
         : '<span class="batch-task-scope-line muted">无限制</span>';
+    // S4b-2：门禁 pill 恒输出一行（三态之一），追加在全部 scopeParts 之后；
+    // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
+    scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
 
     var planHtml = cronToDisplayText(c.cron);
     var statusHtml = renderBatchConfigStatusToggle(c);
@@ -13534,6 +13546,9 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorPerRoundIntervalSec", config ? Math.round((config.perRoundIntervalMs || 60000) / 1000) : "60");
     setVal("batchConfigEditorSelfCheckTtlMin", config ? config.selfCheckTtlMinutes : "30");
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
+    var gateCheckbox = document.getElementById("batchConfigEditorGateFilter");
+    if (gateCheckbox) gateCheckbox.checked = Boolean(config && config.gateFilterEnabled);
+    if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
     // 每小时 / 每天 / 每周一；其余（范围、列表、步长、工作日、月/日限制…）
@@ -14100,6 +14115,144 @@ function updateBatchConfigVolumeHint() {
         "</strong> 封（执行轮次 × 每轮数量）；跨调度总量由发件账号每日限额兜底。";
 }
 
+// ── 邮件模版门禁过滤（P4b / I4b-3 / I4b-4） ─────────────────────────────────────────
+
+/* 前端已知的可预筛字段（与后端 ExpertSearchService.ALLOWED_HAS_FIELDS 一致）。
+   I4b-4：其余字段无法预筛，只标注不筛。 */
+var BATCH_GATE_FILTERABLE_FIELDS = {
+    employment: "有职位", degree: "有学历", institution: "有机构",
+    researchFields: "有研究方向", patentTitles: "有专利", recentWorkTitles: "有近期论文"
+};
+
+var batchGateState = { editor: { available: false, fields: [], dropped: [] },
+                       manual:  { available: false, fields: [], dropped: [] } };
+
+function gateToggleId(kind) {
+    return kind === "editor" ? "batchConfigEditorGateFilter" : "batchManualGateFilter";
+}
+
+function gateToggleChecked(kind) {
+    var el = document.getElementById(gateToggleId(kind));
+    return Boolean(el && el.checked);
+}
+
+function updateGateToggleLabel(kind) {
+    var label = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterLabel" : "batchManualGateFilterLabel");
+    if (!label) return;
+    var st = batchGateState[kind];
+    if (!st || !st.available) { label.textContent = "不可用"; return; }
+    label.textContent = gateToggleChecked(kind) ? "已开启" : "已关闭";
+}
+
+/* refreshBatchGateState 规格（I4b-3）：
+   1. 取当前模板 id（editor: #batchConfigEditorTemplateId；manual: #batchManualTemplateId）。
+   2. id 为空 → 置不可用态并 return（不发请求）。
+   3. await gate-fields 接口；异常 → 置不可用态 + console.error 一次、不弹窗，return。
+   4. esFields 为空 → 不可用态。
+   5. 否则 fields = 可预筛交集，dropped = 差集；fields 为空（全部落在差集）→ 仍不可用态，
+      但提示文案改为「该模板的必填字段均无法预筛（<dropped>）」。
+   6. 可用态：checkbox 可点；徽标区渲染「该模板必填字段」+ 每个 field 一个 .tag-chip.active；
+      dropped 非空时追加 .batch-gate-keys-dropped 说明。
+   7. 同步开关 label（不可用 / 已开启 / 已关闭）。
+   8. 结束后调 scheduleRecipientPreview(kind)（IP-1：模板变了排除数也变）。 */
+async function refreshBatchGateState(kind) {
+    if (kind !== "editor" && kind !== "manual") return;
+    var field = document.getElementById(kind === "editor" ? "editorFieldGateFilter" : "manualFieldGateFilter");
+    var checkbox = document.getElementById(gateToggleId(kind));
+    var keys = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterKeys" : "batchManualGateFilterKeys");
+    var hint = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterHint" : "batchManualGateFilterHint");
+    if (!field || !checkbox || !keys || !hint) return;
+    var st = batchGateState[kind];
+    var DEFAULT_HINTS = {
+        editor: "仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败。",
+        manual: "仅影响本次执行，不修改原定时任务。"
+    };
+
+    var setUnavailable = function(warnText) {
+        st.available = false;
+        st.fields = [];
+        st.dropped = [];
+        field.classList.add("is-disabled");
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        keys.hidden = true;
+        keys.innerHTML = "";
+        hint.classList.add("is-warn");
+        hint.textContent = warnText;
+    };
+
+    var templateEl = document.getElementById(kind === "editor" ? "batchConfigEditorTemplateId" : "batchManualTemplateId");
+    var rawTemplate = templateEl ? templateEl.value : "";
+    var id = null;
+    if (rawTemplate) {
+        var n = Number(rawTemplate);
+        if (Number.isFinite(n) && n > 0) id = n;
+    }
+    // 步骤 2：模板为空 → 不可用态，不发 gate-fields 请求
+    if (!id) {
+        setUnavailable("请先选择邮件模板");
+        updateGateToggleLabel(kind);
+        scheduleRecipientPreview(kind);
+        return;
+    }
+
+    var data;
+    try {
+        // 步骤 3
+        data = await api("/api/compose-templates/" + id + "/gate-fields");
+    } catch (error) {
+        // 失败策略照 initExpertGateFilter：只清状态、console.error 一次、不弹窗
+        setUnavailable("门禁字段加载失败，开关暂不可用");
+        console.error("Failed to load gate fields for template " + id, error);
+        updateGateToggleLabel(kind);
+        scheduleRecipientPreview(kind);
+        return;
+    }
+
+    var esFields = Array.isArray(data && data.esFields) ? data.esFields : [];
+    // 步骤 4：无门禁字段 → 不可用态
+    if (esFields.length === 0) {
+        setUnavailable("该模板未配置门禁字段（required_keys 为空），门禁本身未启用，开启无效。");
+        updateGateToggleLabel(kind);
+        scheduleRecipientPreview(kind);
+        return;
+    }
+
+    var hasKey = function(f) { return Object.prototype.hasOwnProperty.call(BATCH_GATE_FILTERABLE_FIELDS, f); };
+    var fields = esFields.filter(hasKey);
+    var dropped = esFields.filter(function(f) { return !hasKey(f); });
+    // 步骤 5：全部落在差集，预筛不会产生任何效果 → 仍不可用态
+    if (fields.length === 0) {
+        setUnavailable("该模板的必填字段均无法预筛（" + dropped.join("、") + "）");
+        updateGateToggleLabel(kind);
+        scheduleRecipientPreview(kind);
+        return;
+    }
+
+    // 步骤 6：可用态
+    st.available = true;
+    st.fields = fields;
+    st.dropped = dropped;
+    field.classList.remove("is-disabled");
+    checkbox.disabled = false;
+    keys.hidden = false;
+    var html = '<span class="batch-gate-keys-label">该模板必填字段</span>' +
+        fields.map(function(f) {
+            return '<span class="tag-chip active">' + BATCH_GATE_FILTERABLE_FIELDS[f] + '</span>';
+        }).join("");
+    if (dropped.length > 0) {
+        html += '<div class="batch-gate-keys-dropped">另有 ' + dropped.length +
+            ' 个必填字段无法预筛（' + dropped.join("、") + '），这些专家仍可能在发送时被拦下</div>';
+    }
+    keys.innerHTML = html;
+    hint.classList.remove("is-warn");
+    hint.textContent = DEFAULT_HINTS[kind];
+
+    // 步骤 7 + 8
+    updateGateToggleLabel(kind);
+    scheduleRecipientPreview(kind);
+}
+
 // ── Recipient-count preview (P-F / 06) ──────────────────────────────────────────────
 // 与执行共用同一入参 BatchExecutionSnapshot（I-2）：后端 countBySnapshot 复用执行路径
 // 的同一套目标计算（I-1），前端此处只负责把面板当前过滤条件组装成该 snapshot。
@@ -14125,6 +14278,7 @@ function buildConfigEditorRecipientSnapshot() {
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
+        gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
     };
 }
@@ -14144,6 +14298,7 @@ function buildManualExecutionSnapshot() {
         emailDomains: values.emailDomains,
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
+        gateFilterEnabled: values.gateFilterEnabled,
         templateId: values.templateId
     };
 }
@@ -14160,27 +14315,59 @@ function scheduleRecipientPreview(kind) {
     }, 500);
 }
 
+/* baseHintHtml：与改动前逐字一致的既有命中行（P4b T4b-4）。 */
+function baseHintHtml(total, res) {
+    var pending = Number(res.pending || 0);
+    var retryable = Number(res.retryable || 0);
+    return "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
+        "、可重试 " + retryable + "）";
+}
+
 function refreshRecipientPreview(kind) {
     if (kind !== "editor" && kind !== "manual") return;
     var hint = document.getElementById(recipientPreviewHintId(kind));
     if (!hint) return;
-    var seq = ++recipientPreviewRequestSeq[kind];
+    var seq = ++recipientPreviewRequestSeq[kind];          // I4b-2：两次请求共用同一 seq
     var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
     hint.innerHTML = "当前条件命中 <strong>计算中…</strong>";
-    api("/api/mail/batch-send/recipients/preview", {
-        method: "POST",
-        body: JSON.stringify(snapshot)
-    }).then(function(res) {
-        // 丢弃过期响应：只有本次请求序号仍是最新时才渲染（K-ai-preflight-stale-response-draft-identity）
-        if (seq !== recipientPreviewRequestSeq[kind]) return;
-        var pending = Number(res.pending || 0);
-        var retryable = Number(res.retryable || 0);
-        var total = Number(res.totalSendable != null ? res.totalSendable : (pending + retryable));
-        hint.innerHTML = "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
-            "、可重试 " + retryable + "）";
+
+    var post = function(gateOn) {
+        return api("/api/mail/batch-send/recipients/preview", {
+            method: "POST",
+            body: JSON.stringify(Object.assign({}, snapshot, { gateFilterEnabled: gateOn }))
+        });
+    };
+    // I4b-6：不可用态只发一次（当前全库 required_keys 为空，双发会让 ES 计数量翻倍且结果恒等）
+    var gateAvailable = batchGateState[kind].available;
+    var requests = gateAvailable ? [post(false), post(true)] : [post(false)];
+
+    Promise.all(requests).then(function(results) {
+        if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2
+        var totalOf = function(r) {
+            var p = Number(r.pending || 0), t = Number(r.retryable || 0);
+            return Number(r.totalSendable != null ? r.totalSendable : (p + t));
+        };
+        var off = results[0];
+        var offTotal = totalOf(off);
+        var gateOn = gateAvailable && document.getElementById(gateToggleId(kind)).checked;
+        if (!gateAvailable) {
+            hint.innerHTML = baseHintHtml(offTotal, off);
+            return;
+        }
+        var onTotal = totalOf(results[1]);
+        var excluded = Math.max(0, offTotal - onTotal);        // I4b-1
+        if (gateOn) {
+            hint.innerHTML = baseHintHtml(onTotal, results[1]) +
+                "；门禁过滤已排除 <span class=\"batch-gate-excluded\">" + excluded + "</span> 位";
+        } else {
+            hint.innerHTML = baseHintHtml(offTotal, off) +
+                (excluded > 0
+                    ? "<span class=\"batch-gate-warnline\">其中 " + excluded +
+                      " 位缺少该模板必填字段，发送时会被门禁拦下并计入失败。</span>"
+                    : "");
+        }
     }).catch(function(error) {
-        // 失败不打断编辑：保留接口错误原因，便于校正筛选参数（A-2）
-        if (seq !== recipientPreviewRequestSeq[kind]) return;
+        if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2：失败也要比 seq
         var message = error && error.message ? String(error.message) : "请求失败";
         console.warn("Recipient preview failed", error);
         hint.textContent = "预估失败：" + message;
@@ -14229,6 +14416,7 @@ async function saveBatchConfigEditor() {
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
+        gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
     };
 
@@ -14312,6 +14500,7 @@ function deepCloneConfig(c) {
         emailDomains: Array.isArray(c.emailDomains) ? c.emailDomains.slice() : [],
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
+        gateFilterEnabled: c.gateFilterEnabled === true,
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -14332,6 +14521,7 @@ function fillManualFormDefaults() {
         emailDomains: [],
         discipline: "",
         operatorStatuses: [],
+        gateFilterEnabled: false,
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -14360,6 +14550,10 @@ function fillManualFormFromDraft() {
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
     setVal("batchManualSelfCheckTtlMin", d.selfCheckTtlMinutes);
+
+    var gateCheckbox = document.getElementById("batchManualGateFilter");
+    if (gateCheckbox) gateCheckbox.checked = Boolean(d.gateFilterEnabled);
+    if (typeof updateGateToggleLabel === "function") updateGateToggleLabel("manual");
 
     fillBatchManualTemplateSelector(d.templateId);
 
@@ -14424,6 +14618,7 @@ function readManualFormValues() {
     };
     var rawTemplateId = val("batchManualTemplateId");
     var templateId = rawTemplateId ? Number(rawTemplateId) : null;
+    var gateCheckboxEl = document.getElementById("batchManualGateFilter");
     return {
         templateId: templateId,
         mailType: resolveBatchTemplateMailType(templateId),
@@ -14433,6 +14628,7 @@ function readManualFormValues() {
         emailDomains: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualEmailDomains") : [],
         discipline: val("batchManualDiscipline") || null,
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
+        gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
@@ -14450,6 +14646,7 @@ function normalizeManualSnapshot(v) {
         emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
         discipline: (v.discipline || "").trim() || null,
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
+        gateFilterEnabled: Boolean(v.gateFilterEnabled),
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
@@ -14459,6 +14656,7 @@ function normalizeManualSnapshot(v) {
 }
 
 function formatManualDiffValue(key, value) {
+    if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
         var template = supportedBatchComposeTemplates().find(function(item) {
@@ -14497,6 +14695,7 @@ function computeManualDiffs() {
         { key: "emailDomains", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
         { key: "operatorStatuses", label: "专家状态" },
+        { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -14543,6 +14742,7 @@ function computeAndRenderDiffs() {
         emailDomains: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
         operatorStatuses: "manualFieldOperatorStatus",
+        gateFilterEnabled: "manualFieldGateFilter",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -14572,7 +14772,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -15177,6 +15377,17 @@ function bindBatchSendTaskEvents() {
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", function() { scheduleRecipientPreview("editor"); });
     });
+
+    // P4b 门禁过滤（IP-1 / IP-2）：模板下拉变化 → 重新解析三态（内部以 scheduleRecipientPreview 收尾）；
+    // 开关变化 → 同步 label + 重新预估。
+    var editorGateTemplate = document.getElementById("batchConfigEditorTemplateId");
+    if (editorGateTemplate) editorGateTemplate.addEventListener("change", function() { refreshBatchGateState("editor"); });
+    var manualGateTemplate = document.getElementById("batchManualTemplateId");
+    if (manualGateTemplate) manualGateTemplate.addEventListener("change", function() { refreshBatchGateState("manual"); });
+    var editorGateToggle = document.getElementById("batchConfigEditorGateFilter");
+    if (editorGateToggle) editorGateToggle.addEventListener("change", function() { updateGateToggleLabel("editor"); scheduleRecipientPreview("editor"); });
+    var manualGateToggle = document.getElementById("batchManualGateFilter");
+    if (manualGateToggle) manualGateToggle.addEventListener("change", function() { updateGateToggleLabel("manual"); scheduleRecipientPreview("manual"); });
 
     // Manual source search — autocomplete
     var sourceQuery = document.getElementById("batchManualSourceQuery");

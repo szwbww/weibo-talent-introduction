@@ -1231,6 +1231,18 @@
                                 <div id="batchConfigEditorOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                             </div>
                         </div>
+                        <div class="batch-config-field batch-gate-field" id="editorFieldGateFilter">
+                            <span class="batch-config-field-label">邮件模版门禁过滤</span>
+                            <div class="batch-gate-row">
+                                <label class="batch-task-status-toggle batch-gate-toggle">
+                                    <input type="checkbox" id="batchConfigEditorGateFilter">
+                                    <span class="batch-task-status-switch"></span>
+                                    <span class="batch-task-status-label" id="batchConfigEditorGateFilterLabel">已关闭</span>
+                                </label>
+                                <span class="batch-gate-hint" id="batchConfigEditorGateFilterHint">仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败。</span>
+                            </div>
+                            <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
+                        </div>
                     </div>
                 </section>
 
@@ -1413,6 +1425,20 @@
                             <input type="hidden" id="batchManualOperatorStatuses" value="">
                             <div id="batchManualOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                         </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field batch-gate-field" id="manualFieldGateFilter">
+                        <span class="batch-config-field-label">邮件模版门禁过滤</span>
+                        <div class="batch-gate-row">
+                            <label class="batch-task-status-toggle batch-gate-toggle">
+                                <input type="checkbox" id="batchManualGateFilter">
+                                <span class="batch-task-status-switch"></span>
+                                <span class="batch-task-status-label" id="batchManualGateFilterLabel">已关闭</span>
+                            </label>
+                            <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务。</span>
+                        </div>
+                        <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
