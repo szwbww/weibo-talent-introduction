@@ -44,11 +44,11 @@
 | 序 | 子计划 | 文件数 | 子系统数 | 迁移版本 | 依赖 |
 |---|---|---|---|---|---|
 | 1 | `p1-cron-echo-whitelist.md` | 2 | 1（前端） | — | 无 |
-| 2 | `p2a-email-domain-multi-backend.md` | 10 | 2（campaign / expert） | **V96** | 无 |
+| 2 | `p2a-email-domain-multi-backend.md` | 10 | 2（campaign / expert） | **V97** | 无 |
 | 3 | `p2b-email-domain-multi-frontend.md` | 3 | 1（前端） | — | P2a |
-| 4 | `p3a-operator-status-multi-backend.md` | 10 | 2 | **V97** | P2a |
+| 4 | `p3a-operator-status-multi-backend.md` | 10 | 2 | **V98** | P2a |
 | 5 | `p3b-operator-status-multi-frontend.md` | 3 | 1（前端） | — | P2b + P3a |
-| 6 | `p4a-template-gate-filter-backend.md` | 10 | 2 | **V98** | P3a |
+| 6 | `p4a-template-gate-filter-backend.md` | 10 | 2 | **V99** | P3a |
 | 7 | `p4b-template-gate-filter-frontend.md` | 4 | 1（前端） | — | P3b + P4a |
 
 建议合并顺序即上表顺序。P1 与其余无耦合，可最先单独合并上线。
@@ -63,7 +63,7 @@
 - **P3a 依赖 P2a**：两者都改 `buildEsFiltersForLevel` 的**同一个函数体**（`ManualInitialOutreachService.kt:1245-1274`），并行必冲突；且 P3a 的基座切换判据要建立在 P2a 已改成 `emailDomainsFilter` 的形态之上。
 - **P4a 依赖 P3a**：P4a 在 `buildEsFiltersForLevel` 末尾追加门禁 filter，需要 P3a 完成后的稳定形态。
 - **P4b 依赖 P3b + P4a**：P4b 的双请求预估要把 P2/P3 的多值字段一起带进 snapshot。
-- **迁移版本必须依序占用**：V96 → V97 → V98。乱序会产生版本号冲突，且 `FlywayMigrationIntegrationTest` 会红。
+- **迁移版本必须依序占用**：V97 → V98 → V99。乱序会产生版本号冲突，且 `FlywayMigrationIntegrationTest` 会红。
 - **四个前端计划都改 `app.js` 的同一批函数**（`showBatchConfigEditor` / `readManualFormValues` / `computeManualDiffs` / `computeAndRenderDiffs` / `buildConfigEditorRecipientSnapshot` / `renderBatchConfigRow`），并行必冲突。
 
 ---
@@ -158,9 +158,10 @@ for (level in scope.funnelLevels) {
 | `V91` | 加 `rounds_per_run INT NOT NULL DEFAULT 1` |
 | `V92` | **删** `daily_cap` 列（本仓允许在迁移中 DROP 列的先例） |
 | `V93` | 加 `regions_json TEXT NOT NULL AFTER funnel_level` + `UPDATE ... SET regions_json='[]' WHERE regions_json=''`（**TEXT 不能带 DEFAULT，故用后续 UPDATE 兜底 —— 新增 JSON 列必须照抄这个两步范式**） |
+| `V94` | 回填 `expert_contact.operator_status`（手动发送历史；幂等，前置 NOT_CONTACTED） |
 | `V95` | 加 `operator_status VARCHAR(32) NULL AFTER discipline`；注释明确 NULL = 不限 |
 
-**下一个可用版本号：`V96`。** 已核对 `src/main/resources/db/migration/` 无 V96。
+**下一个可用版本号：`V97`。** 已核对 `src/main/resources/db/migration/` 最高为 V96（`V96__add_name_to_reply_snippet.sql`，来自 expert-mail-preview 运行并已合并进 main —— 本审计的版本号已过期）。P2a / P3a / P4a 依序占用 **V97 / V98 / V99**。
 
 ⚠️ **迁移写法强制约束（来源: K-flyway-placeholder-replacement）**：生产 `application.yml` 未关 `placeholder-replacement`（默认 true）。本轮三个子计划的迁移**均不得包含 `${...}` 字面量**。若确有需要，必须同提交加 `spring.flyway.placeholder-replacement: false` 并加配置回归断言。
 

@@ -1,7 +1,7 @@
 # P3a：专家状态筛选改多值（后端）
 
 主计划：`batch-task-filters-main.md`（共享不变量 M-1…M-5、共享审计 X-1…X-3、验证命令在主计划）
-前置计划：**P2a 必须已合并**（`V96` 已占用，本计划用 `V97`；`buildEsFiltersForLevel` 已改为多域形态）
+前置计划：**P2a 必须已合并**（`V97` 已占用，本计划用 `V98`；`buildEsFiltersForLevel` 已改为多域形态）
 子系统数：2（campaign / expert）  文件数：9
 
 ---
@@ -75,8 +75,8 @@
 - 来源: K-recipient-scope-status-filter
 
 ### Invariant I3a-7: `operator_status` 旧列在同一迁移中删除
-- Rule: 同 I2a-1，`operator_statuses_json` 为唯一事实源，`operator_status` 单值列在 V97 中 DROP。
-- Applies to: V97。
+- Rule: 同 I2a-1，`operator_statuses_json` 为唯一事实源，`operator_status` 单值列在 V98 中 DROP。
+- Applies to: V98。
 - 来源: I2a-1 的同款结论
 
 ---
@@ -89,7 +89,7 @@
 
 ## 现状审计
 
-> 表结构与迁移版本见主计划 X-2；两条活体目标来源的证据见主计划 X-1。**下一个可用版本：V97**（P2a 已占 V96）。
+> 表结构与迁移版本见主计划 X-2；两条活体目标来源的证据见主计划 X-1。**下一个可用版本：V98**（P2a 已占 V97）。
 
 ### 存储
 
@@ -178,9 +178,9 @@
 
 ## 实现方案
 
-### T3a-1 迁移 V97（I3a-7）
+### T3a-1 迁移 V98（I3a-7）
 
-新建 `src/main/resources/db/migration/V97__add_operator_statuses_to_batch_send_task_config.sql`：
+新建 `src/main/resources/db/migration/V98__add_operator_statuses_to_batch_send_task_config.sql`：
 
 ```sql
 -- I3a-7: operator_statuses_json 成为唯一事实源；operator_status 单值列在本迁移中删除。
@@ -346,7 +346,7 @@ ALTER TABLE batch_send_task_config DROP COLUMN operator_status;
 
 | # | 文件 | 类型 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V97__add_operator_statuses_to_batch_send_task_config.sql` | 新建 |
+| 1 | `src/main/resources/db/migration/V98__add_operator_statuses_to_batch_send_task_config.sql` | 新建 |
 | 2 | `src/main/kotlin/.../campaign/domain/BatchSendTaskConfig.kt` | 修改 |
 | 3 | `src/main/kotlin/.../campaign/domain/BatchExecutionModels.kt` | 修改 |
 | 4 | `src/main/kotlin/.../campaign/service/BatchSendTaskConfigService.kt` | 修改 |
@@ -382,7 +382,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - **I3a-4**：基座切换用例 + 混合用例绿。
 - **I3a-5**：ES/DB 同口径用例绿。
 - **I3a-6**：四条校验用例绿；`grep -n "ALLOWED_OPERATOR_STATUSES" src/main/kotlin/.../BatchSendTaskConfigService.kt` 显示该常量仍由 `OperatorStatus.entries` 派生，未被字符串字面量集合替代。
-- **I3a-7**：`FlywayMigrationIntegrationTest` 绿；V97 含 DROP 语句。
+- **I3a-7**：`FlywayMigrationIntegrationTest` 绿；V98 含 DROP 语句。
 - **N3a-1**：`git diff src/main/kotlin/.../ExpertSearchService.kt` 中，`operatorStatusFilter` / `notContactedWithEmailFilters` / `buildExpertFilters` / `searchExperts` 的**函数体**无改动行（只允许 KDoc 注释行变更）。
 - **N3a-2**：等价性用例绿（硬编码基线断言）。
 - **M-3**：`grep -rn "operatorStatuses" src/main/kotlin | wc -l` 的输出贴进复验报告并逐点核对。

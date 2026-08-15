@@ -1,7 +1,7 @@
 # P4a：邮件模版门禁过滤开关（后端）
 
 主计划：`batch-task-filters-main.md`
-前置计划：**P3a 必须已合并**（`V97` 已占用，本计划用 `V98`；`buildEsFiltersForLevel` 已是多值形态）
+前置计划：**P3a 必须已合并**（`V98` 已占用，本计划用 `V99`；`buildEsFiltersForLevel` 已是多值形态）
 子系统数：2（campaign / expert）  文件数：10
 
 ---
@@ -35,7 +35,7 @@
 ### Invariant I4a-1: 开关关闭时零行为变化
 - Rule: `gateFilterEnabled = false` 或 `templateId` 为 null 或该模板 `requiredEsFields` 为空时，**不向 ES 查询追加任何 filter**，`matchesExpert` **不做任何字段判定**。
 - Applies to: `resolveScope`、`buildEsFiltersForLevel`、`matchesExpert`。
-- Violation consequence: 全部存量任务（V98 回填为 `FALSE`）的收件范围漂移 → 大面积漏发。
+- Violation consequence: 全部存量任务（V99 回填为 `FALSE`）的收件范围漂移 → 大面积漏发。
 - 来源: original
 
 ### Invariant I4a-2: 门禁字段之间是 AND
@@ -84,7 +84,7 @@
 
 ## 现状审计
 
-> 表结构与迁移版本见主计划 X-2。**下一个可用版本：V98**（P2a 占 V96、P3a 占 V97）。
+> 表结构与迁移版本见主计划 X-2。**下一个可用版本：V99**（P2a 占 V97、P3a 占 V98）。
 
 ### 门禁的既有实现（逐字，改动前基线）
 
@@ -188,9 +188,9 @@ main 侧 **4 处**（I4a-4 要求全改）；test 侧 4 处需同步适配（新
 
 ## 实现方案
 
-### T4a-1 迁移 V98（I4a-1 / I4a-6）
+### T4a-1 迁移 V99（I4a-1 / I4a-6）
 
-新建 `src/main/resources/db/migration/V98__add_gate_filter_enabled_to_batch_send_task_config.sql`：
+新建 `src/main/resources/db/migration/V99__add_gate_filter_enabled_to_batch_send_task_config.sql`：
 
 ```sql
 -- I4a-1: 存量配置一律回填 FALSE，保证行为零漂移。
@@ -328,7 +328,7 @@ ALTER TABLE batch_send_task_config
 
 | # | 文件 | 类型 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V98__add_gate_filter_enabled_to_batch_send_task_config.sql` | 新建 |
+| 1 | `src/main/resources/db/migration/V99__add_gate_filter_enabled_to_batch_send_task_config.sql` | 新建 |
 | 2 | `src/main/kotlin/.../campaign/domain/BatchSendTaskConfig.kt` | 修改 |
 | 3 | `src/main/kotlin/.../campaign/domain/BatchExecutionModels.kt` | 修改 |
 | 4 | `src/main/kotlin/.../campaign/service/BatchSendTaskConfigService.kt` | 修改 |

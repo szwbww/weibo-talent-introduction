@@ -32,8 +32,8 @@
 ## 关键不变量
 
 ### Invariant I2a-1: `email_domains_json` 是唯一事实源，`email_domain` 列在同一迁移中删除
-- Rule: V96 迁移完成后，`batch_send_task_config` **不再有** `email_domain` 列。所有读写走 `email_domains_json`（JSON 字符串数组，空数组 `[]` = 不限）。
-- Applies to: V96 迁移；`BatchSendTaskConfig` 实体；`BatchSendTaskConfigService` 全部映射点。
+- Rule: V97 迁移完成后，`batch_send_task_config` **不再有** `email_domain` 列。所有读写走 `email_domains_json`（JSON 字符串数组，空数组 `[]` = 不限）。
+- Applies to: V97 迁移；`BatchSendTaskConfig` 实体；`BatchSendTaskConfigService` 全部映射点。
 - Violation consequence: 保留旧列 = 双事实源。运营从旧 typed API 改一次，新旧列分叉，定时任务按哪个执行取决于代码路径，无法排查（同 `K-batch-send-legacy-routes-entity-ssot` 的事故形态）。
 - 先例: `V92__drop_daily_cap_from_batch_send_task_config.sql` 已有在迁移中 DROP 列的先例。
 - 来源: original + K-batch-send-legacy-routes-entity-ssot
@@ -89,7 +89,7 @@
 ### 存储：`batch_send_task_config.email_domain`
 
 - Schema：`email_domain VARCHAR(120) NULL`（`V72__create_batch_send_task_config.sql:14`）。NULL 或空串 = 不限。
-- **下一个可用迁移版本：V96**（已核对 `src/main/resources/db/migration/` 最高为 V95）。
+- **下一个可用迁移版本：V97**（已核对 `src/main/resources/db/migration/` 最高为 V96，V96 已被 `V96__add_name_to_reply_snippet.sql` 占用）。
 
 ### 写路径（全量 grep 取证）
 
@@ -185,9 +185,9 @@ $ grep -rn "emailDomain" src/main/kotlin | grep -v "^.*ExpertIndexController\|^.
 
 ## 实现方案
 
-### T2a-1 迁移 V96（I2a-1）
+### T2a-1 迁移 V97（I2a-1）
 
-新建 `src/main/resources/db/migration/V96__add_email_domains_to_batch_send_task_config.sql`：
+新建 `src/main/resources/db/migration/V97__add_email_domains_to_batch_send_task_config.sql`：
 
 ```sql
 -- I2a-1: email_domains_json 成为唯一事实源；email_domain 单值列在本迁移中删除，避免双事实源。
@@ -379,7 +379,7 @@ ALTER TABLE batch_send_task_config DROP COLUMN email_domain;
 
 | # | 文件 | 类型 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V96__add_email_domains_to_batch_send_task_config.sql` | 新建 |
+| 1 | `src/main/resources/db/migration/V97__add_email_domains_to_batch_send_task_config.sql` | 新建 |
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt` | 修改 |
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt` | 修改 |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt` | 修改 |
@@ -405,7 +405,7 @@ ALTER TABLE batch_send_task_config DROP COLUMN email_domain;
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=BatchSendTaskConfigServiceTest
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ManualInitialOutreachServiceTest
 
-# 迁移集成测试（V96 必跑；需本地 Docker）
+# 迁移集成测试（V97 必跑；需本地 Docker）
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true
 
 # 写入守卫（M-5）
@@ -416,7 +416,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 
 ## 验收标准
 
-- **I2a-1**：`grep -rn "email_domain\b" src/main/resources/db/migration/V96*.sql` 命中 DROP 语句；`grep -rn "emailDomain\b" src/main/kotlin/com/weibo/talentintroduction/campaign/` 的结果中不再出现实体字段 `emailDomain`（只允许出现在 KV 兼容层 `BatchSendConfig` 相关的降级映射处，且每处都有 `firstOrNull()`）。`FlywayMigrationIntegrationTest` 绿。
+- **I2a-1**：`grep -rn "email_domain\b" src/main/resources/db/migration/V97*.sql` 命中 DROP 语句；`grep -rn "emailDomain\b" src/main/kotlin/com/weibo/talentintroduction/campaign/` 的结果中不再出现实体字段 `emailDomain`（只允许出现在 KV 兼容层 `BatchSendConfig` 相关的降级映射处，且每处都有 `firstOrNull()`）。`FlywayMigrationIntegrationTest` 绿。
 - **I2a-2**：`ManualInitialOutreachServiceTest` 的空集合用例绿；`emailDomainsFilter(emptyList())` 返回 `null`。
 - **I2a-3**：`ManualInitialOutreachServiceTest` 的 should/minimum_should_match 形状断言绿；`grep -n "emailDomainsFilter" src/main/kotlin/.../ManualInitialOutreachService.kt` 恰好 **2** 处（`buildEsFiltersForLevel` 的两个非-CANDIDATE 分支），加 `notContactedWithEmailDomainsFilters` **1** 处。
 - **I2a-4**：ES/DB 同口径用例绿。
@@ -434,7 +434,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 > 本计划无 UI。以下用 curl / Postman 直接打接口。`{BASE}` 为服务地址。
 
 ### A2a-1: 多域配置保存与回读
-- 前置条件：服务已启动，V96 已应用。
+- 前置条件：服务已启动，V97 已应用。
 - 操作步骤：
   1. `POST {BASE}/api/mail/batch-send/configs`，body 含 `"configName":"多域测试","emailDomains":["gmail.com","outlook.com"]` 及必填的 cron/roundSize 等。
   2. `GET {BASE}/api/mail/batch-send/configs`，找到该条。
