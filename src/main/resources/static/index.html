@@ -1219,12 +1219,18 @@
                                 <option value="UNCLASSIFIED">未分类</option>
                             </select>
                         </label>
-                        <label class="batch-config-field">
+                        <div class="batch-config-field">
                             <span class="batch-config-field-label">专家状态</span>
-                            <select id="batchConfigEditorOperatorStatus" class="bsc-input bsc-select">
-                                <option value="">全部状态</option>
-                            </select>
-                        </label>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorOperatorStatuses">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorOperatorStatusesChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorOperatorStatusesSearch" class="batch-tag-picker-search" placeholder="搜索并选择专家状态" autocomplete="off" aria-controls="batchConfigEditorOperatorStatusesDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorOperatorStatuses" value="">
+                                <div id="batchConfigEditorOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -1396,14 +1402,20 @@
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </label>
-                    <label class="batch-config-field" id="manualFieldOperatorStatus">
+                    <div class="batch-config-field" id="manualFieldOperatorStatus">
                         <span class="batch-config-field-label">专家状态</span>
-                        <select id="batchManualOperatorStatus" class="bsc-input bsc-select">
-                            <option value="">全部状态</option>
-                        </select>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualOperatorStatuses">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualOperatorStatusesChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualOperatorStatusesSearch" class="batch-tag-picker-search" placeholder="搜索并选择专家状态" autocomplete="off" aria-controls="batchManualOperatorStatusesDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualOperatorStatuses" value="">
+                            <div id="batchManualOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
-                    </label>
+                    </div>
                 </div>
                 <div class="batch-config-editor-hint" id="batchManualRecipientHint"></div>
             </section>

@@ -1055,7 +1055,7 @@ describe("batch send task console interactions", () => {
             regions: ["China"],
             emailDomains: ["university.edu"],
             discipline: "STEM",
-            operatorStatus: "NOT_CONTACTED",
+            operatorStatuses: ["NOT_CONTACTED"],
             templateId: 7
         };
         const sandbox = { readManualFormValues: () => values, Number };
@@ -1402,5 +1402,297 @@ describe("batch send task console interactions", () => {
             "tag reader must trim and dedupe, preserving first-seen order");
         assert.deepStrictEqual(Array.from(sandbox.readBatchRegionPickerValue("batchConfigEditorRegions")), ["China", "Europe"],
             "region reader must split/trim/filter, preserving order");
+    });
+
+    it("W1: batchOperatorStatusOptions derives English values and Chinese labels from operatorStatusOptions (I3b-2/I3b-3)", () => {
+        const statusOptionsSrc = appSource.match(/const operatorStatusOptions = \[[\s\S]*?\];/);
+        assert.ok(statusOptionsSrc, "operatorStatusOptions constant must exist in app.js (I3b-3)");
+        const fnSrc = extractFn("batchOperatorStatusOptions");
+        assert.ok(fnSrc, "batchOperatorStatusOptions must exist (I3b-3)");
+        assert.ok(fnSrc.includes("operatorStatusOptions"),
+            "batchOperatorStatusOptions must derive from the existing constant (I3b-3)");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(statusOptionsSrc[0], sandbox);
+        vm.runInContext(fnSrc, sandbox);
+
+        const options = sandbox.batchOperatorStatusOptions();
+        assert.ok(options.length >= 3, "status options must not be empty");
+        options.forEach((o) => {
+            assert.match(o.value, /^[A-Z_]+$/, "value must be an English enum name (I3b-2)");
+            assert.match(o.label, /[\u4e00-\u9fff]/, "label must be Chinese (I3b-2)");
+            assert.notStrictEqual(o.value, o.label, "value and label must not be identical (I3b-2)");
+        });
+    });
+
+    it("W2: operator status values stay English enum names in the hidden input (I3b-2)", () => {
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(setValue, "setBatchMultiPickerValue must exist");
+
+        const hidden = element("");
+        const rendered = [];
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchConfigEditorOperatorStatuses" ? hidden : null },
+            renderBatchMultiPicker: (id) => rendered.push(id)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(setValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", ["NOT_CONTACTED", "CONTACTED"]);
+
+        assert.strictEqual(hidden.value, "NOT_CONTACTED,CONTACTED",
+            "hidden input must carry English enum names, comma-joined (I3b-2)");
+        assert.ok(!hidden.value.includes("未联系"), "Chinese labels must never enter the hidden input (I3b-2)");
+        assert.strictEqual(rendered.length, 1, "set must trigger a render");
+    });
+
+    it("W3: picker chips show Chinese labels while data-remove-tag keeps English values (I3b-2)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorOperatorStatuses: {
+                    options: () => [
+                        { value: "NOT_CONTACTED", label: "未联系" },
+                        { value: "CONTACTED", label: "已联系" },
+                        { value: "REPLIED", label: "已回复" }
+                    ],
+                    emptyText: "没有匹配状态",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorOperatorStatuses": hidden,
+                    "batchConfigEditorOperatorStatusesSearch": search,
+                    "batchConfigEditorOperatorStatusesChips": chips,
+                    "batchConfigEditorOperatorStatusesDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", ["NOT_CONTACTED", "CONTACTED"]);
+
+        assert.ok(chips.innerHTML.includes("未联系"), "chip must show the Chinese label (I3b-2)");
+        assert.ok(chips.innerHTML.includes("已联系"), "chip must show the Chinese label (I3b-2)");
+        assert.ok(chips.innerHTML.includes('data-remove-tag="NOT_CONTACTED"'),
+            "chip remove button must carry the English enum value (I3b-2)");
+        assert.ok(chips.innerHTML.includes('data-remove-tag="CONTACTED"'),
+            "chip remove button must carry the English enum value (I3b-2)");
+    });
+
+    it("W4: showBatchConfigEditor echoes operatorStatuses into the picker hidden input (IP-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            renderBatchMultiPicker: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [], operatorStatuses: ["CONTACTED"] });
+        assert.strictEqual(el("batchConfigEditorOperatorStatuses").value, "CONTACTED",
+            "config operatorStatuses must be echoed into the hidden input (IP-1)");
+
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(el("batchConfigEditorOperatorStatuses").value, "",
+            "new task must start with an empty status picker");
+    });
+
+    it("W5: saveBatchConfigEditor payload carries English operatorStatuses from the picker (IP-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["CONTACTED"],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "状态筛选任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].operatorStatuses, ["CONTACTED"],
+            "payload operatorStatuses must come from the picker as English values (IP-1)");
+        assert.ok(!("operatorStatus" in apiBodies[0]), "payload must not carry the old operatorStatus key");
+    });
+
+    it("W6: formatManualDiffValue renders status list or 全部状态 with Chinese labels (I3b-4 #2)", () => {
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        assert.ok(formatDiffValue, "formatManualDiffValue must exist");
+
+        const sandbox = {
+            batchTaskState: { preloadedTemplates: [] },
+            supportedBatchComposeTemplates: () => [],
+            operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+        vm.runInContext(formatDiffValue, sandbox);
+
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", []), "全部状态");
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", ["NOT_CONTACTED"]), "未联系");
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", ["NOT_CONTACTED", "CONTACTED"]), "未联系、已联系");
+    });
+
+    it("W7: normalizeManualSnapshot sorts operatorStatuses so order never reads as changed (I3b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        assert.ok(normalize, "normalizeManualSnapshot must exist");
+
+        const sandbox = { Number };
+        vm.createContext(sandbox);
+        vm.runInContext(normalize, sandbox);
+
+        const a = sandbox.normalizeManualSnapshot({ operatorStatuses: ["CONTACTED", "NOT_CONTACTED"], tags: [], regions: [], emailDomains: [] });
+        const b = sandbox.normalizeManualSnapshot({ operatorStatuses: ["NOT_CONTACTED", "CONTACTED"], tags: [], regions: [], emailDomains: [] });
+
+        assert.deepStrictEqual(Array.from(a.operatorStatuses), ["CONTACTED", "NOT_CONTACTED"],
+            "operatorStatuses must be sorted (I3b-5)");
+        assert.deepStrictEqual(Array.from(a.operatorStatuses), Array.from(b.operatorStatuses),
+            "same status set in different order must normalize identically (I3b-5)");
+    });
+
+    it("W8: computeManualDiffs flags operatorStatuses once the field participates in diffs (I3b-4 #3 gap fix)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(operatorStatuses) {
+            return {
+                id: 1, templateId: null, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains: [], discipline: "", operatorStatuses,
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceStatuses, draftStatuses) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceStatuses) },
+                readManualFormValues: () => makeConfig(draftStatuses),
+                supportedBatchComposeTemplates: () => [],
+                operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const diffsWhenExtended = runDiffs([], ["CONTACTED"]);
+        assert.ok(diffsWhenExtended.some((d) => d.key === "operatorStatuses"),
+            "draft with a selected status must be flagged as diff when the source has none (gap fix)");
+
+        const diffsWhenSame = runDiffs(["CONTACTED"], ["CONTACTED"]);
+        assert.ok(!diffsWhenSame.some((d) => d.key === "operatorStatuses"),
+            "identical status sets must not be flagged as diff");
+    });
+
+    it("W9: renderBatchConfigRow adds the 状态 scope line with Chinese labels (S3b-3)", () => {
+        const renderRow = extractFn("renderBatchConfigRow");
+        assert.ok(renderRow, "renderBatchConfigRow must exist");
+
+        function makeConfig(operatorStatuses) {
+            return {
+                id: 1, configName: "状态筛选任务", mailType: "INTRODUCTION", autoEnabled: false,
+                funnelLevel: null, tags: [], regions: [], emailDomains: [], operatorStatuses, discipline: null,
+                templateId: null, cron: null, nextFireTime: null, lastExecutedAt: null
+            };
+        }
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v),
+            regionLabel: (v) => v || "",
+            operatorStatusOptions: [["NOT_CONTACTED", "未联系"]],
+            cronToDisplayText: () => "",
+            renderBatchConfigStatusToggle: () => ""
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+        vm.runInContext(renderRow, sandbox);
+
+        const html = sandbox.renderBatchConfigRow(makeConfig(["NOT_CONTACTED"]));
+        assert.ok(html.includes("状态: 未联系"), "scope line must render 状态: with the Chinese label (S3b-3)");
+        assert.ok(/<span class="batch-task-scope-line">状态: 未联系<\/span>/.test(html),
+            "status scope line must be wrapped in .batch-task-scope-line");
+
+        const emptyHtml = sandbox.renderBatchConfigRow(makeConfig([]));
+        assert.ok(!emptyHtml.includes("状态:"), "empty operatorStatuses must not render a status line");
+        assert.ok(emptyHtml.includes("无限制"), "empty filters must show 无限制");
+    });
+
+    it("W10: regression — P2b email-domain picker behavior stays intact (N3b-2)", () => {
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const readValue = extractFn("readBatchMultiPickerValue");
+        assert.ok(setValue && readValue, "multi picker helpers must exist");
+
+        const hidden = element("");
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(readValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchManualEmailDomains", ["university.edu", "research.cn"]);
+        assert.strictEqual(hidden.value, "university.edu,research.cn",
+            "email domain comma contract must be unchanged (N3b-2)");
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchMultiPickerValue("batchManualEmailDomains")),
+            ["university.edu", "research.cn"]
+        );
     });
 });
