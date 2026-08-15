@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-15/batch-task-filters-main.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-15/batch-task-filters-main.md (commit 72ea4f55)
 - Amendments: N/A
 - Master base: b59876d5f9a98c36622ec6766d359e368b7e89f6
@@ -9,17 +9,18 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-15T00:00:00Z
-- Current child: p1-cron-echo-whitelist
+- Current child: p2a-email-domain-multi-backend
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
+- Pause reason: PLAN_CONFLICT — master plan X-2 audit is stale: V96__add_name_to_reply_snippet.sql already exists at base 72ea4f55 (added by 15633f7, expert-mail-preview run, merged into main). p2a/p3a/p4a migration versions must bump V96→V97, V97→V98, V98→V99. Implementer made zero code changes (ImplP2aEmailDomain).
 - Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| p1-cron-echo-whitelist | docs/plans/2026-08-15/p1-cron-echo-whitelist.md | commit:72ea4f55 | none | 1 | LIGHT_PASS_WITH_NOTES | 72ea4f55 | 8d8dccb2 | 0 | — | 8d8dccb2 | — | RECORD_ONLY O-1: pre-existing daily-echo test sandbox gained isCronClock/padClock injection (in authorized test file, required for N1-1). |
+| p1-cron-echo-whitelist | docs/plans/2026-08-15/p1-cron-echo-whitelist.md | commit:72ea4f55 | none | 1 | LIGHT_PASS_WITH_NOTES | 72ea4f55 | 8d8dccb2 | 0 | — | 8d8dccb2 | cd031693 | RECORD_ONLY O-1: pre-existing daily-echo test sandbox gained isCronClock/padClock injection (in authorized test file, required for N1-1). |
+| p2a-email-domain-multi-backend | docs/plans/2026-08-15/p2a-email-domain-multi-backend.md | commit:72ea4f55 | none | 1 | PAUSED_FOR_HUMAN | 8d8dccb2 | — | 0 | — | — | — | PLAN_CONFLICT: V96 already exists at base (stale X-2 audit). No code changed. |
 | p2a-email-domain-multi-backend | docs/plans/2026-08-15/p2a-email-domain-multi-backend.md | commit:72ea4f55 | none | 1 | PENDING | — | — | 0 | — | — | — |  |
 | p2b-email-domain-multi-frontend | docs/plans/2026-08-15/p2b-email-domain-multi-frontend.md | commit:72ea4f55 | p2a | 1 | PENDING | — | — | 0 | — | — | — |  |
 | p3a-operator-status-multi-backend | docs/plans/2026-08-15/p3a-operator-status-multi-backend.md | commit:72ea4f55 | p2a | 1 | PENDING | — | — | 0 | — | — | — |  |
