@@ -223,7 +223,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `tags use OR within field discipline and provider use AND`() {
         val scope = RecipientScope.fromSnapshot(
-            baseSnapshot(tags = listOf("t1", "t2"), emailDomain = "edu.cn", discipline = "STEM")
+            baseSnapshot(tags = listOf("t1", "t2"), emailDomains = listOf("edu.cn"), discipline = "STEM")
         )
         assertTrue(scope.matchesExpert(expert("0001", "a@edu.cn", tags = listOf("t2"), discipline = "STEM")))
         assertFalse(scope.matchesExpert(expert("0002", "b@edu.cn", tags = listOf("other"), discipline = "STEM")))
@@ -235,7 +235,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     fun `retry path applies same scope filters as ES matcher`() {
         val outreach = buildManualOutreachService()
         val scope = RecipientScope.fromSnapshot(
-            baseSnapshot(funnelLevel = "APPLICATION", tags = listOf("hot"), emailDomain = "mit.edu", discipline = "STEM")
+            baseSnapshot(funnelLevel = "APPLICATION", tags = listOf("hot"), emailDomains = listOf("mit.edu"), discipline = "STEM")
         )
         stubRetryContacts(
             outreach,
@@ -257,7 +257,7 @@ class BatchSendTaskRuntimeIntegrationTest {
     @Test
     fun `ES count path queries every funnel level in scope`() {
         val outreach = buildManualOutreachService()
-        val scope = RecipientScope.fromSnapshot(baseSnapshot(funnelLevel = null, emailDomain = "edu.cn"))
+        val scope = RecipientScope.fromSnapshot(baseSnapshot(funnelLevel = null, emailDomains = listOf("edu.cn")))
         Mockito.`when`(outreach.expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())))
             .thenReturn(3L)
         Mockito.`when`(outreach.expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())))
@@ -620,26 +620,26 @@ class BatchSendTaskRuntimeIntegrationTest {
         templateId: Long? = null,
         funnelLevel: String? = null,
         tagsJson: String = "[]",
-        emailDomain: String? = null,
+        emailDomainsJson: String = "[]",
         discipline: String? = null
     ) = BatchSendTaskConfig(
         id = id, configName = "cfg-$id", mailType = "INTRODUCTION", autoEnabled = true, cron = cron,
         roundSize = 10, perMailIntervalMs = 0, perRoundIntervalMs = 0,
         selfCheckTtlMinutes = 30, funnelLevel = funnelLevel, tagsJson = tagsJson,
-        emailDomain = emailDomain, discipline = discipline, templateId = templateId,
+        emailDomainsJson = emailDomainsJson, discipline = discipline, templateId = templateId,
         updatedAt = LocalDateTime.of(2026, 7, 14, 10, 0)
     )
 
     private fun baseSnapshot(
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
-        emailDomain: String? = null,
+        emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         templateId: Long? = null
     ) = BatchExecutionSnapshot(
         mailType = "INTRODUCTION", roundSize = 10,
         perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
-        funnelLevel = funnelLevel, tags = tags, emailDomain = emailDomain,
+        funnelLevel = funnelLevel, tags = tags, emailDomains = emailDomains,
         discipline = discipline, templateId = templateId
     )
 

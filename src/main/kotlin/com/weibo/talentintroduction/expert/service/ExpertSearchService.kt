@@ -113,6 +113,47 @@ class ExpertSearchService(
             )
         }
 
+        /**
+         * I2a-3: N 个邮箱域取 OR，产出**单个** filter 项；空集合返回 null（I2a-2，
+         * 调用方不得追加）。照 [regionsFilter] 的 should + minimum_should_match 范式。
+         */
+        fun emailDomainsFilter(emailDomains: List<String>): Map<String, Any>? {
+            val domains = emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (domains.isEmpty()) return null
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to domains.map {
+                        mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))
+                    },
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
+        /**
+         * 多域版 [notContactedWithEmailFilters]。**旧单值重载保持原样不动**（N2a-2）——
+         * 专家列表等路径仍在用它。
+         */
+        fun notContactedWithEmailDomainsFilters(
+            emailDomains: List<String> = emptyList(),
+            discipline: String? = null
+        ): List<Map<String, Any>> {
+            val filters = mutableListOf<Map<String, Any>>(
+                mapOf("exists" to mapOf("field" to "email")),
+                mapOf("bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                ))
+            )
+            emailDomainsFilter(emailDomains)?.let { filters.add(it) }
+            if (!discipline.isNullOrBlank()) {
+                filters.add(disciplineFilter(discipline))
+            }
+            return filters
+        }
+
         fun notContactedWithEmailFilters(
             emailDomain: String? = null,
             discipline: String? = null

@@ -998,7 +998,7 @@ class ManualInitialOutreachService(
             funnelLevels = setOf("CANDIDATE"),
             tags = emptyList(),
             regions = emptyList(),
-            emailDomain = emailDomain,
+            emailDomains = emailDomain?.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline
         )
         return buildRetryableTargets(campaignId, scope)
@@ -1127,7 +1127,7 @@ class ManualInitialOutreachService(
      */
     private fun buildMaterialReminderSnapshot(scope: RecipientScope, config: BatchSendConfig): MaterialReminderSnapshot {
         val scopeDescription = scope.funnelLevels.joinToString("+") + " + tags=${scope.tags}" +
-            (scope.emailDomain?.let { " + domain=$it" } ?: "") +
+            (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (scope.discipline?.let { " + discipline=$it" } ?: "")
         return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
     }
@@ -1139,11 +1139,11 @@ class ManualInitialOutreachService(
             tags = listOf("承诺回复材料"),
             // 统计路径输入为 BatchSendConfig（KV 层，无地区维度），故不携带地区；发送路径经 fromSnapshot 携带
             regions = emptyList(),
-            emailDomain = config.emailDomain.ifBlank { null },
+            emailDomains = config.emailDomain.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = config.discipline.ifBlank { null }
         )
         val scopeDescription = "APPLICATION + tag=承诺回复材料 + email" +
-            (if (config.emailDomain.isNotBlank()) " + domain=${config.emailDomain}" else "") +
+            (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (if (config.discipline.isNotBlank()) " + discipline=${config.discipline}" else "")
         return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
     }
@@ -1245,20 +1245,20 @@ class ManualInitialOutreachService(
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
         val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE") {
             if (scope.operatorStatus == null || scope.operatorStatus == "NOT_CONTACTED") {
-                // I-3: 留空（不限）与 NOT_CONTACTED 都走 notContactedWithEmailFilters 的 must_not exists 表达。
-                ExpertSearchService.notContactedWithEmailFilters(scope.emailDomain, scope.discipline).toMutableList()
+                // I-3: 留空（不限）与 NOT_CONTACTED 都走 notContactedWithEmailDomainsFilters 的 must_not exists 表达。
+                ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
             } else {
                 // I-2: 显式非 NOT_CONTACTED 状态与 notContactedWithEmailFilters 的 must_not exists operatorStatus
                 // 冲突（term 与 must_not 并存恒为空），必须换成状态无关基座 + operatorStatusFilter。
                 val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-                scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
+                ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
                 scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
                 base.addAll(ExpertSearchService.operatorStatusFilter(scope.operatorStatus))
                 base
             }
         } else {
             val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-            scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
+            ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
             scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
             // I-2: else 分支（APPLICATION / MATERIAL_REMINDER）同样按状态过滤（I-3 同款表达）。
             scope.operatorStatus?.let { base.addAll(ExpertSearchService.operatorStatusFilter(it)) }
@@ -1281,7 +1281,7 @@ class ManualInitialOutreachService(
             selfCheckTtlMinutes = selfCheckTtlMinutes,
             funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
             tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
-            emailDomain = emailDomain.ifBlank { null },
+            emailDomains = emailDomain.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline.ifBlank { null },
             templateId = templateId,
             oneRoundOnly = oneRoundOnly
@@ -1297,7 +1297,7 @@ class ManualInitialOutreachService(
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
             selfCheckTtlMinutes = selfCheckTtlMinutes,
-            emailDomain = emailDomain.orEmpty(),
+            emailDomain = emailDomains.firstOrNull().orEmpty(),
             discipline = discipline.orEmpty(),
             templateId = templateId
         )

@@ -572,7 +572,7 @@ class BatchSendControlService(
             funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
             tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
             regions = emptyList(),
-            emailDomain = emailDomain.ifBlank { null },
+            emailDomains = emailDomain.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline.ifBlank { null },
             templateId = templateId,
             oneRoundOnly = oneRoundOnly

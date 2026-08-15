@@ -15,7 +15,7 @@ data class BatchExecutionSnapshot(
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
     val regions: List<String> = emptyList(),
-    val emailDomain: String? = null,
+    val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatus: String? = null,
     val templateId: Long? = null,
@@ -50,7 +50,7 @@ data class RecipientScope(
     val funnelLevels: Set<String>,
     val tags: List<String>,
     val regions: List<String>,
-    val emailDomain: String?,
+    val emailDomains: List<String>,
     val discipline: String?,
     val operatorStatus: String? = null
 ) {
@@ -73,9 +73,11 @@ data class RecipientScope(
             }
             if (!matched) return false
         }
-        if (!emailDomain.isNullOrBlank()) {
+        // I2a-4: 与 ES 的 emailDomainsFilter 同口径 —— 多域取 OR；空集合不判定（I2a-2）。
+        if (emailDomains.isNotEmpty()) {
             val email = profile.email
-            if (email.isNullOrBlank() || !email.endsWith("@$emailDomain")) return false
+            if (email.isNullOrBlank()) return false
+            if (emailDomains.none { email.endsWith("@$it") }) return false
         }
         if (tags.isNotEmpty()) {
             val expertTags = profile.tags.orEmpty()
@@ -102,7 +104,8 @@ data class RecipientScope(
                 funnelLevels = levels,
                 tags = snapshot.tags,
                 regions = snapshot.regions,
-                emailDomain = snapshot.emailDomain?.trim()?.takeIf { it.isNotEmpty() },
+                // I2a-2 / I2a-5：trim、丢空、去重保序；空集合 = 不限。
+                emailDomains = snapshot.emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
                 operatorStatus = snapshot.operatorStatus?.trim()?.takeIf { it.isNotEmpty() }
             )
@@ -228,6 +231,15 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     } catch (_: Exception) {
         emptyList()
     }
+    // I2a-1/I2a-2: email_domains_json 是唯一事实源；解析失败按不限（空集合）处理。
+    val emailDomains = try {
+        objectMapper.readValue(emailDomainsJson, object : TypeReference<List<String>>() {})
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    } catch (_: Exception) {
+        emptyList()
+    }
     return BatchExecutionSnapshot(
         mailType = mailType,
         roundSize = roundSize,
@@ -238,7 +250,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
         operatorStatus = operatorStatus,
         templateId = templateId,

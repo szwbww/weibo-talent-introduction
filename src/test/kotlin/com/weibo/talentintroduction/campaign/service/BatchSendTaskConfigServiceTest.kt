@@ -65,7 +65,7 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
         regions: List<String> = emptyList(),
-        emailDomain: String? = null,
+        emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         templateId: Long? = null
     ) = BatchSendTaskConfigCreateCommand(
@@ -80,7 +80,7 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
         templateId = templateId
     )
@@ -97,7 +97,7 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
         regions: List<String> = emptyList(),
-        emailDomain: String? = null,
+        emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         templateId: Long? = null
     ) = BatchSendTaskConfigUpdateCommand(
@@ -112,7 +112,7 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
         templateId = templateId
     )
@@ -126,7 +126,7 @@ class BatchSendTaskConfigServiceTest {
         roundsPerRun: Int = 1,
         tagsJson: String = "[]",
         funnelLevel: String? = null,
-        emailDomain: String? = null,
+        emailDomainsJson: String = "[]",
         discipline: String? = null,
         templateId: Long? = null,
         deletedAt: LocalDateTime? = null,
@@ -144,7 +144,7 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes = 30,
         funnelLevel = funnelLevel,
         tagsJson = tagsJson,
-        emailDomain = emailDomain,
+        emailDomainsJson = emailDomainsJson,
         discipline = discipline,
         templateId = templateId,
         deletedAt = deletedAt,
@@ -293,17 +293,18 @@ class BatchSendTaskConfigServiceTest {
                 name = "范围任务",
                 funnelLevel = "ALL",
                 tags = listOf("  beta ", "alpha", "beta", " "),
-                emailDomain = "ALL",
+                emailDomains = emptyList(),
                 discipline = ""
             )
         )
 
         assertNull(view.funnelLevel)
         assertEquals(listOf("alpha", "beta"), view.tags)
-        assertNull(view.emailDomain)
+        assertTrue(view.emailDomains.isEmpty())
         assertNull(view.discipline)
         verify(repository).save(captor.capture())
         assertEquals("""["alpha","beta"]""", captor.value.tagsJson)
+        assertEquals("[]", captor.value.emailDomainsJson)
         assertNull(captor.value.funnelLevel)
     }
 
@@ -468,7 +469,7 @@ class BatchSendTaskConfigServiceTest {
             id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
             autoEnabled = true, cron = "0 0 7 * * ?", roundSize = 10,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            emailDomain = "edu.cn", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
+            emailDomainsJson = """["edu.cn"]""", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(entity)
@@ -507,7 +508,7 @@ class BatchSendTaskConfigServiceTest {
             id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -541,7 +542,8 @@ class BatchSendTaskConfigServiceTest {
         assertEquals("CANDIDATE", captor.value.funnelLevel)
         assertEquals("""["保留标签"]""", captor.value.tagsJson)
         assertEquals("0 30 8 * * ?", captor.value.cron)
-        assertEquals("ox.ac.uk", captor.value.emailDomain)
+        // M-2/I2a-6: legacy request's degraded single emailDomain must never rebuild the entity json.
+        assertEquals("[]", captor.value.emailDomainsJson)
         assertEquals("HUMANITIES", captor.value.discipline)
         assertTrue(captor.value.autoEnabled)
         assertEquals("0 30 8 * * ?", updated.cron)
@@ -590,7 +592,7 @@ class BatchSendTaskConfigServiceTest {
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -710,7 +712,7 @@ class BatchSendTaskConfigServiceTest {
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", regionsJson = """["Europe"]""",
-            emailDomain = null, discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            emailDomainsJson = "[]", discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
@@ -740,6 +742,130 @@ class BatchSendTaskConfigServiceTest {
         verify(repository).save(captor.capture())
         // X-2/K-batch-config-legacy-adapter-field-preservation: legacy request has no regions dimension; entity value must survive.
         assertEquals("""["Europe"]""", captor.value.regionsJson)
+    }
+
+    // ── P2a: emailDomains multi-value ─────────────────────────────────────────
+
+    @Test
+    fun `create persists emailDomains multi-value and get returns them in order (I2a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("多域任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 40L)
+        }
+
+        val view = service().create(createCmd(name = "多域任务", emailDomains = listOf("a.com", "b.com")))
+
+        assertEquals(listOf("a.com", "b.com"), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("""["a.com","b.com"]""", captor.value.emailDomainsJson)
+
+        // row → View mapping carries the field too (I2a-1: snapshot path reads emailDomainsJson)
+        `when`(repository.findByIdAndDeletedAtIsNull(40L)).thenReturn(captor.value.copy(id = 40L))
+        assertEquals(listOf("a.com", "b.com"), service().get(40L).emailDomains)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate emailDomains (I2a-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("域名去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 41L)
+        }
+
+        val view = service().create(
+            createCmd(name = "域名去重", emailDomains = listOf("  a.com  ", "", "a.com"))
+        )
+
+        assertEquals(listOf("a.com"), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("""["a.com"]""", captor.value.emailDomainsJson)
+    }
+
+    @Test
+    fun `create rejects emailDomain containing comma (I2a-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("逗号域名")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "逗号域名", emailDomains = listOf("a,b.com")))
+        }
+        assertTrue(ex.message!!.contains("emailDomain must not contain a comma"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create with empty emailDomains persists empty json and view returns empty (I2a-2)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无域名")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 42L)
+        }
+
+        val view = service().create(createCmd(name = "无域名"))
+
+        assertEquals(emptyList<String>(), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.emailDomainsJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing emailDomainsJson entity value (I2a-6)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = """["a.com","b.com"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        val updated = service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2/I2a-6: legacy request carries only the degraded single emailDomain; the entity's
+        // multi-value json must survive — never rebuilt from request.emailDomain.
+        assertEquals("""["a.com","b.com"]""", captor.value.emailDomainsJson)
+        assertEquals("a.com", updated.emailDomain)
+    }
+
+    @Test
+    fun `getLegacyConfig degrades multi emailDomains to first (I2a-6)`() {
+        val entity = BatchSendTaskConfig(
+            id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = true, cron = "0 0 7 * * ?", roundSize = 10,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            emailDomainsJson = """["a.com","b.com"]""", discipline = null, templateId = null,
+            legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(entity)
+
+        val config = service().getLegacyConfig(BatchSendType.INTRODUCTION)
+
+        assertEquals("a.com", config.emailDomain)
     }
 
     // ── 04a: nextFireTime / lastExecutedAt / cron preview ─────────────────────────

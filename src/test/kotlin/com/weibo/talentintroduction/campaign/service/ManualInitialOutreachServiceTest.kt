@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -1213,7 +1214,8 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com")
+        // P2a: 单值配置经 KV 桥接成单元素 list，ES 侧走多域版过滤器。
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"))
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -1247,7 +1249,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com", "HUMANITIES")
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"), "HUMANITIES")
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3168,7 +3170,7 @@ class ManualInitialOutreachServiceTest {
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = "[]", regionsJson = "[]",
-            emailDomain = null, discipline = null, operatorStatus = "NOT_CONTACTED",
+            emailDomainsJson = "[]", discipline = null, operatorStatus = "NOT_CONTACTED",
             templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -3200,6 +3202,93 @@ class ManualInitialOutreachServiceTest {
         // I-4: 旧 typed API 只改 cron，operatorStatus 必须显式保留（漏写会命中 Kotlin 默认值静默重置）。
         Mockito.verify(configRepository).save(captor.capture())
         assertEquals("NOT_CONTACTED", captor.value.operatorStatus)
+    }
+
+    // ── P2a: emailDomains multi-value（I2a-2 / I2a-3 / I2a-4）──────────────────
+
+    @Test
+    fun `buildEsFiltersForLevel produces exactly one should OR for multi emailDomains (I2a-3)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = listOf("a.com", "b.com"), discipline = null
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        @Suppress("UNCHECKED_CAST")
+        val shouldBlocks = filters.mapNotNull { it["bool"] as? Map<String, Any> }
+            .filter { it["should"] is List<*> }
+        assertEquals(1, shouldBlocks.size, "exactly one bool.should filter for N domains")
+        val should = shouldBlocks.single()
+        assertEquals(1, should["minimum_should_match"])
+        val shouldList = should["should"] as List<*>
+        assertEquals(2, shouldList.size)
+        val wildcardValues = shouldList.map { item ->
+            val wildcard = (item as Map<*, *>)["wildcard"] as Map<*, *>
+            val email = wildcard["email"] as Map<*, *>
+            email["value"]
+        }
+        assertEquals(listOf("*@a.com", "*@b.com"), wildcardValues)
+    }
+
+    @Test
+    fun `buildEsFiltersForLevel emits no email wildcard for empty emailDomains (I2a-2)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        assertTrue(filters.none { it.containsKey("wildcard") }, "empty domains must not emit any wildcard filter")
+        assertTrue(
+            filters.none { (it["bool"] as? Map<*, *>)?.containsKey("should") == true },
+            "empty domains must not emit any bool.should filter"
+        )
+    }
+
+    @Test
+    fun `matchesExpert applies emailDomains any-OR and skips judgment when empty (I2a-2 I2a-4)`() {
+        val scoped = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = listOf("a.com", "b.com"), discipline = null
+        )
+        assertTrue(scoped.matchesExpert(expert("0001", "x@b.com")))
+        assertFalse(scoped.matchesExpert(expert("0002", "x@c.com")))
+
+        // I2a-2: 空集合 = 不限 —— 即使 profile 无 email 也不判定。
+        val unrestricted = scoped.copy(emailDomains = emptyList())
+        assertTrue(
+            unrestricted.matchesExpert(
+                ExpertProfile(
+                    orcidId = "0003", email = null, givenNames = "G", familyNames = "F",
+                    country = null, keyword = null, employment = null
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `matchesExpert agrees with emailDomainsFilter semantics per profile (I2a-4)`() {
+        val domains = listOf("a.com", "b.com")
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = domains, discipline = null
+        )
+        val profiles = listOf(
+            expert("0001", "x@a.com"),
+            expert("0002", "x@b.com"),
+            expert("0003", "x@c.com"),
+            expert("0004", "no-at-sign"),
+            expert("0005", "")
+        )
+        profiles.forEach { profile ->
+            val email = profile.email
+            val expected = email != null && domains.any { email.endsWith("@$it") }
+            assertEquals(expected, scope.matchesExpert(profile), "parity mismatch for email=${profile.email}")
+        }
     }
 
     // ──── Helpers ────
@@ -3256,6 +3345,19 @@ class ManualInitialOutreachServiceTest {
 
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
+
+    private fun invokeBuildEsFiltersForLevel(
+        service: ManualInitialOutreachService,
+        scope: RecipientScope,
+        level: String
+    ): List<Map<String, Any>> {
+        val method = ManualInitialOutreachService::class.java.getDeclaredMethod(
+            "buildEsFiltersForLevel", RecipientScope::class.java, String::class.java
+        )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return method.invoke(service, scope, level) as List<Map<String, Any>>
+    }
 
     private fun <T> eqValue(value: T): T =
         Mockito.eq(value) ?: value

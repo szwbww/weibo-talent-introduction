@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.DuplicateKeyException
@@ -31,6 +32,8 @@ class BatchSendTaskConfigService(
     private val eventPublisher: ApplicationEventPublisher,
     private val taskExecutionService: TaskExecutionService
 ) {
+
+    private val log = LoggerFactory.getLogger(BatchSendTaskConfigService::class.java)
 
     fun list(query: String?): List<BatchSendTaskConfigView> {
         val trimmed = query?.trim().orEmpty()
@@ -69,7 +72,7 @@ class BatchSendTaskConfigService(
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
                 regionsJson = normalized.regionsJson,
-                emailDomain = normalized.emailDomain,
+                emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
                 operatorStatus = normalized.operatorStatus,
                 templateId = normalized.templateId,
@@ -102,7 +105,7 @@ class BatchSendTaskConfigService(
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
                 regionsJson = normalized.regionsJson,
-                emailDomain = normalized.emailDomain,
+                emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
                 operatorStatus = normalized.operatorStatus,
                 templateId = normalized.templateId,
@@ -182,7 +185,7 @@ class BatchSendTaskConfigService(
                 funnelLevel = existing.funnelLevel,
                 tags = parseTags(existing.tagsJson),
                 regions = parseRegions(existing.regionsJson),
-                emailDomain = request.emailDomain.ifBlank { null },
+                emailDomains = parseEmailDomains(existing.emailDomainsJson),
                 discipline = request.discipline.ifBlank { null },
                 operatorStatus = existing.operatorStatus,
                 templateId = request.templateId
@@ -197,7 +200,7 @@ class BatchSendTaskConfigService(
             perMailIntervalMs = view.perMailIntervalMs,
             perRoundIntervalMs = view.perRoundIntervalMs,
             selfCheckTtlMinutes = view.selfCheckTtlMinutes,
-            emailDomain = view.emailDomain.orEmpty(),
+            emailDomain = view.emailDomains.firstOrNull().orEmpty(),
             discipline = view.discipline.orEmpty(),
             templateId = view.templateId
         )
@@ -224,7 +227,7 @@ class BatchSendTaskConfigService(
             perMailIntervalMs = row.perMailIntervalMs,
             perRoundIntervalMs = row.perRoundIntervalMs,
             selfCheckTtlMinutes = row.selfCheckTtlMinutes,
-            emailDomain = row.emailDomain.orEmpty(),
+            emailDomain = parseEmailDomains(row.emailDomainsJson).firstOrNull().orEmpty(),
             discipline = row.discipline.orEmpty(),
             templateId = row.templateId
         )
@@ -252,7 +255,16 @@ class BatchSendTaskConfigService(
         }
 
         val funnelLevel = normalizeFunnelLevel(fields.funnelLevel)
-        val emailDomain = normalizeOptionalFilter(fields.emailDomain)
+        // I2a-2 / I2a-5：trim、丢空、去重保序；空集合 = 不限。逗号是前端 picker 的
+        // 分隔符（K-batch-picker-comma-delimited-contract），含逗号的域名会在回显时被拆坏。
+        val emailDomains = fields.emailDomains
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        emailDomains.forEach {
+            require(!it.contains(",")) { "emailDomain must not contain a comma: $it" }
+        }
+        val emailDomainsJson = objectMapper.writeValueAsString(emailDomains)
         val discipline = normalizeOptionalFilter(fields.discipline)
         if (discipline != null) {
             require(discipline in ALLOWED_DISCIPLINES) {
@@ -287,7 +299,7 @@ class BatchSendTaskConfigService(
             funnelLevel = funnelLevel,
             tagsJson = tagsJson,
             regionsJson = regionsJson,
-            emailDomain = emailDomain,
+            emailDomainsJson = emailDomainsJson,
             discipline = discipline,
             operatorStatus = operatorStatus,
             templateId = fields.templateId
@@ -378,6 +390,18 @@ class BatchSendTaskConfigService(
             emptyList()
         }
 
+    private fun parseEmailDomains(json: String?): List<String> {
+        val text = json?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        return try {
+            objectMapper.readValue(text, object : TypeReference<List<String>>() {})
+                .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        } catch (e: Exception) {
+            log.warn("Failed to parse email_domains_json, treating as unrestricted: {}", e.message)
+            emptyList()
+        }
+    }
+
     private fun toView(row: BatchSendTaskConfig, lastExecutedAt: LocalDateTime? = null): BatchSendTaskConfigView {
         val id = row.id ?: error("Batch send task config id is required")
         return BatchSendTaskConfigView(
@@ -394,7 +418,7 @@ class BatchSendTaskConfigService(
             funnelLevel = row.funnelLevel,
             tags = parseTags(row.tagsJson),
             regions = parseRegions(row.regionsJson),
-            emailDomain = row.emailDomain,
+            emailDomains = parseEmailDomains(row.emailDomainsJson),
             discipline = row.discipline,
             operatorStatus = row.operatorStatus,
             templateId = row.templateId,
@@ -485,7 +509,7 @@ class BatchSendTaskConfigService(
         val funnelLevel: String?,
         val tags: List<String>,
         val regions: List<String>,
-        val emailDomain: String?,
+        val emailDomains: List<String>,
         val discipline: String?,
         val operatorStatus: String?,
         val templateId: Long?
@@ -504,7 +528,7 @@ class BatchSendTaskConfigService(
         val funnelLevel: String?,
         val tagsJson: String,
         val regionsJson: String,
-        val emailDomain: String?,
+        val emailDomainsJson: String,
         val discipline: String?,
         val operatorStatus: String?,
         val templateId: Long?
@@ -522,7 +546,7 @@ class BatchSendTaskConfigService(
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
         operatorStatus = operatorStatus,
         templateId = templateId
@@ -540,7 +564,7 @@ class BatchSendTaskConfigService(
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
         operatorStatus = operatorStatus,
         templateId = templateId
@@ -558,7 +582,7 @@ class BatchSendTaskConfigService(
         funnelLevel = funnelLevel,
         tags = parseTags(tagsJson),
         regions = parseRegions(regionsJson),
-        emailDomain = emailDomain,
+        emailDomains = parseEmailDomains(emailDomainsJson),
         discipline = discipline,
         operatorStatus = operatorStatus,
         templateId = templateId
