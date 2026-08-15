@@ -5,7 +5,7 @@
 - Child plan: `docs/plans/2026-08-15/p3a-operator-status-multi-backend.md` (commit 72ea4f55) — **the complete contract. Read it in full before implementing** (also read master plan M-1..M-5, X-1..X-3).
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/batch-task-filters`
 - Branch: `fast/batch-task-filters`
-- Child base SHA: `<p2a code head — recorded in the dispatch prompt>`
+- Child base SHA: `f3ca1abe` (p2b terminal code head; p2a V97 committed on branch)
 
 ## Prerequisite (P2a, verified/committed on branch)
 P2a delivered: V96 migration taken (next free version is **V97**), `buildEsFiltersForLevel` now multi-domain shape — `notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline)`, `emailDomainsFilter(scope.emailDomains)`, `RecipientScope.emailDomains`. Build on that exact shape; do not re-verify.
