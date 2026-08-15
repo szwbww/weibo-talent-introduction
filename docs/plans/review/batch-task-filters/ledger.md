@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-15/batch-task-filters-main.md
+
+- Status: MACHINE_BLOCKED
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-15/batch-task-filters-main.md (sha256 0d19d05bc7ac4d737658231df5de86eb83ccd9c7c2195f87dfd32e32fe90cf1f)
+- Governing master identity: worktree sha256 0d19d05bc7ac4d737658231df5de86eb83ccd9c7c2195f87dfd32e32fe90cf1f; recorded commit d6980764
+- Invoked master identity: sha256 2b5cca8a5589a9b09af6379b82ae4221e7b6ef9290877dd75795ae6dedc39556
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A1 — X-2 迁移版本审计（「下一个可用版本号」）与「迁移版本必须依序占用」; V96 已存在，版本分配 V96→V97 / V97→V98 / V98→V99; HUMAN:Approve A1 (V97/V98/V99) via ask 2026-08-15
+- Amendments: A1–A7 recorded in docs/plans/fast/batch-task-filters/ledger.md
+- Fast-p ledger: docs/plans/fast/batch-task-filters/ledger.md (sha256 1e7bc02e74ae401209d518e3ae954b29734455993fae50fd18f0e084843be80f)
+- Fast-p handoff: docs/plans/fast/batch-task-filters/human-review-handoff.md (sha256 b97d65e76850ffd9a51da2380d76966b0b6bc6b609a7910d2f7874da92ce8772)
+- Master base: b59876d5f9a98c36622ec6766d359e368b7e89f6
+- Final code head: e61cc5e
+- Evidence parent before next commit: 492ab746080881274f725790025d82040af8714d
+- Previous evidence commit: N/A
+- Branch: fast/batch-task-filters
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/batch-task-filters
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; exact master path; branch fast/batch-task-filters; READY_FOR_HUMAN_REVIEW; all 7 children terminal; base b59876d5f9a98c36622ec6766d359e368b7e89f6; final code e61cc5e; governing master identity/recorded amendment A1 returned by discover_fast_p.py.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh independent reviewer, created after e61cc5e)
+- Reviewer attempt: 1
+- Machine result: BLOCKED
+- Machine report epoch: docs/plans/review/batch-task-filters/machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Docker/Testcontainers unavailable for mandatory `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` (exit 1; Docker socket unavailable). Start Docker, then resume this exact review boundary.
