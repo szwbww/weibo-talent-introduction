@@ -338,8 +338,9 @@ ALTER TABLE batch_send_task_config
 | 8 | `src/test/kotlin/.../campaign/service/BatchSendTaskConfigServiceTest.kt` | 修改 |
 | 9 | `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` | 修改 |
 | 10 | `src/test/kotlin/.../campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | 修改（构造适配） |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 修改（**A7 授权**：`EXCLUDED_NOISE_SITES` 维护 —— ExpertSearchService 419→431 行号刷新（上下文 `operatorStatus = source.nullableText` 不变）。M-5：守卫判定逻辑一行不改） |
 
-文件数：**10**（≤10 ✅，已到上限 —— 执行中若发现需改第 11 个文件，**停下来报告，不要顺手改**）
+文件数：**11**（原 10 上限 + A7 授权放宽 1 个测试文件；执行中若发现仍需改第 12 个文件，**停下来报告**）
 子系统数：**2** ✅
 
 **不改**：`PersonalizationGateService.kt`、`IntroductionMailComposer.kt`、`ManualExpertMailService.kt`、`MailComposeTemplateService.kt`、`MailComposeTemplateController.kt`、`app.js`、`index.html`、`styles.css`。
