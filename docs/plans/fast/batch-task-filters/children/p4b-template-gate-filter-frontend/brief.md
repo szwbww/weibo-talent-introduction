@@ -5,7 +5,7 @@
 - Child plan: `docs/plans/2026-08-15/p4b-template-gate-filter-frontend.md` (commit 72ea4f55 — unaffected by A1) — **the complete contract. Read it in full before implementing** (also read master plan X-3 and P4a's I4a-3 for the drop-set rationale).
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/batch-task-filters`
 - Branch: `fast/batch-task-filters`
-- Child base SHA: `<p4a code head — recorded in the dispatch prompt>` (after p3b is also on branch)
+- Child base SHA: `9cde7473` (p4a terminal code head; p3b foundation committed on branch)
 
 ## Prerequisites (verified on branch before dispatch)
 - P4a committed: backend accepts `gateFilterEnabled: boolean`; `BatchSendTaskConfigView.gateFilterEnabled`; `RecipientScope.gateEsFields`; `ExpertSearchService.fieldPresenceFilters`; DTO shape unchanged.
