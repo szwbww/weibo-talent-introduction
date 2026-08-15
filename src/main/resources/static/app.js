@@ -13494,6 +13494,17 @@ function showBatchConfigEditorForm() {
     showBatchConfigEditor(null);
 }
 
+/* cron 白名单反解的两个纯 helper（I1-1）。分钟 0-59、小时 0-23 才算合法时钟；
+   正则已保证是 1-2 位数字，此处只做范围判定。 */
+function isCronClock(minText, hourText) {
+    var min = Number(minText), hour = Number(hourText);
+    return min >= 0 && min <= 59 && hour >= 0 && hour <= 23;
+}
+
+function padClock(hourText, minText) {
+    return String(hourText).padStart(2, "0") + ":" + String(minText).padStart(2, "0");
+}
+
 function showBatchConfigEditor(config) {
     var editor = document.getElementById("batchConfigEditor");
     if (!editor) return;
@@ -13523,18 +13534,26 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorSelfCheckTtlMin", config ? config.selfCheckTtlMinutes : "30");
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
 
-    // Parse cron to frequency + time; anything not matching the three known modes is "custom"
-    var freq = "daily", time = "09:00";
+    // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
+    // 每小时 / 每天 / 每周一；其余（范围、列表、步长、工作日、月/日限制…）
+    // 一律 custom 并原样回填，避免有损反解在保存时把表达式改写掉。
+    var freq = "daily", time = "09:00", customCron = "";
     if (config && config.cron) {
-        var cronParts = config.cron.trim().split(/\s+/);
-        if (cronParts.length >= 5) {
-            var hour = cronParts[2], min = cronParts[1], dow = cronParts[5];
-            if (hour === "*" || hour === "*/1") { freq = "hourly"; time = ""; }
-            else if (dow === "MON" || dow === "TUE" || dow === "WED" || dow === "THU" || dow === "FRI" || dow === "SAT" || dow === "SUN") { freq = "weekly"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
-            else if (!dow || dow === "?" || dow === "*") { freq = "daily"; time = (hour || "0").padStart(2, "0") + ":" + (min || "0").padStart(2, "0"); }
-            else { freq = "custom"; setVal("batchConfigEditorCron", config.cron); }
+        var raw = String(config.cron).trim();
+        var m;
+        if (/^0 0 (\*|\*\/1) \* \* \?$/.test(raw)) {
+            freq = "hourly"; time = "";
+        } else if ((m = /^0 (\d{1,2}) (\d{1,2}) \* \* \?$/.exec(raw)) && isCronClock(m[1], m[2])) {
+            freq = "daily"; time = padClock(m[2], m[1]);
+        } else if ((m = /^0 (\d{1,2}) (\d{1,2}) \? \* MON$/.exec(raw)) && isCronClock(m[1], m[2])) {
+            freq = "weekly"; time = padClock(m[2], m[1]);
+        } else {
+            freq = "custom"; customCron = raw;
         }
     }
+    // I1-2：两条路径都显式写值。编辑器 DOM 复用，不清空会把上一条任务的
+    // 表达式留在框里，用户切到 custom 时会把别的任务的调度保存进来。
+    setVal("batchConfigEditorCron", customCron);
     setVal("batchConfigEditorFrequency", freq);
     setVal("batchConfigEditorTime", time);
     syncBatchConfigEditorScheduleFields();

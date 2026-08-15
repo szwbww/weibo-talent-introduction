@@ -496,12 +496,376 @@ describe("batch send task console interactions", () => {
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
 
         sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
 
         assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
         assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+    });
+
+    it("U1: echoes a range cron (0 0 9-17 * * ?) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9-17 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9-17 * * ?");
+    });
+
+    it("U2: echoes a list cron (0 0 9,12,15 * * ?) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9,12,15 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9,12,15 * * ?");
+    });
+
+    it("U3: does not drop the day-of-month field (0 0 9 1 * ? stays custom) (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 1 * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9 1 * ?");
+    });
+
+    it("U4: echoes a weekday-range cron (0 0 9 ? * MON-FRI) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 ? * MON-FRI", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9 ? * MON-FRI");
+    });
+
+    it("U5: echoes hourly cron (0 0 * * * ?) as hourly with empty time and cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 * * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "hourly");
+        assert.strictEqual(el("batchConfigEditorTime").value, "");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U6: echoes daily cron (0 15 3 * * ?) as daily 03:15 with empty cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U7: echoes weekly cron (0 30 9 ? * MON) as weekly 09:30 with empty cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 30 9 ? * MON", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "weekly");
+        assert.strictEqual(el("batchConfigEditorTime").value, "09:30");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U8: rejects an out-of-range minute (0 70 9 * * ?) as custom (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 70 9 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 70 9 * * ?");
+    });
+
+    it("U9: clears the cron box when the reused DOM switches from custom to daily (I1-2)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务A", cron: "0 0 9-17 * * ?", tags: [], regions: [] });
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9-17 * * ?");
+
+        sandbox.showBatchConfigEditor({ id: 2, configName: "任务B", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+        assert.strictEqual(el("batchConfigEditorCron").value, "", "reused DOM must not leak task A's cron");
+    });
+
+    it("U10: new task (null config) keeps daily 09:00 defaults with an empty cron box (I1-3)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            fillBatchConfigEditorProviderSelect: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor(null);
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "09:00");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U11: custom mode saves the raw range cron verbatim through saveBatchConfigEditor (N1-2)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "自定义任务";
+        el("batchConfigEditorFrequency").value = "custom";
+        el("batchConfigEditorTime").value = "08:00";
+        el("batchConfigEditorCron").value = "0 0 9-17 * * ?";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.strictEqual(apiBodies[0].cron, "0 0 9-17 * * ?", "custom mode must save the range cron verbatim");
     });
 
     it("showBatchConfigEditor echoes an unmatched cron as custom with the raw expression (I-2)", () => {
