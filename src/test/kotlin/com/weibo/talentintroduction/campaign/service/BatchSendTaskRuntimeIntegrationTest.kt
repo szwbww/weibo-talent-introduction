@@ -662,7 +662,8 @@ class BatchSendTaskRuntimeIntegrationTest {
             Mockito.mock(AutoReplySettingService::class.java),
             Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java),
             Mockito.mock(TaskExecutionService::class.java),
-            Mockito.mock(SenderAccountBindingService::class.java)
+            Mockito.mock(SenderAccountBindingService::class.java),
+            Mockito.mock(MailComposeTemplateService::class.java)
         )
         return ManualOutreachHarness(service, expertSearchService, expertContactRepository, mailRecordRepository)
     }

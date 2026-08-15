@@ -38,7 +38,7 @@ class ExpertSearchService(
          * `exists` check is combined with `must_not term ""` so blank values do
          * not count as present; for `text` fields a bare `exists` is used (I-9).
          */
-        private fun fieldPresenceFilter(field: String): Map<String, Any> =
+        fun fieldPresenceFilter(field: String): Map<String, Any> =
             if (field in BLANK_EXCLUDABLE_FIELDS) {
                 mapOf(
                     "bool" to mapOf(
@@ -48,6 +48,18 @@ class ExpertSearchService(
                 )
             } else {
                 mapOf("exists" to mapOf("field" to field))
+            }
+
+        /**
+         * I4a-2: 门禁字段之间是 AND —— 每个字段产出一个独立 filter，由调用方平铺进
+         * bool.filter。空集合返回空列表（I4a-1）。
+         * 调用方必须已把字段裁剪到 [ALLOWED_HAS_FIELDS] 之内（I4a-3）；此处仍保留
+         * require 作为兜底，越界即 fail-fast，不静默忽略。
+         */
+        fun fieldPresenceFilters(fields: List<String>): List<Map<String, Any>> =
+            fields.distinct().map {
+                require(it in ALLOWED_HAS_FIELDS) { "Invalid gate ES field: $it" }
+                fieldPresenceFilter(it)
             }
 
         val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")

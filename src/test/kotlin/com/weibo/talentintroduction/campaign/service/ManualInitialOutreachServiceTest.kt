@@ -48,6 +48,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
@@ -80,6 +81,7 @@ class ManualInitialOutreachServiceTest {
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
     private val manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java)
     private val taskExecutionService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+    private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val providerResolver = ProviderResolver()
     private val senderWarmupService = SenderWarmupService(
         WarmupProperties(
@@ -113,7 +115,8 @@ class ManualInitialOutreachServiceTest {
         autoReplySettingService = autoReplySettingService,
         manualExpertMailService = manualExpertMailService,
         taskExecutionService = taskExecutionService,
-        senderAccountBindingService = senderAccountBindingService
+        senderAccountBindingService = senderAccountBindingService,
+        mailComposeTemplateService = mailComposeTemplateService
     )
 
     private fun fastConfig(
@@ -3507,6 +3510,285 @@ class ManualInitialOutreachServiceTest {
         }
     }
 
+    // ── P4a: 邮件模版门禁过滤（I4a-1..I4a-6 / M-1 / M-2 / M-4）────────────────────
+
+    @Test
+    fun `gateFilterEnabled false keeps pre-change baseline filters verbatim (I4a-1)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            gateFilterEnabled = false
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        // fromSnapshot 不解析门禁字段（I4a-4：解析只在 resolveScope），开关关闭 → 默认空。
+        assertEquals(emptyList<String>(), scope.gateEsFields)
+
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        // 改动前基线逐字硬编码（I4a-1 / N4a-1）：门禁关闭时不追加任何 filter。
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline, filters)
+        // 开关关闭时不得触碰模板解析。
+        Mockito.verify(mailComposeTemplateService, Mockito.never()).requiredEsFields(Mockito.anyLong())
+    }
+
+    @Test
+    fun `gateFilterEnabled true without template keeps pre-change baseline filters verbatim (I4a-1)`() {
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            templateId = null,
+            gateFilterEnabled = true
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        assertEquals(emptyList<String>(), scope.gateEsFields)
+
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline, filters)
+        // 无 templateId → resolveScope 提前返回，不查模板。
+        Mockito.verify(mailComposeTemplateService, Mockito.never()).requiredEsFields(Mockito.anyLong())
+    }
+
+    @Test
+    fun `gateFilterEnabled true with empty template required keys keeps baseline verbatim (I4a-1)`() {
+        Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(emptyList())
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            templateId = 42L,
+            gateFilterEnabled = true
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        assertEquals(emptyList<String>(), scope.gateEsFields)
+
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline, filters)
+    }
+
+    @Test
+    fun `gate fields AND two independent presence filters flat in bool filter (I4a-2)`() {
+        Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("institution", "researchFields"))
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            templateId = 42L,
+            gateFilterEnabled = true
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        assertEquals(listOf("institution", "researchFields"), scope.gateEsFields)
+
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        // I4a-2: 基线 2 项 + 恰好 2 项门禁 filter（每字段一个独立 filter，平铺进 bool.filter）。
+        assertEquals(4, filters.size)
+        assertEquals(mapOf("exists" to mapOf("field" to "institution")), filters[2])
+        assertEquals(
+            mapOf(
+                "bool" to mapOf(
+                    "must" to listOf(mapOf("exists" to mapOf("field" to "researchFields"))),
+                    "must_not" to listOf(mapOf("term" to mapOf("researchFields" to "")))
+                )
+            ),
+            filters[3]
+        )
+        // 门禁语义是 AND（任一缺失即拦）：任何 filter 都不得是 should 块。
+        val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(filters)
+        assertFalse(json.contains("\"should\""), "gate filters must be AND (flat), not should")
+    }
+
+    @Test
+    fun `gate fields outside ALLOWED_HAS_FIELDS are dropped without throwing (I4a-3)`() {
+        Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("institution", "keyword", "hIndex"))
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            templateId = 42L,
+            gateFilterEnabled = true
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        // I4a-3: 差集字段（keyword/hIndex）在 resolveScope 被裁剪，只保留交集。
+        assertEquals(listOf("institution"), scope.gateEsFields)
+
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        assertEquals(3, filters.size)
+        assertEquals(mapOf("exists" to mapOf("field" to "institution")), filters[2])
+    }
+
+    @Test
+    fun `fieldPresenceFilters fails fast on fields outside ALLOWED_HAS_FIELDS (I4a-3)`() {
+        // 兜底 require：若调用方未裁剪就把越界字段传进来，必须 fail-fast 而非静默忽略。
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            ExpertSearchService.fieldPresenceFilters(listOf("keyword"))
+        }
+        assertTrue(ex.message!!.contains("Invalid gate ES field"))
+        // 空集合返回空列表（I4a-1）。
+        assertEquals(emptyList<Map<String, Any>>(), ExpertSearchService.fieldPresenceFilters(emptyList()))
+    }
+
+    @Test
+    fun `preview and execution resolve identical gateEsFields for same snapshot (I4a-4)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("institution"))
+
+        // 门禁开启的预期 filter 列表：基线 + institution 存在性 filter（I4a-2 平铺）。
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
+        expectedFilters.add(mapOf("exists" to mapOf("field" to "institution")))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(1L)
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            templateId = 42L,
+            gateFilterEnabled = true
+        )
+
+        // 预估路径（countBySnapshot → resolveScope → countEsTargets）
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(1, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(1, preview.totalSendable)
+
+        // 执行路径（无可用账号 → 停在轮次闸口，不发信）
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12346L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total)
+
+        // I4a-4 / M-4: 两条路径对同一 snapshot 使用完全相同的 filter 列表（同源同口径）。
+        // 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage
+        // 首页预取(1，OutreachTargetIterator.hasNext 在轮次闸口前拉首页)；全部命中同一列表。
+        Mockito.verify(expertSearchService, Mockito.times(3))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `matchesExpert agrees with fieldPresenceFilter semantics per profile (I4a-5)`() {
+        data class Case(val field: String, val profile: ExpertProfile, val expected: Boolean, val label: String)
+
+        val base = expert("0001", "a@b.com")
+        val cases = listOf(
+            // employment / institution 非 BLANK_EXCLUDABLE：ES 仅 exists，空串算有值（!= null）。
+            Case("employment", base.copy(employment = null), false, "employment=null"),
+            Case("employment", base.copy(employment = ""), true, "employment=\"\" (ES exists 为真)"),
+            Case("employment", base.copy(employment = "X University"), true, "employment=value"),
+            Case("institution", base.copy(institution = null), false, "institution=null"),
+            Case("institution", base.copy(institution = ""), true, "institution=\"\" (ES exists 为真)"),
+            Case("institution", base.copy(institution = "Tsinghua"), true, "institution=value"),
+            // BLANK_EXCLUDABLE：ES 是 exists AND NOT term ""，空串不算有值。
+            Case("degree", base.copy(degree = null), false, "degree=null"),
+            Case("degree", base.copy(degree = ""), false, "degree=\"\" (ES must_not term \"\")"),
+            Case("degree", base.copy(degree = "PhD"), true, "degree=value"),
+            Case("researchFields", base.copy(researchFields = null), false, "researchFields=null"),
+            Case("researchFields", base.copy(researchFields = ""), false, "researchFields=\"\""),
+            Case("researchFields", base.copy(researchFields = "AI"), true, "researchFields=value"),
+            Case("recentWorkTitles", base.copy(recentWorkTitles = null), false, "recentWorkTitles=null"),
+            Case("recentWorkTitles", base.copy(recentWorkTitles = emptyList()), false, "recentWorkTitles=[]"),
+            Case("recentWorkTitles", base.copy(recentWorkTitles = listOf("")), false, "recentWorkTitles=[\"\"]"),
+            Case("recentWorkTitles", base.copy(recentWorkTitles = listOf("Paper A")), true, "recentWorkTitles=[value]"),
+            Case("patentTitles", base.copy(patentTitles = null), false, "patentTitles=null"),
+            Case("patentTitles", base.copy(patentTitles = listOf(" ")), false, "patentTitles=[blank]"),
+            Case("patentTitles", base.copy(patentTitles = listOf("Patent 1")), true, "patentTitles=[value]")
+        )
+
+        cases.forEach { case ->
+            val scope = RecipientScope(
+                mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+                tags = emptyList(), regions = emptyList(),
+                emailDomains = emptyList(), discipline = null,
+                gateEsFields = listOf(case.field)
+            )
+            assertEquals(
+                case.expected,
+                scope.matchesExpert(case.profile),
+                "parity mismatch for ${case.label}"
+            )
+        }
+
+        // AND 语义：两个字段必须同时满足（I4a-2）。
+        val both = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            gateEsFields = listOf("institution", "degree")
+        )
+        assertTrue(both.matchesExpert(base.copy(institution = "Tsinghua", degree = "PhD")))
+        assertFalse(both.matchesExpert(base.copy(institution = "Tsinghua", degree = "")))
+        // institution 非 BLANK_EXCLUDABLE：空串在 ES 里 exists 为真 → 内存侧算有值（I4a-5）。
+        assertTrue(both.matchesExpert(base.copy(institution = "", degree = "PhD")))
+
+        // 空 gateEsFields 不做任何判定（I4a-1）。
+        val none = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            gateEsFields = emptyList()
+        )
+        assertTrue(none.matchesExpert(base.copy(institution = null, degree = null)))
+    }
+
     // ──── Helpers ────
 
     private fun expert(orcidId: String, email: String): ExpertProfile =
@@ -3573,6 +3855,17 @@ class ManualInitialOutreachServiceTest {
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         return method.invoke(service, scope, level) as List<Map<String, Any>>
+    }
+
+    private fun invokeResolveScope(
+        service: ManualInitialOutreachService,
+        snapshot: BatchExecutionSnapshot
+    ): RecipientScope {
+        val method = ManualInitialOutreachService::class.java.getDeclaredMethod(
+            "resolveScope", BatchExecutionSnapshot::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(service, snapshot) as RecipientScope
     }
 
     private fun <T> eqValue(value: T): T =

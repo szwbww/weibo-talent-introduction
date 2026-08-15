@@ -47,6 +47,7 @@ import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -81,7 +82,8 @@ class ManualInitialOutreachService(
     private val autoReplySettingService: AutoReplySettingService,
     private val manualExpertMailService: ManualExpertMailService,
     private val taskExecutionService: TaskExecutionService,
-    private val senderAccountBindingService: SenderAccountBindingService
+    private val senderAccountBindingService: SenderAccountBindingService,
+    private val mailComposeTemplateService: MailComposeTemplateService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -171,7 +173,7 @@ class ManualInitialOutreachService(
         val ignoreWarmup = mode == ExecutionMode.MANUAL
         val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
         val templateId = snapshot.templateId ?: error("MATERIAL_REMINDER config requires a templateId")
-        val scope = RecipientScope.fromSnapshot(snapshot)
+        val scope = resolveScope(snapshot)
 
         val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
         val targets = materialSnapshot.targets
@@ -415,20 +417,45 @@ class ManualInitialOutreachService(
     }
 
     /**
+     * I4a-4: 门禁字段解析的**唯一** seam。预估与执行共用，保证 M-4 同源。
+     * I4a-1: 开关关闭 / 无模板 / 模板无 required_keys → gateEsFields 为空，零行为变化。
+     * I4a-3: requiredEsFields 可能返回 ALLOWED_HAS_FIELDS 之外的字段
+     * （familyNames/keyword/country/hIndex/worksCount/lastPublicationYear），
+     * 这些字段无法做存在性预筛，此处丢弃并记录 —— 预筛因此是子集近似，
+     * 仍可能有专家在发送时被门禁拦下。
+     */
+    private fun resolveScope(snapshot: BatchExecutionSnapshot): RecipientScope {
+        val base = RecipientScope.fromSnapshot(snapshot)
+        if (!snapshot.gateFilterEnabled) return base
+        val templateId = snapshot.templateId ?: return base
+        val required = mailComposeTemplateService.requiredEsFields(templateId)
+        if (required.isEmpty()) return base
+        val usable = required.filter { it in ExpertSearchService.ALLOWED_HAS_FIELDS }
+        val dropped = required - usable.toSet()
+        if (dropped.isNotEmpty()) {
+            log.info(
+                "Gate filter: {} of template {} cannot be pre-filtered (not in ALLOWED_HAS_FIELDS), dropped: {}",
+                dropped.size, templateId, dropped
+            )
+        }
+        return base.copy(gateEsFields = usable)
+    }
+
+    /**
      * Side-effect-free recipient preview (P-F / 06). Same target computation as the execution
-     * path (I-1): RecipientScope.fromSnapshot + buildRetryableTargets + countEsTargets for
+     * path (I-1): resolveScope + buildRetryableTargets + countEsTargets for
      * INTRODUCTION, buildMaterialReminderSnapshot(scope, config).targets.size for MATERIAL_REMINDER.
      * Reads the campaign read-only via findByCampaignCode (I-3): never getOrCreateManualCampaign().
      */
     fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
             val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
-            val scope = RecipientScope.fromSnapshot(snapshot)
+            val scope = resolveScope(snapshot)
             val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
             PendingOutreachSummary(pending = materialSnapshot.targets.size, retryable = 0, totalSendable = materialSnapshot.targets.size)
         }
         else -> {
-            val scope = RecipientScope.fromSnapshot(snapshot)
+            val scope = resolveScope(snapshot)
             var retryable = 0
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
@@ -479,7 +506,7 @@ class ManualInitialOutreachService(
         val campaign = getOrCreateManualCampaign()
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = snapshot.toBatchSendConfig(BatchSendType.INTRODUCTION)
-        val scope = RecipientScope.fromSnapshot(snapshot)
+        val scope = resolveScope(snapshot)
         val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId, scope)
         val esEstimate = countEsTargets(scope)
         val totalEstimate = retryableTargets.size + esEstimate
@@ -1263,6 +1290,9 @@ class ManualInitialOutreachService(
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
         ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
+        // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
+        // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
+        filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))
         return filters
     }
 

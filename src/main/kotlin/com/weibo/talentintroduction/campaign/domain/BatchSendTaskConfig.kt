@@ -24,6 +24,7 @@ data class BatchSendTaskConfig(
     val discipline: String? = null,
     val operatorStatusesJson: String = "[]",
     val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
@@ -48,6 +49,7 @@ data class BatchSendTaskConfigView(
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long?,
+    val gateFilterEnabled: Boolean = false,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
     /** Next automatic trigger time; null when autoEnabled = false or the cron is invalid (I-1/I-2/I-3). */
@@ -71,7 +73,8 @@ data class BatchSendTaskConfigCreateCommand(
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
-    val templateId: Long? = null
+    val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -89,5 +92,6 @@ data class BatchSendTaskConfigUpdateCommand(
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
-    val templateId: Long? = null
+    val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false
 )

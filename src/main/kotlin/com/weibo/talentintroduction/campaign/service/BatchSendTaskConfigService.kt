@@ -76,6 +76,7 @@ class BatchSendTaskConfigService(
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
+                gateFilterEnabled = normalized.gateFilterEnabled,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -109,6 +110,7 @@ class BatchSendTaskConfigService(
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
+                gateFilterEnabled = normalized.gateFilterEnabled,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -189,7 +191,9 @@ class BatchSendTaskConfigService(
                 discipline = request.discipline.ifBlank { null },
                 // M-2: 旧 typed API 不传该字段，必须显式保留现有多值状态（漏写会命中默认值静默重置）。
                 operatorStatuses = parseOperatorStatuses(existing.operatorStatusesJson),
-                templateId = request.templateId
+                templateId = request.templateId,
+                // I4a-6 (M-2): 旧 typed API 不传门禁开关，必须显式保留存量值（漏写会命中默认值静默重置为 false）。
+                gateFilterEnabled = existing.gateFilterEnabled
             )
         )
         return BatchSendConfig(
@@ -308,7 +312,8 @@ class BatchSendTaskConfigService(
             emailDomainsJson = emailDomainsJson,
             discipline = discipline,
             operatorStatusesJson = operatorStatusesJson,
-            templateId = fields.templateId
+            templateId = fields.templateId,
+            gateFilterEnabled = fields.gateFilterEnabled
         )
     }
 
@@ -440,6 +445,7 @@ class BatchSendTaskConfigService(
             discipline = row.discipline,
             operatorStatuses = parseOperatorStatuses(row.operatorStatusesJson),
             templateId = row.templateId,
+            gateFilterEnabled = row.gateFilterEnabled,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.autoEnabled, row.cron),
@@ -530,7 +536,8 @@ class BatchSendTaskConfigService(
         val emailDomains: List<String>,
         val discipline: String?,
         val operatorStatuses: List<String>,
-        val templateId: Long?
+        val templateId: Long?,
+        val gateFilterEnabled: Boolean = false
     )
 
     private data class NormalizedConfig(
@@ -549,7 +556,8 @@ class BatchSendTaskConfigService(
         val emailDomainsJson: String,
         val discipline: String?,
         val operatorStatusesJson: String,
-        val templateId: Long?
+        val templateId: Long?,
+        val gateFilterEnabled: Boolean = false
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -567,7 +575,8 @@ class BatchSendTaskConfigService(
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
-        templateId = templateId
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun BatchSendTaskConfigUpdateCommand.toFields() = ConfigFields(
@@ -585,7 +594,8 @@ class BatchSendTaskConfigService(
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
-        templateId = templateId
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -603,7 +613,8 @@ class BatchSendTaskConfigService(
         emailDomains = parseEmailDomains(emailDomainsJson),
         discipline = discipline,
         operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
-        templateId = templateId
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private companion object {

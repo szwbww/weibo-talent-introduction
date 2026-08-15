@@ -19,6 +19,7 @@ data class BatchExecutionSnapshot(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false,
     val oneRoundOnly: Boolean = false
 )
 
@@ -52,7 +53,9 @@ data class RecipientScope(
     val regions: List<String>,
     val emailDomains: List<String>,
     val discipline: String?,
-    val operatorStatuses: List<String> = emptyList()
+    val operatorStatuses: List<String> = emptyList(),
+    /** I4a-4: 已解析的门禁 ES 字段（ALLOWED_HAS_FIELDS 交集）；解析只发生在 resolveScope。 */
+    val gateEsFields: List<String> = emptyList()
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
@@ -86,6 +89,24 @@ data class RecipientScope(
             val expertRegion = com.weibo.talentintroduction.expert.domain
                 .CountryContinentMapping.toRegion(profile.country)
             if (expertRegion !in regions) return false
+        }
+        // I4a-5: 与 ES 的 fieldPresenceFilter 同口径。BLANK_EXCLUDABLE_FIELDS
+        // （researchFields / recentWorkTitles / patentTitles / degree）在 ES 侧是
+        // `exists AND NOT term ""`，故空串不算有值；employment / institution 只有
+        // `exists`，空串在 ES 里算有值，内存侧对应 `!= null`。
+        if (gateEsFields.isNotEmpty()) {
+            val allPresent = gateEsFields.all { field ->
+                when (field) {
+                    "employment" -> profile.employment != null
+                    "institution" -> profile.institution != null
+                    "degree" -> !profile.degree.isNullOrBlank()
+                    "researchFields" -> !profile.researchFields.isNullOrBlank()
+                    "recentWorkTitles" -> profile.recentWorkTitles?.any { it.isNotBlank() } == true
+                    "patentTitles" -> profile.patentTitles?.any { it.isNotBlank() } == true
+                    else -> true   // I4a-3 已裁剪，理论不可达；保守放行，不静默排除
+                }
+            }
+            if (!allPresent) return false
         }
         return true
     }
@@ -263,6 +284,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled,
         oneRoundOnly = oneRoundOnly
     )
 }

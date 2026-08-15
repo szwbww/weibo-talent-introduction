@@ -68,7 +68,8 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
-        templateId: Long? = null
+        templateId: Long? = null,
+        gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -84,7 +85,8 @@ class BatchSendTaskConfigServiceTest {
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
-        templateId = templateId
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun updateCmd(
@@ -102,7 +104,8 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
-        templateId: Long? = null
+        templateId: Long? = null,
+        gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -118,7 +121,8 @@ class BatchSendTaskConfigServiceTest {
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
-        templateId = templateId
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun row(
@@ -134,6 +138,7 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatusesJson: String = "[]",
         templateId: Long? = null,
+        gateFilterEnabled: Boolean = false,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -153,6 +158,7 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatusesJson = operatorStatusesJson,
         templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -1003,6 +1009,85 @@ class BatchSendTaskConfigServiceTest {
         // M-2: legacy request never carries operatorStatuses; the entity's multi-value json
         // must survive — 漏写会命中 Kotlin 默认值静默重置。
         assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
+    }
+
+    // ── P4a: gateFilterEnabled 门禁开关（I4a-1 / I4a-6 / M-2）────────────────────
+
+    @Test
+    fun `create persists gateFilterEnabled true and get returns it (I4a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("门禁任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 60L)
+        }
+
+        val view = service().create(createCmd(name = "门禁任务", gateFilterEnabled = true))
+
+        assertTrue(view.gateFilterEnabled)
+        verify(repository).save(captor.capture())
+        assertTrue(captor.value.gateFilterEnabled)
+
+        // row → View 映射同样携带该字段（读路径）。
+        `when`(repository.findByIdAndDeletedAtIsNull(60L)).thenReturn(captor.value.copy(id = 60L))
+        assertTrue(service().get(60L).gateFilterEnabled)
+    }
+
+    @Test
+    fun `create without gateFilterEnabled defaults to false (I4a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无门禁")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 61L)
+        }
+
+        val view = service().create(createCmd(name = "无门禁"))
+
+        assertFalse(view.gateFilterEnabled)
+        verify(repository).save(captor.capture())
+        assertFalse(captor.value.gateFilterEnabled)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing gateFilterEnabled entity value (M-2 I4a-6)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            gateFilterEnabled = true,
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2 (I4a-6): legacy request never carries gateFilterEnabled; the entity value
+        // must survive — 漏写会命中 Kotlin 默认值静默重置为 false。
+        assertTrue(captor.value.gateFilterEnabled)
     }
 
     // ── 04a: nextFireTime / lastExecutedAt / cron preview ─────────────────────────
