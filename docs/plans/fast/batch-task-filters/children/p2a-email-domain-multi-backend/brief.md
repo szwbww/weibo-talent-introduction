@@ -13,11 +13,11 @@
 - **M-3**: full mapping-point set — the 4 data classes in `BatchSendTaskConfig.kt`, `BatchSendTaskConfigService.kt` (create/update/toView/ConfigFields/NormalizedConfig/3×`*Fields()`/normalizeAndValidate), `BatchExecutionModels.kt` (snapshot/RecipientScope/fromSnapshot/toExecutionSnapshot). Do NOT touch `toLegacyConfig` KV-layer construction beyond the required degradation reads.
 - **M-4**: preview and execution stay same-source (`countBySnapshot` keeps taking `BatchExecutionSnapshot`; one `buildEsFiltersForLevel`).
 - **M-5**: `OperatorStatusWriteSeamGuardTest` must stay green; never edit guard logic.
-- **X-2**: migration MUST be V96 (next free version); migration must NOT contain `${` literals (placeholder-replacement is ON in prod); TEXT columns cannot carry DEFAULT — follow the V93 two-step ADD + UPDATE pattern. DROP-column precedent: V92.
+- **X-2**: migration MUST be V97 (next free version); migration must NOT contain `${` literals (placeholder-replacement is ON in prod); TEXT columns cannot carry DEFAULT — follow the V93 two-step ADD + UPDATE pattern. DROP-column precedent: V92.
 - **X-3 comma contract**: option values must never contain commas (I2a-5 requires `require(!it.contains(","))`).
 
 ## Authorized files (complete, exclusive list — plan is at the 10-file cap)
-1. `src/main/resources/db/migration/V96__add_email_domains_to_batch_send_task_config.sql` (new)
+1. `src/main/resources/db/migration/V97__add_email_domains_to_batch_send_task_config.sql` (new)
 2. `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt`
 3. `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`
 4. `src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt`
@@ -31,14 +31,14 @@
 **If a fix needs an 11th file, STOP and report — do not touch it.** Do NOT modify: `app.js`, `index.html`, `styles.css`, `BatchSendSettingService.kt`, `BatchSendConfigController.kt`, any applied migration, `buildMaterialReminderEsFilters`, or the old single-value `notContactedWithEmailFilters` (N2a-2).
 
 ## Required work (per child plan T2a-1..T2a-6)
-Follow the plan verbatim: V96 migration (add `email_domains_json TEXT NOT NULL AFTER regions_json` + backfill CASE + DROP `email_domain`); entity/snapshot renames (`emailDomainsJson: String = "[]"` on entity, `emailDomains: List<String>` on view/commands/snapshot/RecipientScope); `matchesExpert` any-OR with empty-skip; new `emailDomainsFilter` + `notContactedWithEmailDomainsFilters` in ExpertSearchService companion (verbatim code in plan T2a-3); wire `buildEsFiltersForLevel` at :1249/:1254/:1261; full service mapping table T2a-5; helper `parseEmailDomains`; normalizeAndValidate block; all tests in T2a-6 including the critical `updateLegacyConfig` preservation test.
+Follow the plan verbatim: V97 migration (add `email_domains_json TEXT NOT NULL AFTER regions_json` + backfill CASE + DROP `email_domain`); entity/snapshot renames (`emailDomainsJson: String = "[]"` on entity, `emailDomains: List<String>` on view/commands/snapshot/RecipientScope); `matchesExpert` any-OR with empty-skip; new `emailDomainsFilter` + `notContactedWithEmailDomainsFilters` in ExpertSearchService companion (verbatim code in plan T2a-3); wire `buildEsFiltersForLevel` at :1249/:1254/:1261; full service mapping table T2a-5; helper `parseEmailDomains`; normalizeAndValidate block; all tests in T2a-6 including the critical `updateLegacyConfig` preservation test.
 
 ## Downstream interfaces (consumed by later children — must match exactly)
 - `BatchSendTaskConfigView.emailDomains: List<String>` (P2b reads this).
 - Commands `emailDomains: List<String>` (P2b sends this).
 - `RecipientScope.emailDomains: List<String>` + `matchesExpert` any-OR (P3a/P4a build on this).
 - `ExpertSearchService.emailDomainsFilter(List<String>): Map<String, Any>?` + `notContactedWithEmailDomainsFilters(List<String>, String?)` (P3a/P4a reuse).
-- Entity column is `email_domains_json`; old `email_domain` column is GONE after V96.
+- Entity column is `email_domains_json`; old `email_domain` column is GONE after V97.
 - `emailDomainsFilter` returns null for empty — callers must NOT append (I2a-2).
 
 ## Required commands (run freshly, record exit codes + counts)
