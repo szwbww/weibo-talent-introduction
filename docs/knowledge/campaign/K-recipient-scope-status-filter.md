@@ -1,19 +1,32 @@
 ---
 id: K-recipient-scope-status-filter
 domain: campaign
-created: 2026-08-13
-last_used: 2026-08-13
+created: 2026-08-15
+last_used: 2026-08-15
 hit_count: 0
 source: create-p:batch-send-status-consistency-05
 severity: P1
 ---
+> **2026-08-15 更正（create-p:batch-task-filters-main）**：本条原写「三条查询旁路」，
+> 第 3 条 `buildMaterialReminderEsFilters` 经全仓 grep 证明**零调用方，是死代码**：
+> ```
+> $ grep -rn "buildMaterialReminderEsFilters" src/
+> src/main/.../ManualInitialOutreachService.kt:1102:    private fun buildMaterialReminderEsFilters(   <- 定义行
+> src/main/.../ExpertSearchService.kt:141:  ... buildMaterialReminderEsFilters ...               <- 文档注释
+> ```
+> 材料提醒的真实取数路径是 `buildMaterialReminderSnapshotFromScope`（`:1152`），它在 `:1160`
+> 调用的是 **`buildEsFiltersForLevel(scope, level)`**，与 INTRODUCTION 路径同一个函数。
+> **活体旁路只有 2 条**（下方第 1、2 条）。第 3 条保留在文中仅作历史记录 —— 改它没有任何效果，
+> 但"照着它改"会让人误以为已覆盖材料提醒路径。
+
 批量发送的「专家状态」筛选（`operator_status` on `batch_send_task_config`，NULL = 不限）必须覆盖
-**三条查询旁路**，缺一不可（结构同 [[K-discipline-unclassified-filter-bypasses]]，事故形态同
+**两条活体查询旁路**，缺一不可（结构同 [[K-discipline-unclassified-filter-bypasses]]，事故形态同
 [[K-batch-send-filter-retry-parity]]）：
 
 1. `ManualInitialOutreachService.buildEsFiltersForLevel()` —— ES 目标查询
+   （3 个调用点：材料提醒目标构建 `:1160`、`countEsTargets` `:1214`、`fetchEsPage` `:1226`）
 2. `RecipientScope.matchesExpert()`（`BatchExecutionModels.kt`）—— 数据库重试联系人内存过滤
-3. `ManualInitialOutreachService.buildMaterialReminderEsFilters()` —— 材料提醒查询
+3. ~~`ManualInitialOutreachService.buildMaterialReminderEsFilters()`~~ —— **死代码，零调用方**
 
 `NOT_CONTACTED` 的语义唯一（I-3）：ES 文档**没有** `operatorStatus` 字段 =
 未联系（`ExpertIndexWriterService.syncOperatorStatus` 对 NOT_CONTACTED 执行的是
@@ -60,3 +73,5 @@ NOT_CONTACTED → `profile.operatorStatus.isNullOrBlank()`，其余 → 相等�
 
 关联：[[K-batch-send-filter-retry-parity]]、[[K-batch-config-legacy-adapter-field-preservation]]、
 [[K-operator-status-single-writer]]、[[K-material-reminder-single-es-filter-seam]]
+
+多值化（`String?` → `List<String>`）时的补充约束见 [[K-batch-multi-value-filter-seams]]。
