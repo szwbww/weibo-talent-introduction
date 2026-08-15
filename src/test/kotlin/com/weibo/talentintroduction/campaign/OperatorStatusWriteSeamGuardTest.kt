@@ -57,7 +57,7 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 431, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正）
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 345, "operatorStatus = source.nullableText"),
+        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 386, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
         // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
         // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status
@@ -72,26 +72,26 @@ class OperatorStatusWriteSeamGuardTest {
         // ── 05 P-E 配置列映射（A5 授权登记：batch_send_task_config.operator_status 的 DTO/命令
         //    命名参数映射，非 expert_contact 表写入；不属白名单闭包范围）──
         // RecipientScope.fromSnapshot：快照字段透传到 scope（重试路径内存过滤，非 DB 写入）
-        NoiseSite("com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt", 107, "operatorStatus = snapshot.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt", 110, "operatorStatus = snapshot.operatorStatus"),
         // BatchSendTaskConfig.toExecutionSnapshot：实体字段透传到执行快照，非 DB 写入
-        NoiseSite("com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt", 243, "operatorStatus = operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt", 255, "operatorStatus = operatorStatus,"),
         // 创建命令落库实体构造：normalizeAndValidate 结果映射到实体（batch_send_task_config 写入，
         // 非 expert_contact 写入；写入口守卫只约束 expert_contact 列）
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 74, "operatorStatus = normalized.operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 77, "operatorStatus = normalized.operatorStatus,"),
         // 更新命令落库实体构造：同上
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 107, "operatorStatus = normalized.operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 110, "operatorStatus = normalized.operatorStatus,"),
         // updateLegacyConfig 旧适配器字段保留：显式写 existing.operatorStatus 防默认值静默重置（I-4）
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 187, "operatorStatus = existing.operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 190, "operatorStatus = existing.operatorStatus,"),
         // NormalizedConfig 构造：校验后结果透传，非 DB 写入
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 292, "operatorStatus = operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 304, "operatorStatus = operatorStatus,"),
         // toView()：实体字段映射到前端视图 DTO，非 DB 写入
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 399, "operatorStatus = row.operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 423, "operatorStatus = row.operatorStatus,"),
         // CreateCommand.toFields()：命令 → 校验字段 DTO 映射，非 DB 写入
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 527, "operatorStatus = operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 551, "operatorStatus = operatorStatus,"),
         // UpdateCommand.toFields()：同上
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 545, "operatorStatus = operatorStatus,"),
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 569, "operatorStatus = operatorStatus,"),
         // BatchSendTaskConfig.toFields()：实体 → 校验字段 DTO 映射，非 DB 写入
-        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 563, "operatorStatus = operatorStatus,")
+        NoiseSite("com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt", 587, "operatorStatus = operatorStatus,")
     )
 
     /**
