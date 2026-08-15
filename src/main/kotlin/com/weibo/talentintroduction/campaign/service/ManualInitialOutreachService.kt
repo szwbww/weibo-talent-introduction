@@ -1243,25 +1243,20 @@ class ManualInitialOutreachService(
     }
 
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
-        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE") {
-            if (scope.operatorStatus == null || scope.operatorStatus == "NOT_CONTACTED") {
-                // I-3: 留空（不限）与 NOT_CONTACTED 都走 notContactedWithEmailDomainsFilters 的 must_not exists 表达。
-                ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
-            } else {
-                // I-2: 显式非 NOT_CONTACTED 状态与 notContactedWithEmailFilters 的 must_not exists operatorStatus
-                // 冲突（term 与 must_not 并存恒为空），必须换成状态无关基座 + operatorStatusFilter。
-                val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-                ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
-                scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-                base.addAll(ExpertSearchService.operatorStatusFilter(scope.operatorStatus))
-                base
-            }
+        // I3a-4: 判据从「等于 NOT_CONTACTED」变为「是否含非 NOT_CONTACTED 值」。
+        // 空集合 或 仅含 NOT_CONTACTED  → 保持 notContacted 基座（N3a-2 逐字不变）。
+        val statuses = scope.operatorStatuses
+        val onlyNotContacted = statuses.isEmpty() || statuses.all { it == "NOT_CONTACTED" }
+        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE" && onlyNotContacted) {
+            ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
         } else {
+            // I3a-4: 含任一非 NOT_CONTACTED 状态时必须换成状态无关基座 —— notContacted 基座
+            // 自带 must_not exists operatorStatus，与 term 状态并存恒为空。
             val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
             ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
             scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-            // I-2: else 分支（APPLICATION / MATERIAL_REMINDER）同样按状态过滤（I-3 同款表达）。
-            scope.operatorStatus?.let { base.addAll(ExpertSearchService.operatorStatusFilter(it)) }
+            // I3a-3: 空集合返回 null，不追加任何状态 filter。
+            ExpertSearchService.operatorStatusesFilter(statuses)?.let { base.add(it) }
             base
         }
         if (scope.tags.isNotEmpty()) {

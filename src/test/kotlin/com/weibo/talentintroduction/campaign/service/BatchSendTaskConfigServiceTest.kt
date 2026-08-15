@@ -67,6 +67,7 @@ class BatchSendTaskConfigServiceTest {
         regions: List<String> = emptyList(),
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
+        operatorStatuses: List<String> = emptyList(),
         templateId: Long? = null
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
@@ -82,6 +83,7 @@ class BatchSendTaskConfigServiceTest {
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
+        operatorStatuses = operatorStatuses,
         templateId = templateId
     )
 
@@ -99,6 +101,7 @@ class BatchSendTaskConfigServiceTest {
         regions: List<String> = emptyList(),
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
+        operatorStatuses: List<String> = emptyList(),
         templateId: Long? = null
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
@@ -114,6 +117,7 @@ class BatchSendTaskConfigServiceTest {
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
+        operatorStatuses = operatorStatuses,
         templateId = templateId
     )
 
@@ -128,6 +132,7 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel: String? = null,
         emailDomainsJson: String = "[]",
         discipline: String? = null,
+        operatorStatusesJson: String = "[]",
         templateId: Long? = null,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
@@ -146,6 +151,7 @@ class BatchSendTaskConfigServiceTest {
         tagsJson = tagsJson,
         emailDomainsJson = emailDomainsJson,
         discipline = discipline,
+        operatorStatusesJson = operatorStatusesJson,
         templateId = templateId,
         deletedAt = deletedAt,
         createdAt = updatedAt,
@@ -866,6 +872,137 @@ class BatchSendTaskConfigServiceTest {
         val config = service().getLegacyConfig(BatchSendType.INTRODUCTION)
 
         assertEquals("a.com", config.emailDomain)
+    }
+
+    // ── P3a: operatorStatuses multi-value（I3a-3 / I3a-6 / M-2）──────────────────
+
+    @Test
+    fun `create persists operatorStatuses multi-value and get returns them in order (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("状态任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 50L)
+        }
+
+        val view = service().create(
+            createCmd(name = "状态任务", operatorStatuses = listOf("NOT_CONTACTED", "CONTACTED"))
+        )
+
+        assertEquals(listOf("NOT_CONTACTED", "CONTACTED"), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("""["NOT_CONTACTED","CONTACTED"]""", captor.value.operatorStatusesJson)
+
+        // row → View 映射同样携带该字段（读路径）。
+        `when`(repository.findByIdAndDeletedAtIsNull(50L)).thenReturn(captor.value.copy(id = 50L))
+        assertEquals(listOf("NOT_CONTACTED", "CONTACTED"), service().get(50L).operatorStatuses)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate operatorStatuses (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("状态去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 51L)
+        }
+
+        val view = service().create(
+            createCmd(name = "状态去重", operatorStatuses = listOf("  CONTACTED  ", "", "CONTACTED"))
+        )
+
+        assertEquals(listOf("CONTACTED"), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
+    }
+
+    @Test
+    fun `create rejects operatorStatus containing comma (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("逗号状态")).thenReturn(null)
+
+        // 逗号分隔符值既不在枚举白名单（先触发 whitelist require），也满足逗号防御性 require；
+        // 无论哪条命中，契约都是：含逗号的状态被拒、不落库。
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "逗号状态", operatorStatuses = listOf("CONTACTED,REPLIED")))
+        }
+        assertTrue(
+            ex.message!!.contains("operatorStatus must be one of") || ex.message!!.contains("comma"),
+            "rejection must name the operatorStatus constraint, got: ${ex.message}"
+        )
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create rejects unknown operatorStatus value with allowed list (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法状态")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "非法状态", operatorStatuses = listOf("BOGUS")))
+        }
+        assertTrue(ex.message!!.contains("operatorStatus must be one of"))
+        assertTrue(ex.message!!.contains("NOT_CONTACTED"), "message must show the enum-derived whitelist")
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create with empty operatorStatuses persists empty json and view returns empty (I3a-3)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无状态")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 52L)
+        }
+
+        val view = service().create(createCmd(name = "无状态", operatorStatuses = emptyList()))
+
+        assertEquals(emptyList<String>(), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.operatorStatusesJson)
+
+        // 存量行 operator_statuses_json = "[]"（迁移回填形态）→ 视图同样为空集合。
+        `when`(repository.findByIdAndDeletedAtIsNull(53L)).thenReturn(
+            row(id = 53L, name = "存量空状态", operatorStatusesJson = "[]")
+        )
+        assertEquals(emptyList<String>(), service().get(53L).operatorStatuses)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing operatorStatusesJson entity value (M-2)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = """["CONTACTED"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2: legacy request never carries operatorStatuses; the entity's multi-value json
+        // must survive — 漏写会命中 Kotlin 默认值静默重置。
+        assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
     }
 
     // ── 04a: nextFireTime / lastExecutedAt / cron preview ─────────────────────────

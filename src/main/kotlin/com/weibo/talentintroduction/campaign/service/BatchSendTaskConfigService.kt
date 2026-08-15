@@ -74,7 +74,7 @@ class BatchSendTaskConfigService(
                 regionsJson = normalized.regionsJson,
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
-                operatorStatus = normalized.operatorStatus,
+                operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
                 createdAt = now,
                 updatedAt = now
@@ -107,7 +107,7 @@ class BatchSendTaskConfigService(
                 regionsJson = normalized.regionsJson,
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
-                operatorStatus = normalized.operatorStatus,
+                operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
                 updatedAt = now
             ),
@@ -187,7 +187,8 @@ class BatchSendTaskConfigService(
                 regions = parseRegions(existing.regionsJson),
                 emailDomains = parseEmailDomains(existing.emailDomainsJson),
                 discipline = request.discipline.ifBlank { null },
-                operatorStatus = existing.operatorStatus,
+                // M-2: 旧 typed API 不传该字段，必须显式保留现有多值状态（漏写会命中默认值静默重置）。
+                operatorStatuses = parseOperatorStatuses(existing.operatorStatusesJson),
                 templateId = request.templateId
             )
         )
@@ -271,14 +272,19 @@ class BatchSendTaskConfigService(
                 "discipline must be one of $ALLOWED_DISCIPLINES or ALL/empty"
             }
         }
-        // I-3: 状态白名单引用 OperatorStatus.entries（单一权威，照 ALLOWED_DISCIPLINES 范式），
-        // 不另抄字符串集合，避免与枚举漂移。
-        val operatorStatus = normalizeOptionalFilter(fields.operatorStatus)
-        if (operatorStatus != null) {
-            require(operatorStatus in ALLOWED_OPERATOR_STATUSES) {
-                "operatorStatus must be one of $ALLOWED_OPERATOR_STATUSES or ALL/empty"
+        // I3a-6：白名单仍引用 OperatorStatus.entries 派生的 ALLOWED_OPERATOR_STATUSES（单一权威）。
+        // 逗号是前端 picker 的分隔符（K-batch-picker-comma-delimited-contract）。
+        val operatorStatuses = fields.operatorStatuses
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        operatorStatuses.forEach {
+            require(it in ALLOWED_OPERATOR_STATUSES) {
+                "operatorStatus must be one of $ALLOWED_OPERATOR_STATUSES: $it"
             }
+            require(!it.contains(",")) { "operatorStatus must not contain a comma: $it" }
         }
+        val operatorStatusesJson = objectMapper.writeValueAsString(operatorStatuses)
 
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
@@ -301,7 +307,7 @@ class BatchSendTaskConfigService(
             regionsJson = regionsJson,
             emailDomainsJson = emailDomainsJson,
             discipline = discipline,
-            operatorStatus = operatorStatus,
+            operatorStatusesJson = operatorStatusesJson,
             templateId = fields.templateId
         )
     }
@@ -402,6 +408,18 @@ class BatchSendTaskConfigService(
         }
     }
 
+    private fun parseOperatorStatuses(json: String?): List<String> {
+        val text = json?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        return try {
+            objectMapper.readValue(text, object : TypeReference<List<String>>() {})
+                .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        } catch (e: Exception) {
+            log.warn("Failed to parse operator statuses JSON, treating as unrestricted: {}", e.message)
+            emptyList()
+        }
+    }
+
     private fun toView(row: BatchSendTaskConfig, lastExecutedAt: LocalDateTime? = null): BatchSendTaskConfigView {
         val id = row.id ?: error("Batch send task config id is required")
         return BatchSendTaskConfigView(
@@ -420,7 +438,7 @@ class BatchSendTaskConfigService(
             regions = parseRegions(row.regionsJson),
             emailDomains = parseEmailDomains(row.emailDomainsJson),
             discipline = row.discipline,
-            operatorStatus = row.operatorStatus,
+            operatorStatuses = parseOperatorStatuses(row.operatorStatusesJson),
             templateId = row.templateId,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
@@ -511,7 +529,7 @@ class BatchSendTaskConfigService(
         val regions: List<String>,
         val emailDomains: List<String>,
         val discipline: String?,
-        val operatorStatus: String?,
+        val operatorStatuses: List<String>,
         val templateId: Long?
     )
 
@@ -530,7 +548,7 @@ class BatchSendTaskConfigService(
         val regionsJson: String,
         val emailDomainsJson: String,
         val discipline: String?,
-        val operatorStatus: String?,
+        val operatorStatusesJson: String,
         val templateId: Long?
     )
 
@@ -548,7 +566,7 @@ class BatchSendTaskConfigService(
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
-        operatorStatus = operatorStatus,
+        operatorStatuses = operatorStatuses,
         templateId = templateId
     )
 
@@ -566,7 +584,7 @@ class BatchSendTaskConfigService(
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
-        operatorStatus = operatorStatus,
+        operatorStatuses = operatorStatuses,
         templateId = templateId
     )
 
@@ -584,7 +602,7 @@ class BatchSendTaskConfigService(
         regions = parseRegions(regionsJson),
         emailDomains = parseEmailDomains(emailDomainsJson),
         discipline = discipline,
-        operatorStatus = operatorStatus,
+        operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
         templateId = templateId
     )
 

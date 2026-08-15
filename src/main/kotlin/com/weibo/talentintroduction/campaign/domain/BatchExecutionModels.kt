@@ -17,7 +17,7 @@ data class BatchExecutionSnapshot(
     val regions: List<String> = emptyList(),
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
-    val operatorStatus: String? = null,
+    val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null,
     val oneRoundOnly: Boolean = false
 )
@@ -52,16 +52,15 @@ data class RecipientScope(
     val regions: List<String>,
     val emailDomains: List<String>,
     val discipline: String?,
-    val operatorStatus: String? = null
+    val operatorStatuses: List<String> = emptyList()
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        // I-1 第 2 条旁路（重试路径）：状态口径必须与 ES 的 operatorStatusFilter 一致
-        // （NOT_CONTACTED = ES 文档无 operatorStatus 字段；其余状态 = term 相等）。
-        if (!operatorStatus.isNullOrBlank()) {
-            val matched = if (operatorStatus == "NOT_CONTACTED") {
-                profile.operatorStatus.isNullOrBlank()
-            } else {
-                profile.operatorStatus == operatorStatus
+        // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
+        // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
+        if (operatorStatuses.isNotEmpty()) {
+            val matched = operatorStatuses.any {
+                if (it == "NOT_CONTACTED") profile.operatorStatus.isNullOrBlank()
+                else profile.operatorStatus == it
             }
             if (!matched) return false
         }
@@ -107,7 +106,8 @@ data class RecipientScope(
                 // I2a-2 / I2a-5：trim、丢空、去重保序；空集合 = 不限。
                 emailDomains = snapshot.emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
-                operatorStatus = snapshot.operatorStatus?.trim()?.takeIf { it.isNotEmpty() }
+                // I3a-3：trim、丢空、去重保序；空集合 = 不限。
+                operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             )
         }
     }
@@ -240,6 +240,15 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     } catch (_: Exception) {
         emptyList()
     }
+    // I3a-1/I3a-3: operator_statuses_json 是唯一事实源；解析失败按不限（空集合）处理。
+    val operatorStatuses = try {
+        objectMapper.readValue(operatorStatusesJson, object : TypeReference<List<String>>() {})
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    } catch (_: Exception) {
+        emptyList()
+    }
     return BatchExecutionSnapshot(
         mailType = mailType,
         roundSize = roundSize,
@@ -252,7 +261,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
-        operatorStatus = operatorStatus,
+        operatorStatuses = operatorStatuses,
         templateId = templateId,
         oneRoundOnly = oneRoundOnly
     )

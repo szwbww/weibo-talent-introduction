@@ -3012,7 +3012,7 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `ES CANDIDATE branch replaces not-contacted base with term filter when explicit non-NOT_CONTACTED status set (I-2)`() {
+    fun `ES CANDIDATE branch replaces not-contacted base when explicit non-NOT_CONTACTED status set (I3a-4)`() {
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
@@ -3026,11 +3026,18 @@ class ManualInitialOutreachServiceTest {
             perRoundIntervalMs = 0,
             selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE",
-            operatorStatus = "CONTACTED"
+            operatorStatuses = listOf("CONTACTED")
         )
-        // I-2: 显式非 NOT_CONTACTED 状态必须替换 must_not exists 基座，否则 term 与 must_not 并存恒为空。
+        // I3a-4: 显式非 NOT_CONTACTED 状态必须换成状态无关基座（I-2 同款：term 与 must_not 并存恒为空）。
         val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-        expectedFilters.add(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")))
+        expectedFilters.add(
+            mapOf(
+                "bool" to mapOf(
+                    "should" to listOf(mapOf("term" to mapOf("operatorStatus" to "CONTACTED"))),
+                    "minimum_should_match" to 1
+                )
+            )
+        )
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3055,7 +3062,7 @@ class ManualInitialOutreachServiceTest {
             perRoundIntervalMs = 0,
             selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE",
-            operatorStatus = "NOT_CONTACTED"
+            operatorStatuses = listOf("NOT_CONTACTED")
         )
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
         // I-3: NOT_CONTACTED 的唯一语义是 must_not exists operatorStatus，绝不写 term operatorStatus=NOT_CONTACTED。
@@ -3081,11 +3088,18 @@ class ManualInitialOutreachServiceTest {
             selfCheckTtlMinutes = 30,
             funnelLevel = "APPLICATION",
             tags = listOf("承诺回复材料"),
-            operatorStatus = "CONTACTED",
+            operatorStatuses = listOf("CONTACTED"),
             templateId = 42L
         )
         val expectedFilters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-        expectedFilters.add(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")))
+        expectedFilters.add(
+            mapOf(
+                "bool" to mapOf(
+                    "should" to listOf(mapOf("term" to mapOf("operatorStatus" to "CONTACTED"))),
+                    "minimum_should_match" to 1
+                )
+            )
+        )
         expectedFilters.add(mapOf("terms" to mapOf("tags" to listOf("承诺回复材料"))))
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters)))
             .thenReturn(0L)
@@ -3116,7 +3130,7 @@ class ManualInitialOutreachServiceTest {
             perRoundIntervalMs = 0,
             selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE",
-            operatorStatus = "NOT_CONTACTED"
+            operatorStatuses = listOf("NOT_CONTACTED")
         )
         stubScrolledExperts(emptyList())
 
@@ -3170,7 +3184,7 @@ class ManualInitialOutreachServiceTest {
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = "[]", regionsJson = "[]",
-            emailDomainsJson = "[]", discipline = null, operatorStatus = "NOT_CONTACTED",
+            emailDomainsJson = "[]", discipline = null, operatorStatusesJson = """["NOT_CONTACTED"]""",
             templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -3199,9 +3213,9 @@ class ManualInitialOutreachServiceTest {
             )
         )
 
-        // I-4: 旧 typed API 只改 cron，operatorStatus 必须显式保留（漏写会命中 Kotlin 默认值静默重置）。
+        // M-2/I3a-6: 旧 typed API 只改 cron，operatorStatuses 必须显式保留（漏写会命中 Kotlin 默认值静默重置）。
         Mockito.verify(configRepository).save(captor.capture())
-        assertEquals("NOT_CONTACTED", captor.value.operatorStatus)
+        assertEquals("""["NOT_CONTACTED"]""", captor.value.operatorStatusesJson)
     }
 
     // ── P2a: emailDomains multi-value（I2a-2 / I2a-3 / I2a-4）──────────────────
@@ -3288,6 +3302,208 @@ class ManualInitialOutreachServiceTest {
             val email = profile.email
             val expected = email != null && domains.any { email.endsWith("@$it") }
             assertEquals(expected, scope.matchesExpert(profile), "parity mismatch for email=${profile.email}")
+        }
+    }
+
+    // ── P3a: operatorStatuses multi-value（I3a-1 / I3a-2 / I3a-3 / I3a-4 / I3a-5 / N3a-2）──
+
+    @Test
+    fun `empty operatorStatuses keeps pre-change baseline filters verbatim on CANDIDATE (N3a-2)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        // 改动前基线逐字硬编码（不调用任何 helper 生成）：operatorStatus 留空（不限）时
+        // CANDIDATE 分支走 notContacted 基座且不追加任何状态 filter —— 必须逐字相等（N3a-2）。
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline, filters)
+    }
+
+    @Test
+    fun `only NOT_CONTACTED keeps pre-change baseline filters verbatim on CANDIDATE (N3a-2)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = listOf("NOT_CONTACTED")
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        // 与上一条相同：仅选 NOT_CONTACTED 也必须与改动前逐字一致（N3a-2）。
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline, filters)
+    }
+
+    @Test
+    fun `CONTACTED switches to status-agnostic base without must_not exists operatorStatus (I3a-4)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = listOf("CONTACTED")
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        // 基座已切换：不得再出现 notContacted 基座的 must_not exists operatorStatus（I-2 陷阱）。
+        assertTrue(
+            filters.none { (it["bool"] as? Map<*, *>)?.get("must_not") != null },
+            "CONTACTED must not keep the notContacted base (must_not exists operatorStatus)"
+        )
+        @Suppress("UNCHECKED_CAST")
+        val shouldBlocks = filters.mapNotNull { it["bool"] as? Map<String, Any> }
+            .filter { it["should"] is List<*> }
+        assertEquals(1, shouldBlocks.size, "exactly one bool.should status filter")
+        assertEquals(1, shouldBlocks.single()["minimum_should_match"])
+        val shouldList = shouldBlocks.single()["should"] as List<*>
+        assertEquals(1, shouldList.size)
+        assertEquals(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")), shouldList.single())
+    }
+
+    @Test
+    fun `mixed NOT_CONTACTED and CONTACTED uses status-agnostic base with pure predicates (I3a-4 I3a-1 I3a-2)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = listOf("NOT_CONTACTED", "CONTACTED")
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        assertTrue(
+            filters.none { (it["bool"] as? Map<*, *>)?.get("must_not") != null },
+            "mixed statuses must use the status-agnostic base"
+        )
+        @Suppress("UNCHECKED_CAST")
+        val shouldBlocks = filters.mapNotNull { it["bool"] as? Map<String, Any> }
+            .filter { it["should"] is List<*> }
+        assertEquals(1, shouldBlocks.size)
+        val shouldList = shouldBlocks.single()["should"] as List<*>
+        assertEquals(2, shouldList.size)
+        // I3a-1/I3a-2: NOT_CONTACTED 分支必须是纯 must_not exists 谓词（无 exists email / EMAIL_INVALID）。
+        assertTrue(
+            shouldList.any {
+                it == mapOf(
+                    "bool" to mapOf(
+                        "must_not" to listOf(mapOf("exists" to mapOf("field" to "operatorStatus")))
+                    )
+                )
+            },
+            "NOT_CONTACTED should branch must be the pure must_not exists predicate"
+        )
+        assertTrue(shouldList.any { it == mapOf("term" to mapOf("operatorStatus" to "CONTACTED")) })
+    }
+
+    @Test
+    fun `operatorStatusPredicate is a pure predicate without email or EMAIL_INVALID terms (I3a-2)`() {
+        val predicate = ExpertSearchService.operatorStatusPredicate("NOT_CONTACTED")
+        val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(predicate)
+        assertFalse(json.contains("\"email\""), "pure predicate must not carry exists email")
+        assertFalse(json.contains("EMAIL_INVALID"), "pure predicate must not carry term EMAIL_INVALID")
+        assertEquals(
+            mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "operatorStatus"))))),
+            predicate
+        )
+    }
+
+    @Test
+    fun `operatorStatusesFilter returns null for empty and trims dedupes (I3a-3)`() {
+        assertNull(ExpertSearchService.operatorStatusesFilter(emptyList()))
+        assertNull(ExpertSearchService.operatorStatusesFilter(listOf("  ", "")))
+        val filter = ExpertSearchService.operatorStatusesFilter(listOf(" CONTACTED ", "CONTACTED"))
+        assertNotNull(filter)
+        @Suppress("UNCHECKED_CAST")
+        val should = (filter!!["bool"] as Map<String, Any>)["should"] as List<*>
+        assertEquals(1, should.size)
+        assertEquals(mapOf("term" to mapOf("operatorStatus" to "CONTACTED")), should.single())
+    }
+
+    @Test
+    fun `matchesExpert agrees with operatorStatusesFilter semantics per profile (I3a-5)`() {
+        val statusGroups = listOf(
+            emptyList(),
+            listOf("NOT_CONTACTED"),
+            listOf("CONTACTED"),
+            listOf("NOT_CONTACTED", "EMAIL_INVALID")
+        )
+        val profiles = listOf(
+            expert("0001", "a@b.com").copy(operatorStatus = null),
+            expert("0002", "b@b.com").copy(operatorStatus = ""),
+            expert("0003", "c@b.com").copy(operatorStatus = "CONTACTED"),
+            expert("0004", "d@b.com").copy(operatorStatus = "EMAIL_INVALID"),
+            expert("0005", "e@b.com").copy(operatorStatus = "REPLIED")
+        )
+        statusGroups.forEach { statuses ->
+            val scope = RecipientScope(
+                mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+                tags = emptyList(), regions = emptyList(),
+                emailDomains = emptyList(), discipline = null,
+                operatorStatuses = statuses
+            )
+            profiles.forEach { profile ->
+                val expected = statuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                    .let { values ->
+                        values.isEmpty() || values.any {
+                            if (it == "NOT_CONTACTED") profile.operatorStatus.isNullOrBlank()
+                            else profile.operatorStatus == it
+                        }
+                    }
+                assertEquals(
+                    expected,
+                    scope.matchesExpert(profile),
+                    "parity mismatch for statuses=$statuses profile.operatorStatus=${profile.operatorStatus}"
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `serialized CANDIDATE filters never contain literal NOT_CONTACTED term (I3a-1)`() {
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        listOf(
+            RecipientScope(
+                mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+                tags = emptyList(), regions = emptyList(),
+                emailDomains = emptyList(), discipline = null,
+                operatorStatuses = listOf("NOT_CONTACTED")
+            ),
+            RecipientScope(
+                mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+                tags = emptyList(), regions = emptyList(),
+                emailDomains = emptyList(), discipline = null,
+                operatorStatuses = listOf("NOT_CONTACTED", "CONTACTED")
+            ),
+            RecipientScope(
+                mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+                tags = emptyList(), regions = emptyList(),
+                emailDomains = emptyList(), discipline = null,
+                operatorStatuses = emptyList()
+            )
+        ).forEach { scope ->
+            val json = mapper.writeValueAsString(invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE"))
+            assertFalse(json.contains("NOT_CONTACTED"), "no filter may serialize the literal NOT_CONTACTED")
         }
     }
 

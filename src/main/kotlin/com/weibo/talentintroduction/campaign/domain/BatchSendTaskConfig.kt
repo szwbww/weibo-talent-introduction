@@ -22,7 +22,7 @@ data class BatchSendTaskConfig(
     val regionsJson: String = "[]",
     val emailDomainsJson: String = "[]",
     val discipline: String? = null,
-    val operatorStatus: String? = null,
+    val operatorStatusesJson: String = "[]",
     val templateId: Long? = null,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
@@ -46,7 +46,7 @@ data class BatchSendTaskConfigView(
     val regions: List<String> = emptyList(),
     val emailDomains: List<String> = emptyList(),
     val discipline: String?,
-    val operatorStatus: String? = null,
+    val operatorStatuses: List<String> = emptyList(),
     val templateId: Long?,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
@@ -70,7 +70,7 @@ data class BatchSendTaskConfigCreateCommand(
     val regions: List<String> = emptyList(),
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
-    val operatorStatus: String? = null,
+    val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null
 )
 
@@ -88,6 +88,6 @@ data class BatchSendTaskConfigUpdateCommand(
     val regions: List<String> = emptyList(),
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
-    val operatorStatus: String? = null,
+    val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null
 )

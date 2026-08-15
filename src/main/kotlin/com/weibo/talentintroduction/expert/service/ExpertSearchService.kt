@@ -178,8 +178,8 @@ class ExpertSearchService(
 
         /**
          * I-3: NOT_CONTACTED 语义唯一 —— 复用 [notContactedWithEmailFilters] 的 must_not exists
-         * 表达（= ES 文档无 operatorStatus 字段），其余状态走 term。三处批量发送旁路
-         * （buildEsFiltersForLevel / buildMaterialReminderEsFilters / matchesExpert）共用此实现，
+         * 表达（= ES 文档无 operatorStatus 字段），其余状态走 term。两处活体旁路
+         * （buildEsFiltersForLevel / matchesExpert）共用此实现，
          * 禁止在别处另写 `term operatorStatus=NOT_CONTACTED`。
          */
         fun operatorStatusFilter(status: String): List<Map<String, Any>> {
@@ -187,6 +187,39 @@ class ExpertSearchService(
                 return notContactedWithEmailFilters(null)
             }
             return listOf(mapOf("term" to mapOf("operatorStatus" to status)))
+        }
+
+        /**
+         * I3a-2: 单个状态的**纯谓词** —— 只判定状态本身，不夹带 exists email /
+         * EMAIL_INVALID 排除等 AND 语义条件，因此可安全放进 bool.should 分支。
+         *
+         * NOT_CONTACTED = ES 文档无 operatorStatus 字段（I3a-1）。与
+         * [notContactedWithEmailFilters] 的 `must_not [exists, term EMAIL_INVALID]` 逻辑等价：
+         * `term operatorStatus=EMAIL_INVALID` 蕴含 `exists operatorStatus`，
+         * 故 NOT(exists) AND NOT(term) ≡ NOT(exists)。
+         */
+        fun operatorStatusPredicate(status: String): Map<String, Any> =
+            if (status == "NOT_CONTACTED") {
+                mapOf("bool" to mapOf(
+                    "must_not" to listOf(mapOf("exists" to mapOf("field" to "operatorStatus")))
+                ))
+            } else {
+                mapOf("term" to mapOf("operatorStatus" to status))
+            }
+
+        /**
+         * I3a-3: N 个状态取 OR，产出**单个** filter 项；空集合返回 null（调用方不得追加）。
+         * 照 [regionsFilter] / [emailDomainsFilter] 的 should + minimum_should_match 范式。
+         */
+        fun operatorStatusesFilter(statuses: List<String>): Map<String, Any>? {
+            val values = statuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (values.isEmpty()) return null
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to values.map { operatorStatusPredicate(it) },
+                    "minimum_should_match" to 1
+                )
+            )
         }
     }
 
