@@ -5,7 +5,7 @@
 - Child plan: `docs/plans/2026-08-15/p4a-template-gate-filter-backend.md` (commit d6980764, amended A1 — migration is **V99**) — **the complete contract. Read it in full before implementing** (also read master plan M-1..M-5, X-1..X-3).
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/fast/batch-task-filters`
 - Branch: `fast/batch-task-filters`
-- Child base SHA: `<p3a code head — recorded in the dispatch prompt>`
+- Child base SHA: `802ab2b` (p3b terminal code head; P2a V97 + P3a V98 committed on branch)
 
 ## Prerequisites (verified/committed on branch before dispatch)
 - P2a (V97) + P3a (V98) committed: `buildEsFiltersForLevel` is multi-value shape (`notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline)`, `emailDomainsFilter`, `operatorStatusesFilter(scope.operatorStatuses)` appended in the status-agnostic branch). Next free migration: **V99**.
