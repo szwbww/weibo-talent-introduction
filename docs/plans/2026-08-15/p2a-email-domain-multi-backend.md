@@ -389,8 +389,9 @@ ALTER TABLE batch_send_task_config DROP COLUMN email_domain;
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt` | 修改 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` | 修改 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | 修改（`:218/:225/:237/:260` 的 `RecipientScope.fromSnapshot` 与 `baseSnapshot(emailDomain = "edu.cn")` 适配） |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 修改（**A5 授权**：仅刷新 `EXCLUDED_NOISE_SITES` 的 11 条行号 —— BatchExecutionModels 107→110 / 243→255，BatchSendTaskConfigService 74→77 / 107→110 / 187→190 / 292→304 / 399→423 / 527→551 / 545→569 / 563→587，ExpertSearchService 345→386。M-5：守卫判定逻辑一行不改） |
 
-文件数：**10**（≤10 ✅，已到上限 —— 执行中若发现需改第 11 个文件，**停下来报告，不要顺手改**）  子系统数：**2**（campaign / expert，≤2 ✅）
+文件数：**11**（原 10 上限 + A5 授权放宽 1 个测试文件；执行中若发现仍需改第 12 个文件，**停下来报告**）  子系统数：**2**（campaign / expert，≤2 ✅）
 
 **不改**：`app.js`、`index.html`、`styles.css`、`BatchSendSettingService.kt`、`BatchSendConfigController.kt`、任何已应用迁移。
 
