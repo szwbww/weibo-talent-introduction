@@ -38,7 +38,7 @@ class ExpertSearchService(
          * `exists` check is combined with `must_not term ""` so blank values do
          * not count as present; for `text` fields a bare `exists` is used (I-9).
          */
-        private fun fieldPresenceFilter(field: String): Map<String, Any> =
+        fun fieldPresenceFilter(field: String): Map<String, Any> =
             if (field in BLANK_EXCLUDABLE_FIELDS) {
                 mapOf(
                     "bool" to mapOf(
@@ -48,6 +48,18 @@ class ExpertSearchService(
                 )
             } else {
                 mapOf("exists" to mapOf("field" to field))
+            }
+
+        /**
+         * I4a-2: 门禁字段之间是 AND —— 每个字段产出一个独立 filter，由调用方平铺进
+         * bool.filter。空集合返回空列表（I4a-1）。
+         * 调用方必须已把字段裁剪到 [ALLOWED_HAS_FIELDS] 之内（I4a-3）；此处仍保留
+         * require 作为兜底，越界即 fail-fast，不静默忽略。
+         */
+        fun fieldPresenceFilters(fields: List<String>): List<Map<String, Any>> =
+            fields.distinct().map {
+                require(it in ALLOWED_HAS_FIELDS) { "Invalid gate ES field: $it" }
+                fieldPresenceFilter(it)
             }
 
         val ALLOWED_DISCIPLINES = setOf("STEM", "HUMANITIES", "UNCLASSIFIED")
@@ -113,6 +125,47 @@ class ExpertSearchService(
             )
         }
 
+        /**
+         * I2a-3: N 个邮箱域取 OR，产出**单个** filter 项；空集合返回 null（I2a-2，
+         * 调用方不得追加）。照 [regionsFilter] 的 should + minimum_should_match 范式。
+         */
+        fun emailDomainsFilter(emailDomains: List<String>): Map<String, Any>? {
+            val domains = emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (domains.isEmpty()) return null
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to domains.map {
+                        mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))
+                    },
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
+        /**
+         * 多域版 [notContactedWithEmailFilters]。**旧单值重载保持原样不动**（N2a-2）——
+         * 专家列表等路径仍在用它。
+         */
+        fun notContactedWithEmailDomainsFilters(
+            emailDomains: List<String> = emptyList(),
+            discipline: String? = null
+        ): List<Map<String, Any>> {
+            val filters = mutableListOf<Map<String, Any>>(
+                mapOf("exists" to mapOf("field" to "email")),
+                mapOf("bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                ))
+            )
+            emailDomainsFilter(emailDomains)?.let { filters.add(it) }
+            if (!discipline.isNullOrBlank()) {
+                filters.add(disciplineFilter(discipline))
+            }
+            return filters
+        }
+
         fun notContactedWithEmailFilters(
             emailDomain: String? = null,
             discipline: String? = null
@@ -137,8 +190,8 @@ class ExpertSearchService(
 
         /**
          * I-3: NOT_CONTACTED 语义唯一 —— 复用 [notContactedWithEmailFilters] 的 must_not exists
-         * 表达（= ES 文档无 operatorStatus 字段），其余状态走 term。三处批量发送旁路
-         * （buildEsFiltersForLevel / buildMaterialReminderEsFilters / matchesExpert）共用此实现，
+         * 表达（= ES 文档无 operatorStatus 字段），其余状态走 term。两处活体旁路
+         * （buildEsFiltersForLevel / matchesExpert）共用此实现，
          * 禁止在别处另写 `term operatorStatus=NOT_CONTACTED`。
          */
         fun operatorStatusFilter(status: String): List<Map<String, Any>> {
@@ -146,6 +199,39 @@ class ExpertSearchService(
                 return notContactedWithEmailFilters(null)
             }
             return listOf(mapOf("term" to mapOf("operatorStatus" to status)))
+        }
+
+        /**
+         * I3a-2: 单个状态的**纯谓词** —— 只判定状态本身，不夹带 exists email /
+         * EMAIL_INVALID 排除等 AND 语义条件，因此可安全放进 bool.should 分支。
+         *
+         * NOT_CONTACTED = ES 文档无 operatorStatus 字段（I3a-1）。与
+         * [notContactedWithEmailFilters] 的 `must_not [exists, term EMAIL_INVALID]` 逻辑等价：
+         * `term operatorStatus=EMAIL_INVALID` 蕴含 `exists operatorStatus`，
+         * 故 NOT(exists) AND NOT(term) ≡ NOT(exists)。
+         */
+        fun operatorStatusPredicate(status: String): Map<String, Any> =
+            if (status == "NOT_CONTACTED") {
+                mapOf("bool" to mapOf(
+                    "must_not" to listOf(mapOf("exists" to mapOf("field" to "operatorStatus")))
+                ))
+            } else {
+                mapOf("term" to mapOf("operatorStatus" to status))
+            }
+
+        /**
+         * I3a-3: N 个状态取 OR，产出**单个** filter 项；空集合返回 null（调用方不得追加）。
+         * 照 [regionsFilter] / [emailDomainsFilter] 的 should + minimum_should_match 范式。
+         */
+        fun operatorStatusesFilter(statuses: List<String>): Map<String, Any>? {
+            val values = statuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (values.isEmpty()) return null
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to values.map { operatorStatusPredicate(it) },
+                    "minimum_should_match" to 1
+                )
+            )
         }
     }
 

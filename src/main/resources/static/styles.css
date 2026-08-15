@@ -9040,6 +9040,104 @@ body.preview-available:not(.preview-docked) .preview-rail {
   text-align: center;
 }
 
+/* ── 邮件模版门禁过滤（P4b / S4b-1、S4b-2） ─────────────────────── */
+.batch-gate-field { grid-column: 1 / -1; }
+
+.batch-gate-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.batch-gate-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-gate-toggle .batch-task-status-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.batch-gate-field.is-disabled { opacity: .6; }
+.batch-gate-field.is-disabled .batch-gate-toggle { cursor: not-allowed; }
+
+.batch-gate-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.batch-gate-hint.is-warn { color: var(--warning-strong); }
+
+.batch-gate-keys {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.batch-gate-keys[hidden] { display: none; }
+
+.batch-gate-keys-label {
+  color: var(--text-sidebar);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.batch-gate-keys .tag-chip {
+  cursor: default;
+  pointer-events: none;
+}
+
+.batch-gate-keys-dropped {
+  flex-basis: 100%;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.batch-config-editor-hint .batch-gate-excluded {
+  color: var(--error-strong);
+  font-weight: 600;
+}
+
+.batch-config-editor-hint .batch-gate-warnline {
+  display: block;
+  margin-top: 4px;
+  color: var(--warning-strong);
+}
+
+.batch-gate-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-lg);
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.batch-gate-pill.is-off {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.batch-gate-pill.is-na {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+}
+
 .batch-manual-actions {
   display: flex;
   align-items: center;

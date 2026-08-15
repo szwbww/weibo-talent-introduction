@@ -65,9 +65,11 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
         regions: List<String> = emptyList(),
-        emailDomain: String? = null,
+        emailDomains: List<String> = emptyList(),
         discipline: String? = null,
-        templateId: Long? = null
+        operatorStatuses: List<String> = emptyList(),
+        templateId: Long? = null,
+        gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -80,9 +82,11 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
-        templateId = templateId
+        operatorStatuses = operatorStatuses,
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun updateCmd(
@@ -97,9 +101,11 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel: String? = null,
         tags: List<String> = emptyList(),
         regions: List<String> = emptyList(),
-        emailDomain: String? = null,
+        emailDomains: List<String> = emptyList(),
         discipline: String? = null,
-        templateId: Long? = null
+        operatorStatuses: List<String> = emptyList(),
+        templateId: Long? = null,
+        gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -112,9 +118,11 @@ class BatchSendTaskConfigServiceTest {
         funnelLevel = funnelLevel,
         tags = tags,
         regions = regions,
-        emailDomain = emailDomain,
+        emailDomains = emailDomains,
         discipline = discipline,
-        templateId = templateId
+        operatorStatuses = operatorStatuses,
+        templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled
     )
 
     private fun row(
@@ -126,9 +134,11 @@ class BatchSendTaskConfigServiceTest {
         roundsPerRun: Int = 1,
         tagsJson: String = "[]",
         funnelLevel: String? = null,
-        emailDomain: String? = null,
+        emailDomainsJson: String = "[]",
         discipline: String? = null,
+        operatorStatusesJson: String = "[]",
         templateId: Long? = null,
+        gateFilterEnabled: Boolean = false,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -144,9 +154,11 @@ class BatchSendTaskConfigServiceTest {
         selfCheckTtlMinutes = 30,
         funnelLevel = funnelLevel,
         tagsJson = tagsJson,
-        emailDomain = emailDomain,
+        emailDomainsJson = emailDomainsJson,
         discipline = discipline,
+        operatorStatusesJson = operatorStatusesJson,
         templateId = templateId,
+        gateFilterEnabled = gateFilterEnabled,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -293,17 +305,18 @@ class BatchSendTaskConfigServiceTest {
                 name = "范围任务",
                 funnelLevel = "ALL",
                 tags = listOf("  beta ", "alpha", "beta", " "),
-                emailDomain = "ALL",
+                emailDomains = emptyList(),
                 discipline = ""
             )
         )
 
         assertNull(view.funnelLevel)
         assertEquals(listOf("alpha", "beta"), view.tags)
-        assertNull(view.emailDomain)
+        assertTrue(view.emailDomains.isEmpty())
         assertNull(view.discipline)
         verify(repository).save(captor.capture())
         assertEquals("""["alpha","beta"]""", captor.value.tagsJson)
+        assertEquals("[]", captor.value.emailDomainsJson)
         assertNull(captor.value.funnelLevel)
     }
 
@@ -468,7 +481,7 @@ class BatchSendTaskConfigServiceTest {
             id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
             autoEnabled = true, cron = "0 0 7 * * ?", roundSize = 10,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            emailDomain = "edu.cn", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
+            emailDomainsJson = """["edu.cn"]""", discipline = "STEM", templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(entity)
@@ -507,7 +520,7 @@ class BatchSendTaskConfigServiceTest {
             id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -541,7 +554,8 @@ class BatchSendTaskConfigServiceTest {
         assertEquals("CANDIDATE", captor.value.funnelLevel)
         assertEquals("""["保留标签"]""", captor.value.tagsJson)
         assertEquals("0 30 8 * * ?", captor.value.cron)
-        assertEquals("ox.ac.uk", captor.value.emailDomain)
+        // M-2/I2a-6: legacy request's degraded single emailDomain must never rebuild the entity json.
+        assertEquals("[]", captor.value.emailDomainsJson)
         assertEquals("HUMANITIES", captor.value.discipline)
         assertTrue(captor.value.autoEnabled)
         assertEquals("0 30 8 * * ?", updated.cron)
@@ -590,7 +604,7 @@ class BatchSendTaskConfigServiceTest {
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
-            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomain = null,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -710,7 +724,7 @@ class BatchSendTaskConfigServiceTest {
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", regionsJson = """["Europe"]""",
-            emailDomain = null, discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            emailDomainsJson = "[]", discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
@@ -740,6 +754,340 @@ class BatchSendTaskConfigServiceTest {
         verify(repository).save(captor.capture())
         // X-2/K-batch-config-legacy-adapter-field-preservation: legacy request has no regions dimension; entity value must survive.
         assertEquals("""["Europe"]""", captor.value.regionsJson)
+    }
+
+    // ── P2a: emailDomains multi-value ─────────────────────────────────────────
+
+    @Test
+    fun `create persists emailDomains multi-value and get returns them in order (I2a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("多域任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 40L)
+        }
+
+        val view = service().create(createCmd(name = "多域任务", emailDomains = listOf("a.com", "b.com")))
+
+        assertEquals(listOf("a.com", "b.com"), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("""["a.com","b.com"]""", captor.value.emailDomainsJson)
+
+        // row → View mapping carries the field too (I2a-1: snapshot path reads emailDomainsJson)
+        `when`(repository.findByIdAndDeletedAtIsNull(40L)).thenReturn(captor.value.copy(id = 40L))
+        assertEquals(listOf("a.com", "b.com"), service().get(40L).emailDomains)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate emailDomains (I2a-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("域名去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 41L)
+        }
+
+        val view = service().create(
+            createCmd(name = "域名去重", emailDomains = listOf("  a.com  ", "", "a.com"))
+        )
+
+        assertEquals(listOf("a.com"), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("""["a.com"]""", captor.value.emailDomainsJson)
+    }
+
+    @Test
+    fun `create rejects emailDomain containing comma (I2a-5)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("逗号域名")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "逗号域名", emailDomains = listOf("a,b.com")))
+        }
+        assertTrue(ex.message!!.contains("emailDomain must not contain a comma"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create with empty emailDomains persists empty json and view returns empty (I2a-2)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无域名")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 42L)
+        }
+
+        val view = service().create(createCmd(name = "无域名"))
+
+        assertEquals(emptyList<String>(), view.emailDomains)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.emailDomainsJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing emailDomainsJson entity value (I2a-6)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = """["a.com","b.com"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        val updated = service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2/I2a-6: legacy request carries only the degraded single emailDomain; the entity's
+        // multi-value json must survive — never rebuilt from request.emailDomain.
+        assertEquals("""["a.com","b.com"]""", captor.value.emailDomainsJson)
+        assertEquals("a.com", updated.emailDomain)
+    }
+
+    @Test
+    fun `getLegacyConfig degrades multi emailDomains to first (I2a-6)`() {
+        val entity = BatchSendTaskConfig(
+            id = 1L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = true, cron = "0 0 7 * * ?", roundSize = 10,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            emailDomainsJson = """["a.com","b.com"]""", discipline = null, templateId = null,
+            legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(entity)
+
+        val config = service().getLegacyConfig(BatchSendType.INTRODUCTION)
+
+        assertEquals("a.com", config.emailDomain)
+    }
+
+    // ── P3a: operatorStatuses multi-value（I3a-3 / I3a-6 / M-2）──────────────────
+
+    @Test
+    fun `create persists operatorStatuses multi-value and get returns them in order (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("状态任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 50L)
+        }
+
+        val view = service().create(
+            createCmd(name = "状态任务", operatorStatuses = listOf("NOT_CONTACTED", "CONTACTED"))
+        )
+
+        assertEquals(listOf("NOT_CONTACTED", "CONTACTED"), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("""["NOT_CONTACTED","CONTACTED"]""", captor.value.operatorStatusesJson)
+
+        // row → View 映射同样携带该字段（读路径）。
+        `when`(repository.findByIdAndDeletedAtIsNull(50L)).thenReturn(captor.value.copy(id = 50L))
+        assertEquals(listOf("NOT_CONTACTED", "CONTACTED"), service().get(50L).operatorStatuses)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate operatorStatuses (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("状态去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 51L)
+        }
+
+        val view = service().create(
+            createCmd(name = "状态去重", operatorStatuses = listOf("  CONTACTED  ", "", "CONTACTED"))
+        )
+
+        assertEquals(listOf("CONTACTED"), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
+    }
+
+    @Test
+    fun `create rejects operatorStatus containing comma (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("逗号状态")).thenReturn(null)
+
+        // 逗号分隔符值既不在枚举白名单（先触发 whitelist require），也满足逗号防御性 require；
+        // 无论哪条命中，契约都是：含逗号的状态被拒、不落库。
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "逗号状态", operatorStatuses = listOf("CONTACTED,REPLIED")))
+        }
+        assertTrue(
+            ex.message!!.contains("operatorStatus must be one of") || ex.message!!.contains("comma"),
+            "rejection must name the operatorStatus constraint, got: ${ex.message}"
+        )
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create rejects unknown operatorStatus value with allowed list (I3a-6)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法状态")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "非法状态", operatorStatuses = listOf("BOGUS")))
+        }
+        assertTrue(ex.message!!.contains("operatorStatus must be one of"))
+        assertTrue(ex.message!!.contains("NOT_CONTACTED"), "message must show the enum-derived whitelist")
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create with empty operatorStatuses persists empty json and view returns empty (I3a-3)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无状态")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 52L)
+        }
+
+        val view = service().create(createCmd(name = "无状态", operatorStatuses = emptyList()))
+
+        assertEquals(emptyList<String>(), view.operatorStatuses)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.operatorStatusesJson)
+
+        // 存量行 operator_statuses_json = "[]"（迁移回填形态）→ 视图同样为空集合。
+        `when`(repository.findByIdAndDeletedAtIsNull(53L)).thenReturn(
+            row(id = 53L, name = "存量空状态", operatorStatusesJson = "[]")
+        )
+        assertEquals(emptyList<String>(), service().get(53L).operatorStatuses)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing operatorStatusesJson entity value (M-2)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = """["CONTACTED"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2: legacy request never carries operatorStatuses; the entity's multi-value json
+        // must survive — 漏写会命中 Kotlin 默认值静默重置。
+        assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
+    }
+
+    // ── P4a: gateFilterEnabled 门禁开关（I4a-1 / I4a-6 / M-2）────────────────────
+
+    @Test
+    fun `create persists gateFilterEnabled true and get returns it (I4a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("门禁任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 60L)
+        }
+
+        val view = service().create(createCmd(name = "门禁任务", gateFilterEnabled = true))
+
+        assertTrue(view.gateFilterEnabled)
+        verify(repository).save(captor.capture())
+        assertTrue(captor.value.gateFilterEnabled)
+
+        // row → View 映射同样携带该字段（读路径）。
+        `when`(repository.findByIdAndDeletedAtIsNull(60L)).thenReturn(captor.value.copy(id = 60L))
+        assertTrue(service().get(60L).gateFilterEnabled)
+    }
+
+    @Test
+    fun `create without gateFilterEnabled defaults to false (I4a-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无门禁")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 61L)
+        }
+
+        val view = service().create(createCmd(name = "无门禁"))
+
+        assertFalse(view.gateFilterEnabled)
+        verify(repository).save(captor.capture())
+        assertFalse(captor.value.gateFilterEnabled)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing gateFilterEnabled entity value (M-2 I4a-6)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            gateFilterEnabled = true,
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // M-2 (I4a-6): legacy request never carries gateFilterEnabled; the entity value
+        // must survive — 漏写会命中 Kotlin 默认值静默重置为 false。
+        assertTrue(captor.value.gateFilterEnabled)
     }
 
     // ── 04a: nextFireTime / lastExecutedAt / cron preview ─────────────────────────

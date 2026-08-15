@@ -47,6 +47,7 @@ import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -81,7 +82,8 @@ class ManualInitialOutreachService(
     private val autoReplySettingService: AutoReplySettingService,
     private val manualExpertMailService: ManualExpertMailService,
     private val taskExecutionService: TaskExecutionService,
-    private val senderAccountBindingService: SenderAccountBindingService
+    private val senderAccountBindingService: SenderAccountBindingService,
+    private val mailComposeTemplateService: MailComposeTemplateService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -171,7 +173,7 @@ class ManualInitialOutreachService(
         val ignoreWarmup = mode == ExecutionMode.MANUAL
         val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
         val templateId = snapshot.templateId ?: error("MATERIAL_REMINDER config requires a templateId")
-        val scope = RecipientScope.fromSnapshot(snapshot)
+        val scope = resolveScope(snapshot)
 
         val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
         val targets = materialSnapshot.targets
@@ -415,20 +417,45 @@ class ManualInitialOutreachService(
     }
 
     /**
+     * I4a-4: 门禁字段解析的**唯一** seam。预估与执行共用，保证 M-4 同源。
+     * I4a-1: 开关关闭 / 无模板 / 模板无 required_keys → gateEsFields 为空，零行为变化。
+     * I4a-3: requiredEsFields 可能返回 ALLOWED_HAS_FIELDS 之外的字段
+     * （familyNames/keyword/country/hIndex/worksCount/lastPublicationYear），
+     * 这些字段无法做存在性预筛，此处丢弃并记录 —— 预筛因此是子集近似，
+     * 仍可能有专家在发送时被门禁拦下。
+     */
+    private fun resolveScope(snapshot: BatchExecutionSnapshot): RecipientScope {
+        val base = RecipientScope.fromSnapshot(snapshot)
+        if (!snapshot.gateFilterEnabled) return base
+        val templateId = snapshot.templateId ?: return base
+        val required = mailComposeTemplateService.requiredEsFields(templateId)
+        if (required.isEmpty()) return base
+        val usable = required.filter { it in ExpertSearchService.ALLOWED_HAS_FIELDS }
+        val dropped = required - usable.toSet()
+        if (dropped.isNotEmpty()) {
+            log.info(
+                "Gate filter: {} of template {} cannot be pre-filtered (not in ALLOWED_HAS_FIELDS), dropped: {}",
+                dropped.size, templateId, dropped
+            )
+        }
+        return base.copy(gateEsFields = usable)
+    }
+
+    /**
      * Side-effect-free recipient preview (P-F / 06). Same target computation as the execution
-     * path (I-1): RecipientScope.fromSnapshot + buildRetryableTargets + countEsTargets for
+     * path (I-1): resolveScope + buildRetryableTargets + countEsTargets for
      * INTRODUCTION, buildMaterialReminderSnapshot(scope, config).targets.size for MATERIAL_REMINDER.
      * Reads the campaign read-only via findByCampaignCode (I-3): never getOrCreateManualCampaign().
      */
     fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
             val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
-            val scope = RecipientScope.fromSnapshot(snapshot)
+            val scope = resolveScope(snapshot)
             val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
             PendingOutreachSummary(pending = materialSnapshot.targets.size, retryable = 0, totalSendable = materialSnapshot.targets.size)
         }
         else -> {
-            val scope = RecipientScope.fromSnapshot(snapshot)
+            val scope = resolveScope(snapshot)
             var retryable = 0
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
@@ -479,7 +506,7 @@ class ManualInitialOutreachService(
         val campaign = getOrCreateManualCampaign()
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = snapshot.toBatchSendConfig(BatchSendType.INTRODUCTION)
-        val scope = RecipientScope.fromSnapshot(snapshot)
+        val scope = resolveScope(snapshot)
         val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId, scope)
         val esEstimate = countEsTargets(scope)
         val totalEstimate = retryableTargets.size + esEstimate
@@ -998,7 +1025,7 @@ class ManualInitialOutreachService(
             funnelLevels = setOf("CANDIDATE"),
             tags = emptyList(),
             regions = emptyList(),
-            emailDomain = emailDomain,
+            emailDomains = emailDomain?.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline
         )
         return buildRetryableTargets(campaignId, scope)
@@ -1127,7 +1154,7 @@ class ManualInitialOutreachService(
      */
     private fun buildMaterialReminderSnapshot(scope: RecipientScope, config: BatchSendConfig): MaterialReminderSnapshot {
         val scopeDescription = scope.funnelLevels.joinToString("+") + " + tags=${scope.tags}" +
-            (scope.emailDomain?.let { " + domain=$it" } ?: "") +
+            (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (scope.discipline?.let { " + discipline=$it" } ?: "")
         return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
     }
@@ -1139,11 +1166,11 @@ class ManualInitialOutreachService(
             tags = listOf("承诺回复材料"),
             // 统计路径输入为 BatchSendConfig（KV 层，无地区维度），故不携带地区；发送路径经 fromSnapshot 携带
             regions = emptyList(),
-            emailDomain = config.emailDomain.ifBlank { null },
+            emailDomains = config.emailDomain.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = config.discipline.ifBlank { null }
         )
         val scopeDescription = "APPLICATION + tag=承诺回复材料 + email" +
-            (if (config.emailDomain.isNotBlank()) " + domain=${config.emailDomain}" else "") +
+            (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (if (config.discipline.isNotBlank()) " + discipline=${config.discipline}" else "")
         return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
     }
@@ -1243,31 +1270,29 @@ class ManualInitialOutreachService(
     }
 
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
-        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE") {
-            if (scope.operatorStatus == null || scope.operatorStatus == "NOT_CONTACTED") {
-                // I-3: 留空（不限）与 NOT_CONTACTED 都走 notContactedWithEmailFilters 的 must_not exists 表达。
-                ExpertSearchService.notContactedWithEmailFilters(scope.emailDomain, scope.discipline).toMutableList()
-            } else {
-                // I-2: 显式非 NOT_CONTACTED 状态与 notContactedWithEmailFilters 的 must_not exists operatorStatus
-                // 冲突（term 与 must_not 并存恒为空），必须换成状态无关基座 + operatorStatusFilter。
-                val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-                scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
-                scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-                base.addAll(ExpertSearchService.operatorStatusFilter(scope.operatorStatus))
-                base
-            }
+        // I3a-4: 判据从「等于 NOT_CONTACTED」变为「是否含非 NOT_CONTACTED 值」。
+        // 空集合 或 仅含 NOT_CONTACTED  → 保持 notContacted 基座（N3a-2 逐字不变）。
+        val statuses = scope.operatorStatuses
+        val onlyNotContacted = statuses.isEmpty() || statuses.all { it == "NOT_CONTACTED" }
+        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE" && onlyNotContacted) {
+            ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
         } else {
+            // I3a-4: 含任一非 NOT_CONTACTED 状态时必须换成状态无关基座 —— notContacted 基座
+            // 自带 must_not exists operatorStatus，与 term 状态并存恒为空。
             val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-            scope.emailDomain?.let { base.add(mapOf("wildcard" to mapOf("email" to mapOf("value" to "*@$it")))) }
+            ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
             scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-            // I-2: else 分支（APPLICATION / MATERIAL_REMINDER）同样按状态过滤（I-3 同款表达）。
-            scope.operatorStatus?.let { base.addAll(ExpertSearchService.operatorStatusFilter(it)) }
+            // I3a-3: 空集合返回 null，不追加任何状态 filter。
+            ExpertSearchService.operatorStatusesFilter(statuses)?.let { base.add(it) }
             base
         }
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
         ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
+        // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
+        // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
+        filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))
         return filters
     }
 
@@ -1281,7 +1306,7 @@ class ManualInitialOutreachService(
             selfCheckTtlMinutes = selfCheckTtlMinutes,
             funnelLevel = if (sendType == BatchSendType.INTRODUCTION) "CANDIDATE" else "APPLICATION",
             tags = if (sendType == BatchSendType.MATERIAL_REMINDER) listOf("承诺回复材料") else emptyList(),
-            emailDomain = emailDomain.ifBlank { null },
+            emailDomains = emailDomain.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline.ifBlank { null },
             templateId = templateId,
             oneRoundOnly = oneRoundOnly
@@ -1297,7 +1322,7 @@ class ManualInitialOutreachService(
             perMailIntervalMs = perMailIntervalMs,
             perRoundIntervalMs = perRoundIntervalMs,
             selfCheckTtlMinutes = selfCheckTtlMinutes,
-            emailDomain = emailDomain.orEmpty(),
+            emailDomain = emailDomains.firstOrNull().orEmpty(),
             discipline = discipline.orEmpty(),
             templateId = templateId
         )

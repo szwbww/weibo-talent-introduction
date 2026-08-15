@@ -272,7 +272,7 @@ describe("batch send task console interactions", () => {
         vm.runInContext(formatDiffValue, sandbox);
 
         assert.strictEqual(sandbox.formatManualDiffValue("funnelLevel", null), "全部层级");
-        assert.strictEqual(sandbox.formatManualDiffValue("emailDomain", ""), "全部服务商");
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", []), "全部服务商");
         assert.strictEqual(sandbox.formatManualDiffValue("discipline", null), "全部学科");
         assert.strictEqual(sandbox.formatManualDiffValue("templateId", null), "系统默认介绍邮件模板");
         assert.strictEqual(sandbox.formatManualDiffValue("tags", []), "(无)");
@@ -385,6 +385,8 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => ["China", "Europe"],
+            readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -420,6 +422,8 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -455,6 +459,8 @@ describe("batch send task console interactions", () => {
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
             readBatchTagPickerValue: () => [],
             readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
             showStatus: () => {},
             api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
             hideBatchConfigEditor: () => {},
@@ -492,16 +498,382 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
 
         sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
 
         assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
         assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+    });
+
+    it("U1: echoes a range cron (0 0 9-17 * * ?) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9-17 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9-17 * * ?");
+    });
+
+    it("U2: echoes a list cron (0 0 9,12,15 * * ?) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9,12,15 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9,12,15 * * ?");
+    });
+
+    it("U3: does not drop the day-of-month field (0 0 9 1 * ? stays custom) (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 1 * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9 1 * ?");
+    });
+
+    it("U4: echoes a weekday-range cron (0 0 9 ? * MON-FRI) as custom with the raw expression (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 ? * MON-FRI", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9 ? * MON-FRI");
+    });
+
+    it("U5: echoes hourly cron (0 0 * * * ?) as hourly with empty time and cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 * * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "hourly");
+        assert.strictEqual(el("batchConfigEditorTime").value, "");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U6: echoes daily cron (0 15 3 * * ?) as daily 03:15 with empty cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U7: echoes weekly cron (0 30 9 ? * MON) as weekly 09:30 with empty cron box (N1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 30 9 ? * MON", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "weekly");
+        assert.strictEqual(el("batchConfigEditorTime").value, "09:30");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U8: rejects an out-of-range minute (0 70 9 * * ?) as custom (I1-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 70 9 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "custom");
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 70 9 * * ?");
+    });
+
+    it("U9: clears the cron box when the reused DOM switches from custom to daily (I1-2)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务A", cron: "0 0 9-17 * * ?", tags: [], regions: [] });
+        assert.strictEqual(el("batchConfigEditorCron").value, "0 0 9-17 * * ?");
+
+        sandbox.showBatchConfigEditor({ id: 2, configName: "任务B", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
+        assert.strictEqual(el("batchConfigEditorCron").value, "", "reused DOM must not leak task A's cron");
+    });
+
+    it("U10: new task (null config) keeps daily 09:00 defaults with an empty cron box (I1-3)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor(null);
+
+        assert.strictEqual(el("batchConfigEditorFrequency").value, "daily");
+        assert.strictEqual(el("batchConfigEditorTime").value, "09:00");
+        assert.strictEqual(el("batchConfigEditorCron").value, "");
+    });
+
+    it("U11: custom mode saves the raw range cron verbatim through saveBatchConfigEditor (N1-2)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
+            gateToggleChecked: () => false,
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "自定义任务";
+        el("batchConfigEditorFrequency").value = "custom";
+        el("batchConfigEditorTime").value = "08:00";
+        el("batchConfigEditorCron").value = "0 0 9-17 * * ?";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.strictEqual(apiBodies[0].cron, "0 0 9-17 * * ?", "custom mode must save the range cron verbatim");
     });
 
     it("showBatchConfigEditor echoes an unmatched cron as custom with the raw expression (I-2)", () => {
@@ -522,7 +894,7 @@ describe("batch send task console interactions", () => {
             setBatchRegionPickerValue: () => {},
             syncBatchConfigEditorScheduleFields: () => {},
             fillBatchConfigEditorTemplateSelector: () => {},
-            fillBatchConfigEditorProviderSelect: () => {},
+            setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
         vm.createContext(sandbox);
@@ -685,9 +1057,9 @@ describe("batch send task console interactions", () => {
             funnelLevel: "CANDIDATE",
             tags: ["AI"],
             regions: ["China"],
-            emailDomain: "university.edu",
+            emailDomains: ["university.edu"],
             discipline: "STEM",
-            operatorStatus: "NOT_CONTACTED",
+            operatorStatuses: ["NOT_CONTACTED"],
             templateId: 7
         };
         const sandbox = { readManualFormValues: () => values, Number };
@@ -709,6 +1081,8 @@ describe("batch send task console interactions", () => {
         const sandbox = {
             recipientPreviewRequestSeq: { editor: 0, manual: 0 },
             recipientPreviewHintId: () => "batchManualRecipientHint",
+            batchGateState: { editor: { available: false }, manual: { available: false } },
+            gateToggleId: () => "batchManualGateFilter",
             buildManualRecipientSnapshot: () => ({}),
             buildManualExecutionSnapshot: () => ({}),
             document: { getElementById: () => hint },
@@ -731,5 +1105,1038 @@ describe("batch send task console interactions", () => {
         await new Promise((resolve) => setImmediate(resolve));
 
         assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
+    });
+
+    it("V1: setBatchMultiPickerValue + readBatchMultiPickerValue roundtrip keeps the comma contract (I2b-3)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(readValue && setValue, "multi picker helpers must exist");
+
+        const hidden = element("");
+        const rendered = [];
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchConfigEditorEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: (id) => rendered.push(id)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorEmailDomains", ["a.com", "b.com"]);
+
+        assert.strictEqual(hidden.value, "a.com,b.com", "values must be comma-joined in the hidden input (I2b-3)");
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchMultiPickerValue("batchConfigEditorEmailDomains")),
+            ["a.com", "b.com"]
+        );
+        assert.strictEqual(rendered.length, 1, "set must trigger a render");
+    });
+
+    it("V2: renderBatchMultiPicker draws one chip per value and marks selected options (S2b-1)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorEmailDomains: {
+                    options: () => [
+                        { value: "a.com", label: "a.com" },
+                        { value: "b.com", label: "b.com" },
+                        { value: "c.com", label: "c.com" }
+                    ],
+                    emptyText: "没有匹配服务商",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorEmailDomains": hidden,
+                    "batchConfigEditorEmailDomainsSearch": search,
+                    "batchConfigEditorEmailDomainsChips": chips,
+                    "batchConfigEditorEmailDomainsDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorEmailDomains", ["a.com", "b.com"]);
+
+        const chipCount = (chips.innerHTML.match(/class="batch-tag-picker-chip"/g) || []).length;
+        assert.strictEqual(chipCount, 2, "chips HTML must contain 2 .batch-tag-picker-chip (S2b-1)");
+        assert.ok(dropdown.innerHTML.includes("is-selected"), "selected options must carry is-selected");
+        assert.ok(dropdown.innerHTML.includes("✓"), "selected options must show the check mark");
+        assert.ok(dropdown.innerHTML.includes("c.com"), "unselected option must remain listed");
+    });
+
+    it("V3: renderBatchMultiPicker shows the registry emptyText when no option matches (I2b-1)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("a.com");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorEmailDomains: {
+                    options: () => [],
+                    emptyText: "没有匹配服务商",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorEmailDomains": hidden,
+                    "batchConfigEditorEmailDomainsSearch": search,
+                    "batchConfigEditorEmailDomainsChips": chips,
+                    "batchConfigEditorEmailDomainsDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.renderBatchMultiPicker("batchConfigEditorEmailDomains");
+
+        assert.strictEqual(dropdown.innerHTML, '<div class="batch-tag-picker-empty">没有匹配服务商</div>',
+            "empty state must use meta.emptyText");
+    });
+
+    it("V4: showBatchConfigEditor echoes emailDomains into the picker hidden input (IP-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            renderBatchMultiPicker: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [], emailDomains: ["a.com"] });
+        assert.strictEqual(el("batchConfigEditorEmailDomains").value, "a.com",
+            "config emailDomains must be echoed into the hidden input (IP-1)");
+
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(el("batchConfigEditorEmailDomains").value, "",
+            "new task must start with an empty emailDomains picker");
+    });
+
+    it("V5: saveBatchConfigEditor payload carries emailDomains from the picker (IP-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["a.com", "b.com"],
+            gateToggleChecked: () => true,
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "多选服务商任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].emailDomains, ["a.com", "b.com"],
+            "payload emailDomains must come from the picker (IP-1)");
+        assert.strictEqual(apiBodies[0].gateFilterEnabled, true,
+            "payload gateFilterEnabled must come from gateToggleChecked (P4b T4b-5)");
+        assert.ok(!("emailDomain" in apiBodies[0]), "payload must not carry the old emailDomain key");
+    });
+
+    it("V6: normalizeManualSnapshot sorts emailDomains so order never reads as changed (I2b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        assert.ok(normalize, "normalizeManualSnapshot must exist");
+
+        const sandbox = { Number };
+        vm.createContext(sandbox);
+        vm.runInContext(normalize, sandbox);
+
+        const a = sandbox.normalizeManualSnapshot({ emailDomains: ["b.com", "a.com"], tags: [], regions: [] });
+        const b = sandbox.normalizeManualSnapshot({ emailDomains: ["a.com", "b.com"], tags: [], regions: [] });
+
+        assert.deepStrictEqual(Array.from(a.emailDomains), ["a.com", "b.com"], "emailDomains must be sorted");
+        assert.deepStrictEqual(Array.from(a.emailDomains), Array.from(b.emailDomains),
+            "same set in different order must normalize identically (I2b-5)");
+    });
+
+    it("V7: formatManualDiffValue renders the emailDomains list or 全部服务商 (I2b-4 #2)", () => {
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        assert.ok(formatDiffValue, "formatManualDiffValue must exist");
+
+        const sandbox = {
+            batchTaskState: { preloadedTemplates: [] },
+            supportedBatchComposeTemplates: () => []
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(formatDiffValue, sandbox);
+
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", []), "全部服务商");
+        assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", ["a.com", "b.com"]), "a.com、b.com");
+    });
+
+    it("V8: computeManualDiffs flags emailDomains only when the domain set differs (I2b-4 #3)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(emailDomains) {
+            return {
+                id: 1, templateId: null, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains, discipline: "", operatorStatus: "",
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceDomains, draftDomains) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceDomains) },
+                readManualFormValues: () => makeConfig(draftDomains),
+                supportedBatchComposeTemplates: () => [],
+                operatorStatusOptions: []
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const diffsWhenExtended = runDiffs(["a.com"], ["a.com", "b.com"]);
+        assert.ok(diffsWhenExtended.some((d) => d.key === "emailDomains"),
+            "draft with an extra domain must be flagged as diff (I2b-4 #3)");
+
+        const diffsWhenSame = runDiffs(["a.com"], ["a.com"]);
+        assert.ok(!diffsWhenSame.some((d) => d.key === "emailDomains"),
+            "identical domains must not be flagged as diff");
+    });
+
+    it("V9: renderBatchConfigRow joins emailDomains into the scope line (S2b-3)", () => {
+        const renderRow = extractFn("renderBatchConfigRow");
+        assert.ok(renderRow, "renderBatchConfigRow must exist");
+
+        function makeConfig(emailDomains) {
+            return {
+                id: 1, configName: "多选服务商任务", mailType: "INTRODUCTION", autoEnabled: false,
+                funnelLevel: null, tags: [], regions: [], emailDomains, discipline: null,
+                templateId: null, cron: null, nextFireTime: null, lastExecutedAt: null
+            };
+        }
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v),
+            regionLabel: (v) => v || "",
+            cronToDisplayText: () => "",
+            renderBatchConfigStatusToggle: () => "",
+            batchGatePillHtml: () => ""
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(renderRow, sandbox);
+
+        const html = sandbox.renderBatchConfigRow(makeConfig(["a.com", "b.com"]));
+        assert.ok(html.includes("服务商: a.com, b.com"), "scope line must join domains with ', ' (S2b-3)");
+        assert.ok(/<span class="batch-task-scope-line">服务商: a.com, b.com<\/span>/.test(html),
+            "provider scope line must be wrapped in .batch-task-scope-line");
+
+        const emptyHtml = sandbox.renderBatchConfigRow(makeConfig([]));
+        assert.ok(!emptyHtml.includes("服务商:"), "empty emailDomains must not render a provider line");
+        assert.ok(emptyHtml.includes("无限制"), "empty filters must show 无限制");
+    });
+
+    it("V10: existing tag and region picker readers keep their exact behavior (I2b-2)", () => {
+        const readTags = extractFn("readBatchTagPickerValue");
+        const readRegions = extractFn("readBatchRegionPickerValue");
+        assert.ok(readTags && readRegions, "existing picker readers must exist");
+
+        const tagHidden = element("AI,STEM,AI");
+        const regionHidden = element("China,Europe");
+        const sandbox = {
+            document: {
+                getElementById: (id) => id === "batchManualTags" ? tagHidden : (id === "batchConfigEditorRegions" ? regionHidden : null)
+            }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("normalizeBatchTags"), sandbox);
+        vm.runInContext(readTags, sandbox);
+        vm.runInContext(readRegions, sandbox);
+
+        assert.deepStrictEqual(Array.from(sandbox.readBatchTagPickerValue("batchManualTags")), ["AI", "STEM"],
+            "tag reader must trim and dedupe, preserving first-seen order");
+        assert.deepStrictEqual(Array.from(sandbox.readBatchRegionPickerValue("batchConfigEditorRegions")), ["China", "Europe"],
+            "region reader must split/trim/filter, preserving order");
+    });
+
+    it("W1: batchOperatorStatusOptions derives English values and Chinese labels from operatorStatusOptions (I3b-2/I3b-3)", () => {
+        const statusOptionsSrc = appSource.match(/const operatorStatusOptions = \[[\s\S]*?\];/);
+        assert.ok(statusOptionsSrc, "operatorStatusOptions constant must exist in app.js (I3b-3)");
+        const fnSrc = extractFn("batchOperatorStatusOptions");
+        assert.ok(fnSrc, "batchOperatorStatusOptions must exist (I3b-3)");
+        assert.ok(fnSrc.includes("operatorStatusOptions"),
+            "batchOperatorStatusOptions must derive from the existing constant (I3b-3)");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(statusOptionsSrc[0], sandbox);
+        vm.runInContext(fnSrc, sandbox);
+
+        const options = sandbox.batchOperatorStatusOptions();
+        assert.ok(options.length >= 3, "status options must not be empty");
+        options.forEach((o) => {
+            assert.match(o.value, /^[A-Z_]+$/, "value must be an English enum name (I3b-2)");
+            assert.match(o.label, /[\u4e00-\u9fff]/, "label must be Chinese (I3b-2)");
+            assert.notStrictEqual(o.value, o.label, "value and label must not be identical (I3b-2)");
+        });
+    });
+
+    it("W2: operator status values stay English enum names in the hidden input (I3b-2)", () => {
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(setValue, "setBatchMultiPickerValue must exist");
+
+        const hidden = element("");
+        const rendered = [];
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchConfigEditorOperatorStatuses" ? hidden : null },
+            renderBatchMultiPicker: (id) => rendered.push(id)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(setValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", ["NOT_CONTACTED", "CONTACTED"]);
+
+        assert.strictEqual(hidden.value, "NOT_CONTACTED,CONTACTED",
+            "hidden input must carry English enum names, comma-joined (I3b-2)");
+        assert.ok(!hidden.value.includes("未联系"), "Chinese labels must never enter the hidden input (I3b-2)");
+        assert.strictEqual(rendered.length, 1, "set must trigger a render");
+    });
+
+    it("W3: picker chips show Chinese labels while data-remove-tag keeps English values (I3b-2)", () => {
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const renderValue = extractFn("renderBatchMultiPicker");
+        assert.ok(renderValue, "renderBatchMultiPicker must exist");
+
+        const hidden = element("");
+        const search = element("");
+        const chips = element("");
+        const dropdown = element("");
+        const sandbox = {
+            BATCH_MULTI_PICKER_REGISTRY: {
+                batchConfigEditorOperatorStatuses: {
+                    options: () => [
+                        { value: "NOT_CONTACTED", label: "未联系" },
+                        { value: "CONTACTED", label: "已联系" },
+                        { value: "REPLIED", label: "已回复" }
+                    ],
+                    emptyText: "没有匹配状态",
+                    previewKind: "editor"
+                }
+            },
+            document: {
+                getElementById: (id) => ({
+                    "batchConfigEditorOperatorStatuses": hidden,
+                    "batchConfigEditorOperatorStatusesSearch": search,
+                    "batchConfigEditorOperatorStatusesChips": chips,
+                    "batchConfigEditorOperatorStatusesDropdown": dropdown
+                }[id] || null)
+            },
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValue, sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(renderValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", ["NOT_CONTACTED", "CONTACTED"]);
+
+        assert.ok(chips.innerHTML.includes("未联系"), "chip must show the Chinese label (I3b-2)");
+        assert.ok(chips.innerHTML.includes("已联系"), "chip must show the Chinese label (I3b-2)");
+        assert.ok(chips.innerHTML.includes('data-remove-tag="NOT_CONTACTED"'),
+            "chip remove button must carry the English enum value (I3b-2)");
+        assert.ok(chips.innerHTML.includes('data-remove-tag="CONTACTED"'),
+            "chip remove button must carry the English enum value (I3b-2)");
+    });
+
+    it("W4: showBatchConfigEditor echoes operatorStatuses into the picker hidden input (IP-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            renderBatchMultiPicker: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [], operatorStatuses: ["CONTACTED"] });
+        assert.strictEqual(el("batchConfigEditorOperatorStatuses").value, "CONTACTED",
+            "config operatorStatuses must be echoed into the hidden input (IP-1)");
+
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(el("batchConfigEditorOperatorStatuses").value, "",
+            "new task must start with an empty status picker");
+    });
+
+    it("W5: saveBatchConfigEditor payload carries English operatorStatuses from the picker (IP-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["CONTACTED"],
+            gateToggleChecked: () => true,
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "状态筛选任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].operatorStatuses, ["CONTACTED"],
+            "payload operatorStatuses must come from the picker as English values (IP-1)");
+        assert.strictEqual(apiBodies[0].gateFilterEnabled, true,
+            "payload gateFilterEnabled must come from gateToggleChecked (P4b T4b-5)");
+        assert.ok(!("operatorStatus" in apiBodies[0]), "payload must not carry the old operatorStatus key");
+    });
+
+    it("W6: formatManualDiffValue renders status list or 全部状态 with Chinese labels (I3b-4 #2)", () => {
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        assert.ok(formatDiffValue, "formatManualDiffValue must exist");
+
+        const sandbox = {
+            batchTaskState: { preloadedTemplates: [] },
+            supportedBatchComposeTemplates: () => [],
+            operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+        vm.runInContext(formatDiffValue, sandbox);
+
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", []), "全部状态");
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", ["NOT_CONTACTED"]), "未联系");
+        assert.strictEqual(sandbox.formatManualDiffValue("operatorStatuses", ["NOT_CONTACTED", "CONTACTED"]), "未联系、已联系");
+    });
+
+    it("W7: normalizeManualSnapshot sorts operatorStatuses so order never reads as changed (I3b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        assert.ok(normalize, "normalizeManualSnapshot must exist");
+
+        const sandbox = { Number };
+        vm.createContext(sandbox);
+        vm.runInContext(normalize, sandbox);
+
+        const a = sandbox.normalizeManualSnapshot({ operatorStatuses: ["CONTACTED", "NOT_CONTACTED"], tags: [], regions: [], emailDomains: [] });
+        const b = sandbox.normalizeManualSnapshot({ operatorStatuses: ["NOT_CONTACTED", "CONTACTED"], tags: [], regions: [], emailDomains: [] });
+
+        assert.deepStrictEqual(Array.from(a.operatorStatuses), ["CONTACTED", "NOT_CONTACTED"],
+            "operatorStatuses must be sorted (I3b-5)");
+        assert.deepStrictEqual(Array.from(a.operatorStatuses), Array.from(b.operatorStatuses),
+            "same status set in different order must normalize identically (I3b-5)");
+    });
+
+    it("W8: computeManualDiffs flags operatorStatuses once the field participates in diffs (I3b-4 #3 gap fix)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(operatorStatuses) {
+            return {
+                id: 1, templateId: null, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains: [], discipline: "", operatorStatuses,
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceStatuses, draftStatuses) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceStatuses) },
+                readManualFormValues: () => makeConfig(draftStatuses),
+                supportedBatchComposeTemplates: () => [],
+                operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const diffsWhenExtended = runDiffs([], ["CONTACTED"]);
+        assert.ok(diffsWhenExtended.some((d) => d.key === "operatorStatuses"),
+            "draft with a selected status must be flagged as diff when the source has none (gap fix)");
+
+        const diffsWhenSame = runDiffs(["CONTACTED"], ["CONTACTED"]);
+        assert.ok(!diffsWhenSame.some((d) => d.key === "operatorStatuses"),
+            "identical status sets must not be flagged as diff");
+    });
+
+    it("W9: renderBatchConfigRow adds the 状态 scope line with Chinese labels (S3b-3)", () => {
+        const renderRow = extractFn("renderBatchConfigRow");
+        assert.ok(renderRow, "renderBatchConfigRow must exist");
+
+        function makeConfig(operatorStatuses) {
+            return {
+                id: 1, configName: "状态筛选任务", mailType: "INTRODUCTION", autoEnabled: false,
+                funnelLevel: null, tags: [], regions: [], emailDomains: [], operatorStatuses, discipline: null,
+                templateId: null, cron: null, nextFireTime: null, lastExecutedAt: null
+            };
+        }
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v),
+            regionLabel: (v) => v || "",
+            operatorStatusOptions: [["NOT_CONTACTED", "未联系"]],
+            cronToDisplayText: () => "",
+            renderBatchConfigStatusToggle: () => "",
+            batchGatePillHtml: () => ""
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
+        vm.runInContext(renderRow, sandbox);
+
+        const html = sandbox.renderBatchConfigRow(makeConfig(["NOT_CONTACTED"]));
+        assert.ok(html.includes("状态: 未联系"), "scope line must render 状态: with the Chinese label (S3b-3)");
+        assert.ok(/<span class="batch-task-scope-line">状态: 未联系<\/span>/.test(html),
+            "status scope line must be wrapped in .batch-task-scope-line");
+
+        const emptyHtml = sandbox.renderBatchConfigRow(makeConfig([]));
+        assert.ok(!emptyHtml.includes("状态:"), "empty operatorStatuses must not render a status line");
+        assert.ok(emptyHtml.includes("无限制"), "empty filters must show 无限制");
+    });
+
+    it("W10: regression — P2b email-domain picker behavior stays intact (N3b-2)", () => {
+        const setValue = extractFn("setBatchMultiPickerValue");
+        const readValue = extractFn("readBatchMultiPickerValue");
+        assert.ok(setValue && readValue, "multi picker helpers must exist");
+
+        const hidden = element("");
+        const sandbox = {
+            document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(setValue, sandbox);
+        vm.runInContext(readValue, sandbox);
+
+        sandbox.setBatchMultiPickerValue("batchManualEmailDomains", ["university.edu", "research.cn"]);
+        assert.strictEqual(hidden.value, "university.edu,research.cn",
+            "email domain comma contract must be unchanged (N3b-2)");
+        assert.deepStrictEqual(
+            Array.from(sandbox.readBatchMultiPickerValue("batchManualEmailDomains")),
+            ["university.edu", "research.cn"]
+        );
+    });
+
+    // ── P4b 邮件模版门禁过滤（G1-G14） ────────────────────────────────────────────
+
+    const BATCH_GATE_FILTERABLE_FIELDS_SRC = appSource.match(/var BATCH_GATE_FILTERABLE_FIELDS = \{[\s\S]*?\};/);
+
+    function gateStateHarness({ templateValue, gateApi, showStatus }) {
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                const classes = new Set();
+                elements[id] = {
+                    id, value: "", textContent: "", innerHTML: "", hidden: true, disabled: false, checked: false,
+                    classList: {
+                        add: (c) => classes.add(c),
+                        remove: (c) => classes.delete(c),
+                        contains: (c) => classes.has(c)
+                    },
+                    setAttribute() {},
+                    querySelectorAll() { return []; }
+                };
+            }
+            return elements[id];
+        }
+        const scheduled = [];
+        const gateApiCalls = [];
+        const dialogs = [];
+        const sandbox = {
+            batchGateState: {
+                editor: { available: false, fields: [], dropped: [] },
+                manual: { available: false, fields: [], dropped: [] }
+            },
+            document: { getElementById: (id) => el(id) },
+            api: async (url, options) => {
+                gateApiCalls.push(url);
+                if (gateApi instanceof Error) throw gateApi;
+                return gateApi ? gateApi(url, options) : { esFields: [] };
+            },
+            console: { error: () => {} },
+            showStatus: (msg) => { dialogs.push(msg); },
+            updateGateToggleLabel: () => {},
+            scheduleRecipientPreview: (k) => scheduled.push(k)
+        };
+        vm.createContext(sandbox);
+        assert.ok(BATCH_GATE_FILTERABLE_FIELDS_SRC, "BATCH_GATE_FILTERABLE_FIELDS must exist (I4b-4)");
+        vm.runInContext(BATCH_GATE_FILTERABLE_FIELDS_SRC[0], sandbox);
+        vm.runInContext(extractFn("gateToggleId"), sandbox);
+        vm.runInContext(extractFn("refreshBatchGateState"), sandbox);
+        el("batchConfigEditorTemplateId").value = templateValue || "";
+        return { sandbox, el, scheduled, gateApiCalls, dialogs };
+    }
+
+    it("G1: empty esFields disables the gate toggle with the warn hint (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: [] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, true, "toggle must be disabled (I4b-3)");
+        assert.strictEqual(checkbox.checked, false, "toggle must be unchecked (I4b-3)");
+        assert.strictEqual(keys.hidden, true, "chip area must stay hidden (I4b-3)");
+        assert.ok(hint.textContent.includes("未配置门禁字段"),
+            "hint must explain the template has no gate fields (I4b-3)");
+        assert.ok(hint.classList.contains("is-warn"), "hint must carry is-warn (S4b-1)");
+    });
+
+    it("G2: empty template id sends no gate-fields request and stays unavailable (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "", gateApi: async () => ({ esFields: ["institution"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        assert.strictEqual(h.gateApiCalls.length, 0, "no request may fire for an empty template (I4b-3)");
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").disabled, true);
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").checked, false);
+        assert.strictEqual(h.el("batchConfigEditorGateFilterKeys").hidden, true);
+    });
+
+    it("G3: a failing gate-fields request falls back to unavailable without a dialog (I4b-3)", async () => {
+        const errors = [];
+        const h = gateStateHarness({ templateValue: "5", gateApi: new Error("boom") });
+        h.sandbox.console.error = () => { errors.push("logged"); };
+        await h.sandbox.refreshBatchGateState("editor");
+
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").disabled, true, "must degrade to unavailable (I4b-3)");
+        assert.strictEqual(h.el("batchConfigEditorGateFilter").checked, false);
+        assert.strictEqual(errors.length, 1, "console.error must be called exactly once (I4b-3)");
+        assert.strictEqual(h.dialogs.length, 0, "failure must not open a dialog (I4b-3)");
+    });
+
+    it("G4: filterable esFields enable the toggle and render one chip per field (I4b-4/S4b-1)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["institution", "researchFields"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, false, "toggle must be enabled (I4b-3)");
+        assert.strictEqual(keys.hidden, false, "chip area must be visible (I4b-3)");
+        assert.strictEqual((keys.innerHTML.match(/class="tag-chip active"/g) || []).length, 2,
+            "exactly 2 filterable chips must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("有机构"), "institution chip label must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("有研究方向"), "researchFields chip label must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("该模板必填字段"), "chip area label must render (S4b-1)");
+        assert.ok(!hint.classList.contains("is-warn"), "available state must not keep is-warn");
+    });
+
+    it("G5: non-filterable esFields are flagged as dropped alongside the chips (I4b-4)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["institution", "keyword", "hIndex"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        assert.strictEqual((keys.innerHTML.match(/class="tag-chip active"/g) || []).length, 1,
+            "only the filterable field must render as a chip (I4b-4)");
+        assert.ok(keys.innerHTML.includes("batch-gate-keys-dropped"), "dropped note must render (I4b-4)");
+        assert.ok(keys.innerHTML.includes("keyword"), "dropped field keyword must be named (I4b-4)");
+        assert.ok(keys.innerHTML.includes("hIndex"), "dropped field hIndex must be named (I4b-4)");
+        assert.ok(keys.innerHTML.includes("另有 2 个必填字段无法预筛"),
+            "dropped count must be stated (I4b-4)");
+    });
+
+    it("G6: esFields with no filterable overlap stay unavailable with the all-dropped hint (I4b-3)", async () => {
+        const h = gateStateHarness({ templateValue: "5", gateApi: async () => ({ esFields: ["keyword"] }) });
+        await h.sandbox.refreshBatchGateState("editor");
+
+        const checkbox = h.el("batchConfigEditorGateFilter");
+        const keys = h.el("batchConfigEditorGateFilterKeys");
+        const hint = h.el("batchConfigEditorGateFilterHint");
+        assert.strictEqual(checkbox.disabled, true, "all-dropped must disable the toggle (I4b-3)");
+        assert.strictEqual(checkbox.checked, false);
+        assert.strictEqual(keys.hidden, true);
+        assert.ok(hint.textContent.includes("该模板的必填字段均无法预筛"),
+            "all-dropped hint text required (I4b-3 step 5)");
+        assert.ok(hint.textContent.includes("keyword"), "dropped field must be named in the hint");
+    });
+
+    it("G7: unavailable gate state sends a single preview request (I4b-6)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: false }, manual: { available: false } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : null },
+            api: async (url, opts) => { bodies.push(JSON.parse(opts.body)); return { pending: 5, retryable: 3 }; },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 1, "unavailable state must send exactly one request (I4b-6)");
+        assert.strictEqual(bodies[0].gateFilterEnabled, false, "the single request must gate off (I4b-6)");
+        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>8</strong>"),
+            "single-request total must render (5+3)");
+        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
+            "no exclusion line may render without dual requests");
+    });
+
+    it("G8: available gate with toggle off sends two requests and renders the warnline (I4b-1)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: async (url, opts) => {
+                bodies.push(JSON.parse(opts.body));
+                return bodies.length === 1 ? { pending: 10, retryable: 5 } : { pending: 4, retryable: 3 };
+            },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 2, "available state must send two requests (I4b-1)");
+        assert.strictEqual(bodies[0].gateFilterEnabled, false, "first request must be gate off (I4b-1)");
+        assert.strictEqual(bodies[1].gateFilterEnabled, true, "second request must be gate on (I4b-1)");
+        assert.ok(hint.innerHTML.includes("batch-gate-warnline"),
+            "off toggle with an excluded count must render the warnline (I4b-1)");
+        assert.ok(hint.innerHTML.includes("其中 8 位缺少该模板必填字段"),
+            "excluded count must be off-total minus on-total (15-7=8) (I4b-1)");
+    });
+
+    it("G9: available gate with toggle on renders the excluded span with the gated total (I4b-1)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = true;
+        const bodies = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: async (url, opts) => {
+                bodies.push(JSON.parse(opts.body));
+                return bodies.length === 1 ? { totalSendable: 100 } : { totalSendable: 60 };
+            },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(bodies.length, 2);
+        assert.ok(hint.innerHTML.includes("batch-gate-excluded"),
+            "on toggle must render the excluded span (I4b-1)");
+        assert.ok(hint.innerHTML.includes("门禁过滤已排除"), "exclusion copy must render (I4b-1)");
+        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>60</strong>"),
+            "total must come from the gate-on response (I4b-1)");
+        assert.ok(hint.innerHTML.includes(">40<"), "excluded = 100-60 = 40 (I4b-1)");
+    });
+
+    it("G10: a stale dual-response round is discarded by seq and never renders (I4b-2)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const pending = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");   // round 1 (seq 1): pending[0] off, pending[1] on
+        sandbox.refreshRecipientPreview("manual");   // round 2 (seq 2): pending[2] off, pending[3] on
+        assert.strictEqual(pending.length, 4, "two rounds must issue four requests (I4b-2)");
+
+        pending[2].resolve({ pending: 1, retryable: 1 });   // round 2 off → total 2
+        pending[3].resolve({ pending: 1, retryable: 0 });   // round 2 on  → total 1, excluded 1
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.ok(hint.innerHTML.includes("batch-gate-warnline"), "fresh round must render");
+        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"), "fresh excluded count must render");
+
+        pending[0].resolve({ pending: 50, retryable: 50 }); // round 1 off → total 100
+        pending[1].resolve({ pending: 25, retryable: 25 }); // round 1 on  → total 50, excluded 50
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"),
+            "stale round must not overwrite the fresh render (I4b-2)");
+        assert.ok(!hint.innerHTML.includes("其中 50 位"), "stale excluded count must not render (I4b-2)");
+    });
+
+    it("G11: a rejected dual request renders the failure, never a partial result (I4b-2)", async () => {
+        const refresh = extractFn("refreshRecipientPreview");
+        const baseHint = extractFn("baseHintHtml");
+        const gateToggle = extractFn("gateToggleId");
+        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+
+        const hint = element();
+        const checkbox = element("");
+        checkbox.checked = false;
+        const pending = [];
+        const sandbox = {
+            batchGateState: { editor: { available: true }, manual: { available: true } },
+            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
+            recipientPreviewHintId: () => "batchManualRecipientHint",
+            gateToggleId: () => "batchManualGateFilter",
+            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
+            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(baseHint, sandbox);
+        vm.runInContext(gateToggle, sandbox);
+        vm.runInContext(refresh, sandbox);
+
+        sandbox.refreshRecipientPreview("manual");
+        pending[0].resolve({ pending: 10, retryable: 5 });   // off succeeds
+        pending[1].reject(new Error("boom"));                // on fails
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(hint.textContent, "预估失败：boom",
+            "any failing request must render the failure (I4b-2)");
+        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
+            "no half-rendered result may appear (I4b-2)");
+    });
+
+    it("G12: gateFilterEnabled participates in manual diffs with 开启/关闭 values (I4b-5)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(gateFilterEnabled) {
+            return {
+                id: 1, templateId: 1, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains: [], discipline: "", operatorStatuses: [],
+                gateFilterEnabled,
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceGate, draftGate) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceGate) },
+                readManualFormValues: () => makeConfig(draftGate),
+                supportedBatchComposeTemplates: () => []
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const onValue = runDiffs(false, true);
+        assert.ok(onValue.some((d) => d.key === "gateFilterEnabled" && d.label === "邮件模版门禁过滤"),
+            "draft on with source off must be flagged (I4b-5)");
+        assert.strictEqual(onValue.find((d) => d.key === "gateFilterEnabled").oldDisplay, "关闭");
+        assert.strictEqual(onValue.find((d) => d.key === "gateFilterEnabled").newDisplay, "开启");
+
+        const sameValue = runDiffs(false, false);
+        assert.ok(!sameValue.some((d) => d.key === "gateFilterEnabled"),
+            "identical gate state must not be flagged (I4b-5)");
+
+        const formatSandbox = { supportedBatchComposeTemplates: () => [] };
+        vm.createContext(formatSandbox);
+        vm.runInContext(formatDiffValue, formatSandbox);
+        assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", true), "开启");
+        assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", false), "关闭");
+    });
+
+    it("G13: batchGatePillHtml renders the three list states (S4b-2)", () => {
+        const pillHtml = extractFn("batchGatePillHtml");
+        assert.ok(pillHtml, "batchGatePillHtml must exist (S4b-2)");
+
+        const sandbox = {};
+        vm.createContext(sandbox);
+        vm.runInContext(pillHtml, sandbox);
+
+        const na = sandbox.batchGatePillHtml({ templateId: null, gateFilterEnabled: true });
+        assert.ok(na.includes("is-na"), "empty template must render the is-na pill (S4b-2)");
+        assert.ok(na.includes("模板无门禁字段"), "is-na pill copy required (S4b-2)");
+
+        const on = sandbox.batchGatePillHtml({ templateId: 1, gateFilterEnabled: true });
+        assert.ok(on.includes("batch-gate-pill") && !on.includes("is-off") && !on.includes("is-na"),
+            "gate on must render the blue pill only (S4b-2)");
+        assert.ok(on.includes("门禁过滤 · 开"), "gate on pill copy must be 「门禁过滤 · 开」(P4b T4b-5 deviation)");
+
+        const off = sandbox.batchGatePillHtml({ templateId: 1, gateFilterEnabled: false });
+        assert.ok(off.includes("is-off"), "gate off must render the is-off pill (S4b-2)");
+        assert.ok(off.includes("门禁过滤 · 关"), "gate off pill copy required (S4b-2)");
+    });
+
+    it("G14: regression — P2b (V1-V9) and P3b (W1-W9) behaviors stay green", () => {
+        // P2b V1: email-domain comma contract unchanged
+        const readValue = extractFn("readBatchMultiPickerValue");
+        const setValue = extractFn("setBatchMultiPickerValue");
+        assert.ok(readValue && setValue, "multi picker helpers must remain (V1)");
+        const hidden = element("");
+        const sandbox1 = {
+            document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
+            renderBatchMultiPicker: () => {}
+        };
+        vm.createContext(sandbox1);
+        vm.runInContext(setValue, sandbox1);
+        vm.runInContext(readValue, sandbox1);
+        sandbox1.setBatchMultiPickerValue("batchManualEmailDomains", ["a.com", "b.com"]);
+        assert.strictEqual(hidden.value, "a.com,b.com", "comma contract must be unchanged (V1)");
+        assert.deepStrictEqual(
+            Array.from(sandbox1.readBatchMultiPickerValue("batchManualEmailDomains")),
+            ["a.com", "b.com"]
+        );
+
+        // P3b W1: status options derive from the existing constant
+        const statusOptionsSrc = appSource.match(/const operatorStatusOptions = \[[\s\S]*?\];/);
+        assert.ok(statusOptionsSrc, "operatorStatusOptions constant must remain (W1)");
+        const fnSrc = extractFn("batchOperatorStatusOptions");
+        assert.ok(fnSrc, "batchOperatorStatusOptions must remain (W1)");
+        const sandbox2 = {};
+        vm.createContext(sandbox2);
+        vm.runInContext(statusOptionsSrc[0], sandbox2);
+        vm.runInContext(fnSrc, sandbox2);
+        const options = sandbox2.batchOperatorStatusOptions();
+        assert.ok(options.length >= 3, "status options must not be empty (W1)");
+        options.forEach((o) => {
+            assert.match(o.value, /^[A-Z_]+$/, "value must stay an English enum name (W1)");
+            assert.notStrictEqual(o.value, o.label, "value and label must stay distinct (W1)");
+        });
     });
 });

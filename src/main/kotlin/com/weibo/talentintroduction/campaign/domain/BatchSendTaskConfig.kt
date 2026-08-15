@@ -20,10 +20,11 @@ data class BatchSendTaskConfig(
     val funnelLevel: String? = null,
     val tagsJson: String = "[]",
     val regionsJson: String = "[]",
-    val emailDomain: String? = null,
+    val emailDomainsJson: String = "[]",
     val discipline: String? = null,
-    val operatorStatus: String? = null,
+    val operatorStatusesJson: String = "[]",
     val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
@@ -44,10 +45,11 @@ data class BatchSendTaskConfigView(
     val funnelLevel: String?,
     val tags: List<String>,
     val regions: List<String> = emptyList(),
-    val emailDomain: String?,
+    val emailDomains: List<String> = emptyList(),
     val discipline: String?,
-    val operatorStatus: String? = null,
+    val operatorStatuses: List<String> = emptyList(),
     val templateId: Long?,
+    val gateFilterEnabled: Boolean = false,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
     /** Next automatic trigger time; null when autoEnabled = false or the cron is invalid (I-1/I-2/I-3). */
@@ -68,10 +70,11 @@ data class BatchSendTaskConfigCreateCommand(
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
     val regions: List<String> = emptyList(),
-    val emailDomain: String? = null,
+    val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
-    val operatorStatus: String? = null,
-    val templateId: Long? = null
+    val operatorStatuses: List<String> = emptyList(),
+    val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -86,8 +89,9 @@ data class BatchSendTaskConfigUpdateCommand(
     val funnelLevel: String? = null,
     val tags: List<String> = emptyList(),
     val regions: List<String> = emptyList(),
-    val emailDomain: String? = null,
+    val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
-    val operatorStatus: String? = null,
-    val templateId: Long? = null
+    val operatorStatuses: List<String> = emptyList(),
+    val templateId: Long? = null,
+    val gateFilterEnabled: Boolean = false
 )
