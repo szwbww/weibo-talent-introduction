@@ -10,10 +10,10 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: a1
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
+- Pause reason: PLAN_CONFLICT — plan T-C2/A-8 (app.js:15149 raw live message) contradicts batchManualExecutionLog.test.js:331-349 which asserts the escaped literal; plan requires that file green (fail 0) but its 5-file authorized list excludes it. Plan amendment needs human approval. Implementer left all 5 authorized files modified, uncommitted.
 - Resume from: N/A
 
 ## Baseline
@@ -26,7 +26,7 @@ Baseline command results, run in the retained fast worktree at the master base (
 - `node --test src/test/js/batchSendTaskConsoleVisualFix.test.js` -> exit 0, fail 0
 - `node --test src/test/js/*.test.js` -> exit 0, fail 0
 - `git diff --check` -> clean
-- `JAVA_HOME=...zulu-11... mvn test` -> running asynchronously; result appended when settled (bg job).
+- `JAVA_HOME=...zulu-11... mvn test` -> exit 0, `Tests run: 2456, Failures: 0, Errors: 0, Skipped: 4`, `BUILD SUCCESS`. Baseline fully green (no pre-existing failures to compare against).
 
 JDK 11 (zulu-11) verified: `openjdk version "11.0.15"`. Node `v25.7.0`.
 
@@ -38,7 +38,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | none | 1 | IMPLEMENTING | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | | 0 | — | | | |
+| a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | none | 1 | PAUSED_FOR_HUMAN | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | | 0 | — | | | plan T-C2 vs batchManualExecutionLog.test.js:331-349 contradiction; 5 authorized files modified, uncommitted |
 | a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 0 | PENDING | | | 0 | — | | | |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 0 | PENDING | | | 0 | — | | | |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2,a3 | 0 | PENDING | | | 0 | — | | | |
