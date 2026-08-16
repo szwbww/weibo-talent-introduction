@@ -39,14 +39,14 @@ class TaskAuditRetentionService(
 
         // I3-4：先子表后主表
         try {
-            progressDeleted = purgeLoop { progressLogRepository.deleteOlderThan(cutoff, props.batchSize) }
+            progressDeleted = purgeLoop { limit -> progressLogRepository.deleteOlderThan(cutoff, limit) }
         } catch (e: Exception) {
             failedTables++
             log.warn("purge task_progress_log failed: {}", e.message)
         }
 
         try {
-            executionDeleted = purgeLoop { executionRepository.deleteOlderThan(cutoff, props.batchSize) }
+            executionDeleted = purgeLoop { limit -> executionRepository.deleteOlderThan(cutoff, limit) }
         } catch (e: Exception) {
             failedTables++
             log.warn("purge task_execution failed: {}", e.message)
@@ -55,14 +55,19 @@ class TaskAuditRetentionService(
         return RetentionResult(progressDeleted, executionDeleted, failedTables)
     }
 
-    /** I3-2：循环删除直到单批返回 0 或累计达到单次运行上限。 */
-    private fun purgeLoop(deleteBatch: () -> Int): Int {
+    /** I3-2：循环删除直到单批返回 0 或累计达到单次运行上限。每次调用传入剩余容量
+     *  `min(batchSize, maxRowsPerRun - deleted)` 作为 LIMIT，保证单次运行绝不超过
+     *  `maxRowsPerRun`（修复 V-1：原先总以整批 batchSize 删除、累计达上限后才检查，
+     *  例如 batchSize=2000 / maxRowsPerRun=3000 时会删 4000 行）。 */
+    private fun purgeLoop(deleteBatch: (Int) -> Int): Int {
         var deleted = 0
-        while (true) {
-            val batch = deleteBatch()
+        while (deleted < props.maxRowsPerRun) {
+            val remaining = props.maxRowsPerRun - deleted
+            val batch = deleteBatch(minOf(props.batchSize, remaining))
+            if (batch <= 0) return deleted
             deleted += batch
-            if (batch == 0 || deleted >= props.maxRowsPerRun) return deleted
         }
+        return deleted
     }
 }
 

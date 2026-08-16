@@ -63,14 +63,24 @@ class TaskAuditRetentionServiceTest {
 
     @Test
     fun `purge stops early when maxRowsPerRun cap is reached`() {
-        Mockito.`when`(progressLogRepository.deleteOlderThan(anyValue(LocalDateTime.now()), Mockito.anyInt()))
-            .thenReturn(2000, 2000)
+        Mockito.`when`(progressLogRepository.deleteOlderThan(anyValue(LocalDateTime.now()), Mockito.eq(2000)))
+            .thenReturn(2000)
+        Mockito.`when`(progressLogRepository.deleteOlderThan(anyValue(LocalDateTime.now()), Mockito.eq(1000)))
+            .thenReturn(1000)
 
         val result = service(TaskRetentionProperties(maxRowsPerRun = 3000)).purge()
 
-        assertEquals(4000, result.progressLogDeleted)
+        assertEquals(3000, result.progressLogDeleted, "per-run cap must not be exceeded")
+        assertEquals(0, result.failedTables)
+        assertEquals("SUCCESS", result.taskFinalStatus)
+        val limits = ArgumentCaptor.forClass(Int::class.java)
         Mockito.verify(progressLogRepository, Mockito.times(2))
-            .deleteOlderThan(anyValue(LocalDateTime.now()), Mockito.anyInt())
+            .deleteOlderThan(anyValue(LocalDateTime.now()), captureValue(limits, 0))
+        assertEquals(
+            listOf(2000, 1000),
+            limits.allValues,
+            "delete limits must be the remaining capacity: 2000 then 1000, no third call"
+        )
     }
 
     // ---- I3-4: deletion order ----
