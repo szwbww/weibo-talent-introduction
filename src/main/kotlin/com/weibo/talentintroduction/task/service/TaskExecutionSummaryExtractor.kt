@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component
  * [TaskTypeCatalog] 的 `summaryRule`）。取数顺序固定为 I1-3 的三级优先级：
  *
  * ① `resultSummary`（终态权威，block 返回后才写入）→
- * ② 该 executionId 最新一条 `task_progress_log.detailsJson` + 该行 `processedCount` → 
+ * ② 该 executionId 最新一条 `task_progress_log.detailsJson` + 该行 `processedCount` →
  * ③ 存量 `success_count` / `failure_count`。
  *
  * 三级都无有效值时返回全 0（列表页由 catalog 的 `metricLabel = null` 决定渲染
