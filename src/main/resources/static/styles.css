@@ -8530,6 +8530,9 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-task-table td.batch-task-actions { overflow-wrap: normal; white-space: nowrap; }
 .batch-task-scope-line { display: block; }
 .batch-task-scope-line + .batch-task-scope-line { margin-top: 3px; color: var(--text-muted); }
+.batch-task-scope-more { margin-top: 3px; }
+.batch-task-scope-more .batch-task-scope-line { margin-top: 3px; color: var(--text-muted); }
+.batch-task-scope-more + .batch-task-scope-line { margin-top: 3px; }
 
 .batch-task-footer {
   padding: 14px 2px 0;
@@ -8770,6 +8773,14 @@ body.preview-available:not(.preview-docked) .preview-rail {
   color: var(--primary);
 }
 
+.batch-send-task-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .batch-log-drawer {
   position: absolute;
   top: 0;
@@ -8779,7 +8790,8 @@ body.preview-available:not(.preview-docked) .preview-rail {
   width: min(620px, 72%);
   padding: 22px;
   overflow: auto;
-  background: var(--panel-bg);
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(8px);
   border-left: 1px solid rgba(15, 23, 42, .08);
   box-shadow: -12px 0 32px rgba(15, 23, 42, .12);
 }
@@ -9187,7 +9199,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-manual-confirm-old { color: var(--text-muted); text-decoration: line-through; }
 .batch-manual-confirm-new { color: var(--error-strong); font-weight: 600; }
 
-.batch-log-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.batch-log-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
 .batch-log-metric { padding: 10px; border: 1px solid rgba(15, 23, 42, .08); border-radius: var(--radius-md); background: var(--bg-subtle); }
 .batch-log-metric-label { color: var(--text-muted); font-size: 11px; }
 .batch-log-metric-value { margin-top: 3px; color: var(--text-main); font-size: 18px; font-weight: 700; }

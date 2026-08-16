@@ -46,9 +46,9 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260816-v1-batch-console-list-layout'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260816-v1-batch-console-list-layout'));
-        assert.ok(html.includes('app.js?v=20260816-v1-batch-console-list-layout'));
+        assert.ok(html.includes('styles.css?v=20260817-v1-batch-console-row-drawer'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260817-v1-batch-console-row-drawer'));
+        assert.ok(html.includes('app.js?v=20260817-v1-batch-console-row-drawer'));
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
@@ -132,5 +132,24 @@ describe("batch send task console visual repair", () => {
         assert.match(sql, /CONVERT\(UNHEX\(/i);
         assert.ok(!sql.includes("默认介绍邮件任务"), "migration must stay ASCII-only");
         assert.ok(!sql.includes("材料提醒任务"), "migration must stay ASCII-only");
+    });
+
+    it("uses an opaque drawer surface that no longer references the translucent panel token (I-3/S-2)", () => {
+        const drawer = css.match(/\.batch-log-drawer\s*\{[\s\S]*?\n\}/)[0];
+        assert.ok(!drawer.includes("var(--panel-bg)"), "drawer must not reference the translucent --panel-bg");
+        assert.ok(drawer.includes("rgba(255, 255, 255, .96)"), "drawer must use the opaque panel surface");
+    });
+
+    it("keeps the log drawer inside the .batch-send-task-body positioning container (I-3/S-1)", () => {
+        const bodyOpen = html.indexOf('<div class="batch-send-task-body">');
+        const scheduledPanel = html.indexOf('<div id="batchScheduledPanel"');
+        const manualPanel = html.indexOf('<div id="batchManualPanel"');
+        const drawer = html.indexOf('<aside id="batchExecutionLogDrawer"');
+        const bodyClose = html.indexOf("</div>", drawer);
+        assert.ok(bodyOpen !== -1 && scheduledPanel !== -1 && manualPanel !== -1 && drawer !== -1,
+            "wrapper, panels and drawer must all exist");
+        assert.ok(bodyOpen < scheduledPanel, "wrapper must open before the scheduled panel");
+        assert.ok(manualPanel < drawer, "manual panel must precede the drawer");
+        assert.ok(drawer < bodyClose, "drawer must be inside the wrapper, before its close tag");
     });
 });

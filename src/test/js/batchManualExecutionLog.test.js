@@ -328,7 +328,7 @@ describe("batch manual execution log drawer", () => {
         assert.strictEqual(elements.batchLogLiveFill.style.width, "0%");
     });
 
-    it("renderBatchLiveSection escapes message and accountCode", () => {
+    it("renderBatchLiveSection renders raw message and escapes accountCode", () => {
         const elements = drawerElements();
         const sandbox = {
             document: { getElementById: (id) => elements[id] || null },
@@ -346,7 +346,7 @@ describe("batch manual execution log drawer", () => {
             }
         });
 
-        assert.strictEqual(elements.batchLogLiveMessage.textContent, "正在发送：&lt;b&gt;x&lt;/b&gt;");
+        assert.strictEqual(elements.batchLogLiveMessage.textContent, "正在发送：<b>x</b>");
         assert.ok(!elements.batchLogLiveAccounts.innerHTML.includes("<script>"),
             "accountCode must be escaped before innerHTML");
         assert.match(elements.batchLogLiveAccounts.innerHTML, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);

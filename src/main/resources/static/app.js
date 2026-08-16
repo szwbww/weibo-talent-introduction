@@ -13398,13 +13398,23 @@ function renderBatchConfigRow(c) {
     if (Array.isArray(c.emailDomains) && c.emailDomains.length > 0) scopeParts.push("服务商: " + escapeHtml(c.emailDomains.join(", ")));
     if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : c.discipline === "UNCLASSIFIED" ? "未分类" : escapeHtml(c.discipline)));
     if (Array.isArray(c.operatorStatuses) && c.operatorStatuses.length > 0) scopeParts.push("状态: " + c.operatorStatuses.map(operatorStatusLabel).join("、"));
+    // I-1：截断发生在数组层 —— 前 SCOPE_VISIBLE_LINES(=3) 条常驻，其余整体折叠进
+    // <details class="log-detail batch-task-scope-more">，单元格 HTML 不做任何字符级截断。
     var scopeHtml = scopeParts.length > 0
-        ? scopeParts.map(function(s, i) {
-            var cls = i === 0 ? "batch-task-scope-line" : "batch-task-scope-line";
-            return '<span class="' + cls + '">' + s + '</span>';
+        ? scopeParts.slice(0, 3).map(function(s) {
+            return '<span class="batch-task-scope-line">' + s + '</span>';
         }).join("")
         : '<span class="batch-task-scope-line muted">无限制</span>';
-    // S4b-2：门禁 pill 恒输出一行（三态之一），追加在全部 scopeParts 之后；
+    var collapsedScopeParts = scopeParts.slice(3);
+    if (collapsedScopeParts.length > 0) {
+        scopeHtml += '<details class="log-detail batch-task-scope-more">' +
+            '<summary>展开剩余 ' + collapsedScopeParts.length + ' 项</summary>' +
+            collapsedScopeParts.map(function(s) {
+                return '<span class="batch-task-scope-line">' + s + '</span>';
+            }).join("") +
+            '</details>';
+    }
+    // S4b-2：门禁 pill 恒输出一行（三态之一），追加在可见行与 <details> 之后；
     // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
     scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
 
@@ -13413,7 +13423,7 @@ function renderBatchConfigRow(c) {
 
     return '<tr>' +
         '<td><strong>' + escapeHtml(c.configName) + '</strong><br><span class="muted" style="font-size:11px;">' + escapeHtml(c.mailType) + '</span></td>' +
-        '<td class="batch-task-scope">' + scopeHtml.substring(0, 300) + '</td>' +
+        '<td class="batch-task-scope">' + scopeHtml + '</td>' +
         '<td>' + (c.templateId ? '<span class="badge ok">已指定</span>' : '<span class="badge">默认</span>') + '</td>' +
         '<td>' + escapeHtml(planHtml) + '</td>' +
         '<td>' +
@@ -15107,6 +15117,14 @@ function renderBatchExecutionDetail(d) {
     renderBatchLiveSection(d);
     renderOutcomeMetrics(d);
     renderIntegrityWarning(d);
+    // I-4：空数据时整块隐藏「失败原因/跳过原因/错误样例」三个 wrapper；「批次时间线」
+    // section 永不隐藏（空态仍由 renderBatchTimeline 输出「无执行过程记录」）。
+    var failureSection = document.getElementById("batchLogFailureSection");
+    if (failureSection) failureSection.hidden = !(d.failureReasons && Object.keys(d.failureReasons).length > 0);
+    var skippedSection = document.getElementById("batchLogSkippedSection");
+    if (skippedSection) skippedSection.hidden = !(d.skippedReasons && Object.keys(d.skippedReasons).length > 0);
+    var errorSamplesSection = document.getElementById("batchLogErrorSamples");
+    if (errorSamplesSection) errorSamplesSection.hidden = !(Array.isArray(d.errorSamples) && d.errorSamples.length > 0);
     renderReasons("batchLogFailureReasons", d.failureReasons, "无失败原因");
     renderReasons("batchLogSkippedReasons", d.skippedReasons, "无跳过原因");
     renderErrorSamples(d.errorSamples);
@@ -15146,7 +15164,7 @@ function renderBatchLiveSection(d) {
         }
     }
     var messageEl = document.getElementById("batchLogLiveMessage");
-    if (messageEl) messageEl.textContent = l.message ? escapeHtml(l.message) : "";
+    if (messageEl) messageEl.textContent = l.message || "";
     var accountsEl = document.getElementById("batchLogLiveAccounts");
     if (accountsEl) {
         accountsEl.innerHTML = (Array.isArray(l.accounts) ? l.accounts : []).map(function(a) {
@@ -15244,6 +15262,13 @@ function clearBatchLogDisplay() {
     if (statusInfo) statusInfo.textContent = '';
     var integrityWarning = document.getElementById("batchLogIntegrityWarning");
     if (integrityWarning) integrityWarning.hidden = true;
+    // I-4：复位三个空态 wrapper 为可见，避免下次切到有数据的记录时整块不显示。
+    var failureSection = document.getElementById("batchLogFailureSection");
+    if (failureSection) failureSection.hidden = false;
+    var skippedSection = document.getElementById("batchLogSkippedSection");
+    if (skippedSection) skippedSection.hidden = false;
+    var errorSamplesSection = document.getElementById("batchLogErrorSamples");
+    if (errorSamplesSection) errorSamplesSection.hidden = false;
 }
 
 function renderBatchTimeline(rows) {
