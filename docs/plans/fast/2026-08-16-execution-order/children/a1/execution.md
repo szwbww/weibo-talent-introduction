@@ -169,3 +169,112 @@ Smallest missing authority: permission to edit
 `src/test/js/batchManualExecutionLog.test.js:349` (or an explicit plan amendment), because
 plan T-C2 is logically incompatible with that file's existing assertion and with the plan's
 own required passing command.
+
+---
+
+# Execution Report — child a1 (Epoch 2)
+
+- **Result**: `READY_FOR_VERIFICATION`
+- **Plan**: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast/docs/plans/fast/2026-08-16-execution-order/children/a1/brief.md`
+- **Plan SHA-256**: `8656497153f0d08340e82cf15f6d12da9195bf170be7c638e3d4c2b35380c1f9` (epoch-2 brief, amended per ledger amendment A1; recomputed before and after execution — unchanged)
+- **Execution identity**: `.../children/a1/brief.md@86564971…`
+- **Execution epoch**: RESUME (epoch 2 of amended brief)
+- **Target worktree**: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast`
+- **Target branch**: `fast/2026-08-16-execution-order`
+- **Worktree identity**: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast@fast/2026-08-16-execution-order@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast`
+- **Worktree HEAD (pre-execution)**: `3731745386acb0542fb411770100ea5c7f46b1ab`
+- **Child base SHA**: `edda3e4e67e8b4511f3c7ca76b09926c56e4f69a`
+- **Post-execution code SHA**: `9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd` (implementation commit)
+- **Implementation commit**: `feat(fast-p): implement a1`
+- **Executor**: ImplementA1E2
+
+## Summary
+
+Epoch 2 resumed the epoch-1 state (5 product files implemented, uncommitted) and completed
+the remaining authorized work per amendment A1: applied T-D4 to
+`src/test/js/batchManualExecutionLog.test.js`, re-verified the retained epoch-1 changes,
+ran every required command (all green), and committed the implementation as exactly one
+commit.
+
+## What was reviewed / added
+
+1. **Retained epoch-1 diff reviewed** (`git diff` of the 5 product files, full text read):
+   - `app.js` — T-A1 (`renderBatchConfigRow`: removed useless `var cls` ternary and
+     `scopeHtml.substring(0, 300)`; `scopeParts.slice(0,3)` resident lines, empty → `无限制`;
+     `slice(3)` folds into one `<details class="log-detail batch-task-scope-more">` with
+     `展开剩余 N 项`; gate pill appended after the fold), T-C1 (`renderBatchExecutionDetail`
+     sets `hidden` on `#batchLogFailureSection`/`#batchLogSkippedSection`/
+     `#batchLogErrorSamples` for empty data; `clearBatchLogDisplay` resets all three to
+     visible; timeline section never touched), T-C2 (`messageEl.textContent = l.message || ""`).
+   - `index.html` — S-1 wrapper `<div class="batch-send-task-body">` opens right after
+     `</nav>` and closes after `</aside>`, wrapping both tab panels + drawer; S-5 three cache
+     keys all `20260817-v1-batch-console-row-drawer`; `task-modal-runtime.js` untouched.
+   - `styles.css` — S-1 `.batch-send-task-body` block inserted verbatim before
+     `.batch-log-drawer`; S-2 drawer `background: rgba(255, 255, 255, .96)` +
+     `backdrop-filter: blur(8px)` (other 10 lines untouched); S-3 three
+     `.batch-task-scope-more` rules appended after `.batch-task-scope-line` pair; S-4
+     `.batch-log-metrics` `repeat(5,…)` → `repeat(3,…)` (single token).
+   - `batchSendTaskConsoleVisualFix.test.js` — T-D1/T-D2 cache-key assertions synced; two new
+     assertions (opaque drawer rule block, drawer inside `.batch-send-task-body`); existing
+     `:54-61` `background-color` assertion untouched.
+   - `batchLogDrawerLayout.test.js` (new, T-D3) — 7 tests covering I-1/I-2/I-4/S-3.
+   All retained changes judged correct and complete per the amended plan; nothing reverted.
+2. **T-D4 applied** to `src/test/js/batchManualExecutionLog.test.js` (newly authorized 6th file):
+   - Test case `renderBatchLiveSection escapes message and accountCode` renamed to
+     `renderBatchLiveSection renders raw message and escapes accountCode` (line 331);
+   - Message assertion changed from `"正在发送：&lt;b&gt;x&lt;/b&gt;"` (double-escaped) to the
+     raw value `"正在发送：<b>x</b>"` (line 349) — consistent with T-C2 / acceptance A-8;
+   - accountCode innerHTML escaping assertions (lines 350–352) and the `is-failing`
+     assertion (line 353) left **byte-for-byte untouched** (that path still uses `innerHTML`
+     and must escape).
+
+## Commands run (all freshly in epoch 2, in the fast worktree)
+
+| # | Command | Result | Evidence |
+|---|---|---|---|
+| 1 | `node --check src/main/resources/static/app.js` | PASS (exit 0) | `CHECK_OK` |
+| 2 | `node --test src/test/js/batchLogDrawerLayout.test.js` | PASS (exit 0) | tests 7, pass 7, fail 0 |
+| 3 | `node --test src/test/js/batchSendTaskConsoleVisualFix.test.js` | PASS (exit 0) | tests 16, pass 16, fail 0 |
+| 4 | `node --test src/test/js/batchSendTaskConsoleInteraction.test.js` | PASS (exit 0) | tests 72, pass 72, fail 0 (V9/W9/G13 green) |
+| 5 | `node --test src/test/js/batchExecutionLogTimeline.test.js` | PASS (exit 0) | tests 16, pass 16, fail 0 |
+| 6 | `node --test src/test/js/batchManualExecutionLog.test.js` | PASS (exit 0) | tests 17, pass 17, fail 0 (T-D4 applied; epoch-1 single failure resolved) |
+| 7 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS (exit 0) | `BUILD SUCCESS` (02:15 min); surefire: Tests run: 2456, Failures: 0, Errors: 0, Skipped: 4 (summed from target/surefire-reports/TEST-*.xml); node suite inside mvn: tests 593, pass 593, fail 0 |
+| 8 | `git diff --check` | PASS (exit 0) | clean |
+
+## Verification evidence
+
+- All 8 required commands from the brief ran freshly and passed with the brief's criteria
+  (`# fail 0` + exit 0 per node run; mvn exit 0 with `Tests run: 2456, Failures: 0,
+  Errors: 0, Skipped: 4`; `git diff --check` clean).
+- Acceptance spot-checks re-run: `grep "substring" app.js` → no hit in
+  `renderBatchConfigRow` body (I-1); `grep -c "20260817-v1-batch-console-row-drawer"` →
+  index.html = 3, test file = 3 (S-5/M-2); no `style=` on the `.batch-send-task-body` line
+  (S-1).
+- Commit: `9dfbd5e feat(fast-p): implement a1` — exactly 6 files (app.js, index.html,
+  styles.css, batchSendTaskConsoleVisualFix.test.js, batchLogDrawerLayout.test.js (new),
+  batchManualExecutionLog.test.js), 299 insertions / 16 deletions. `docs/plans/fast/`
+  excluded. Commit is HEAD of the target worktree and an ancestor of
+  `fast/2026-08-16-execution-order`; working tree clean afterwards (porcelain = 0).
+
+## Deviations / notes
+
+- None beyond the authorized amendment: epoch 2 modified exactly the one newly authorized
+  file (`src/test/js/batchManualExecutionLog.test.js`, T-D4). Epoch-1 changes were verified
+  but not re-touched.
+- `Post-execution code SHA` in the epoch-1 header was N/A (no commit); epoch-2 commit SHA
+  is `9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd` (`9dfbd5e` short).
+- Plan identity / worktree identity rechecked before staging and before commit: unchanged.
+- No push, merge, rebase, amend, or history rewrite performed.
+
+## Freshness
+
+- Plan identity rechecked: YES (SHA-256 `86564971…` before and after execution)
+- Worktree identity rechecked: YES (root/branch/git-dir unchanged; HEAD moved only by the
+  implementation commit)
+- Reported commit reachable from target branch: YES (`9dfbd5e` is HEAD and ancestor)
+- Required commands run this invocation: YES (all 8)
+- Historical evidence used only as baseline: YES (epoch-1 report, ledger baseline)
+
+## Remaining Blocker
+
+- None. Ready for independent verification (`verify-p`).
