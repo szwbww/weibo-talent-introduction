@@ -33,10 +33,22 @@ describe("batch send task console visual repair", () => {
         assert.ok(app.includes('count.textContent = "共 " + configs.length + " 个任务"'));
     });
 
+    it("keeps the scheduled-task list compact and gives every table column a stable role", () => {
+        assert.match(css, /\.task-modal\.batch-send-task-modal\s*\{[\s\S]*?width:\s*min\(1180px,\s*calc\(100vw\s*-\s*48px\)\);/);
+        assert.match(css, /\.task-modal\.batch-send-task-modal:has\(#batchScheduledPanel:not\(\[hidden\]\)\)\s*\{\s*min-height:\s*0;/);
+        assert.ok(html.includes('<colgroup class="batch-task-table-columns">'));
+        ["name", "scope", "template", "schedule", "timing", "status", "actions"].forEach((column) => {
+            assert.ok(html.includes('class="batch-task-column-' + column + '"'), `missing ${column} column`);
+        });
+        assert.match(css, /\.batch-task-table\s*\{[^}]*table-layout:\s*fixed;/);
+        assert.match(css, /\.batch-task-table td\s*\{[^}]*vertical-align:\s*top;/);
+        assert.match(css, /\.batch-task-column-actions\s*\{\s*width:\s*170px;/);
+    });
+
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260814-v10-expert-mail-preview-01'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260814-v10-expert-mail-preview-01'));
-        assert.ok(html.includes('app.js?v=20260814-v10-expert-mail-preview-01'));
+        assert.ok(html.includes('styles.css?v=20260816-v1-batch-console-list-layout'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260816-v1-batch-console-list-layout'));
+        assert.ok(html.includes('app.js?v=20260816-v1-batch-console-list-layout'));
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {

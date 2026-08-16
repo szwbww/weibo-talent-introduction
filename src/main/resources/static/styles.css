@@ -8420,7 +8420,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 /* ── Batch Send Task Console ─────────────────────────────────────────────── */
 
 .task-modal.batch-send-task-modal {
-  width: min(1320px, calc(100vw - 64px));
+  width: min(1180px, calc(100vw - 48px));
   max-width: none;
   height: auto;
   min-height: min(580px, calc(100vh - 48px));
@@ -8429,6 +8429,10 @@ body.preview-available:not(.preview-docked) .preview-rail {
   flex-direction: column;
   position: relative;
   overflow: hidden;
+}
+
+.task-modal.batch-send-task-modal:has(#batchScheduledPanel:not([hidden])) {
+  min-height: 0;
 }
 
 .batch-send-task-header {
@@ -8512,11 +8516,18 @@ body.preview-available:not(.preview-docked) .preview-rail {
 
 .batch-task-toolbar-search { width: min(360px, 100%); }
 .batch-task-table-wrap { overflow: auto; border: 1px solid rgba(15, 23, 42, .08); border-radius: var(--radius-md); }
-.batch-task-table { min-width: 1080px; margin: 0; }
+.batch-task-table { min-width: 1080px; margin: 0; table-layout: fixed; }
 .batch-task-table th { padding: 11px 14px; font-size: 11px; }
-.batch-task-table td { padding: 14px; vertical-align: middle; }
+.batch-task-table td { padding: 14px; vertical-align: top; overflow-wrap: anywhere; }
+.batch-task-column-name { width: 15%; }
+.batch-task-column-scope { width: 26%; }
+.batch-task-column-template { width: 9%; }
+.batch-task-column-schedule { width: 12%; }
+.batch-task-column-timing { width: 16%; }
+.batch-task-column-status { width: 7%; }
+.batch-task-column-actions { width: 170px; }
 .batch-task-table td.batch-task-scope { min-width: 210px; white-space: normal; color: var(--text-secondary); }
-.batch-task-table td.batch-task-actions { white-space: nowrap; }
+.batch-task-table td.batch-task-actions { overflow-wrap: normal; white-space: nowrap; }
 .batch-task-scope-line { display: block; }
 .batch-task-scope-line + .batch-task-scope-line { margin-top: 3px; color: var(--text-muted); }
 
