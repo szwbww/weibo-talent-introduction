@@ -349,6 +349,12 @@ K-frontend-cache-key-triad 说的是三键，加第四个会让上述断言的�
   - 3 条及以内时**不产生** `<details>`；0 条时仍输出 `无限制` 且 pill 仍在；
   - `renderBatchExecutionDetail` 在空 reasons/errorSamples 下把三个 wrapper 置 `hidden`，
     而 `#batchLogTimelineSection` 保持可见（I-4）。
+- **T-D4** `src/test/js/batchManualExecutionLog.test.js` 同步 T-C2（fast-p 修正 A1：
+  原计划要求该文件 `fail 0` 却未授权修改它，与 T-C2/A-8 自相矛盾，经人工批准修正）：
+  - 「renderBatchLiveSection escapes message and accountCode」（:331-349）的 message 断言
+    改为裸值：`textContent === "正在发送：<b>x</b>"`（与 A-8 一致）；
+  - 该用例改名以反映语义（如 `renderBatchLiveSection renders raw message and escapes accountCode`）；
+  - accountCode 的 innerHTML 转义断言与 `is-failing` 断言**一字不改**（该路径仍走 innerHTML，必须转义）。
 
 ## 变更文件清单
 
@@ -359,8 +365,9 @@ K-frontend-cache-key-triad 说的是三键，加第四个会让上述断言的�
 | 3 | `src/main/resources/static/app.js` | 重写 `renderBatchConfigRow` 收件范围段；`renderBatchExecutionDetail` / `clearBatchLogDisplay` 空态隐藏；去掉 `:15149` 双重转义 |
 | 4 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 缓存键断言改值；新增抽屉不透明与包装层断言 |
 | 5 | `src/test/js/batchLogDrawerLayout.test.js` | **新建** |
+| 6 | `src/test/js/batchManualExecutionLog.test.js` | T-D4：:331-349 message 断言改裸值、用例改名；accountCode 断言不动 |
 
-文件数 5 ≤ 10；子系统 1（前端静态资源 + 其 JS 测试）≤ 2。
+文件数 6 ≤ 10；子系统 1（前端静态资源 + 其 JS 测试）≤ 2。
 
 ## 验证命令
 
