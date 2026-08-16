@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-16/00-execution-order.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-08-16/00-execution-order.md (commit 65b8de831a5f0edeafeae5683a2f15b79f7000a3)
 - Amendments: A1,A2,A3,A4,A5,A6
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
-- Current child: b5
-- Waiting role: REVERIFIER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -46,13 +46,10 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a1 | 2 | LIGHT_PASS | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | 8d497b05585bb46e33694ec8fa1d5d1ea3b23cba | epoch 1 scope pause resolved via amendment A2; RECORD_ONLY O1/O2 in verify-log carried to handoff |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 1 | LIGHT_PASS | bb07586b758357ad21794e17b7e99f200abeed5b | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | 0 | — | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | b662e185fdd053011824977c603b6a32d79b5053 | RECORD_ONLY O-1 (surefire count reporting artifact) in verify-log |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476 | a1,a2,a3 | 2 | LIGHT_PASS_WITH_NOTES | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | ad005d98b706ceed67b34c96a89e642334ca819a | 0 | — | ad005d98b706ceed67b34c96a89e642334ca819a | 5e49c0c947de7293a48b4be31150d0778d062a15 | epoch 1 scope pause resolved via amendment A3; RECORD_ONLY O-1/O-2/O-3 in verify-log |
-| b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:38ce7ad494397d168663036e9252b3d6bf1c2089 | b1 | 2 | LIGHT_PASS_WITH_NOTES | ad005d98b706ceed67b34c96a89e642334ca819a | 7885ac04378f553376711184b6596bc2906a9ad1 | 1 | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 816cd31cbdcdda409660f02735cd30303523a051 | epoch 1 scope pause resolved via amendment A4; round 1 F-1 whitespace fix; RECORD_ONLY O-1..O-3 |
-| b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 1 | LIGHT_PASS | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 0 | — | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 199d02a4877a3f9a08b23e548f99127d72b31b17 | RECORD_ONLY O-1 (Flyway unexecuted, no Docker) / O-2 / O-3 |
+| b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:38ce7ad494397d168663036e9252b3d6bf1c2089 | b1 | 2 | LIGHT_PASS_WITH_NOTES | ad005d98b706ceed67b34c96a89e642334ca819a | 7885ac04378f553376711184b6596bc2906a9ad1 | 1 | 7ca26a1 | 7ca26a1 | 816cd31cbdcdda409660f02735cd30303523a051 | epoch 1 scope pause resolved via amendment A4; round 1 F-1 whitespace fix; RECORD_ONLY O-1..O-3 |
+| b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 1 | LIGHT_PASS | 7ca26a1 | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 0 | — | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 199d02a4877a3f9a08b23e548f99127d72b31b17 | RECORD_ONLY O-1 (Flyway unexecuted, no Docker) / O-2 / O-3 |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 1 | LIGHT_PASS_WITH_NOTES | eb27b8d84a4286ce3ef92ca40acf98d761168121 | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 0 | — | d32ccb282d88a6e6182bb579acbc0b65d74995eb | d130fe81e53f16936bd36f665ec416ab1f9163f5 | RECORD_ONLY O-1/O-2/O-3 in verify-log |
-| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:771c8555b1a8a2bf286249df50acfc7a66436f3a | b1 | 2 | LIGHT_VERIFYING | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 2856a71c62252358d417b0f63810e547e66075f0 | 1 | 4d7f206a4f506104af73f3e63e4fceea3d857ef7 | 4d7f206a4f506104af73f3e63e4fceea3d857ef7 | | round 1 = A6-authorized T3-8 lock updates |
-| b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 0 | PENDING | | | 0 | — | | | |
-| b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 0 | PENDING | | | 0 | — | | | |
-| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
+| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:771c8555b1a8a2bf286249df50acfc7a66436f3a | b1 | 2 | LIGHT_PASS | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 2856a71c62252358d417b0f63810e547e66075f0 | 1 | 4d7f206a4f506104af73f3e63e4fceea3d857ef7 | 4d7f206a4f506104af73f3e63e4fceea3d857ef7 | 2091a440b7aeaf88bf81c4ce522e9c59826b3b4e | epoch 1 scope pause resolved via amendment A6 (12th file); round 1 = T3-8 lock updates; RECORD_ONLY O-1/O-2/O-3 |
 
 ## Amendments
 
