@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-16/00-execution-order.md (commit 65b8de831a5f0edeafeae5683a2f15b79f7000a3)
-- Amendments: A1,A2
+- Amendments: A1,A2,A3
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Branch: fast/2026-08-16-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: b1
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: SCOPE — plan T0-3 changes TaskExecutionService.listExecutions to paged (taskType,status,page,size) signature, breaking test-compile of src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt (old 2-arg call :26 + result.size :28; stubs findAllByTaskTypeAndStatusOrderByStartedAtDesc); file not among the 9 authorized. Controller grep confirms only two callers (controller:30 authorized; test unlisted). Implementer made no edits, no commit.
-- Resume from: b1 epoch 2, base e1ce1cbf1eeaba87e670771f23c25f2d2293a768, next action amend plan (authorize 10th file) then implement
+- Pause reason: N/A
+- Resume from: b1 epoch 2, base e1ce1cbf1eeaba87e670771f23c25f2d2293a768, next action dispatch implementer with amended brief (10th file authorized)
 
 ## Baseline
 
@@ -41,7 +41,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:d32a4cfb45e32b0932955290260839858b959c79 | none | 2 | LIGHT_PASS_WITH_NOTES | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 0 | — | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 03ea6672b8e3e9f57954e70cd3ad93c383681887 | epoch 1 PLAN_CONFLICT resolved via amendment A1; RECORD_ONLY O-1: renderErrorSamples pre-existing substring truncation |
 | a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a1 | 2 | LIGHT_PASS | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | 8d497b05585bb46e33694ec8fa1d5d1ea3b23cba | epoch 1 scope pause resolved via amendment A2; RECORD_ONLY O1/O2 in verify-log carried to handoff |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 1 | LIGHT_PASS | bb07586b758357ad21794e17b7e99f200abeed5b | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | 0 | — | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | b662e185fdd053011824977c603b6a32d79b5053 | RECORD_ONLY O-1 (surefire count reporting artifact) in verify-log |
-| b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2,a3 | 1 | PAUSED_FOR_HUMAN | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | | 0 | — | | | scope: TaskExecutionServiceTest.kt (10th file) not authorized; amendment pending; no edits made |
+| b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476 | a1,a2,a3 | 2 | IMPLEMENTING | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | | 0 | — | | | epoch 1 scope pause resolved via amendment A3 (10th file authorized) |
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 0 | PENDING | | | 0 | — | | | |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 0 | PENDING | | | 0 | — | | | |
@@ -53,3 +53,4 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:d32a4cfb45e32b0932955290260839858b959c79 | a1 阶段C T-C2 + 验收 A-8（实时消息裸值）与 a1 验证命令 通过判据（batchManualExecutionLog.test.js 须 fail 0） | 计划要求未授权测试文件保持绿，T-C2 却必然使其红；授权同步该文件 :331-349 断言为裸消息（T-D4），accountCode 转义断言不动 | HUMAN:ask 选项「Amend: authorize test edit, assert raw message」2026-08-16 |
 | A2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a2 阶段B T2-B5（triggerTypeLabel 文案）+ 共享审计 X-2 同步规则 vs a2 变更文件清单 | T2-B5 使 I-2 套件执行的 openBatchConfigLogs 路径调用 triggerTypeLabel，无 stub 时套件红；按 X-2 授权 createLogSandbox 补一行函数桩（T2-C4），不改任何断言 | HUMAN:ask 选项「Amend: authorize the one-line stub sync」2026-08-16 |
+| A3 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476 | b1 T0-3（listExecutions 分页签名）vs b1 变更文件清单 | 旧签名唯一测试调用方 TaskExecutionServiceTest.kt 不在 9 文件清单内，签名变更必然 test-compile 红；授权第 10 个文件并重写该旧用例适配分页 API | HUMAN:ask 选项「Amend: authorize TaskExecutionServiceTest.kt as file 10」2026-08-16 |

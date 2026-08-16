@@ -1,37 +1,42 @@
-# Fast-P Child Brief — b1
+# Fast-P Child Brief — b1 (epoch 2, amended)
 
 - Child: b1
 - Plan: docs/plans/2026-08-16/b1-task-execution-list-performance.md
-- Plan identity: commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3
+- Plan identity: commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476  (amended per ledger amendment A3, human-approved)
 - Depends on: a1,a2,a3
 - Base: e1ce1cbf1eeaba87e670771f23c25f2d2293a768  (a3 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
 - Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/
 - Family main plan (MUST read first for shared invariants M-1..M-7, audits X-1..X-7, authoritative verification commands): docs/plans/2026-08-16/task-records-refactor-main.md
 
+## Epoch status
+
+Epoch 1: no edits, no commit — PLAN_CONFLICT on the 10th file. Amendment A3 (human-approved) authorizes src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt as file 10: rewrite the obsolete 'lists executions by task type and status' test (old 2-arg call at :26, result.size at :28) to the new paged listExecutions API per T0-7 amendment text. Start fresh from base.
+
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/00-execution-order.md)
 
 1. JDK 11 mandatory. Use JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home for every mvn command; bare mvn fails to build.
-2. Cache key triad (M-7 / K-frontend-cache-key-triad): this child must set all three ?v= values in index.html to `20260817-v4-task-records-paging` AND update the three literal string assertions in src/test/js/batchSendTaskConsoleVisualFix.test.js to the same value — in the SAME commit (M-7). Chain authority: a3 set them to 20260817-v3-expert-list-entry-move; verify current values equal v3 BEFORE editing (if not, stop and report PLAN_CONFLICT).
-3. Migration chain: current max is V99__add_gate_filter_enabled_to_batch_send_task_config.sql; this child creates V100__add_task_execution_indexes.sql (three indexes: idx_te_started, idx_te_type_started, idx_te_status_started). No ${} placeholder in the SQL. Do not use any other V-number.
+2. Cache key triad (M-7 / K-frontend-cache-key-triad): set all three ?v= values in index.html to `20260817-v4-task-records-paging` AND the three literal assertions in batchSendTaskConsoleVisualFix.test.js to the same value — in the SAME commit. Chain: a3 left v3 (20260817-v3-expert-list-entry-move); verify before editing.
+3. Migration chain: current max V99__add_gate_filter_enabled_to_batch_send_task_config.sql; create V100__add_task_execution_indexes.sql (idx_te_started, idx_te_type_started, idx_te_status_started; no ${). No other V-number.
 4. Next child b2 depends on this child's terminal code head and bumps cache keys to v5.
-5. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement b1`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the commit.
+5. Git: commit locally only, exactly one implementation commit `feat(fast-p): implement b1`. Never push, merge, rebase, amend, rewrite. Exclude docs/plans/fast/ from the commit.
 
-## Authorized files (from the plan 变更文件清单 — 9 files, modify nothing else)
+## Authorized files (10 files — amended; modify nothing else)
 
-1. src/main/resources/db/migration/V100__add_task_execution_indexes.sql   (NEW; three CREATE INDEX, no ${)
-2. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt   (NEW TaskExecutionListItem + 4 paged queries + 4 counts; existing methods untouched)
+1. src/main/resources/db/migration/V100__add_task_execution_indexes.sql   (NEW)
+2. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt   (NEW TaskExecutionListItem + 4 paged + 4 counts; existing methods untouched)
 3. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt   (only listExecutions; NEW TaskExecutionPage)
 4. src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt   (only listExecutions; NEW 2 response DTOs)
 5. src/main/resources/static/app.js   (loadTasks rewrite + renderTaskPager + state + bindings + :5276 adaptation)
 6. src/main/resources/static/index.html   (insert #taskPager per S0-1 skeleton)
-7. src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionListPagingTest.kt   (NEW; includes V100 migration text assertions)
+7. src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionListPagingTest.kt   (NEW; includes V100 text assertions)
 8. src/test/js/taskRecordsPaging.test.js   (NEW)
-9. src/test/js/batchSendTaskConsoleVisualFix.test.js   (ONLY the three cache-key literal assertions; nothing else)
+9. src/test/js/batchSendTaskConsoleVisualFix.test.js   (ONLY the three cache-key literals)
+10. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt   (T0-7 amendment: rewrite obsolete listExecutions test to paged API)
 
-No styles.css changes (the ?v= references are in index.html).
+No styles.css changes.
 
-## Required commands (run all; from plan 验证命令 + family main plan)
+## Required commands (run all)
 
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskExecutionListPagingTest
 - node --test src/test/js/taskRecordsPaging.test.js
@@ -42,17 +47,17 @@ No styles.css changes (the ?v= references are in index.html).
 
 ## Verify-first items
 
-1. T0-1 note: MySQL ORDER BY DESC uses ascending index reverse scan — plan says run EXPLAIN on the new queries if a MySQL instance is available and confirm Extra has no 'Using filesort'; if no instance is available, record that in the execution report as unexecuted (plan acceptance I0-2 is the migration-text assertion, EXPLAIN is advisory).
-2. Plan 现状审计 claims (4 repository methods have no other callers; TaskExecutionResponse carries the two TEXT columns; app.js:5276 caller) must be re-verified by grep before editing (K-plan-quantified-claims-need-grep-receipts).
+1. T0-1 EXPLAIN note: if a MySQL instance is available, EXPLAIN the new queries and confirm no 'Using filesort'; otherwise record as unexecuted in the report (acceptance I0-2 is the migration-text assertion).
+2. Re-verify by grep: four repository methods have no other callers; app.js:5276 caller; TaskExecutionResponse carries the TEXT columns (K-plan-quantified-claims-need-grep-receipts).
 
 ## Downstream interfaces
 
-- b2 (next child) extends TaskExecutionListItemResponse (B1's projection) with taskTypeLabel/metricLabel/summaryText; keep the projection class shape and listExecutions response DTO per plan.
-- b5 (child 8) depends on idx_te_started from V100.
-- N-1..N-7 from the family main plan are binding (recent-polls endpoints, batchOnly semantics, runAndRecord signatures, N-5: GET /api/task-executions?taskType=CANDIDATE_OPERATOR_STATUS_SYNC must keep working with the new shape — the :5276 caller adaptation).
-- Chain check: before editing, index.html cache values must equal v3 (20260817-v3-expert-list-entry-move); after this child they must be v4.
+- b2 extends TaskExecutionListItemResponse (this projection) with taskTypeLabel/metricLabel/summaryText — keep projection + response DTO shape per plan.
+- b5 depends on idx_te_started from V100.
+- N-1..N-7 binding (recent-polls, batchOnly, runAndRecord signatures, N-5 CANDIDATE_OPERATOR_STATUS_SYNC with :5276 adaptation).
+- Chain check: index.html cache values must equal v3 before editing, v4 after.
 
-## Plan text (exact approved content; authoritative)
+## Plan text (exact approved content incl. amendment A3; authoritative)
 
 # B1：任务记录列表性能（投影 + 分页 + 索引）
 
@@ -451,6 +456,8 @@ async function loadTasks() {
 
 新增迁移的文本断言（沿用 `QaSeedEncodingRepairMigrationTest` 范式，不需 Docker）：在 `TaskExecutionListPagingTest` 内加一条用例，`Files.readString(Path.of("src/main/resources/db/migration/V100__add_task_execution_indexes.sql"))` 断言含三个 `CREATE INDEX` 且**不含** `${`。
 
+同步改造 `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt`（fast-p 修正 A3：T0-3 把 `listExecutions` 改为分页签名后，该文件 :26 的旧 2 参调用与 :28 的 `result.size` 断言编译失败；该文件不在原 9 文件清单内，经人工批准列为第 10 个授权文件）：删除/重写「lists executions by task type and status」旧用例，改为针对新分页签名的契约（分页/夹取行为由 `TaskExecutionListPagingTest` 承载，此处仅保持 service 层编译与最小行为断言）。
+
 ---
 
 ## 变更文件清单
@@ -466,8 +473,9 @@ async function loadTasks() {
 | 7 | `src/test/kotlin/.../task/controller/TaskExecutionListPagingTest.kt` | 新增 | 后端用例 |
 | 8 | `src/test/js/taskRecordsPaging.test.js` | 新增 | 前端用例 |
 | 9 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 修改 | **仅**改三条缓存键 literal 断言（I0-6）；其余用例一行不动 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt` | 修改 | T0-7：重写「lists executions by task type and status」旧用例适配分页签名（fast-p 修正 A3） |
 
-文件数 9 ≤ 10。子系统 2（task 后端 / 前端）。
+文件数 10 ≤ 10。子系统 2（task 后端 / 前端）。
 
 ---
 
