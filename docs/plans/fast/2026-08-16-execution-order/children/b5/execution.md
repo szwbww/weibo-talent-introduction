@@ -166,3 +166,10 @@ No other files are affected; with that amendment the full regression criterion (
 ## 9. Remaining blocker
 
 One human decision: authorize `TaskExecutionSummaryExtractorTest.kt` as a 12th file with the three lock-set updates in §5.3 (or an equivalent plan amendment). Until then the full-regression gate cannot pass and the outcome is PLAN_CONFLICT.
+
+## Fast-P Evidence (controller note)
+
+- Terminal verdict: LIGHT_PASS (epoch 2, ReVerifyB5)
+- Fix rounds: 1 (4d7f206a4f506104af73f3e63e4fceea3d857ef7, A6-authorized T3-8 catalog lock updates)
+- Evidence commit: f73e55cc2d263192f80d49e29e349055846ff154 (corrected in successor commit to include this file)
+- RECORD_ONLY: O-1 stale "16 种" comment (out of T3-8 scope), O-2 FlywayMigrationIntegrationTest unexecuted (no Docker), O-3 TaskRetentionProperties registration mechanism family
