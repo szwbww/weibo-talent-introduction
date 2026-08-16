@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260817-v2-batch-manual-log-entry">
+    <link rel="stylesheet" href="styles.css?v=20260817-v3-expert-list-entry-move">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -103,7 +103,7 @@
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
-                <span>专家联系</span>
+                <span>专家列表</span>
             </button>
             <button class="nav-tab" data-view="mailbox">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -588,7 +588,6 @@
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
                     </div>
-                    <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
                     <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                     <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
                     <button class="button secondary" id="backfillOperatorStatusBtn" onclick="handleBackfillOperatorStatus()">回刷 ES</button>
@@ -727,7 +726,10 @@
             </div>
 
             <section class="panel">
-                <div class="panel-head"><h2>已激活账号收发邮件记录</h2></div>
+                <div class="panel-head">
+                    <h2>已激活账号收发邮件记录</h2>
+                    <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
+                </div>
                 <div class="mailbox-list" id="mailboxList"></div>
                 <div class="pagination" id="mailboxPagination" style="padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;"></div>
             </section>
@@ -2029,7 +2031,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260817-v2-batch-manual-log-entry"></script>
-<script src="app.js?v=20260817-v2-batch-manual-log-entry"></script>
+<script src="trust-reply-workbench.js?v=20260817-v3-expert-list-entry-move"></script>
+<script src="app.js?v=20260817-v3-expert-list-entry-move"></script>
 </body>
 </html>
