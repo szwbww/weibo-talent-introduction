@@ -330,9 +330,7 @@ TASK_AUDIT_RETENTION → label "任务审计清理", group "SCHEDULED",
 | 10 | `src/test/kotlin/.../task/service/TaskAuditRetentionServiceTest.kt` | 新增 | — |
 | 11 | `src/test/kotlin/.../task/service/TaskRetentionMigrationTest.kt` | 新增 | — |
 
-文件数 **11 > 10** ⚠️。
-
-**处置**：第 8、9 项（catalog 登记 + extractor 分支）合计约 6 行，是 P1 产物上的登记式改动，无独立逻辑。若执行时严格受限于 10 文件，**把 T3-6 拆出，作为 P1 的补丁在 P1 合并时一并完成**（P1 的 catalog 里预留 `TASK_AUDIT_RETENTION` 条目，`summaryRule` 先指向一个返回全 0 的兜底分支）。**执行 agent 须在开工前明确采用哪种方案并记录。** 采用拆分方案后本计划为 9 个文件。
+文件数 **11**（fast-p 修正 A5：经人工批准采用 11 文件完整方案，超出 10 的上限仅此一次；拆分方案的前提——P1 在合并时预留 `TASK_AUDIT_RETENTION` 条目——未成立，b2 合并后的 catalog 为 16 条、无该条目，拆分会使任务记录页无法正确显示审计清理行，A3-1 可见性验收不满足）。
 
 子系统 1（task）。
 
