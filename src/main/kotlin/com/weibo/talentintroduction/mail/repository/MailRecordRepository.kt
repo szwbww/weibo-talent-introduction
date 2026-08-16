@@ -749,6 +749,16 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         onlyPending: Int,
         tag: String?
     ): List<MailboxRow>
+
+    /**
+     * I2b-3/I2b-4（B4）：按任务执行过滤的收发件箱数据源。
+     * 不 join task_execution（P3 保留清理删除执行行后悬垂 id 仍正常返回邮件）。
+     * 刻意追加在接口末尾，避免行号钉死的守卫测试（OperatorStatusWriteSeamGuardTest）误报。
+     */
+    fun findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId: Long): List<MailRecord>
+
+    /** T2b-4（B4）：/{id}/detail 的 drilldownCount（MAIL_BY_EXECUTION）计数。 */
+    fun countByTaskExecutionId(taskExecutionId: Long): Long
 }
 
 data class MailboxExpertSummaryRow(

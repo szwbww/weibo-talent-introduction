@@ -173,6 +173,57 @@ class MailboxService(
         return MailboxExpertGroupListResponse(groups, total)
     }
 
+    /**
+     * I2b-3（B4）：按 task_execution_id 过滤的收发件箱查询。复用既有行装配
+     * （MailboxRow 投影字段 → [toMailboxItemResponse] → [computeTags]，同一 DTO、同一标签计算），
+     * 只在数据来源上多一个 WHERE（仓库派生查询）。不 join task_execution（I2b-4：
+     * P3 保留清理删除执行行后，悬垂 id 仍正常返回邮件）。
+     *
+     * 排序：`id ASC`（仓库派生查询命名，同一批次的发送顺序）。
+     * 刻意置于 listByExpert 之后：避免位移行号钉死的守卫测试（OperatorStatusWriteSeamGuardTest）。
+     */
+    fun listByTaskExecution(taskExecutionId: Long): MailboxListResponse {
+        val items = mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId)
+            .map { record -> toMailboxItemResponse(toMailboxRow(record), emptyMap()) }
+        return MailboxListResponse(items, items.size.toLong())
+    }
+
+    /**
+     * I2b-3：把 MailRecord 实体转换为与 listMailbox SQL 投影（MAIL_RECORD 分支）同形的
+     * [MailboxRow]，使两条路径共用同一 DTO 装配。字段取值逐一对齐 UNION 投影的
+     * SELECT 列表（source / id / expert_contact_id / direction / mail_type /
+     * sender_account_code / triggered_by / matched_qa_rule_id / subject /
+     * SUBSTRING(COALESCE(cleaned_body, body), 1, 200) / sent_at / NULL 列 /
+     * LEFT JOIN expert_contact / EXISTS(mail_attachment)）。
+     */
+    private fun toMailboxRow(record: MailRecord): MailboxRow {
+        val recordId = record.id
+        val contact = expertContactRepository.findById(record.expertContactId).orElse(null)
+        val hasAttachment = recordId != null &&
+            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty()
+        return MailboxRow(
+            source = "MAIL_RECORD",
+            id = recordId ?: 0L,
+            expertContactId = record.expertContactId,
+            direction = record.direction,
+            mailType = record.mailType,
+            senderAccountCode = record.senderAccountCode,
+            triggeredBy = record.triggeredBy,
+            matchedQaRuleId = record.matchedQaRuleId,
+            subject = record.subject,
+            bodyPreview = (record.cleanedBody ?: record.body)?.take(200),
+            sendStatus = record.sendStatus,
+            sentAt = record.sentAt,
+            receivedAt = null,
+            processStatus = null,
+            reasonType = null,
+            expertEmail = contact?.expertEmail,
+            expertName = contact?.expertName,
+            hasAttachment = if (hasAttachment) 1L else 0L,
+            inboundProcessingId = null
+        )
+    }
+
     private fun toMailboxItemResponse(
         row: MailboxRow,
         inboundTagsById: Map<Long, List<TagView>>

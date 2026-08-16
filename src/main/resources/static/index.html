@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260817-v5-task-type-catalog">
+    <link rel="stylesheet" href="styles.css?v=20260817-v6-task-drilldown">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -723,6 +723,12 @@
                 <span>至</span>
                 <input type="date" id="mailboxFilterEndDate" style="width: 130px;">
                 <button class="button primary" id="mailboxSearchBtn">查询</button>
+            </div>
+
+            <!-- B4 (S2b-3): 按任务执行过滤的提示条；位于既有 .toolbar 之下、不与标题栏「批量发送」按钮同行 -->
+            <div id="mailboxExecutionFilterBar" class="toolbar" hidden>
+                <span class="text-muted" id="mailboxExecutionFilterText"></span>
+                <button type="button" class="button small" id="mailboxExecutionFilterClear">清除过滤</button>
             </div>
 
             <section class="panel">
@@ -2033,7 +2039,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260817-v5-task-type-catalog"></script>
-<script src="app.js?v=20260817-v5-task-type-catalog"></script>
+<script src="trust-reply-workbench.js?v=20260817-v6-task-drilldown"></script>
+<script src="app.js?v=20260817-v6-task-drilldown"></script>
 </body>
 </html>

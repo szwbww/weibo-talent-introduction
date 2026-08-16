@@ -24,10 +24,14 @@ data class TaskTypeMeta(
     val metricLabel: String?,     // 计数列语义，如 "已发送/失败"；null → 前端渲染「— 无统计」
     val summaryRule: String?,     // extractor 的提取规则 key，null → 无结构化提取
     val hasProgressUi: Boolean,   // 派生 TaskProgressController.allowedTaskTypes
-    val drilldown: Drilldown?     // P2 使用；本计划全部声明为 null
+    val drilldown: Drilldown?     // P2b（B4）使用；null → 前端渲染禁用态「该任务无个体明细」（M-4）
 )
 
-/** P2（跳转）使用；本计划只声明枚举，全部条目 drilldown 均为 null。 */
+/**
+ * P2b（B4）使用：MAIL_BY_EXECUTION（按执行过滤收发件箱）/ EXPERT_BY_POLL_DETAIL（专家明细跳转）。
+ * B4 起 MAIL 类（MANUAL_INITIAL_OUTREACH / INITIAL_OUTREACH）与专家类（AUTO_REPLY_ALL / CHECK_REPLIES）
+ * 声明非 null，其余 12 项（含全部 ES 类）保持 null（M-4）。
+ */
 enum class Drilldown { MAIL_BY_EXECUTION, EXPERT_BY_POLL_DETAIL }
 
 object TaskTypeCatalog {
@@ -56,7 +60,8 @@ object TaskTypeCatalog {
         ),
         TaskTypeMeta(
             code = "AUTO_REPLY_ALL", label = "全量账号自动收信回复", group = "SCHEDULED",
-            metricLabel = "轮询账号/失败账号", summaryRule = null, hasProgressUi = false, drilldown = null
+            metricLabel = "轮询账号/失败账号", summaryRule = null, hasProgressUi = false,
+            drilldown = Drilldown.EXPERT_BY_POLL_DETAIL
         ),
         TaskTypeMeta(
             code = "AUTO_REPLY_ALL_DISPATCH", label = "批量分发与调度", group = "QUEUE",
@@ -72,7 +77,8 @@ object TaskTypeCatalog {
         ),
         TaskTypeMeta(
             code = "CHECK_REPLIES", label = "检查回复", group = "MANUAL",
-            metricLabel = null, summaryRule = "CHECK_REPLIES", hasProgressUi = true, drilldown = null
+            metricLabel = null, summaryRule = "CHECK_REPLIES", hasProgressUi = true,
+            drilldown = Drilldown.EXPERT_BY_POLL_DETAIL
         ),
         TaskTypeMeta(
             code = "DAILY_COUNT_RESET", label = "每日计数重置", group = "SCHEDULED",
@@ -92,11 +98,13 @@ object TaskTypeCatalog {
         ),
         TaskTypeMeta(
             code = "INITIAL_OUTREACH", label = "定时首发邮件", group = "SCHEDULED",
-            metricLabel = null, summaryRule = null, hasProgressUi = false, drilldown = null
+            metricLabel = null, summaryRule = null, hasProgressUi = false,
+            drilldown = Drilldown.MAIL_BY_EXECUTION
         ),
         TaskTypeMeta(
             code = "MANUAL_INITIAL_OUTREACH", label = "批量首发邮件", group = "MANUAL",
-            metricLabel = "已发送/失败", summaryRule = "MANUAL_INITIAL_OUTREACH", hasProgressUi = true, drilldown = null
+            metricLabel = "已发送/失败", summaryRule = "MANUAL_INITIAL_OUTREACH", hasProgressUi = true,
+            drilldown = Drilldown.MAIL_BY_EXECUTION
         ),
         TaskTypeMeta(
             code = "OPERATOR_STATUS_RECONCILE", label = "运营状态对账", group = "SCHEDULED",

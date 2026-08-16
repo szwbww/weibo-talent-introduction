@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.controller
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.weibo.talentintroduction.task.domain.Drilldown
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
 import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
@@ -11,6 +12,7 @@ import com.weibo.talentintroduction.task.repository.TaskTypeCount
 import com.weibo.talentintroduction.task.service.ExecutionTotals
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -26,7 +28,9 @@ class TaskExecutionController(
     private val service: TaskExecutionService,
     private val taskExecutionRepository: TaskExecutionRepository,
     private val extractor: TaskExecutionSummaryExtractor,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    /** B4（T2b-4）：drilldownCount（MAIL_BY_EXECUTION）计数；可空默认值兼容既有直构测试。 */
+    private val mailRecordRepository: MailRecordRepository? = null
 ) {
     private val log = LoggerFactory.getLogger(TaskExecutionController::class.java)
 
@@ -75,6 +79,8 @@ class TaskExecutionController(
         val totals: ExecutionTotals = extractor.extract(exec.taskType, exec)
         val (requestRaw, requestTruncated) = truncateRaw(exec.requestPayload)
         val (summaryRaw, summaryTruncated) = truncateRaw(exec.resultSummary)
+        val drilldown = TaskTypeCatalog.byCode(exec.taskType)?.drilldown
+        val (drilldownState, drilldownCount, experts) = computeDrilldown(exec, drilldown)
         return TaskExecutionDetailResponse(
             id = exec.id,
             taskType = exec.taskType,
@@ -89,8 +95,81 @@ class TaskExecutionController(
             metricLabel = TaskTypeCatalog.byCode(exec.taskType)?.metricLabel,
             rawRequestPayload = requestRaw,
             rawResultSummary = summaryRaw,
-            rawTruncated = requestTruncated || summaryTruncated
+            rawTruncated = requestTruncated || summaryTruncated,
+            drilldown = drilldown?.name,
+            drilldownState = drilldownState,
+            drilldownCount = drilldownCount,
+            experts = experts
         )
+    }
+
+    /**
+     * T2b-4（B4）：drilldownState 判定（I2b-2，三种禁用原因必须可区分）：
+     * - catalog.drilldown == null                                    → NONE
+     * - MAIL_BY_EXECUTION && count > 0                               → AVAILABLE
+     * - MAIL_BY_EXECUTION && count == 0 && requestPayload 含队列标记 → QUEUE_DISPATCHED
+     * - MAIL_BY_EXECUTION && count == 0                              → PRE_FEATURE
+     * - EXPERT_BY_POLL_DETAIL && 专家非空                             → AVAILABLE
+     * - EXPERT_BY_POLL_DETAIL && 专家为空                             → NONE
+     */
+    private fun computeDrilldown(
+        exec: TaskExecution,
+        drilldown: Drilldown?
+    ): Triple<String, Int, List<PollRepliedExpert>?> {
+        return when (drilldown) {
+            null -> Triple("NONE", 0, null)
+            Drilldown.MAIL_BY_EXECUTION -> {
+                val executionId = exec.id ?: 0L
+                val count = mailRecordRepository?.countByTaskExecutionId(executionId)?.toInt() ?: 0
+                val state = when {
+                    count > 0 -> "AVAILABLE"
+                    isQueueDispatched(exec.requestPayload) -> "QUEUE_DISPATCHED"
+                    else -> "PRE_FEATURE"
+                }
+                Triple(state, count, null)
+            }
+            Drilldown.EXPERT_BY_POLL_DETAIL -> {
+                val experts = parseRepliedExperts(exec.resultSummary)
+                val state = if (experts.isNotEmpty()) "AVAILABLE" else "NONE"
+                Triple(state, experts.size, experts)
+            }
+        }
+    }
+
+    /** 复用 PollDetailRaw / PollDetailAccountRaw / PollDetailExpertRaw 解析 result_summary 的专家数组。 */
+    private fun parseRepliedExperts(raw: String?): List<PollRepliedExpert> {
+        if (raw == null) return emptyList()
+        return try {
+            objectMapper.readValue<PollDetailRaw>(raw)
+                .accounts
+                .flatMap { it.repliedExperts }
+                .map { expert ->
+                    PollRepliedExpert(
+                        expertContactId = expert.expertContactId,
+                        expertEmail = expert.expertEmail,
+                        expertName = expert.expertName,
+                        outcome = expert.outcome
+                    )
+                }
+        } catch (e: Exception) {
+            log.warn("Failed to parse poll detail experts for execution: {}", e.message)
+            emptyList()
+        }
+    }
+
+    /**
+     * I2b-2 情形 3：队列派发标记。request_payload 由
+     * TaskExecutionService.toJson（Jackson）序列化 TaskDispatchRequest，
+     * 队列模式（MailAutomationScheduler.dispatchMode()）写入 `"dispatchMode":"QUEUE"`。
+     * 解析失败/字段缺失一律视为非队列。
+     */
+    private fun isQueueDispatched(payload: String?): Boolean {
+        if (payload == null) return false
+        return try {
+            objectMapper.readTree(payload).path("dispatchMode").asText() == "QUEUE"
+        } catch (e: Exception) {
+            false
+        }
     }
 
     @GetMapping("/recent-polls")
@@ -283,7 +362,7 @@ data class TaskTypeOption(
     val count: Long
 )
 
-/** I1-3/I1-5/I1-6：通用明细响应。 */
+/** I1-3/I1-5/I1-6：通用明细响应。B4（T2b-4/N2b-4）只追加 4 个 drilldown 字段，既有字段不改。 */
 data class TaskExecutionDetailResponse(
     val id: Long?,
     val taskType: String,
@@ -296,7 +375,15 @@ data class TaskExecutionDetailResponse(
     val metricLabel: String?,
     val rawRequestPayload: String?,
     val rawResultSummary: String?,
-    val rawTruncated: Boolean
+    val rawTruncated: Boolean,
+    /** B4：MAIL_BY_EXECUTION / EXPERT_BY_POLL_DETAIL / null（枚举名，与 catalog.drilldown 同源）。 */
+    val drilldown: String? = null,
+    /** B4（I2b-2）：AVAILABLE / NONE / PRE_FEATURE / QUEUE_DISPATCHED。 */
+    val drilldownState: String = "NONE",
+    /** B4：邮件类为该执行发出的邮件数；专家类为明细中专家总数。 */
+    val drilldownCount: Int = 0,
+    /** B4：仅 EXPERT_BY_POLL_DETAIL 附带（复用 PollDetailRaw 解析）；其余为 null。 */
+    val experts: List<PollRepliedExpert>? = null
 )
 
 data class TaskExecutionPageResponse(

@@ -63,7 +63,9 @@ const state = {
         dateDefaultsApplied: false,
         onlyPending: false,
         tagFilter: "",
-        detailContext: null
+        detailContext: null,
+        taskExecutionId: null,
+        taskExecutionLabel: null
     },
     inboundSummary: {
         from: "",
@@ -8992,6 +8994,30 @@ function renderTaskDetailRawBlocks(detail) {
     return html;
 }
 
+/**
+ * B4（T2b-5）：邮件类跳转 —— 按该次执行过滤收发件箱。
+ * 沿用跨视图范式 setView → 设过滤状态 → page = 0 → load<View>()（K-cross-view-drilldown-pattern）。
+ * 任务类型中文名从 catalog 选项（state.taskTypeOptions）反查并随过滤状态带入，
+ * 供提示条渲染「正在查看：批量首发邮件 执行 #13023 发出的邮件」。
+ */
+function handleTaskDrilldownMail(element) {
+    const taskRow = element.closest("tr.task-detail-row")?.previousElementSibling;
+    const taskType = taskRow?.dataset?.taskType;
+    const label = (state.taskTypeOptions || []).find((option) => option.code === taskType)?.label || null;
+    state.mailbox.taskExecutionId = Number(element.dataset.executionId);
+    state.mailbox.taskExecutionLabel = label;
+    setView("mailbox");
+    state.mailbox.page = 0;
+    loadMailbox().catch((e) => showStatus(e.message, "error"));
+}
+
+/**
+ * B4（T2b-5 / N2b-3）：专家类跳转 —— 复用 openContactInList 打开该专家详情，不新增视图（I2b-5）。
+ */
+function handleTaskDrilldownContact(element) {
+    openContactInList(Number(element.dataset.contactId)).catch((e) => showStatus(e.message, "error"));
+}
+
 async function toggleTaskDetail(row) {
     const existingDetail = row.nextElementSibling;
     if (existingDetail?.classList.contains("task-detail-row")) {
@@ -9021,6 +9047,27 @@ async function toggleTaskDetail(row) {
     } else if (detail) {
         contentHtml = renderTaskDetailRawBlocks(detail);
     }
+    // B4（I2b-1/I2b-2，S2b-1/S2b-2）：明细顶部按 drilldownState 渲染跳转入口。
+    // 容器是块级非 flex 的 td——.link-btn 的 margin-left:auto 只在 flex 容器中生效，
+    // 因此入口不会被推到右侧（S2b-1 波及提示；不修改 .link-btn 规则块）。
+    // 无 drilldown 声明（NONE）与两种不可用态（PRE_FEATURE / QUEUE_DISPATCHED）渲染
+    // <span class="text-muted">，不渲染可点击元素、不带 data-action / href（M-4）。
+    let drilldownHtml = "";
+    if (detail && detail.drilldownState === "NONE") {
+        drilldownHtml = '<span class="text-muted">该任务无个体明细</span>';
+    } else if (detail && detail.drilldownState === "PRE_FEATURE") {
+        drilldownHtml = '<span class="text-muted">该执行早于本功能上线，无法关联</span>';
+    } else if (detail && detail.drilldownState === "QUEUE_DISPATCHED") {
+        drilldownHtml = '<span class="text-muted">该执行经队列派发，邮件未直接关联</span>';
+    } else if (detail && detail.drilldownState === "AVAILABLE" && detail.drilldown === "MAIL_BY_EXECUTION") {
+        drilldownHtml = `<button type="button" class="link-btn" data-action="task-drilldown-mail" data-execution-id="${detail.id}">查看本次发出的邮件（${detail.drilldownCount} 封）</button>`;
+    } else if (detail && detail.drilldownState === "AVAILABLE" && detail.drilldown === "EXPERT_BY_POLL_DETAIL") {
+        drilldownHtml = (detail.experts || [])
+            .filter((expert) => expert.expertContactId != null)
+            .map((expert) => `<button type="button" class="link-btn" data-action="task-drilldown-contact" data-contact-id="${expert.expertContactId}">${escapeHtml((expert.expertName || "") + (expert.expertEmail ? ` <${expert.expertEmail}>` : ""))}</button>`)
+            .join("<br>");
+    }
+    contentHtml = drilldownHtml + contentHtml;
     const detailRow = document.createElement("tr");
     detailRow.className = "task-detail-row";
     detailRow.innerHTML = `<td colspan="7" style="padding:12px 16px;background:var(--surface);">${contentHtml || '<div class="text-muted">暂无明细</div>'}</td>`;
@@ -11613,6 +11660,16 @@ function bindEvents() {
             loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
         }
+        if (action === "task-drilldown-mail") {
+            event.preventDefault();
+            handleTaskDrilldownMail(element);
+            return;
+        }
+        if (action === "task-drilldown-contact") {
+            event.preventDefault();
+            handleTaskDrilldownContact(element);
+            return;
+        }
         if (action === "add-alias") {
             const contactId = element.dataset.contactId;
             const email = $("#newAliasEmail").value.trim();
@@ -12053,6 +12110,13 @@ function initBulkAutoReply() {
         state.mailbox.page = 0;
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
+    // B4（T2b-5）：清除按执行的批次过滤 → 提示条随 loadMailbox 隐藏，列表恢复全部邮件。
+    $("#mailboxExecutionFilterClear").addEventListener("click", () => {
+        state.mailbox.taskExecutionId = null;
+        state.mailbox.taskExecutionLabel = null;
+        state.mailbox.page = 0;
+        loadMailbox().catch((e) => showStatus(e.message, "error"));
+    });
     $("#mailboxPagination").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
@@ -12448,6 +12512,10 @@ function setMailboxPendingOnly(pending) {
     const input = document.querySelector(`input[name="mailboxMailScope"][value="${value}"]`);
     if (input) input.checked = true;
     state.mailbox.onlyPending = pending;
+    // N2b-2（B4）：待处理入口一律清空按执行的批次过滤，避免跨入口残留
+    // （view-unmatched / open-pending、goto-manual-queue、标签「待处理」三条路径全覆盖）。
+    state.mailbox.taskExecutionId = null;
+    state.mailbox.taskExecutionLabel = null;
 }
 
 function syncMailboxViewModeControls() {
@@ -12519,8 +12587,31 @@ async function loadMailbox() {
     params.set("page", state.mailbox.page);
     params.set("size", state.mailbox.pageSize);
 
+    // B4（T2b-5）：按执行过滤时把 taskExecutionId 加进 query（过滤态只作用在平铺列表端点）。
+    if (state.mailbox.taskExecutionId != null) {
+        params.set("taskExecutionId", String(state.mailbox.taskExecutionId));
+    }
+    // B4（S2b-3）：提示条文案两种形式逐字（label 已知 → 正常形式；label 缺失（如直接带参访问、
+    // 执行记录已被 P3 保留清理删除）→ 保留期形式）。容器为既有 .toolbar，hidden 由 [hidden] 规则兜底。
+    const filterBar = $("#mailboxExecutionFilterBar");
+    const filterText = $("#mailboxExecutionFilterText");
+    if (filterBar && filterText) {
+        const executionId = state.mailbox.taskExecutionId;
+        if (executionId == null || executionId === "") {
+            filterBar.hidden = true;
+            filterText.textContent = "";
+        } else {
+            const label = state.mailbox.taskExecutionLabel;
+            filterText.textContent = label
+                ? `正在查看：${label} 执行 #${executionId} 发出的邮件`
+                : `正在查看：执行 #${executionId}（记录已过保留期）发出的邮件`;
+            filterBar.hidden = false;
+        }
+    }
+
     try {
-        if (expertMode) {
+        // 按执行过滤时强制走平铺列表端点（by-expert 端点不支持 taskExecutionId）。
+        if (expertMode && state.mailbox.taskExecutionId == null) {
             const data = await api(`/api/mail/mailbox/by-expert?${params}`);
             state.mailbox.groups = data.groups || [];
             state.mailbox.items = [];

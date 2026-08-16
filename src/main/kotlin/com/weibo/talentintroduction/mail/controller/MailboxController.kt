@@ -93,8 +93,13 @@ class MailboxController(private val mailboxService: MailboxService) {
         @RequestParam(required = false) endDate: String?,
         @RequestParam(defaultValue = "false") pending: Boolean,
         @RequestParam(defaultValue = "0") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
+        @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) taskExecutionId: Long?
     ): MailboxListResponse {
+        // I2b-3（B4）：非 null 时走按执行过滤的装配路径；null 时走原路径一行不改（N2b-1）。
+        if (taskExecutionId != null) {
+            return mailboxService.listByTaskExecution(taskExecutionId)
+        }
         val startTime = startDate?.let { LocalDate.parse(it).atStartOfDay() }
         val endTime = endDate?.let { LocalDate.parse(it).plusDays(1).atStartOfDay() }
         return mailboxService.listMailbox(
