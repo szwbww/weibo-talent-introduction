@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
-- Current child: a1
+- Current child: a2
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -38,8 +38,8 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:d32a4cfb45e32b0932955290260839858b959c79 | none | 2 | IMPLEMENTING | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | | 0 | — | | | epoch 1 PLAN_CONFLICT amended via A1; 5 authorized files modified, uncommitted |
-| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 0 | PENDING | | | 0 | — | | | |
+| a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:d32a4cfb45e32b0932955290260839858b959c79 | none | 2 | LIGHT_PASS_WITH_NOTES | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 0 | — | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 03ea6672b8e3e9f57954e70cd3ad93c383681887 | epoch 1 PLAN_CONFLICT resolved via amendment A1; RECORD_ONLY O-1: renderErrorSamples pre-existing substring truncation |
+| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 1 | IMPLEMENTING | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | | 0 | — | | | |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 0 | PENDING | | | 0 | — | | | |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2,a3 | 0 | PENDING | | | 0 | — | | | |
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
