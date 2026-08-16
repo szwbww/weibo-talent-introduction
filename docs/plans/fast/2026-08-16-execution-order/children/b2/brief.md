@@ -1,38 +1,52 @@
-# Fast-P Child Brief — b2
+# Fast-P Child Brief — b2 (epoch 2, amended)
 
 - Child: b2
 - Plan: docs/plans/2026-08-16/b2-task-type-catalog-semantics.md
-- Plan identity: commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3
+- Plan identity: commit:38ce7ad494397d168663036e9252b3d6bf1c2089  (amended per ledger amendment A4, human-approved)
 - Depends on: b1
 - Base: ad005d98b706ceed67b34c96a89e642334ca819a  (b1 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
 - Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/
 - Family main plan (MUST read first for shared invariants M-1..M-7, audits X-1..X-7, authoritative verification commands): docs/plans/2026-08-16/task-records-refactor-main.md
 
+## Epoch status
+
+Epoch 1: no edits, no commit — PLAN_CONFLICT on 4 unlisted test files. Amendment A4 (human-approved) authorizes them (14 files total). The three ⏳ metricLabel decisions were RESOLVED in epoch 1 with source evidence — CARRY THEM, do not redo the investigation (details below). Start fresh from base; the plan file list rows 11-14 define the exact test-file adaptations.
+
+## Epoch-1 metricLabel decisions (with evidence, see execution.md)
+
+- INITIAL_OUTREACH -> metricLabel null. Evidence: InitialOutreachService.kt:32,147-153 — InitialOutreachBatchResult is NOT a TaskExecutionSummaryProvider; reflection failure side hits 'skipped' not 'failed'; queue-mode rows persist QueuePublishResult(accepted) as 1/0.
+- AUTO_REPLY_ALL -> metricLabel 轮询账号/失败账号. Evidence: BatchAutoMailReplyService.kt:167-178 — BatchAutoMailReplyResult implements TaskExecutionSummaryProvider (taskSuccessCount=successAccountCount, taskFailureCount=failedAccountCount); persisted in default SYNC deployment (application.yml:48 mail-queue.enabled default false). Caveat: QUEUE-mode rows persist 1/0 accepted.
+- OPERATOR_STATUS_RECONCILE -> metricLabel 一致/异常. Evidence: OperatorStatusReconcileService.kt:303-315 — ReconcileReport implements TaskExecutionSummaryProvider (taskSuccessCount=consistent, taskFailureCount=dbVsExpected+esVsDb); both write paths use runAndRecordWithResult; no queue variant.
+
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/00-execution-order.md)
 
 1. JDK 11 mandatory. Use JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home for every mvn command; bare mvn fails to build.
 2. Cache key triad (M-7 / K-frontend-cache-key-triad): set all three ?v= values in index.html to `20260817-v5-task-type-catalog` AND the three literal assertions in batchSendTaskConsoleVisualFix.test.js to the same value — in the SAME commit. Chain: b1 left v4 (20260817-v4-task-records-paging); verify before editing.
-3. No Flyway migration for this child (B2 does not touch schema). Do not touch src/main/resources/db/migration/.
-4. Next child b3 depends on this child's terminal code head (needs TaskTypeCatalog.Drilldown present). Cache key v6 belongs to b4.
+3. No Flyway migration for this child. Do not touch src/main/resources/db/migration/.
+4. Next child b3 depends on this child's terminal code head (needs TaskTypeCatalog.Drilldown present).
 5. Git: commit locally only, exactly one implementation commit `feat(fast-p): implement b2`. Never push, merge, rebase, amend, rewrite. Exclude docs/plans/fast/ from the commit.
 
-## Authorized files (from the plan 变更文件清单 — 10 files, at the hard cap)
+## Authorized files (14 files — amended A4; modify nothing else)
 
-The plan states explicitly: 文件数 10 ≤ 10 (已到上限). If an 11th file turns out to be needed, STOP and report PLAN_CONFLICT — do NOT widen scope on your own.
-
-1. src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt   (NEW: 16 entries + TaskTypeMeta + Drilldown)
-2. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt   (NEW: three migrated methods + three-level extraction)
-3. src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt   (whitelist derived from catalog + delegate extractor + delete three methods)
-4. src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt   (list + 2 fields + /task-types + /{id}/detail)
-5. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt   (NEW TaskTypeCount projection + group-by query)
-6. src/main/resources/static/app.js   (dropdown injection + two column renderers + toggleTaskDetail rewrite)
-7. src/main/resources/static/index.html   (S1-1 / S1-2)
-8. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt   (NEW: extractor tests + catalog tests merged)
+1. src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt   (NEW)
+2. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt   (NEW)
+3. src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt
+4. src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt
+5. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt
+6. src/main/resources/static/app.js
+7. src/main/resources/static/index.html
+8. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt   (NEW; extractor + catalog tests merged)
 9. src/test/js/taskRecordsSemantics.test.js   (NEW)
-10. src/test/js/batchSendTaskConsoleVisualFix.test.js   (ONLY the three cache-key literal assertions)
+10. src/test/js/batchSendTaskConsoleVisualFix.test.js   (ONLY the three cache-key literals)
+11. src/test/js/taskRecordsPaging.test.js   (A4: N0-1 col5 assertion to I1-2 semantics; other six columns verbatim; paging behavior assertions untouched)
+12. src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionControllerTest.kt   (A4: constructor-call adaptation only)
+13. src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionListPagingTest.kt   (A4: constructor-call adaptation only)
+14. src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionControllerMvcTest.kt   (A4: @MockBean additions only)
 
-## Required commands (run all; from plan 验证命令 + family main plan)
+No further widening: if a 15th file is needed, STOP and report PLAN_CONFLICT.
+
+## Required commands (run all)
 
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskExecutionSummaryExtractorTest
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskProgressControllerExecutionsTest
@@ -42,19 +56,20 @@ The plan states explicitly: 文件数 10 ≤ 10 (已到上限). If an 11th file 
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test   (full regression; Tests run: N, Failures: 0, Errors: 0, exit 0; includes node --test exec; verify.sh NOT a gate)
 - git diff --check   (clean)
 
-## Verify-first items (⏳ — MUST resolve BEFORE implementing the metricLabel table)
+## Verify-first items
 
-Three ⏳ metricLabel entries (T1-1 table): INITIAL_OUTREACH, AUTO_REPLY_ALL, OPERATOR_STATUS_RECONCILE — the write-side return types were NOT verified at plan-writing time. Execution rule from the plan: read the actual result-class source (sendInitialBatch / receiveAndAutoReplyAll + publisher / ReconcileReport) before deciding; landing `null` first is SAFE (shows — 无统计; the real numbers appear in the expanded detail via the extractor). NEVER guess semantics from field names. If the source shows a class whose success/failure fields map to the persisted success_count/failure_count (i.e. the reflection list hits), give it the semantic label; otherwise null. Document each decision with file:line evidence in the execution report.
-
-Also re-verify by grep: allowedTaskTypes hardcoded set in TaskProgressController; the three hardcoded lists (index.html:940 / app.js:678); the 4 repository methods removed-by-delegation have no other callers (K-plan-quantified-claims-need-grep-receipts).
+1. metricLabel decisions already resolved (see above) — verify the evidence quickly if you like, but do not re-litigate; land the three values as decided.
+2. Re-verify by grep: allowedTaskTypes hardcoded set in TaskProgressController; the three hardcoded lists (index.html:940 / app.js:678); delegated-away methods have no other callers.
+3. Plan's internal self-correction: list DTO adds ONLY taskTypeLabel + metricLabel; summaryText is REMOVED from the list DTO.
+4. N0-1 update (file 11): the fixture row without metricLabel must render '— 无统计' (I1-2, no 0/0); the other six columns keep verbatim assertions.
 
 ## Downstream interfaces
 
-- b3 (next child) uses TaskTypeCatalog.Drilldown — the catalog class shape (16 entries, TaskTypeMeta, Drilldown) must be exactly per plan T1-1.
-- N-1..N-7 binding (recent-polls endpoints unchanged; batchOnly semantics; runAndRecord untouched; N-1-7 taskButtonMapping NOT merged into catalog).
+- b3 (next child) uses TaskTypeCatalog.Drilldown — catalog class shape per plan T1-1.
+- N-1..N-7 binding (recent-polls endpoints unchanged; batchOnly semantics; runAndRecord untouched; taskButtonMapping NOT merged into catalog).
 - Chain check: index.html cache values must equal v4 before editing, v5 after.
 
-## Plan text (exact approved content; authoritative)
+## Plan text (exact approved content incl. amendment A4; authoritative)
 
 # B2：任务类型注册表与单列语义（TaskTypeCatalog）
 
@@ -482,6 +497,12 @@ catalog 断言并入同一文件（原 `TaskTypeCatalogTest.kt`，为腾名额�
 - 明细展开在无 renderer 时渲染两个 `.pre` 块（S1-4 逐字）；`rawTruncated` 时追加截断文案。
 - `#taskTypeFilter` 注入后仍保留 `value=""` 的占位项，且选中值不丢。
 
+既有测试适配（fast-p 修正 A4：T1-5/T1-6 给 `TaskExecutionController` 加依赖、I1-2 改第 5 列渲染语义，经人工批准新增 4 个授权文件）：
+
+- `src/test/js/taskRecordsPaging.test.js`：N0-1 的「七列逐字」断言按新语义更新 —— 无 `metricLabel` 的行第 5 列渲染 `— 无统计`（I1-2），其余六列仍逐字断言；不改动分页行为断言。
+- `src/test/kotlin/.../task/controller/TaskExecutionControllerTest.kt` 与 `.../TaskExecutionListPagingTest.kt`：仅适配 `TaskExecutionController(...)` 构造调用（新增依赖实参），不改既有断言。
+- `src/test/kotlin/.../task/controller/TaskExecutionControllerMvcTest.kt`：`@WebMvcTest` 切片补新增依赖的 `@MockBean`，不新增/改动用例。
+
 ---
 
 ## 变更文件清单
@@ -498,8 +519,12 @@ catalog 断言并入同一文件（原 `TaskTypeCatalogTest.kt`，为腾名额�
 | 8 | `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` | 新增 | extractor 用例 **+ catalog 用例**（原计划的 `TaskTypeCatalogTest.kt` 并入此文件，为缓存键测试腾出名额） |
 | 9 | `src/test/js/taskRecordsSemantics.test.js` | 新增 | — |
 | 10 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 修改 | **仅**改三条缓存键 literal 断言（I1-8）；其余用例一行不动 |
+| 11 | `src/test/js/taskRecordsPaging.test.js` | 修改 | T1-8 适配：N0-1 第 5 列按 I1-2 新语义（fast-p 修正 A4） |
+| 12 | `src/test/kotlin/.../task/controller/TaskExecutionControllerTest.kt` | 修改 | 构造调用适配（fast-p 修正 A4） |
+| 13 | `src/test/kotlin/.../task/controller/TaskExecutionListPagingTest.kt` | 修改 | 构造调用适配（fast-p 修正 A4） |
+| 14 | `src/test/kotlin/.../task/controller/TaskExecutionControllerMvcTest.kt` | 修改 | @MockBean 补充（fast-p 修正 A4） |
 
-文件数 10 ≤ 10（已到上限。原清单里的 `TaskTypeCatalogTest.kt` 已并入第 8 项 —— 两者都是同包小单测，合并不损失断言。执行时若发现还须改第 11 个文件，**停止并回报**，不要顺手扩围）。子系统 2（task 后端 / 前端）。
+文件数 14；其中授权文件上限说明：原「10 ≤ 10 已到上限」规则经 fast-p 修正 A4 放宽至 14（仅本次四文件），后续仍不得自行扩围；发现第 15 个文件须停止回报。子系统 2（task 后端 / 前端）。
 
 ---
 
