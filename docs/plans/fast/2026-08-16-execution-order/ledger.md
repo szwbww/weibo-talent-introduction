@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-16/00-execution-order.md (commit 65b8de831a5f0edeafeae5683a2f15b79f7000a3)
-- Amendments: A1,A2,A3,A4
+- Amendments: A1,A2,A3,A4,A5
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Branch: fast/2026-08-16-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: b5
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: PLAN FORK — b5 plan's T3-6 split disposition assumed P1 (b2) reserved TASK_AUDIT_RETENTION in the catalog; b2 merged WITHOUT it (catalog has 16 entries, no TASK_AUDIT_RETENTION). Complete T3-6 inline requires TaskTypeCatalog.kt + TaskExecutionSummaryExtractor.kt -> 11 files > plan's 10-file cap. Deferring T3-6 leaves records-page rows without catalog 中文名 (A3-1 visibility gap). Human must pick: amendment A5 (11 files, complete) or 9-file split (defer).
-- Resume from: b5 epoch 1, base d32ccb282d88a6e6182bb579acbc0b65d74995eb, next action per human choice
+- Pause reason: N/A
+- Resume from: b5 epoch 1, base d32ccb282d88a6e6182bb579acbc0b65d74995eb, next action dispatch implementer with amended brief (11 files, T3-6 inline)
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -49,7 +49,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:38ce7ad494397d168663036e9252b3d6bf1c2089 | b1 | 2 | LIGHT_PASS_WITH_NOTES | ad005d98b706ceed67b34c96a89e642334ca819a | 7885ac04378f553376711184b6596bc2906a9ad1 | 1 | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 816cd31cbdcdda409660f02735cd30303523a051 | epoch 1 scope pause resolved via amendment A4; round 1 F-1 whitespace fix; RECORD_ONLY O-1..O-3 |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 1 | LIGHT_PASS | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 0 | — | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 199d02a4877a3f9a08b23e548f99127d72b31b17 | RECORD_ONLY O-1 (Flyway unexecuted, no Docker) / O-2 / O-3 |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 1 | LIGHT_PASS_WITH_NOTES | eb27b8d84a4286ce3ef92ca40acf98d761168121 | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 0 | — | d32ccb282d88a6e6182bb579acbc0b65d74995eb | d130fe81e53f16936bd36f665ec416ab1f9163f5 | RECORD_ONLY O-1/O-2/O-3 in verify-log |
-| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PAUSED_FOR_HUMAN | d32ccb282d88a6e6182bb579acbc0b65d74995eb | | 0 | — | | | T3-6 fork: 11-file complete vs 9-file defer pending human decision |
+| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:50a4532ca58cdcaadb3285a9e44395e8d494fea3 | b1 | 1 | IMPLEMENTING | d32ccb282d88a6e6182bb579acbc0b65d74995eb | | 0 | — | | | T3-6 fork resolved via amendment A5 (11-file complete path) |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 0 | PENDING | | | 0 | — | | | |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 0 | PENDING | | | 0 | — | | | |
 | b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
@@ -62,3 +62,4 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | A2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a2 阶段B T2-B5（triggerTypeLabel 文案）+ 共享审计 X-2 同步规则 vs a2 变更文件清单 | T2-B5 使 I-2 套件执行的 openBatchConfigLogs 路径调用 triggerTypeLabel，无 stub 时套件红；按 X-2 授权 createLogSandbox 补一行函数桩（T2-C4），不改任何断言 | HUMAN:ask 选项「Amend: authorize the one-line stub sync」2026-08-16 |
 | A3 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476 | b1 T0-3（listExecutions 分页签名）vs b1 变更文件清单 | 旧签名唯一测试调用方 TaskExecutionServiceTest.kt 不在 9 文件清单内，签名变更必然 test-compile 红；授权第 10 个文件并重写该旧用例适配分页 API | HUMAN:ask 选项「Amend: authorize TaskExecutionServiceTest.kt as file 10」2026-08-16 |
 | A4 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:38ce7ad494397d168663036e9252b3d6bf1c2089 | b2 T1-5/T1-6（controller 新依赖）+ I1-2（第 5 列新语义）vs b2 变更文件清单（10 文件上限） | 新依赖使 3 个既有测试文件编译/上下文失败，N0-1 断言与 I1-2 渲染语义冲突（实测互斥）；授权 4 个测试文件（总数 14），N0-1 第 5 列按新语义更新、其余六列逐字保留 | HUMAN:ask 选项「Amend: authorize the 4 test files (14 total)」2026-08-16 |
+| A5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:50a4532ca58cdcaadb3285a9e44395e8d494fea3 | b5 T3-6 处置（11>10 拆分 vs 完整）vs 实际合并历史（b2 catalog 无 TASK_AUDIT_RETENTION 预留） | 拆分方案前提（P1 预留条目）未成立，拆分会使 A3-1 记录页可见性验收不满足；经人工批准采用 11 文件完整方案，T3-6 内联完成 | HUMAN:ask 选项「Amend: 11 files, complete T3-6 inline」2026-08-16 |
