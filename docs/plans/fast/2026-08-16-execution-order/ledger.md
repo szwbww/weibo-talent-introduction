@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: b2
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: b1 epoch 2, base e1ce1cbf1eeaba87e670771f23c25f2d2293a768, next action dispatch implementer with amended brief (10th file authorized)
+- Pause reason: SCOPE — plan hard-caps 10 files and instructs STOP if an 11th is needed. 4 test files required: taskRecordsPaging.test.js (N0-1 asserts verbatim <td>4/0</td> vs new I1-2 '— 无统计' rendering; proven unsatisfiable by both, empirically); TaskExecutionControllerTest.kt + TaskExecutionListPagingTest.kt (new controller constructor deps -> compile break); TaskExecutionControllerMvcTest.kt (@WebMvcTest needs new @MockBeans). No edits, no commit. metricLabel decisions (with evidence) in execution.md: INITIAL_OUTREACH=null, AUTO_REPLY_ALL=轮询账号/失败账号, OPERATOR_STATUS_RECONCILE=一致/异常.
+- Resume from: b2 epoch 2, base ad005d98b706ceed67b34c96a89e642334ca819a, next action amend plan (authorize 4 test files) then implement
 
 ## Baseline
 
@@ -42,7 +42,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a1 | 2 | LIGHT_PASS | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | 8d497b05585bb46e33694ec8fa1d5d1ea3b23cba | epoch 1 scope pause resolved via amendment A2; RECORD_ONLY O1/O2 in verify-log carried to handoff |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 1 | LIGHT_PASS | bb07586b758357ad21794e17b7e99f200abeed5b | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | 0 | — | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | b662e185fdd053011824977c603b6a32d79b5053 | RECORD_ONLY O-1 (surefire count reporting artifact) in verify-log |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:9c1e78a6d549ae16a6f45ff7499d6e340e39d476 | a1,a2,a3 | 2 | LIGHT_PASS_WITH_NOTES | e1ce1cbf1eeaba87e670771f23c25f2d2293a768 | ad005d98b706ceed67b34c96a89e642334ca819a | 0 | — | ad005d98b706ceed67b34c96a89e642334ca819a | 5e49c0c947de7293a48b4be31150d0778d062a15 | epoch 1 scope pause resolved via amendment A3; RECORD_ONLY O-1/O-2/O-3 in verify-log |
-| b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 1 | IMPLEMENTING | ad005d98b706ceed67b34c96a89e642334ca819a | | 0 | — | | | |
+| b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 1 | PAUSED_FOR_HUMAN | ad005d98b706ceed67b34c96a89e642334ca819a | | 0 | — | | | 4 test files need authorization (N0-1 rendering conflict + 3 constructor/@MockBean adaptations); metricLabel decisions made in execution.md |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 0 | PENDING | | | 0 | — | | | |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 0 | PENDING | | | 0 | — | | | |
 | b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
