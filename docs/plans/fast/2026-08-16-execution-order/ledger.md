@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: b5
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: b5 epoch 1, base d32ccb282d88a6e6182bb579acbc0b65d74995eb, next action dispatch implementer with amended brief (11 files, T3-6 inline)
+- Pause reason: SCOPE — b5 implementation commit 2856a71 (11 authorized files) fails full-regression gate on 3 catalog-lock assertions in src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt (b2-owned, unlisted 12th file): assertEquals(auditedCodes, entries.keys) at :219, assertEquals(16, entries.size) at :235, summaryRule-key set at :199-201. A5-mandated 17th catalog entry breaks them by design; mechanical lock updates needed (16->17, add TASK_AUDIT_RETENTION to both sets). Controller grep confirms the assertions.
+- Resume from: b5 epoch 2, base d32ccb282d88a6e6182bb579acbc0b65d74995eb, implementation 2856a71c62252358d417b0f63810e547e66075f0 retained, next action amend plan (authorize 12th file) then fix/verify
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -49,7 +49,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:38ce7ad494397d168663036e9252b3d6bf1c2089 | b1 | 2 | LIGHT_PASS_WITH_NOTES | ad005d98b706ceed67b34c96a89e642334ca819a | 7885ac04378f553376711184b6596bc2906a9ad1 | 1 | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | 816cd31cbdcdda409660f02735cd30303523a051 | epoch 1 scope pause resolved via amendment A4; round 1 F-1 whitespace fix; RECORD_ONLY O-1..O-3 |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 1 | LIGHT_PASS | 7ca26a1129399fa5f0431fb7830dcecbaf4f9f3f | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 0 | — | eb27b8d84a4286ce3ef92ca40acf98d761168121 | 199d02a4877a3f9a08b23e548f99127d72b31b17 | RECORD_ONLY O-1 (Flyway unexecuted, no Docker) / O-2 / O-3 |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 1 | LIGHT_PASS_WITH_NOTES | eb27b8d84a4286ce3ef92ca40acf98d761168121 | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 0 | — | d32ccb282d88a6e6182bb579acbc0b65d74995eb | d130fe81e53f16936bd36f665ec416ab1f9163f5 | RECORD_ONLY O-1/O-2/O-3 in verify-log |
-| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:50a4532ca58cdcaadb3285a9e44395e8d494fea3 | b1 | 1 | IMPLEMENTING | d32ccb282d88a6e6182bb579acbc0b65d74995eb | | 0 | — | | | T3-6 fork resolved via amendment A5 (11-file complete path) |
+| b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:50a4532ca58cdcaadb3285a9e44395e8d494fea3 | b1 | 1 | PAUSED_FOR_HUMAN | d32ccb282d88a6e6182bb579acbc0b65d74995eb | 2856a71c62252358d417b0f63810e547e66075f0 | 0 | — | 2856a71c62252358d417b0f63810e547e66075f0 | | 12th file TaskExecutionSummaryExtractorTest.kt lock updates pending amendment; implementation committed |
 | b3 | docs/plans/2026-08-16/b3-mail-record-execution-link-backend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b2 | 0 | PENDING | | | 0 | — | | | |
 | b4 | docs/plans/2026-08-16/b4-task-drilldown-frontend.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b3 | 0 | PENDING | | | 0 | — | | | |
 | b5 | docs/plans/2026-08-16/b5-task-audit-retention.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
