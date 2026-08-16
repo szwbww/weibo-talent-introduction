@@ -395,6 +395,8 @@ async function loadTasks() {
 
 新增迁移的文本断言（沿用 `QaSeedEncodingRepairMigrationTest` 范式，不需 Docker）：在 `TaskExecutionListPagingTest` 内加一条用例，`Files.readString(Path.of("src/main/resources/db/migration/V100__add_task_execution_indexes.sql"))` 断言含三个 `CREATE INDEX` 且**不含** `${`。
 
+同步改造 `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt`（fast-p 修正 A3：T0-3 把 `listExecutions` 改为分页签名后，该文件 :26 的旧 2 参调用与 :28 的 `result.size` 断言编译失败；该文件不在原 9 文件清单内，经人工批准列为第 10 个授权文件）：删除/重写「lists executions by task type and status」旧用例，改为针对新分页签名的契约（分页/夹取行为由 `TaskExecutionListPagingTest` 承载，此处仅保持 service 层编译与最小行为断言）。
+
 ---
 
 ## 变更文件清单
@@ -410,8 +412,9 @@ async function loadTasks() {
 | 7 | `src/test/kotlin/.../task/controller/TaskExecutionListPagingTest.kt` | 新增 | 后端用例 |
 | 8 | `src/test/js/taskRecordsPaging.test.js` | 新增 | 前端用例 |
 | 9 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 修改 | **仅**改三条缓存键 literal 断言（I0-6）；其余用例一行不动 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt` | 修改 | T0-7：重写「lists executions by task type and status」旧用例适配分页签名（fast-p 修正 A3） |
 
-文件数 9 ≤ 10。子系统 2（task 后端 / 前端）。
+文件数 10 ≤ 10。子系统 2（task 后端 / 前端）。
 
 ---
 
