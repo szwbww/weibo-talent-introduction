@@ -45,3 +45,6 @@ Verifier: ReVerifyB2
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+Controller note: evidence consolidated; verdict LIGHT_PASS_WITH_NOTES; RECORD_ONLY O-1/O-2/O-3 carried to handoff index.
