@@ -19,6 +19,8 @@ const state = {
     suppressionsPage: 0,
     suppressionsTotal: 0,
     suppressionKeyword: "",
+    tasksPage: 0,
+    tasksTotal: 0,
     contacts: [],
     contactsPage: 0,
     contactsTotalHits: 0,
@@ -5273,12 +5275,13 @@ async function loadOperatorStatusSyncTooltip() {
     const btn = $("#backfillOperatorStatusBtn");
     if (!btn) return;
     try {
-        const tasks = await api("/api/task-executions?taskType=CANDIDATE_OPERATOR_STATUS_SYNC");
-        if (!tasks || tasks.length === 0) {
+        const page = await api("/api/task-executions?taskType=CANDIDATE_OPERATOR_STATUS_SYNC&size=1");
+        const items = page.items || [];
+        if (items.length === 0) {
             btn.title = "暂无同步记录";
             return;
         }
-        const task = tasks[0];
+        const task = await api(`/api/task-executions/${items[0].id}`);
         const startedAt = task.startedAt || "-";
         const status = task.status || "-";
         const success = Number(task.successCount || 0);
@@ -8903,14 +8906,19 @@ function renderDiscoverySummaryText(summaryText) {
     return `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">${escapeHtml(summaryText)}</div>`;
 }
 
+const TASK_PAGE_SIZE = 50;
+
 async function loadTasks() {
     const params = new URLSearchParams();
     const taskType = $("#taskTypeFilter").value;
     const status = $("#taskStatusFilter").value;
     if (taskType) params.set("taskType", taskType);
     if (status) params.set("status", status);
-    const suffix = params.toString() ? `?${params}` : "";
-    const tasks = await api(`/api/task-executions${suffix}`);
+    params.set("page", String(state.tasksPage));
+    params.set("size", String(TASK_PAGE_SIZE));
+    const data = await api(`/api/task-executions?${params}`);
+    const tasks = data.items || [];
+    state.tasksTotal = data.total ?? tasks.length;
     $("#tasksTable").innerHTML = tasks.map((task) => `
         <tr class="task-row" data-task-id="${task.id}" data-task-type="${escapeHtml(task.taskType)}" onclick="toggleTaskDetail(this)" style="cursor:pointer;">
             <td>${task.id}</td>
@@ -8922,6 +8930,19 @@ async function loadTasks() {
             <td>${escapeHtml(task.errorMessage || "")}</td>
         </tr>
     `).join("");
+    renderTaskPager();
+}
+
+function renderTaskPager() {
+    const pager = $("#taskPager");
+    if (state.tasksTotal === 0) {
+        pager.hidden = true;
+        return;
+    }
+    pager.hidden = false;
+    $("#taskPageInfo").textContent = `第 ${state.tasksPage + 1} 页 / 共 ${state.tasksTotal} 条`;
+    $("#taskPrevPage").disabled = state.tasksPage === 0;
+    $("#taskNextPage").disabled = (state.tasksPage + 1) * TASK_PAGE_SIZE >= state.tasksTotal;
 }
 
 async function toggleTaskDetail(row) {
@@ -11078,6 +11099,16 @@ function bindEvents() {
         state.suppressionsPage += 1;
         loadSuppressions().catch((error) => showStatus(error.message, "error"));
     });
+    $("#taskPrevPage").addEventListener("click", () => {
+        if (state.tasksPage > 0) {
+            state.tasksPage -= 1;
+            loadTasks().catch((error) => showStatus(error.message, "error"));
+        }
+    });
+    $("#taskNextPage").addEventListener("click", () => {
+        state.tasksPage += 1;
+        loadTasks().catch((error) => showStatus(error.message, "error"));
+    });
     $("#loadContactsBtn").addEventListener("click", () => {
         loadContacts().catch((e) => showStatus(e.message, "error"));
     });
@@ -11375,7 +11406,18 @@ function bindEvents() {
             syncAiReplyTimeoutControls();
         }
     });
-    $("#loadTasksBtn").addEventListener("click", loadTasks);
+    $("#loadTasksBtn").addEventListener("click", () => {
+        state.tasksPage = 0;
+        loadTasks();
+    });
+    $("#taskTypeFilter").addEventListener("change", () => {
+        state.tasksPage = 0;
+        loadTasks();
+    });
+    $("#taskStatusFilter").addEventListener("change", () => {
+        state.tasksPage = 0;
+        loadTasks();
+    });
     document.addEventListener("submit", (event) => {
         const form = event.target.closest("#meetingScheduleForm");
         if (form) {

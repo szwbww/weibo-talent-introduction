@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -15,20 +16,30 @@ class TaskExecutionService(
     private val objectMapper: ObjectMapper,
     private val schedulingProperties: MailSchedulingProperties
 ) {
-    fun listExecutions(taskType: String?, status: String?): List<TaskExecution> =
-        when {
-            taskType != null && status != null ->
-                repository.findAllByTaskTypeAndStatusOrderByStartedAtDesc(taskType, status)
+    fun listExecutions(taskType: String?, status: String?, page: Int, size: Int): TaskExecutionPage {
+        val offset = page.toLong() * size
+        return when {
+            taskType != null && status != null -> TaskExecutionPage(
+                items = repository.findPageByTaskTypeAndStatus(taskType, status, size, offset),
+                total = repository.countByTaskTypeAndStatus(taskType, status)
+            )
 
-            taskType != null ->
-                repository.findAllByTaskTypeOrderByStartedAtDesc(taskType)
+            taskType != null -> TaskExecutionPage(
+                items = repository.findPageByTaskType(taskType, size, offset),
+                total = repository.countByTaskType(taskType)
+            )
 
-            status != null ->
-                repository.findAllByStatusOrderByStartedAtDesc(status)
+            status != null -> TaskExecutionPage(
+                items = repository.findPageByStatus(status, size, offset),
+                total = repository.countByStatus(status)
+            )
 
-            else ->
-                repository.findAllByOrderByStartedAtDesc()
+            else -> TaskExecutionPage(
+                items = repository.findPage(size, offset),
+                total = repository.countAll()
+            )
         }
+    }
 
     fun getExecution(id: Long): TaskExecution =
         repository.findById(id)
@@ -249,6 +260,11 @@ class TaskExecutionService(
         val SHANGHAI: ZoneId = ZoneId.of("Asia/Shanghai")
     }
 }
+
+data class TaskExecutionPage(
+    val items: List<TaskExecutionListItem>,
+    val total: Long
+)
 
 data class TaskDispatchRequest(
     val campaignId: Long? = null,

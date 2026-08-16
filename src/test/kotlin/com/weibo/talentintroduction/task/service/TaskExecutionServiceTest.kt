@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -18,18 +19,24 @@ class TaskExecutionServiceTest {
     private val service = TaskExecutionService(repository, ObjectMapper(), schedulingProperties)
 
     @Test
-    fun `lists executions by task type and status`() {
+    fun `lists executions by task type and status with pagination`() {
         Mockito.`when`(
-            repository.findAllByTaskTypeAndStatusOrderByStartedAtDesc("AUTO_REPLY_ACCOUNT", "FAILED")
-        ).thenReturn(listOf(execution(status = "FAILED")))
+            repository.findPageByTaskTypeAndStatus("AUTO_REPLY_ACCOUNT", "FAILED", 50, 0L)
+        ).thenReturn(listOf(executionItem(status = "FAILED")))
+        Mockito.`when`(repository.countByTaskTypeAndStatus("AUTO_REPLY_ACCOUNT", "FAILED"))
+            .thenReturn(1L)
 
-        val result = service.listExecutions("AUTO_REPLY_ACCOUNT", "FAILED")
+        val result = service.listExecutions("AUTO_REPLY_ACCOUNT", "FAILED", 0, 50)
 
-        assertEquals(1, result.size)
-        Mockito.verify(repository).findAllByTaskTypeAndStatusOrderByStartedAtDesc(
+        assertEquals(1, result.items.size)
+        assertEquals(1L, result.total)
+        Mockito.verify(repository).findPageByTaskTypeAndStatus(
             "AUTO_REPLY_ACCOUNT",
-            "FAILED"
+            "FAILED",
+            50,
+            0L
         )
+        Mockito.verify(repository).countByTaskTypeAndStatus("AUTO_REPLY_ACCOUNT", "FAILED")
     }
 
     @Test
@@ -361,6 +368,19 @@ class TaskExecutionServiceTest {
             requestPayload = "{}",
             resultSummary = "{}",
             startedAt = LocalDateTime.now()
+        )
+
+    private fun executionItem(status: String): TaskExecutionListItem =
+        TaskExecutionListItem(
+            id = 1L,
+            taskType = "AUTO_REPLY_ACCOUNT",
+            triggerType = "QUEUE",
+            status = status,
+            successCount = 0,
+            failureCount = 0,
+            errorMessage = null,
+            startedAt = LocalDateTime.now(),
+            finishedAt = null
         )
 }
 

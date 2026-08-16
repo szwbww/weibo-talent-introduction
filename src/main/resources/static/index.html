@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260817-v3-expert-list-entry-move">
+    <link rel="stylesheet" href="styles.css?v=20260817-v4-task-records-paging">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -973,6 +973,11 @@
                         </thead>
                         <tbody id="tasksTable"></tbody>
                     </table>
+                </div>
+                <div id="taskPager" class="list-pager" hidden>
+                    <button class="button small" id="taskPrevPage">上一页</button>
+                    <span id="taskPageInfo" class="list-pager-info"></span>
+                    <button class="button small" id="taskNextPage">下一页</button>
                 </div>
             </section>
         </section>
@@ -2031,7 +2036,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260817-v3-expert-list-entry-move"></script>
-<script src="app.js?v=20260817-v3-expert-list-entry-move"></script>
+<script src="trust-reply-workbench.js?v=20260817-v4-task-records-paging"></script>
+<script src="app.js?v=20260817-v4-task-records-paging"></script>
 </body>
 </html>

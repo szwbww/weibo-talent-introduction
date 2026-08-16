@@ -16,6 +16,23 @@ data class BatchConfigLastExecution(
     val lastStartedAt: LocalDateTime
 )
 
+/**
+ * 列表投影：刻意不含 request_payload / result_summary（两者均为 TEXT，
+ * 单条 AUTO_REPLY_ALL 的 result_summary 内嵌 accounts[].repliedExperts[]，
+ * 可达数十 KB，而列表页一个字段都不用）。见主计划 Invariant M-1。
+ */
+data class TaskExecutionListItem(
+    val id: Long,
+    val taskType: String,
+    val triggerType: String,
+    val status: String,
+    val successCount: Int,
+    val failureCount: Int,
+    val errorMessage: String?,
+    val startedAt: LocalDateTime,
+    val finishedAt: LocalDateTime?
+)
+
 interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
     fun findAllByOrderByStartedAtDesc(): List<TaskExecution>
 
@@ -90,4 +107,74 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
         """
     )
     fun updateProgressCounts(id: Long, successCount: Int, failureCount: Int, updatedAt: LocalDateTime): Int
+
+    // ---- Paged list queries (M-1): SELECT list deliberately omits request_payload / result_summary ----
+
+    @Query(
+        """
+        SELECT id AS id, task_type AS task_type, trigger_type AS trigger_type,
+               status AS status, success_count AS success_count, failure_count AS failure_count,
+               error_message AS error_message, started_at AS started_at, finished_at AS finished_at
+        FROM task_execution
+        ORDER BY started_at DESC
+        LIMIT :size OFFSET :offset
+        """
+    )
+    fun findPage(size: Int, offset: Long): List<TaskExecutionListItem>
+
+    @Query(
+        """
+        SELECT id AS id, task_type AS task_type, trigger_type AS trigger_type,
+               status AS status, success_count AS success_count, failure_count AS failure_count,
+               error_message AS error_message, started_at AS started_at, finished_at AS finished_at
+        FROM task_execution
+        WHERE task_type = :taskType
+        ORDER BY started_at DESC
+        LIMIT :size OFFSET :offset
+        """
+    )
+    fun findPageByTaskType(taskType: String, size: Int, offset: Long): List<TaskExecutionListItem>
+
+    @Query(
+        """
+        SELECT id AS id, task_type AS task_type, trigger_type AS trigger_type,
+               status AS status, success_count AS success_count, failure_count AS failure_count,
+               error_message AS error_message, started_at AS started_at, finished_at AS finished_at
+        FROM task_execution
+        WHERE status = :status
+        ORDER BY started_at DESC
+        LIMIT :size OFFSET :offset
+        """
+    )
+    fun findPageByStatus(status: String, size: Int, offset: Long): List<TaskExecutionListItem>
+
+    @Query(
+        """
+        SELECT id AS id, task_type AS task_type, trigger_type AS trigger_type,
+               status AS status, success_count AS success_count, failure_count AS failure_count,
+               error_message AS error_message, started_at AS started_at, finished_at AS finished_at
+        FROM task_execution
+        WHERE task_type = :taskType AND status = :status
+        ORDER BY started_at DESC
+        LIMIT :size OFFSET :offset
+        """
+    )
+    fun findPageByTaskTypeAndStatus(
+        taskType: String,
+        status: String,
+        size: Int,
+        offset: Long
+    ): List<TaskExecutionListItem>
+
+    @Query("SELECT COUNT(*) FROM task_execution")
+    fun countAll(): Long
+
+    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType")
+    fun countByTaskType(taskType: String): Long
+
+    @Query("SELECT COUNT(*) FROM task_execution WHERE status = :status")
+    fun countByStatus(status: String): Long
+
+    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType AND status = :status")
+    fun countByTaskTypeAndStatus(taskType: String, status: String): Long
 }

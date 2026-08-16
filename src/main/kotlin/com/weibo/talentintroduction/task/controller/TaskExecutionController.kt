@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.GetMapping
@@ -25,9 +26,18 @@ class TaskExecutionController(
     @GetMapping
     fun listExecutions(
         @RequestParam(required = false) taskType: String?,
-        @RequestParam(required = false) status: String?
-    ): List<TaskExecutionResponse> =
-        service.listExecutions(taskType, status).map { it.toResponse() }
+        @RequestParam(required = false) status: String?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "50") size: Int
+    ): TaskExecutionPageResponse {
+        val safeSize = size.coerceIn(1, 200)
+        val safePage = page.coerceAtLeast(0)
+        val result = service.listExecutions(taskType, status, safePage, safeSize)
+        return TaskExecutionPageResponse(
+            items = result.items.map { it.toListResponse() },
+            total = result.total
+        )
+    }
 
     @GetMapping("/recent-polls")
     fun recentPolls(
@@ -177,6 +187,28 @@ data class TaskExecutionResponse(
     val updatedAt: String?
 )
 
+/**
+ * 列表响应投影（M-1）：刻意不含 requestPayload / resultSummary —— 两个 TEXT 列
+ * 只由单行详情端点 `/{id}`（TaskExecutionResponse）返回。时间格式沿用
+ * `startedAt.toString()` 语义以满足 N0-1。
+ */
+data class TaskExecutionListItemResponse(
+    val id: Long?,
+    val taskType: String,
+    val triggerType: String,
+    val status: String,
+    val successCount: Int,
+    val failureCount: Int,
+    val errorMessage: String?,
+    val startedAt: String,
+    val finishedAt: String?
+)
+
+data class TaskExecutionPageResponse(
+    val items: List<TaskExecutionListItemResponse>,
+    val total: Long
+)
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 private data class PollDetailRaw(
     val accounts: List<PollDetailAccountRaw> = emptyList()
@@ -225,6 +257,19 @@ data class PollRepliedExpert(
     val expertName: String?,
     val outcome: String
 )
+
+private fun TaskExecutionListItem.toListResponse(): TaskExecutionListItemResponse =
+    TaskExecutionListItemResponse(
+        id = id,
+        taskType = taskType,
+        triggerType = triggerType,
+        status = status,
+        successCount = successCount,
+        failureCount = failureCount,
+        errorMessage = errorMessage,
+        startedAt = startedAt.toString(),
+        finishedAt = finishedAt?.toString()
+    )
 
 private fun TaskExecution.toResponse(): TaskExecutionResponse =
     TaskExecutionResponse(
