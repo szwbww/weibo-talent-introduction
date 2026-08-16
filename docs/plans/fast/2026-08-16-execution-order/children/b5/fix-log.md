@@ -6,3 +6,5 @@
 - Commands: mvn test -Dtest=TaskExecutionSummaryExtractorTest -> exit 0, Tests run: 18, Failures: 0, Errors: 0; mvn test -Dtest=TaskAuditRetentionServiceTest -> exit 0; mvn test -Dtest=TaskRetentionMigrationTest -> exit 0; full mvn test -> exit 0, Tests run: 2512, Failures: 0, Errors: 0; git diff --check -> exit 0
 - Result: FIXED
 - Notes: A6-authorized lock updates, lock semantics preserved
+
+Controller note: evidence recorded; fix round 1 (A6-authorized T3-8 lock updates), verdict LIGHT_PASS.

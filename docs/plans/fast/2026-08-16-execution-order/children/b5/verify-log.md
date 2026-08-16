@@ -21,3 +21,6 @@ Verifier: ReVerifyB5 (first attempt; re-verification after fix round 1/3)
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+Controller note: verdict LIGHT_PASS; F-1..F-n N/A; RECORD_ONLY O-1/O-2/O-3 carried to handoff index.
