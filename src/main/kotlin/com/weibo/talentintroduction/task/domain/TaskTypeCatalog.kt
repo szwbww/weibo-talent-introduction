@@ -37,7 +37,7 @@ enum class Drilldown { MAIL_BY_EXECUTION, EXPERT_BY_POLL_DETAIL }
 object TaskTypeCatalog {
 
     /**
-     * 16 种类型，按「现状审计」grep 回执的 taskType 全集逐条声明。
+     * 17 种类型，按「现状审计」grep 回执的 taskType 全集逐条声明。
      *
      * metricLabel 证据（写入侧源码位置）：
      * - MANUAL_INITIAL_OUTREACH "已发送/失败"：ManualOutreachResult 实现 TaskExecutionSummaryProvider
@@ -117,6 +117,11 @@ object TaskTypeCatalog {
         TaskTypeMeta(
             code = "RAW_PROMOTION_SCAN", label = "RAW 层晋升扫描", group = "MANUAL",
             metricLabel = null, summaryRule = "RAW_PROMOTION_SCAN", hasProgressUi = true, drilldown = null
+        ),
+        TaskTypeMeta(
+            code = "TASK_AUDIT_RETENTION", label = "任务审计清理", group = "SCHEDULED",
+            metricLabel = "删除行数/失败表数", summaryRule = "TASK_AUDIT_RETENTION",
+            hasProgressUi = false, drilldown = null
         )
     ).associateBy { it.code }
 

@@ -117,6 +117,14 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
     )
     fun updateProgressCounts(id: Long, successCount: Int, failureCount: Int, updatedAt: LocalDateTime): Int
 
+    /**
+     * B5 保留清理（I3-3）：按 `started_at` 删（该列有 idx_te_started，created_at 无索引）。
+     * `ORDER BY ... LIMIT` 使删除沿索引顺序分批进行，减少锁范围（I3-2）。返回受影响行数。
+     */
+    @Modifying
+    @Query("DELETE FROM task_execution WHERE started_at < :cutoff ORDER BY started_at LIMIT :batchSize")
+    fun deleteOlderThan(cutoff: LocalDateTime, batchSize: Int): Int
+
     // ---- Paged list queries (M-1): SELECT list deliberately omits request_payload / result_summary ----
 
     @Query(

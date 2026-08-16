@@ -73,6 +73,12 @@ talent-introduction:
     operator-status-sync-cron: ${MAIL_SCHEDULING_OPERATOR_STATUS_SYNC_CRON:-}
     ai-qa-extraction-cron: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_CRON:-}
     ai-qa-extraction-max-contacts: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_MAX_CONTACTS:20}
+  task-retention:
+    enabled: ${TASK_RETENTION_ENABLED:false}
+    cron: ${TASK_RETENTION_CRON:0 30 4 * * *}
+    retention-days: ${TASK_RETENTION_DAYS:90}
+    batch-size: ${TASK_RETENTION_BATCH_SIZE:2000}
+    max-rows-per-run: ${TASK_RETENTION_MAX_ROWS_PER_RUN:200000}
   postmaster:
     enabled: ${POSTMASTER_ENABLED:false}
     credentials-json: ${POSTMASTER_CREDENTIALS_JSON:}

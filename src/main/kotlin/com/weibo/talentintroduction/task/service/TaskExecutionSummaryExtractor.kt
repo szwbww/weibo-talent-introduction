@@ -108,6 +108,16 @@ class TaskExecutionSummaryExtractor(
                         totalRejected = failed
                     )
                 }
+                "TASK_AUDIT_RETENTION" -> {
+                    val progressLogDeleted = root.path("progressLogDeleted").asLong(0)
+                    val executionDeleted = root.path("executionDeleted").asLong(0)
+                    val failedTables = root.path("failedTables").asLong(0)
+                    ExecutionTotals(
+                        totalProcessed = progressLogDeleted + executionDeleted + failedTables,
+                        totalPassed = progressLogDeleted + executionDeleted,
+                        totalRejected = failedTables
+                    )
+                }
                 else -> ExecutionTotals()
             }
         } catch (e: Exception) {
