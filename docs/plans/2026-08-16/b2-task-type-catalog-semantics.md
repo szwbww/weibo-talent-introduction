@@ -424,6 +424,12 @@ catalog 断言并入同一文件（原 `TaskTypeCatalogTest.kt`，为腾名额�
 - 明细展开在无 renderer 时渲染两个 `.pre` 块（S1-4 逐字）；`rawTruncated` 时追加截断文案。
 - `#taskTypeFilter` 注入后仍保留 `value=""` 的占位项，且选中值不丢。
 
+既有测试适配（fast-p 修正 A4：T1-5/T1-6 给 `TaskExecutionController` 加依赖、I1-2 改第 5 列渲染语义，经人工批准新增 4 个授权文件）：
+
+- `src/test/js/taskRecordsPaging.test.js`：N0-1 的「七列逐字」断言按新语义更新 —— 无 `metricLabel` 的行第 5 列渲染 `— 无统计`（I1-2），其余六列仍逐字断言；不改动分页行为断言。
+- `src/test/kotlin/.../task/controller/TaskExecutionControllerTest.kt` 与 `.../TaskExecutionListPagingTest.kt`：仅适配 `TaskExecutionController(...)` 构造调用（新增依赖实参），不改既有断言。
+- `src/test/kotlin/.../task/controller/TaskExecutionControllerMvcTest.kt`：`@WebMvcTest` 切片补新增依赖的 `@MockBean`，不新增/改动用例。
+
 ---
 
 ## 变更文件清单
@@ -440,8 +446,12 @@ catalog 断言并入同一文件（原 `TaskTypeCatalogTest.kt`，为腾名额�
 | 8 | `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` | 新增 | extractor 用例 **+ catalog 用例**（原计划的 `TaskTypeCatalogTest.kt` 并入此文件，为缓存键测试腾出名额） |
 | 9 | `src/test/js/taskRecordsSemantics.test.js` | 新增 | — |
 | 10 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 修改 | **仅**改三条缓存键 literal 断言（I1-8）；其余用例一行不动 |
+| 11 | `src/test/js/taskRecordsPaging.test.js` | 修改 | T1-8 适配：N0-1 第 5 列按 I1-2 新语义（fast-p 修正 A4） |
+| 12 | `src/test/kotlin/.../task/controller/TaskExecutionControllerTest.kt` | 修改 | 构造调用适配（fast-p 修正 A4） |
+| 13 | `src/test/kotlin/.../task/controller/TaskExecutionListPagingTest.kt` | 修改 | 构造调用适配（fast-p 修正 A4） |
+| 14 | `src/test/kotlin/.../task/controller/TaskExecutionControllerMvcTest.kt` | 修改 | @MockBean 补充（fast-p 修正 A4） |
 
-文件数 10 ≤ 10（已到上限。原清单里的 `TaskTypeCatalogTest.kt` 已并入第 8 项 —— 两者都是同包小单测，合并不损失断言。执行时若发现还须改第 11 个文件，**停止并回报**，不要顺手扩围）。子系统 2（task 后端 / 前端）。
+文件数 14；其中授权文件上限说明：原「10 ≤ 10 已到上限」规则经 fast-p 修正 A4 放宽至 14（仅本次四文件），后续仍不得自行扩围；发现第 15 个文件须停止回报。子系统 2（task 后端 / 前端）。
 
 ---
 
