@@ -230,5 +230,3 @@ Spot-verified evidence quickly (no re-litigation): `InitialOutreachService.kt:14
   - `EXPERT_DISCOVERY` detail keeps the bySource table + summaryText via `detail.rawResultSummary` parsed by the existing `normalizeDiscoveryResultSummary` (three existing renderer functions untouched).
 - Worktree: only the 14 authorized files changed; `docs/plans/fast/` changes (this file) are NOT part of the implementation commit — left uncommitted for the controller's separate evidence commit.
 - Commit: exactly one implementation commit `feat(fast-p): implement b2` (SHA recorded by controller); not pushed.
-
-Controller note: fix-log SHA corrected to full form; evidence consolidated.
