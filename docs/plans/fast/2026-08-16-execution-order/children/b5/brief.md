@@ -1,63 +1,53 @@
-# Fast-P Child Brief — b5 (amended)
+# Fast-P Child Brief — b5 (epoch 2, amended)
 
 - Child: b5
 - Plan: docs/plans/2026-08-16/b5-task-audit-retention.md
-- Plan identity: commit:50a4532ca58cdcaadb3285a9e44395e8d494fea3  (amended per ledger amendment A5, human-approved)
+- Plan identity: commit:771c8555b1a8a2bf286249df50acfc7a66436f3a  (amended per ledger amendments A5+A6, human-approved)
 - Depends on: b1
 - Base: d32ccb282d88a6e6182bb579acbc0b65d74995eb  (b4 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
-- Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/
+- Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/ — read from there if needed; do NOT edit the main worktree.
 - Family main plan (MUST read first for shared invariants M-1..M-7, audits X-1..X-7, authoritative verification commands): docs/plans/2026-08-16/task-records-refactor-main.md
 
 ## Epoch status
 
-Amendment A5 (human-approved) resolved the plan's T3-6 disposition fork: 11-file COMPLETE path (T3-6 inline). The split option is OFF the table (b2 merged without the reserved catalog entry). Proceed with all 11 authorized files.
+Epoch 1 implemented and committed at 2856a71c62252358d417b0f63810e547e66075f0 (11 files, per A5). Full-regression gate failed on 3 catalog-lock assertions in TaskExecutionSummaryExtractorTest.kt (b2-owned). Amendment A6 (human-approved) authorizes that file as the 12th: apply T3-8 lock updates (mechanical: add TASK_AUDIT_RETENTION to the auditedCodes set at ~:212, 16->17 at :235, add TASK_AUDIT_RETENTION to the summaryRule-key set at ~:201; preserve lock semantics, no other test changes). Epoch-2 action: apply T3-8 as fix round 1, then independent verification.
 
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/00-execution-order.md)
 
 1. JDK 11 mandatory. Use JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home for every mvn command; bare mvn fails to build.
-2. Cache key triad: NOT APPLICABLE — pure backend; do not touch index.html/app.js/styles.css/batchSendTaskConsoleVisualFix.test.js.
-3. Migration chain: current max V101__add_task_execution_id_to_mail_record.sql; create V102__add_task_progress_log_created_at_index.sql (idx_tpl_created_at; no ${). Do not use any other V-number.
-4. This is the LAST child. No downstream child.
-5. Git: commit locally only, exactly one implementation commit `feat(fast-p): implement b5`. Never push, merge, rebase, amend, rewrite. Exclude docs/plans/fast/ from the commit.
+2. Cache key triad: NOT APPLICABLE — pure backend.
+3. Migration chain: V102__add_task_progress_log_created_at_index.sql (idx_tpl_created_at; no ${). No other V-number.
+4. Last child; no downstream child.
+5. Git: commit locally only. Never push, merge, rebase, amend, rewrite. Exclude docs/plans/fast/ from product commits.
 
-## Authorized files (from the plan 变更文件清单 — 11 files per amendment A5, modify nothing else)
+## Authorized files (12 files — amended A5+A6; modify nothing else)
 
-1. src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql   (NEW; 1 index)
-2. src/main/kotlin/com/weibo/talentintroduction/config/TaskRetentionProperties.kt   (NEW; 5 config items; register per MailSchedulingProperties pattern)
-3. src/main/resources/application.yml   (new task-retention section; MUST keep spring.flyway.placeholder-replacement: false at :8-13)
-4. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt   (+1 delete method)
-5. src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt   (+1 delete method)
-6. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt   (NEW; purge + RetentionResult)
-7. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt   (NEW; cron + runAndRecordWithResult)
-8. src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt   (+1 entry: TASK_AUDIT_RETENTION -> 任务审计清理 / SCHEDULED / metricLabel 删除行数/失败表数 / summaryRule TASK_AUDIT_RETENTION / hasProgressUi false / drilldown null)
-9. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt   (+1 branch: totalPassed = progressLogDeleted + executionDeleted; totalRejected = failedTables)
-10. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionServiceTest.kt   (NEW; cutoff/batching/maxRowsPerRun/InOrder/I3-6 partial-failure/I3-5 no-exclusion cases)
-11. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskRetentionMigrationTest.kt   (NEW; V102 text + delete-SQL text assertions + placeholder-replacement: false regression)
+Files 1-11 as the plan 变更文件清单 rows 1-11 (V102 migration; TaskRetentionProperties; application.yml; TaskExecutionRepository; TaskProgressLogRepository; TaskAuditRetentionService; TaskAuditRetentionScheduler; TaskTypeCatalog +TASK_AUDIT_RETENTION; TaskExecutionSummaryExtractor +branch; TaskAuditRetentionServiceTest; TaskRetentionMigrationTest).
+File 12: src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt (T3-8 lock updates ONLY).
 
-## Required commands (run all; from plan 验证命令 + family main plan)
+## Required commands (run all)
 
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskAuditRetentionServiceTest
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskRetentionMigrationTest
-- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true   (requires local Docker; if Docker is unavailable, record as unexecuted with rationale)
-- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test   (full regression; Tests run: N, Failures: 0, Errors: 0, exit 0; includes node --test exec; verify.sh NOT a gate)
+- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=TaskExecutionSummaryExtractorTest   (the previously failing lock file — must pass)
+- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true   (requires Docker; if unavailable record unexecuted)
+- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test   (full regression; Tests run: N, Failures: 0, Errors: 0, exit 0; includes node --test exec)
 - git diff --check   (clean)
 
-## Verify-first items (⚠️ — MUST resolve BEFORE editing; record resolutions in the execution report)
+## Verify-first items (resolved in epoch 1, recorded in execution.md — see the report)
 
-1. @Modifying + DELETE spike (plan T3-3): the repo has ONLY UPDATE precedents (@Modifying+@Query updateProgressCounts / rebindPendingExecutionId); DELETE is a first — spike a minimal case to confirm Spring Data JDBC @Modifying supports DELETE and returns affected-rows. Record the spike conclusion (support + return semantics) in the report and in the plan's intended knowledge entry K-modifying-delete-precedent (the knowledge write-back lives in the MAIN worktree — document there per plan Phase 6).
-2. batch_reject_reasons_json column check: grep src/main/resources/db/migration/ — if the column doesn't exist while the entity has the property, that is a PRE-EXISTING defect: record as an observation, do NOT fix (out of scope).
-3. application.yml: confirm spring.flyway.placeholder-replacement: false still present (must NOT be removed).
-4. TaskRetentionProperties registration: follow MailSchedulingProperties' registration pattern (@ConfigurationPropertiesScan or @EnableConfigurationProperties).
-5. I3-4: deletion order progress_log -> execution; I3-1: task_progress_log delete condition is created_at < cutoff, NO JOIN/EXISTS/task_execution_id (the plan's V22 audit: no FK, no created_at index -> V102 needed).
-6. I3-5: the retention task must NOT exempt itself (TASK_AUDIT_RETENTION rows are deletable); T3-5 uses runAndRecordWithResult so RetentionResult lands in result_summary (I3-6 terminal-status semantics depend on the TaskExecutionSummaryProvider branch — implement the provider rather than TaskResultSummary.from() reflection, which would yield 0/0).
+1. @Modifying DELETE spike: PASS on scratch MySQL 5.7 (temporary test deleted; confirms @Modifying DELETE + affected-rows Int return).
+2. batch_reject_reasons_json: record-only (pre-existing entity/column mismatch, out of scope).
+3. placeholder-replacement: false preserved.
+4. TaskRetentionProperties registered per MailSchedulingProperties pattern.
+5. I3-4 order / I3-1 created_at-only condition / I3-5 no self-exemption / I3-6 partial-failure semantics / TaskExecutionSummaryProvider (not reflection).
 
 ## Downstream interfaces
 
-- No later child. N-3 (runAndRecord signatures) and N-2 (batchOnly) binding.
-- The catalog entry (file 8) and extractor branch (file 9) must match the b2 catalog shape (TaskTypeMeta fields) exactly.
+- No later child. N-2/N-3 binding. Catalog entry + extractor branch match b2 catalog shape (TaskTypeMeta fields).
 
-## Plan text (exact approved content incl. amendment A5; authoritative)
+## Plan text (exact approved content incl. amendments A5+A6; authoritative)
 
 # B5：任务审计 90 天保留清理
 
@@ -373,6 +363,13 @@ TASK_AUDIT_RETENTION → label "任务审计清理", group "SCHEDULED",
 - **两个 Repository 的删除 SQL 文本断言**（I3-1 / M-6）：读取 `TaskProgressLogRepository.kt` 源文件，断言其 `deleteOlderThan` 的 `@Query` 字符串含 `created_at <`，且**不含** `JOIN` / `EXISTS` / `task_execution_id`。
 - `application.yml` 仍含 `placeholder-replacement: false`（K-flyway-placeholder-replacement 的回归断言，与既有 `UnsubscribeBodyLinkMigrationTest.kt:46` 同类）。
 
+### T3-8 catalog 锁断言适配（fast-p 修正 A6）
+
+`TaskExecutionSummaryExtractorTest.kt` 的三条 catalog 锁断言随 T3-6 的 17 条目同步（经人工批准列为第 12 个授权文件；只做机械锁更新，不改锁语义）：
+- `assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)`（:219）：`auditedCodes` 集合补 `TASK_AUDIT_RETENTION`；
+- `assertEquals(16, TaskTypeCatalog.entries.size)`（:235）：改为 17；
+- `summaryRule` key 集合断言（:199-201）：补 `TASK_AUDIT_RETENTION`。
+
 ---
 
 ## 变更文件清单
@@ -390,8 +387,9 @@ TASK_AUDIT_RETENTION → label "任务审计清理", group "SCHEDULED",
 | 9 | `src/main/kotlin/.../task/service/TaskExecutionSummaryExtractor.kt` | 修改 | 加 1 个分支 |
 | 10 | `src/test/kotlin/.../task/service/TaskAuditRetentionServiceTest.kt` | 新增 | — |
 | 11 | `src/test/kotlin/.../task/service/TaskRetentionMigrationTest.kt` | 新增 | — |
+| 12 | `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` | 修改 | T3-8：三条 catalog 锁断言机械更新（fast-p 修正 A6） |
 
-文件数 **11**（fast-p 修正 A5：经人工批准采用 11 文件完整方案，超出 10 的上限仅此一次；拆分方案的前提——P1 在合并时预留 `TASK_AUDIT_RETENTION` 条目——未成立，b2 合并后的 catalog 为 16 条、无该条目，拆分会使任务记录页无法正确显示审计清理行，A3-1 可见性验收不满足）。
+文件数 **12**（fast-p 修正 A5：采用 11 文件完整方案，超出 10 的上限仅此一次；fast-p 修正 A6：catalog 锁断言随 17 条目同步，列为第 12 个授权文件）。
 
 子系统 1（task）。
 
