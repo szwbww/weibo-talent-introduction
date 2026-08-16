@@ -1,29 +1,36 @@
-# Fast-P Child Brief — a1
+# Fast-P Child Brief — a1 (epoch 2, amended)
 
 - Child: a1
 - Plan: docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md
-- Plan identity: commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3
+- Plan identity: commit:d32a4cfb45e32b0932955290260839858b959c79  (amended per ledger amendment A1, human-approved)
 - Depends on: none
 - Base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
 - Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/
 - Family main plan (MUST read first for shared invariants M-1..M-4, audits X-1..X-3, authoritative verification commands): docs/plans/2026-08-16/batch-console-log-drawer-main.md
 
+## Resume state (epoch 1 -> epoch 2)
+
+Epoch 1 implementer completed all plan work EXCEPT the test file that the original plan did not authorize touching (PLAN_CONFLICT). The 5 product files are currently modified, UNCOMMITTED in the worktree: src/main/resources/static/app.js, index.html, styles.css, src/test/js/batchSendTaskConsoleVisualFix.test.js, and untracked new src/test/js/batchLogDrawerLayout.test.js. The epoch-1 execution report is at docs/plans/fast/2026-08-16-execution-order/children/a1/execution.md — READ IT FIRST, then review the actual diff (git diff) to confirm the retained work is sound before completing.
+
+Amendment A1 (approved) authorizes the 6th file: src/test/js/batchManualExecutionLog.test.js — apply T-D4 exactly: change the ':331-349' message assertion to the raw value, rename that test case, leave accountCode innerHTML escaping and is-failing assertions untouched.
+
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/00-execution-order.md)
 
 1. JDK 11 mandatory. Use JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home for every mvn command; bare mvn fails to build.
-2. Cache key triad (M-2 / K-frontend-cache-key-triad): this child must set all three ?v= values in index.html (styles.css?v=, trust-reply-workbench.js?v=, app.js?v=) to `20260817-v1-batch-console-row-drawer` AND update the three literal string assertions in src/test/js/batchSendTaskConsoleVisualFix.test.js to the same value. All three values must be identical.
+2. Cache key triad (M-2 / K-frontend-cache-key-triad): index.html three ?v= values must all be `20260817-v1-batch-console-row-drawer` AND the three literal string assertions in src/test/js/batchSendTaskConsoleVisualFix.test.js must match. All three values identical.
 3. No Flyway migration for this child (A family has none). Do not touch src/main/resources/db/migration/.
-4. This child is first in the chain; next child a2 depends on this child's terminal code head and will bump the cache keys to v2. Preserve renderBatchConfigRow output structure and the drawer DOM/hierarchy per the plan invariants so a2's entry points attach cleanly.
+4. Next child a2 depends on this child's terminal code head and bumps cache keys to v2. Preserve renderBatchConfigRow output structure and drawer DOM/hierarchy per plan invariants.
 5. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement a1`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the commit.
 
-## Authorized files (from the plan 变更文件清单 — 5 files, modify nothing else)
+## Authorized files (6 files — amended; modify nothing else)
 
 1. src/main/resources/static/index.html
 2. src/main/resources/static/styles.css
 3. src/main/resources/static/app.js
 4. src/test/js/batchSendTaskConsoleVisualFix.test.js
 5. src/test/js/batchLogDrawerLayout.test.js (NEW)
+6. src/test/js/batchManualExecutionLog.test.js (T-D4: raw-message assertion + case rename; accountCode assertions untouched)
 
 ## Required commands (run all; from plan 验证命令 + family main plan X-3)
 
@@ -36,16 +43,12 @@
 - JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test   (full regression; output must contain Tests run: N, Failures: 0, Errors: 0 and node --test execution records; exit 0)
 - git diff --check   (clean)
 
-## Verify-first items
-
-None marked in this plan. The plan's 现状审计 claims (line numbers in app.js/index.html/styles.css, 300-char truncation threshold) must be re-verified by grep before editing (K-plan-quantified-claims-need-grep-receipts: knowledge seeds research, does not replace it).
-
 ## Downstream interfaces
 
-- a2 (next child) reads this child's Code head as its Base; it edits app.js drawer-family functions and index.html cache keys. Keep the .batch-send-task-body wrapper, drawer background opacity change, and renderBatchConfigRow cell structure exactly per plan so a2 can attach its log entry points.
-- Full-chain cache key expectations: index.html must end at v1 value so the chain check (step 4 of master plan fixed actions) passes for the next child.
+- a2 (next child) reads this child's Code head as its Base; it edits app.js drawer-family functions and index.html cache keys. Keep the .batch-send-task-body wrapper, drawer background opacity change, and renderBatchConfigRow cell structure exactly per plan.
+- Full-chain cache key expectations: index.html must end at v1 value so the chain check passes for the next child.
 
-## Plan text (exact approved content; authoritative)
+## Plan text (exact approved content incl. amendment A1; authoritative)
 
 # A1：定时任务列表行错位 + 执行日志抽屉视觉/层级修复
 
@@ -398,6 +401,12 @@ K-frontend-cache-key-triad 说的是三键，加第四个会让上述断言的�
   - 3 条及以内时**不产生** `<details>`；0 条时仍输出 `无限制` 且 pill 仍在；
   - `renderBatchExecutionDetail` 在空 reasons/errorSamples 下把三个 wrapper 置 `hidden`，
     而 `#batchLogTimelineSection` 保持可见（I-4）。
+- **T-D4** `src/test/js/batchManualExecutionLog.test.js` 同步 T-C2（fast-p 修正 A1：
+  原计划要求该文件 `fail 0` 却未授权修改它，与 T-C2/A-8 自相矛盾，经人工批准修正）：
+  - 「renderBatchLiveSection escapes message and accountCode」（:331-349）的 message 断言
+    改为裸值：`textContent === "正在发送：<b>x</b>"`（与 A-8 一致）；
+  - 该用例改名以反映语义（如 `renderBatchLiveSection renders raw message and escapes accountCode`）；
+  - accountCode 的 innerHTML 转义断言与 `is-failing` 断言**一字不改**（该路径仍走 innerHTML，必须转义）。
 
 ## 变更文件清单
 
@@ -408,8 +417,9 @@ K-frontend-cache-key-triad 说的是三键，加第四个会让上述断言的�
 | 3 | `src/main/resources/static/app.js` | 重写 `renderBatchConfigRow` 收件范围段；`renderBatchExecutionDetail` / `clearBatchLogDisplay` 空态隐藏；去掉 `:15149` 双重转义 |
 | 4 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 缓存键断言改值；新增抽屉不透明与包装层断言 |
 | 5 | `src/test/js/batchLogDrawerLayout.test.js` | **新建** |
+| 6 | `src/test/js/batchManualExecutionLog.test.js` | T-D4：:331-349 message 断言改裸值、用例改名；accountCode 断言不动 |
 
-文件数 5 ≤ 10；子系统 1（前端静态资源 + 其 JS 测试）≤ 2。
+文件数 6 ≤ 10；子系统 1（前端静态资源 + 其 JS 测试）≤ 2。
 
 ## 验证命令
 
