@@ -96,11 +96,13 @@ class InitialOutreachServiceTest {
             Mockito.anyString(),
             eqValue("Subject"),
             eqValue("Body"),
-            eqValue(0L)
+            eqValue(0L),
+            Mockito.isNull()
         )
         Mockito.verify(txHelper, Mockito.never()).recordFailure(
             Mockito.anyLong(),
             Mockito.anyString(),
+            Mockito.any(),
             Mockito.any(),
             Mockito.any(),
             Mockito.any(),
@@ -135,7 +137,8 @@ class InitialOutreachServiceTest {
             Mockito.anyString(),
             eqValue("Subject"),
             eqValue("Body"),
-            eqValue(0L)
+            eqValue(0L),
+            Mockito.isNull()
         )
     }
 
@@ -168,7 +171,8 @@ class InitialOutreachServiceTest {
             Mockito.any(),
             Mockito.any(),
             Mockito.any(),
-            Mockito.anyLong()
+            Mockito.anyLong(),
+            Mockito.any()
         )
         Mockito.verify(txHelper).recordFailure(
             contactId = eqValue(100L),
@@ -177,7 +181,8 @@ class InitialOutreachServiceTest {
             errorSummary = eqValue("550 rejected"),
             subject = eqValue("Subject"),
             body = eqValue("Body"),
-            attemptId = Mockito.isNull()
+            attemptId = Mockito.isNull(),
+            taskExecutionId = Mockito.isNull()
         )
     }
 
@@ -369,6 +374,32 @@ class InitialOutreachServiceTest {
         assertEquals(3, result.sent)
         // I-1: 快照在批次开始处取一次，而非每个专家一次
         Mockito.verify(senderAccountAssignmentService, Mockito.times(1)).loadBindingStock()
+    }
+
+    @Test
+    fun `sendInitialBatch passes taskExecutionId through to txHelper`() {
+        val experts = listOf(expert("0001"))
+        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-1", "SENT"))
+
+        service.sendInitialBatch(campaignId = 1L, size = 1, taskExecutionId = 42L)
+
+        Mockito.verify(txHelper).recordSuccess(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null)),
+            eqValue("chen"),
+            Mockito.anyString(),
+            eqValue("Subject"),
+            eqValue("Body"),
+            eqValue(0L),
+            eqValue(42L)
+        )
     }
 
     private fun expert(orcidId: String): ExpertProfile =

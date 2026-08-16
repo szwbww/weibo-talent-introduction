@@ -25,5 +25,7 @@ data class MailRecord(
     val sentAt: LocalDateTime?,
     val errorSummary: String? = null,
     val mailSendAttemptId: Long? = null,
-    val createdAt: LocalDateTime? = null
+    val createdAt: LocalDateTime? = null,
+    /** 产生该邮件的任务执行 id；只由 ManualOutreachTxHelper 写入（见计划 I2a-1），其余构造点恒为 null。 */
+    val taskExecutionId: Long? = null
 )

@@ -31,7 +31,8 @@ class ManualOutreachTxHelper(
         deliveredMessageId: String?,
         subject: String?,
         body: String?,
-        attemptId: Long
+        attemptId: Long,
+        taskExecutionId: Long? = null
     ) {
         val now = LocalDateTime.now()
 
@@ -72,7 +73,8 @@ class ManualOutreachTxHelper(
                 receivedAt = null,
                 sentAt = now,
                 mailSendAttemptId = attemptId,
-                createdAt = now
+                createdAt = now,
+                taskExecutionId = taskExecutionId
             )
         )
 
@@ -100,7 +102,8 @@ class ManualOutreachTxHelper(
         errorSummary: String?,
         subject: String?,
         body: String?,
-        attemptId: Long?
+        attemptId: Long?,
+        taskExecutionId: Long? = null
     ) {
         val now = LocalDateTime.now()
 
@@ -122,7 +125,8 @@ class ManualOutreachTxHelper(
                 receivedAt = null,
                 sentAt = null,
                 mailSendAttemptId = attemptId,
-                createdAt = now
+                createdAt = now,
+                taskExecutionId = taskExecutionId
             )
         )
 

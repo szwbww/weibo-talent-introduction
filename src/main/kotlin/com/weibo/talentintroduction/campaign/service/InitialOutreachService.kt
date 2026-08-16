@@ -29,7 +29,7 @@ class InitialOutreachService(
     private val schedulingProperties: MailSchedulingProperties,
     private val senderAccountBindingService: SenderAccountBindingService
 ) {
-    fun sendInitialBatch(campaignId: Long, size: Int): InitialOutreachBatchResult {
+    fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
         val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
         val stock = senderAccountAssignmentService.loadBindingStock()
@@ -93,7 +93,8 @@ class InitialOutreachService(
                     deliveredMessageId = delivered.messageId,
                     subject = mail.subject,
                     body = mail.text ?: mail.body,
-                    attemptId = 0L
+                    attemptId = 0L,
+                    taskExecutionId = taskExecutionId
                 )
             } else {
                 txHelper.recordFailure(
@@ -103,7 +104,8 @@ class InitialOutreachService(
                     errorSummary = delivered.errorDetail ?: delivered.status,
                     subject = mail.subject,
                     body = mail.text ?: mail.body,
-                    attemptId = null
+                    attemptId = null,
+                    taskExecutionId = taskExecutionId
                 )
             }
 

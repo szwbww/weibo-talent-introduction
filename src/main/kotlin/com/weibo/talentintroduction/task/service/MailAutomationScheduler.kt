@@ -49,7 +49,15 @@ class MailAutomationScheduler(
             batchSize = properties.initialOutreachBatchSize,
             dispatchMode = dispatchMode()
         )
-        taskExecutionService.runAndRecord("INITIAL_OUTREACH", "SCHEDULED", request) {
+        // 通过 runAndRecord 已有的 onStarted 回调拿到本次执行的 id（I2a-3），传给同步分支。
+        // 队列分支（publisher != null）刻意不传 executionId：MailQueueConsumer 在另一个
+        // runAndRecord 上下文里跑，会有自己的 execution 行；队列模式下 mail_record.
+        // task_execution_id 保持 null（该执行经队列派发，邮件未直接关联）。
+        var executionId: Long? = null
+        taskExecutionService.runAndRecord(
+            "INITIAL_OUTREACH", "SCHEDULED", request,
+            onStarted = { executionId = it }
+        ) {
             val publisher = mailQueuePublisherProvider.getIfAvailable()
             if (publisher != null) {
                 publisher.publishInitialOutreach(
@@ -59,7 +67,8 @@ class MailAutomationScheduler(
             } else {
                 initialOutreachService.sendInitialBatch(
                     campaignId = properties.initialOutreachCampaignId,
-                    size = properties.initialOutreachBatchSize
+                    size = properties.initialOutreachBatchSize,
+                    taskExecutionId = executionId
                 )
             }
         }

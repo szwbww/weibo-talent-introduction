@@ -741,7 +741,8 @@ class ManualInitialOutreachService(
                         txHelper.recordSuccess(
                             contact = contact, accountCode = account.accountCode,
                             deliveredMessageId = messageId, subject = mail.subject,
-                            body = mail.text ?: mail.body, attemptId = attempt.id!!
+                            body = mail.text ?: mail.body, attemptId = attempt.id!!,
+                            taskExecutionId = executionId
                         )
                         accumulator.recordSuccess()
                         stat.success++
@@ -754,7 +755,8 @@ class ManualInitialOutreachService(
                                 txHelper.recordFailure(
                                     contactId = contact.id, accountCode = account.accountCode,
                                     messageId = messageId, errorSummary = errorSummary,
-                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id
+                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id,
+                                    taskExecutionId = executionId
                                 )
                                 expertContactRepository.save(
                                     contact.copy(operatorStatus = "EMAIL_INVALID", updatedAt = LocalDateTime.now())
@@ -768,7 +770,8 @@ class ManualInitialOutreachService(
                                 txHelper.recordFailure(
                                     contactId = contact.id, accountCode = account.accountCode,
                                     messageId = messageId, errorSummary = errorSummary,
-                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id
+                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id,
+                                    taskExecutionId = executionId
                                 )
                                 val code = delivered.smtpResponseCode
                                 if (code == 421 || code == 452) {
@@ -792,7 +795,8 @@ class ManualInitialOutreachService(
                                 txHelper.recordFailure(
                                     contactId = contact.id, accountCode = account.accountCode,
                                     messageId = messageId, errorSummary = errorSummary,
-                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id
+                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id,
+                                    taskExecutionId = executionId
                                 )
                                 mailSenderAccountService.pauseAutoSend(
                                     account.accountCode,
@@ -808,7 +812,8 @@ class ManualInitialOutreachService(
                                 txHelper.recordFailure(
                                     contactId = contact.id, accountCode = account.accountCode,
                                     messageId = messageId, errorSummary = errorSummary,
-                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id
+                                    subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id,
+                                    taskExecutionId = executionId
                                 )
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送失败 (${expert.email}): ${delivered.status}")
                                 stat.failed++

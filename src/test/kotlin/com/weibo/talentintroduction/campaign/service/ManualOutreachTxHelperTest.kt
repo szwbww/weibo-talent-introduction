@@ -78,7 +78,7 @@ class ManualOutreachTxHelperTest {
         Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
         Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
 
-        helper.recordSuccess(contact, "chen", "msg123", "Subject", "Body", 77L)
+        helper.recordSuccess(contact, "chen", "msg123", "Subject", "Body", 77L, 1000L)
 
         // 1. Verify conversation status transitions
         Mockito.verify(conversationStateService).transition(
@@ -156,7 +156,7 @@ class ManualOutreachTxHelperTest {
         )
         Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
 
-        helper.recordSuccess(contact, "chen", "msg456", "Subject", "Body", 88L)
+        helper.recordSuccess(contact, "chen", "msg456", "Subject", "Body", 88L, 2000L)
 
         Mockito.verify(expertOperatorStatusService).updateAutomatically(
             anyValue(contact),
@@ -177,7 +177,7 @@ class ManualOutreachTxHelperTest {
         )
         Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
 
-        helper.recordFailure(100L, "chen", "msg-fail", "SMTP connection timeout", "Subject", "Body", 77L)
+        helper.recordFailure(100L, "chen", "msg-fail", "SMTP connection timeout", "Subject", "Body", 77L, 1000L)
 
         val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
         Mockito.verify(mailRecordRepository).save(captureValue(recordCaptor, MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))
@@ -204,10 +204,73 @@ class ManualOutreachTxHelperTest {
     fun `recordFailure without attemptId only saves mail record`() {
         Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
 
-        helper.recordFailure(100L, "chen", "msg-fail", "SMTP connection timeout", "Subject", "Body", attemptId = null)
+        helper.recordFailure(100L, "chen", "msg-fail", "SMTP connection timeout", "Subject", "Body", attemptId = null, taskExecutionId = 3000L)
 
         Mockito.verify(mailRecordRepository).save(Mockito.any(MailRecord::class.java))
         Mockito.verify(mailSendAttemptRepository, Mockito.never()).findById(Mockito.anyLong())
         Mockito.verify(mailSendAttemptRepository, Mockito.never()).save(Mockito.any(MailSendAttempt::class.java))
+    }
+
+    @Test
+    fun `recordSuccess writes taskExecutionId into mail record`() {
+        val contact = ExpertContact(
+            id = 300L,
+            campaignId = 10L,
+            orcidId = "0003",
+            expertEmail = "c@d.com",
+            expertName = "Name",
+            currentStatus = "NEW",
+            operatorStatus = "NOT_CONTACTED"
+        )
+
+        Mockito.`when`(conversationStateService.transition(
+            anyValue(contact),
+            eqValue(ConversationStatus.INTRO_SENT),
+            eqValue("MANUAL_BULK_OUTREACH"),
+            eqValue("MANUAL"),
+            anyValue(LocalDateTime.now()),
+            anyValue { contact }
+        )).thenAnswer { invocation ->
+            val base = invocation.getArgument<ExpertContact>(0)
+            val mutator = invocation.getArgument<(ExpertContact) -> ExpertContact>(5)
+            mutator(base.copy(currentStatus = "INTRO_SENT"))
+        }
+
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+        Mockito.`when`(mailSenderAccountRepository.incrementTodaySentCount(eqValue("chen"), anyValue(LocalDateTime.now()))).thenReturn(1)
+        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+            Optional.of(MailSendAttempt(
+                id = 77L, orcidId = "0003", mailType = "INTRODUCTION",
+                accountCode = "chen", messageId = "msg123",
+                status = MailSendAttemptStatus.PREPARED
+            ))
+        )
+        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+
+        helper.recordSuccess(contact, "chen", "msg123", "Subject", "Body", 77L, taskExecutionId = 4242L)
+
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(captureValue(recordCaptor, MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))
+        assertEquals(4242L, recordCaptor.value.taskExecutionId)
+    }
+
+    @Test
+    fun `recordFailure writes taskExecutionId into mail record`() {
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+            Optional.of(MailSendAttempt(
+                id = 77L, orcidId = "0001", mailType = "INTRODUCTION",
+                accountCode = "chen", messageId = "msg-fail",
+                status = MailSendAttemptStatus.PREPARED
+            ))
+        )
+        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+
+        helper.recordFailure(100L, "chen", "msg-fail", "SMTP connection timeout", "Subject", "Body", 77L, taskExecutionId = 4242L)
+
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(captureValue(recordCaptor, MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))
+        assertEquals("FAILED", recordCaptor.value.sendStatus)
+        assertEquals(4242L, recordCaptor.value.taskExecutionId)
     }
 }

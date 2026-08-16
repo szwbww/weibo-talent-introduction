@@ -374,7 +374,8 @@ class ManualInitialOutreachServiceTest {
             deliveredMessageId = Mockito.anyString(),
             subject = eqValue("Subject"),
             body = eqValue("Body"),
-            attemptId = Mockito.anyLong()
+            attemptId = Mockito.anyLong(),
+            taskExecutionId = Mockito.eq(12345L)
         )
     }
 
@@ -1120,7 +1121,8 @@ class ManualInitialOutreachServiceTest {
             errorSummary = Mockito.contains("TRANSIENT:450"),
             subject = eqValue("Subject"),
             body = eqValue("Body"),
-            attemptId = Mockito.eq(77L)
+            attemptId = Mockito.eq(77L),
+            taskExecutionId = Mockito.eq(12345L)
         )
     }
 
@@ -1861,7 +1863,7 @@ class ManualInitialOutreachServiceTest {
             // Does not use txHelper (no contact creation/status change for reminder)
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
-                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong()
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.any()
             )
         }
 
