@@ -312,6 +312,13 @@ TASK_AUDIT_RETENTION → label "任务审计清理", group "SCHEDULED",
 - **两个 Repository 的删除 SQL 文本断言**（I3-1 / M-6）：读取 `TaskProgressLogRepository.kt` 源文件，断言其 `deleteOlderThan` 的 `@Query` 字符串含 `created_at <`，且**不含** `JOIN` / `EXISTS` / `task_execution_id`。
 - `application.yml` 仍含 `placeholder-replacement: false`（K-flyway-placeholder-replacement 的回归断言，与既有 `UnsubscribeBodyLinkMigrationTest.kt:46` 同类）。
 
+### T3-8 catalog 锁断言适配（fast-p 修正 A6）
+
+`TaskExecutionSummaryExtractorTest.kt` 的三条 catalog 锁断言随 T3-6 的 17 条目同步（经人工批准列为第 12 个授权文件；只做机械锁更新，不改锁语义）：
+- `assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)`（:219）：`auditedCodes` 集合补 `TASK_AUDIT_RETENTION`；
+- `assertEquals(16, TaskTypeCatalog.entries.size)`（:235）：改为 17；
+- `summaryRule` key 集合断言（:199-201）：补 `TASK_AUDIT_RETENTION`。
+
 ---
 
 ## 变更文件清单
@@ -329,8 +336,9 @@ TASK_AUDIT_RETENTION → label "任务审计清理", group "SCHEDULED",
 | 9 | `src/main/kotlin/.../task/service/TaskExecutionSummaryExtractor.kt` | 修改 | 加 1 个分支 |
 | 10 | `src/test/kotlin/.../task/service/TaskAuditRetentionServiceTest.kt` | 新增 | — |
 | 11 | `src/test/kotlin/.../task/service/TaskRetentionMigrationTest.kt` | 新增 | — |
+| 12 | `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` | 修改 | T3-8：三条 catalog 锁断言机械更新（fast-p 修正 A6） |
 
-文件数 **11**（fast-p 修正 A5：经人工批准采用 11 文件完整方案，超出 10 的上限仅此一次；拆分方案的前提——P1 在合并时预留 `TASK_AUDIT_RETENTION` 条目——未成立，b2 合并后的 catalog 为 16 条、无该条目，拆分会使任务记录页无法正确显示审计清理行，A3-1 可见性验收不满足）。
+文件数 **12**（fast-p 修正 A5：采用 11 文件完整方案，超出 10 的上限仅此一次；fast-p 修正 A6：catalog 锁断言随 17 条目同步，列为第 12 个授权文件）。
 
 子系统 1（task）。
 
