@@ -46,9 +46,9 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260817-v1-batch-console-row-drawer'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260817-v1-batch-console-row-drawer'));
-        assert.ok(html.includes('app.js?v=20260817-v1-batch-console-row-drawer'));
+        assert.ok(html.includes('styles.css?v=20260817-v2-batch-manual-log-entry'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260817-v2-batch-manual-log-entry'));
+        assert.ok(html.includes('app.js?v=20260817-v2-batch-manual-log-entry'));
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
@@ -151,5 +151,15 @@ describe("batch send task console visual repair", () => {
         assert.ok(bodyOpen < scheduledPanel, "wrapper must open before the scheduled panel");
         assert.ok(manualPanel < drawer, "manual panel must precede the drawer");
         assert.ok(drawer < bodyClose, "drawer must be inside the wrapper, before its close tag");
+    });
+
+    it("places the recent-log button before the execute button with a secondary style (S2-1)", () => {
+        assert.ok(html.includes(
+            '<button class="button secondary" id="batchManualRecentLogBtn" type="button">最近执行日志</button>'
+        ), "recent-log button must use the secondary class with no inline style");
+        const recentIdx = html.indexOf('id="batchManualRecentLogBtn"');
+        const executeIdx = html.indexOf('id="batchManualExecuteBtn"');
+        assert.ok(recentIdx !== -1 && executeIdx !== -1, "both manual action buttons must exist");
+        assert.ok(recentIdx < executeIdx, "recent-log button must precede the execute button");
     });
 });

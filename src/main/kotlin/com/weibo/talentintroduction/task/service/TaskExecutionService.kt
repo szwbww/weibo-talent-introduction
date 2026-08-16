@@ -39,6 +39,11 @@ class TaskExecutionService(
         return repository.findRecentByBatchConfigId(batchConfigId, limit)
     }
 
+    fun listRecentByTaskType(taskType: String, limit: Int): List<TaskExecution> {
+        require(limit in 1..200) { "limit must be between 1 and 200" }
+        return repository.findRecentByTaskType(taskType, limit)
+    }
+
     /**
      * Batch last-execution start time per config (I-4): a single aggregated query covering
      * MANUAL + SCHEDULED executions. Independent manual runs (batch_config_id = null) are

@@ -124,41 +124,42 @@ describe("batch manual execution log drawer", () => {
         assert.deepStrictEqual(calls.openExecution, []);
     });
 
-    it("openBatchExecutionLogs writes identity before requesting and shapes the drawer (I-4/S-2)", async () => {
+    it("openBatchExecutionLogs opens the recent-logs drawer with identity written first (I-4/S-2)", async () => {
         const elements = drawerElements();
-        const stateAtCall = [];
-        const resolvers = [];
+        const urls = [];
         const state = { logConfigId: null, logExecutionId: null, logMode: null, logRefreshTimer: null };
         const sandbox = {
             batchTaskState: state,
             document: { getElementById: (id) => elements[id] || null },
             api: async (url) => {
-                stateAtCall.push({
-                    url,
-                    logConfigId: state.logConfigId,
-                    logExecutionId: state.logExecutionId,
-                    logMode: state.logMode
-                });
-                return new Promise((resolve) => { resolvers.push(resolve); });
+                urls.push(url);
+                return [{ executionId: 101, startedAt: null, status: "SUCCESS", triggerType: "MANUAL", batchConfigId: null }];
             },
             clearBatchLogRefreshTimer: () => { state.logRefreshTimer = null; },
+            formatDateTime: (dt) => String(dt),
+            statusLabel: (s) => s,
+            triggerTypeLabel: (t) => t,
+            escapeHtml: escapeHtmlStub,
+            clearBatchLogDisplay: () => {},
+            renderBatchExecutionDetail: () => {},
             showStatus: () => {}
         };
         vm.createContext(sandbox);
+        vm.runInContext(extractFn("openBatchRecentLogs"), sandbox);
+        vm.runInContext(extractFn("loadBatchGlobalExecutions"), sandbox);
         vm.runInContext(extractFn("openBatchExecutionLogs"), sandbox);
         vm.runInContext(extractFn("loadBatchLogDetail"), sandbox);
 
         sandbox.openBatchExecutionLogs(101);
+        await new Promise((r) => setImmediate(r));
 
-        assert.strictEqual(stateAtCall.length, 1);
-        assert.strictEqual(stateAtCall[0].url, "/api/mail/batch-send/executions/101");
-        assert.strictEqual(stateAtCall[0].logConfigId, null);
-        assert.strictEqual(stateAtCall[0].logExecutionId, 101, "identity must be written before api()");
-        assert.strictEqual(stateAtCall[0].logMode, "execution");
+        assert.strictEqual(urls[0], "/api/mail/batch-send/executions?limit=50", "independent run loads the global list");
+        assert.strictEqual(state.logMode, "execution");
+        assert.strictEqual(state.logConfigId, null);
+        assert.strictEqual(state.logExecutionId, 101, "identity must be written before the list request");
         assert.strictEqual(elements.batchExecutionLogDrawer.hidden, false);
-        assert.strictEqual(elements.batchLogDrawerTitle.textContent, "执行日志（独立执行）");
-        assert.strictEqual(elements.batchLogExecutionSelect.hidden, true, "independent runs hide the execution select");
-        assert.strictEqual(state.logExecutionId, 101);
+        assert.strictEqual(elements.batchLogDrawerTitle.textContent, "执行日志");
+        assert.strictEqual(elements.batchLogExecutionSelect.hidden, false, "recent-logs drawer must expose the execution select");
     });
 
     it("openBatchExecutionLogs with no executionId degrades with a status message", () => {
@@ -237,29 +238,76 @@ describe("batch manual execution log drawer", () => {
         const sandbox = {
             batchTaskState: state,
             document: { getElementById: (id) => elements[id] || null },
-            api: async () => new Promise((resolve) => { resolvers.push(resolve); }),
+            api: async (url) => new Promise((resolve) => { resolvers.push(resolve); }),
             clearBatchLogRefreshTimer: () => { state.logRefreshTimer = null; },
             renderBatchExecutionDetail: (detail) => { rendered.push(detail.executionId); },
             setInterval: () => 1,
             clearInterval: () => {},
+            formatDateTime: (dt) => String(dt),
+            statusLabel: (s) => s,
+            triggerTypeLabel: (t) => t,
+            escapeHtml: escapeHtmlStub,
+            clearBatchLogDisplay: () => {},
             console
         };
         vm.createContext(sandbox);
+        vm.runInContext(extractFn("openBatchRecentLogs"), sandbox);
+        vm.runInContext(extractFn("loadBatchGlobalExecutions"), sandbox);
         vm.runInContext(extractFn("openBatchExecutionLogs"), sandbox);
         vm.runInContext(extractFn("loadBatchLogDetail"), sandbox);
 
         sandbox.openBatchExecutionLogs(101);
         sandbox.openBatchExecutionLogs(202);
-        assert.strictEqual(resolvers.length, 2, "two pending detail requests");
+        assert.strictEqual(resolvers.length, 2, "two pending list requests");
 
-        // Resolve B first, then A (stale)
-        resolvers[1]({ status: "SUCCESS", executionId: 202 });
+        // Resolve both lists: the last-resolved list (101) becomes the current target.
+        resolvers[1]([{ executionId: 202, startedAt: null, status: "SUCCESS", triggerType: "MANUAL", batchConfigId: null }]);
         await new Promise((r) => setImmediate(r));
-        resolvers[0]({ status: "SUCCESS", executionId: 101 });
+        resolvers[0]([{ executionId: 101, startedAt: null, status: "SUCCESS", triggerType: "MANUAL", batchConfigId: null }]);
+        await new Promise((r) => setImmediate(r));
+        assert.strictEqual(resolvers.length, 4, "each list resolution loads its detail");
+
+        // Stale detail for 202 (no longer current) must be dropped; 101 renders.
+        resolvers[2]({ status: "SUCCESS", executionId: 202 });
+        await new Promise((r) => setImmediate(r));
+        resolvers[3]({ status: "SUCCESS", executionId: 101 });
         await new Promise((r) => setImmediate(r));
 
-        assert.deepStrictEqual(rendered, [202], "stale A response must be dropped");
-        assert.strictEqual(state.logExecutionId, 202);
+        assert.deepStrictEqual(rendered, [101], "stale B detail must be dropped, only current target renders");
+        assert.strictEqual(state.logExecutionId, 101);
+    });
+
+    it("switchBatchSendTab never tears down the log drawer (I2-2)", () => {
+        const source = extractFn("switchBatchSendTab");
+        assert.ok(!source.includes("closeBatchLogDrawer"),
+            "tab switch must keep the drawer open");
+        assert.ok(!source.includes("clearBatchLogRefreshTimer"),
+            "tab switch must keep the live refresh timer");
+    });
+
+    it("dropdown change dispatches by logMode so execution mode still reloads (I2-1)", () => {
+        const calls = [];
+        const selectStub = {
+            value: "202",
+            addEventListener(type, fn) { this.handler = fn; }
+        };
+        const sandbox = {
+            batchTaskState: { logMode: "execution", logConfigId: null, logExecutionId: 101, logRefreshTimer: null },
+            document: { getElementById: (id) => id === "batchLogExecutionSelect" ? selectStub : null },
+            loadBatchLogDetail: (configId, executionId) => { calls.push({ configId, executionId }); }
+        };
+        const block = appJsSource.match(
+            /var logExecSelect = document\.getElementById\("batchLogExecutionSelect"\);\s*if \(logExecSelect\) \{\s*logExecSelect\.addEventListener\("change", function\(\) \{[\s\S]*?\n\s*\}\);\s*\}/
+        );
+        assert.ok(block, "dropdown change listener block must exist");
+        vm.createContext(sandbox);
+        vm.runInContext(block[0], sandbox);
+
+        selectStub.handler();
+
+        assert.deepStrictEqual(calls, [{ configId: null, executionId: 202 }],
+            "execution mode with logConfigId null must still reload the selected record");
+        assert.strictEqual(sandbox.batchTaskState.logExecutionId, 202);
     });
 
     it("renderBatchLiveSection hides the block when live is null", () => {
@@ -461,6 +509,8 @@ describe("batch manual execution log drawer", () => {
         const drawerFns = [
             "openBatchConfigLogs",
             "openBatchExecutionLogs",
+            "openBatchRecentLogs",
+            "loadBatchGlobalExecutions",
             "loadBatchLogDetail",
             "loadBatchLogExecutions",
             "closeBatchLogDrawer"

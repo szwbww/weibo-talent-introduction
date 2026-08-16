@@ -336,4 +336,46 @@ class BatchSendExecutionDetailTest {
         assertEquals("已发送取消请求，将在当前批次结束后停止", response.body!!["message"])
         Mockito.verify(batchSendControlService).cancelExecution(10L)
     }
+
+    @Test
+    fun `list all executions returns config and independent rows with echo batchConfigId`() {
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 50))
+            .thenReturn(
+                listOf(
+                    execution(id = 10L, batchConfigId = 1L),
+                    execution(id = 11L, batchConfigId = null)
+                )
+            )
+
+        val body = controller().listAllExecutions(50).body!!
+
+        assertEquals(2, body.size)
+        assertEquals(1L, body[0].batchConfigId, "config-sourced row keeps its config id")
+        assertNull(body[1].batchConfigId, "independent run must appear with null batchConfigId")
+        Mockito.verify(taskExecutionService).listRecentByTaskType(BatchSendControlService.TASK_TYPE, 50)
+    }
+
+    @Test
+    fun `list all executions clamps limit 0 to 1`() {
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 1))
+            .thenReturn(emptyList())
+
+        val response = controller().listAllExecutions(0)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(emptyList<Any>(), response.body)
+        Mockito.verify(taskExecutionService).listRecentByTaskType(BatchSendControlService.TASK_TYPE, 1)
+    }
+
+    @Test
+    fun `list all executions clamps limit 500 to 200`() {
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 200))
+            .thenReturn(emptyList())
+
+        val response = controller().listAllExecutions(500)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(emptyList<Any>(), response.body)
+        Mockito.verify(taskExecutionService).listRecentByTaskType(BatchSendControlService.TASK_TYPE, 200)
+    }
 }

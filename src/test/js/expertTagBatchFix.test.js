@@ -548,6 +548,7 @@ function createLogSandbox() {
         escapeHtml: function(v) { return String(v ?? ""); },
         formatDateTime: function(dt) { return dt || "—"; },
         statusLabel: function(s) { return s || "—"; },
+        triggerTypeLabel: function(t) { return t || "—"; },
         renderBatchExecutionDetail: function() {},
         clearBatchLogDisplay: function() {},
         loadBatchLogDetail: function() {},

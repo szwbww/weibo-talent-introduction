@@ -132,6 +132,17 @@ class BatchSendConfigController(
 
     // ── Execution-level endpoints (I-3: independent manual executions) ──────────
 
+    @GetMapping("/executions")
+    fun listAllExecutions(
+        @RequestParam(defaultValue = "50") limit: Int
+    ): ResponseEntity<List<BatchConfigExecutionSummary>> {
+        val clamped = limit.coerceIn(1, 200)
+        val executions = taskExecutionService.listRecentByTaskType(
+            BatchSendControlService.TASK_TYPE, clamped
+        )
+        return ResponseEntity.ok(executions.map { toSummary(it) })
+    }
+
     @GetMapping("/executions/{executionId}")
     fun getExecutionDetail(
         @PathVariable executionId: Long
@@ -236,6 +247,7 @@ class BatchSendConfigController(
         } else null
         return BatchConfigExecutionSummary(
             executionId = execution.id,
+            batchConfigId = execution.batchConfigId,
             triggerType = execution.triggerType,
             status = execution.status,
             target = outcome?.target ?: execution.successCount + execution.failureCount,
@@ -421,6 +433,7 @@ data class CronPreviewRequest(
 
 data class BatchConfigExecutionSummary(
     val executionId: Long?,
+    val batchConfigId: Long?,
     val triggerType: String,
     val status: String,
     val target: Int,

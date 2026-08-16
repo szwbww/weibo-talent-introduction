@@ -13331,8 +13331,6 @@ function switchBatchSendTab(tab) {
     });
     document.getElementById("batchScheduledPanel").hidden = (tab !== "scheduled");
     document.getElementById("batchManualPanel").hidden = (tab !== "manual");
-    closeBatchLogDrawer();
-    clearBatchLogRefreshTimer();
     if (tab === "scheduled") {
         hideBatchConfigEditor();
         loadBatchConfigList();
@@ -13504,6 +13502,7 @@ function hideBatchConfigEditor() {
 }
 
 function openBatchConfigEditor(id) {
+    closeBatchLogDrawer();
     var config = batchTaskState.configs.find(function(c) { return c.id === id; });
     if (!config) return;
     batchTaskState.editorMode = "edit";
@@ -14985,6 +14984,50 @@ function selectBatchManualSource(id) {
 
 // ── Config Logs ────────────────────────────────────────────────────────────────────
 
+function openBatchRecentLogs(executionId) {
+    batchTaskState.logMode = "execution";
+    batchTaskState.logConfigId = null;
+    batchTaskState.logExecutionId = executionId || null;
+    var drawer = document.getElementById("batchExecutionLogDrawer");
+    if (drawer) drawer.hidden = false;
+    var title = document.getElementById("batchLogDrawerTitle");
+    if (title) title.textContent = "执行日志";
+    var select = document.getElementById("batchLogExecutionSelect");
+    if (select) select.hidden = false;
+    clearBatchLogRefreshTimer();
+    loadBatchGlobalExecutions(executionId);
+}
+
+async function loadBatchGlobalExecutions(executionId) {
+    var select = document.getElementById("batchLogExecutionSelect");
+    if (select) {
+        select.innerHTML = '<option value="">加载中...</option>';
+    }
+    try {
+        var executions = await api("/api/mail/batch-send/executions?limit=50");
+        if (batchTaskState.logMode !== "execution") return;
+        if (!Array.isArray(executions)) { executions = []; }
+        if (select) {
+            select.innerHTML = executions.map(function(e) {
+                var label = (e.startedAt ? formatDateTime(e.startedAt) : "") + " | " + statusLabel(e.status) + " | " + triggerTypeLabel(e.triggerType) + (e.batchConfigId == null ? " | 独立执行" : "");
+                return '<option value="' + e.executionId + '">' + escapeHtml(label) + '</option>';
+            }).join("");
+        }
+        var targetId = executionId || (executions.length > 0 ? executions[0].executionId : null);
+        if (targetId) {
+            if (select) select.value = String(targetId);
+            batchTaskState.logExecutionId = targetId;
+            loadBatchLogDetail(null, targetId);
+        } else {
+            clearBatchLogDisplay();
+        }
+    } catch (e) {
+        if (batchTaskState.logMode !== "execution") return;
+        if (select) select.innerHTML = '<option value="">加载失败</option>';
+        console.error("Failed to load log executions", e);
+    }
+}
+
 function openBatchConfigLogs(configId, executionId) {
     batchTaskState.logConfigId = configId;
     batchTaskState.logExecutionId = executionId || null;
@@ -15004,17 +15047,7 @@ function openBatchExecutionLogs(executionId) {
         showStatus("执行已启动，但未能定位到日志", "warn");
         return;
     }
-    batchTaskState.logMode = "execution";
-    batchTaskState.logConfigId = null;
-    batchTaskState.logExecutionId = executionId;
-    var drawer = document.getElementById("batchExecutionLogDrawer");
-    if (drawer) drawer.hidden = false;
-    var title = document.getElementById("batchLogDrawerTitle");
-    if (title) title.textContent = "执行日志（独立执行）";
-    var select = document.getElementById("batchLogExecutionSelect");
-    if (select) select.hidden = true;
-    clearBatchLogRefreshTimer();
-    loadBatchLogDetail(null, executionId);
+    openBatchRecentLogs(executionId);
 }
 
 function closeBatchLogDrawer() {
@@ -15066,7 +15099,7 @@ async function loadBatchLogExecutions(configId, executionId) {
         if (!Array.isArray(executions)) { executions = []; }
         if (select) {
             select.innerHTML = executions.map(function(e) {
-                var label = (e.startedAt ? formatDateTime(e.startedAt) : "") + " | " + statusLabel(e.status) + " | " + (e.triggerType || "");
+                var label = (e.startedAt ? formatDateTime(e.startedAt) : "") + " | " + statusLabel(e.status) + " | " + triggerTypeLabel(e.triggerType) + (e.batchConfigId == null ? " | 独立执行" : "");
                 return '<option value="' + e.executionId + '">' + escapeHtml(label) + '</option>';
             }).join("");
         }
@@ -15460,6 +15493,9 @@ function bindBatchSendTaskEvents() {
     if (executeBtn) executeBtn.addEventListener("click", handleManualExecute);
 
     // Log drawer
+    var recentLogBtn = document.getElementById("batchManualRecentLogBtn");
+    if (recentLogBtn) recentLogBtn.addEventListener("click", function() { openBatchRecentLogs(null); });
+
     var logCloseBtn = document.getElementById("batchLogDrawerCloseBtn");
     if (logCloseBtn) logCloseBtn.addEventListener("click", closeBatchLogDrawer);
 
@@ -15470,9 +15506,12 @@ function bindBatchSendTaskEvents() {
     if (logExecSelect) {
         logExecSelect.addEventListener("change", function() {
             var executionId = logExecSelect.value ? Number(logExecSelect.value) : null;
-            if (executionId && batchTaskState.logConfigId) {
-                batchTaskState.logExecutionId = executionId;
+            if (!executionId) return;
+            batchTaskState.logExecutionId = executionId;
+            if (batchTaskState.logMode === "config") {
                 loadBatchLogDetail(batchTaskState.logConfigId, executionId);
+            } else {
+                loadBatchLogDetail(null, executionId);
             }
         });
     }
