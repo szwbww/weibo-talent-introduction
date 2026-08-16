@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-16/00-execution-order.md (commit 65b8de831a5f0edeafeae5683a2f15b79f7000a3)
-- Amendments: A1
+- Amendments: A1,A2
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Branch: fast/2026-08-16-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: a2
-- Waiting role: N/A
+- Waiting role: VERIFIER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: SCOPE — implementation commit bb07586 includes one-line triggerTypeLabel stub sync in src/test/js/expertTagBatchFix.test.js (createLogSandbox), outside the plan's 7-file authorized list. Controller probe proves the stub REQUIRED: without it, I-2 suite "default selection writes logExecutionId" fails (mandated node/mvn commands would go red). Family audit X-2 sanctions syncing assertion files for changed areas, but child-plan file list omits it. Widening authorized files needs amendment row + human approval.
-- Resume from: a2 epoch 2, base 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd, implementation bb07586b758357ad21794e17b7e99f200abeed5b retained, next action amend plan then verify
+- Pause reason: N/A
+- Resume from: a2 epoch 2, base 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd, implementation bb07586b758357ad21794e17b7e99f200abeed5b retained, next action dispatch fresh verifier
 
 ## Baseline
 
@@ -39,7 +39,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:d32a4cfb45e32b0932955290260839858b959c79 | none | 2 | LIGHT_PASS_WITH_NOTES | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 0 | — | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 03ea6672b8e3e9f57954e70cd3ad93c383681887 | epoch 1 PLAN_CONFLICT resolved via amendment A1; RECORD_ONLY O-1: renderErrorSamples pre-existing substring truncation |
-| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 1 | PAUSED_FOR_HUMAN | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | | scope: 8th file expertTagBatchFix.test.js 1-line stub, proven required; amendment pending |
+| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a1 | 2 | LIGHT_VERIFYING | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | | epoch 1 scope pause resolved via amendment A2 (8th file authorized) |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 0 | PENDING | | | 0 | — | | | |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2,a3 | 0 | PENDING | | | 0 | — | | | |
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
@@ -52,3 +52,4 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:d32a4cfb45e32b0932955290260839858b959c79 | a1 阶段C T-C2 + 验收 A-8（实时消息裸值）与 a1 验证命令 通过判据（batchManualExecutionLog.test.js 须 fail 0） | 计划要求未授权测试文件保持绿，T-C2 却必然使其红；授权同步该文件 :331-349 断言为裸消息（T-D4），accountCode 转义断言不动 | HUMAN:ask 选项「Amend: authorize test edit, assert raw message」2026-08-16 |
+| A2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb | a2 阶段B T2-B5（triggerTypeLabel 文案）+ 共享审计 X-2 同步规则 vs a2 变更文件清单 | T2-B5 使 I-2 套件执行的 openBatchConfigLogs 路径调用 triggerTypeLabel，无 stub 时套件红；按 X-2 授权 createLogSandbox 补一行函数桩（T2-C4），不改任何断言 | HUMAN:ask 选项「Amend: authorize the one-line stub sync」2026-08-16 |

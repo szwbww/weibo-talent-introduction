@@ -1,31 +1,36 @@
-# Fast-P Child Brief — a2
+# Fast-P Child Brief — a2 (epoch 2, amended)
 
 - Child: a2
 - Plan: docs/plans/2026-08-16/a2-batch-manual-log-reachability.md
-- Plan identity: commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3
+- Plan identity: commit:5f361ed5c8c0bcb8fd747f43bfe0ffa9daf2bdeb  (amended per ledger amendment A2, human-approved)
 - Depends on: a1
 - Base: 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd  (a1 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
 - Knowledge files (K-*) referenced by plans live in the MAIN worktree (uncommitted): /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/knowledge/
 - Family main plan (MUST read first for shared invariants M-1..M-4, audits X-1..X-3, authoritative verification commands): docs/plans/2026-08-16/batch-console-log-drawer-main.md
 
+## Epoch status
+
+Epoch 1 implemented and committed at bb07586b758357ad21794e17b7e99f200abeed5b (feat(fast-p): implement a2), including one test-harness sync in expertTagBatchFix.test.js (createLogSandbox triggerTypeLabel stub) that epoch 1's plan file list did not authorize. Amendment A2 (human-approved) authorizes that file: row 8 in the file list, task T2-C4. No assertions were changed; the stub is required for the I-2 suite (probe-verified by the controller). The implementation commit stands. Epoch 2 action: independent verification only — no product changes.
+
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/00-execution-order.md)
 
 1. JDK 11 mandatory. Use JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home for every mvn command; bare mvn fails to build.
-2. Cache key triad (M-2 / K-frontend-cache-key-triad): this child must set all three ?v= values in index.html (styles.css?v=, trust-reply-workbench.js?v=, app.js?v=) to `20260817-v2-batch-manual-log-entry` AND update the three literal string assertions in src/test/js/batchSendTaskConsoleVisualFix.test.js to the same value. Chain authority: a1 set them to 20260817-v1-batch-console-row-drawer; verify current values equal v1 BEFORE editing (if not, stop and report — someone skipped order).
+2. Cache key triad (M-2 / K-frontend-cache-key-triad): index.html three ?v= values must all be `20260817-v2-batch-manual-log-entry` AND the three literal string assertions in src/test/js/batchSendTaskConsoleVisualFix.test.js must match. Chain: a1 left v1 (20260817-v1-batch-console-row-drawer).
 3. No Flyway migration for this child (A family has none). Do not touch src/main/resources/db/migration/.
-4. Next child a3 depends on this child's terminal code head and bumps cache keys to v3. Keep drawer family functions (openBatchRecentLogs/loadBatchGlobalExecutions etc.) per plan so a3's entry move attaches cleanly.
-5. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement a2`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the commit.
+4. Next child a3 depends on this child's terminal code head and bumps cache keys to v3.
+5. Git: commit locally only. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from product commits.
 
-## Authorized files (from the plan 变更文件清单 — 7 files, modify nothing else)
+## Authorized files (8 files — amended; modify nothing else)
 
 1. src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt   (new method listRecentByTaskType)
 2. src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt   (new GET /executions; DTO batchConfigId; toSummary fields)
-3. src/main/resources/static/index.html   (new #batchManualRecentLogBtn; three cache keys to v2)
-4. src/main/resources/static/app.js   (openBatchRecentLogs / loadBatchGlobalExecutions; switchBatchSendTab / openBatchConfigEditor / dropdown listener / openBatchExecutionLogs / loadBatchLogExecutions copy; new event binding)
+3. src/main/resources/static/index.html   (#batchManualRecentLogBtn; three cache keys v2)
+4. src/main/resources/static/app.js   (openBatchRecentLogs / loadBatchGlobalExecutions; switchBatchSendTab / openBatchConfigEditor / dropdown listener / openBatchExecutionLogs / loadBatchLogExecutions; event binding)
 5. src/test/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendExecutionDetailTest.kt   (new endpoint tests)
-6. src/test/js/batchManualExecutionLog.test.js   (I2-1 / I2-2 regression assertions)
-7. src/test/js/batchSendTaskConsoleVisualFix.test.js   (cache keys + new button position assertions)
+6. src/test/js/batchManualExecutionLog.test.js   (I2-1 / I2-2 assertions)
+7. src/test/js/batchSendTaskConsoleVisualFix.test.js   (cache keys + button position)
+8. src/test/js/expertTagBatchFix.test.js   (T2-C4: one-line triggerTypeLabel stub in createLogSandbox; NO assertion changes)
 
 NO styles.css changes (S2-1: zero new CSS).
 
@@ -43,14 +48,14 @@ NO styles.css changes (S2-1: zero new CSS).
 
 ## Verify-first items
 
-None marked (no ⏳ / ⚠️ 执行前须核实 entries). Plan 现状审计 line-number claims must be re-verified by grep before editing (K-plan-quantified-claims-need-grep-receipts).
+None marked. Plan 现状审计 line-number claims must be re-verified by grep (K-plan-quantified-claims-need-grep-receipts).
 
 ## Downstream interfaces
 
-- a3 (next child) reads this child's Code head as its Base; it moves #bulkOutreachBtn into the mailbox panel title bar and bumps cache keys to v3. Keep the drawer entry points and batchTaskState.logMode semantics per plan (I2-1).
-- Chain check: before editing, index.html cache values must equal v1 (20260817-v1-batch-console-row-drawer); after this child they must be v2.
+- a3 (next child) reads this child's Code head as its Base; it moves #bulkOutreachBtn into the mailbox panel title bar and bumps cache keys to v3. Keep drawer entry points and batchTaskState.logMode semantics (I2-1).
+- Chain check: index.html cache values must equal v2 after this child.
 
-## Plan text (exact approved content; authoritative)
+## Plan text (exact approved content incl. amendment A2; authoritative)
 
 # A2：手动执行日志可达性（含独立执行）
 
@@ -353,6 +358,10 @@ None marked (no ⏳ / ⚠️ 执行前须核实 entries). Plan 现状审计 line
   - `openBatchExecutionLogs` 不再把下拉设为 `hidden = true`。
 - **T2-C3** `batchSendTaskConsoleVisualFix.test.js` 缓存键断言改值；
   追加断言 `index.html` 中 `#batchManualRecentLogBtn` 存在且位于 `#batchManualExecuteBtn` 之前。
+- **T2-C4** `expertTagBatchFix.test.js` 的 `createLogSandbox` 补一行 `triggerTypeLabel` stub
+  （fast-p 修正 A2：T2-B5 使该套件执行的 `openBatchConfigLogs` 路径调用 `triggerTypeLabel`，
+  无 stub 时 I-2 套件红；该文件不在原 7 文件清单内，经人工批准按 X-2 同步规则授权）。
+  仅加函数桩，**不改动任何断言**。
 
 ## 变更文件清单
 
@@ -365,8 +374,9 @@ None marked (no ⏳ / ⚠️ 执行前须核实 entries). Plan 现状审计 line
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendExecutionDetailTest.kt` | 新端点用例 |
 | 6 | `src/test/js/batchManualExecutionLog.test.js` | I2-1 / I2-2 回归断言 |
 | 7 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 缓存键 + 新按钮位置断言 |
+| 8 | `src/test/js/expertTagBatchFix.test.js` | T2-C4：`createLogSandbox` 补一行 `triggerTypeLabel` stub（X-2 同步规则） |
 
-文件数 7 ≤ 10；子系统 2（前端静态资源 / Kotlin 后端）≤ 2。
+文件数 8 ≤ 10；子系统 2（前端静态资源 / Kotlin 后端）≤ 2。
 **无 styles.css 改动** —— S2-1 明确论证了零新增 CSS。
 
 ## 验证命令
