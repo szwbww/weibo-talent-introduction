@@ -299,6 +299,10 @@
   - `openBatchExecutionLogs` 不再把下拉设为 `hidden = true`。
 - **T2-C3** `batchSendTaskConsoleVisualFix.test.js` 缓存键断言改值；
   追加断言 `index.html` 中 `#batchManualRecentLogBtn` 存在且位于 `#batchManualExecuteBtn` 之前。
+- **T2-C4** `expertTagBatchFix.test.js` 的 `createLogSandbox` 补一行 `triggerTypeLabel` stub
+  （fast-p 修正 A2：T2-B5 使该套件执行的 `openBatchConfigLogs` 路径调用 `triggerTypeLabel`，
+  无 stub 时 I-2 套件红；该文件不在原 7 文件清单内，经人工批准按 X-2 同步规则授权）。
+  仅加函数桩，**不改动任何断言**。
 
 ## 变更文件清单
 
@@ -311,8 +315,9 @@
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendExecutionDetailTest.kt` | 新端点用例 |
 | 6 | `src/test/js/batchManualExecutionLog.test.js` | I2-1 / I2-2 回归断言 |
 | 7 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 缓存键 + 新按钮位置断言 |
+| 8 | `src/test/js/expertTagBatchFix.test.js` | T2-C4：`createLogSandbox` 补一行 `triggerTypeLabel` stub（X-2 同步规则） |
 
-文件数 7 ≤ 10；子系统 2（前端静态资源 / Kotlin 后端）≤ 2。
+文件数 8 ≤ 10；子系统 2（前端静态资源 / Kotlin 后端）≤ 2。
 **无 styles.css 改动** —— S2-1 明确论证了零新增 CSS。
 
 ## 验证命令
