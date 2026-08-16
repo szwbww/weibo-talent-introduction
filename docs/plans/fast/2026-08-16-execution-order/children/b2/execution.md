@@ -154,3 +154,79 @@ Required implementation commands (extractor test, TaskProgressControllerExecutio
 - No files modified; worktree index remains clean.
 - The three ⏳ metricLabel items were resolved from actual source (evidence above) as instructed, even though implementation did not proceed.
 - `git diff --check` not applicable (no diff). 
+
+---
+
+# B2 Execution Report — Epoch 2 (implemented, READY_FOR_VERIFICATION)
+
+- Executor: ImplementB2E2
+- Outcome: **READY_FOR_VERIFICATION**
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast/docs/plans/fast/2026-08-16-execution-order/children/b2/brief.md` (amended per ledger amendment A4, human-approved; full plan text embedded)
+- Plan SHA-256: `cdc59e4f6cd26577cc699f29aca841e81e2d34a01611674a278b352ac9a90bca`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast/docs/plans/fast/2026-08-16-execution-order/children/b2/brief.md@cdc59e4f6cd26577cc699f29aca841e81e2d34a01611674a278b352ac9a90bca`
+- Execution epoch: RESUME (epoch 2; epoch 1 = PLAN_CONFLICT, no edits; A4 authorized 4 extra test files → 14 total)
+- Pre-execution HEAD: `55fb49bb0003380e82fd45fe63bfa40671729185` (controller evidence commits on top of b1 code head `ad005d98b706ceed67b34c96a89e642334ca819a`)
+
+## 1. Chain check (before editing index.html) — PASS
+
+All three `?v=` in `src/main/resources/static/index.html` equaled `20260817-v4-task-records-paging` (b1's value). Bumped to `20260817-v5-task-type-catalog` in the same commit as the three literal assertions in `batchSendTaskConsoleVisualFix.test.js` (M-7 / I1-8 / S1-5).
+
+## 2. metricLabel decisions (carried from epoch 1, landed as decided)
+
+- `INITIAL_OUTREACH` → `null`（— 无统计）
+- `AUTO_REPLY_ALL` → `轮询账号/失败账号`
+- `OPERATOR_STATUS_RECONCILE` → `一致/异常`
+
+Spot-verified evidence quickly (no re-litigation): `InitialOutreachService.kt:147` `InitialOutreachBatchResult` is NOT a `TaskExecutionSummaryProvider`; `BatchAutoMailReplyService.kt:183-185` provider `successAccountCount/failedAccountCount`; `OperatorStatusReconcileService.kt:303-315` provider `consistent / dbVsExpected+esVsDb`. Locked via `catalog metricLabel decisions are locked` test in TaskExecutionSummaryExtractorTest.
+
+## 3. Changes per authorized file (14/14)
+
+| # | File | Change |
+|---|---|---|
+| 1 | `src/main/kotlin/.../task/domain/TaskTypeCatalog.kt` (NEW) | `TaskTypeMeta` + `Drilldown` + `TaskTypeCatalog.entries: Map<String,TaskTypeMeta>` — 16 declarations per audit; `hasProgressUi=true` exactly the 6 legacy whitelist types; `summaryRule` non-null for the same 6; `drilldown` all null |
+| 2 | `src/main/kotlin/.../task/service/TaskExecutionSummaryExtractor.kt` (NEW) | Migrated `parseResultSummary` / `fallbackFromLog` / `detectWasCancelled` from TaskProgressController; `when` keys switched to `TaskTypeCatalog.byCode(taskType)?.summaryRule`; `ExecutionTotals` promoted to public data class; `extract()` implements I1-3 three-level priority (① resultSummary → ② latest progress_log detailsJson+processedCount → ③ stored success/failure counts) |
+| 3 | `src/main/kotlin/.../task/controller/TaskProgressController.kt` | `allowedTaskTypes` derived from catalog (`TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys`); deleted the 3 migrated private methods + private `ExecutionTotals`; `getExecutions` delegates to `extractor.extract`/`detectWasCancelled`; constructor unchanged (4 args) so `TaskProgressControllerExecutionsTest` needs no edits; `getProgressLogs` + batchOnly untouched (N1-1) |
+| 4 | `src/main/kotlin/.../task/controller/TaskExecutionController.kt` | Constructor gains `taskExecutionRepository` + `extractor`; list DTO adds ONLY `taskTypeLabel` + `metricLabel` (T1-4 self-correction: `summaryText` NOT added); new `GET /task-types` (I1-7, catalog left-join label fallback, count desc); new `GET /{id}/detail` (I1-5, no `require(taskType)`; `NoSuchElementException` → 404; I1-6 32 KB truncation with `rawTruncated`) |
+| 5 | `src/main/kotlin/.../task/repository/TaskExecutionRepository.kt` | `TaskTypeCount(taskType, cnt)` projection + `findTaskTypeCounts()` `GROUP BY task_type` query (BatchConfigLastExecution pattern; no TEXT columns, M-1) |
+| 6 | `src/main/resources/static/app.js` | `loadTaskTypeOptions()` (S1-1 injection, placeholder kept, selection preserved, cached in `state.taskTypeOptions`); `loadTasks` col2 → `taskTypeLabel || taskType`, col5 → S1-3 (metricLabel null → `— 无统计`, else `n/m <span class="text-muted">label</span>`), first-entry dropdown load (failure non-blocking); `toggleTaskDetail` rewritten to always call `/api/task-executions/{id}/detail` (recent-polls call deleted, N1-3), EXPERT_DISCOVERY keeps bySource table + summaryText renderers via `rawResultSummary`, others → S1-4 JSON fallback via new `renderTaskDetailRawBlocks`; `normalizeDiscoveryResultSummary` / `renderDiscoverySummaryText` / `renderBySourceTable` untouched |
+| 7 | `src/main/resources/static/index.html` | S1-1 `#taskTypeFilter` reduced to static placeholder only; S1-2 `#taskStatusFilter` 5 options (PARTIAL_SUCCESS/CANCELLED added); S1-5 three cache keys → `20260817-v5-task-type-catalog` |
+| 8 | `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` (NEW) | 18 tests: 6 summaryRule parses (verbatim migration outputs), RUNNING level-② (2), processedCount-only log fallback, level-③ stored-count fallback, all-empty zeros + null summaryText, malformed JSON no log fallback, wasCancelled (3), catalog: hasProgressUi==6-item set (N1-2), summaryRule keys == extractor rules (reverse drift guard), 16-code coverage, metricLabel decisions locked |
+| 9 | `src/test/js/taskRecordsSemantics.test.js` (NEW) | 7 tests: I1-2 `— 无统计` + no `0/0`; S1-3 verbatim cell; col2 taskTypeLabel; S1-4 two `.pre` blocks verbatim; I1-6 truncation notice; S1-1 placeholder/selection/caching; I1-1 no hardcoded option in `#taskTypeFilter` |
+| 10 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | ONLY the three cache-key literals v4→v5 (17/17 pass) |
+| 11 | `src/test/js/taskRecordsPaging.test.js` | A4 adaptation: N0-1 col5 `4/0` → `<span class="text-muted">— 无统计</span>` for the no-metricLabel fixture; other six columns verbatim; paging assertions untouched (6/6 pass) |
+| 12 | `src/test/kotlin/.../task/controller/TaskExecutionControllerTest.kt` | Constructor-call adaptation only: `TaskExecutionController(service, repository, extractor, objMapper)` + extractor mock |
+| 13 | `src/test/kotlin/.../task/controller/TaskExecutionListPagingTest.kt` | Constructor-call adaptation only (same pattern) |
+| 14 | `src/test/kotlin/.../task/controller/TaskExecutionControllerMvcTest.kt` | `@MockBean` additions only: `TaskExecutionRepository` + `TaskExecutionSummaryExtractor` (no new/changed cases) |
+
+## 4. Commands run (all required, all pass)
+
+| Command | Result |
+|---|---|
+| `node --check src/main/resources/static/app.js` | exit 0 (APPJS_OK) |
+| `node --test src/test/js/taskRecordsSemantics.test.js` | exit 0, 7 pass / 0 fail |
+| `node --test src/test/js/batchSendTaskConsoleVisualFix.test.js` | exit 0, 17 pass / 0 fail |
+| `node --test src/test/js/taskRecordsPaging.test.js` | exit 0, 6 pass / 0 fail (A4-adapted N0-1) |
+| `JAVA_HOME=…zulu-11… mvn test -Dtest=TaskExecutionSummaryExtractorTest` | exit 0, Tests run: 18, Failures: 0, Errors: 0, BUILD SUCCESS |
+| `JAVA_HOME=…zulu-11… mvn test -Dtest=TaskProgressControllerExecutionsTest` | exit 0, Tests run: 26, Failures: 0, Errors: 0, BUILD SUCCESS (incl. both batchOnly cases, N1-1) |
+| `JAVA_HOME=…zulu-11… mvn test` (full regression incl. node --test + node-check) | exit 0, Kotlin Tests run: 2488, Failures: 0, Errors: 0, Skipped: 4; JS node-test/check executions pass; BUILD SUCCESS |
+| `git diff --check` | clean (no output) |
+
+## 5. Acceptance-spot greps
+
+- I1-4: `grep -c "when (taskType)" TaskProgressController.kt` = **0**.
+- I1-1: `allowedTaskTypes` assignment derives from `TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys`.
+- I1-5: `require(` hits in TaskExecutionController are only pre-existing `recentPolls` (limit) and `pollDetail` (AUTO_REPLY_ALL check, N1-3 untouched); none inside `/{id}/detail`.
+- I1-8/S1-5: `20260817-v5-task-type-catalog` = 3 in index.html, 3 in batchSendTaskConsoleVisualFix.test.js.
+- M-3: no `INITIAL_OUTREACH|AUTO_REPLY_ALL|EXPERT_ENRICHMENT` in the `view-tasks` section of index.html.
+- S1-*: commit contains no styles.css changes (no diff on `src/main/resources/static/styles.css`); no migration files touched.
+
+## 6. Deviations / notes
+
+- None in behavior. Implementation notes:
+  - `TaskProgressController` keeps its original 4-arg constructor and builds `TaskExecutionSummaryExtractor(progressLogRepository, objectMapper)` internally so `TaskProgressControllerExecutionsTest` compiles/passes unchanged (its existing `taskType not in whitelist returns 400` covers the T1-8 whitelist case; no new test added there — not an authorized file).
+  - `loadTasks` guards the first-entry dropdown fetch with `if (!state.taskTypeOptions)` + non-blocking try/catch; this keeps `taskRecordsPaging.test.js`'s sandbox (which lacks `loadTaskTypeOptions`) functioning with zero sandbox changes — the only modification to that file is the N0-1 col5 assertion.
+  - Detail endpoint reads the execution via `taskExecutionRepository.findById(...).orElseThrow { NoSuchElementException(...) }` (not `service.getExecution`, which throws `IllegalStateException` → 400) to satisfy the 404 mapping (I1-5).
+  - Extractor level ② uses `processedCount` (not `totalCount`) for `totalProcessed`, preserving the migrated `fallbackFromLog` behavior verbatim (plan's own 复核修正 note).
+  - `EXPERT_DISCOVERY` detail keeps the bySource table + summaryText via `detail.rawResultSummary` parsed by the existing `normalizeDiscoveryResultSummary` (three existing renderer functions untouched).
+- Worktree: only the 14 authorized files changed; `docs/plans/fast/` changes (this file) are NOT part of the implementation commit — left uncommitted for the controller's separate evidence commit.
+- Commit: exactly one implementation commit `feat(fast-p): implement b2` (SHA recorded by controller); not pushed.
