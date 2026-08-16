@@ -200,7 +200,8 @@ class TaskExecutionSummaryExtractorTest {
         assertEquals(
             setOf(
                 "EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY",
-                "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES", "EXPERT_ENRICHMENT"
+                "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES", "EXPERT_ENRICHMENT",
+                "TASK_AUDIT_RETENTION"
             ),
             ruleKeys
         )
@@ -214,7 +215,8 @@ class TaskExecutionSummaryExtractorTest {
             "AUTO_REPLY_ALL_DISPATCH", "BOUNCE_COLLECTION", "CANDIDATE_OPERATOR_STATUS_SYNC",
             "CHECK_REPLIES", "DAILY_COUNT_RESET", "EXPERT_DISCOVERY", "EXPERT_ENRICHMENT",
             "EXPERT_REVALIDATION", "INITIAL_OUTREACH", "MANUAL_INITIAL_OUTREACH",
-            "OPERATOR_STATUS_RECONCILE", "POSTMASTER_REPUTATION", "RAW_PROMOTION_SCAN"
+            "OPERATOR_STATUS_RECONCILE", "POSTMASTER_REPUTATION", "RAW_PROMOTION_SCAN",
+            "TASK_AUDIT_RETENTION"
         )
         assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)
     }
@@ -232,6 +234,6 @@ class TaskExecutionSummaryExtractorTest {
         assertNull(meta("BOUNCE_COLLECTION").metricLabel)
         assertNull(meta("EXPERT_ENRICHMENT").metricLabel)
         assertNull(meta("DAILY_COUNT_RESET").metricLabel)
-        assertEquals(16, TaskTypeCatalog.entries.size)
+        assertEquals(17, TaskTypeCatalog.entries.size)
     }
 }
