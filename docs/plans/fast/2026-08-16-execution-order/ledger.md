@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-16T00:00:00+08:00
 - Current child: a2
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: a1 epoch 2, base edda3e4e67e8b4511f3c7ca76b09926c56e4f69a, next action dispatch implementer with amended brief (T-D4)
+- Pause reason: SCOPE — implementation commit bb07586 includes one-line triggerTypeLabel stub sync in src/test/js/expertTagBatchFix.test.js (createLogSandbox), outside the plan's 7-file authorized list. Controller probe proves the stub REQUIRED: without it, I-2 suite "default selection writes logExecutionId" fails (mandated node/mvn commands would go red). Family audit X-2 sanctions syncing assertion files for changed areas, but child-plan file list omits it. Widening authorized files needs amendment row + human approval.
+- Resume from: a2 epoch 2, base 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd, implementation bb07586b758357ad21794e17b7e99f200abeed5b retained, next action amend plan then verify
 
 ## Baseline
 
@@ -39,7 +39,7 @@ Migration chain (authoritative): current max `V99__add_gate_filter_enabled_to_ba
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | a1 | docs/plans/2026-08-16/a1-batch-list-row-and-drawer-visual.md | commit:d32a4cfb45e32b0932955290260839858b959c79 | none | 2 | LIGHT_PASS_WITH_NOTES | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 0 | — | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | 03ea6672b8e3e9f57954e70cd3ad93c383681887 | epoch 1 PLAN_CONFLICT resolved via amendment A1; RECORD_ONLY O-1: renderErrorSamples pre-existing substring truncation |
-| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 1 | IMPLEMENTING | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | | 0 | — | | | |
+| a2 | docs/plans/2026-08-16/a2-batch-manual-log-reachability.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1 | 1 | PAUSED_FOR_HUMAN | 9dfbd5e1bae6d3dcb5dfe1beb85265af5a4bdabd | bb07586b758357ad21794e17b7e99f200abeed5b | 0 | — | bb07586b758357ad21794e17b7e99f200abeed5b | | scope: 8th file expertTagBatchFix.test.js 1-line stub, proven required; amendment pending |
 | a3 | docs/plans/2026-08-16/a3-expert-list-rename-and-entry-move.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2 | 0 | PENDING | | | 0 | — | | | |
 | b1 | docs/plans/2026-08-16/b1-task-execution-list-performance.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | a1,a2,a3 | 0 | PENDING | | | 0 | — | | | |
 | b2 | docs/plans/2026-08-16/b2-task-type-catalog-semantics.md | commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3 | b1 | 0 | PENDING | | | 0 | — | | | |
