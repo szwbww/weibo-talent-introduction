@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-16/00-execution-order.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-08-16/00-execution-order.md (sha256:2ca42704e7c4608eaf7f6199ca86fa2acbde51cb54a2b968b60135f187e89118)
 - Governing master identity: worktree sha256:2ca42704e7c4608eaf7f6199ca86fa2acbde51cb54a2b968b60135f187e89118; recorded commit:65b8de831a5f0edeafeae5683a2f15b79f7000a3
 - Invoked master identity: sha256:2ca42704e7c4608eaf7f6199ca86fa2acbde51cb54a2b968b60135f187e89118
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/2026-08-16-execution-order/ledger.md (sha256:b88179dff344e97f4ed67d36cd9c94e625931e6fa8473caf31f2acd7689492f3)
 - Fast-p handoff: docs/plans/fast/2026-08-16-execution-order/human-review-handoff.md (sha256:1bc53a99191b162a8a35578871174fe0f7ab355065ca19635c00b2ecbb2f5745)
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
-- Final code head: 4d7f206a4f506104af73f3e63e4fceea3d857ef7
-- Evidence parent before next commit: f3b8bad752ab03fd68ca0304f960771f778bee5f
-- Previous evidence commit: N/A
+- Final code head: 3867f61b26b5584b54ac52e540360f7aa8122492
+- Evidence parent before next commit: a24449b96f471741c5890de6dc0fb61400131a76
+- Previous evidence commit: a24449b96f471741c5890de6dc0fb61400131a76
 - Branch: fast/2026-08-16-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED via /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py; exact master/worktree/branch/ledger/handoff/base/final-code identities validated
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer (fresh; created after final code head with no inherited fast-p implementation or light-verification conversation)
+- Reviewer: /root/post_repair_reviewer (fresh; created after repair code head with no inherited fast-p/repair execution context)
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: docs/plans/review/2026-08-16-execution-order/machine-verification.md#epoch-1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/2026-08-16-execution-order/machine-verification.md#epoch-2
 - Repair artifact: docs/plans/fix/00-execution-order/repair.md (sha256:ebbb5dbfcf25ddb2784b49dd38b429ed2fe60aa3e75ce8f08b491f220832026d; DRAFT_READY)
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN `$execute-p docs/plans/fix/00-execution-order/repair.md` invocation, 2026-08-16 (recorded in repair-execution.md)
+- Repair executor: Main (opencode-go/deepseek-v4-flash), recorded in repair-execution.md
+- Repair code head: 3867f61b26b5584b54ac52e540360f7aa8122492
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-1 requires human approval of docs/plans/fix/00-execution-order/repair.md before execution
+- Blocker/next action: human manual acceptance A-M1–A-M6 and explicit sign-off for 3867f61b26b5584b54ac52e540360f7aa8122492
