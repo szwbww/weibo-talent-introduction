@@ -148,7 +148,7 @@ describe("task records paging (b1)", () => {
             <td>AUTO_REPLY_ALL</td>
             <td>QUEUE</td>
             <td>${sandbox.badge(sandbox.labelStatus("SUCCESS"), "ok")}</td>
-            <td>4/0</td>
+            <td><span class="text-muted">— 无统计</span></td>
             <td>2026-08-16T10:00:00</td>
             <td></td>
         </tr>

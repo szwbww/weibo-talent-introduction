@@ -21,6 +21,7 @@ const state = {
     suppressionKeyword: "",
     tasksPage: 0,
     tasksTotal: 0,
+    taskTypeOptions: null,
     contacts: [],
     contactsPage: 0,
     contactsTotalHits: 0,
@@ -8906,9 +8907,29 @@ function renderDiscoverySummaryText(summaryText) {
     return `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">${escapeHtml(summaryText)}</div>`;
 }
 
+async function loadTaskTypeOptions() {
+    const options = await api("/api/task-executions/task-types");
+    if (!Array.isArray(options)) return;
+    state.taskTypeOptions = options;
+    const select = $("#taskTypeFilter");
+    if (!select) return;
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">全部自动化任务</option>' + options.map((option) =>
+        `<option value="${escapeHtml(option.code)}">${escapeHtml(option.label)}（${option.count}）</option>`
+    ).join("");
+    select.value = previousValue;
+}
+
 const TASK_PAGE_SIZE = 50;
 
 async function loadTasks() {
+    if (!state.taskTypeOptions) {
+        try {
+            await loadTaskTypeOptions();
+        } catch (e) {
+            // 类型下拉加载失败不阻塞任务列表：保留静态占位项，下次进入重试
+        }
+    }
     const params = new URLSearchParams();
     const taskType = $("#taskTypeFilter").value;
     const status = $("#taskStatusFilter").value;
@@ -8922,10 +8943,12 @@ async function loadTasks() {
     $("#tasksTable").innerHTML = tasks.map((task) => `
         <tr class="task-row" data-task-id="${task.id}" data-task-type="${escapeHtml(task.taskType)}" onclick="toggleTaskDetail(this)" style="cursor:pointer;">
             <td>${task.id}</td>
-            <td>${escapeHtml(task.taskType)}</td>
+            <td>${escapeHtml(task.taskTypeLabel || task.taskType)}</td>
             <td>${escapeHtml(task.triggerType)}</td>
             <td>${badge(labelStatus(task.status), task.status === "SUCCESS" ? "ok" : task.status === "FAILED" ? "error" : "warn")}</td>
-            <td>${task.successCount}/${task.failureCount}</td>
+            <td>${task.metricLabel
+                ? `${task.successCount}/${task.failureCount} <span class="text-muted">${escapeHtml(task.metricLabel)}</span>`
+                : '<span class="text-muted">— 无统计</span>'}</td>
             <td>${escapeHtml(task.startedAt)}</td>
             <td>${escapeHtml(task.errorMessage || "")}</td>
         </tr>
@@ -8945,6 +8968,30 @@ function renderTaskPager() {
     $("#taskNextPage").disabled = (state.tasksPage + 1) * TASK_PAGE_SIZE >= state.tasksTotal;
 }
 
+/**
+ * S1-4：无结构化 renderer 时的原始 JSON 兜底视图。
+ * 逐字结构：请求参数/执行结果两个 `.pre` 块；`rawTruncated` 时在对应 `.pre` 之后
+ * 追加截断标注（I1-6）。
+ */
+function renderTaskDetailRawBlocks(detail) {
+    let html = "";
+    if (detail.rawRequestPayload != null) {
+        html += '<div class="text-muted">请求参数</div>';
+        html += `<div class="pre">${escapeHtml(detail.rawRequestPayload)}</div>`;
+        if (detail.rawTruncated) {
+            html += '<div class="text-muted">内容过长已截断，完整内容见服务端日志</div>';
+        }
+    }
+    if (detail.rawResultSummary != null) {
+        html += '<div class="text-muted">执行结果</div>';
+        html += `<div class="pre">${escapeHtml(detail.rawResultSummary)}</div>`;
+        if (detail.rawTruncated) {
+            html += '<div class="text-muted">内容过长已截断，完整内容见服务端日志</div>';
+        }
+    }
+    return html;
+}
+
 async function toggleTaskDetail(row) {
     const existingDetail = row.nextElementSibling;
     if (existingDetail?.classList.contains("task-detail-row")) {
@@ -8953,31 +9000,30 @@ async function toggleTaskDetail(row) {
     }
     const taskId = row.dataset.taskId;
     const taskType = row.dataset.taskType;
-    let data;
-    if (taskType === "EXPERT_DISCOVERY") {
-        try {
-            const task = await api(`/api/task-executions/${taskId}`);
-            if (task && task.resultSummary) {
-                data = normalizeDiscoveryResultSummary(task.resultSummary);
-            }
-        } catch (e) { data = null; }
-    } else {
-        try {
-            data = await api(`/api/task-executions/recent-polls/${taskId}/detail`);
-        } catch (e) { data = null; }
+    let detail = null;
+    try {
+        detail = await api(`/api/task-executions/${taskId}/detail`);
+    } catch (e) {
+        detail = null;
     }
-    let bySourceHtml = "";
-    if (data && data.bySource) {
-        const container = document.createElement("div");
-        renderBySourceTable(data.bySource, container);
-        bySourceHtml = container.innerHTML;
-    }
-    if (data && data.summaryText) {
-        bySourceHtml += renderDiscoverySummaryText(data.summaryText);
+    let contentHtml = "";
+    if (taskType === "EXPERT_DISCOVERY" && detail && detail.rawResultSummary) {
+        // 既有结构化 renderer（I1-5）：按数据源分组的 bySource 表 + summaryText
+        const data = normalizeDiscoveryResultSummary(detail.rawResultSummary);
+        if (data && data.bySource) {
+            const container = document.createElement("div");
+            renderBySourceTable(data.bySource, container);
+            contentHtml = container.innerHTML;
+        }
+        if (data && data.summaryText) {
+            contentHtml += renderDiscoverySummaryText(data.summaryText);
+        }
+    } else if (detail) {
+        contentHtml = renderTaskDetailRawBlocks(detail);
     }
     const detailRow = document.createElement("tr");
     detailRow.className = "task-detail-row";
-    detailRow.innerHTML = `<td colspan="7" style="padding:12px 16px;background:var(--surface);">${bySourceHtml || '<div class="text-muted">暂无明细</div>'}</td>`;
+    detailRow.innerHTML = `<td colspan="7" style="padding:12px 16px;background:var(--surface);">${contentHtml || '<div class="text-muted">暂无明细</div>'}</td>`;
     row.after(detailRow);
 }
 

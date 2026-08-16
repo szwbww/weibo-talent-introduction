@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionPage
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -26,7 +27,8 @@ class TaskExecutionListPagingTest {
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val service = TaskExecutionService(repository, ObjectMapper(), com.weibo.talentintroduction.config.MailSchedulingProperties(autoReplyAllCron = "-"))
     private val objectMapper = ObjectMapper().registerKotlinModule()
-    private val controller = TaskExecutionController(service, objectMapper)
+    private val extractor = Mockito.mock(TaskExecutionSummaryExtractor::class.java)
+    private val controller = TaskExecutionController(service, repository, extractor, objectMapper)
 
     private fun item(
         id: Long = 1L,

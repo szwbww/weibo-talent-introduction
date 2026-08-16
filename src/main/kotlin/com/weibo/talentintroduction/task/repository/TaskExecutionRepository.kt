@@ -33,6 +33,15 @@ data class TaskExecutionListItem(
     val finishedAt: LocalDateTime?
 )
 
+/**
+ * 任务类型下拉选项投影（I1-7）：`SELECT DISTINCT task_type` 的聚合行数与类型枚举。
+ * 照 `BatchConfigLastExecution` 范式（列别名与 DTO 属性名对齐）。不含 TEXT 列，满足 M-1。
+ */
+data class TaskTypeCount(
+    val taskType: String,
+    val cnt: Long
+)
+
 interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
     fun findAllByOrderByStartedAtDesc(): List<TaskExecution>
 
@@ -168,6 +177,20 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
 
     @Query("SELECT COUNT(*) FROM task_execution")
     fun countAll(): Long
+
+    /**
+     * I1-7：下拉选项来自实际数据（`GROUP BY task_type`），与 catalog 左连接后由
+     * controller 做 label 兜底——catalog 未声明的类型仍然返回（I1-7 禁止只返回
+     * catalog 全集）。不含 WHERE、不含 TEXT 列（M-1）。
+     */
+    @Query(
+        """
+        SELECT task_type AS task_type, COUNT(*) AS cnt
+        FROM task_execution
+        GROUP BY task_type
+        """
+    )
+    fun findTaskTypeCounts(): List<TaskTypeCount>
 
     @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType")
     fun countByTaskType(taskType: String): Long

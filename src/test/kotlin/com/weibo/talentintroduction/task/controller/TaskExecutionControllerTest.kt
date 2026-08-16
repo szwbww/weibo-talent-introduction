@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -18,7 +19,8 @@ class TaskExecutionControllerTest {
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objMapper = ObjectMapper().registerKotlinModule()
     private val service = TaskExecutionService(repository, objMapper, schedulingProperties)
-    private val controller = TaskExecutionController(service, objMapper)
+    private val extractor = Mockito.mock(TaskExecutionSummaryExtractor::class.java)
+    private val controller = TaskExecutionController(service, repository, extractor, objMapper)
 
     @Test
     fun `recent polls default limit 10`() {

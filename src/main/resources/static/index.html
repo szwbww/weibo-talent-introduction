@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260817-v4-task-records-paging">
+    <link rel="stylesheet" href="styles.css?v=20260817-v5-task-type-catalog">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -941,17 +941,14 @@
             <div class="toolbar">
                 <select id="taskTypeFilter">
                     <option value="">全部自动化任务</option>
-                    <option value="INITIAL_OUTREACH">首发邮件任务 (Initial Outreach)</option>
-                    <option value="MANUAL_INITIAL_OUTREACH">手动批量首发邮件</option>
-                    <option value="AUTO_REPLY_ALL">全量账号自动收信回复任务</option>
-                    <option value="AUTO_REPLY_ACCOUNT">单账号轮询自动回复任务</option>
-                    <option value="AUTO_REPLY_ALL_DISPATCH">批量分发与调度任务</option>
                 </select>
                 <select id="taskStatusFilter">
                     <option value="">全部执行状态</option>
-                    <option value="RUNNING">RUNNING - 执行中</option>
-                    <option value="SUCCESS">SUCCESS - 执行成功</option>
-                    <option value="FAILED">FAILED - 执行失败</option>
+                    <option value="RUNNING">执行中</option>
+                    <option value="SUCCESS">执行成功</option>
+                    <option value="PARTIAL_SUCCESS">部分成功</option>
+                    <option value="FAILED">执行失败</option>
+                    <option value="CANCELLED">已取消</option>
                 </select>
                 <button class="button primary" id="loadTasksBtn">查询任务执行记录</button>
             </div>
@@ -2036,7 +2033,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260817-v4-task-records-paging"></script>
-<script src="app.js?v=20260817-v4-task-records-paging"></script>
+<script src="trust-reply-workbench.js?v=20260817-v5-task-type-catalog"></script>
+<script src="app.js?v=20260817-v5-task-type-catalog"></script>
 </body>
 </html>

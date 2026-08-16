@@ -1,10 +1,12 @@
 package com.weibo.talentintroduction.task.controller
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
+import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+import com.weibo.talentintroduction.task.service.ExecutionTotals
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.slf4j.LoggerFactory
@@ -30,10 +32,16 @@ class TaskProgressController(
 ) {
 
     private val log = LoggerFactory.getLogger(TaskProgressController::class.java)
-    private val allowedTaskTypes = setOf(
-        "EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY",
-        "EXPERT_ENRICHMENT", "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES"
-    )
+
+    /**
+     * M-3 / I1-1：白名单从 TaskTypeCatalog 派生（成员集合保持既有 6 项不变，N1-2），
+     * 不再手工维护第二份字符串。
+     */
+    private val allowedTaskTypes: Set<String> =
+        TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
+
+    /** I1-3/I1-4：取数统一委托共享 extractor（本控制器不再保留 when(taskType) 分支）。 */
+    private val extractor = TaskExecutionSummaryExtractor(progressLogRepository, objectMapper)
 
     @GetMapping("/{taskType}")
     fun getProgress(@PathVariable taskType: String): ResponseEntity<TaskProgress> {
@@ -84,8 +92,8 @@ class TaskProgressController(
         val clampedLimit = limit.coerceIn(1, 50)
         val executions = taskExecutionRepository.findRecentByTaskType(taskType, clampedLimit)
         val responses = executions.map { exec ->
-            val totals = parseResultSummary(taskType, exec.resultSummary, exec.id)
-            val wasCancelled = exec.resultSummary?.let { detectWasCancelled(it) } ?: false
+            val totals: ExecutionTotals = extractor.extract(taskType, exec)
+            val wasCancelled = extractor.detectWasCancelled(exec.resultSummary)
             val status = when {
                 exec.status == "RUNNING" || exec.status == "CANCELLING" -> exec.status
                 wasCancelled -> "CANCELLED"
@@ -110,137 +118,6 @@ class TaskProgressController(
             )
         }
         return ResponseEntity.ok(responses)
-    }
-
-    private data class ExecutionTotals(
-        val totalProcessed: Long = 0,
-        val totalPassed: Long = 0,
-        val totalRejected: Long = 0,
-        val summaryText: String? = null
-    )
-
-    private fun parseResultSummary(taskType: String, resultSummary: String?, executionId: Long?): ExecutionTotals {
-        if (!resultSummary.isNullOrBlank()) {
-            try {
-                val root = objectMapper.readTree(resultSummary)
-                val stats = root.path("stats")
-                return when (taskType) {
-                    "EXPERT_REVALIDATION" -> ExecutionTotals(
-                        totalProcessed = stats.path("total").asLong(0),
-                        totalPassed = stats.path("passed").asLong(0),
-                        totalRejected = stats.path("demoted").asLong(0)
-                    )
-                    "RAW_PROMOTION_SCAN" -> ExecutionTotals(
-                        totalProcessed = stats.path("total").asLong(0),
-                        totalPassed = stats.path("promoted").asLong(0),
-                        totalRejected = stats.path("filtered").asLong(0) + stats.path("emailRejected").asLong(0)
-                    )
-                    "EXPERT_DISCOVERY" -> {
-                        val totalPapers = stats.path("totalPapers").asLong(0)
-                        val indexed = stats.path("indexed").asLong(0)
-                        val summaryText = root.path("summaryText").asText().takeIf { it.isNotBlank() }
-                            ?: stats.path("summaryText").asText().takeIf { it.isNotBlank() }
-                        ExecutionTotals(
-                            totalProcessed = totalPapers,
-                            totalPassed = indexed,
-                            totalRejected = (totalPapers - indexed).coerceAtLeast(0),
-                            summaryText = summaryText
-                        )
-                    }
-                    "MANUAL_INITIAL_OUTREACH" -> ExecutionTotals(
-                        totalProcessed = (root.path("total").asLong(0) - root.path("remaining").asLong(0))
-                            .coerceAtLeast(0),
-                        totalPassed = root.path("sent").asLong(0),
-                        totalRejected = root.path("failed").asLong(0)
-                    )
-                    "CHECK_REPLIES" -> ExecutionTotals(
-                        totalProcessed = root.path("totalAccountsToPoll").asLong(0),
-                        totalPassed = root.path("successAccountCount").asLong(0),
-                        totalRejected = root.path("failedAccountCount").asLong(0)
-                    )
-                    "EXPERT_ENRICHMENT" -> {
-                        val enriched = root.path("enriched").asLong(0)
-                        val failed = root.path("failed").asLong(0)
-                        ExecutionTotals(
-                            totalProcessed = enriched + failed,
-                            totalPassed = enriched,
-                            totalRejected = failed
-                        )
-                    }
-                    else -> ExecutionTotals()
-                }
-            } catch (e: Exception) {
-                log.warn("Failed to parse resultSummary for executionId={} taskType={}: {}", executionId, taskType, e.message)
-                return ExecutionTotals()
-            }
-        }
-        return fallbackFromLog(executionId, taskType)
-    }
-
-    private fun fallbackFromLog(executionId: Long?, taskType: String): ExecutionTotals {
-        if (executionId == null) return ExecutionTotals()
-        val latestLog = progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(executionId)
-            ?: return ExecutionTotals()
-        val detailsJson = latestLog.detailsJson
-        val passed: Long
-        val rejected: Long
-        if (!detailsJson.isNullOrBlank()) {
-            try {
-                val details = objectMapper.readTree(detailsJson)
-                when (taskType) {
-                    "EXPERT_REVALIDATION" -> {
-                        passed = details.path("passed").asLong(0)
-                        rejected = details.path("demoted").asLong(0)
-                    }
-                    "RAW_PROMOTION_SCAN" -> {
-                        passed = details.path("promoted").asLong(0)
-                        rejected = details.path("filtered").asLong(0) + details.path("emailRejected").asLong(0)
-                    }
-                    "EXPERT_DISCOVERY" -> {
-                        passed = details.path("indexed").asLong(0)
-                        rejected = 0
-                    }
-                    "MANUAL_INITIAL_OUTREACH" -> {
-                        passed = details.path("sent").asLong(0)
-                        rejected = details.path("failed").asLong(0)
-                    }
-                    "CHECK_REPLIES" -> {
-                        passed = details.path("successAccountCount").asLong(0)
-                        rejected = details.path("failedAccountCount").asLong(0)
-                    }
-                    "EXPERT_ENRICHMENT" -> {
-                        passed = details.path("enriched").asLong(0)
-                        rejected = details.path("failed").asLong(0)
-                    }
-                    else -> {
-                        passed = 0; rejected = 0
-                    }
-                }
-            } catch (e: Exception) {
-                return ExecutionTotals(
-                    totalProcessed = latestLog.processedCount,
-                    totalPassed = 0,
-                    totalRejected = 0
-                )
-            }
-        } else {
-            passed = 0; rejected = 0
-        }
-        return ExecutionTotals(
-            totalProcessed = latestLog.processedCount,
-            totalPassed = passed,
-            totalRejected = rejected
-        )
-    }
-
-    private fun detectWasCancelled(resultSummary: String?): Boolean {
-        if (resultSummary.isNullOrBlank()) return false
-        return try {
-            val root = objectMapper.readTree(resultSummary)
-            root.path("wasCancelled").asBoolean(false)
-        } catch (e: Exception) {
-            false
-        }
     }
 
     companion object {

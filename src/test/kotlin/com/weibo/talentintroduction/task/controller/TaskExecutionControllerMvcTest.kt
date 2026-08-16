@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.task.controller
 
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
@@ -21,6 +23,12 @@ class TaskExecutionControllerMvcTest {
 
     @MockBean
     private lateinit var taskExecutionService: TaskExecutionService
+
+    @MockBean
+    private lateinit var taskExecutionRepository: TaskExecutionRepository
+
+    @MockBean
+    private lateinit var taskExecutionSummaryExtractor: TaskExecutionSummaryExtractor
 
     @Test
     fun `recent-polls route is not captured by id path variable`() {
