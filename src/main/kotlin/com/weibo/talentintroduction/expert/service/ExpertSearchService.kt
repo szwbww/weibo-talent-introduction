@@ -434,7 +434,8 @@ class ExpertSearchService(
             patentTitles = source.path("patentTitles").takeIf { it.isArray }
                 ?.map { it.asText() }?.filter { it.isNotBlank() },
             enrichedAt = source.nullableText("enrichedAt"),
-            enrichmentSource = source.nullableText("enrichmentSource")
+            enrichmentSource = source.nullableText("enrichmentSource"),
+            reachability = source.nullableText("reachability")
         )
     }
 
@@ -456,7 +457,8 @@ class ExpertSearchService(
             "tags",
             "updatedAt",
             "operatorStatus",
-            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource"
+            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource",
+            "reachability"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
