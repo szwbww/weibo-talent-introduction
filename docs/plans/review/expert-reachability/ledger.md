@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-16/expert-reachability-00-execution-order.md
+
+- Status: BLOCKED_PREFLIGHT
+- Review epoch: 0
+- Master plan: docs/plans/2026-08-16/expert-reachability-00-execution-order.md (sha256:55e4a37ae76772ea880a5c3478d14c0eb219ea2d9b07a6ba9c418314af94421c)
+- Governing master identity: worktree sha256:55e4a37ae76772ea880a5c3478d14c0eb219ea2d9b07a6ba9c418314af94421c; recorded commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b
+- Invoked master identity: SAME (sha256:55e4a37ae76772ea880a5c3478d14c0eb219ea2d9b07a6ba9c418314af94421c)
+- Master identity state: CONSISTENT
+- Governing amendment: A1,A2,A3,A4; each recorded with master rule, reason, and human approval in the fast-p ledger
+- Amendments: A1,A2,A3,A4 (fast-p ledger)
+- Fast-p ledger: docs/plans/fast/expert-reachability/ledger.md (sha256:893869a697b6a1ce87935b1000ff165caacd3a61a5b98687451a627a46a1432a)
+- Fast-p handoff: docs/plans/fast/expert-reachability/human-review-handoff.md (sha256:053877ad15649ce5cbecd9713e679d063b15f980e5e01138b6b073201647db39)
+- Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
+- Final code head: 59f33864c0cd91f6699f83eabf5fa88e7c1d7839
+- Evidence parent before next commit: c7db6caa218cfe3f58dfd169bd1ba314c930789d
+- Previous evidence commit: N/A
+- Branch: fast/expert-reachability
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; matching READY_FOR_HUMAN_REVIEW ledger/handoff; five terminal children; invoked and worktree master sha256 match; master base and final code head ancestry valid.
+- Misdirected review evidence: N/A
+- Reviewer: N/A
+- Reviewer attempt: 0
+- Machine result: PENDING
+- Machine report epoch: N/A
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: DIRTY_INDEX — index contains staged edits to docs/plans/fast/expert-reachability/{ledger.md,human-review-handoff.md,children/05/fix-log.md}; those edits change the completed fast-p status and evidence/code identities while the working tree retains the canonical READY_FOR_HUMAN_REVIEW state. Resolve or preserve this competing staged work in a clean index, then resume this exact review.
