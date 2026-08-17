@@ -168,8 +168,9 @@ fun reachabilityFilter(mode: String?): Map<String, Any>?
 | 5 | `src/main/resources/static/index.html` | T4 |
 | 6 | `src/main/resources/static/app.js` | T4 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ReachabilityFilterSeamTest.kt` | 新增（T5） |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **修正记录 A3（授权）：** `EXCLUDED_NOISE_SITES` 三条 pin 行号同步 —— `ExpertIndexController.kt` 94→95、484→485，`ExpertSearchService.kt` 431→476（context 不变），遵该 guard 自带维护规程（`:130`）与 A1/A2 同机制 |
 
-文件数 7 ≤ 10。子系统 2（筛选表达式 / 前端控件）。新增 ES 字段 0。
+文件数 8 ≤ 10。子系统 2（筛选表达式 / 前端控件）。新增 ES 字段 0。
 
 ## 验证命令
 
@@ -222,3 +223,15 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 操作步骤: 在未配置可达性过滤的情况下，触发一次材料提醒的收件人预估。
 - 预期结果: 预估人数与改动前一致。
 - 覆盖: N-1 / IP-3
+
+## 修正记录
+
+### A3（2026-08-16，fast-p 运行期）授权第 8 个文件：guard 测试行号 pin 同步
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A3」）。
+- **触发证据**：T3 对 `listExperts` 的 `@RequestParam` 追加使 `ExpertIndexController.kt` 行号 +1
+  （guard pin 94→95、484→485）；T1 在 `ExpertSearchService` companion 新增 `reachabilityFilter()` 块
+  （约 +45 行）使该文件 pin 431→476。`OperatorStatusWriteSeamGuardTest.EXCLUDED_NOISE_SITES` 三条 pin
+  全部过期，guard 自检（`staleExclusions`）必然失败，且任何 T1/T3 实现都无法避免该漂移。
+- **影响**：变更文件清单新增第 8 项 `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`
+  （仅行号同步 94→95、484→485、431→476，context 不变，零断言语义变更）。文件数 7→8，仍 ≤10。
