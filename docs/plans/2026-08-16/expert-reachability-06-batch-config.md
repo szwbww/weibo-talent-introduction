@@ -154,8 +154,9 @@ ALTER TABLE batch_send_task_config
 | 6 | `src/main/resources/static/app.js` | T7 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigReachabilityTest.kt` | 新增（T8） |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt` | 补断言 |
+| 9 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt` | **修正记录 A4（授权）：** T6 的 snapshot 载体 3 行增量 —— `BatchExecutionSnapshot.reachabilityFilter: String? = null`（带默认值）、`toExecutionSnapshot()` 透传、`RecipientScope.fromSnapshot()` 透传（`resolveScope(snapshot)` 仅经 `fromSnapshot` 构造 `RecipientScope`，缺载体则配置值在 snapshot 边界丢失，T6 为 no-op） |
 
-文件数 8 ≤ 10。子系统 2（配置持久化 / 前端配置 UI）。新增 ES 字段 0；新增 DB 列 1。
+文件数 9 ≤ 10。子系统 2（配置持久化 / 前端配置 UI）。新增 ES 字段 0；新增 DB 列 1。
 
 ## 样式契约
 
@@ -242,3 +243,19 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 操作步骤: 1) 查看列表 pill。2) 打开编辑器确认开关状态。3) 保存后再次确认。4) 查看该任务的变更日志。
 - 预期结果: 门禁 pill 与开关状态、变更日志文案与改动前一致；两个 pill 并存时不重叠、不换行错位。
 - 覆盖: N-4
+
+## 修正记录
+
+### A4（2026-08-16，fast-p 运行期）授权第 9 个文件：T6 snapshot 载体
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A4」）。
+- **触发证据**：`resolveScope(snapshot: BatchExecutionSnapshot)`（`ManualInitialOutreachService.kt:427`）仅经
+  `RecipientScope.fromSnapshot(snapshot)`（`BatchExecutionModels.kt:134`）构造 `RecipientScope`；配置值只能沿
+  `BatchSendTaskConfig → toExecutionSnapshot() → BatchExecutionSnapshot → fromSnapshot` 传递。
+  三个载体（snapshot 字段、`toExecutionSnapshot` 透传、`fromSnapshot` 透传）全部位于 `BatchExecutionModels.kt`，
+  不在原 8 文件清单内。缺载体时 scheduled/manual/config-driven 执行与 `/recipients/preview` 路径
+  都会在 Jackson/snapshot 边界丢失该值，T6 成为静默 no-op，IP-1 / Observable outcome 2 / A-3 无法成立。
+  同型先例：`gateFilterEnabled` 的 snapshot 载体（`BatchExecutionSnapshot:22`，p4a）。
+- **影响**：变更文件清单新增第 9 项 `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`
+  （仅 3 行增量、全部带默认值：`BatchExecutionSnapshot.reachabilityFilter: String? = null`、
+  `toExecutionSnapshot()` 透传、`fromSnapshot()` 透传；不新增任何字段语义）。文件数 8→9，仍 ≤10。
