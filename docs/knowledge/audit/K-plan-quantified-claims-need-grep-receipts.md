@@ -2,8 +2,8 @@
 id: K-plan-quantified-claims-need-grep-receipts
 domain: audit
 created: 2026-08-12
-last_used: 2026-08-14
-hit_count: 1
+last_used: 2026-08-16
+hit_count: 2
 source: create-p:batch-send-rhythm-and-filter-00-master
 severity: P1
 ---
@@ -35,3 +35,28 @@ severity: P1
 3. **框架能力假设无仓库先例**。写 Spring Data JDBC `@Query` 返回 DTO 投影前，先 grep 本仓库全部 `@Query` 的返回类型——实测只有实体、标量、`List<String>` 三类，**零个 DTO 投影**。通行做法 ≠ 本仓库已验证。这类假设必须标注为「执行前先 spike」并给出有先例的降级方案。
 
 关联：[[K-batch-task-config-implementation-evidence]]（绿测不能证明新计划已落地）、[[K-dom-stub-tests-hide-dangling-refs]]、[[K-ui-removal-retires-obsolete-contract-tests]]、[[K-entity-field-default-for-test-constructors]]
+
+---
+
+## 2026-08-16 更正（create-p:task-records-refactor-main）：陷阱 #3 的举例已过期
+
+上文陷阱 #3 写「写 Spring Data JDBC `@Query` 返回 DTO 投影前，先 grep 本仓库全部 `@Query` 的返回类型——实测只有实体、标量、`List<String>` 三类，**零个 DTO 投影**」。
+
+**该举例在 2026-08-16 已不成立。** grep 回执：
+
+```
+$ grep -rn -A8 "@Query(" src/main/kotlin --include=*.kt | grep -E "fun .*: (List<)?[A-Z][A-Za-z]+" \
+    | grep -vE ": (List<)?(String|Long|Int|Boolean|Double)"
+mail/repository/InboundMailProcessingRepository.kt:79    fun countGroupedByReasonType(): List<ReasonTypeCount>
+mail/repository/InboundMailProcessingRepository.kt:157   fun findLastReceivedAtPerAccount(): List<SenderAccountLastReceived>
+mail/repository/InboundMailTagRepository.kt:40           fun countQaTagsGroupedByRule(): List<QaTagCount>
+mail/repository/InboundMailTagRepository.kt:63           fun countCustomTagsGroupedByLabel(): List<CustomTagCount>
+task/repository/TaskExecutionRepository.kt:66            fun findLastStartedAtByBatchConfigIds(...): List<BatchConfigLastExecution>
+campaign/repository/ExpertContactRepository.kt:122       fun countBindingsByAccount(): List<AccountBindingCount>
+```
+
+**6 个 DTO 投影先例**（写法：SELECT 列别名与 DTO 属性名对齐）。因此新计划里的列投影**无需再 spike**。
+
+**陷阱 #3 的规则本身仍然成立**（"通行做法 ≠ 本仓库已验证，框架能力假设须先查先例"），失效的只是它举的那个例子。这条更正本身正是该规则的一次应用：**知识条目里的具体计数与全称判断也会过期，Phase 0 载入后必须重新 grep 验证，不能直接引用。**
+
+反向的新例（2026-08-16 实测，尚未证伪）：`@Modifying` + `@Query` 在本仓库**只有 UPDATE 先例**（`TaskExecutionRepository.updateProgressCounts`、`TaskProgressLogRepository.rebindPendingExecutionId`），**DELETE 零先例** —— 见 [[K-modifying-delete-precedent]]（P3 执行时补 spike 结论）。

@@ -2,8 +2,8 @@
 id: K-frontend-cache-key-triad
 domain: frontend
 created: 2026-08-13
-last_used: 2026-08-14
-hit_count: 4
+last_used: 2026-08-16
+hit_count: 5
 source: create-p:v6-topnav-glass-navy-restyle
 severity: P1
 ---

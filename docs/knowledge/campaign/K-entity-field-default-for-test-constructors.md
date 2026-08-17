@@ -2,8 +2,8 @@
 id: K-entity-field-default-for-test-constructors
 domain: campaign
 created: 2026-08-12
-last_used: 2026-08-12
-hit_count: 0
+last_used: 2026-08-16
+hit_count: 1
 source: create-p:batch-send-rhythm-01-rounds-per-run
 severity: P2
 ---

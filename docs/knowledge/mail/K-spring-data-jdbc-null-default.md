@@ -2,8 +2,8 @@
 id: K-spring-data-jdbc-null-default
 domain: mail
 created: 2026-08-12
-last_used: 2026-08-14
-hit_count: 1
+last_used: 2026-08-16
+hit_count: 2
 source: create-p:unsubscribe-token-created-at-null
 severity: P1
 ---

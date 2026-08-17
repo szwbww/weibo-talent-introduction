@@ -2,8 +2,8 @@
 id: K-contact-list-dual-path-field-parity
 domain: frontend
 created: 2026-08-10
-last_used: 2026-08-14
-hit_count: 1
+last_used: 2026-08-16
+hit_count: 2
 source: create-p:sender-binding-05-frontend-visibility
 severity: P1
 ---

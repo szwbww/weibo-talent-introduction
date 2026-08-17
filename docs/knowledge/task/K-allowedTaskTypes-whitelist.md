@@ -2,8 +2,8 @@
 id: K-allowedTaskTypes-whitelist
 domain: task
 created: 2026-07-07
-last_used: 2026-07-07
-hit_count: 3
+last_used: 2026-08-16
+hit_count: 4
 source: create-p:enrichment-improvement-v2
 ---
 

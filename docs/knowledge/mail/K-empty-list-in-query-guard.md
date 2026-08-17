@@ -2,8 +2,8 @@
 id: K-empty-list-in-query-guard
 domain: mail
 created: 2026-07-02
-last_used: 2026-07-18
-hit_count: 2
+last_used: 2026-08-16
+hit_count: 3
 source: fix-v:ai-training-redesign:fix-1
 severity: P1
 ---
