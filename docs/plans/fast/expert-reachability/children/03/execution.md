@@ -149,3 +149,57 @@ sync 抛异常时 `suppress()` 仍返回 true 且记录已保存（I-3-5）；�
   `docs/plans/fast/expert-reachability/ledger.md`（控制器既有改动，与本实现无关，提交时剔除）。
 - 计划身份与工作树身份在开始与结束时一致（SHA-256 `34f60195...`；branch `fast/expert-reachability`）。
 - 未执行 `mvn clean package`（brief 必跑命令清单不含构建命令）。
+## Epoch 2（恢复执行，amend A1 后） — 结果: READY_FOR_VERIFICATION
+
+- 执行者: Reachability03ImplementerE2
+- 执行日期: 2026-08-17
+- 基线: 工作树 HEAD `dd94a8d`（docs-only）；产品代码 = child 02 code head `5396782`；8 个 epoch-1 文件改动原样保留。
+- **A1 修复（第 9 个授权文件）**：`src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`
+  `EXCLUDED_NOISE_SITES` 两条 `ExpertIndexController.kt` pin 行号 90→94、431→483（context 子串未动；
+  已核对修改后控制器实际行号 :94 `operatorStatus = contact?.operatorStatus ...`、:483 `operatorStatus = operatorStatus ?: ...`）。
+  仅行号同步，未触碰该 guard 任何断言语义。
+
+### 保留工作复核结论
+
+逐文件审阅 epoch-1 的 8 个文件 diff 与两个新文件全文，与计划 T1/T3/T4/T5/T6/T7 逐条一致：
+
+- T1 `syncReachabilityBatch`：对照 `syncOperatorStatusBatch` 复制的四点差异齐备（层级 CANDIDATE+APPLICATION、
+  字段 reachability、null → remove script、双分支不写 updatedAt）；`resolveOrcidToDocIds` 直接复用；
+  skipped 统计（未命中 `_id`）与 `_bulk` ndjson 计数与源方法同构。
+- T3 `ExpertReachabilitySyncService`：`syncAll()` 首行 `checkReachabilityMapping()` fail-fast（I-3-6）；
+  判定集合装配与 `OperatorStatusReconcileService` 同款；`scrollExperts(CANDIDATE, 500)` 恰 1 处驱动（I-3-3）；
+  `map` 非 `mapNotNull`（null 值仍下发 remove）；逐批 `progressStore.update` + `isCancelled` 支持取消。
+- T4 端点：`tryStartWithToken` + 409 + `runAndRecordWithResult(onStarted=bindExecutionId)` + `catch IllegalStateException` → 400
+  + `finally clearExecutionContext` 完整模式；构造参数尾部可空默认（既有 9 位置参数测试不受影响）。
+- T5 增量：`EmailSuppressionService.suppress()` 新增成功后调 `markBlockedByEmail`（私有方法 try/catch 吞异常）；
+  `BounceCollectionService` HARD 分支 `markBlockedByContact` try/catch 吞异常；两处均为 fail-open（I-3-5）。
+- T6 定时：`MailAutomationScheduler` 新增 `reachability-sync` cron（默认 `-` 禁用），包 `runAndRecordWithResult`。
+- T7 测试：`ExpertReachabilitySyncServiceTest` 10 用例、`EmailSuppressionServiceTest` +4 用例，
+  断言覆盖 I-3-1/2/6、IP-5、硬退集合装配、增量 fail-open、null→remove、层级排除 RAW。
+
+### 验证命令（全部 JDK 11，`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`）
+
+| 命令 | 结果 | 证据 |
+|------|------|------|
+| `mvn test -Dtest=ExpertReachabilitySyncServiceTest` | PASS | exit 0；Tests run: 10, Failures: 0, Errors: 0, Skipped: 0 |
+| `mvn test -Dtest=EmailSuppressionServiceTest` | PASS | exit 0；Tests run: 20, Failures: 0, Errors: 0, Skipped: 0 |
+| `mvn test -Dtest=ExpertIndexControllerTest` | PASS | exit 0；Tests run: 18, Failures: 0, Errors: 0, Skipped: 0 |
+| `mvn test`（全量回归） | **PASS** | exit 0；`Tests run: 2483, Failures: 0, Errors: 0, Skipped: 4`；`BUILD SUCCESS` |
+| `git diff --check` | PASS | exit 0，无空白/换行告警 |
+
+补充：epoch-1 唯一失败 `OperatorStatusWriteSeamGuardTest` 本次通过（`Tests run: 1, Failures: 0, Errors: 0`，全量日志确认）。
+
+### 验收标准核对（epoch 2 复跑）
+
+- I-3-1：`grep -rn '"UNKNOWN"' src/main/kotlin/.../expert/` 零命中；单测断言 null → remove script。
+- I-3-2：`syncReachabilityBatch` 函数体（writer :211-313）`ExpertIndexLevel.RAW` 零命中（文件内 RAW 命中均在其它方法）。
+- I-3-3：sync 服务 `scrollExperts` 恰 1 处；`expertContactRepository` 仅构造参数 + 硬退映射两处。
+- I-3-4：新端点函数体内 `tryStartWithToken|clearExecutionContext` 3 处命中。
+- IP-5：`syncReachabilityBatch` 函数体内 `updatedAt` 零命中。
+- N-1：writer diff 纯增量（+103/-0），`syncOperatorStatusBatch` / `resolveOrcidToDocIds` 零改动行。
+- 回归：全量 2483/0/0/4 BUILD SUCCESS。
+
+### 提交
+
+- 单次本地提交 `feat(fast-p): implement 03`，内容恰为 9 个授权文件（8 个 epoch-1 文件 + guard 行号修正）；
+  `docs/plans/fast/` 报告/账本未纳入（证据由控制器另行提交）。未 push / merge / rebase。
