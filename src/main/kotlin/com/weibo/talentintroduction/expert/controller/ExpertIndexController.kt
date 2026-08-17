@@ -450,7 +450,8 @@ data class ExpertIndexResponse(
     val disciplineCategory: String? = null,
     val institution: String? = null,
     val worksCount: Int? = null,
-    val enrichedAt: String? = null
+    val enrichedAt: String? = null,
+    val reachability: String? = null
 ) {
     companion object {
         fun from(
@@ -496,7 +497,8 @@ data class ExpertIndexResponse(
                 disciplineCategory = expert.disciplineCategory,
                 institution = expert.institution,
                 worksCount = expert.worksCount,
-                enrichedAt = expert.enrichedAt
+                enrichedAt = expert.enrichedAt,
+                reachability = expert.reachability
             )
     }
 }

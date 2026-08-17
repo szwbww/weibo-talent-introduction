@@ -54,7 +54,7 @@ class OperatorStatusWriteSeamGuardTest {
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
         NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 94, "operatorStatus = contact?.operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 483, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 484, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正）
         NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 431, "operatorStatus = source.nullableText"),

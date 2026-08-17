@@ -4650,7 +4650,8 @@ async function loadContacts() {
             researchFields: "",
             institution: "",
             worksCount: null,
-            enrichedAt: null
+            enrichedAt: null,
+            reachability: null
         }));
     } else {
         const params = new URLSearchParams();
@@ -4701,7 +4702,8 @@ async function loadContacts() {
             researchFields: e.researchFields || "",
             institution: e.institution || "",
             worksCount: e.worksCount ?? null,
-            enrichedAt: e.enrichedAt || null
+            enrichedAt: e.enrichedAt || null,
+            reachability: e.reachability ?? null
         }));
     }
     } catch (e) {
@@ -4746,6 +4748,23 @@ function renderContactListItems() {
         return;
     }
 
+    // T3 (I-4-1/I-4-2/I-4-3): 可达性档位映射 —— 只映射已落库 contact.reachability，
+    // 禁止在前端依据其他学术字段重算档位。
+    // 定义在函数体内：Node 测试以「函数」为单位抽取源码到 vm 沙箱执行，顶层常量/函数
+    // 引用会触发 ReferenceError（详见 child 04 execution.md 偏差说明）。
+    const reachabilityMeta = {
+        HIGH:                  { label: "可达 高",       cls: "reach-high" },
+        LOW:                   { label: "可达 低",       cls: "reach-low" },
+        BLOCKED_UNSUBSCRIBED:  { label: "已退订 · 停发", cls: "reach-blocked" },
+        BLOCKED_BOUNCED:       { label: "邮箱失效 · 停发", cls: "reach-blocked" }
+    };
+    const emailSourceLabel = (v) =>
+        v === "PAPER_FULLTEXT" ? "论文通讯邮箱"
+        : v === "ORCID_PUBLIC" ? "ORCID 公开邮箱"
+        : (v || "");
+    const domainOf = (email) => (email || "").split("@")[1] || "";
+    const isBlockedReach = (v) => typeof v === "string" && v.indexOf("BLOCKED_") === 0;
+
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.operatorStatus
             ? operatorStatusLabels[contact.operatorStatus] || contact.operatorStatus
@@ -4763,6 +4782,15 @@ function renderContactListItems() {
         const enrichedBadge = contact.enrichedAt
             ? `<span class="academic-badge academic-enriched" title="数据已补充 ${escapeHtml(contact.enrichedAt)}">已补充</span>`
             : "";
+        const reachMeta = reachabilityMeta[contact.reachability] || { label: "可达 未知", cls: "reach-unknown" };
+        const reachTitle = isBlockedReach(contact.reachability)
+            ? (contact.reachability === "BLOCKED_UNSUBSCRIBED"
+                ? "该专家已退订，不再发送"
+                : "该邮箱曾硬退（收件人不存在），不再发送")
+            : reachMeta.cls === "reach-unknown"
+                ? "缺少邮箱来源信息，无法判定可达性"
+                : `邮箱来源 ${emailSourceLabel(contact.emailSource)} · 域名 ${domainOf(contact.email)}`;
+        const reachBadge = `<span class="reach-badge ${reachMeta.cls}" title="${escapeHtml(reachTitle)}">${reachMeta.label}</span>`;
         const bindingText = `<span>账号：${escapeHtml(contact.boundSenderAccountCode || "未绑定")}</span>`;
         const senderChangedTag = contact.senderAccountChanged
             ? `<span class="expert-row-tags"><span class="expert-tag tag-sender-changed">发送账号已变更</span></span>`
@@ -4774,7 +4802,7 @@ function renderContactListItems() {
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}" ${hoverInfo ? `title="${escapeHtml(hoverInfo)}"` : ""}>
             <label class="expert-checkbox" onclick="event.stopPropagation()">
-                <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${!contact.contactId ? 'disabled' : ''}>
+                <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${(!contact.contactId || isBlockedReach(contact.reachability)) ? 'disabled' : ''}>
             </label>
             <div class="expert-content-wrapper">
                 <div class="expert-row-main">
@@ -4792,7 +4820,7 @@ function renderContactListItems() {
                 <div class="expert-row-sub">
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
                     ${bindingText}
-                    ${hIndexBadge}${enrichedBadge}
+                    ${reachBadge}${hIndexBadge}${enrichedBadge}
                     ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
                     ${senderChangedTag}
                 </div>` : ""}
