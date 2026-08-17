@@ -191,8 +191,9 @@ null value 走 remove 分支、层级只含 CANDIDATE+APPLICATION、增量方法
 | 6 | `src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt` | T6 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertReachabilitySyncServiceTest.kt` | 新增（T7） |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/EmailSuppressionServiceTest.kt` | 补增量调用断言 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **修正记录 A1（授权）：** `EXCLUDED_NOISE_SITES` 中 `ExpertIndexController.kt` 两条 pin 行号 90→94、431→483（context 不变），遵该 guard 自带维护规程（`:130`「排除名单失效请同步更新 EXCLUDED_NOISE_SITES 的 path/line/context」）与同仓先例 `bdf853c`「A5 授权行号修正」 |
 
-文件数 8 ≤ 10。子系统 2（expert 写入/同步 / mail 增量挂载）。新增 ES 字段 0（计划 02 已加）。
+文件数 9 ≤ 10。子系统 2（expert 写入/同步 / mail 增量挂载）。新增 ES 字段 0（计划 02 已加）。
 
 ## 验证命令
 
@@ -253,3 +254,16 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 操作步骤: 1) 专家列表按「更新时间」排序，记录前 10 位。2) 触发一次 `POST /api/experts/backfill-operator-status`（若 A-1 前该端点可用）。3) 再次按更新时间排序对比。
 - 预期结果: 回填可达性**没有**把全部专家的更新时间刷成同一时刻；排序结果与回填前基本一致（仅因期间真实业务变更而不同）。
 - 覆盖: IP-5 / N-1 / N-4
+
+## 修正记录
+
+### A1（2026-08-16，fast-p 运行期）授权第 9 个文件：guard 测试行号 pin 同步
+
+- **决策方**：需求方（fast-p 运行期授权，指令「继续」）。
+- **触发证据**：T4 对 `ExpertIndexController.kt` 的授权改动（import + 构造参数 + 端点体）
+  使全文件行号整体下移；`OperatorStatusWriteSeamGuardTest.EXCLUDED_NOISE_SITES` 对该文件的两条
+  pin（`:90` `operatorStatus = contact?.operatorStatus`、`:431` `operatorStatus = operatorStatus ?: expert.operatorStatus`）
+  变为过期 pin，guard 自检（`staleExclusions` 断言）必然失败，且**任何** T4 实现都无法避免该行号漂移。
+  该 guard 自带维护规程（`:130`「排除名单失效请同步更新 EXCLUDED_NOISE_SITES 的 path/line/context」）
+  与同仓先例（`bdf853c`「A5 授权行号修正」）都指向同一种确定性修正：仅更新行号 90→94、431→483，context 不变。
+- **影响**：变更文件清单新增第 9 项 `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`（仅行号 pin 同步，不触碰该 guard 的任何断言语义）。文件数 8→9，仍 ≤10。
