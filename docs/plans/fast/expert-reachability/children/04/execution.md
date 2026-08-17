@@ -162,3 +162,49 @@ context 不变，白名单闭包与断言语义零变化），或提出替代方
   故按计划忠实实现；如需完整展示邮箱来源需另行授权（不属本计划 4 文件可完成范围）。
 - 未 review 后续子计划（05/06）；未 push / merge / rebase / amend；未执行 `mvn clean package`
   （brief 必跑命令清单不含构建命令）。
+
+---
+
+# Epoch 2 执行记录（A2 授权后 resume，2026-08-17）
+
+- Resume 依据：brief.md（epoch 2, amended）；amendment A2（ledger 已由控制器记录于 9e92424/9ced588）。
+- 执行者：Reachability04ImplementerE2
+- **结果: READY_FOR_VERIFICATION**
+- 实现提交：`8530af4 feat(fast-p): implement 04`（5 个授权文件一次性提交；docs/plans/fast/ 报告文件未纳入，工作区提交后干净）。
+
+## 已完成
+
+1. **复核 epoch-1 保留改动**：逐文件审阅 `git diff`（ExpertIndexController.kt T1、app.js T2/T3/T4、
+   styles.css T5、ExpertIndexControllerTest.kt T1 测试），与计划 T1-T5、S-1/S-2 契约一致；T3 函数体内
+   放置的偏差（Node `extractFn` vm 沙箱限制）经确认成立，未回移。
+2. **A2 守卫 pin 修正**（第 5 个授权文件）：`OperatorStatusWriteSeamGuardTest.kt` 的
+   `EXCLUDED_NOISE_SITES` 中 ExpertIndexController.kt 噪声项行号 **483→484**（context 子串
+   `operatorStatus = operatorStatus ?: expert.operatorStatus` 不变；:94 pin 未动；守卫断言语义零变化）。
+   已用 grep 实证修改后钉死点在 ExpertIndexController.kt 的实际行号 = 484。
+3. 提交前工作区仅含 5 个授权文件改动，无越界。
+
+## 验证命令（全部以 JDK 11 实际执行）
+
+| 命令 | 结果 | 证据 |
+|------|------|------|
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `JAVA_HOME=...zulu-11... mvn test -Dtest=ExpertIndexControllerTest` | PASS | exit 0，BUILD SUCCESS；Tests run: 19, Failures: 0, Errors: 0（含内嵌 Node 套件 584 pass / 0 fail） |
+| `JAVA_HOME=...zulu-11... mvn test`（全量回归） | PASS | exit 0，BUILD SUCCESS；**Tests run: 2484, Failures: 0, Errors: 0, Skipped: 4** |
+| `git diff --check` | PASS | exit 0，无空白/换行告警 |
+
+全量回归 = 基线 2483 + 本计划新增 1 个测试用例 = 2484；epoch-1 唯一失败的
+OperatorStatusWriteSeamGuardTest 经 A2 pin 同步后转绿。
+
+## 验收标准核对（epoch 1 已逐项达标，epoch 2 复核未变）
+
+- I-4-1：`renderContactListItems` 内 `emailSource` 仅用于 title 拼装；档位唯一依据
+  `reachabilityMeta[contact.reachability]` 映射。
+- I-4-2：默认分支 `reach-unknown`；无 `reachability || "LOW"` / `?? "LOW"` 兜底。
+- I-4-3：`已退订 · 停发` / `邮箱失效 · 停发` 两条文案分离（grep ≥ 2）。
+- S-1：styles.css 新增 41 行与计划契约代码块逐字一致；受保护规则块零改动行。
+- S-2：复选框条件取并集 `(!contact.contactId || isBlockedReach(contact.reachability))`；无行级置灰/透明度/删除线。
+- N-2：`hIndexBadge` / `enrichedBadge` / `tagsHtml` / `bindingText` / `senderChangedTag` 定义行零改动。
+
+## 偏差
+
+无新增偏差。保留 epoch-1 记录的唯一偏差（T3 helper 置于函数体内，A2 裁决确认接受）。
