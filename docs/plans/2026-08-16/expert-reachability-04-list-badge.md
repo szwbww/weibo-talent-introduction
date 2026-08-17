@@ -263,8 +263,9 @@ BLOCKED 两档分别为 `该专家已退订，不再发送` 与 `该邮箱曾硬
 | 2 | `src/main/resources/static/app.js` | T2/T3/T4 |
 | 3 | `src/main/resources/static/styles.css` | T5 |
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt` | 补响应字段断言 |
+| 5 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **修正记录 A2（授权）：** `EXCLUDED_NOISE_SITES` 中 `ExpertIndexController.kt` 的 pin 行号 483→484（context 不变；`:94` pin 不受影响），遵该 guard 自带维护规程（`:130`）与 A1 同机制 |
 
-文件数 4 ≤ 10。子系统 2（后端响应 / 前端）。新增 ES 字段 0。
+文件数 5 ≤ 10。子系统 2（后端响应 / 前端）。新增 ES 字段 0。
 
 ## 验证命令
 
@@ -316,3 +317,16 @@ git diff --check
 - 操作步骤: 在列表使用「需人工介入」或任一联系人状态筛选（触发 MySQL 数据路径）。
 - 预期结果: 列表正常渲染；该路径下全部行显示灰色 `可达 未知`（该路径无 ES 学术数据，属预期）；控制台无 `undefined` 相关报错。
 - 覆盖: 现状审计「loadContacts 两条数据路径」
+
+## 修正记录
+
+### A2（2026-08-16，fast-p 运行期）授权第 5 个文件：guard 测试行号 pin 同步
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A2」）。
+- **触发证据**：T1 对 `ExpertIndexResponse` 追加 `reachability` 字段使 `ExpertIndexController.kt` 全文件行号 +1，
+  `OperatorStatusWriteSeamGuardTest.EXCLUDED_NOISE_SITES` 对该文件的 pin `:483` 变为过期（实际 `:484`），
+  guard 自检（`staleExclusions` 断言）必然失败，且**任何** T1 实现都无法避免该漂移（字段须紧随 `enrichedAt` 声明，
+  不能在 from() 之后插入）。`:94` pin 在字段声明之前，不受影响。
+- **影响**：变更文件清单新增第 5 项 `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`
+  （仅行号 483→484，context 不变，零断言语义变更）。文件数 4→5，仍 ≤10。
+  同机制适用于后续任何编辑 `ExpertIndexController.kt` 的子计划（预计计划 05 仍需一次 pin 同步）。
