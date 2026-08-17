@@ -1,11 +1,15 @@
-# Fast-P Child Brief — 06
+# Fast-P Child Brief — 06 (epoch 1, amended mid-run)
 
 - Child: 06
 - Plan: docs/plans/2026-08-16/expert-reachability-06-batch-config.md
-- Plan identity: commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b
+- Plan identity: commit:fb184c4510964449e15928e432ccecc07c794c77  (amended per ledger amendment A4, human-approved)
 - Depends on: 05
-- Base: child 05 terminal Code head (set at dispatch time)
+- Base: a591cb7972bd7838cead435a496f90e095817bc1 (child 05 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
+
+## Mid-run amendment A4
+
+Amendment A4 (approved) authorizes the 9th file: src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt — apply EXACTLY 3 additive lines: `BatchExecutionSnapshot.reachabilityFilter: String? = null` (defaulted), passthrough in `BatchSendTaskConfig.toExecutionSnapshot()`, passthrough in `RecipientScope.fromSnapshot()`. This is required for T6 (resolveScope wiring): `resolveScope(snapshot)` at ManualInitialOutreachService.kt:427 builds RecipientScope only via `fromSnapshot` (BatchExecutionModels.kt:134); without the snapshot carrier the config value dies at the Jackson/snapshot boundary and T6 is a silent no-op. Same pattern as the existing gateFilterEnabled snapshot carrier (BatchExecutionSnapshot:22, p4a precedent). No new field semantics, no DB/ES changes.
 
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/expert-reachability-00-execution-order.md)
 
@@ -19,7 +23,7 @@
 8. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement 06`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the implementation commit; the controller commits evidence separately.
 9. Do not repair unrelated behavior. Skip formatters/linters and project-wide suites beyond the required commands.
 
-## Authorized files (8; modify nothing else)
+## Authorized files (9; modify nothing else)
 
 1. src/main/resources/db/migration/V100__add_reachability_filter_to_batch_send_task_config.sql (NEW, T1)
 2. src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt (T2)
@@ -29,6 +33,7 @@
 6. src/main/resources/static/app.js (T7)
 7. src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigReachabilityTest.kt (NEW, T8)
 8. src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt (T8 addition)
+9. src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt (A4: 3 additive lines — snapshot field + toExecutionSnapshot passthrough + fromSnapshot passthrough)
 
 ## Required commands (run all; from plan 验证命令 + master plan 验证命令)
 
