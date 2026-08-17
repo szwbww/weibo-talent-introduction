@@ -1,11 +1,17 @@
-# Fast-P Child Brief — 03
+# Fast-P Child Brief — 03 (epoch 2, amended)
 
 - Child: 03
 - Plan: docs/plans/2026-08-16/expert-reachability-03-sync-and-backfill.md
-- Plan identity: commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b
+- Plan identity: commit:2663ecc9c5644fa3df2cb39e2cf723cf583ed2d2  (amended per ledger amendment A1, human-approved)
 - Depends on: 02
-- Base: child 02 terminal Code head (set at dispatch time)
+- Base: 5396782203892adcc0dc69cc5160a2ec9a21fa6e (child 02 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
+
+## Resume state (epoch 1 -> epoch 2)
+
+Epoch 1 implementer (Reachability03Implementer) completed T1-T7 for the 8 authorized files but could NOT commit: full-suite gate failed solely on `OperatorStatusWriteSeamGuardTest` (EXCLUDED_NOISE_SITES stale pins 90/431 vs actual 94/483 in the modified ExpertIndexController.kt). All 8 files are currently modified/untracked and UNCOMMITTED in the worktree; the epoch-1 execution report is at docs/plans/fast/expert-reachability/children/03/execution.md — READ IT FIRST, then review the actual diff (git diff) to confirm the retained work is sound before completing.
+
+Amendment A1 (approved) authorizes the 9th file: src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt — apply ONLY the line-number pin sync 90→94 and 431→483 in EXCLUDED_NOISE_SITES for ExpertIndexController.kt (context strings unchanged, per the guard's own maintenance doc at :130 and same-repo precedent bdf853c). Do not touch any assertion semantics of that guard.
 
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/expert-reachability-00-execution-order.md)
 
@@ -17,7 +23,7 @@
 6. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement 03`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the implementation commit; the controller commits evidence separately.
 7. Do not review or implement later children (04/05/06). Do not repair unrelated behavior. Skip formatters/linters and project-wide suites beyond the required commands.
 
-## Authorized files (8; modify nothing else)
+## Authorized files (9; modify nothing else)
 
 1. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt (T1)
 2. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertReachabilitySyncService.kt (NEW, T3/T5)
@@ -27,6 +33,7 @@
 6. src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt (T6)
 7. src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertReachabilitySyncServiceTest.kt (NEW, T7)
 8. src/test/kotlin/com/weibo/talentintroduction/mail/service/EmailSuppressionServiceTest.kt (T7 addition)
+9. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt (A1: pin 90→94, 431→483, contexts unchanged)
 
 ## Required commands (run all; from plan 验证命令 + master plan 验证命令)
 
