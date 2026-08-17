@@ -4655,7 +4655,8 @@ async function loadContacts() {
             researchFields: "",
             institution: "",
             worksCount: null,
-            enrichedAt: null
+            enrichedAt: null,
+            reachability: null
         }));
     } else {
         const params = new URLSearchParams();
@@ -4672,6 +4673,7 @@ async function loadContacts() {
         const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
         const citationMin = $("#expertCitationMinFilter")?.value || "";
         const recentYears = $("#expertRecentYearsFilter")?.value || "";
+        const reachability = $("#expertReachabilityFilter")?.value || "";
         const hasFieldEl = $("#expertHasFieldFilter");
         const hasField = hasFieldEl?.selectedOptions
             ? Array.from(hasFieldEl.selectedOptions).map((o) => o.value)
@@ -4679,6 +4681,7 @@ async function loadContacts() {
         if (hIndexMin) params.set("hIndexMin", hIndexMin);
         if (citationMin) params.set("citationCountMin", citationMin);
         if (recentYears) params.set("recentYears", recentYears);
+        if (reachability) params.set("reachability", reachability);
         hasField.forEach((f) => params.append("hasField", f));
         const data = await api(`/api/experts?${params}`);
         const rawExperts = data.experts || data;
@@ -4706,7 +4709,8 @@ async function loadContacts() {
             researchFields: e.researchFields || "",
             institution: e.institution || "",
             worksCount: e.worksCount ?? null,
-            enrichedAt: e.enrichedAt || null
+            enrichedAt: e.enrichedAt || null,
+            reachability: e.reachability ?? null
         }));
     }
     } catch (e) {
@@ -4751,6 +4755,23 @@ function renderContactListItems() {
         return;
     }
 
+    // T3 (I-4-1/I-4-2/I-4-3): 可达性档位映射 —— 只映射已落库 contact.reachability，
+    // 禁止在前端依据其他学术字段重算档位。
+    // 定义在函数体内：Node 测试以「函数」为单位抽取源码到 vm 沙箱执行，顶层常量/函数
+    // 引用会触发 ReferenceError（详见 child 04 execution.md 偏差说明）。
+    const reachabilityMeta = {
+        HIGH:                  { label: "可达 高",       cls: "reach-high" },
+        LOW:                   { label: "可达 低",       cls: "reach-low" },
+        BLOCKED_UNSUBSCRIBED:  { label: "已退订 · 停发", cls: "reach-blocked" },
+        BLOCKED_BOUNCED:       { label: "邮箱失效 · 停发", cls: "reach-blocked" }
+    };
+    const emailSourceLabel = (v) =>
+        v === "PAPER_FULLTEXT" ? "论文通讯邮箱"
+        : v === "ORCID_PUBLIC" ? "ORCID 公开邮箱"
+        : (v || "");
+    const domainOf = (email) => (email || "").split("@")[1] || "";
+    const isBlockedReach = (v) => typeof v === "string" && v.indexOf("BLOCKED_") === 0;
+
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.operatorStatus
             ? operatorStatusLabels[contact.operatorStatus] || contact.operatorStatus
@@ -4768,6 +4789,15 @@ function renderContactListItems() {
         const enrichedBadge = contact.enrichedAt
             ? `<span class="academic-badge academic-enriched" title="数据已补充 ${escapeHtml(contact.enrichedAt)}">已补充</span>`
             : "";
+        const reachMeta = reachabilityMeta[contact.reachability] || { label: "可达 未知", cls: "reach-unknown" };
+        const reachTitle = isBlockedReach(contact.reachability)
+            ? (contact.reachability === "BLOCKED_UNSUBSCRIBED"
+                ? "该专家已退订，不再发送"
+                : "该邮箱曾硬退（收件人不存在），不再发送")
+            : reachMeta.cls === "reach-unknown"
+                ? "缺少邮箱来源信息，无法判定可达性"
+                : `邮箱来源 ${emailSourceLabel(contact.emailSource)} · 域名 ${domainOf(contact.email)}`;
+        const reachBadge = `<span class="reach-badge ${reachMeta.cls}" title="${escapeHtml(reachTitle)}">${reachMeta.label}</span>`;
         const bindingText = `<span>账号：${escapeHtml(contact.boundSenderAccountCode || "未绑定")}</span>`;
         const senderChangedTag = contact.senderAccountChanged
             ? `<span class="expert-row-tags"><span class="expert-tag tag-sender-changed">发送账号已变更</span></span>`
@@ -4779,7 +4809,7 @@ function renderContactListItems() {
         return `
         <div class="list-item expert-list-item ${needsAttentionClass} ${state.selectedExpertOrcid === contact.orcidId ? "active" : ""}" data-action="select-expert" data-orcid="${escapeHtml(contact.orcidId)}" data-contact-id="${contact.contactId || ""}" ${hoverInfo ? `title="${escapeHtml(hoverInfo)}"` : ""}>
             <label class="expert-checkbox" onclick="event.stopPropagation()">
-                <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${!contact.contactId ? 'disabled' : ''}>
+                <input type="checkbox" class="expert-select-cb" data-contact-id="${contact.contactId || ""}" ${(!contact.contactId || isBlockedReach(contact.reachability)) ? 'disabled' : ''}>
             </label>
             <div class="expert-content-wrapper">
                 <div class="expert-row-main">
@@ -4797,7 +4827,7 @@ function renderContactListItems() {
                 <div class="expert-row-sub">
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
                     ${bindingText}
-                    ${hIndexBadge}${enrichedBadge}
+                    ${reachBadge}${hIndexBadge}${enrichedBadge}
                     ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
                     ${senderChangedTag}
                 </div>` : ""}
@@ -11553,6 +11583,7 @@ function bindEvents() {
             ($("#expertHIndexMinFilter")?.value || "") !== "",
             ($("#expertCitationMinFilter")?.value || "") !== "",
             ($("#expertRecentYearsFilter")?.value || "") !== "",
+            ($("#expertReachabilityFilter")?.value || "") !== "",
             ($("#expertHasFieldFilter")?.selectedOptions?.length || 0) > 0
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
@@ -11567,7 +11598,7 @@ function bindEvents() {
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter", "expertDisciplineFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
-        "expertRecentYearsFilter"].forEach((id) => {
+        "expertRecentYearsFilter", "expertReachabilityFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
     ["expertHIndexMinFilter", "expertCitationMinFilter"].forEach((id) => {
@@ -11829,6 +11860,8 @@ function initExpertGateFilter(reloadContactsFromStart) {
         if (citationMin) params.set("citationCountMin", citationMin);
         const recentYears = $("#expertRecentYearsFilter")?.value || "";
         if (recentYears) params.set("recentYears", recentYears);
+        const reachability = $("#expertReachabilityFilter")?.value || "";
+        if (reachability) params.set("reachability", reachability);
         return params;
     }
 
@@ -13558,6 +13591,17 @@ function renderBatchConfigTable() {
     tbody.innerHTML = configs.map(function(c) { return renderBatchConfigRow(c); }).join("");
 }
 
+/* 可达性过滤档位文案（与配置编辑器 select 的 option 文案同源；含 API 可写但 UI 未列出的档位）。 */
+var BATCH_REACHABILITY_LABELS = {
+    "EXCLUDE_BLOCKED": "排除已失效",
+    "HIGH_ONLY": "仅高可达",
+    "UNKNOWN_ONLY": "仅未知",
+    "BLOCKED_ONLY": "仅已失效"
+};
+function batchReachabilityFilterLabel(v) {
+    return BATCH_REACHABILITY_LABELS[v] || (v ? String(v) : "不过滤");
+}
+
 /* S4b-2 列表 pill 三态。⚠️ 列表行渲染不发 gate-fields 请求（N 行会打 N 次）：
    is-na 退化判定为 c.templateId 为空；蓝 pill 文案为「门禁过滤 · 开」而非「门禁过滤 · N 字段」，
    因为列表拿不到该行的 esFields（有意偏离预览稿，见 P4b T4b-5）。 */
@@ -13594,6 +13638,11 @@ function renderBatchConfigRow(c) {
     // S4b-2：门禁 pill 恒输出一行（三态之一），追加在可见行与 <details> 之后；
     // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
     scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
+    // S-6-2：可达性过滤 pill，仅在配置了过滤档位时渲染一行，紧随门禁 pill 之后。
+    if (c.reachabilityFilter) {
+        scopeHtml += '<span class="batch-task-scope-line"><span class="batch-gate-pill">可达性 · ' +
+            batchReachabilityFilterLabel(c.reachabilityFilter) + '</span></span>';
+    }
 
     var planHtml = cronToDisplayText(c.cron);
     var statusHtml = renderBatchConfigStatusToggle(c);
@@ -13736,6 +13785,7 @@ function showBatchConfigEditor(config) {
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
     var gateCheckbox = document.getElementById("batchConfigEditorGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(config && config.gateFilterEnabled);
+    setVal("batchConfigEditorReachabilityFilter", config ? (config.reachabilityFilter || "") : "");
     if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
@@ -14467,6 +14517,7 @@ function buildConfigEditorRecipientSnapshot() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         gateFilterEnabled: gateToggleChecked("editor"),
+        reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
     };
 }
@@ -14487,6 +14538,9 @@ function buildManualExecutionSnapshot() {
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
         gateFilterEnabled: values.gateFilterEnabled,
+        // I-2 节点测试契约：空档位与 gateFilterEnabled 同款序列化为缺省（undefined 会被
+        // JSON.stringify 丢弃），仅在有值时才出现在快照里 —— 后端缺省 = null = 不过滤（I-6-5）。
+        reachabilityFilter: values.reachabilityFilter || undefined,
         templateId: values.templateId
     };
 }
@@ -14605,6 +14659,7 @@ async function saveBatchConfigEditor() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         gateFilterEnabled: gateToggleChecked("editor"),
+        reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
     };
 
@@ -14689,6 +14744,7 @@ function deepCloneConfig(c) {
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
         gateFilterEnabled: c.gateFilterEnabled === true,
+        reachabilityFilter: c.reachabilityFilter || "",
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -14710,6 +14766,7 @@ function fillManualFormDefaults() {
         discipline: "",
         operatorStatuses: [],
         gateFilterEnabled: false,
+        reachabilityFilter: "",
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -14733,6 +14790,7 @@ function fillManualFormFromDraft() {
     setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
     setBatchMultiPickerValue("batchManualOperatorStatuses", Array.isArray(d.operatorStatuses) ? d.operatorStatuses : []);
+    setVal("batchManualReachabilityFilter", d.reachabilityFilter || "");
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualRoundsPerRun", d.roundsPerRun);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
@@ -14817,6 +14875,7 @@ function readManualFormValues() {
         discipline: val("batchManualDiscipline") || null,
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
+        reachabilityFilter: val("batchManualReachabilityFilter") || null,
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
@@ -14835,6 +14894,7 @@ function normalizeManualSnapshot(v) {
         discipline: (v.discipline || "").trim() || null,
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
+        reachabilityFilter: (v.reachabilityFilter || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
@@ -14845,6 +14905,7 @@ function normalizeManualSnapshot(v) {
 
 function formatManualDiffValue(key, value) {
     if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
+    if (key === "reachabilityFilter") return batchReachabilityFilterLabel(value);
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
         var template = supportedBatchComposeTemplates().find(function(item) {
@@ -14884,6 +14945,7 @@ function computeManualDiffs() {
         { key: "discipline", label: "学科" },
         { key: "operatorStatuses", label: "专家状态" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
+        { key: "reachabilityFilter", label: "可达性过滤" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -14931,6 +14993,7 @@ function computeAndRenderDiffs() {
         discipline: "manualFieldDiscipline",
         operatorStatuses: "manualFieldOperatorStatus",
         gateFilterEnabled: "manualFieldGateFilter",
+        reachabilityFilter: "manualFieldReachabilityFilter",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -14960,7 +15023,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldReachabilityFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);

@@ -69,7 +69,8 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
         templateId: Long? = null,
-        gateFilterEnabled: Boolean = false
+        gateFilterEnabled: Boolean = false,
+        reachabilityFilter: String? = null
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -86,7 +87,8 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter
     )
 
     private fun updateCmd(
@@ -105,7 +107,8 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
         templateId: Long? = null,
-        gateFilterEnabled: Boolean = false
+        gateFilterEnabled: Boolean = false,
+        reachabilityFilter: String? = null
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -122,7 +125,8 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter
     )
 
     private fun row(
@@ -139,6 +143,7 @@ class BatchSendTaskConfigServiceTest {
         operatorStatusesJson: String = "[]",
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
+        reachabilityFilter: String? = null,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -159,6 +164,7 @@ class BatchSendTaskConfigServiceTest {
         operatorStatusesJson = operatorStatusesJson,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -522,6 +528,7 @@ class BatchSendTaskConfigServiceTest {
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            reachabilityFilter = "HIGH_ONLY",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
@@ -557,6 +564,8 @@ class BatchSendTaskConfigServiceTest {
         // M-2/I2a-6: legacy request's degraded single emailDomain must never rebuild the entity json.
         assertEquals("[]", captor.value.emailDomainsJson)
         assertEquals("HUMANITIES", captor.value.discipline)
+        // I-6-1: 旧 typed API 不传可达性过滤，存量值必须保留（漏写会命中默认值静默重置）。
+        assertEquals("HIGH_ONLY", captor.value.reachabilityFilter)
         assertTrue(captor.value.autoEnabled)
         assertEquals("0 30 8 * * ?", updated.cron)
         verify(eventPublisher).publishEvent(any(BatchSendCronChangedEvent::class.java))

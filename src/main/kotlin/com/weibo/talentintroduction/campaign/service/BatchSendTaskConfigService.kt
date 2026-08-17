@@ -77,6 +77,7 @@ class BatchSendTaskConfigService(
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
+                reachabilityFilter = normalized.reachabilityFilter,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -111,6 +112,7 @@ class BatchSendTaskConfigService(
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
+                reachabilityFilter = normalized.reachabilityFilter,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -193,7 +195,9 @@ class BatchSendTaskConfigService(
                 operatorStatuses = parseOperatorStatuses(existing.operatorStatusesJson),
                 templateId = request.templateId,
                 // I4a-6 (M-2): 旧 typed API 不传门禁开关，必须显式保留存量值（漏写会命中默认值静默重置为 false）。
-                gateFilterEnabled = existing.gateFilterEnabled
+                gateFilterEnabled = existing.gateFilterEnabled,
+                // 同 M-2：旧 typed API 不传可达性过滤，必须显式保留存量值（漏写会命中默认值静默重置）。
+                reachabilityFilter = existing.reachabilityFilter
             )
         )
         return BatchSendConfig(
@@ -290,6 +294,16 @@ class BatchSendTaskConfigService(
         }
         val operatorStatusesJson = objectMapper.writeValueAsString(operatorStatuses)
 
+        // I-6-4: 白名单单一真源是 ExpertSearchService.ALLOWED_REACHABILITY_MODES（计划 05 定义），
+        // 不另写字符串集合，避免与筛选表达式漂移（K-discipline-unclassified-filter-bypasses 同构）。
+        // I-6-5: 空/空白 = 不过滤（null），与「仅高可达/排除已失效」等档位互斥。
+        val reachabilityFilter = fields.reachabilityFilter?.trim()?.takeIf { it.isNotEmpty() }
+        if (reachabilityFilter != null) {
+            require(reachabilityFilter in ExpertSearchService.ALLOWED_REACHABILITY_MODES) {
+                "reachabilityFilter must be one of ${ExpertSearchService.ALLOWED_REACHABILITY_MODES} or empty"
+            }
+        }
+
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
         val regions = normalizeRegions(fields.regions)
@@ -313,7 +327,8 @@ class BatchSendTaskConfigService(
             discipline = discipline,
             operatorStatusesJson = operatorStatusesJson,
             templateId = fields.templateId,
-            gateFilterEnabled = fields.gateFilterEnabled
+            gateFilterEnabled = fields.gateFilterEnabled,
+            reachabilityFilter = reachabilityFilter
         )
     }
 
@@ -446,6 +461,7 @@ class BatchSendTaskConfigService(
             operatorStatuses = parseOperatorStatuses(row.operatorStatusesJson),
             templateId = row.templateId,
             gateFilterEnabled = row.gateFilterEnabled,
+            reachabilityFilter = row.reachabilityFilter,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.autoEnabled, row.cron),
@@ -537,7 +553,8 @@ class BatchSendTaskConfigService(
         val discipline: String?,
         val operatorStatuses: List<String>,
         val templateId: Long?,
-        val gateFilterEnabled: Boolean = false
+        val gateFilterEnabled: Boolean = false,
+        val reachabilityFilter: String? = null
     )
 
     private data class NormalizedConfig(
@@ -557,7 +574,8 @@ class BatchSendTaskConfigService(
         val discipline: String?,
         val operatorStatusesJson: String,
         val templateId: Long?,
-        val gateFilterEnabled: Boolean = false
+        val gateFilterEnabled: Boolean = false,
+        val reachabilityFilter: String? = null
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -576,7 +594,8 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter
     )
 
     private fun BatchSendTaskConfigUpdateCommand.toFields() = ConfigFields(
@@ -595,7 +614,8 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -614,7 +634,8 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        reachabilityFilter = reachabilityFilter
     )
 
     private companion object {

@@ -175,7 +175,8 @@ class ExpertIndexControllerTest {
             country = "US",
             keyword = null,
             employment = null,
-            operatorStatus = null
+            operatorStatus = null,
+            reachability = "HIGH"
         )
         Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null, null, null, null, null))
             .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
@@ -204,6 +205,39 @@ class ExpertIndexControllerTest {
 
         assertEquals(1, response.experts.size)
         assertEquals("REPLIED", response.experts[0].operatorStatus)
+        assertEquals("HIGH", response.experts[0].reachability)
+    }
+
+    @Test
+    fun `listExperts passes through null reachability when profile lacks it`() {
+        val expert = ExpertProfile(
+            orcidId = "orcid-2",
+            email = "test2@example.com",
+            givenNames = "Expert",
+            familyNames = "Two",
+            country = "US",
+            keyword = null,
+            employment = null,
+            operatorStatus = null
+        )
+        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null, null, null, null, null))
+            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
+        Mockito.`when`(contactRepository.findByOrcidIdIn(listOf("orcid-2")))
+            .thenReturn(emptyList())
+
+        val response = controller.listExperts(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = null,
+            region = null
+        )
+
+        assertEquals(1, response.experts.size)
+        assertEquals(null, response.experts[0].reachability)
     }
 
     @Test
