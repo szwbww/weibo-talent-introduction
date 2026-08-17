@@ -20,7 +20,8 @@ data class BatchExecutionSnapshot(
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
-    val oneRoundOnly: Boolean = false
+    val oneRoundOnly: Boolean = false,
+    val reachabilityFilter: String? = null
 )
 
 data class ManualBatchExecutionRequest(
@@ -147,7 +148,8 @@ data class RecipientScope(
                 emailDomains = snapshot.emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
                 // I3a-3：trim、丢空、去重保序；空集合 = 不限。
-                operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+                reachabilityFilter = snapshot.reachabilityFilter
             )
         }
     }
@@ -304,6 +306,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         operatorStatuses = operatorStatuses,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        oneRoundOnly = oneRoundOnly
+        oneRoundOnly = oneRoundOnly,
+        reachabilityFilter = reachabilityFilter
     )
 }

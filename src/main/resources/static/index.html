@@ -1262,6 +1262,15 @@
                             </div>
                             <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
                         </div>
+                        <div class="batch-config-field" id="editorFieldReachabilityFilter">
+                            <span class="batch-config-field-label">可达性过滤</span>
+                            <select id="batchConfigEditorReachabilityFilter" class="bsc-input bsc-select">
+                                <option value="">不过滤</option>
+                                <option value="EXCLUDE_BLOCKED">排除已失效</option>
+                                <option value="HIGH_ONLY">仅高可达</option>
+                            </select>
+                            <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」还会排除数据未补充的专家。</span>
+                        </div>
                     </div>
                 </section>
 
@@ -1458,6 +1467,17 @@
                             <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务。</span>
                         </div>
                         <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field" id="manualFieldReachabilityFilter">
+                        <span class="batch-config-field-label">可达性过滤</span>
+                        <select id="batchManualReachabilityFilter" class="bsc-input bsc-select">
+                            <option value="">不过滤</option>
+                            <option value="EXCLUDE_BLOCKED">排除已失效</option>
+                            <option value="HIGH_ONLY">仅高可达</option>
+                        </select>
+                        <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」还会排除数据未补充的专家。</span>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>

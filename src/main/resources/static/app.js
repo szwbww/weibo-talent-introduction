@@ -13414,6 +13414,17 @@ function renderBatchConfigTable() {
     tbody.innerHTML = configs.map(function(c) { return renderBatchConfigRow(c); }).join("");
 }
 
+/* 可达性过滤档位文案（与配置编辑器 select 的 option 文案同源；含 API 可写但 UI 未列出的档位）。 */
+var BATCH_REACHABILITY_LABELS = {
+    "EXCLUDE_BLOCKED": "排除已失效",
+    "HIGH_ONLY": "仅高可达",
+    "UNKNOWN_ONLY": "仅未知",
+    "BLOCKED_ONLY": "仅已失效"
+};
+function batchReachabilityFilterLabel(v) {
+    return BATCH_REACHABILITY_LABELS[v] || (v ? String(v) : "不过滤");
+}
+
 /* S4b-2 列表 pill 三态。⚠️ 列表行渲染不发 gate-fields 请求（N 行会打 N 次）：
    is-na 退化判定为 c.templateId 为空；蓝 pill 文案为「门禁过滤 · 开」而非「门禁过滤 · N 字段」，
    因为列表拿不到该行的 esFields（有意偏离预览稿，见 P4b T4b-5）。 */
@@ -13440,6 +13451,11 @@ function renderBatchConfigRow(c) {
     // S4b-2：门禁 pill 恒输出一行（三态之一），追加在全部 scopeParts 之后；
     // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
     scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
+    // S-6-2：可达性过滤 pill，仅在配置了过滤档位时渲染一行，紧随门禁 pill 之后。
+    if (c.reachabilityFilter) {
+        scopeHtml += '<span class="batch-task-scope-line"><span class="batch-gate-pill">可达性 · ' +
+            batchReachabilityFilterLabel(c.reachabilityFilter) + '</span></span>';
+    }
 
     var planHtml = cronToDisplayText(c.cron);
     var statusHtml = renderBatchConfigStatusToggle(c);
@@ -13581,6 +13597,7 @@ function showBatchConfigEditor(config) {
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
     var gateCheckbox = document.getElementById("batchConfigEditorGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(config && config.gateFilterEnabled);
+    setVal("batchConfigEditorReachabilityFilter", config ? (config.reachabilityFilter || "") : "");
     if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
@@ -14312,6 +14329,7 @@ function buildConfigEditorRecipientSnapshot() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         gateFilterEnabled: gateToggleChecked("editor"),
+        reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
     };
 }
@@ -14332,6 +14350,9 @@ function buildManualExecutionSnapshot() {
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
         gateFilterEnabled: values.gateFilterEnabled,
+        // I-2 节点测试契约：空档位与 gateFilterEnabled 同款序列化为缺省（undefined 会被
+        // JSON.stringify 丢弃），仅在有值时才出现在快照里 —— 后端缺省 = null = 不过滤（I-6-5）。
+        reachabilityFilter: values.reachabilityFilter || undefined,
         templateId: values.templateId
     };
 }
@@ -14450,6 +14471,7 @@ async function saveBatchConfigEditor() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         gateFilterEnabled: gateToggleChecked("editor"),
+        reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
     };
 
@@ -14534,6 +14556,7 @@ function deepCloneConfig(c) {
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
         gateFilterEnabled: c.gateFilterEnabled === true,
+        reachabilityFilter: c.reachabilityFilter || "",
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -14555,6 +14578,7 @@ function fillManualFormDefaults() {
         discipline: "",
         operatorStatuses: [],
         gateFilterEnabled: false,
+        reachabilityFilter: "",
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -14578,6 +14602,7 @@ function fillManualFormFromDraft() {
     setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
     setBatchMultiPickerValue("batchManualOperatorStatuses", Array.isArray(d.operatorStatuses) ? d.operatorStatuses : []);
+    setVal("batchManualReachabilityFilter", d.reachabilityFilter || "");
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualRoundsPerRun", d.roundsPerRun);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
@@ -14662,6 +14687,7 @@ function readManualFormValues() {
         discipline: val("batchManualDiscipline") || null,
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
+        reachabilityFilter: val("batchManualReachabilityFilter") || null,
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
@@ -14680,6 +14706,7 @@ function normalizeManualSnapshot(v) {
         discipline: (v.discipline || "").trim() || null,
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
+        reachabilityFilter: (v.reachabilityFilter || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
@@ -14690,6 +14717,7 @@ function normalizeManualSnapshot(v) {
 
 function formatManualDiffValue(key, value) {
     if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
+    if (key === "reachabilityFilter") return batchReachabilityFilterLabel(value);
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
         var template = supportedBatchComposeTemplates().find(function(item) {
@@ -14729,6 +14757,7 @@ function computeManualDiffs() {
         { key: "discipline", label: "学科" },
         { key: "operatorStatuses", label: "专家状态" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
+        { key: "reachabilityFilter", label: "可达性过滤" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -14776,6 +14805,7 @@ function computeAndRenderDiffs() {
         discipline: "manualFieldDiscipline",
         operatorStatuses: "manualFieldOperatorStatus",
         gateFilterEnabled: "manualFieldGateFilter",
+        reachabilityFilter: "manualFieldReachabilityFilter",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -14805,7 +14835,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldReachabilityFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
