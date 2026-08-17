@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/expert-reachability/human-review-handoff.md (sha256:053877ad15649ce5cbecd9713e679d063b15f980e5e01138b6b073201647db39)
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Final code head: 59f33864c0cd91f6699f83eabf5fa88e7c1d7839
-- Evidence parent before next commit: 21b64123125798fdf0527c19a7da20cde7cae7a8
-- Previous evidence commit: 21b64123125798fdf0527c19a7da20cde7cae7a8
+- Evidence parent before next commit: b31f46ecebfb4e0e99c54d64263f4c79f9314cbe
+- Previous evidence commit: b31f46ecebfb4e0e99c54d64263f4c79f9314cbe
 - Branch: fast/expert-reachability
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
