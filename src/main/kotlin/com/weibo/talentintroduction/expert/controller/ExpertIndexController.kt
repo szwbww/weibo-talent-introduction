@@ -68,11 +68,12 @@ class ExpertIndexController(
         @RequestParam(required = false) citationCountMin: Int? = null,
         @RequestParam(required = false) recentYears: Int? = null,
         @RequestParam(required = false) hasField: List<String>? = null,
-        @RequestParam(required = false) discipline: String? = null
+        @RequestParam(required = false) discipline: String? = null,
+        @RequestParam(required = false) reachability: String? = null
     ): ExpertListResponse {
         val result = expertSearchService.searchExperts(
             size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
-            hIndexMin, citationCountMin, recentYears, hasField, discipline
+            hIndexMin, citationCountMin, recentYears, hasField, discipline, reachability
         )
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository

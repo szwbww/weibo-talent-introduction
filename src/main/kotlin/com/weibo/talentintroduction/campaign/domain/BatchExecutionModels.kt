@@ -55,7 +55,10 @@ data class RecipientScope(
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
     /** I4a-4: 已解析的门禁 ES 字段（ALLOWED_HAS_FIELDS 交集）；解析只发生在 resolveScope。 */
-    val gateEsFields: List<String> = emptyList()
+    val gateEsFields: List<String> = emptyList(),
+    /** I-5: 可达性筛选档位（HIGH_ONLY / EXCLUDE_BLOCKED / UNKNOWN_ONLY / BLOCKED_ONLY）；
+     * null = 不筛选（I-5-4）。配置接线由计划 06 在 resolveScope 完成。 */
+    val reachabilityFilter: String? = null
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
@@ -64,6 +67,22 @@ data class RecipientScope(
             val matched = operatorStatuses.any {
                 if (it == "NOT_CONTACTED") profile.operatorStatus.isNullOrBlank()
                 else profile.operatorStatus == it
+            }
+            if (!matched) return false
+        }
+        // I-5-3: 与 ES 的 reachabilityFilter 逐档同口径（I-5-1 语义）；
+        // null/空不判定（I-5-4）；非法档位与 ES 侧一致 fail-fast。
+        if (!reachabilityFilter.isNullOrBlank()) {
+            val value = profile.reachability
+            val matched = when (reachabilityFilter) {
+                "HIGH_ONLY" -> value == com.weibo.talentintroduction.expert.domain.ExpertReachability.HIGH.esValue
+                "EXCLUDE_BLOCKED" -> !value.isNullOrBlank() &&
+                    value != com.weibo.talentintroduction.expert.domain.ExpertReachability.BLOCKED_UNSUBSCRIBED.esValue &&
+                    value != com.weibo.talentintroduction.expert.domain.ExpertReachability.BLOCKED_BOUNCED.esValue
+                "UNKNOWN_ONLY" -> value.isNullOrBlank()
+                "BLOCKED_ONLY" -> value == com.weibo.talentintroduction.expert.domain.ExpertReachability.BLOCKED_UNSUBSCRIBED.esValue ||
+                    value == com.weibo.talentintroduction.expert.domain.ExpertReachability.BLOCKED_BOUNCED.esValue
+                else -> throw IllegalArgumentException("Invalid reachability mode: $reachabilityFilter")
             }
             if (!matched) return false
         }

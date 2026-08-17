@@ -1128,7 +1128,8 @@ class ManualInitialOutreachService(
 
     private fun buildMaterialReminderEsFilters(
         config: BatchSendConfig,
-        operatorStatus: String? = null
+        operatorStatus: String? = null,
+        reachabilityFilter: String? = null
     ): List<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>(
             mapOf("term" to mapOf("tags" to "承诺回复材料")),
@@ -1144,6 +1145,8 @@ class ManualInitialOutreachService(
         if (!operatorStatus.isNullOrBlank()) {
             filters.addAll(ExpertSearchService.operatorStatusFilter(operatorStatus))
         }
+        // I-5-1: 委托权威表达式；I-5-4: 空/未指定返回 null，不追加任何 filter。
+        ExpertSearchService.reachabilityFilter(reachabilityFilter)?.let { filters.add(it) }
         return filters
     }
 
@@ -1293,6 +1296,8 @@ class ManualInitialOutreachService(
         // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
         // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
         filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))
+        // I-5-1: 委托权威表达式；I-5-4: 空/未指定返回 null，不追加任何 filter。
+        ExpertSearchService.reachabilityFilter(scope.reachabilityFilter)?.let { filters.add(it) }
         return filters
     }
 

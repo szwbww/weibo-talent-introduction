@@ -549,6 +549,16 @@
                             <option value="10">近 10 年</option>
                         </select>
                     </label>
+                    <label class="toolbar-label">
+                        可达性:
+                        <select id="expertReachabilityFilter">
+                            <option value="">全部</option>
+                            <option value="HIGH_ONLY">仅高可达</option>
+                            <option value="EXCLUDE_BLOCKED">高+低（排除已失效）</option>
+                            <option value="UNKNOWN_ONLY">仅未知</option>
+                            <option value="BLOCKED_ONLY">仅已失效</option>
+                        </select>
+                    </label>
                     <span class="toolbar-label">
                         数据完整度:
                         <span class="tag-select" id="hasFieldTagSelect">

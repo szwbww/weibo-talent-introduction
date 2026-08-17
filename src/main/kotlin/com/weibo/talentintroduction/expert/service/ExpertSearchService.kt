@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertReachability
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
@@ -233,6 +234,48 @@ class ExpertSearchService(
                 )
             )
         }
+
+        /**
+         * I-5: 可达性筛选档位常量（唯一真源，计划 06 的配置校验复用）。
+         * 档位语义见 [reachabilityFilter]。
+         */
+        val ALLOWED_REACHABILITY_MODES = setOf("HIGH_ONLY", "EXCLUDE_BLOCKED", "UNKNOWN_ONLY", "BLOCKED_ONLY")
+
+        /** I-5-1: 已失效档的两个取值，与 [ExpertReachability] 枚举同源（不写死字符串）。 */
+        private val BLOCKED_REACHABILITY_VALUES = listOf(
+            ExpertReachability.BLOCKED_UNSUBSCRIBED.esValue,
+            ExpertReachability.BLOCKED_BOUNCED.esValue
+        )
+
+        /**
+         * I-5-1: 可达性 ES 表达式的**唯一权威**实现。四处构造点一律委托本方法，
+         * 禁止在别处自持 term / terms / must_not exists 表达式。
+         *
+         * I-5-2: UNKNOWN 档 = `must_not exists reachability`（写入侧以字段缺失表达，
+         * 见 ExpertReachability 枚举注释），禁止以 term 查询直接匹配未知档字符串。
+         *
+         * I-5-4: null / 空串返回 null，调用方不得追加任何 filter（沿用 operatorStatusesFilter
+         * 空集合返回 null 的先例）。非法档位 fail-fast（require），GlobalExceptionHandler 映射为 400。
+         */
+        fun reachabilityFilter(mode: String?): Map<String, Any>? {
+            if (mode.isNullOrBlank()) return null
+            require(mode in ALLOWED_REACHABILITY_MODES) { "Invalid reachability mode: $mode" }
+            return when (mode) {
+                "HIGH_ONLY" -> mapOf("term" to mapOf("reachability" to ExpertReachability.HIGH.esValue))
+                "EXCLUDE_BLOCKED" -> mapOf(
+                    "bool" to mapOf(
+                        "must" to listOf(mapOf("exists" to mapOf("field" to "reachability"))),
+                        "must_not" to listOf(mapOf("terms" to mapOf("reachability" to BLOCKED_REACHABILITY_VALUES)))
+                    )
+                )
+                "UNKNOWN_ONLY" -> mapOf(
+                    "bool" to mapOf(
+                        "must_not" to listOf(mapOf("exists" to mapOf("field" to "reachability")))
+                    )
+                )
+                else -> mapOf("terms" to mapOf("reachability" to BLOCKED_REACHABILITY_VALUES))
+            }
+        }
     }
 
     fun searchExperts(
@@ -248,13 +291,15 @@ class ExpertSearchService(
         citationCountMin: Int? = null,
         recentYears: Int? = null,
         hasField: List<String>? = null,
-        discipline: String? = null
+        discipline: String? = null,
+        reachability: String? = null
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
         val filters = buildExpertFilters(
-            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField, discipline
+            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField, discipline,
+            reachability
         )
 
         val query = if (filters.isEmpty()) {
@@ -913,7 +958,8 @@ class ExpertSearchService(
         citationCountMin: Int? = null,
         recentYears: Int? = null,
         hasField: List<String>? = null,
-        discipline: String? = null
+        discipline: String? = null,
+        reachability: String? = null
     ): MutableList<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>()
 
@@ -954,6 +1000,9 @@ class ExpertSearchService(
         if (!discipline.isNullOrBlank()) {
             filters.add(disciplineFilter(discipline))
         }
+
+        // I-5-1: 委托权威表达式；I-5-4: 空/未指定返回 null，不追加任何 filter（N-1）。
+        reachabilityFilter(reachability)?.let { filters.add(it) }
 
         return filters
     }

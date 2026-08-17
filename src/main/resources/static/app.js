@@ -4668,6 +4668,7 @@ async function loadContacts() {
         const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
         const citationMin = $("#expertCitationMinFilter")?.value || "";
         const recentYears = $("#expertRecentYearsFilter")?.value || "";
+        const reachability = $("#expertReachabilityFilter")?.value || "";
         const hasFieldEl = $("#expertHasFieldFilter");
         const hasField = hasFieldEl?.selectedOptions
             ? Array.from(hasFieldEl.selectedOptions).map((o) => o.value)
@@ -4675,6 +4676,7 @@ async function loadContacts() {
         if (hIndexMin) params.set("hIndexMin", hIndexMin);
         if (citationMin) params.set("citationCountMin", citationMin);
         if (recentYears) params.set("recentYears", recentYears);
+        if (reachability) params.set("reachability", reachability);
         hasField.forEach((f) => params.append("hasField", f));
         const data = await api(`/api/experts?${params}`);
         const rawExperts = data.experts || data;
@@ -11446,6 +11448,7 @@ function bindEvents() {
             ($("#expertHIndexMinFilter")?.value || "") !== "",
             ($("#expertCitationMinFilter")?.value || "") !== "",
             ($("#expertRecentYearsFilter")?.value || "") !== "",
+            ($("#expertReachabilityFilter")?.value || "") !== "",
             ($("#expertHasFieldFilter")?.selectedOptions?.length || 0) > 0
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
@@ -11460,7 +11463,7 @@ function bindEvents() {
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter", "expertDisciplineFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
-        "expertRecentYearsFilter"].forEach((id) => {
+        "expertRecentYearsFilter", "expertReachabilityFilter"].forEach((id) => {
         $(`#${id}`).addEventListener("change", reloadContactsFromStart);
     });
     ["expertHIndexMinFilter", "expertCitationMinFilter"].forEach((id) => {
@@ -11712,6 +11715,8 @@ function initExpertGateFilter(reloadContactsFromStart) {
         if (citationMin) params.set("citationCountMin", citationMin);
         const recentYears = $("#expertRecentYearsFilter")?.value || "";
         if (recentYears) params.set("recentYears", recentYears);
+        const reachability = $("#expertReachabilityFilter")?.value || "";
+        if (reachability) params.set("reachability", reachability);
         return params;
     }
 
