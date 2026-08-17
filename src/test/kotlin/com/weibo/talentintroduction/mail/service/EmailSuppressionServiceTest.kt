@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.expert.service.ExpertReachabilitySyncService
 import com.weibo.talentintroduction.mail.domain.EmailSuppression
 import com.weibo.talentintroduction.mail.repository.EmailSuppressionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -14,11 +15,12 @@ import org.springframework.dao.DuplicateKeyException
 
 class EmailSuppressionServiceTest {
     private val repository = Mockito.mock(EmailSuppressionRepository::class.java)
-    private val service = EmailSuppressionService(repository)
+    private val reachabilitySyncService = Mockito.mock(ExpertReachabilitySyncService::class.java)
+    private val service = EmailSuppressionService(repository, reachabilitySyncService)
 
     @BeforeEach
     fun setUp() {
-        Mockito.reset(repository)
+        Mockito.reset(repository, reachabilitySyncService)
     }
 
     @Test
@@ -70,6 +72,53 @@ class EmailSuppressionServiceTest {
         Mockito.verify(repository).save(captureValue(captor, EmailSuppression(email = "", source = "", reason = null)))
         assertEquals(SuppressionSource.INBOUND_REPLY.name, captor.value.source)
         assertEquals(500, captor.value.reason?.length)
+    }
+
+    @Test
+    fun `suppress triggers reachability mark on new suppression`() {
+        Mockito.`when`(repository.existsByEmail("a@x.com")).thenReturn(false)
+        Mockito.`when`(repository.save(Mockito.any(EmailSuppression::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<EmailSuppression>(0).copy(id = 1L)
+        }
+
+        assertTrue(service.suppress("  A@X.com ", SuppressionSource.INBOUND_REPLY, "test"))
+
+        // I-3-5/IP-3: 新增成功后立即增量写 BLOCKED_UNSUBSCRIBED，且传归一化后的邮箱。
+        Mockito.verify(reachabilitySyncService).markBlockedByEmail("a@x.com")
+    }
+
+    @Test
+    fun `suppress swallows reachability sync failure and keeps suppression`() {
+        Mockito.`when`(repository.existsByEmail("a@x.com")).thenReturn(false)
+        Mockito.`when`(repository.save(Mockito.any(EmailSuppression::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<EmailSuppression>(0).copy(id = 1L)
+        }
+        Mockito.`when`(reachabilitySyncService.markBlockedByEmail(anyString()))
+            .thenThrow(RuntimeException("ES unavailable"))
+
+        // I-3-5: ES 写失败不得回传为退订失败（合规风险）；退订仍成功且 MySQL 记录已保存。
+        assertTrue(service.suppress("a@x.com", SuppressionSource.INBOUND_REPLY, "test"))
+        Mockito.verify(repository, Mockito.times(1)).save(Mockito.any(EmailSuppression::class.java))
+        Mockito.verify(reachabilitySyncService).markBlockedByEmail("a@x.com")
+    }
+
+    @Test
+    fun `suppress does not trigger reachability mark when already suppressed`() {
+        Mockito.`when`(repository.existsByEmail("a@x.com")).thenReturn(true)
+
+        assertFalse(service.suppress("a@x.com", SuppressionSource.INBOUND_REPLY, "test"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(EmailSuppression::class.java))
+        Mockito.verify(reachabilitySyncService, Mockito.never()).markBlockedByEmail(anyString())
+    }
+
+    @Test
+    fun `suppress does not trigger reachability mark on concurrent duplicate key`() {
+        Mockito.`when`(repository.existsByEmail("a@x.com")).thenReturn(false)
+        Mockito.`when`(repository.save(Mockito.any(EmailSuppression::class.java)))
+            .thenThrow(DuplicateKeyException("duplicate"))
+
+        assertFalse(service.suppress("a@x.com", SuppressionSource.INBOUND_REPLY, "test"))
+        Mockito.verify(reachabilitySyncService, Mockito.never()).markBlockedByEmail(anyString())
     }
 
     @Test

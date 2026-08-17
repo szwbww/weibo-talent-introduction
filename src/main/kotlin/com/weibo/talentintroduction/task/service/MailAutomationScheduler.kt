@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.service
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
 import com.weibo.talentintroduction.campaign.service.OperatorStatusReconcileService
 import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
+import com.weibo.talentintroduction.expert.service.ExpertReachabilitySyncService
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyService
@@ -20,6 +21,7 @@ class MailAutomationScheduler(
     private val initialOutreachService: InitialOutreachService,
     private val candidateOperatorStatusSyncService: CandidateOperatorStatusSyncService,
     private val operatorStatusReconcileService: OperatorStatusReconcileService,
+    private val expertReachabilitySyncService: ExpertReachabilitySyncService,
     private val taskExecutionService: TaskExecutionService
 ) {
     @Scheduled(cron = "\${talent-introduction.scheduling.auto-reply-all-cron:-}")
@@ -85,6 +87,18 @@ class MailAutomationScheduler(
             "operator-status-reconcile"
         ) {
             operatorStatusReconcileService.reconcile()
+        }
+    }
+
+    @Scheduled(cron = "\${talent-introduction.scheduling.reachability-sync-cron:-}")
+    fun scheduleReachabilitySync() {
+        // 走 runAndRecordWithResult 使 BulkSyncResult 落入 task_execution.result_summary，可在任务面板查看
+        taskExecutionService.runAndRecordWithResult(
+            "EXPERT_REACHABILITY_SYNC",
+            "SCHEDULED",
+            "reachability-sync"
+        ) {
+            expertReachabilitySyncService.syncAll()
         }
     }
 

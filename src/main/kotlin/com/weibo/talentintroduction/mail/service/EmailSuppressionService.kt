@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.expert.service.ExpertReachabilitySyncService
 import com.weibo.talentintroduction.mail.domain.EmailSuppression
 import com.weibo.talentintroduction.mail.repository.EmailSuppressionRepository
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -11,8 +13,10 @@ enum class SuppressionSource { INBOUND_REPLY, ONE_CLICK, MAILTO, MANUAL }
 
 @Service
 class EmailSuppressionService(
-    private val repository: EmailSuppressionRepository
+    private val repository: EmailSuppressionRepository,
+    private val reachabilitySyncService: ExpertReachabilitySyncService
 ) {
+    private val log = LoggerFactory.getLogger(EmailSuppressionService::class.java)
     fun normalize(email: String): String = email.trim().lowercase(Locale.ROOT)
 
     fun isSuppressed(email: String): Boolean {
@@ -34,9 +38,21 @@ class EmailSuppressionService(
                     createdAt = LocalDateTime.now()
                 )
             )
+            // I-3-5/IP-3: 新增成功后立即增量写 reachability=BLOCKED_UNSUBSCRIBED；
+            // ES 写失败不得回传为退订失败（合规风险），只记 warn，下一轮全量扫描会自愈。
+            markBlockedReachability(n)
             true
         } catch (e: DuplicateKeyException) {
             false
+        }
+    }
+
+    /** I-3-5: 增量可达性写入 fail-open——吞掉全部异常，只记 warn 日志。 */
+    private fun markBlockedReachability(normalizedEmail: String) {
+        try {
+            reachabilitySyncService.markBlockedByEmail(normalizedEmail)
+        } catch (e: Exception) {
+            log.warn("Failed to mark reachability BLOCKED_UNSUBSCRIBED for email={}", normalizedEmail, e)
         }
     }
 
