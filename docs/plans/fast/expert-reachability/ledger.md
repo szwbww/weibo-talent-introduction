@@ -2,14 +2,14 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-16/expert-reachability-00-execution-order.md (commit 1c7cf0e4c11c53d1f4d20f28964fce837f70442b)
-- Amendments: A1,A2
+- Amendments: A1,A2,A3
 - Master base: edda3e4e67e8b4511f3c7ca76b09926c56e4f69a
 - Branch: fast/expert-reachability
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-16T22:30:00+08:00
-- Current child: 04
+- Current child: 05
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -40,7 +40,8 @@ Plan family facts (from master plan):
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 02 | docs/plans/2026-08-16/expert-reachability-02-classifier-and-mapping.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | none | 1 | LIGHT_PASS | edda3e4e67e8b4511f3c7ca76b09926c56e4f69a | 5396782203892adcc0dc69cc5160a2ec9a21fa6e | 0 | — | 5396782203892adcc0dc69cc5160a2ec9a21fa6e | c878763b29fcd66066664f820023677152c9ac38 | all four gates PASS, no notes; verify-log in children/02 |
 | 03 | docs/plans/2026-08-16/expert-reachability-03-sync-and-backfill.md | commit:2663ecc9c5644fa3df2cb39e2cf723cf583ed2d2 | 02 | 2 | LIGHT_PASS_WITH_NOTES | 5396782203892adcc0dc69cc5160a2ec9a21fa6e | 111aea17aa434bc5836a9409b451dc72954d62be | 0 | — | 111aea17aa434bc5836a9409b451dc72954d62be | ccaae40638386a4e1ffefc7d57615fbf365e5d78 | epoch 1 PLAN_CONFLICT resolved via A1; RECORD_ONLY O-1 (nullable ctor param style) / O-2 (boundary spans docs commits) |
-| 04 | docs/plans/2026-08-16/expert-reachability-04-list-badge.md | commit:9e92424a44025b65b4c9091e139c28c596901205 | 03 | 2 | PENDING | 111aea17aa434bc5836a9409b451dc72954d62be | — | 0 | — | — | — | epoch 1 PLAN_CONFLICT (guard pin 483 stale vs 484) resolved via amendment A2; 4 files work retained uncommitted |
+| 04 | docs/plans/2026-08-16/expert-reachability-04-list-badge.md | commit:9e92424a44025b65b4c9091e139c28c596901205 | 03 | 2 | LIGHT_PASS_WITH_NOTES | 111aea17aa434bc5836a9409b451dc72954d62be | 8530af46bdf0b6575a607645392e12a2bfbdc3e6 | 0 | — | 8530af46bdf0b6575a607645392e12a2bfbdc3e6 | f0168a140e9068963c1e09b164bfeb38a9d7a80c | epoch 1 PLAN_CONFLICT resolved via A2; RECORD_ONLY O-1 (T3 in-function placement) / O-2 (worktree docs) / O-3 (title emailSource empty, plan-faithful) |
+| 05 | docs/plans/2026-08-16/expert-reachability-05-filter-seams.md | commit:e9badbbd347dd12fdb6a65c6c3a9191763ecaefd | 03 | 2 | PENDING | 8530af46bdf0b6575a607645392e12a2bfbdc3e6 | f5025fcfd2d98d16f55c1cf79d55bf12c24ad4b6 | 0 | — | — | — | epoch 1 PLAN_CONFLICT (3 guard pins stale) resolved via A3; implementation committed f5025fc, guard pin sync pending as fix commit |
 | 03 | docs/plans/2026-08-16/expert-reachability-03-sync-and-backfill.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | 02 | 1 | PENDING | — | — | 0 | — | — | — | — |
 | 04 | docs/plans/2026-08-16/expert-reachability-04-list-badge.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | 03 | 1 | PENDING | — | — | 0 | — | — | — | — |
 | 05 | docs/plans/2026-08-16/expert-reachability-05-filter-seams.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | 03 | 1 | PENDING | — | — | 0 | — | — | — | — |
@@ -52,3 +53,4 @@ Plan family facts (from master plan):
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-16/expert-reachability-03-sync-and-backfill.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | commit:2663ecc9c5644fa3df2cb39e2cf723cf583ed2d2 | 计划 03 验证命令「回归：全量测试通过」vs 变更文件清单（8 文件） | T4 对 ExpertIndexController.kt 的授权改动使 OperatorStatusWriteSeamGuardTest 的 EXCLUDED_NOISE_SITES 行号 pin（90/431）必然过期，任何 T4 实现都无法保绿；按 guard 自带规程（:130）与 bdf853c 先例仅同步行号 90→94、431→483，context 不变 | HUMAN:继续 2026-08-16 |
 | A2 | docs/plans/2026-08-16/expert-reachability-04-list-badge.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | commit:9e92424a44025b65b4c9091e139c28c596901205 | 计划 04 验证命令「回归：全量测试通过」vs 变更文件清单（4 文件） | T1 对 ExpertIndexResponse 的授权字段追加使 guard pin 483 必然过期（实际 484），任何 T1 实现都无法保绿；按 guard 自带规程与 A1 同机制仅同步行号 483→484，context 不变，:94 pin 不受影响 | HUMAN:ask 选项「Approve amendment A2」2026-08-16 |
+| A3 | docs/plans/2026-08-16/expert-reachability-05-filter-seams.md | commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b | commit:e9badbbd347dd12fdb6a65c6c3a9191763ecaefd | 计划 05 验证命令「回归：全量测试通过」vs 变更文件清单（7 文件） | T3 的 listExperts @RequestParam（+1 行）与 T1 的 companion reachabilityFilter 块（+45 行）使 guard 三条 pin 必然过期（controller 94/484、service 431），任何 T1/T3 实现都无法保绿；按 guard 自带规程与 A1/A2 同机制仅同步行号 94→95、484→485、431→476，context 不变 | HUMAN:ask 选项「Approve amendment A3」2026-08-16 |

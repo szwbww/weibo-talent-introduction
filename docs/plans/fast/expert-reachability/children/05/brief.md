@@ -1,11 +1,19 @@
-# Fast-P Child Brief — 05
+# Fast-P Child Brief — 05 (epoch 2, amended)
 
 - Child: 05
 - Plan: docs/plans/2026-08-16/expert-reachability-05-filter-seams.md
-- Plan identity: commit:1c7cf0e4c11c53d1f4d20f28964fce837f70442b
+- Plan identity: commit:e9badbbd347dd12fdb6a65c6c3a9191763ecaefd  (amended per ledger amendment A3, human-approved)
 - Depends on: 03
-- Base: child 03 terminal Code head (set at dispatch time)
+- Base: 8530af46bdf0b6575a607645392e12a2bfbdc3e6 (child 04 terminal Code head)
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-reachability
+
+## Resume state (epoch 1 -> epoch 2)
+
+Epoch 1 implementer (Reachability05Implementer) completed T1-T5 and COMMITTED the 7 authorized files as f5025fcfd2d98d16f55c1cf79d55bf12c24ad4b6 (`feat(fast-p): implement 05`), but full-suite gate fails solely on `OperatorStatusWriteSeamGuardTest` (3 stale EXCLUDED_NOISE_SITES pins). Read the epoch-1 execution report at docs/plans/fast/expert-reachability/children/05/execution.md FIRST.
+
+Amendment A3 (approved) authorizes the 8th file: src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt — apply ONLY the line-number pin syncs 94→95 and 484→485 (ExpertIndexController.kt) and 431→476 (ExpertSearchService.kt), contexts unchanged (per guard maintenance doc :130 and A1/A2 precedent). Do not touch any assertion semantics of that guard.
+
+This is epoch-2 FIX ROUND 1: apply the A3 pin sync as a separate fix commit `fix(fast-p): repair 05 round 1`, then the full suite must be green.
 
 ## Global constraints (binding, from master plan docs/plans/2026-08-16/expert-reachability-00-execution-order.md)
 
@@ -17,7 +25,7 @@
 6. Git: commit locally only, exactly one implementation commit with message `feat(fast-p): implement 05`. Never push, merge, rebase, amend, or rewrite history. Exclude fast-p report/log files (docs/plans/fast/) from the implementation commit; the controller commits evidence separately.
 7. Do not review or implement later children (06). Do not repair unrelated behavior. Skip formatters/linters and project-wide suites beyond the required commands.
 
-## Authorized files (7; modify nothing else)
+## Authorized files (8; modify nothing else)
 
 1. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt (T1/T3)
 2. src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt (T2)
@@ -26,6 +34,7 @@
 5. src/main/resources/static/index.html (T4)
 6. src/main/resources/static/app.js (T4)
 7. src/test/kotlin/com/weibo/talentintroduction/expert/service/ReachabilityFilterSeamTest.kt (NEW, T5)
+8. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt (A3: pins 94→95, 484→485, 431→476; contexts unchanged)
 
 ## Required commands (run all; from plan 验证命令 + master plan 验证命令)
 
