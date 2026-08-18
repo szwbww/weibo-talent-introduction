@@ -24,6 +24,8 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -82,14 +84,19 @@ class GroundedAutoReplyDecisionServiceTest {
         ).thenReturn(result)
     }
 
-    private fun service(autoReplyEnabled: Boolean = true) =
+    private fun service(autoReplyEnabled: Boolean = true, shadowScoringEnabled: Boolean = false) =
         GroundedAutoReplyDecisionService(
-            LlmProperties(enabled = true, autoReplyEnabled = autoReplyEnabled),
+            LlmProperties(
+                enabled = true,
+                autoReplyEnabled = autoReplyEnabled,
+                shadowScoringEnabled = shadowScoringEnabled
+            ),
             aiReplyDraftService,
             qaRuleRepository,
             aiReplyContextService,
             aiTrainingQaService,
-            mailRecordRepository
+            mailRecordRepository,
+            AutoReplyConfidenceScorer()
         )
 
     private fun autoRule(id: Long, policy: QaReplyPolicy = QaReplyPolicy.AUTO) = QaRule(
@@ -130,6 +137,41 @@ class GroundedAutoReplyDecisionServiceTest {
         assertFalse(decision.readyToSend)
         assertEquals(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED, decision.reason)
         Mockito.verifyNoInteractions(aiReplyDraftService)
+    }
+
+    @Test
+    fun `shadow mode scores but never sends`() {
+        stubGenerate(readyDraft())
+        Mockito.`when`(qaRuleRepository.findById(1L)).thenReturn(Optional.of(autoRule(1)))
+
+        val decision = service(autoReplyEnabled = false, shadowScoringEnabled = true)
+            .decide("Salary?", "Question", null)
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED, decision.reason)
+        assertNotNull(decision.confidence)
+    }
+
+    @Test
+    fun `both flags off skips generation entirely`() {
+        val decision = service(autoReplyEnabled = false, shadowScoringEnabled = false)
+            .decide("Salary?", "Question", null)
+
+        assertFalse(decision.readyToSend)
+        assertEquals(GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED, decision.reason)
+        assertNull(decision.confidence)
+        Mockito.verify(aiReplyDraftService, Mockito.never()).generate(
+            Mockito.anyString(),
+            Mockito.anyList(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.anyBoolean(),
+            Mockito.anyList(),
+            Mockito.isNull(),
+            Mockito.anyBoolean()
+        )
     }
 
     @Test

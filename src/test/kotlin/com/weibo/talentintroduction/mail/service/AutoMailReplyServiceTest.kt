@@ -10,11 +10,13 @@ import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
+import com.weibo.talentintroduction.mail.domain.AutoReplyConfidenceLog
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
+import com.weibo.talentintroduction.mail.repository.AutoReplyConfidenceLogRepository
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
@@ -53,6 +55,7 @@ class AutoMailReplyServiceTest {
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val inboundIntentRepository = Mockito.mock(InboundIntentRepository::class.java)
+    private val autoReplyConfidenceLogRepository = Mockito.mock(AutoReplyConfidenceLogRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
     private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
@@ -137,7 +140,8 @@ class AutoMailReplyServiceTest {
         cursorService,
         autoReplySettingService,
         inboundMailTagService,
-        mailVariableService
+        mailVariableService,
+        autoReplyConfidenceLogRepository
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -995,6 +999,35 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `confidence log write failure does not block inbound processing`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        stubReadyDecision(subject = "Re: Program", body = "Auto reply body", ruleIds = listOf(1L))
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.`when`(
+            deliveryService.send(
+                anyValue(account),
+                anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+            )
+        ).thenReturn(DeliveredMail(messageId = "msg-203", status = "SUCCESS"))
+        Mockito.doThrow(RuntimeException("db down"))
+            .`when`(autoReplyConfidenceLogRepository).save(Mockito.any(AutoReplyConfidenceLog::class.java))
+
+        val result = service.processSingle(account, reply(), skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.QA_REPLIED, result.outcome)
+        assertEquals(true, result.recorded)
+        Mockito.verify(autoReplyConfidenceLogRepository)
+            .save(Mockito.any(AutoReplyConfidenceLog::class.java))
+        Mockito.verify(deliveryService).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "stub", body = "stub"))
+        )
+        Mockito.reset(autoReplyConfidenceLogRepository)
+    }
+
+    @Test
     fun `mailto unsubscribe mail with empty body is suppressed with MAILTO source`() {
         val account = account("sender")
         val contact = introSentContact()
@@ -1670,7 +1703,19 @@ class AutoMailReplyServiceTest {
         qaRuleIds = ruleIds,
         draftReadiness = AiReplyDraftReadiness.READY,
         generationState = AiReplyGenerationState.LLM_USED,
-        usedLlm = true
+        usedLlm = true,
+        confidence = AutoReplyConfidenceScore(
+            crs = 92.0,
+            coverageScore = 40.0,
+            evidenceScore = 25.0,
+            consistencyScore = 20.0,
+            historyScore = 7.0,
+            requestCount = 1,
+            unsupportedCount = 0,
+            partialCount = 0,
+            verifiedRuleCount = ruleIds.size,
+            warningCount = 0
+        )
     )
 
     private fun stubReadyDecision(

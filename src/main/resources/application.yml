@@ -105,6 +105,7 @@ talent-introduction:
   llm:
     enabled: ${LLM_ENABLED:false}
     auto-reply-enabled: ${LLM_AUTO_REPLY_ENABLED:false}
+    shadow-scoring-enabled: ${LLM_SHADOW_SCORING_ENABLED:false}
     api-url: ${LLM_API_URL:}
     api-key: ${LLM_API_KEY:}
     model: ${LLM_MODEL:gpt-4o-mini}

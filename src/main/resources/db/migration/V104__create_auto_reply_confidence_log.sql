@@ -1,0 +1,30 @@
+-- Shadow-mode confidence samples for auto-reply threshold calibration.
+-- Write-only in this phase: no application read path; samples are exported by SQL.
+CREATE TABLE auto_reply_confidence_log (
+    id                    BIGINT       NOT NULL AUTO_INCREMENT,
+    expert_contact_id     BIGINT       NOT NULL,
+    inbound_mail_record_id BIGINT      NULL,
+    sender_account_code   VARCHAR(64)  NOT NULL,
+    inbound_message_id    VARCHAR(255) NULL,
+    crs                   DECIMAL(5,2) NOT NULL,
+    coverage_score        DECIMAL(5,2) NOT NULL,
+    evidence_score        DECIMAL(5,2) NOT NULL,
+    consistency_score     DECIMAL(5,2) NOT NULL,
+    history_score         DECIMAL(5,2) NOT NULL,
+    request_count         INT          NOT NULL,
+    unsupported_count     INT          NOT NULL,
+    partial_count         INT          NOT NULL,
+    verified_rule_count   INT          NOT NULL,
+    warning_count         INT          NOT NULL,
+    draft_readiness       VARCHAR(32)  NOT NULL,
+    generation_state      VARCHAR(64)  NOT NULL,
+    decision_reason       VARCHAR(64)  NOT NULL,
+    ready_to_send         TINYINT(1)   NOT NULL,
+    tier                  VARCHAR(32)  NOT NULL,
+    operator_edited       TINYINT(1)   NULL,
+    operator_edit_distance INT         NULL,
+    created_at            DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_arcl_contact (expert_contact_id),
+    KEY idx_arcl_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

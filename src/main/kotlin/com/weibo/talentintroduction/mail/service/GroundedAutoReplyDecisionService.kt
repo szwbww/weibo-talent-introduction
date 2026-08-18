@@ -36,7 +36,8 @@ data class GroundedAutoReplyDecision(
     val qaRuleIds: List<Long>,
     val draftReadiness: AiReplyDraftReadiness,
     val generationState: AiReplyGenerationState,
-    val usedLlm: Boolean
+    val usedLlm: Boolean,
+    val confidence: AutoReplyConfidenceScore? = null
 )
 
 @Service
@@ -46,7 +47,8 @@ class GroundedAutoReplyDecisionService(
     private val qaRuleRepository: QaRuleRepository,
     private val aiReplyContextService: AiReplyContextService,
     private val aiTrainingQaService: AiTrainingQaService,
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val autoReplyConfidenceScorer: AutoReplyConfidenceScorer = AutoReplyConfidenceScorer()
 ) {
     fun decide(
         inboundText: String,
@@ -55,7 +57,7 @@ class GroundedAutoReplyDecisionService(
         currentInboundMessageId: String? = null
     ): GroundedAutoReplyDecision {
         val subject = buildReplySubject(inboundSubject)
-        if (!llmProperties.autoReplyEnabled) {
+        if (!llmProperties.autoReplyEnabled && !llmProperties.shadowScoringEnabled) {
             return disabledDecision(subject)
         }
 
@@ -74,15 +76,17 @@ class GroundedAutoReplyDecisionService(
         val ready = reason == GroundedAutoReplyReason.QA_AUTO_REPLIED &&
             passesSendGate(draft, verifiedRuleIds)
 
+        val shadowOnly = !llmProperties.autoReplyEnabled
         return GroundedAutoReplyDecision(
-            readyToSend = ready,
-            reason = reason,
+            readyToSend = if (shadowOnly) false else ready,
+            reason = if (shadowOnly) GroundedAutoReplyReason.AI_AUTO_REPLY_DISABLED else reason,
             subject = subject,
             rawDraftText = draft.draftText.takeIf { it.isNotBlank() },
             qaRuleIds = if (ready) verifiedRuleIds else draft.qaRuleIds,
             draftReadiness = draft.draftReadiness,
             generationState = draft.generationState,
-            usedLlm = draft.usedLlm
+            usedLlm = draft.usedLlm,
+            confidence = autoReplyConfidenceScorer.score(draft, verifiedRuleIds)
         )
     }
 
@@ -190,7 +194,8 @@ class GroundedAutoReplyDecisionService(
             qaRuleIds = emptyList(),
             draftReadiness = AiReplyDraftReadiness.BLOCKED,
             generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED,
-            usedLlm = false
+            usedLlm = false,
+            confidence = null
         )
 
     private fun buildAutoReplyContext(
