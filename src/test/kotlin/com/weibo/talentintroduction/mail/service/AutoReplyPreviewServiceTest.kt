@@ -168,7 +168,9 @@ class AutoReplyPreviewServiceTest {
 
         Mockito.verify(groundedAutoReplyDecisionService).decide(
             Mockito.anyString(),
-            eqValue("Remote work")
+            eqValue("Remote work"),
+            Mockito.any(),
+            Mockito.any()
         )
     }
 
@@ -546,13 +548,23 @@ class AutoReplyPreviewServiceTest {
         ruleIds: List<Long> = listOf(1L)
     ) {
         Mockito.`when`(
-            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+            groundedAutoReplyDecisionService.decide(
+                Mockito.anyString(),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.any()
+            )
         ).thenReturn(readyDecision(subject, body, ruleIds))
     }
 
     private fun stubNotReadyDecision(reason: String) {
         Mockito.`when`(
-            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+            groundedAutoReplyDecisionService.decide(
+                Mockito.anyString(),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.any()
+            )
         ).thenReturn(
             GroundedAutoReplyDecision(
                 readyToSend = false,

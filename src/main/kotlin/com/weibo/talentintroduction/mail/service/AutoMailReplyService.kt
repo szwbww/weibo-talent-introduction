@@ -502,7 +502,12 @@ class AutoMailReplyService(
             AutoIntentAction.QA -> Unit
         }
 
-        val decision = groundedAutoReplyDecisionService.decide(cleanedBody, received.subject)
+        val decision = groundedAutoReplyDecisionService.decide(
+            inboundText = cleanedBody,
+            inboundSubject = received.subject,
+            contact = effectiveContact,
+            currentInboundMessageId = received.messageId
+        )
         if (!decision.readyToSend) {
             val manualReason = decision.reason
             markManualReview(

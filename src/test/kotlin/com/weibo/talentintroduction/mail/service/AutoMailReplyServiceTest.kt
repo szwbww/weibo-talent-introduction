@@ -1059,7 +1059,9 @@ class AutoMailReplyServiceTest {
 
         Mockito.verify(groundedAutoReplyDecisionService).decide(
             Mockito.anyString(),
-            eqValue("Re: Talent Program")
+            eqValue("Re: Talent Program"),
+            Mockito.any(),
+            Mockito.any()
         )
     }
 
@@ -1677,13 +1679,23 @@ class AutoMailReplyServiceTest {
         ruleIds: List<Long> = listOf(1L)
     ) {
         Mockito.`when`(
-            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+            groundedAutoReplyDecisionService.decide(
+                Mockito.anyString(),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.any()
+            )
         ).thenReturn(readyDecision(subject, body, ruleIds))
     }
 
     private fun stubNotReadyDecision(reason: String) {
         Mockito.`when`(
-            groundedAutoReplyDecisionService.decide(Mockito.anyString(), Mockito.any())
+            groundedAutoReplyDecisionService.decide(
+                Mockito.anyString(),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.any()
+            )
         ).thenReturn(
             GroundedAutoReplyDecision(
                 readyToSend = false,

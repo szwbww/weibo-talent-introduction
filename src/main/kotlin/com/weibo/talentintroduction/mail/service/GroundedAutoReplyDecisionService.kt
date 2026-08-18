@@ -1,14 +1,19 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.config.LlmProperties
 import com.weibo.talentintroduction.llm.service.AiReplyActionPolicy
+import com.weibo.talentintroduction.llm.service.AiReplyContext
+import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
 import com.weibo.talentintroduction.llm.service.AiReplyDraftResult
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyGenerationState
+import com.weibo.talentintroduction.llm.service.AiTrainingQaService
 import com.weibo.talentintroduction.llm.service.AiReplyGroundedDraftMaterializer
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.springframework.stereotype.Service
@@ -38,17 +43,31 @@ data class GroundedAutoReplyDecision(
 class GroundedAutoReplyDecisionService(
     private val llmProperties: LlmProperties,
     private val aiReplyDraftService: AiReplyDraftService,
-    private val qaRuleRepository: QaRuleRepository
+    private val qaRuleRepository: QaRuleRepository,
+    private val aiReplyContextService: AiReplyContextService,
+    private val aiTrainingQaService: AiTrainingQaService,
+    private val mailRecordRepository: MailRecordRepository
 ) {
-    fun decide(inboundText: String, inboundSubject: String?): GroundedAutoReplyDecision {
+    fun decide(
+        inboundText: String,
+        inboundSubject: String?,
+        contact: ExpertContact?,
+        currentInboundMessageId: String? = null
+    ): GroundedAutoReplyDecision {
         val subject = buildReplySubject(inboundSubject)
         if (!llmProperties.autoReplyEnabled) {
             return disabledDecision(subject)
         }
 
+        val context = buildAutoReplyContext(contact, inboundText, currentInboundMessageId)
+
         val draft = aiReplyDraftService.generate(
             inboundText = inboundText,
-            operatorTurns = emptyList()
+            operatorTurns = emptyList(),
+            expertProfile = context.profileText,
+            mailHistory = context.mailHistory,
+            contextWarnings = context.contextWarnings,
+            researchProfileSufficient = context.researchProfileSufficient
         )
         val verifiedRuleIds = verifyAutoEvidenceRuleIds(draft.qaRuleIds)
         val reason = resolveReason(draft, verifiedRuleIds)
@@ -173,6 +192,30 @@ class GroundedAutoReplyDecisionService(
             generationState = AiReplyGenerationState.FALLBACK_LLM_DISABLED,
             usedLlm = false
         )
+
+    private fun buildAutoReplyContext(
+        contact: ExpertContact?,
+        inboundText: String,
+        currentInboundMessageId: String?
+    ): AiReplyContext {
+        if (contact?.id == null) {
+            return AiReplyContext(
+                profileText = "",
+                mailHistory = "",
+                contextWarnings = listOf("EXPERT_PROFILE_NOT_FOUND"),
+                researchProfileSufficient = false
+            )
+        }
+        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
+        return aiReplyContextService.build(
+            contact = contact,
+            records = records,
+            inboundText = inboundText,
+            trainingKnowledge = knowledge,
+            currentInboundMessageId = currentInboundMessageId
+        )
+    }
 
     private fun hasReviewPolicyEvidence(ruleIds: List<Long>): Boolean =
         ruleIds.any { ruleId ->
