@@ -674,7 +674,7 @@ describe("renderAiReplyFeedback generationState", () => {
         const sandbox = {
             state: { mailbox: { detailContext: { id: 7 } } },
             $: () => panel,
-            unmountLiveTrustReply: () => {}
+            unmountMailboxTrustReplyHosts: () => {}
         };
         vm.createContext(sandbox);
         vm.runInContext(extractHandler("handleUnmatchedAction", "renderEmailAliasSection"), sandbox);

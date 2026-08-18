@@ -289,8 +289,9 @@ function createRendererSandbox() {
             return {};
         },
         loadMailSendOptions: async () => [],
-        unmountLiveTrustReply() {},
+        unmountMailboxTrustReplyHosts() {},
         mountLiveTrustReply() {},
+        mountAutoPreviewTrustReply() {},
         loadEmailAliases() {},
         resetPreflightState() {},
         focusMailboxProcessingPanel() {},
