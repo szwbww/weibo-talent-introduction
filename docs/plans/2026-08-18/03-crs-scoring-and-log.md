@@ -5,7 +5,7 @@
 主计划：[00-auto-reply-convergence-master.md](./00-auto-reply-convergence-master.md)
 前置依赖：**必须在 [01](./01-decide-context-closure.md) 通过人工验收后执行**；建议在 [02](./02-preview-into-workbench.md) 之后
 子系统数：2（mail 服务与持久化 / 配置与迁移）
-文件数：10
+文件数：11
 
 ## 需求描述
 
@@ -312,8 +312,9 @@ decision.confidence?.let { score ->
 | 8 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt` | 修改 | 注入 repository；`:505` 后 best-effort 写日志 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyConfidenceScorerTest.kt` | 新建 | 分量与钳制 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionServiceTest.kt` | 修改 | 影子模式两条 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt` | 修改 | I-3 回归：stub `autoReplyConfidenceLogRepository.save()` 抛异常，断言 `processSingle` 仍返回正常 `SinglePipelineResult`（A2 授权） |
 
-合计 10 个文件（上限），2 个子系统。新增 1 张表，`LlmProperties` 新增 1 个字段。
+合计 11 个文件（上限），2 个子系统。新增 1 张表，`LlmProperties` 新增 1 个字段。
 
 ## 验证命令
 
