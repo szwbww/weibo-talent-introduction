@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.PostmasterProperties
 import com.weibo.talentintroduction.monitoring.service.MailMonitoringService
 import com.weibo.talentintroduction.postmaster.repository.DomainReputationHistoryRepository
 import com.weibo.talentintroduction.postmaster.service.PostmasterDataCollector
+import com.weibo.talentintroduction.postmaster.service.PostmasterOAuthService
 import com.weibo.talentintroduction.postmaster.service.ReputationAutoPauseService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -18,6 +19,7 @@ class MailMonitoringControllerPostmasterTest {
     private val monitoringService = Mockito.mock(MailMonitoringService::class.java)
     private val historyRepository = Mockito.mock(DomainReputationHistoryRepository::class.java)
     private val collector = Mockito.mock(PostmasterDataCollector::class.java)
+    private val oauthService = Mockito.mock(PostmasterOAuthService::class.java)
     private val autoPause = Mockito.mock(ReputationAutoPauseService::class.java)
 
     @Suppress("UNCHECKED_CAST")
@@ -30,14 +32,19 @@ class MailMonitoringControllerPostmasterTest {
     private fun controller(
         properties: PostmasterProperties,
         collectorBean: PostmasterDataCollector?,
-        autoPauseBean: ReputationAutoPauseService?
-    ) = MailMonitoringController(
-        monitoringService,
-        historyRepository,
-        properties,
-        providerOf(collectorBean),
-        providerOf(autoPauseBean)
-    )
+        autoPauseBean: ReputationAutoPauseService?,
+        authorized: Boolean = true
+    ): MailMonitoringController {
+        Mockito.`when`(oauthService.authorized()).thenReturn(authorized)
+        return MailMonitoringController(
+            monitoringService,
+            historyRepository,
+            properties,
+            oauthService,
+            providerOf(collectorBean),
+            providerOf(autoPauseBean)
+        )
+    }
 
     @Test
     fun `returns a clear message instead of failing when postmaster is disabled`() {
@@ -94,5 +101,19 @@ class MailMonitoringControllerPostmasterTest {
         assertEquals("2026-08-01", response.reportDate)
         Mockito.verify(collector).collect(date)
         Mockito.verifyNoInteractions(autoPause)
+    }
+
+    @Test
+    fun `returns a clear message when Postmaster OAuth is not authorized`() {
+        val response = controller(
+            PostmasterProperties(enabled = true, domains = listOf("talents.example.com")),
+            collectorBean = collector,
+            autoPauseBean = autoPause,
+            authorized = false
+        ).collectPostmaster(date = null, skipAutoPause = false)
+
+        assertFalse(response.triggered)
+        assertTrue(response.message.contains("OAuth"))
+        Mockito.verifyNoInteractions(collector)
     }
 }

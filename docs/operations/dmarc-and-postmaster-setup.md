@@ -94,38 +94,48 @@ DNS 生效前记录仍会返回旧值，按 TTL 等待。
 | 问题 | 位置 | 说明 |
 |---|---|---|
 | **OAuth scope 无效（致命）** | `PostmasterDataCollector.kt` | 原代码请求 `.../auth/postmaster.readonly`，这是 **v1 时代的 scope，v2 已不存在**。v2 discovery 文档中 `domainStats.query` 只接受 `.../auth/postmaster` 与 `.../auth/postmaster.traffic.readonly`。用错 scope 会鉴权失败，异常被 `catch` 吞掉只留一行 WARN，表现为"永远没数据"——极易被误判成"量不够"。现改用 SDK 常量 `PostmasterToolsScopes.POSTMASTER_TRAFFIC_READONLY`。 |
-| **凭证只支持文件路径** | 同上 | 变量名 `POSTMASTER_CREDENTIALS_JSON` 会让人直接粘贴 JSON 内容，但原实现是 `FileInputStream(...)`。现已改为：以 `{` 开头当内联 JSON，否则当文件路径，两种都支持。 |
+| **服务账号不能代表 Postmaster 用户** | `PostmasterOAuthService.kt` | Postmaster API 要求已获域名访问权的 Google/Workspace 用户 OAuth2 授权；不再使用服务账号 JSON。授权完成后，应用保存 `authorized_user` refresh token 文件。 |
 | **异常缺少堆栈** | 同上 | 采集失败原来只打印 `ex.message`，鉴权类错误无法定位。现已附带完整异常。 |
-| **无法手动触发** | `MailMonitoringController.kt` | 原来只有每日 cron，接入后要等到次日 08:00 才知道成败。已新增 `POST /api/mail-monitoring/postmaster/collect`。 |
+| **无法手动授权/触发** | `MailMonitoringController.kt` | 新增 OAuth 授权入口、回调、状态查询，以及原有手动采集接口。 |
 
 ### 2.2 GCP 侧配置
 
 1. **创建 / 选择 GCP 项目**（https://console.cloud.google.com/）
 2. **启用 API**：API 和服务 → 库 → 搜索 `Gmail Postmaster Tools API` → 启用
-3. **创建服务账号**：IAM 和管理 → 服务账号 → 新建（无需授予项目角色）
-4. **生成密钥**：进入该服务账号 → 密钥 → 添加密钥 → 创建新密钥 → **JSON** → 下载并妥善保存
+3. **配置 OAuth 权限请求页面**：Google Auth Platform → Branding / Audience / Data Access
+4. Data Access 添加范围：
 
-> 注意：服务账号本身不会自动拥有 Postmaster 数据权限，必须完成下一步的域名与用户授权。
+   ```text
+   https://www.googleapis.com/auth/postmaster.traffic.readonly
+   ```
+
+5. Audience 选择 Internal（企业 Workspace）或 External（普通 Gmail）；External 测试状态下加入实际授权账号。
+6. **创建 OAuth Client**：代码部署后创建 `Web application`，回调地址必须与 `POSTMASTER_OAUTH_REDIRECT_URI` 完全一致。
+
+> 注意：不要创建 Service Account Key 或 API Key。授权账号必须是有 Postmaster 域名访问权的 Google/Workspace 用户。
 
 ### 2.3 Postmaster Tools 侧配置
 
 1. 打开 https://postmaster.google.com/ ，用你的 Google 账号登录
-2. 添加域名 `talents.szwebotech.cn`
-3. 按提示在 DNS 加一条 TXT 验证记录，等待验证通过
-4. **把服务账号邮箱（形如 `xxx@<project>.iam.gserviceaccount.com`）添加为该域名的用户**，权限 READER 即可
+2. 添加或确认发信认证域名（DKIM `d=` 或 SPF Return-Path 域名）
+3. 按提示在 DNS 加 TXT 验证记录，等待验证通过
+4. 每个已验证域名进入 `Manage → Manage users → Add`
+5. 添加用于 OAuth 授权的 Google/Workspace 用户邮箱
 
-> 第 4 步最容易漏。漏了会得到 `PERMISSION_DENIED`，而不是空数据。
+> 用户没有域名访问权会得到 `PERMISSION_DENIED`，而不是空数据。
 
 ### 2.4 环境变量
 
 ```bash
 # 必填
 POSTMASTER_ENABLED=true
-POSTMASTER_DOMAINS=talents.szwebotech.cn          # 多个域名用英文逗号分隔
+POSTMASTER_DOMAINS=mail.szwebotech.cn,szwebotech.cn,talents.szwebotech.cn,updates.szwebotech.cn
 
-# 凭证：以下二选一
-POSTMASTER_CREDENTIALS_JSON=/etc/secrets/postmaster-sa.json      # 文件路径
-# POSTMASTER_CREDENTIALS_JSON='{"type":"service_account",...}'   # 或直接内联 JSON
+# OAuth 客户端配置
+POSTMASTER_OAUTH_CLIENT_ID=...
+POSTMASTER_OAUTH_CLIENT_SECRET=...
+POSTMASTER_OAUTH_REDIRECT_URI=https://qingfei.szwbww.com/talent/api/mail-monitoring/postmaster/oauth/callback
+POSTMASTER_OAUTH_TOKEN_FILE=/etc/talent/secrets/postmaster-oauth-token.json
 
 # 可选，均有默认值
 POSTMASTER_CRON="0 0 8 * * *"                     # 每天 08:00 采集
@@ -136,21 +146,28 @@ POSTMASTER_RESUME_CONSECUTIVE_DAYS=3              # 需连续 N 天低于恢复�
 
 配置项定义见 `config/PostmasterProperties.kt`，默认值见 `application.yml` 的 `talent-introduction.postmaster`。
 
-> 建议用文件路径而非内联 JSON：私钥出现在环境变量里更容易随进程列表、日志或崩溃转储泄露。若必须内联，注意 shell 单引号包裹，且 JSON 中的换行需为 `\n` 转义形式。
+> OAuth client secret 只放服务器环境变量或密钥管理系统；refresh token 由授权回调写入 `POSTMASTER_OAUTH_TOKEN_FILE`，文件权限为 `600`，不要提交 Git 或粘贴到聊天。
 
 ### 2.5 验证
 
-重启应用后，**不要等 cron**，直接手动触发：
+重启应用后，在已登录后台的浏览器打开授权入口：
+
+```text
+https://qingfei.szwbww.com/talent/api/mail-monitoring/postmaster/oauth/start
+```
+
+完成 Google 授权并回到回调地址后，检查状态：
+
+> 下列 API 受后台登录保护。`curl` 必须携带已登录会话 Cookie；最简单是直接在已登录浏览器打开授权入口，或从浏览器开发者工具复制请求。
 
 ```bash
-# 采集昨天的数据（Postmaster 数据有延迟，当天通常查不到）
-curl -X POST 'http://<host>/api/mail-monitoring/postmaster/collect'
+curl 'https://qingfei.szwbww.com/talent/api/mail-monitoring/postmaster/oauth/status'
 
-# 指定日期，并跳过自动暂停判定（首次验证建议跳过，避免误暂停账号）
-curl -X POST 'http://<host>/api/mail-monitoring/postmaster/collect?date=2026-08-08&skipAutoPause=true'
+# 采集昨天的数据（Postmaster 数据有延迟，当天通常查不到）
+curl -X POST 'https://qingfei.szwbww.com/talent/api/mail-monitoring/postmaster/collect?skipAutoPause=true'
 
 # 查看落库结果
-curl 'http://<host>/api/mail-monitoring/reputation-history?domain=talents.szwebotech.cn&days=30'
+curl 'https://qingfei.szwbww.com/talent/api/mail-monitoring/reputation-history?days=30'
 ```
 
 **如何判读结果**：
@@ -159,6 +176,7 @@ curl 'http://<host>/api/mail-monitoring/reputation-history?domain=talents.szwebo
 |---|---|---|
 | `triggered=false` 且提示 `POSTMASTER_ENABLED` | 开关没开或未重启 | 检查环境变量是否真正注入进程 |
 | `triggered=false` 且提示 `POSTMASTER_DOMAINS` | 域名列表为空 | 检查逗号分隔格式 |
+| `triggered=false` 且提示 `OAuth` | 尚未完成用户授权或 token 文件不可读 | 先打开 `/postmaster/oauth/start`，再查 token 文件权限 |
 | `triggered=true`，但 history 为空数组 | 采集跑了，但 Google 没返回数据 | **看日志**：无异常 = 发信量未达阈值（当前阶段的预期结果）；有 `PERMISSION_DENIED` = 2.3 第 4 步没做；有 `invalid_scope` / `401` = 凭证或 scope 问题 |
 | history 有行但各项指标为 null | 同上，Google 对该日无数据 | 同上 |
 | `domainReputation` 恒为 null | **预期行为，不是故障** | v2 的 `StandardMetric` 枚举里没有域名信誉指标（只有 `SPAM_RATE` / `AUTH_SUCCESS_RATE` / `TLS_ENCRYPTION_*` / `DELIVERY_ERROR_*` / `FEEDBACK_LOOP_*`），域名信誉是 v1 的概念。该列会一直是空 |

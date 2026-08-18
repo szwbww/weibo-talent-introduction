@@ -81,7 +81,10 @@ talent-introduction:
     max-rows-per-run: ${TASK_RETENTION_MAX_ROWS_PER_RUN:200000}
   postmaster:
     enabled: ${POSTMASTER_ENABLED:false}
-    credentials-json: ${POSTMASTER_CREDENTIALS_JSON:}
+    oauth-client-id: ${POSTMASTER_OAUTH_CLIENT_ID:}
+    oauth-client-secret: ${POSTMASTER_OAUTH_CLIENT_SECRET:}
+    oauth-redirect-uri: ${POSTMASTER_OAUTH_REDIRECT_URI:}
+    oauth-token-file: ${POSTMASTER_OAUTH_TOKEN_FILE:/etc/talent/secrets/postmaster-oauth-token.json}
     domains: ${POSTMASTER_DOMAINS:}
     cron: ${POSTMASTER_CRON:0 0 8 * * *}
     pause-threshold-spam-rate: ${POSTMASTER_PAUSE_THRESHOLD_SPAM_RATE:0.003}

@@ -157,3 +157,8 @@ data class PostmasterCollectResponse(
     val domains: List<String>,
     val message: String
 )
+
+data class PostmasterOAuthStatusResponse(
+    val clientConfigured: Boolean,
+    val authorized: Boolean
+)

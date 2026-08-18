@@ -7,7 +7,10 @@ import org.springframework.boot.context.properties.ConstructorBinding
 @ConfigurationProperties(prefix = "talent-introduction.postmaster")
 data class PostmasterProperties(
     val enabled: Boolean = false,
-    val credentialsJson: String = "",
+    val oauthClientId: String = "",
+    val oauthClientSecret: String = "",
+    val oauthRedirectUri: String = "",
+    val oauthTokenFile: String = "/etc/talent/secrets/postmaster-oauth-token.json",
     val domains: List<String> = emptyList(),
     val cron: String = "0 0 8 * * *",
     val pauseThresholdSpamRate: Double = 0.003,

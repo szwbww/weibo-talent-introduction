@@ -1,57 +1,56 @@
 package com.weibo.talentintroduction.postmaster.service
 
 import com.google.api.services.gmailpostmastertools.v2.PostmasterToolsScopes
+import com.google.auth.oauth2.UserCredentials
+import com.weibo.talentintroduction.config.PostmasterProperties
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.io.FileNotFoundException
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 
 class GoogleDomainStatsFetcherCredentialsTest {
 
-    private val serviceAccountJson = """
-        {"type":"service_account","project_id":"demo","client_email":"a@b.iam.gserviceaccount.com"}
-    """.trimIndent()
-
     @Test
-    fun `inline json is read directly without touching the filesystem`() {
-        val stream = GoogleDomainStatsFetcher.openCredentialsStream(serviceAccountJson)
+    fun `loads authorized user credentials from the OAuth token file`(@TempDir dir: Path) {
+        val tokenFile = dir.resolve("postmaster-oauth-token.json")
+        UserCredentials.newBuilder()
+            .setClientId("client-id")
+            .setClientSecret("client-secret")
+            .setRefreshToken("refresh-token")
+            .build()
+            .save(tokenFile.toString())
 
-        val content = stream.use { it.readBytes().toString(StandardCharsets.UTF_8) }
-        assertEquals(serviceAccountJson, content)
+        val service = PostmasterOAuthService(
+            PostmasterProperties(
+                oauthClientId = "client-id",
+                oauthClientSecret = "client-secret",
+                oauthRedirectUri = "https://example.com/callback",
+                oauthTokenFile = tokenFile.toString()
+            )
+        )
+
+        val credentials = service.loadCredentials()
+
+        assertNotNull(credentials)
+        assertEquals(GoogleDomainStatsFetcher.REQUIRED_SCOPE, PostmasterToolsScopes.POSTMASTER_TRAFFIC_READONLY)
+        assertTrue(service.authorized())
     }
 
     @Test
-    fun `inline json surrounded by whitespace or newlines is still detected`() {
-        // 环境变量里粘贴多行 JSON 时常常带首尾换行
-        val padded = "\n  $serviceAccountJson  \n"
+    fun `reports unauthorized when the OAuth token file is absent`(@TempDir dir: Path) {
+        val service = PostmasterOAuthService(
+            PostmasterProperties(
+                oauthClientId = "client-id",
+                oauthClientSecret = "client-secret",
+                oauthRedirectUri = "https://example.com/callback",
+                oauthTokenFile = dir.resolve("missing.json").toString()
+            )
+        )
 
-        val content = GoogleDomainStatsFetcher.openCredentialsStream(padded)
-            .use { it.readBytes().toString(StandardCharsets.UTF_8) }
-
-        assertEquals(serviceAccountJson, content)
-    }
-
-    @Test
-    fun `a filesystem path is still supported for backward compatibility`(@TempDir dir: Path) {
-        val file = dir.resolve("sa.json")
-        Files.write(file, serviceAccountJson.toByteArray(StandardCharsets.UTF_8))
-
-        val content = GoogleDomainStatsFetcher.openCredentialsStream(file.toString())
-            .use { it.readBytes().toString(StandardCharsets.UTF_8) }
-
-        assertEquals(serviceAccountJson, content)
-    }
-
-    @Test
-    fun `a non-json value that is not an existing file fails loudly`() {
-        assertThrows(FileNotFoundException::class.java) {
-            GoogleDomainStatsFetcher.openCredentialsStream("/no/such/credentials.json")
-        }
+        assertEquals(null, service.loadCredentials())
+        assertTrue(!service.authorized())
     }
 
     @Test
