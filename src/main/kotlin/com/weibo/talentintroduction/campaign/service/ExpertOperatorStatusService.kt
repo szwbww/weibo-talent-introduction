@@ -65,4 +65,33 @@ class ExpertOperatorStatusService(
         expertIndexWriterService.syncOperatorStatus(updated.orcidId, targetStatus.name)
         return updated
     }
+
+    /**
+     * 退信侧旁路终态写入口（I-3）。EMAIL_INVALID 不在 OperatorStatus 枚举内，
+     * 既有两个出口都无法表达它：
+     *   - updateAutomatically 形参类型为 OperatorStatus，字面无法传入；
+     *   - changeStatus 走 OperatorStatus.fromName() 会 error()，且会写
+     *     CHANGE_OPERATOR_STATUS 审计（对账的人工覆盖判别器，I-5 禁止）。
+     * 故新增本方法，写入语句留在本文件内以保持守卫白名单闭包不变。
+     */
+    @Transactional
+    fun markEmailInvalid(contact: ExpertContact, reason: String): ExpertContact {
+        // I-4：已推进状态不回退 —— 已回信即证明地址可达
+        val current = OperatorStatus.entries.firstOrNull { it.name == contact.operatorStatus }
+        if (current != null && current.ordinal >= OperatorStatus.REPLIED.ordinal) {
+            return contact
+        }
+        // 幂等：已是 EMAIL_INVALID 则零交互
+        if (contact.operatorStatus == EMAIL_INVALID) {
+            return contact
+        }
+        val updated = expertContactRepository.save(contact.copy(operatorStatus = EMAIL_INVALID))
+        expertIndexWriterService.syncOperatorStatus(updated.orcidId, EMAIL_INVALID)
+        // I-5：自动路径不写 CHANGE_OPERATOR_STATUS 审计
+        return updated
+    }
+
+    companion object {
+        const val EMAIL_INVALID = "EMAIL_INVALID"
+    }
 }

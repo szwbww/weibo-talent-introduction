@@ -148,23 +148,44 @@ class ImapMailReceiveService : MailReceiveService {
             ?.address
             ?: error("Received mail has no sender address")
 
-    private fun extractBody(part: Part): String {
+    internal fun extractBody(part: Part): String {
         if (part.isMimeType("text/plain")) {
             return part.content as? String ?: ""
         }
         if (part.isMimeType("text/html")) {
             return stripHtml(part.content as? String ?: "")
         }
+        // I-1：DSN 机器段，getContent() 无 handler 时返回 InputStream，走字节流兜底
+        if (part.isMimeType("message/delivery-status")) {
+            return readPartAsText(part)
+        }
         if (part.content is Multipart) {
             val multipart = part.content as Multipart
-            return (0 until multipart.count)
-                .asSequence()
+            val segments = (0 until multipart.count)
                 .map { extractBody(multipart.getBodyPart(it)) }
-                .firstOrNull { it.isNotBlank() }
-                .orEmpty()
+                .filter { it.isNotBlank() }
+            // I-2：alternative 各分段是同一内容的多种表现 → 取首个；
+            //      report / mixed 等各分段是不同内容 → 拼接
+            return if (part.isMimeType("multipart/alternative")) {
+                segments.firstOrNull().orEmpty()
+            } else {
+                segments.joinToString("\n")
+            }
         }
         return ""
     }
+
+    /**
+     * I-1：绕开 DataHandler 读分段文本（与 BounceDetector.readPartAsText 同款，两处各自私有持有）。
+     * message/delivery-status 无 DataContentHandler 时 getContent() 返回 InputStream，
+     * Part.getInputStream() 返回解码后的内容流，不经 mailcap 查表。
+     */
+    private fun readPartAsText(part: Part): String =
+        try {
+            part.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (_: Exception) {
+            ""
+        }
 
     private fun extractAttachments(part: Part): List<ReceivedMailAttachment> {
         if (part.isMimeType("multipart/*")) {

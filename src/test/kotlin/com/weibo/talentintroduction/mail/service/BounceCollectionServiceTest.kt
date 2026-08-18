@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.mail.domain.BounceRecord
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -32,15 +33,18 @@ class BounceCollectionServiceTest {
         Mockito.mock(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java)
     private val expertEmailAliasService =
         Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService::class.java)
+    private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
 
     private val service = BounceCollectionService(
-        mailReceiveService,
-        bounceDetector,
-        bounceRecordRepository,
-        mailRecordRepository,
-        expertIndexWriterService,
-        expertContactRepository,
-        expertEmailAliasService
+        mailReceiveService = mailReceiveService,
+        bounceDetector = bounceDetector,
+        bounceRecordRepository = bounceRecordRepository,
+        mailRecordRepository = mailRecordRepository,
+        expertIndexWriterService = expertIndexWriterService,
+        expertContactRepository = expertContactRepository,
+        expertEmailAliasService = expertEmailAliasService,
+        reachabilitySyncService = null,
+        expertOperatorStatusService = expertOperatorStatusService
     )
 
     @Test
@@ -159,6 +163,66 @@ class BounceCollectionServiceTest {
         Mockito.verify(bounceRecordRepository).save(captor.capture())
         assertEquals("NOID:deadbeef", captor.value.originalMessageId)
         assertNull(captor.value.originalExpertContactId)
+    }
+
+    @Test
+    fun `ingest marks EMAIL_INVALID via ExpertOperatorStatusService for HARD bounce`() {
+        val c = ExpertContact(
+            id = 10L, campaignId = 10L, orcidId = "orcid-10",
+            expertEmail = "expert@example.com", expertName = null
+        )
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findByMessageId("orig-hard@example.com")).thenReturn(
+            MailRecord(
+                id = 60L, expertContactId = 10L, direction = "OUTBOUND", mailType = "INTRODUCTION",
+                messageId = "orig-hard@example.com", inReplyTo = null, subject = "Intro", body = "Body",
+                matchedQaRuleId = null, sendStatus = null, receivedAt = null, sentAt = LocalDateTime.now()
+            )
+        )
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(c))
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 5L) }
+
+        service.ingest(
+            signal = BounceSignal(
+                bounceType = "HARD",
+                dsnStatus = "5.1.1",
+                failedRecipient = null,
+                reason = "Undelivered",
+                originalMessageId = "orig-hard@example.com"
+            ),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-hard@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        Mockito.verify(expertOperatorStatusService).markEmailInvalid(c, "HARD_BOUNCE")
+    }
+
+    @Test
+    fun `ingest does not mark EMAIL_INVALID for SOFT bounce`() {
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 6L) }
+
+        service.ingest(
+            signal = BounceSignal(
+                bounceType = "SOFT",
+                dsnStatus = "4.2.2",
+                failedRecipient = null,
+                reason = "Mailbox full",
+                originalMessageId = null
+            ),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-soft@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
     }
 
     private fun senderAccount() = MailSenderAccount(

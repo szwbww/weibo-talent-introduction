@@ -194,9 +194,25 @@ class BounceDetector {
         return null
     }
 
+    /**
+     * I-1：绕开 DataHandler 读分段文本。
+     * 本仓无 com.sun.mail:dsn，message/delivery-status 无 DataContentHandler，
+     * getContent() 返回 InputStream 而非 String；Part.getInputStream() 返回解码后的
+     * 内容流，不经 mailcap 查表，对任意 MIME 类型可用。
+     */
+    private fun readPartAsText(part: Part): String =
+        try {
+            part.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (_: Exception) {
+            ""
+        }
+
     private fun findDeliveryStatusBody(part: Part): String? {
         if (part.isMimeType("message/delivery-status")) {
-            return part.content as? String
+            // I-1：无 com.sun.mail:dsn 时 message/delivery-status 无 DataContentHandler，
+            // getContent() 返回 InputStream，as? String 恒为 null —— 回退字节流解码。
+            return (part.content as? String)?.takeIf { it.isNotBlank() }
+                ?: readPartAsText(part).takeIf { it.isNotBlank() }
         }
         if (part.isMimeType("multipart/*")) {
             val multipart = part.content as Multipart
@@ -227,8 +243,8 @@ class BounceDetector {
 
     companion object {
         private val STATUS_PATTERN = Regex("""\d\.\d\.\d""")
-        private val DSN_STATUS_PATTERN = Regex("""\b5\d\d\s+5\.\d\.\d\b""")
-        private val HARD_SMTP_CODE_PATTERN = Regex("""\b5\d\d\s+5\.\d\.\d\b""")
+        private val DSN_STATUS_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d\.\d\b""")
+        private val HARD_SMTP_CODE_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d\.\d\b""")
         private val MESSAGE_ID_HEADER_PATTERN = Regex("""Message-ID:\s*<?([^>\s]+@[^>\s]+)>?""", RegexOption.IGNORE_CASE)
 
         private val BOUNCE_SUBJECT_KEYWORDS = listOf(

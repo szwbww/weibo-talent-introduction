@@ -57,6 +57,25 @@ class BounceDetectorTest {
     }
 
     @Test
+    fun `parseBounceDetails classifies 5_1_1 as HARD after MIME round trip`() {
+        val message = roundTrip(dsnBounce(status = "5.1.1", originalMessageId = "orig-rt@example.com"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertEquals("HARD", signal!!.bounceType)
+        assertEquals("5.1.1", signal.dsnStatus)
+        assertEquals("orig-rt@example.com", signal.originalMessageId)
+    }
+
+    @Test
+    fun `parseBounceDetails classifies 4_2_2 as SOFT after MIME round trip`() {
+        val message = roundTrip(dsnBounce(status = "4.2.2"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertEquals("SOFT", signal!!.bounceType)
+        assertEquals("4.2.2", signal.dsnStatus)
+    }
+
+    @Test
     fun `detect recognizes Chinese bounce subject`() {
         val signal = detector.detect(
             from = "postmaster@mail.example.com",
@@ -105,6 +124,15 @@ class BounceDetectorTest {
         assertEquals("5.1.1", signal.dsnStatus)
         assertEquals("orig-neutral@example.com", signal.originalMessageId)
         assertNull(detector.detect("system@example.com", "notice", "Delivery failed"))
+    }
+
+    private fun roundTrip(message: MimeMessage): MimeMessage {
+        val buf = java.io.ByteArrayOutputStream()
+        message.writeTo(buf)
+        return MimeMessage(
+            Session.getDefaultInstance(Properties()),
+            java.io.ByteArrayInputStream(buf.toByteArray())
+        )
     }
 
     private fun neutralMimeDsn(status: String, originalMessageId: String? = null): MimeMessage {

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import java.util.Optional
+import org.mockito.ArgumentCaptor
 
 class ExpertOperatorStatusServiceTest {
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
@@ -137,5 +138,79 @@ class ExpertOperatorStatusServiceTest {
         assertEquals("CONTACTED", result.operatorStatus)
         Mockito.verify(expertContactRepository).save(Mockito.any(ExpertContact::class.java))
         Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", "CONTACTED")
+    }
+
+    @Test
+    fun `markEmailInvalid writes both MySQL and ES for CONTACTED`() {
+        val c = contact("CONTACTED")
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        val result = service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        assertEquals(ExpertOperatorStatusService.EMAIL_INVALID, result.operatorStatus)
+        val captor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(captor.capture())
+        assertEquals(ExpertOperatorStatusService.EMAIL_INVALID, captor.value.operatorStatus)
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0000-0001", ExpertOperatorStatusService.EMAIL_INVALID)
+    }
+
+    @Test
+    fun `markEmailInvalid does not downgrade REPLIED`() {
+        val c = contact("REPLIED")
+
+        val result = service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        assertEquals("REPLIED", result.operatorStatus)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+        org.junit.jupiter.api.Assertions.assertSame(c, result)
+    }
+
+    @Test
+    fun `markEmailInvalid does not downgrade MATERIALS_RECEIVED`() {
+        val c = contact("MATERIALS_RECEIVED")
+
+        val result = service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        assertEquals("MATERIALS_RECEIVED", result.operatorStatus)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+        org.junit.jupiter.api.Assertions.assertSame(c, result)
+    }
+
+    @Test
+    fun `markEmailInvalid does not downgrade INVITED`() {
+        val c = contact("INVITED")
+
+        val result = service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        assertEquals("INVITED", result.operatorStatus)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+        org.junit.jupiter.api.Assertions.assertSame(c, result)
+    }
+
+    @Test
+    fun `markEmailInvalid never writes CHANGE_OPERATOR_STATUS audit`() {
+        val c = contact("CONTACTED")
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { invocation -> invocation.arguments[0] as ExpertContact }
+
+        service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        Mockito.verifyNoInteractions(operatorActionLogService)
+    }
+
+    @Test
+    fun `markEmailInvalid is idempotent when already EMAIL_INVALID`() {
+        val c = contact("EMAIL_INVALID")
+
+        val result = service.markEmailInvalid(c, "HARD_BOUNCE")
+
+        org.junit.jupiter.api.Assertions.assertSame(c, result)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+        Mockito.verifyNoInteractions(operatorActionLogService)
     }
 }
