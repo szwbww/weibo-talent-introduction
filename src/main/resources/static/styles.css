@@ -2687,21 +2687,6 @@ textarea {
     cursor: pointer;
 }
 
-.auto-reply-preview-notice {
-    padding: 10px 12px;
-    margin: 8px 0;
-    border-radius: var(--radius-sm);
-    background-color: var(--warning-bg);
-    border: 1px solid var(--warning-border);
-    color: var(--warning);
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.auto-reply-preview-result {
-    margin-top: 4px;
-}
-
 /* Needs attention */
 .list-item.needs-attention {
     position: relative;
@@ -5375,6 +5360,56 @@ tr td {
         "draft gaps";
     gap: 12px;
     align-items: start;
+}
+
+.trust-reply-readonly {
+    position: relative;
+}
+
+.trust-reply-readonly [data-workbench-control],
+.trust-reply-readonly button,
+.trust-reply-readonly select,
+.trust-reply-readonly textarea,
+.trust-reply-readonly input {
+    display: none !important;
+}
+
+.trust-reply-readonly-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    margin: 0 0 10px;
+    border: 1px solid var(--panel-border);
+    border-left: 2px solid var(--primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.trust-reply-gate-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.trust-reply-gate-item {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background-color: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    color: var(--warning);
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.trust-reply-gate-list:empty {
+    display: none;
 }
 
 .compose-workbench .compose-fragments { grid-area: fragments; }

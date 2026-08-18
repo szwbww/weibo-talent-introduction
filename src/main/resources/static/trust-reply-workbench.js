@@ -3,8 +3,15 @@
 
     if (global.TrustReplyWorkbench) return;
 
-    const MODES = Object.freeze({ SIMULATION: "SIMULATION", LIVE: "LIVE" });
+    const MODES = Object.freeze({ SIMULATION: "SIMULATION", LIVE: "LIVE", AUTO_PREVIEW: "AUTO_PREVIEW" });
     const SOURCES = Object.freeze({ TRAINING_MAIL: "TRAINING_MAIL", LIVE_INBOUND: "LIVE_INBOUND" });
+    // I-1: explicit mode -> source pairing table; AUTO_PREVIEW mirrors the LIVE
+    // source (same inbound record) but is rendered read-only.
+    const MODE_SOURCE = Object.freeze({
+        SIMULATION: SOURCES.TRAINING_MAIL,
+        LIVE: SOURCES.LIVE_INBOUND,
+        AUTO_PREVIEW: SOURCES.LIVE_INBOUND
+    });
     const MODEL_LABELS = Object.freeze({
         DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
         DEEPSEEK_V4_PRO: "DeepSeek V4 Pro"
@@ -127,11 +134,16 @@
             return rejectMount(host, "工作台模式无效");
         }
         const source = options.source || {};
-        const expectedSource = options.mode === MODES.SIMULATION ? SOURCES.TRAINING_MAIL : SOURCES.LIVE_INBOUND;
+        const expectedSource = MODE_SOURCE[options.mode];
+        if (!expectedSource) {
+            return rejectMount(host, "工作台模式无效");
+        }
         if (source.sourceType !== expectedSource || !Number.isInteger(Number(source.sourceId)) || Number(source.sourceId) <= 0) {
             return rejectMount(host, "工作台来源与页面模式不匹配");
         }
-        if (typeof options.contextPath !== "string" || typeof options.onComplete !== "function") {
+        // AUTO_PREVIEW never completes, so onComplete is optional there; the
+        // remaining modes keep it mandatory (I-2).
+        if (typeof options.contextPath !== "string" || (options.mode !== MODES.AUTO_PREVIEW && typeof options.onComplete !== "function")) {
             return rejectMount(host, "工作台宿主参数不完整");
         }
     }
@@ -149,6 +161,7 @@
         const state = {
             instanceId: makeId(),
             mode: options.mode,
+            readOnly: options.mode === MODES.AUTO_PREVIEW,
             source,
             contextPath: options.contextPath,
             onUnauthorized: typeof options.onUnauthorized === "function" ? options.onUnauthorized : null,
@@ -181,6 +194,15 @@
         };
         const listeners = [];
 
+        if (state.readOnly) {
+            if (typeof host.classList?.add === "function") {
+                host.classList.add("trust-reply-readonly");
+            } else {
+                const existing = typeof host.getAttribute === "function" ? host.getAttribute("class") || "" : "";
+                host.setAttribute("class", `${existing ? `${existing} ` : ""}trust-reply-readonly`);
+            }
+        }
+
         function isLive(seq) {
             return !state.destroyed && (seq == null || seq === state.bootSeq);
         }
@@ -202,6 +224,11 @@
         }
 
         async function requestJson(path, payload, controller, method) {
+            // I-2: fail-closed write gate — the read-only AUTO_PREVIEW host may
+            // only call /bootstrap; every other path throws before any fetch.
+            if (state.readOnly && path !== "/api/trust-reply/workbench/bootstrap") {
+                throw new Error("AUTO_PREVIEW 模式禁止写操作");
+            }
             const response = await global.fetch(apiUrl(state.contextPath, path), {
                 method: method || "POST",
                 headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -1322,6 +1349,13 @@
             }
         }
 
+        // S-2: the read-only AUTO_PREVIEW zone. The banner is static; the gate
+        // list starts empty (:empty hides it) and the host adapter fills it.
+        function renderReadOnlyZone() {
+            if (!state.readOnly) return "";
+            return `<div class="trust-reply-readonly-banner">只读预览：此处不生成、不采用、不发送</div><ul class="trust-reply-gate-list"></ul>`;
+        }
+
         // S-5: the former single-pane .trust-reply-layout shell (layout aside +
         // item list) is retired and replaced by two .trust-reply-page panels.
         function renderShell(message) {
@@ -1329,7 +1363,7 @@
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
             host.innerHTML = `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
+                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
             </details>`;
         }
 
@@ -1343,7 +1377,7 @@
             const itemMarkup = state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`;
             return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"><div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section></div>
+                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section></div>
             </details>`;
         }
 
@@ -1747,10 +1781,15 @@
             host.innerHTML = "";
         }
 
-        listen("click", onClick);
-        listen("change", onChange);
-        listen("input", onInput);
-        listen("keydown", onKeydown);
+        // I-2: the read-only host registers no interaction listeners at all, so
+        // generate/adopt/lock/integrate actions can never fire (the requestJson
+        // gate above is the second line of defense); onComplete never runs.
+        if (!state.readOnly) {
+            listen("click", onClick);
+            listen("change", onChange);
+            listen("input", onInput);
+            listen("keydown", onKeydown);
+        }
         renderShell("正在加载工作台…");
         return { state, bootstrap, unmount };
     }
