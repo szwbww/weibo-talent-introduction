@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.qa.service.QaReplyComposer
 import com.weibo.talentintroduction.reply.service.ManualReplyFrame
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.service.GroundedAutoReplyDecisionService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -29,6 +30,8 @@ class AiReplyDraftServiceTest {
     private val aiPromptConfigService = Mockito.mock(AiPromptConfigService::class.java)
     private val aiTrainingDialogueService = Mockito.mock(AiTrainingDialogueService::class.java)
     private val aiReplyContextService = Mockito.mock(AiReplyContextService::class.java)
+    private val aiTrainingQaService = Mockito.mock(AiTrainingQaService::class.java)
+    private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val claimValidator = AiReplyHighRiskClaimValidator(qaRuleRepository)
 
     init {
@@ -925,8 +928,11 @@ class AiReplyDraftServiceTest {
         val decision = GroundedAutoReplyDecisionService(
             props,
             service(props, client),
-            qaRuleRepository
-        ).decide("Auto question", "Subject")
+            qaRuleRepository,
+            aiReplyContextService,
+            aiTrainingQaService,
+            mailRecordRepository
+        ).decide("Auto question", "Subject", null)
 
         assertEquals("Re: Subject", decision.subject)
         assertEquals(1, observedCalls)

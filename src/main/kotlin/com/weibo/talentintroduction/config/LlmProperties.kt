@@ -15,5 +15,6 @@ data class LlmProperties(
     val replyProModel: String = "deepseek-v4-pro",
     val timeoutMs: Int = 30_000,
     val temperature: Double = 0.3,
-    val freeFormTemperature: Double = 0.6
+    val freeFormTemperature: Double = 0.6,
+    val shadowScoringEnabled: Boolean = false
 )

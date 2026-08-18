@@ -108,13 +108,18 @@ class AutoReplyPreviewService(
             }
 
             AutoIntentAction.QA -> {
-                val decision = groundedAutoReplyDecisionService.decide(cleanedBody, record.subject)
+                val previewContact = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+                val decision = groundedAutoReplyDecisionService.decide(
+                    inboundText = cleanedBody,
+                    inboundSubject = record.subject,
+                    contact = previewContact,
+                    currentInboundMessageId = record.messageId
+                )
                 when {
                     decision.readyToSend -> {
                         val account = mailSenderAccountService.getManualSendAccount(record.senderAccountCode)
-                        val contact = contactId?.let { expertContactRepository.findById(it).orElse(null) }
-                        val replyBody = if (contact != null && decision.rawDraftText != null) {
-                            mailVariableService.renderForContact(decision.rawDraftText, account, contact)
+                        val replyBody = if (previewContact != null && decision.rawDraftText != null) {
+                            mailVariableService.renderForContact(decision.rawDraftText, account, previewContact)
                         } else {
                             decision.rawDraftText
                         }

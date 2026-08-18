@@ -11,12 +11,14 @@ import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.InboundIntent
+import com.weibo.talentintroduction.mail.domain.AutoReplyConfidenceLog
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.AutoReplyConfidenceLogRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
@@ -59,7 +61,8 @@ class AutoMailReplyService(
     private val mailInboxCursorService: MailInboxCursorService,
     private val autoReplySettingService: AutoReplySettingService,
     private val inboundMailTagService: InboundMailTagService,
-    private val mailVariableService: MailVariableService
+    private val mailVariableService: MailVariableService,
+    private val autoReplyConfidenceLogRepository: AutoReplyConfidenceLogRepository
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
@@ -502,7 +505,40 @@ class AutoMailReplyService(
             AutoIntentAction.QA -> Unit
         }
 
-        val decision = groundedAutoReplyDecisionService.decide(cleanedBody, received.subject)
+        val decision = groundedAutoReplyDecisionService.decide(
+            inboundText = cleanedBody,
+            inboundSubject = received.subject,
+            contact = effectiveContact,
+            currentInboundMessageId = received.messageId
+        )
+        decision.confidence?.let { score ->
+            runCatching {
+                autoReplyConfidenceLogRepository.save(
+                    AutoReplyConfidenceLog(
+                        expertContactId = contactId,
+                        inboundMailRecordId = inboundMailRecordId,
+                        senderAccountCode = account.accountCode,
+                        inboundMessageId = received.messageId,
+                        crs = score.crs,
+                        coverageScore = score.coverageScore,
+                        evidenceScore = score.evidenceScore,
+                        consistencyScore = score.consistencyScore,
+                        historyScore = score.historyScore,
+                        requestCount = score.requestCount,
+                        unsupportedCount = score.unsupportedCount,
+                        partialCount = score.partialCount,
+                        verifiedRuleCount = score.verifiedRuleCount,
+                        warningCount = score.warningCount,
+                        draftReadiness = decision.draftReadiness.name,
+                        generationState = decision.generationState.name,
+                        decisionReason = decision.reason,
+                        readyToSend = decision.readyToSend,
+                        tier = "SHADOW",
+                        createdAt = LocalDateTime.now()
+                    )
+                )
+            }.onFailure { log.warn("Failed to persist auto-reply confidence log: {}", it.message) }
+        }
         if (!decision.readyToSend) {
             val manualReason = decision.reason
             markManualReview(

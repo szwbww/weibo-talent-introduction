@@ -5,7 +5,7 @@
 主计划：[00-auto-reply-convergence-master.md](./00-auto-reply-convergence-master.md)
 前置依赖：**必须在 [01](./01-decide-context-closure.md) 通过人工验收后执行**
 子系统数：1（frontend）
-文件数：6
+文件数：8
 
 ## 需求描述
 
@@ -240,6 +240,8 @@ src/main/resources/static/app.js:9954
 | `unmatchedQaReplySource.test.js` | `:28-35` | 断言 `async function loadAutoReplyPreview(recordId)`、`id="autoReplyPreviewStatus"`、`id="autoReplyPreviewMeta"`、`data-action="preview-auto-reply"` 存在 | 全部改写为对新 DOM 的断言（I-5） |
 | `trustReplyWorkbenchSharedMount.test.js` | `:369-377` `rejects invalid mode and source combinations` | 只覆盖 `SIMULATION` + `LIVE_INBOUND` 的错配 | 扩展覆盖 `AUTO_PREVIEW` + `TRAINING_MAIL` 错配，以及未知 mode |
 | `trustReplyWorkbenchSharedMount.test.js` | `:303-341` 双宿主共存用例 | 断言两宿主无 mode 切换控件 | 保持不变（回归） |
+| `aiReplyLoadingFeedback.test.js` | `:677` close-detail 沙箱用例 | vm 沙箱 stub `unmountLiveTrustReply: () => {}`，handler 现调用 `unmountMailboxTrustReplyHosts` | stub 改名 `unmountMailboxTrustReplyHosts: () => {}`（A1 授权，1 行） |
+| `expertProfileAbsence.test.js` | `:292` `createRendererSandbox` | vm 沙箱 stub `unmountLiveTrustReply() {}`，`showUnmatchedDetail` 现调用 `unmountMailboxTrustReplyHosts` | stub 改名 `unmountMailboxTrustReplyHosts() {}`（A1 授权，1 行） |
 
 ## 样式契约
 
@@ -474,8 +476,10 @@ grep -n "autoReplyPreview\|preview-auto-reply\|auto-reply-preview" src/main/reso
 | 4 | `src/test/js/unmatchedQaReplySource.test.js` | 修改 | 改写 `:28-35` 的 5 条 assert |
 | 5 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 修改 | 扩展 `:369-377` 错配用例 |
 | 6 | `src/test/js/autoPreviewWorkbenchHost.test.js` | 新建 | `AUTO_PREVIEW` 宿主行为契约 |
+| 7 | `src/test/js/aiReplyLoadingFeedback.test.js` | 修改 | 沙箱 stub `unmountLiveTrustReply` → `unmountMailboxTrustReplyHosts`（A1 授权，1 行） |
+| 8 | `src/test/js/expertProfileAbsence.test.js` | 修改 | 沙箱 stub `unmountLiveTrustReply` → `unmountMailboxTrustReplyHosts`（A1 授权，1 行） |
 
-合计 6 个文件，1 个子系统（frontend）。无后端改动，无迁移，无新增数据字段。
+合计 8 个文件，1 个子系统（frontend）。无后端改动，无迁移，无新增数据字段。
 
 ## 验证命令
 
