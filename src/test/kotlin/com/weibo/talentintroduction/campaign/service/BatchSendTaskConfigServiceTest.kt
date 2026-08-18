@@ -1113,12 +1113,14 @@ class BatchSendTaskConfigServiceTest {
     }
 
     @Test
-    fun `nextFireTime is null when autoEnabled is false`() {
-        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L, autoEnabled = false))
+    fun `nextFireTime is calculated when autoEnabled is false`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L))
+            .thenReturn(row(id = 1L, autoEnabled = false, cron = "0 0 9 * * ?"))
 
         val view = service().get(1L)
 
-        assertNull(view.nextFireTime)
+        assertNotNull(view.nextFireTime)
+        assertTrue(view.nextFireTime!!.isAfter(LocalDateTime.now().minusSeconds(1)))
     }
 
     @Test

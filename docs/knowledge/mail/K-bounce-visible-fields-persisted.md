@@ -2,8 +2,8 @@
 id: K-bounce-visible-fields-persisted
 domain: mail
 created: 2026-06-26
-last_used: 2026-06-29
-hit_count: 2
+last_used: 2026-08-18
+hit_count: 3
 source: fix-v:inbound-selfcheck-bounce-visibility:fix-1
 severity: P1
 ---

@@ -46,9 +46,9 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260817-v6-task-drilldown'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260817-v6-task-drilldown'));
-        assert.ok(html.includes('app.js?v=20260817-v6-task-drilldown'));
+        assert.ok(html.includes('styles.css?v=20260817-v7-reachability-preview'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260817-v7-reachability-preview'));
+        assert.ok(html.includes('app.js?v=20260817-v7-reachability-preview'));
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
@@ -121,6 +121,21 @@ describe("batch send task console visual repair", () => {
         assert.ok(css.includes(".batch-tag-picker-chip"));
         assert.ok(app.includes("loadBatchTagOptions"));
         assert.ok(app.includes("readBatchTagPickerValue"));
+    });
+
+    it("offers the unknown reachability filter in scheduled and manual forms", () => {
+        const unknownOption = '<option value="UNKNOWN_ONLY">仅未知</option>';
+        const editor = html.match(/<select id="batchConfigEditorReachabilityFilter"[\s\S]*?<\/select>/);
+        const manual = html.match(/<select id="batchManualReachabilityFilter"[\s\S]*?<\/select>/);
+        assert.ok(editor && editor[0].includes(unknownOption), "scheduled form must offer 仅未知");
+        assert.ok(manual && manual[0].includes(unknownOption), "manual form must offer 仅未知");
+    });
+
+    it("refreshes scheduled recipient preview when reachability filter changes", () => {
+        const listenerBlock = app.match(/\["batchConfigEditorTemplateId"[\s\S]*?\}\);/);
+        assert.ok(listenerBlock, "scheduled preview listener block must exist");
+        assert.ok(listenerBlock[0].includes('"batchConfigEditorReachabilityFilter"'),
+            "scheduled reachability filter must trigger recipient preview");
     });
 
     it("repairs legacy seed names with an ASCII-only utf8mb4 migration", () => {

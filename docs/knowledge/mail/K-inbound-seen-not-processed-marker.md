@@ -2,8 +2,8 @@
 id: K-inbound-seen-not-processed-marker
 domain: mail
 created: 2026-06-29
-last_used: 2026-07-06
-hit_count: 2
+last_used: 2026-08-18
+hit_count: 3
 source: create-p:inbound-uid-cursor-and-backfill
 severity: P1
 ---

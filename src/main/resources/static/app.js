@@ -15673,7 +15673,7 @@ function bindBatchSendTaskEvents() {
 
     // Recipient preview (P-F / 06): filter selects → debounced estimate
     ["batchConfigEditorTemplateId", "batchConfigEditorFunnelLevel",
-     "batchConfigEditorDiscipline"].forEach(function(id) {
+     "batchConfigEditorDiscipline", "batchConfigEditorReachabilityFilter"].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", function() { scheduleRecipientPreview("editor"); });
     });

@@ -2,8 +2,8 @@
 id: K-operator-status-reconcile
 domain: campaign
 created: 2026-08-13
-last_used: 2026-08-13
-hit_count: 0
+last_used: 2026-08-18
+hit_count: 1
 source: fast-p:batch-send-status-consistency:04
 severity: P1
 ---

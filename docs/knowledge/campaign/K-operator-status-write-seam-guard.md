@@ -2,8 +2,8 @@
 id: K-operator-status-write-seam-guard
 domain: campaign
 created: 2026-08-13
-last_used: 2026-08-13
-hit_count: 0
+last_used: 2026-08-18
+hit_count: 1
 source: execute-p:02-single-writer-guard-test
 ---
 经验：`expert_contact.operator_status` 的**唯一 DB 写入口**由守卫测试机器强制，不再是口头约定——

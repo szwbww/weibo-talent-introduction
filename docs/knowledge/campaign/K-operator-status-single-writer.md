@@ -2,8 +2,8 @@
 id: K-operator-status-single-writer
 domain: campaign
 created: 2026-08-13
-last_used: 2026-08-13
-hit_count: 0
+last_used: 2026-08-18
+hit_count: 1
 source: create-p:operator-status-single-writer
 ---
 经验：`expert_contact.operator_status` 的**自动**写入全仓只有 1 个出口——`ExpertOperatorStatusService.updateAutomatically`（`campaign.service`）。任何"发送成功要改状态"的路径（手动发信 `ManualExpertMailService.sendManualMail`、批量 `ManualOutreachTxHelper.recordSuccess`）都必须在 `ConversationStateService.transition(...)` **之后**调用它，并传入 transition 的返回值（含最新 `lastMailAt`），禁止自持字符串实现或直接 `expertIndexWriterService.syncCandidateOperatorStatus`。顺序不可颠倒：transition 内部用旧快照 save，先调用会被覆盖回去（Spring Data JDBC 无实体跟踪）。

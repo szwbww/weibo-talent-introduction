@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260817-v6-task-drilldown">
+    <link rel="stylesheet" href="styles.css?v=20260817-v7-reachability-preview">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1279,8 +1279,9 @@
                                 <option value="">不过滤</option>
                                 <option value="EXCLUDE_BLOCKED">排除已失效</option>
                                 <option value="HIGH_ONLY">仅高可达</option>
+                                <option value="UNKNOWN_ONLY">仅未知</option>
                             </select>
-                            <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」还会排除数据未补充的专家。</span>
+                            <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」排除数据未补充的专家，「仅未知」只选择尚未完成可达性判定的专家。</span>
                         </div>
                     </div>
                 </section>
@@ -1487,8 +1488,9 @@
                             <option value="">不过滤</option>
                             <option value="EXCLUDE_BLOCKED">排除已失效</option>
                             <option value="HIGH_ONLY">仅高可达</option>
+                            <option value="UNKNOWN_ONLY">仅未知</option>
                         </select>
-                        <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」还会排除数据未补充的专家。</span>
+                        <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」排除数据未补充的专家，「仅未知」只选择尚未完成可达性判定的专家。</span>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
@@ -2069,7 +2071,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260817-v6-task-drilldown"></script>
-<script src="app.js?v=20260817-v6-task-drilldown"></script>
+<script src="trust-reply-workbench.js?v=20260817-v7-reachability-preview"></script>
+<script src="app.js?v=20260817-v7-reachability-preview"></script>
 </body>
 </html>

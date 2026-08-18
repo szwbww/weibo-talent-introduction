@@ -56,7 +56,7 @@ data class BatchSendTaskConfigView(
     val reachabilityFilter: String? = null,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
-    /** Next automatic trigger time; null when autoEnabled = false or the cron is invalid (I-1/I-2/I-3). */
+    /** Next planned trigger time; null when the cron is invalid (I-1/I-2/I-3). */
     val nextFireTime: LocalDateTime? = null,
     /** Most recent execution start time (started_at), MANUAL or SCHEDULED; null when never executed (I-5). */
     val lastExecutedAt: LocalDateTime? = null

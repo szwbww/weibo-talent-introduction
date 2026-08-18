@@ -464,18 +464,18 @@ class BatchSendTaskConfigService(
             reachabilityFilter = row.reachabilityFilter,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
-            nextFireTime = computeNextFireTime(row.autoEnabled, row.cron),
+            nextFireTime = computeNextFireTime(row.cron),
             lastExecutedAt = lastExecutedAt
         )
     }
 
     /**
      * I-1/I-2/I-3: same Spring 6-field cron implementation as the scheduler's CronTrigger.
-     * Disabled configs and invalid cron degrade to null — a single dirty row must never
-     * 500 the config list (X-4).
+     * Invalid cron degrades to null — a single dirty row must never 500 the config list
+     * (X-4). The preview is based on the current plan even when the config is disabled;
+     * the enabled state is exposed separately in the view.
      */
-    private fun computeNextFireTime(autoEnabled: Boolean, cron: String): LocalDateTime? {
-        if (!autoEnabled) return null
+    private fun computeNextFireTime(cron: String): LocalDateTime? {
         return runCatching { CronExpression.parse(cron).next(LocalDateTime.now()) }.getOrNull()
     }
 

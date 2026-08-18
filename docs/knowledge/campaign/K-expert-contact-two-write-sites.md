@@ -2,8 +2,8 @@
 id: K-expert-contact-two-write-sites
 domain: campaign
 created: 2026-06-29
-last_used: 2026-08-16
-hit_count: 5
+last_used: 2026-08-18
+hit_count: 6
 source: create-p:contact-country-foundation
 ---
 经验：`ExpertContact(...)` 全仓只有 2 处**构造**（新建行）——`InitialOutreachService.kt:45`（自动首发）与 `ManualInitialOutreachService.kt:273`（手动/调度批量，`existingContact ?: run { save(...) }`）。两处作用域内都持有 `expert: ExpertProfile`，可取 `.country` 等画像字段。其余所有 `expertContactRepository.save(...)` 都是 `contact.copy(...)` 更新已有行。
