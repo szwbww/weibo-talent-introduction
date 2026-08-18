@@ -90,3 +90,6 @@ Full suite: 634 tests, 632 pass, 2 fail (both above). Java side: all suites `Fai
 
 ### Next action
 - PLAN_CONFLICT → obtain Main's decision on the unmount-fold collateral (option A recommended), then resume (fix-log + re-verify) or proceed with amended scope.
+
+--- finalization 校正 ---
+本报告在 73cd1f0（pause）提交中被过早记录；421ae51 证据提交已纳入本文件（内容未变，仅此注记）。
