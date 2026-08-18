@@ -2,8 +2,8 @@
 id: K-trust-reply-resolved-version-single-source
 domain: frontend
 created: 2026-07-29
-last_used: 2026-08-05
-hit_count: 3
+last_used: 2026-08-18
+hit_count: 4
 source: create-p:trust-reply-unsupported-answer-v1
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-ai-research-profile-authority-parity
 domain: llm
 created: 2026-07-16
-last_used: 2026-07-21
-hit_count: 8
+last_used: 2026-08-18
+hit_count: 9
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

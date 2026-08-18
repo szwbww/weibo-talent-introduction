@@ -2,8 +2,8 @@
 id: K-process-single-all-callers
 domain: mail
 created: 2026-06-30
-last_used: 2026-07-01
-hit_count: 4
+last_used: 2026-08-18
+hit_count: 5
 source: create-p:global-auto-reply-switch
 ---
 `AutoMailReplyService.processSingle()` 是所有入站自动回复逻辑的唯一执行点。调用方共 6 处：

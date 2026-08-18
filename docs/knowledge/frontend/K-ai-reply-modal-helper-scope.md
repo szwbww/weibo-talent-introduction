@@ -2,8 +2,8 @@
 id: K-ai-reply-modal-helper-scope
 domain: frontend
 created: 2026-07-16
-last_used: 2026-07-25
-hit_count: 22
+last_used: 2026-08-18
+hit_count: 23
 source: fix-v:ai-reply-review-authority-fail-closed:fix-1
 severity: P1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1

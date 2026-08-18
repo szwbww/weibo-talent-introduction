@@ -2,8 +2,8 @@
 id: K-ai-generate-single-freeform-seam
 domain: qa
 created: 2026-07-19
-last_used: 2026-08-01
-hit_count: 31
+last_used: 2026-08-18
+hit_count: 32
 source: create-p:ai-reply-04-grounded-trust-content-plan
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 ---
