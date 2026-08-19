@@ -2,8 +2,8 @@
 id: K-clearExecutionContext-status-leak
 domain: task
 created: 2026-07-07
-last_used: 2026-08-16
-hit_count: 4
+last_used: 2026-07-08
+hit_count: 3
 source: create-p:enrichment-improvement-v2
 ---
 

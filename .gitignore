@@ -10,3 +10,4 @@ config/application-local.yml
 .od-skills/
 .worktrees/
 exports/
+__pycache__/

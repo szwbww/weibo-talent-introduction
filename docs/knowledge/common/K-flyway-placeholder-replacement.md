@@ -2,8 +2,8 @@
 id: K-flyway-placeholder-replacement
 domain: common
 created: 2026-08-12
-last_used: 2026-08-16
-hit_count: 3
+last_used: 2026-08-14
+hit_count: 2
 source: create-p:unsubscribe-01-body-link
 severity: P1
 ---
