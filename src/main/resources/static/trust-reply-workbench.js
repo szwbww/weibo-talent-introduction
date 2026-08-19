@@ -119,6 +119,27 @@
         return { events, remainder };
     }
 
+    // I-2: pure array reorder shared by drag (drop target) and keyboard
+    // (ArrowLeft/ArrowRight). `toIndex` is the insertion position in the array
+    // AFTER removing `fromId`, clamped to [0, ids.length - 1]; the result keeps
+    // the same length as the input (asserted below).
+    function reorderFactIds(ids, fromId, toIndex) {
+        const source = ids || [];
+        const numericFrom = Number(fromId);
+        const fromIndex = source.map(Number).indexOf(numericFrom);
+        if (fromIndex < 0) return [...source];
+        let target = Number(toIndex);
+        if (!Number.isInteger(target)) target = fromIndex;
+        target = Math.max(0, Math.min(source.length - 1, target));
+        const next = [...source];
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(target, 0, moved);
+        if (next.length !== source.length) {
+            throw new Error("reorderFactIds: result length must equal input length");
+        }
+        return next;
+    }
+
     function mount(host, options) {
         validateMount(host, options);
         const instance = createInstance(host, options);
@@ -193,7 +214,10 @@
             completePending: false,
             savedStateVersion: 0,
             stateSavePending: false,
-            sequenceCancelled: false
+            sequenceCancelled: false,
+            // I-3: grip keyboard moves re-render via bootstrap(); the next
+            // render() restores focus to this fact's grip (consumed once).
+            pendingFocusFactId: null
         };
         const listeners = [];
 
@@ -1355,6 +1379,114 @@
             await changeRequestFacts(request, (request.factRuleIds || []).filter((item) => Number(item) !== id));
         }
 
+        // I-1/I-2: reorder goes through the exact same canonical path as add /
+        // remove (changeRequestFacts -> confirm -> saved-state delete -> reset
+        // versions -> bootstrap); an unchanged order short-circuits so the
+        // confirmation dialog and state deletion never fire for a no-op.
+        async function moveFact(requestKey, factId, toIndex) {
+            const request = findRequest(requestKey);
+            if (!request) return;
+            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const next = reorderFactIds(request.factRuleIds, factId, toIndex);
+            if (JSON.stringify(next) === JSON.stringify(request.factRuleIds)) return;
+            await changeRequestFacts(request, next);
+        }
+
+        // I-3: keyboard reorder (ArrowLeft/ArrowRight on a focused grip). The
+        // re-render triggered by changeRequestFacts would drop focus, so the
+        // target fact is remembered and render() restores it.
+        function onGripArrowKey(grip, key) {
+            if (grip.getAttribute && grip.getAttribute("aria-disabled") === "true") return;
+            const chip = grip.closest && grip.closest(".trust-reply-fact-chip");
+            if (!chip || !chip.dataset) return;
+            const request = findRequest(chip.dataset.requestKey);
+            if (!request) return;
+            const ids = request.factRuleIds || [];
+            const currentIndex = ids.map(Number).indexOf(Number(chip.dataset.factId));
+            if (currentIndex < 0) return;
+            const toIndex = key === "ArrowLeft" ? currentIndex - 1 : currentIndex + 1;
+            state.pendingFocusFactId = Number(chip.dataset.factId);
+            void moveFact(chip.dataset.requestKey, chip.dataset.factId, toIndex);
+        }
+
+        // B-3: delegated drag handling on the chip list. Drop marks use the
+        // chip's horizontal midline; box-shadow indicators keep chip size
+        // stable so flex-wrap does not reflow while hovering.
+        function clearDropMarks(list) {
+            if (!list || typeof list.querySelectorAll !== "function") return;
+            list.querySelectorAll('[data-dragging="true"], [data-drop-before="true"], [data-drop-after="true"]').forEach((element) => {
+                delete element.dataset.dragging;
+                delete element.dataset.dropBefore;
+                delete element.dataset.dropAfter;
+            });
+        }
+
+        function onDragStart(event) {
+            const grip = event.target && event.target.closest && event.target.closest('[data-role="fact-grip"]');
+            if (!grip || !grip.dataset || grip.dataset.role !== "fact-grip" || !host.contains(grip)) return;
+            if (grip.getAttribute && grip.getAttribute("aria-disabled") === "true") return;
+            const chip = grip.closest && grip.closest(".trust-reply-fact-chip");
+            if (!chip || !chip.dataset) return;
+            if (event.dataTransfer) {
+                event.dataTransfer.setData("text/plain", String(chip.dataset.factId));
+                event.dataTransfer.effectAllowed = "move";
+            }
+            chip.dataset.dragging = "true";
+        }
+
+        function onDragOver(event) {
+            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
+            if (!list || !host.contains(list)) return;
+            event.preventDefault && event.preventDefault();
+            clearDropMarks(list);
+            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
+            if (!chip || !chip.dataset || typeof chip.getBoundingClientRect !== "function" || typeof event.clientX !== "number") return;
+            const rect = chip.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            if (event.clientX < rect.left + rect.width / 2) {
+                chip.dataset.dropBefore = "true";
+                delete chip.dataset.dropAfter;
+            } else {
+                chip.dataset.dropAfter = "true";
+                delete chip.dataset.dropBefore;
+            }
+        }
+
+        function onDrop(event) {
+            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
+            if (!list || !host.contains(list)) return;
+            // IP-3: a drop released over the remove button must reorder, never
+            // fall through to the button's click handler.
+            event.preventDefault && event.preventDefault();
+            event.stopPropagation && event.stopPropagation();
+            clearDropMarks(list);
+            const factId = event.dataTransfer && event.dataTransfer.getData ? event.dataTransfer.getData("text/plain") : null;
+            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
+            if (!chip || !chip.dataset || factId == null) return;
+            const request = findRequest(chip.dataset.requestKey);
+            if (!request) return;
+            const ids = request.factRuleIds || [];
+            const fromIndex = ids.map(Number).indexOf(Number(factId));
+            if (fromIndex < 0) return;
+            const chips = typeof list.querySelectorAll === "function" ? [...list.querySelectorAll(".trust-reply-fact-chip")] : [];
+            const targetIndex = chips.findIndex((element) => String(element.dataset && element.dataset.factId) === String(chip.dataset.factId));
+            if (targetIndex < 0) return;
+            // Dropping a chip back onto itself is a no-op under either mark.
+            if (targetIndex === fromIndex) return;
+            const before = chip.dataset.dropBefore === "true";
+            // toIndex is the insertion slot in the post-removal array: the
+            // target chip's index minus one when the dragged chip sat before it.
+            const targetRemainderIndex = targetIndex - (fromIndex < targetIndex ? 1 : 0);
+            const toIndex = before ? targetRemainderIndex : targetRemainderIndex + 1;
+            void moveFact(chip.dataset.requestKey, factId, toIndex);
+        }
+
+        function onDragEnd(event) {
+            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
+            if (!list || !host.contains(list)) return;
+            clearDropMarks(list);
+        }
+
         function toggleFactPicker(requestKey) {
             const request = findRequest(requestKey);
             if (!request) return;
@@ -1385,6 +1517,14 @@
 
         function onKeydown(event) {
             const key = event.key || (event.target && event.target.key);
+            if (key === "ArrowLeft" || key === "ArrowRight") {
+                const grip = event.target && event.target.closest && event.target.closest('[data-role="fact-grip"]');
+                if (grip && grip.dataset && grip.dataset.role === "fact-grip" && host.contains(grip)) {
+                    event.preventDefault && event.preventDefault();
+                    onGripArrowKey(grip, key);
+                    return;
+                }
+            }
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
             const tab = event.target && event.target.closest && event.target.closest('[role="tab"]');
             if (!tab || !host.contains(tab)) return;
@@ -1426,13 +1566,20 @@
         function renderFactSection(request) {
             const factActionsDisabled = request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending;
             const owners = factOwnerById();
+            // S-3: hint id derived from the request key (unique per summary,
+            // instance-scoped so multiple workbenches on one page never clash).
+            const gripHintId = `${state.instanceId}-fact-grip-hint-${request.requestKey}`;
             const chips = (request.factRuleIds || []).map((factId) => {
                 const id = Number(factId);
                 const rule = factRuleById(id);
                 const label = rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
                 const body = rule && rule.answerBody ? String(rule.answerBody) : "";
                 const title = body ? ` title="${escapeText(body)}"` : "";
-                return `<span class="trust-reply-fact-chip" data-fact-id="${id}"${title}><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
+                // S-1: draggable lives on the grip only (not the chip), so the
+                // remove button never participates in the drag (IP-3).
+                const gripDraggable = factActionsDisabled ? "" : ` draggable="true"`;
+                const gripDisabled = factActionsDisabled ? ` aria-disabled="true"` : "";
+                return `<span class="trust-reply-fact-chip" data-fact-id="${id}" data-request-key="${escapeText(request.requestKey)}"${title}><span class="trust-reply-fact-grip" data-role="fact-grip"${gripDraggable} tabindex="0" role="button" aria-label="拖动或用左右方向键调整「${escapeText(label)}」的顺序" aria-describedby="${gripHintId}"${gripDisabled}>⋮⋮</span><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
             }).join("");
             const pickerOptions = state.rules.map((rule) => {
                 const id = Number(rule.ruleId ?? rule.id);
@@ -1462,7 +1609,7 @@
             const pickerSearch = pickerOptions
                 ? `<div class="trust-reply-fact-picker-search"><input type="text" data-role="fact-search" data-request-key="${escapeText(request.requestKey)}" placeholder="搜索事实标题 / 正文…" aria-label="搜索事实"${factActionsDisabled ? " disabled" : ""}></div>`
                 : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
         }
 
         function renderFrameSelects() {
@@ -1569,6 +1716,17 @@
         function render() {
             if (state.destroyed) return;
             host.innerHTML = renderMarkup();
+            // I-3: keyboard reorder re-renders via bootstrap(); hand focus back
+            // to the same fact's grip (consumed once, kept until found so an
+            // intermediate loading render cannot drop it).
+            const focusFactId = state.pendingFocusFactId;
+            if (focusFactId != null && typeof host.querySelector === "function") {
+                const grip = host.querySelector(`[data-fact-id="${Number(focusFactId)}"] [data-role="fact-grip"]`);
+                if (grip && typeof grip.focus === "function") {
+                    state.pendingFocusFactId = null;
+                    grip.focus();
+                }
+            }
         }
 
         function renderMarkup() {
@@ -2026,10 +2184,14 @@
             listen("change", onChange);
             listen("input", onInput);
             listen("keydown", onKeydown);
+            listen("dragstart", onDragStart);
+            listen("dragover", onDragOver);
+            listen("drop", onDrop);
+            listen("dragend", onDragEnd);
         }
         renderShell("正在加载工作台…");
         return { state, bootstrap, unmount };
     }
 
-    global.TrustReplyWorkbench = Object.freeze({ mount });
+    global.TrustReplyWorkbench = Object.freeze({ mount, reorderFactIds });
 })(typeof window !== "undefined" ? window : globalThis);

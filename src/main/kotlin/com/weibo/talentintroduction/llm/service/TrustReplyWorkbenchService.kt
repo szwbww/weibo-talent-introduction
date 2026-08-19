@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.qa.service.QaRequestExtractor
 import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
@@ -131,7 +132,20 @@ data class TrustReplyRequestCoverage(
     val requestKey: String = "",
     val allowedHandlings: List<String> = emptyList(),
     val recommendedHandling: String = "",
-    val suggestedInstruction: String? = null
+    val suggestedInstruction: String? = null,
+    // P2a (plan 02, C-2): shadow field — the frontend does not render it yet
+    // (O2), and it never enters any outbound text/prompt (I-5).
+    val unrecognizedAsks: List<TrustReplyUnrecognizedAsk> = emptyList()
+)
+
+/**
+ * P2a (plan 02, observable outcome 1): operator-side shadow record of an ask
+ * the intent catalog did not claim. Label and verbatim quote only — the
+ * original range stays server-side audit data.
+ */
+data class TrustReplyUnrecognizedAsk(
+    val label: String,
+    val quote: String
 )
 
 data class TrustReplyIntentCoverage(
@@ -332,6 +346,7 @@ class TrustReplyWorkbenchService(
     private val stateStore: TrustReplyWorkbenchStateStore,
     private val replySnippetService: ReplySnippetService
 ) {
+    private val logger = LoggerFactory.getLogger(TrustReplyWorkbenchService::class.java)
     fun resolveSource(source: TrustReplySourceRef): ResolvedTrustReplySource {
         require(source.sourceId > 0) { "sourceId must be positive" }
         return when (source.sourceType) {
@@ -392,6 +407,21 @@ class TrustReplyWorkbenchService(
                 callerFrame = request.frameSnapshot
             )
         }
+        // P2a (plan 02, C-3): exactly one [ASK_ENUM] record per workbench
+        // bootstrap. The enumerator shadow fields are filled inside
+        // QaFactSelectionService.selectForWorkbench — the workbench path is
+        // never gated by enabledForAutoReply (I-6) and is fail-open (I-4).
+        logger.info(
+            buildAskEnumLogLine(
+                source = resolved.source.sourceType.name,
+                contactId = resolved.contact.id ?: 0L,
+                available = resolvedSelection.selection.enumeratorAvailable,
+                enumerated = resolvedSelection.selection.enumeratorEnumerated,
+                claimed = resolvedSelection.selection.enumeratorClaimed,
+                unrecognized = resolvedSelection.selection.unrecognizedAskCount,
+                kind = extractorKinds(resolved.inboundText)
+            )
+        )
         return TrustReplyBootstrapResponse(
             source = resolved.source,
             sourceVersion = resolved.sourceVersion,
@@ -1711,7 +1741,10 @@ class TrustReplyWorkbenchService(
                 requestKey = requestKey(sourceVersion, item),
                 allowedHandlings = allowedHandlings(item.status).map { it.name },
                 recommendedHandling = recommendedHandling(item.status).name,
-                suggestedInstruction = suggestedInstructionFor(item, adjacentNames)
+                suggestedInstruction = suggestedInstructionFor(item, adjacentNames),
+                unrecognizedAsks = item.unrecognizedAsks.map { ask ->
+                    TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
+                }
             )
         }
     }
@@ -1781,6 +1814,17 @@ class TrustReplyWorkbenchService(
     private fun MailRecord.inboundText(): String = cleanedBody?.takeIf { it.isNotBlank() } ?: body.orEmpty()
 
     private fun InboundMailProcessing.inboundText(): String = cleanedBody?.takeIf { it.isNotBlank() } ?: body.orEmpty()
+
+    /**
+     * P2a (plan 02, C-3): extractor kinds of the mail for the [ASK_ENUM] log —
+     * recorded only, never a judgement input.
+     */
+    private fun extractorKinds(inboundText: String): String =
+        QaRequestExtractor.extract(inboundText)
+            .map { it.kind.name }
+            .distinct()
+            .sorted()
+            .joinToString(",")
 
     companion object {
         // I-0/V-2: time-promise tokens that adjacent display names must not

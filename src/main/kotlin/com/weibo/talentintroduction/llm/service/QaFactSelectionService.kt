@@ -1,23 +1,31 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.weibo.talentintroduction.llm.config.AskEnumeratorProperties
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.qa.service.QaRequestExtractor
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.util.Locale
 
 @Service
 class QaFactSelectionService(
-    private val qaRuleRepository: QaRuleRepository
+    private val qaRuleRepository: QaRuleRepository,
+    // P2a (plan 02): nullable so the historical single-arg constructor sites
+    // (unit tests) compile unchanged; Spring injects the real bean.
+    private val inboundAskEnumerator: InboundAskEnumerator? = null,
+    private val askEnumeratorProperties: AskEnumeratorProperties = AskEnumeratorProperties()
 ) {
+    private val logger = LoggerFactory.getLogger(QaFactSelectionService::class.java)
     fun select(
         inboundText: String,
         selectedRuleIds: List<Long>?,
         researchProfileSufficient: Boolean
     ): ResolvedQaRules {
-        val requestTexts = QaRequestExtractor.extract(inboundText).map { it.text }
+        val requests = extractRequests(inboundText)
+        val requestTexts = requests.map { it.text }
         val matchableRules = qaRuleRepository.findAllEnabledOrdered()
             .filter { it.isMatchable() && it.answerBody.trim().isNotBlank() }
 
@@ -28,23 +36,35 @@ class QaFactSelectionService(
         val promptPool = explicitRules ?: matchableRules
         val promptSet = promptPool.mapNotNull { it.id }.toSet()
 
+        // P2a (plan 02, I-6): the auto-reply path enumerates only while the
+        // opt-in flag is on; otherwise it records available=false and never
+        // enters client.chat. Judgement/status never depends on it (I-3).
+        val enumeration = if (askEnumeratorProperties.enabledForAutoReply) {
+            inboundAskEnumerator?.enumerate(inboundText) ?: AskEnumeration(false, emptyList())
+        } else {
+            AskEnumeration(false, emptyList())
+        }
+
         val requestFacts = if (requestTexts.isEmpty()) {
             emptyList()
         } else {
-            requestTexts.mapIndexed { idx, requestText ->
+            requests.mapIndexed { idx, unit ->
                 buildRequestFact(
                     index = idx + 1,
-                    requestText = requestText,
+                    requestText = unit.text,
                     promptPool = promptPool,
                     promptSet = promptSet,
-                    researchProfileSufficient = researchProfileSufficient
+                    researchProfileSufficient = researchProfileSufficient,
+                    askEnumeration = enumeration,
+                    requestRange = unit.range
                 )
             }
         }
 
         val sendQaRuleIds = orderEvidenceRuleIds(requestFacts, promptPool)
+        val unrecognizedAskCount = requestFacts.sumOf { it.unrecognizedAsks.size }
 
-        return ResolvedQaRules(
+        val result = ResolvedQaRules(
             sendQaRuleIds = sendQaRuleIds,
             promptRuleIds = sendQaRuleIds,
             requestFacts = requestFacts,
@@ -55,8 +75,28 @@ class QaFactSelectionService(
             groundedRequestCount = requestFacts.count {
                 it.status == RequestGroundingStatus.GROUNDED ||
                     it.status == RequestGroundingStatus.PARTIAL
-            }
+            },
+            unrecognizedAskCount = unrecognizedAskCount,
+            enumeratorAvailable = enumeration.available,
+            enumeratorEnumerated = enumeration.asks.size,
+            enumeratorClaimed = enumeration.asks.size - unrecognizedAskCount
         )
+
+        // P2a (plan 02, C-3): the auto-path [ASK_ENUM] record. The fixed field
+        // names/order come from buildAskEnumLogLine; select() has no contact
+        // identity, so source=AUTO / contactId=0.
+        logger.info(
+            buildAskEnumLogLine(
+                source = "AUTO",
+                contactId = 0,
+                available = result.enumeratorAvailable,
+                enumerated = result.enumeratorEnumerated,
+                claimed = result.enumeratorClaimed,
+                unrecognized = result.unrecognizedAskCount,
+                kind = requests.map { it.kind.name }.distinct().sorted().joinToString(",")
+            )
+        )
+        return result
     }
 
     /**
@@ -86,43 +126,53 @@ class QaFactSelectionService(
                 "TRUST_REPLY_FACT_SELECTION_AMBIGUOUS"
             )
         }
-        val requestTexts = QaRequestExtractor.extract(inboundText).map { it.text }
+        val requests = extractRequests(inboundText)
+        val requestTexts = requests.map { it.text }
+        // P2a (plan 02, C-2/I-6): the workbench path always enumerates (never
+        // gated by enabledForAutoReply); the enumerator itself is fail-open and
+        // returns available=false when the LLM is off (I-4).
+        val enumeration = inboundAskEnumerator?.enumerate(inboundText)
+            ?: AskEnumeration(false, emptyList())
         return when {
             selectionsByRequest != null -> resolveMatrixSelection(
-                requestTexts = requestTexts,
+                requests = requests,
                 selectionsByRequest = selectionsByRequest,
-                researchProfileSufficient = researchProfileSufficient
+                researchProfileSufficient = researchProfileSufficient,
+                enumeration = enumeration
             )
             requestedFactIds != null -> resolveLegacySelection(
-                requestTexts = requestTexts,
+                requests = requests,
                 requestedFactIds = requestedFactIds,
-                researchProfileSufficient = researchProfileSufficient
+                researchProfileSufficient = researchProfileSufficient,
+                enumeration = enumeration
             )
             else -> {
                 val matchableRules = qaRuleRepository.findAllEnabledOrdered()
                     .filter { it.isMatchable() && it.answerBody.trim().isNotBlank() }
                 resolveAutoSelection(
-                    requestTexts = requestTexts,
+                    requests = requests,
                     matchableRules = matchableRules,
-                    researchProfileSufficient = researchProfileSufficient
+                    researchProfileSufficient = researchProfileSufficient,
+                    enumeration = enumeration
                 )
             }
         }
     }
 
     private fun resolveMatrixSelection(
-        requestTexts: List<String>,
+        requests: List<RequestUnit>,
         selectionsByRequest: List<List<Long>>,
-        researchProfileSufficient: Boolean
+        researchProfileSufficient: Boolean,
+        enumeration: AskEnumeration
     ): ResolvedQaRules {
-        if (requestTexts.size != selectionsByRequest.size) {
+        if (requests.size != selectionsByRequest.size) {
             throw TrustReplyWorkbenchException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "TRUST_REPLY_FACT_SELECTION_INVALID"
             )
         }
         checkWorkbenchUniqueness(selectionsByRequest.flatten())
-        val requestFacts = requestTexts.mapIndexed { idx, text ->
+        val requestFacts = requests.mapIndexed { idx, unit ->
             val explicitIds = selectionsByRequest[idx]
             val explicitRules = if (explicitIds.isEmpty()) {
                 emptyList()
@@ -139,10 +189,12 @@ class QaFactSelectionService(
             val promptSet = explicitRules.mapNotNull { it.id }.toSet()
             val item = buildRequestFact(
                 index = idx + 1,
-                requestText = text,
+                requestText = unit.text,
                 promptPool = explicitRules,
                 promptSet = promptSet,
-                researchProfileSufficient = researchProfileSufficient
+                researchProfileSufficient = researchProfileSufficient,
+                askEnumeration = enumeration,
+                requestRange = unit.range
             )
             if (item.factRuleIds != explicitIds) {
                 throw TrustReplyWorkbenchException(
@@ -152,27 +204,31 @@ class QaFactSelectionService(
             }
             item
         }
-        return workbenchResult(requestFacts)
+        return workbenchResult(requestFacts, enumeration)
     }
 
     private fun resolveLegacySelection(
-        requestTexts: List<String>,
+        requests: List<RequestUnit>,
         requestedFactIds: List<Long>,
-        researchProfileSufficient: Boolean
+        researchProfileSufficient: Boolean,
+        enumeration: AskEnumeration
     ): ResolvedQaRules {
         if (requestedFactIds.isEmpty()) {
             // Empty flat selection means "no facts assigned": requests keep their
             // intent-derived status without fabricated fallback evidence (Task 2.5).
             return workbenchResult(
-                requestTexts.mapIndexed { idx, text ->
+                requests.mapIndexed { idx, unit ->
                     buildRequestFact(
                         index = idx + 1,
-                        requestText = text,
+                        requestText = unit.text,
                         promptPool = emptyList(),
                         promptSet = emptySet(),
-                        researchProfileSufficient = researchProfileSufficient
+                        researchProfileSufficient = researchProfileSufficient,
+                        askEnumeration = enumeration,
+                        requestRange = unit.range
                     )
-                }
+                },
+                enumeration
             )
         }
         checkWorkbenchUniqueness(requestedFactIds)
@@ -185,15 +241,17 @@ class QaFactSelectionService(
             )
         }
         val remaining = explicitRules.toMutableList()
-        val requestFacts = requestTexts.mapIndexed { idx, text ->
+        val requestFacts = requests.mapIndexed { idx, unit ->
             val pool = remaining.toList()
             val promptSet = pool.mapNotNull { it.id }.toSet()
             val item = buildRequestFact(
                 index = idx + 1,
-                requestText = text,
+                requestText = unit.text,
                 promptPool = pool,
                 promptSet = promptSet,
-                researchProfileSufficient = researchProfileSufficient
+                researchProfileSufficient = researchProfileSufficient,
+                askEnumeration = enumeration,
+                requestRange = unit.range
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
@@ -205,36 +263,43 @@ class QaFactSelectionService(
                 "TRUST_REPLY_FACT_SELECTION_INVALID"
             )
         }
-        return workbenchResult(requestFacts)
+        return workbenchResult(requestFacts, enumeration)
     }
 
     private fun resolveAutoSelection(
-        requestTexts: List<String>,
+        requests: List<RequestUnit>,
         matchableRules: List<QaRule>,
-        researchProfileSufficient: Boolean
+        researchProfileSufficient: Boolean,
+        enumeration: AskEnumeration
     ): ResolvedQaRules {
         val remaining = matchableRules.toMutableList()
-        val requestFacts = requestTexts.mapIndexed { idx, text ->
+        val requestFacts = requests.mapIndexed { idx, unit ->
             val pool = remaining.toList()
             val promptSet = pool.mapNotNull { it.id }.toSet()
             val item = buildRequestFact(
                 index = idx + 1,
-                requestText = text,
+                requestText = unit.text,
                 promptPool = pool,
                 promptSet = promptSet,
-                researchProfileSufficient = researchProfileSufficient
+                researchProfileSufficient = researchProfileSufficient,
+                askEnumeration = enumeration,
+                requestRange = unit.range
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
             item
         }
-        return workbenchResult(requestFacts)
+        return workbenchResult(requestFacts, enumeration)
     }
 
-    private fun workbenchResult(requestFacts: List<RequestFactItem>): ResolvedQaRules {
+    private fun workbenchResult(
+        requestFacts: List<RequestFactItem>,
+        enumeration: AskEnumeration
+    ): ResolvedQaRules {
         // I-1: the ordered union derives from the canonical per-request lists and is
         // never fed back into per-request pools.
         val sendIds = requestFacts.sortedBy { it.index }.flatMap { it.factRuleIds }.distinct()
+        val unrecognizedAskCount = requestFacts.sumOf { it.unrecognizedAsks.size }
         return ResolvedQaRules(
             sendQaRuleIds = sendIds,
             promptRuleIds = sendIds,
@@ -246,7 +311,11 @@ class QaFactSelectionService(
             groundedRequestCount = requestFacts.count {
                 it.status == RequestGroundingStatus.GROUNDED ||
                     it.status == RequestGroundingStatus.PARTIAL
-            }
+            },
+            unrecognizedAskCount = unrecognizedAskCount,
+            enumeratorAvailable = enumeration.available,
+            enumeratorEnumerated = enumeration.asks.size,
+            enumeratorClaimed = enumeration.asks.size - unrecognizedAskCount
         )
     }
 
@@ -310,10 +379,16 @@ class QaFactSelectionService(
         requestText: String,
         promptPool: List<QaRule>,
         promptSet: Set<Long>,
-        researchProfileSufficient: Boolean
+        researchProfileSufficient: Boolean,
+        askEnumeration: AskEnumeration = AskEnumeration(false, emptyList()),
+        requestRange: IntRange? = null
     ): RequestFactItem {
         val normalizedRequest = QaFactKeywordMatcher.normalize(requestText)
-        val matchedIntents = AiReplyIntentCatalog.matchIntents(requestText)
+        // P2a (plan 02, A-1): span-aware matching; the definitions are exactly
+        // what matchIntents would return (thin wrapper), so intent behaviour is
+        // unchanged while the alias-hit ranges feed the I-7 claiming below.
+        val matchedSpans = AiReplyIntentCatalog.matchIntentsWithSpans(requestText)
+        val matchedIntents = matchedSpans.map { it.definition }
         val isResearch = matchedIntents.any { it.requiresProfile }
 
         val candidateRules = promptPool.filter { rule ->
@@ -330,6 +405,16 @@ class QaFactSelectionService(
                 assignedRuleIds = assignedIds,
                 profileSufficient = researchProfileSufficient
             )
+        }
+
+        // P2a (plan 02, I-7): an ask belongs to this request only when its
+        // original range starts inside the request's original region, and it is
+        // unrecognized only when no alias-hit span of this request overlaps it.
+        // Shadow field — never feeds status/evidence/hashes (I-3/I-2).
+        val unrecognizedAsks = askEnumeration.asks.filter { ask ->
+            requestRange != null &&
+                ask.originalRange.first in requestRange &&
+                !claimed(ask, matchedSpans)
         }
 
         val researchWarned = isResearch && !researchProfileSufficient
@@ -362,7 +447,8 @@ class QaFactSelectionService(
             factRuleIds = factRuleIds,
             status = status,
             requiresResearchContext = isResearch,
-            intents = intentCoverages
+            intents = intentCoverages,
+            unrecognizedAsks = unrecognizedAsks
         )
     }
 
@@ -383,6 +469,31 @@ class QaFactSelectionService(
         }
         return ordered.toList()
     }
+
+    /**
+     * P2a (plan 02): extracted request unit carrying the ORIGINAL text offsets
+     * (for enumerator-ask attribution) and the extractor kind (for the
+     * [ASK_ENUM] log line). Offsets/kind are consumed only by shadow
+     * measurement — never by status/evidence/hash computation (I-3/I-2).
+     */
+    private data class RequestUnit(
+        val text: String,
+        val startOffset: Int,
+        val endOffset: Int,
+        val kind: QaRequestExtractor.Kind
+    ) {
+        val range: IntRange get() = startOffset until endOffset
+    }
+
+    private fun extractRequests(inboundText: String): List<RequestUnit> =
+        QaRequestExtractor.extract(inboundText).map { request ->
+            RequestUnit(
+                text = request.text,
+                startOffset = request.startOffset,
+                endOffset = request.endOffset,
+                kind = request.kind
+            )
+        }
 }
 
 internal object QaFactKeywordMatcher {
