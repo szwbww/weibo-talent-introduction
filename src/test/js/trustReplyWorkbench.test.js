@@ -1,12 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
+const vm = require("vm");
 const { describe, it } = require("node:test");
 
 const appPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
 const workbenchPath = path.join(__dirname, "..", "..", "main", "resources", "static", "trust-reply-workbench.js");
+const stylesPath = path.join(__dirname, "..", "..", "main", "resources", "static", "styles.css");
 const app = fs.readFileSync(appPath, "utf-8");
 const workbench = fs.readFileSync(workbenchPath, "utf-8");
+const styles = fs.readFileSync(stylesPath, "utf-8");
 
 describe("shared trust reply workbench", () => {
     it("keeps the component as the only workbench implementation", () => {
@@ -131,5 +134,360 @@ describe("shared trust reply workbench", () => {
         assert.match(app, /rawTemplate: assembly\.rawDraftText/);
         assert.match(app, /function buildTrustReplyAssemblySnapshot\(/);
         assert.doesNotMatch(app, /aiTrainingSimulateBtn|aiTrainingSimulateMessages|aiTrainingReplyModel/);
+    });
+});
+
+// ---- P3: fact chip horizontal drag reorder + keyboard equivalent ----
+
+class FakeElement {
+    constructor(ownerDocument) {
+        this.ownerDocument = ownerDocument;
+        this._innerHTML = "";
+        this.listeners = new Map();
+        this.dataset = {};
+    }
+    set innerHTML(value) {
+        this._innerHTML = String(value);
+    }
+    get innerHTML() { return this._innerHTML; }
+    addEventListener(type, listener) {
+        const list = this.listeners.get(type) || [];
+        list.push(listener);
+        this.listeners.set(type, list);
+    }
+    removeEventListener(type, listener) {
+        this.listeners.set(type, (this.listeners.get(type) || []).filter((item) => item !== listener));
+    }
+    dispatchEvent(type, event) {
+        for (const listener of this.listeners.get(type) || []) listener(event);
+    }
+    contains() { return true; }
+    querySelector(selector) {
+        const match = selector.match(/^\[data-fact-id="(\d+)"\] \[data-role="fact-grip"\]$/);
+        if (match && this._innerHTML.includes(`data-fact-id="${match[1]}"`)) {
+            const grip = new FakeElement(this.ownerDocument);
+            grip.focus = () => { this.ownerDocument.lastFocusedFactId = match[1]; };
+            return grip;
+        }
+        return null;
+    }
+}
+
+class FakeDocument {
+    constructor() {
+        this.activeElement = null;
+        this.lastFocusedFactId = null;
+    }
+    createElement() { return new FakeElement(this); }
+}
+
+function settle() {
+    return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+}
+
+function createSandbox(fetchImpl, confirmImpl) {
+    const document = new FakeDocument();
+    const window = {
+        document,
+        fetch: fetchImpl,
+        confirm: confirmImpl || (() => true),
+        crypto: { randomUUID: () => "00000000-0000-4000-8000-000000000001" },
+        AbortController,
+        TextDecoder,
+        TextEncoder,
+        setTimeout,
+        clearTimeout
+    };
+    const sandbox = { window, document, console, setTimeout, clearTimeout, AbortController, TextDecoder, TextEncoder };
+    vm.createContext(sandbox);
+    vm.runInContext(workbench, sandbox);
+    return { sandbox, window, document };
+}
+
+function bootstrapPayload(sourceType, sourceId, factIds) {
+    return {
+        source: { sourceType, sourceId },
+        sourceVersion: `${sourceType}-${sourceId}-v1`,
+        inboundSubject: "subject",
+        inboundText: "body",
+        expertName: "Expert",
+        expertEmail: "expert@example.com",
+        llmEnabled: true,
+        availableModels: ["DEEPSEEK_V4_FLASH"],
+        defaultModel: "DEEPSEEK_V4_FLASH",
+        suggestedFactIds: [...factIds],
+        canonicalFactIds: [...factIds],
+        rulesByCategory: factIds.map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
+        requestCoverage: [{
+            index: 0,
+            requestKey: `${sourceType}-${sourceId}-request`,
+            requestText: "Question",
+            status: "GROUNDED",
+            factRuleIds: [...factIds],
+            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
+            recommendedHandling: "ANSWER_WITH_EVIDENCE"
+        }],
+        draftReadiness: "READY",
+        contextWarnings: [],
+        evidenceSetVersion: `${sourceType}-${sourceId}-e1`
+    };
+}
+
+function renderedFactIds(host) {
+    return [...host.innerHTML.matchAll(/class="trust-reply-fact-chip" data-fact-id="(\d+)"/g)].map((match) => match[1]);
+}
+
+function chipEl(factId, requestKey, list) {
+    const chip = {
+        dataset: { factId: String(factId), requestKey },
+        getBoundingClientRect: () => ({ left: 0, width: 100 }),
+        closest(selector) {
+            if (selector === ".trust-reply-fact-chip") return chip;
+            if (selector === '[data-role="fact-chip-list"]') return list;
+            return null;
+        }
+    };
+    return chip;
+}
+
+function gripEl(chip) {
+    const grip = {
+        dataset: { role: "fact-grip" },
+        getAttribute(name) {
+            if (name === "aria-disabled") return chip.dataset.factGripDisabled ? "true" : null;
+            return null;
+        },
+        closest(selector) {
+            if (selector === '[data-role="fact-grip"]') return grip;
+            if (selector === ".trust-reply-fact-chip") return chip;
+            return null;
+        }
+    };
+    return grip;
+}
+
+function listEl(chips) {
+    return {
+        dataset: {},
+        querySelectorAll(selector) {
+            return selector === ".trust-reply-fact-chip" ? chips : [];
+        }
+    };
+}
+
+function makeDataTransfer() {
+    return {
+        data: null,
+        effectAllowed: "",
+        setData(type, value) { this.data = value; },
+        getData() { return this.data; }
+    };
+}
+
+function event(target, extra) {
+    return { target, preventDefault() {}, stopPropagation() {}, ...extra };
+}
+
+describe("fact order drag (P3)", () => {
+    it("renders the S-1 grip skeleton and S-3 hint with no inline styles", () => {
+        assert.match(workbench, /data-role="fact-grip"/);
+        assert.match(workbench, /trust-reply-fact-grip/);
+        assert.match(workbench, /draggable="true"/);
+        assert.match(workbench, /data-role="fact-grip"[^>]*tabindex="0"/);
+        assert.match(workbench, /aria-label="拖动或用左右方向键调整/);
+        assert.match(workbench, /aria-describedby=/);
+        assert.match(workbench, /trust-reply-fact-grip-hint/);
+        assert.match(workbench, /拖动 ⋮⋮ 或用 ← → 调整顺序/);
+        // K-dom-stub-tests-hide-dangling-refs: real styles.css must carry the
+        // new classes (the DOM stub would render fine without them).
+        assert.match(styles, /\.trust-reply-fact-grip \{/);
+        assert.match(styles, /data-drop-before="true"\]/);
+        assert.match(styles, /data-drop-after="true"\]/);
+        assert.match(styles, /trust-reply-fact-grip-hint/);
+        // S-1 禁止项: no new inline styles.
+        assert.strictEqual((workbench.match(/style=/g) || []).length, 1);
+        // I-2: no sort/reverse on factRuleIds anywhere.
+        assert.doesNotMatch(workbench, /factRuleIds.*(sort|reverse)/);
+    });
+
+    it("exposes the pure reorderFactIds contract (move, front, end, missing, clamp, length)", () => {
+        const { window } = createSandbox(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}) }));
+        const reorder = window.TrustReplyWorkbench.reorderFactIds;
+        // Sandbox arrays live in a different V8 realm, so compare by JSON.
+        const reordered = (ids, fromId, toIndex) => JSON.stringify(reorder(ids, fromId, toIndex));
+        assert.strictEqual(reordered([1, 2, 3], 2, 0), "[2,1,3]"); // 前移
+        assert.strictEqual(reordered([1, 2, 3], 2, 2), "[1,3,2]"); // 后移
+        assert.strictEqual(reordered([1, 2, 3], 3, 0), "[3,1,2]"); // 移到首位
+        assert.strictEqual(reordered([1, 2, 3], 1, 2), "[2,3,1]"); // 移到末位
+        assert.strictEqual(reordered([1, 2, 3], 99, 0), "[1,2,3]"); // 不存在的 id 原样返回
+        assert.strictEqual(reordered([1, 2, 3], 1, 99), "[2,3,1]"); // 越界 toIndex 钳到末位
+        assert.strictEqual(reordered([1, 2, 3], 1, -5), "[1,2,3]"); // 越界 toIndex 钳到首位
+        assert.strictEqual(reorder([1, 2, 3], 2, 1).length, 3); // 长度守恒
+        assert.strictEqual(reordered([], 1, 0), "[]"); // 空输入
+    });
+
+    it("keyboard ArrowLeft/ArrowRight reorders via changeRequestFacts and restores grip focus", async () => {
+        let currentFactIds = [1, 2, 3];
+        const calls = [];
+        const { window, document } = createSandbox((url, options) => {
+            const body = JSON.parse(options.body);
+            calls.push({ url, body });
+            if (Array.isArray(body.requestFactSelections) && body.requestFactSelections.length) {
+                currentFactIds = [...(body.requestFactSelections[0].factRuleIds || [])];
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, currentFactIds) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        const requestKey = "TRAINING_MAIL-101-request";
+        const list = listEl([]);
+        const chips = [1, 2, 3].map((id) => chipEl(id, requestKey, list));
+        list.querySelectorAll = () => chips;
+
+        // ArrowLeft on the second chip moves it to the front.
+        host.dispatchEvent("keydown", event(gripEl(chips[1]), { key: "ArrowLeft" }));
+        await settle();
+        assert.deepStrictEqual(renderedFactIds(host), ["2", "1", "3"]);
+        const payload = calls[calls.length - 1].body.requestFactSelections[0];
+        assert.deepStrictEqual(payload.factRuleIds, [2, 1, 3]); // I-2: payload = rendered order
+        assert.strictEqual(document.lastFocusedFactId, "2"); // I-3: focus restored to the same fact
+
+        // ArrowRight on the chip now at the head (chip 2) moves it back one slot.
+        host.dispatchEvent("keydown", event(gripEl(chips[1]), { key: "ArrowRight" }));
+        await settle();
+        assert.deepStrictEqual(renderedFactIds(host), ["1", "2", "3"]);
+    });
+
+    it("dragstart/dragover/drop reorders through the same path and clears drop marks", async () => {
+        let currentFactIds = [1, 2, 3];
+        const calls = [];
+        const { window, document } = createSandbox((url, options) => {
+            const body = JSON.parse(options.body);
+            calls.push({ url, body });
+            if (Array.isArray(body.requestFactSelections) && body.requestFactSelections.length) {
+                currentFactIds = [...(body.requestFactSelections[0].factRuleIds || [])];
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, currentFactIds) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        const requestKey = "TRAINING_MAIL-101-request";
+        const list = listEl([]);
+        const chips = [1, 2, 3].map((id) => chipEl(id, requestKey, list));
+        list.querySelectorAll = () => chips;
+        const dt = makeDataTransfer();
+
+        // Drag chip 1 onto the right half of chip 3 -> drop after it.
+        host.dispatchEvent("dragstart", event(gripEl(chips[0]), { dataTransfer: dt }));
+        assert.strictEqual(chips[0].dataset.dragging, "true");
+        assert.strictEqual(dt.data, "1");
+        host.dispatchEvent("dragover", event(chips[2], { clientX: 160, dataTransfer: dt }));
+        assert.strictEqual(chips[2].dataset.dropAfter, "true");
+        host.dispatchEvent("drop", event(chips[2], { clientX: 160, dataTransfer: dt }));
+        await settle();
+
+        assert.deepStrictEqual(renderedFactIds(host), ["2", "3", "1"]);
+        assert.strictEqual(calls[calls.length - 1].body.requestFactSelections[0].factRuleIds.join(","), "2,3,1");
+        assert.strictEqual(chips[0].dataset.dragging, undefined); // dragend cleanup path
+        assert.strictEqual(chips[2].dataset.dropAfter, undefined);
+    });
+
+    it("a no-op reorder never calls changeRequestFacts (no confirm, no fetch)", async () => {
+        let currentFactIds = [1, 2, 3];
+        const calls = [];
+        let confirmCalls = 0;
+        const { window, document } = createSandbox((url, options) => {
+            const body = JSON.parse(options.body);
+            calls.push({ url, body });
+            if (Array.isArray(body.requestFactSelections) && body.requestFactSelections.length) {
+                currentFactIds = [...(body.requestFactSelections[0].factRuleIds || [])];
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, currentFactIds) });
+        }, () => { confirmCalls += 1; return true; });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        const requestKey = "TRAINING_MAIL-101-request";
+        const list = listEl([]);
+        const chips = [1, 2, 3].map((id) => chipEl(id, requestKey, list));
+        list.querySelectorAll = () => chips;
+        const fetchCountBefore = calls.length;
+
+        // First chip + ArrowLeft: already at the head -> must short-circuit.
+        host.dispatchEvent("keydown", event(gripEl(chips[0]), { key: "ArrowLeft" }));
+        await settle();
+        // Drop a chip onto itself: same position -> must short-circuit.
+        const dt = makeDataTransfer();
+        host.dispatchEvent("dragstart", event(gripEl(chips[1]), { dataTransfer: dt }));
+        host.dispatchEvent("dragover", event(chips[1], { clientX: 160, dataTransfer: dt }));
+        host.dispatchEvent("drop", event(chips[1], { clientX: 160, dataTransfer: dt }));
+        await settle();
+
+        assert.strictEqual(calls.length, fetchCountBefore); // changeRequestFacts 零调用 -> 无 bootstrap
+        assert.strictEqual(confirmCalls, 0);
+        assert.deepStrictEqual(renderedFactIds(host), ["1", "2", "3"]);
+    });
+
+    it("disabled state ignores dragstart and ArrowLeft (factRuleIds unchanged)", async () => {
+        let currentFactIds = [1, 2, 3];
+        const calls = [];
+        let confirmCalls = 0;
+        const { window, document } = createSandbox((url, options) => {
+            const body = JSON.parse(options.body);
+            calls.push({ url, body });
+            if (Array.isArray(body.requestFactSelections) && body.requestFactSelections.length) {
+                currentFactIds = [...(body.requestFactSelections[0].factRuleIds || [])];
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, currentFactIds) });
+        }, () => { confirmCalls += 1; return true; });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        const requestKey = "TRAINING_MAIL-101-request";
+        const list = listEl([]);
+        const chips = [1, 2, 3].map((id) => chipEl(id, requestKey, list));
+        list.querySelectorAll = () => chips;
+        chips.forEach((chip) => { chip.dataset.factGripDisabled = true; });
+        const fetchCountBefore = calls.length;
+        const dt = makeDataTransfer();
+
+        host.dispatchEvent("keydown", event(gripEl(chips[1]), { key: "ArrowLeft" }));
+        host.dispatchEvent("dragstart", event(gripEl(chips[0]), { dataTransfer: dt }));
+        host.dispatchEvent("dragover", event(chips[2], { clientX: 160, dataTransfer: dt }));
+        host.dispatchEvent("drop", event(chips[2], { clientX: 160, dataTransfer: dt }));
+        await settle();
+
+        assert.strictEqual(calls.length, fetchCountBefore);
+        assert.strictEqual(confirmCalls, 0);
+        assert.deepStrictEqual(renderedFactIds(host), ["1", "2", "3"]);
+        assert.strictEqual(chips[0].dataset.dragging, undefined);
+    });
+
+    it("moveFact only commits through changeRequestFacts (I-1, no second direct path)", () => {
+        const moveBody = workbench.slice(workbench.indexOf("async function moveFact"), workbench.indexOf("function onGripArrowKey"));
+        assert.match(moveBody, /changeRequestFacts/);
+        assert.doesNotMatch(moveBody, /serializeRequestFactSelections|requestJson|fetch\(/);
     });
 });
