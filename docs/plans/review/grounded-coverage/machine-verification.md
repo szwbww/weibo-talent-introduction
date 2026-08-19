@@ -91,3 +91,53 @@ No product code, tests, configuration, aggregate review evidence, staging, or co
 - Required approval: explicit `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-grounded-coverage/docs/plans/fix/00-grounded-coverage-master/repair.md`.
 
 The repair plan contains the resolved Review-Fast-P one-approval execution handoff: product commit subject `fix(qa): support remuneration in funding facts`; evidence commit subject `docs(review-fast-p): record repair execution`; aggregate re-review returns to this task. No implementation, tests, staging, or commits were performed by the planner.
+
+## Epoch 2 — 2026-08-19T12:30:43Z
+
+- Master plan: docs/plans/2026-08-19/00-grounded-coverage-master.md (sha256: 3112ffe1c665ebda5295e36a315a5bf65f3a09082febf11ce89bec1ba854d4e7)
+- Governing master identity: worktree sha256 3112ffe1c665ebda5295e36a315a5bf65f3a09082febf11ce89bec1ba854d4e7; recorded commit af1723f37021328f8ffa61261504727e514fbb4b
+- Master identity state: CONSISTENT; recorded amendment A1 applies to child 02.
+- Boundary: af1723f37021328f8ffa61261504727e514fbb4b..a7cceb2e3fdec25cecd4e3582135edefb3a5447f
+- Reviewer: /root/post_repair_aggregate_reviewer
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: existing executed docs/plans/fix/00-grounded-coverage-master/repair.md; NO_ACTION.
+- Post-repair evidence: DURABLE_HANDOFF; approval, executor Main, and code head recorded in repair-execution.md.
+
+### Fresh Command Evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q test -Dtest=QaFactSelectionServiceTest` | PASS | exit 0; 44/0/0/0; Node 658/0 |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q test -Dtest='AiReplyIntentCatalogTest,QaFactSelectionServiceTest,ProgrammeIdentityFactsMigrationTest'` | PASS | 35 + 44 + 6 tests; zero failures/errors |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q test -Dtest='InboundAskEnumeratorTest,QaFactSelectionServiceTest,AiReplyIntentCatalogTest'` | PASS | 13 + 44 + 35 tests; zero failures/errors |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q test` | PASS | Surefire 2590 tests, 0 failures, 0 errors, 4 skipped; Node 658/0 |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q clean package` | PASS | Surefire 2590/0/0/4; Node 658/0; WAR assembled |
+| `git diff --check af1723f37021328f8ffa61261504727e514fbb4b HEAD` and `git diff --check` | PASS | exit 0; no whitespace errors |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| M-1 P1 trigger letter recognises five intents | PASS | `AiReplyIntentCatalogTest.kt:247-258`; focused/full tests pass |
+| M-2 five supported intents/facts, GROUNDED | PASS | `QaFactSelectionServiceTest.kt:831-896`; V106 provides production `remuneration` |
+| M-3 catalog, coverage, migration invariants | PASS | V105 unchanged; V106 forward-only; migration tests 6/0/0 |
+| M-4 P2 shadow-only measurement | PASS | `InboundAskEnumerator.kt:41-128`; `QaFactSelectionService.kt:39-49`; `TrustReplyWorkbenchService.kt:410-418` |
+| M-5 P3 ordered drag path | PASS | `trust-reply-workbench.js:126-140,1386-1392,1405-1409`; JS suite 658/0 |
+| M-6 ordering and authorized scope | PASS | P1→P2 ordering/A1 approval valid; repair product delta is exactly V106 plus `QaFactSelectionServiceTest.kt`, both authorized |
+| M-7 full build gate | PASS | fresh `mvn clean package` exit 0 |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | V106 conditionally appends `remuneration` only to Funding support, preserves `updated_at`; regression proves 5/5/GROUNDED |
+| Child-01 O-1/O-3/O-4/O-5 | RECORD_ONLY | no mandatory violation |
+| Child-02 O-1/O-3 | RECORD_ONLY | speculative/non-proven adjacent risks |
+| Child-02 O-2 | RESOLVED/RATIFIED | A1 governs broader neutral log emission |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+All prior RECORD_ONLY items remain non-blocking. V-1 is resolved; no regression or new mandatory finding. Optional Docker-backed Flyway integration remains outside the mandatory gate.
+
+No product code was modified by the reviewer. Manual UI acceptance remains pending.
