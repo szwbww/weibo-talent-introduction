@@ -1509,9 +1509,18 @@
             state.activePage = page;
             render();
             if (!focusTarget || state.destroyed) return;
-            const id = focusTarget === "tab" ? tabId(page) : focusTarget === "panel" ? panelId(page) : null;
-            if (!id) return;
-            const element = host.querySelector ? host.querySelector(`#${id}`) : null;
+            // I-1: state.instanceId is a UUID v4 — 62.5% of mounts start with a
+            // digit, and a CSS identifier may not start with a digit, so
+            // `#${tabId(page)}` throws SyntaxError. Query by the stable
+            // role/data attributes instead; the id attributes stay on the
+            // elements for aria-controls / aria-labelledby (I-2).
+            const selector = focusTarget === "tab"
+                ? `[role="tab"][data-page="${page}"]`
+                : focusTarget === "panel"
+                    ? `[data-page-panel="${page}"]`
+                    : null;
+            if (!selector) return;
+            const element = host.querySelector ? host.querySelector(selector) : null;
             if (element && typeof element.focus === "function") element.focus();
         }
 

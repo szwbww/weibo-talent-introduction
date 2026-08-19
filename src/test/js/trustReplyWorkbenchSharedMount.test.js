@@ -1989,6 +1989,52 @@ describe("shared trust reply workbench mount contract", () => {
         assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "Home must open the first page");
     });
 
+    it("focuses the target tab via role/data attributes, never a bare instanceId id selector", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 503;
+        const current = bootstrap(sourceType, sourceId);
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // I-1/I-3/I-4: swap in a spy so the real selector text setActivePage
+        // builds is observable — the FakeElement stub never validates selector
+        // syntax (A-7 blindness) and its focus() would be silently lost.
+        const selectors = [];
+        let focusCalls = 0;
+        const focusable = { focus: () => { focusCalls += 1; } };
+        host.querySelector = (selector) => {
+            selectors.push(selector);
+            return /^\[role="tab"\]\[data-page="(facts|frame)"\]$/.test(selector) ? focusable : null;
+        };
+
+        click(host, "set-page", undefined, undefined, undefined, "frame");
+        await settle();
+
+        assert.ok(selectors.length > 0, "setActivePage must call host.querySelector");
+        const tabSelector = selectors.find((s) => s.includes("data-page"));
+        assert.ok(tabSelector, "a tab selector must be built");
+        assert.ok(!tabSelector.startsWith("#"), "selector must not be a bare instanceId id selector");
+        assert.match(tabSelector, /^\[role="tab"\]\[data-page="(facts|frame)"\]$/, "selector must be unique to the tab button");
+        assert.strictEqual(focusCalls, 1, "focus must land on the target tab exactly once");
+
+        // I-1 source-text guard: the component must never build bare
+        // `querySelector(`#${...})` selectors again (K-dom-stub-tests-hide-dangling-refs).
+        assert.ok(!source.includes("querySelector(`#${"), "component must not contain bare template-literal id selectors");
+        assert.ok(source.includes('[role="tab"][data-page="'), "component must query tabs by role + data-page");
+    });
+
     it("shows per-card fact chips with used owners disabled and releases facts on remove", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 502;
