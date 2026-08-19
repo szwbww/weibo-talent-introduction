@@ -411,3 +411,15 @@ P2a 上线后**不要立刻**做 P2b。先攒样本，用真实数据回答三�
 样本量参照 `decision-auto-reply-threshold-2026-08-18` 的 ≥200 影子样本口径。
 
 P2b 的内容（届时单独立计划）：把 `unrecognizedAskCount` 铺到 `AiReplyDraftService:325/362`、`AiTrainingController:505`、`UnmatchedInboundMailController:1012` 三个 DTO；让未识别项进 `intentCoverages` 参与 `status`；工作台前端渲染未识别项（触发 Step 1b-fe 样式审计）；接入「有未识别项永不进 A 档」的硬门禁。
+
+---
+
+## 修正 A1（2026-08-19，fast-p 运行中，HUMAN 批准）
+
+本修正由 fast-p 控制器在运行中提出，人类批准（见 `docs/plans/fast/grounded-coverage/ledger.md` Amendments 表，Approval 行）。与正文冲突处以本修正为准：
+
+1. **授权文件清单新增**：`src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt` —— 仅限该文件中 `RequestFactItem` 与 `ResolvedQaRules` 两个数据类定义内新增字段；文件其余部分与既有字段一律不动。
+   理由：`RequestFactItem` / `ResolvedQaRules` 物理上定义在该文件（:349 / :361），正文「变更文件清单」漏列（正文现状审计自引 `AiReplyDraftService.kt:362`）。I-3 / C-1 的字段要求只能落在这里。
+2. **C-1 字段集**：除 `unrecognizedAsks` / `unrecognizedAskCount` / `enumeratorAvailable` 外，允许在 `ResolvedQaRules` 上增加两个默认影子字段 `enumeratorEnumerated` / `enumeratorClaimed`（仅供固定格式 `[ASK_ENUM]` 日志补值；不参与任何判定与任何哈希）。
+3. **C-2 接线位置**：允许把枚举调用放在 `QaFactSelectionService` 内部（而非 `selectForWorkbench` 形参），避免改动既有测试桩的精确参数签名；等效性由 `ResolvedQaRules` 影子字段透传保证。
+4. **C-3 自动路日志**：自动路 `[ASK_ENUM]` 行允许由 `select()` 发出（`source=AUTO`、`contactId=0`）；`select()` 的其他调用方（pending-mail suggest/preflight、训练、unmatched）会额外产生行为中性的日志行，记为 RECORD_ONLY，不算缺陷。
