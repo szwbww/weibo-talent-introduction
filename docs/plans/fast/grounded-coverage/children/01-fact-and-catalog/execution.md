@@ -84,3 +84,9 @@
 ## Next Action
 
 - READY_FOR_VERIFICATION → run `verify-p` (fresh verifier audits the four gates: 6-file scope, verbatim I-7 fixture, command evidence above, commit `f5c0938` subject/scope).
+
+---
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit to include all four child artifacts (brief/execution/verify-log/fix-log). No content change beyond this note; fix_round=0.

@@ -29,3 +29,7 @@ Date: 2026-08-19 (fresh audit; JDK11 zulu-11)
 - COMPLETE_CHILD
 
 Verdict rules applied: no gate PAUSE, no AUTO_FIX, RECORD_ONLY present → LIGHT_PASS_WITH_NOTES.
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit; verifier report content unchanged since signature.
