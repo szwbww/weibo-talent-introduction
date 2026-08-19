@@ -224,7 +224,7 @@ class TrustReplyWorkbenchItemFlowTest {
         // changing the snapshot changes the version.
         assertNotEquals(
             first,
-            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L)) { "base-9.10.changed" }
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L), baseSnapshotOf = { "base-9.10.changed" })
         )
     }
 
@@ -1454,7 +1454,7 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     private fun perRequest(fixture: ThreeItemFixture, key: String, ids: List<Long>): String =
-        TrustReplyWorkbenchService.requestEvidenceVersion(key, ids) { "evidence-v1" }
+        TrustReplyWorkbenchService.requestEvidenceVersion(key, ids, baseSnapshotOf = { "evidence-v1" })
 
     private fun lockItem(
         fixture: ThreeItemFixture,
@@ -1787,6 +1787,282 @@ class TrustReplyWorkbenchItemFlowTest {
             auditService = auditService,
             replySnippetService = replySnippetService,
             defaultFrame = defaultFrame
+        )
+    }
+
+    // 03b (I-2/I-3): two canonical requests — one research-context item and
+    // one general item — over the same inbound. The fixture exposes the
+    // context-service mock so the test can vary the expert profile content
+    // between bootstraps with a constant researchProfileSufficient.
+    private data class ResearchSplitFixture(
+        val service: TrustReplyWorkbenchService,
+        val contextService: AiReplyContextService,
+        val source: TrustReplySourceRef,
+        val selection: ResolvedQaRules,
+        val contact: ExpertContact,
+        val keyResearch: String,
+        val keyGeneral: String
+    )
+
+    private fun researchSplitFixture(): ResearchSplitFixture {
+        val mailRecords = Mockito.mock(MailRecordRepository::class.java)
+        val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        val trainingQa = Mockito.mock(AiTrainingQaService::class.java)
+        val contextService = Mockito.mock(AiReplyContextService::class.java)
+        val factSelection = Mockito.mock(QaFactSelectionService::class.java)
+        val qaRules = Mockito.mock(QaRuleRepository::class.java)
+        val draftService = Mockito.mock(AiReplyDraftService::class.java)
+        val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
+        val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+        val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+        val contact = ExpertContact(
+            id = 7L,
+            campaignId = 1L,
+            orcidId = "0000-0000",
+            expertEmail = "test@example.com",
+            expertName = "Test"
+        )
+        val mail = MailRecord(
+            id = 11L,
+            expertContactId = 7L,
+            direction = "INBOUND",
+            mailType = "REPLY",
+            senderAccountCode = null,
+            messageId = "<11@example.com>",
+            inReplyTo = null,
+            subject = "Subject",
+            body = "Does my research fit?\nWhat is the funding amount?",
+            cleanedBody = null,
+            matchedQaRuleId = null,
+            sendStatus = null,
+            receivedAt = LocalDateTime.of(2026, 7, 28, 10, 0),
+            sentAt = null
+        )
+        // The intent keys must match exactly what canonicalRequests derives
+        // from AiReplyIntentCatalog.matchIntents, so they are built from the
+        // catalog here instead of hand-written.
+        val researchIntents = AiReplyIntentCatalog.matchIntents("Does my research fit?").map { def ->
+            RequestIntentCoverage(
+                intentKey = def.key,
+                title = def.title,
+                requiredCoverageKeys = def.requiredCoverageKeys,
+                evidenceRuleIds = listOf(9L),
+                status = "SUPPORTED",
+                missingEvidenceKeys = emptyList(),
+                requiresResearchContext = def.requiresProfile
+            )
+        }
+        val generalIntents = AiReplyIntentCatalog.matchIntents("What is the funding amount?").map { def ->
+            RequestIntentCoverage(
+                intentKey = def.key,
+                title = def.title,
+                requiredCoverageKeys = def.requiredCoverageKeys,
+                evidenceRuleIds = listOf(10L),
+                status = "SUPPORTED",
+                missingEvidenceKeys = emptyList(),
+                requiresResearchContext = def.requiresProfile
+            )
+        }
+        val researchItem = RequestFactItem(
+            index = 1,
+            requestText = "Does my research fit?",
+            factRuleIds = listOf(9L),
+            status = RequestGroundingStatus.GROUNDED,
+            requiresResearchContext = true,
+            intents = researchIntents
+        )
+        val generalItem = RequestFactItem(
+            index = 2,
+            requestText = "What is the funding amount?",
+            factRuleIds = listOf(10L),
+            status = RequestGroundingStatus.GROUNDED,
+            requiresResearchContext = false,
+            intents = generalIntents
+        )
+        val selection = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L, 10L),
+            promptRuleIds = listOf(9L, 10L),
+            requestFacts = listOf(researchItem, generalItem),
+            requestCount = 2,
+            groundedRequestCount = 2
+        )
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(mail))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(mail))
+        Mockito.`when`(trainingQa.buildKnowledgeContext(Mockito.anyString())).thenReturn("")
+        Mockito.`when`(
+            contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: contact,
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Test",
+                mailHistory = "history",
+                contextWarnings = emptyList(),
+                researchProfileSufficient = true,
+                expertProfileText = "profile-v1"
+            )
+        )
+        Mockito.`when`(
+            factSelection.selectForWorkbench(
+                "Does my research fit?\nWhat is the funding amount?",
+                listOf(listOf(9L), listOf(10L)),
+                null,
+                true
+            )
+        ).thenReturn(selection)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultResolvedFrame())
+        Mockito.`when`(qaRules.findById(Mockito.anyLong())).thenReturn(Optional.of(QaRule(
+            id = 9L,
+            categoryId = 1,
+            keywords = "salary",
+            replyBody = "Salary info",
+            answerBody = "Salary info",
+            replySubject = null,
+            enabled = true
+        )))
+        val claimValidator = AiReplyHighRiskClaimValidator(qaRules)
+        val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
+        val service = TrustReplyWorkbenchService(
+            mailRecordRepository = mailRecords,
+            inboundMailProcessingRepository = inboundProcessing,
+            expertContactRepository = contacts,
+            aiTrainingQaService = trainingQa,
+            aiReplyContextService = contextService,
+            qaFactSelectionService = factSelection,
+            qaRuleRepository = qaRules,
+            aiReplyDraftService = draftService,
+            aiReplyDraftPreviewService = previewService,
+            aiReplyReviewAuditService = auditService,
+            llmProperties = LlmProperties(enabled = true),
+            aiReplyPointByPointComposer = composer,
+            claimValidator = claimValidator,
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
+        )
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
+        val sourceVersion = service.resolveSource(source).sourceVersion
+        val keyResearch = TrustReplyWorkbenchService.requestKey(
+            sourceVersion, 1, "Does my research fit?",
+            AiReplyIntentCatalog.matchIntents("Does my research fit?").map { it.key }
+        )
+        val keyGeneral = TrustReplyWorkbenchService.requestKey(
+            sourceVersion, 2, "What is the funding amount?",
+            AiReplyIntentCatalog.matchIntents("What is the funding amount?").map { it.key }
+        )
+        return ResearchSplitFixture(
+            service = service,
+            contextService = contextService,
+            source = source,
+            selection = selection,
+            contact = contact,
+            keyResearch = keyResearch,
+            keyGeneral = keyGeneral
+        )
+    }
+
+    // 03b (I-2/I-3): with researchProfileSufficient constant at true, changing
+    // only the expert profile CONTENT alters the research-context item's
+    // per-request evidence while the general item's value stays byte-identical
+    // to the 03a baseline (requestEvidenceVersion without research evidence).
+    @Test
+    fun `expert profile content change alters only the research context item evidence`() {
+        val fixture = researchSplitFixture()
+        val matrix = listOf(
+            TrustReplyRequestFactSelection(fixture.keyResearch, listOf(9L)),
+            TrustReplyRequestFactSelection(fixture.keyGeneral, listOf(10L))
+        )
+        val coverageByKey = { boot: TrustReplyBootstrapResponse, key: String ->
+            boot.requestCoverage.single { it.requestKey == key }.evidenceSetVersion
+        }
+        val boot1 = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(fixture.source, requestFactSelections = matrix)
+        )
+        val research1 = coverageByKey(boot1, fixture.keyResearch)
+        val general1 = coverageByKey(boot1, fixture.keyGeneral)
+
+        // I-3: the boolean stays true; only the profile content changes.
+        Mockito.`when`(
+            fixture.contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: fixture.contact,
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Test",
+                mailHistory = "history",
+                contextWarnings = emptyList(),
+                researchProfileSufficient = true,
+                expertProfileText = "profile-v2"
+            )
+        )
+        val boot2 = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(fixture.source, requestFactSelections = matrix)
+        )
+        val research2 = coverageByKey(boot2, fixture.keyResearch)
+        val general2 = coverageByKey(boot2, fixture.keyGeneral)
+
+        // I-2: the research item's per-request evidence changes with the profile.
+        assertNotEquals(research1, research2)
+        // I-2: the general item stays byte-identical (not just unchanged) —
+        // its value equals the exact 03a 3-component baseline.
+        assertEquals(general1, general2)
+        assertEquals(
+            TrustReplyWorkbenchService.requestEvidenceVersion(fixture.keyGeneral, listOf(10L), baseSnapshotOf = { "evidence-v1" }),
+            general2
+        )
+        // The research value is NOT the 03a 3-component baseline.
+        assertNotEquals(
+            TrustReplyWorkbenchService.requestEvidenceVersion(fixture.keyResearch, listOf(9L), baseSnapshotOf = { "evidence-v1" }),
+            research2
+        )
+    }
+
+    // 03b (I-2/I-3): requestEvidenceVersion's researchEvidence input — an
+    // explicit null keeps the hash byte-identical to the 03a 3-component form;
+    // a content-only change (boolean constant) and a sufficiency flip both
+    // move the version.
+    @Test
+    fun `research evidence participates only when provided`() {
+        val baseSnapshotOf = { ids: List<Long> -> "base-${ids.joinToString(".")}" }
+        val baseline = TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L), baseSnapshotOf)
+        // explicit null ≡ absent: the 03a identity is preserved byte-for-byte.
+        assertEquals(
+            baseline,
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L), baseSnapshotOf, null)
+        )
+        val research = TrustReplyWorkbenchService.requestEvidenceVersion(
+            "key-a", listOf(9L, 10L), baseSnapshotOf, "profile-hash-1 true"
+        )
+        assertNotEquals(baseline, research)
+        // I-3: same boolean, different profile content — still moves.
+        assertNotEquals(
+            research,
+            TrustReplyWorkbenchService.requestEvidenceVersion(
+                "key-a", listOf(9L, 10L), baseSnapshotOf, "profile-hash-2 true"
+            )
+        )
+        // Sufficiency flip also moves the version.
+        assertNotEquals(
+            research,
+            TrustReplyWorkbenchService.requestEvidenceVersion(
+                "key-a", listOf(9L, 10L), baseSnapshotOf, "profile-hash-1 false"
+            )
         )
     }
 }

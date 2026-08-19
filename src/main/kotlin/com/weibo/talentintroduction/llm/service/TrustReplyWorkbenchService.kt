@@ -55,7 +55,14 @@ data class ResolvedTrustReplySource(
     val mailHistory: String,
     val contextWarnings: List<String>,
     val researchProfileSufficient: Boolean,
-    val sourceVersion: String
+    val sourceVersion: String,
+    // 03b (T2/I-1): the separable context fragments and their context
+    // fingerprint. sourceVersion is narrowed to the 7 identity components;
+    // contextVersion (training knowledge + mail history) only drives the
+    // per-item context-stale prompt (I-4), never any identity hash (I-6).
+    val expertProfileText: String = "",
+    val trainingKnowledgeText: String = "",
+    val contextVersion: String = ""
 )
 
 /**
@@ -177,6 +184,10 @@ data class TrustReplyBootstrapResponse(
     val draftReadiness: String,
     val contextWarnings: List<String> = emptyList(),
     val evidenceSetVersion: String,
+    // 03b (T5/I-4): the current context fingerprint (training knowledge +
+    // mail history) so the frontend can flag items whose locked version
+    // contextVersion differs; never part of any identity hash (I-6).
+    val contextVersion: String = "",
     val savedState: TrustReplySavedState? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
     val frameOptions: List<TrustReplyFrameOption> = emptyList(),
@@ -267,7 +278,10 @@ data class TrustReplyItemVersion(
     val operatorInstructionHash: String = "",
     val requestIndex: Int = -1,
     val requestText: String = "",
-    val operatorInstruction: String = ""
+    val operatorInstruction: String = "",
+    // 03b (T5/I-4): the context fingerprint observed at generation time.
+    // Observational only — never enters versionId()/requestKey() (I-6).
+    val contextVersion: String = ""
 )
 
 data class TrustReplyItemAdjustmentRequest(
@@ -302,7 +316,12 @@ data class TrustReplyLockedItemRequest(
     val evidenceSetVersion: String,
     val sourceVersion: String,
     val operatorInstructionHash: String = "",
-    val operatorInstruction: String = ""
+    val operatorInstruction: String = "",
+    // 03b (T5/I-4): the locked version's context fingerprint, round-tripped
+    // through saved state so a restore can flag items generated under old
+    // training knowledge / mail history without dropping them (I-6: never an
+    // identity input).
+    val contextVersion: String = ""
 )
 
 data class TrustReplyAssembleRequest(
@@ -324,6 +343,8 @@ data class TrustReplyAssembleResponse(
     val draftHash: String,
     val canonicalFactIds: List<Long>,
     val itemVersions: List<TrustReplyItemVersion>,
+    // 03b (T5/I-4): current context fingerprint; observational (I-6).
+    val contextVersion: String = "",
     val requestedFactIds: List<Long> = emptyList(),
     val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
     val frameSnapshot: TrustReplyFrameSnapshot? = null
@@ -448,6 +469,7 @@ class TrustReplyWorkbenchService(
             draftReadiness = bootstrapReadiness(selection),
             contextWarnings = resolved.contextWarnings,
             evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            contextVersion = resolved.contextVersion,
             savedState = restoreResult.savedState,
             requestFactSelections = resolvedSelection.requestFactSelections,
             frameOptions = frameOptions,
@@ -548,6 +570,14 @@ class TrustReplyWorkbenchService(
      * are dropped and counted (PARTIALLY_RESTORED), and only an all-dropped
      * snapshot is STALE. A fully valid snapshot returns RESTORED with the
      * saved frame.
+     *
+     * 03b (T5/I-4): a context mismatch (training knowledge / mail history
+     * fingerprint) NEVER drops a locked item here — the sourceVersion is
+     * identity-only, so the locks restore intact. Each restored locked item
+     * carries the contextVersion it was generated under; the frontend
+     * compares it with the current contextVersion to flag the affected items
+     * (per-item prompt + one-click rerun). contextVersion itself is never an
+     * identity input (I-6), which is why locked versionIds stay valid.
      */
     private fun restoreSavedStateWithFrame(
         resolved: ResolvedTrustReplySource,
@@ -803,7 +833,8 @@ class TrustReplyWorkbenchService(
                 evidenceSetVersion = perRequestEvidence,
                 sourceVersion = resolved.sourceVersion,
                 operatorInstruction = locked.operatorInstruction,
-                operatorInstructionHash = locked.operatorInstructionHash
+                operatorInstructionHash = locked.operatorInstructionHash,
+                contextVersion = resolved.contextVersion
             )
             if (version.versionId != locked.versionId) {
                 throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ITEM_VERSION_INVALID")
@@ -960,12 +991,22 @@ class TrustReplyWorkbenchService(
         )
         // 03a (T3): the FULL_DRAFT branch has no canonical selection resolver,
         // so per-request evidence versions are derived here per item from the
-        // same base snapshot function (C-6 caliber observation kept).
+        // same base snapshot function (C-6 caliber observation kept). 03b
+        // (T4/I-2): research-context items additionally mix the profile
+        // evidence so their versions agree with the workbench resolver.
         val fullDraftEvidenceVersions = result.requestFacts.associate { item ->
             val key = requestKey(resolved.sourceVersion, item)
-            key to requestEvidenceVersion(key, item.factRuleIds) { ids ->
-                aiReplyDraftService.buildEvidenceSnapshotForSelection(ids).first
+            val researchEvidence = if (item.requiresResearchContext) {
+                sha256Hex(resolved.expertProfileText) + " " + resolved.researchProfileSufficient
+            } else {
+                null
             }
+            key to requestEvidenceVersion(
+                key,
+                item.factRuleIds,
+                baseSnapshotOf = { ids -> aiReplyDraftService.buildEvidenceSnapshotForSelection(ids).first },
+                researchEvidence = researchEvidence
+            )
         }
         return TrustReplyGenerationResult(
             source = resolved.source,
@@ -995,7 +1036,10 @@ class TrustReplyWorkbenchService(
                 requestFacts = result.requestFacts,
                 sourceVersion = resolved.sourceVersion,
                 selectedModel = result.selectedModel,
-                itemAnswers = result.itemAnswers
+                itemAnswers = result.itemAnswers,
+                expertProfileText = resolved.expertProfileText,
+                researchProfileSufficient = resolved.researchProfileSufficient,
+                contextVersion = resolved.contextVersion
             )
         )
     }
@@ -1047,7 +1091,8 @@ class TrustReplyWorkbenchService(
                 generationKind = TrustReplyItemGenerationKind.OMITTED,
                 evidenceSetVersion = perRequestEvidenceVersion,
                 sourceVersion = resolved.sourceVersion,
-                operatorInstruction = request.operatorInstruction
+                operatorInstruction = request.operatorInstruction,
+                contextVersion = resolved.contextVersion
             )
             return TrustReplyItemAdjustmentResponse(
                 source = resolved.source,
@@ -1090,7 +1135,8 @@ class TrustReplyWorkbenchService(
             generationKind = generated.generationKind,
             evidenceSetVersion = perRequestEvidenceVersion,
             sourceVersion = resolved.sourceVersion,
-            operatorInstruction = request.operatorInstruction
+            operatorInstruction = request.operatorInstruction,
+            contextVersion = resolved.contextVersion
         )
         return TrustReplyItemAdjustmentResponse(
             source = resolved.source,
@@ -1156,7 +1202,8 @@ class TrustReplyWorkbenchService(
                 evidenceSetVersion = resolvedSelection.requestEvidenceVersions.getValue(requestKey(resolved.sourceVersion, item)),
                 sourceVersion = resolved.sourceVersion,
                 operatorInstruction = locked.operatorInstruction,
-                operatorInstructionHash = locked.operatorInstructionHash
+                operatorInstructionHash = locked.operatorInstructionHash,
+                contextVersion = resolved.contextVersion
             ).also { version ->
                 if (version.versionId != locked.versionId) {
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ITEM_VERSION_INVALID")
@@ -1191,6 +1238,7 @@ class TrustReplyWorkbenchService(
             draftHash = AiReplyDraftService.sha256Hex(raw),
             canonicalFactIds = factIds.toList(),
             itemVersions = versions,
+            contextVersion = resolved.contextVersion,
             requestedFactIds = selection.sendQaRuleIds,
             requestFactSelections = resolvedSelection.requestFactSelections,
             frameSnapshot = TrustReplyFrameSnapshot(
@@ -1375,7 +1423,8 @@ class TrustReplyWorkbenchService(
         evidenceSetVersion: String,
         sourceVersion: String,
         operatorInstruction: String? = null,
-        operatorInstructionHash: String = ""
+        operatorInstructionHash: String = "",
+        contextVersion: String = ""
     ): TrustReplyItemVersion {
         val normalizedInstruction = if (handling == TrustReplyItemHandling.OMIT) {
             ""
@@ -1420,7 +1469,8 @@ class TrustReplyWorkbenchService(
             operatorInstructionHash = instructionHash,
             requestIndex = item.index,
             requestText = item.requestText,
-            operatorInstruction = normalizedInstruction
+            operatorInstruction = normalizedInstruction,
+            contextVersion = contextVersion
         )
     }
 
@@ -1485,10 +1535,7 @@ class TrustReplyWorkbenchService(
             messageId = messageId,
             subject = subject,
             senderAccountCode = senderAccountCode,
-            inboundText = inboundText,
-            mailHistory = context.mailHistory,
-            profileText = context.profileText,
-            researchProfileSufficient = context.researchProfileSufficient
+            inboundText = inboundText
         )
         return ResolvedTrustReplySource(
             source = source,
@@ -1501,20 +1548,26 @@ class TrustReplyWorkbenchService(
             mailHistory = context.mailHistory,
             contextWarnings = context.contextWarnings,
             researchProfileSufficient = context.researchProfileSufficient,
-            sourceVersion = sourceVersion
+            sourceVersion = sourceVersion,
+            expertProfileText = context.expertProfileText,
+            trainingKnowledgeText = context.trainingKnowledgeText,
+            contextVersion = contextVersion(context.trainingKnowledgeText, context.mailHistory)
         )
     }
 
+    // 03b (T3/I-1): only the 7 identity components participate. The evidence
+    // components (expert profile content, researchProfileSufficient) and the
+    // context components (training knowledge, mail history) were split out —
+    // profileText/mailHistory no longer feed the request identity, so editing
+    // training knowledge or sending a mail no longer resets the whole
+    // workbench (A-1/A-2).
     private fun sourceVersion(
         source: TrustReplySourceRef,
         contactId: Long,
         messageId: String?,
         subject: String?,
         senderAccountCode: String?,
-        inboundText: String,
-        mailHistory: String,
-        profileText: String,
-        researchProfileSufficient: Boolean
+        inboundText: String
     ): String {
         val canonical = listOf(
             source.sourceType.name,
@@ -1523,13 +1576,17 @@ class TrustReplyWorkbenchService(
             messageId.orEmpty(),
             subject.orEmpty(),
             senderAccountCode.orEmpty(),
-            sha256Hex(inboundText),
-            sha256Hex(mailHistory),
-            sha256Hex(profileText),
-            researchProfileSufficient.toString()
+            sha256Hex(inboundText)
         ).joinToString("\u0000")
         return sha256Hex(canonical)
     }
+
+    // 03b (T3/I-1/I-6): context fingerprint over the two non-factual context
+    // fragments. It drives only the per-item context-stale prompt and the
+    // one-click rerun (I-4); it never enters requestKey()/versionId()/
+    // requestEvidenceVersion()/aggregateEvidenceVersion().
+    private fun contextVersion(trainingKnowledgeText: String, mailHistory: String): String =
+        sha256Hex(listOf(sha256Hex(trainingKnowledgeText), sha256Hex(mailHistory)).joinToString(" "))
 
     private data class CanonicalRequestRef(
         val index: Int,
@@ -1590,7 +1647,15 @@ class TrustReplyWorkbenchService(
         }
         val perRequestByIndex = selection.requestFacts.sortedBy { it.index }.map { item ->
             val key = requestKey(resolved.sourceVersion, item)
-            item.index to (key to requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf))
+            // 03b (T4/I-2): only research-context items mix the expert profile
+            // evidence (content hash + sufficiency, I-3) into their per-request
+            // evidence; all other items keep the exact 03a hash input.
+            val researchEvidence = if (item.requiresResearchContext) {
+                sha256Hex(resolved.expertProfileText) + " " + resolved.researchProfileSufficient
+            } else {
+                null
+            }
+            item.index to (key to requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence))
         }
         return ResolvedCanonicalSelection(
             selection = selection,
@@ -1688,7 +1753,10 @@ class TrustReplyWorkbenchService(
         requestFacts: List<RequestFactItem>,
         sourceVersion: String,
         selectedModel: String,
-        itemAnswers: List<AiReplyItemAnswer>
+        itemAnswers: List<AiReplyItemAnswer>,
+        expertProfileText: String = "",
+        researchProfileSufficient: Boolean = true,
+        contextVersion: String = ""
     ): List<TrustReplyItemVersion> {
         val answersByIndex = itemAnswers.associateBy { it.requestIndex }
         val baseSnapshotOf: (List<Long>) -> String = { ids ->
@@ -1703,6 +1771,12 @@ class TrustReplyWorkbenchService(
                     RequestGroundingStatus.PARTIAL -> TrustReplyItemHandling.ANSWER_SUPPORTED_PART
                     RequestGroundingStatus.UNSUPPORTED -> return@mapNotNull null
                 }
+                // 03b (T4/I-2): same research/context split as the resolver.
+                val researchEvidence = if (item.requiresResearchContext) {
+                    sha256Hex(expertProfileText) + " " + researchProfileSufficient
+                } else {
+                    null
+                }
                 materializeVersion(
                     item = item,
                     requestKey = key,
@@ -1711,8 +1785,9 @@ class TrustReplyWorkbenchService(
                     claims = answer.claims,
                     model = selectedModel,
                     generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                    evidenceSetVersion = requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf),
-                    sourceVersion = sourceVersion
+                    evidenceSetVersion = requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence),
+                    sourceVersion = sourceVersion,
+                    contextVersion = contextVersion
                 )
             } else {
                 null
@@ -1984,17 +2059,34 @@ class TrustReplyWorkbenchService(
          * and no observation time participate, so rebinding the same fact
          * union to a different request (I-2) and reordering facts both change
          * the version while repeated identical input stays deterministic.
+         *
+         * 03b (T4/I-2/I-3): [researchEvidence] (profile content hash +
+         * researchProfileSufficient) is mixed in ONLY for items whose
+         * requiresResearchContext is true. When null the hash input is
+         * byte-identical to 03a — non-research items' version values do not
+         * change under this plan (the verifiable form of I-2). A boolean alone
+         * would be insufficient (I-3): the content hash must participate too.
          */
         fun requestEvidenceVersion(
             requestKey: String,
             factRuleIds: List<Long>,
-            baseSnapshotOf: (List<Long>) -> String
+            baseSnapshotOf: (List<Long>) -> String,
+            researchEvidence: String? = null
         ): String {
-            val canonical = listOf(
-                requestKey,
-                factRuleIds.joinToString(","),
-                baseSnapshotOf(factRuleIds)
-            ).joinToString(" ")
+            val canonical = if (researchEvidence == null) {
+                listOf(
+                    requestKey,
+                    factRuleIds.joinToString(","),
+                    baseSnapshotOf(factRuleIds)
+                ).joinToString(" ")
+            } else {
+                listOf(
+                    requestKey,
+                    factRuleIds.joinToString(","),
+                    baseSnapshotOf(factRuleIds),
+                    researchEvidence
+                ).joinToString(" ")
+            }
             return sha256Hex(canonical)
         }
 

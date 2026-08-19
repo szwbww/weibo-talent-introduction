@@ -1444,6 +1444,99 @@ describe("shared trust reply workbench mount contract", () => {
         }
     });
 
+    // 03b (I-4/S-1/S-2): a locked item generated under an older context
+    // fingerprint (training knowledge / mail history) is flagged per-item —
+    // never dropped — with the verbatim hint; the status area gains the
+    // one-click rerun button; clicking it regenerates exactly the affected
+    // items through /generations/stream with no re-bootstrap and no
+    // resetVersions; untouched items keep their locks.
+    it("flags context stale items, renders the rerun button and regenerates exactly the affected items", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 385;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded, partial]);
+        current.contextVersion = "ctx-v2";
+        current.savedState = {
+            status: "RESTORED",
+            stateVersion: 1,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [
+                lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "g-v1", { contextVersion: "ctx-v1" }),
+                lockedItem(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "p-v1", { contextVersion: "ctx-v2", handling: "ANSWER_SUPPORTED_PART" })
+            ]
+        };
+        const calls = [];
+        let streamCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(2));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/generations/stream")) {
+                streamCount += 1;
+                const payload = JSON.parse(options.body);
+                const version = {
+                    ...itemVersion(payload.requestKey, current.sourceVersion, current.evidenceSetVersion, `fresh-${payload.requestKey}`),
+                    contextVersion: "ctx-v2",
+                    ...(payload.requestKey === partial.requestKey ? { handling: "ANSWER_SUPPORTED_PART" } : {})
+                };
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // (a) the affected item renders the verbatim per-item hint; the
+        // untouched item does not.
+        assert.match(host.innerHTML, /<span class="muted" data-role="item-context-stale">本条在旧训练知识\/对话历史下生成<\/span>/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-role="item-context-stale"`));
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-role="item-context-stale"`));
+        // context staleness never clears the lock.
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-locked="true"`));
+        // (b) the status area renders the verbatim one-click rerun button.
+        assert.match(host.innerHTML, /<button type="button" class="button small secondary" data-action="regenerate-context-stale">重新生成受影响条目<\/button>/);
+
+        const bootstrapCallsBefore = calls.filter((call) => call.url.includes("/bootstrap")).length;
+        click(host, "regenerate-context-stale");
+        await settle();
+        await settle();
+
+        // (c) exactly the context-stale items are regenerated (1 item → 1
+        // ADJUST_ITEM stream call; no FULL_DRAFT).
+        assert.strictEqual(streamCount, 1);
+        assert.strictEqual(
+            calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "ADJUST_ITEM").length,
+            1
+        );
+        assert.strictEqual(
+            calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length,
+            0
+        );
+        // (d) no re-bootstrap, no resetVersions: the locks survive and the
+        // fresh context fingerprints clear every hint and the button.
+        assert.strictEqual(calls.filter((call) => call.url.includes("/bootstrap")).length, bootstrapCallsBefore);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /data-role="item-context-stale"/);
+        assert.doesNotMatch(host.innerHTML, /data-action="regenerate-context-stale"/);
+    });
+
     it("does not restore stale saved state and never generates", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 382;

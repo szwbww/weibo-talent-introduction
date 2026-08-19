@@ -205,6 +205,135 @@ class TrustReplyWorkbenchServiceTest {
         assertNotEquals(first, service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion)
     }
 
+    // 03b (I-1a): changing only the training knowledge alters the context
+    // fingerprint but never the identity-only sourceVersion (A-1).
+    @Test
+    fun `training knowledge change alters context version but not source version`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val base = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L))
+        Mockito.`when`(
+            contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: contact(),
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Test",
+                mailHistory = "history",
+                contextWarnings = emptyList(),
+                researchProfileSufficient = true,
+                expertProfileText = "Name: Test",
+                trainingKnowledgeText = "knowledge-v2"
+            )
+        )
+        val changed = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L))
+        assertEquals(base.sourceVersion, changed.sourceVersion)
+        assertNotEquals(base.contextVersion, changed.contextVersion)
+        assertFalse(base.contextVersion.isBlank())
+    }
+
+    // 03b (I-1b): changing only the mail history (a mail was sent to / received
+    // from the same expert) alters the context fingerprint but never the
+    // identity-only sourceVersion (A-2).
+    @Test
+    fun `mail history change alters context version but not source version`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val base = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L))
+        Mockito.`when`(
+            contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: contact(),
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(
+            AiReplyContext(
+                profileText = "Name: Test",
+                mailHistory = "history-v2",
+                contextWarnings = emptyList(),
+                researchProfileSufficient = true
+            )
+        )
+        val changed = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L))
+        assertEquals(base.sourceVersion, changed.sourceVersion)
+        assertNotEquals(base.contextVersion, changed.contextVersion)
+    }
+
+    // 03b (I-1c): every identity component — messageId, subject,
+    // senderAccountCode, contactId — still flips the sourceVersion (inboundText
+    // is covered by the existing source-version test above).
+    @Test
+    fun `every identity component change alters source version`() {
+        val base = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(base))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(base))
+        val original = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion
+
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(base.copy(messageId = "<other@example.com>")))
+        assertNotEquals(original, service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion)
+
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(base.copy(subject = "Other subject")))
+        assertNotEquals(original, service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion)
+
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(base.copy(senderAccountCode = "sender-2")))
+        assertNotEquals(original, service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion)
+
+        val otherContactMail = base.copy(expertContactId = 8L)
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(otherContactMail))
+        Mockito.`when`(contacts.findById(8L)).thenReturn(Optional.of(contact().copy(id = 8L)))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(8L)).thenReturn(listOf(otherContactMail))
+        assertNotEquals(original, service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion)
+    }
+
+    // must-NOT-change 1 (03b regression): a changed inbound body is still a
+    // different letter — every requestKey flips and the saved state is judged
+    // STALE as a whole; the 03b downgrade never applies to identity changes.
+    @Test
+    fun `inbound text change flips request keys and marks saved state stale`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val currentEvidence = evidenceWithMapping("evidence-v1", key to listOf(9L))
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            requestFactSelections = canonicalMatrix(version),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(locked)
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(3L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
+
+        val changed = mail(id = 11L, body = "What changed?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(changed))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(changed))
+        val changedSelection = selection(item(1, "What changed?", listOf(9L), RequestGroundingStatus.GROUNDED))
+        Mockito.`when`(factSelection.selectForWorkbench("What changed?", null, null, true)).thenReturn(changedSelection)
+        Mockito.`when`(factSelection.selectForWorkbench("What changed?", null, listOf(9L), true)).thenReturn(changedSelection)
+        Mockito.`when`(factSelection.selectForWorkbench("What changed?", listOf(listOf(9L)), null, true)).thenReturn(changedSelection)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val changedVersion = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion
+        assertNotEquals(version, changedVersion)
+        assertNotEquals(canonicalKey(version), canonicalKey(changedVersion, 1, "What changed?"))
+
+        val stale = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("STALE", stale.savedState?.status)
+        assert(stale.savedState?.lockedItems?.isEmpty() == true)
+    }
+
     @Test
     fun `bootstrap uses canonical selection and common model catalog`() {
         val exact = mail(id = 11L, body = "What?")

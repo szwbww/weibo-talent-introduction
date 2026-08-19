@@ -190,6 +190,10 @@
             onChange: typeof options.onChange === "function" ? options.onChange : null,
             sourceVersion: null,
             evidenceSetVersion: null,
+            // 03b (T6/I-4): the context fingerprint (training knowledge + mail
+            // history) of the last bootstrap; per-item comparison against each
+            // version's contextVersion drives the context-stale prompt.
+            contextVersion: null,
             activePage: "facts",
             frameOptions: [],
             frameSnapshot: null,
@@ -436,6 +440,11 @@
                 // 03a (I-5/S-1): set when this item's facts changed and its
                 // generated answer must be regenerated; renders the stale hint.
                 evidenceStale: false,
+                // 03b (T6/I-4): set when this item's locked version was
+                // generated under a different context fingerprint (old
+                // training knowledge / mail history); renders the per-item
+                // hint and participates in the one-click rerun.
+                contextStale: false,
                 factPickerOpen: false,
                 availableHandlings: [...(item.allowedHandlings || [])],
                 recommendedHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
@@ -533,6 +542,7 @@
             }
             state.sourceVersion = data.sourceVersion;
             state.evidenceSetVersion = data.evidenceSetVersion;
+            state.contextVersion = data.contextVersion || "";
             state.rules = data.rulesByCategory || [];
             state.availableModels = data.availableModels?.length ? [...data.availableModels] : [data.defaultModel || "DEEPSEEK_V4_FLASH"];
             state.selectedModel = state.availableModels.includes(data.defaultModel) ? data.defaultModel : state.availableModels[0];
@@ -579,6 +589,10 @@
             request.expanded = false;
             request.error = null;
             request.evidenceStale = false;
+            // 03b (T6/I-4): a restored lock generated under a different
+            // context fingerprint is flagged for the per-item hint; it is
+            // never dropped here (context changes never clear locks).
+            request.contextStale = (locked.contextVersion || "") !== (state.contextVersion || "");
             return true;
         }
 
@@ -627,7 +641,8 @@
                 evidenceSetVersion: locked.evidenceSetVersion,
                 sourceVersion: locked.sourceVersion,
                 operatorInstructionHash: locked.operatorInstructionHash || "",
-                operatorInstruction: locked.operatorInstruction || ""
+                operatorInstruction: locked.operatorInstruction || "",
+                contextVersion: locked.contextVersion || ""
             };
         }
 
@@ -711,6 +726,10 @@
                     request.requestSeq = old.requestSeq;
                     request.pending = old.pending;
                     request.error = old.error;
+                    // 03b (T6/I-4): the evidence identity is still fresh, but
+                    // the retained version may have been generated under a
+                    // different context fingerprint — flag it, keep the lock.
+                    request.contextStale = (retained.contextVersion || "") !== (state.contextVersion || "");
                 } else if (old.versions.length > 0 || old.resolvedVersionId) {
                     // 03a (I-5): only this item lost its per-request evidence
                     // identity; the fresh request object already has no
@@ -805,6 +824,9 @@
             // in memory until the whole run succeeds; the default keeps the
             // established per-item durable save for ordinary paths.
             const persistEach = options.persistEach !== false;
+            // 03b (T6/I-4): the context-stale rerun passes skipResolved:false
+            // so already-locked items are regenerated instead of skipped.
+            const skipResolved = options.skipResolved !== false;
             if (!keys.length || state.generation.pending || !state.sourceVersion) return false;
             const frozenKeys = [...keys];
             const total = frozenKeys.length;
@@ -816,7 +838,7 @@
                 if (!isLive(seq) || state.sequenceCancelled) return false;
                 const request = findRequest(requestKey);
                 if (!request) return false;
-                if (request.resolvedVersionId) continue;
+                if (skipResolved && request.resolvedVersionId) continue;
                 index += 1;
                 state.generation.stage = "GENERATING";
                 state.generation.message = `${labelPrefix} ${index}/${total}`;
@@ -950,6 +972,9 @@
                 // 03a (S-1): a fresh version carries the current per-request
                 // evidence, so the stale hint goes away.
                 request.evidenceStale = false;
+                // 03b (T6/I-4): a fresh version also carries the current
+                // context fingerprint, so the context-stale hint goes away.
+                request.contextStale = false;
                 if (version.handling === "OMIT") {
                     request.resolvedVersionId = version.versionId;
                     request.expanded = false;
@@ -1006,6 +1031,44 @@
             const outcome = await requestItemVersion(request, sourceSeq, generationId, request.requestKey);
             if (!outcome || !outcome.version) return null;
             return outcome.version;
+        }
+
+        // 03b (T6/I-4): one-click rerun of every context-stale item. All
+        // affected items run through the shared sequential generation loop
+        // (reused, not a new pipeline); untouched items are never regenerated,
+        // resetVersions()/handleStaleGeneration are never invoked, and no
+        // re-bootstrap happens. After the whole run succeeds, one complete
+        // snapshot persists the fresh context fingerprints durably.
+        async function regenerateContextStale() {
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            const seq = state.bootSeq;
+            const keys = state.requests
+                .filter((request) => request.contextStale === true)
+                .map((request) => request.requestKey);
+            if (!keys.length || !state.sourceVersion) return;
+            const completed = await runItemSequence(keys, seq, {
+                labelPrefix: "正在重新生成受影响条目",
+                doneMessage: "受影响条目已重新生成",
+                skipResolved: false,
+                persistEach: false
+            });
+            if (!completed || !isLive(seq)) return;
+            try {
+                await persistResolvedSnapshot();
+            } catch (error) {
+                if (isFrameStaleError(error)) {
+                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
+                if (isStaleError(error)) {
+                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return;
+                }
+                if (!isLive(seq)) return;
+                setStatus(error.message || "保存失败，请重试", "ERROR");
+                render();
+                return;
+            }
         }
 
         function isVersionSerializable(version, request) {
@@ -1435,7 +1498,8 @@
                 evidenceSetVersion: version.evidenceSetVersion,
                 sourceVersion: version.sourceVersion,
                 operatorInstructionHash: version.operatorInstructionHash || "",
-                operatorInstruction: version.operatorInstruction || ""
+                operatorInstruction: version.operatorInstruction || "",
+                contextVersion: version.contextVersion || ""
             };
         }
 
@@ -1728,9 +1792,14 @@
             // 03a (S-1): only when this item's per-request evidence drifted is
             // the verbatim stale hint appended after the fact section; no new
             // class, no inline style, no output when the condition is false.
-            const staleMarkup = request.evidenceStale === true
+            // 03b (S-1): the verbatim context-stale hint is appended beside it
+            // (never replacing it) when the item's locked version was
+            // generated under a different context fingerprint.
+            const staleMarkup = (request.evidenceStale === true
                 ? `<span class="muted" data-role="item-evidence-stale">事实已变化，本条回答需重新生成</span>`
-                : "";
+                : "") + (request.contextStale === true
+                ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
+                : "");
             return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
         }
 
@@ -2082,9 +2151,19 @@
         }
 
         function renderStatus() {
-            if (!state.generation.message) return "";
-            const cls = state.generation.stage === "ERROR" ? "ai-reply-error" : "ai-reply-coverage";
-            return `<div class="${cls}" role="${state.generation.stage === "ERROR" ? "alert" : "status"}">${escapeText(state.generation.stage ? `${state.generation.stage}：` : "")}${escapeText(state.generation.message)}</div>`;
+            const parts = [];
+            if (state.generation.message) {
+                const cls = state.generation.stage === "ERROR" ? "ai-reply-error" : "ai-reply-coverage";
+                parts.push(`<div class="${cls}" role="${state.generation.stage === "ERROR" ? "alert" : "status"}">${escapeText(state.generation.stage ? `${state.generation.stage}：` : "")}${escapeText(state.generation.message)}</div>`);
+            }
+            // 03b (S-2): one-click rerun for every context-stale item,
+            // appended at the end of the status area; verbatim contract DOM,
+            // only when at least one item is context-stale (I-4).
+            const contextStaleCount = state.requests.filter((request) => request.contextStale === true).length;
+            if (contextStaleCount >= 1) {
+                parts.push(`<button type="button" class="button small secondary" data-action="regenerate-context-stale">重新生成受影响条目</button>`);
+            }
+            return parts.join("");
         }
 
         function renderStatusOnly() {
@@ -2148,6 +2227,7 @@
             if (action === "complete") void complete();
             if (action === "auto-run") void autoRun();
             if (action === "auto-reset") void autoReset();
+            if (action === "regenerate-context-stale") void regenerateContextStale();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
         }
 

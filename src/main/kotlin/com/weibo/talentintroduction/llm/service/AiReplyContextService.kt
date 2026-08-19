@@ -12,7 +12,14 @@ data class AiReplyContext(
     val profileText: String,
     val mailHistory: String,
     val contextWarnings: List<String>,
-    val researchProfileSufficient: Boolean = true
+    val researchProfileSufficient: Boolean = true,
+    // 03b (I-5): the two separable source fragments behind [profileText] — the
+    // raw expert profile (no training knowledge) and the training knowledge —
+    // carried so the workbench can fingerprint them independently. The prompt
+    // content ([profileText]) is byte-unchanged; both new fields are
+    // observational only.
+    val expertProfileText: String = "",
+    val trainingKnowledgeText: String = ""
 )
 
 @Service
@@ -37,8 +44,9 @@ class AiReplyContextService(
         val profile: ExpertProfile? = loadProfile(contact, warnings)
         val researchProfileSufficient = isResearchSufficient(profile)
 
+        val expertProfileText = contextBuilder.buildExpertProfile(contact, profile)
         val profileText = contextBuilder.appendKnowledgeToProfile(
-            contextBuilder.buildExpertProfile(contact, profile),
+            expertProfileText,
             trainingKnowledge
         )
         val mailHistory = contextBuilder.buildMailHistory(records, currentInboundMessageId)
@@ -51,7 +59,9 @@ class AiReplyContextService(
             profileText = profileText,
             mailHistory = mailHistory,
             contextWarnings = warnings,
-            researchProfileSufficient = researchProfileSufficient
+            researchProfileSufficient = researchProfileSufficient,
+            expertProfileText = expertProfileText,
+            trainingKnowledgeText = trainingKnowledge
         )
     }
 

@@ -227,6 +227,34 @@ class AiReplyContextServiceTest {
         assertTrue(result.profileText.contains("Salary"))
     }
 
+    // 03b (T1/I-5): the two source fragments behind profileText are carried as
+    // separate fields — expertProfileText is the raw buildExpertProfile output
+    // (no training knowledge), trainingKnowledgeText is the passed value; the
+    // existing profileText construction stays untouched.
+    @Test
+    fun `build carries raw expert profile and training knowledge as separate fields`() {
+        val c = contact(indexLevel = "CANDIDATE")
+        val profile = profileWith(researchFields = "Machine Learning")
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-test", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(profile)
+        val training = "Topic: Funding\nAnswer: 100k"
+
+        val result = service.build(c, emptyList(), "Hello", training)
+
+        val rawProfile = contextBuilder.buildExpertProfile(c, profile)
+        assertEquals(rawProfile, result.expertProfileText)
+        assertEquals(training, result.trainingKnowledgeText)
+        // I-5: profileText is still the concatenation and contains the raw
+        // profile fragment; the new fields never replace or alter it.
+        assertEquals(
+            contextBuilder.appendKnowledgeToProfile(rawProfile, training),
+            result.profileText
+        )
+        assertTrue(result.profileText.contains(result.expertProfileText))
+        assertTrue(result.profileText.contains(training))
+        assertFalse(result.expertProfileText.contains(training))
+    }
+
     // Test: CANDIDATE level does NOT try APPLICATION fallback
     @Test
     fun `CANDIDATE level only queries CANDIDATE index`() {
