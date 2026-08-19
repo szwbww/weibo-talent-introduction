@@ -1150,6 +1150,8 @@ class TrustReplyWorkbenchService(
                 validatedSections = groundedSections,
                 requestFacts = requestFacts,
                 plan = plan,
+                // I-3 (plan 02): the trust-boundary body stays single-space joined on
+                // purpose — high-risk phrase-family matching assumes continuous text.
                 finalBody = groundedSections.flatMap { it.answers }.joinToString(" ") { it.answer },
                 hasBlockingTrustGap = AiReplyGroundedContentPlanner().hasBlockingTrustGap(requestFacts),
                 sourceTextsByClaim = claimResult.sourceTextsByClaim
@@ -1283,7 +1285,7 @@ class TrustReplyWorkbenchService(
             }
             AiReplyItemClaim(intentKey, claim.text.trim(), sourceIds)
         }
-        if (answerText != canonical.joinToString(" ") { it.text }) {
+        if (answerText != canonical.joinToString(AiReplyDraftService.CLAIM_PARAGRAPH_SEPARATOR) { it.text }) {
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ANSWER_CLAIMS_MISMATCH")
         }
         return canonical
@@ -1328,7 +1330,7 @@ class TrustReplyWorkbenchService(
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
             TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> answerText.trim()
-            else -> normalizedClaims.joinToString(" ") { it.text }
+            else -> normalizedClaims.joinToString(AiReplyDraftService.CLAIM_PARAGRAPH_SEPARATOR) { it.text }
         }
         val instructionHash = sha256Hex(normalizedInstruction).also { calculated ->
             if (handling != TrustReplyItemHandling.OMIT &&

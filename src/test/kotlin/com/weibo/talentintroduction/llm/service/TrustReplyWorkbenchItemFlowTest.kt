@@ -782,6 +782,128 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
 
+    // ── 02 claim paragraphs (I-1/I-2/I-3/I-4) ────────────────────────────
+
+    @Test
+    fun `multi claim item answerText keeps each claim as its own paragraph`() {
+        val paragraphAnswer = "Claim A" + "\n\n" + "Claim B"
+        val fixture = assembleFixture(
+            answerText = paragraphAnswer,
+            claims = listOf(
+                AiReplyItemClaim("policy.eligibility", "Claim A", listOf(9L)),
+                AiReplyItemClaim("compensation.details", "Claim B", listOf(9L))
+            ),
+            intents = listOf(
+                RequestIntentCoverage(
+                    intentKey = "policy.eligibility",
+                    title = "Policy eligibility",
+                    requiredCoverageKeys = emptyList(),
+                    evidenceRuleIds = listOf(9L),
+                    status = "SUPPORTED",
+                    missingEvidenceKeys = emptyList(),
+                    requiresResearchContext = false
+                ),
+                RequestIntentCoverage(
+                    intentKey = "compensation.details",
+                    title = "Compensation details",
+                    requiredCoverageKeys = emptyList(),
+                    evidenceRuleIds = listOf(9L),
+                    status = "SUPPORTED",
+                    missingEvidenceKeys = emptyList(),
+                    requiresResearchContext = false
+                )
+            )
+        )
+
+        val response = fixture.service.assemble(fixture.request)
+
+        assertEquals("Claim A\n\nClaim B", response.itemVersions.single().answerText)
+        assertEquals(listOf("Claim A", "Claim B"), response.itemVersions.single().claims.map { it.text })
+    }
+
+    @Test
+    fun `multi claim item with legacy single space answerText is rejected`() {
+        val fixture = assembleFixture(
+            answerText = "Claim A Claim B",
+            claims = listOf(
+                AiReplyItemClaim("policy.eligibility", "Claim A", listOf(9L)),
+                AiReplyItemClaim("compensation.details", "Claim B", listOf(9L))
+            ),
+            intents = listOf(
+                RequestIntentCoverage(
+                    intentKey = "policy.eligibility",
+                    title = "Policy eligibility",
+                    requiredCoverageKeys = emptyList(),
+                    evidenceRuleIds = listOf(9L),
+                    status = "SUPPORTED",
+                    missingEvidenceKeys = emptyList(),
+                    requiresResearchContext = false
+                ),
+                RequestIntentCoverage(
+                    intentKey = "compensation.details",
+                    title = "Compensation details",
+                    requiredCoverageKeys = emptyList(),
+                    evidenceRuleIds = listOf(9L),
+                    status = "SUPPORTED",
+                    missingEvidenceKeys = emptyList(),
+                    requiresResearchContext = false
+                )
+            )
+        )
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_ANSWER_CLAIMS_MISMATCH", error.code)
+    }
+
+    @Test
+    fun `claims empty handlings stay single line without paragraph separators`() {
+        val canonical = AiReplyHighRiskClaimValidator.safeAcknowledgementFor("What?")
+        val ackFixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            answerText = canonical,
+            claims = emptyList(),
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
+        )
+        val ackPadded = "  $canonical  "
+        val ackResponse = ackFixture.service.assemble(
+            ackFixture.request.copy(lockedItems = listOf(ackFixture.validLockedItem.copy(answerText = ackPadded)))
+        )
+        assertEquals(ackPadded.trim(), ackResponse.itemVersions.single().answerText)
+        assertFalse(ackResponse.itemVersions.single().answerText.contains("\n\n"))
+
+        val operatorHandling = operatorDirectedHandling()
+        val operatorFixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorHandling,
+            answerText = "Operator provided basis.",
+            claims = emptyList()
+        )
+        val operatorPadded = "  Operator provided basis.  "
+        val operatorResponse = operatorFixture.service.assemble(
+            operatorFixture.request.copy(
+                lockedItems = listOf(operatorFixture.validLockedItem.copy(answerText = operatorPadded))
+            )
+        )
+        assertEquals(operatorPadded.trim(), operatorResponse.itemVersions.single().answerText)
+        assertFalse(operatorResponse.itemVersions.single().answerText.contains("\n\n"))
+    }
+
+    @Test
+    fun `duplicate claims across items still rejected despite paragraph and space variance`() {
+        val fixture = duplicateFixture(item1Text = "Same\n\nclaim", item2Text = "Same  claim")
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
+    }
+
+
     // ── 02 selectable frame assembly (I-2/I-3/I-4/I-5) ────────────────────
 
     @Test
@@ -1125,7 +1247,8 @@ class TrustReplyWorkbenchItemFlowTest {
         handling: TrustReplyItemHandling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
         answerText: String = "Salary info",
         claims: List<AiReplyItemClaim> = listOf(AiReplyItemClaim("general.answer", "Salary info", listOf(9L))),
-        generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED
+        generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+        intents: List<RequestIntentCoverage> = emptyList()
     ): AssembleFixture {
         val mailRecords = Mockito.mock(MailRecordRepository::class.java)
         val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
@@ -1162,7 +1285,8 @@ class TrustReplyWorkbenchItemFlowTest {
             receivedAt = LocalDateTime.of(2026, 7, 28, 10, 0),
             sentAt = null
         )
-        val item = item(1, "What?", listOf(9L), status)
+        val baseItem = item(1, "What?", listOf(9L), status)
+        val item = if (intents.isEmpty()) baseItem else baseItem.copy(intents = intents)
         val selection = ResolvedQaRules(
             sendQaRuleIds = listOf(9L),
             promptRuleIds = listOf(9L),
@@ -1201,7 +1325,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val canonicalAnswer = when (handling) {
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
-            else -> answerText.trim().ifBlank { claims.joinToString(" ") { it.text } }
+            else -> answerText.trim().ifBlank { claims.joinToString(AiReplyDraftService.CLAIM_PARAGRAPH_SEPARATOR) { it.text } }
         }
         val operatorInstruction = if (handling.name == "ANSWER_FROM_OPERATOR_INPUT") {
             "Use the operator-provided basis."
@@ -1242,7 +1366,9 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
-        val requestKey = TrustReplyWorkbenchService.requestKey(sourceVersion, 1, "What?", AiReplyIntentCatalog.matchIntents("What?").map { it.key })
+        val requestKey = TrustReplyWorkbenchService.requestKey(
+            sourceVersion, 1, "What?", item.intents.map { it.intentKey }
+        )
         val evidenceSetVersion = AiReplyDraftService.sha256Hex("$baseEvidenceSetVersion\u0000$requestKey\u00009")
         val versionId = TrustReplyWorkbenchService.versionId(
             requestKey,
