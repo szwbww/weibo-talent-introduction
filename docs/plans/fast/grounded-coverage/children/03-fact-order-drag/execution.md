@@ -89,3 +89,9 @@ All commands below ran freshly in this invocation on the final implementation st
 ## Next Action
 
 - READY_FOR_VERIFICATION → run `verify-p` against the four gates (I-1..I-4, S-1..S-3, N4/N5, regression).
+
+---
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit to include all four child artifacts (brief/execution/verify-log/fix-log). No content change beyond this note; fix_round=0.

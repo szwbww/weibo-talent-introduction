@@ -19,3 +19,7 @@ Verifier: Verify03FactDrag
 
 ### Required Action
 - COMPLETE_CHILD
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit; verifier report content unchanged since signature.
