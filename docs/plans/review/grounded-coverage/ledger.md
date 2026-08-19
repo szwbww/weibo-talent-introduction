@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-19/00-grounded-coverage-master.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 1
 - Master plan: docs/plans/2026-08-19/00-grounded-coverage-master.md (sha256: 3112ffe1c665ebda5295e36a315a5bf65f3a09082febf11ce89bec1ba854d4e7)
 - Governing master identity: worktree sha256 3112ffe1c665ebda5295e36a315a5bf65f3a09082febf11ce89bec1ba854d4e7; recorded commit af1723f37021328f8ffa61261504727e514fbb4b
@@ -23,14 +23,14 @@
 - Reviewer attempt: 1
 - Machine result: FAIL
 - Machine report epoch: docs/plans/review/grounded-coverage/machine-verification.md#epoch-1--2026-08-19t093949z
-- Repair artifact: N/A
+- Repair artifact: docs/plans/fix/00-grounded-coverage-master/repair.md (DRAFT_READY)
 - Repair evidence mode: N/A
-- Repair approval source: N/A
+- Repair approval source: HUMAN:user `批准 生成repair文件` on 2026-08-19; scope decision recorded as new forward migration and production-faithful regression test for V-1, drafting only
 - Repair executor: N/A
 - Repair code head: N/A
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human must approve a plan amendment authorizing a new migration (normally V106) and exact production-faithful regression-test files for V-1, or explicitly authorize V105 modification only if guaranteed unapplied; then rerun aggregate review against a committed repair boundary.
+- Blocker/next action: To approve and execute the repair, send `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-grounded-coverage/docs/plans/fix/00-grounded-coverage-master/repair.md`.
 
 ## Preflight — 2026-08-19T09:30:30Z
 

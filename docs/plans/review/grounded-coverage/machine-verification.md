@@ -76,3 +76,18 @@ V-1 is behaviorally repairable, but approved P1 fixes V105 at four statements an
 | Child 02 O-3 | P2 region attribution | RECORD_ONLY | no mandatory acceptance-letter violation proven |
 
 No product code, tests, configuration, aggregate review evidence, staging, or commits were modified by the reviewer.
+
+### Repair Planning Addendum — 2026-08-19T09:49:47Z
+
+## Repair Planning Result: DRAFT_READY
+
+- Baseline: `00-grounded-coverage-master.md`
+- Verification: `FAIL / INITIAL`
+- Repair artifact: `docs/plans/fix/00-grounded-coverage-master/repair.md`
+- Included finding: V-1.
+- Authorized execution files: `src/main/resources/db/migration/V106__add_remuneration_keyword_to_funding_support.sql`; `src/test/kotlin/com/weibo/talentintroduction/llm/service/QaFactSelectionServiceTest.kt`; `docs/plans/review/grounded-coverage/repair-execution.md`.
+- Excluded: transient `mvn clean package` WAR-deletion condition; every RECORD_ONLY item.
+- Scope authority: HUMAN:user `批准 生成repair文件` on 2026-08-19, interpreted against the immediately preceding requested scope as authorization to draft V106 plus its production-faithful regression only. It authorizes no execution.
+- Required approval: explicit `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-grounded-coverage/docs/plans/fix/00-grounded-coverage-master/repair.md`.
+
+The repair plan contains the resolved Review-Fast-P one-approval execution handoff: product commit subject `fix(qa): support remuneration in funding facts`; evidence commit subject `docs(review-fast-p): record repair execution`; aggregate re-review returns to this task. No implementation, tests, staging, or commits were performed by the planner.
