@@ -57,3 +57,7 @@ Epoch context: epoch-2 re-verification of the SAME implementation commit under A
 - COMPLETE_CHILD
 
 Verdict rationale: Gate 1 converts PAUSE → PASS under A1: the human-approved amendment (ledger row A1, plan Before af1723f → After ec68a4d) ratifies all four epoch-1 deviations, and the fresh `-U0` diff proves the AiReplyDraftService.kt change touches ONLY the two data-class definitions at :349/:361 with no other unauthorized file in the boundary. Gates 2/3/4 re-confirmed with fresh evidence: focused suite 91/0/0/0 exit 0, `git diff --check` exit 0, full-suite surefire XML aggregate 2589/0/0/4, invariants I-1..I-7/N1..N6 spot-checked unchanged from epoch 1. No AUTO_FIX; O-1 and O-3 remain RECORD_ONLY, O-2 ratified under A1 → LIGHT_PASS_WITH_NOTES.
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit; verifier report content unchanged since signature.

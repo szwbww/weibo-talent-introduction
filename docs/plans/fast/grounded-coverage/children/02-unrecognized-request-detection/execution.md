@@ -85,3 +85,9 @@ The optional Flyway migration test (`-DmigrationIt=true`) was skipped per the pl
 ## Next Action
 
 - READY_FOR_VERIFICATION → run `verify-p` against this child plan.
+
+---
+
+### Finalization note (2026-08-19, controller)
+
+Evidence re-recorded in the terminal evidence commit to include all four child artifacts (brief/execution/verify-log/fix-log). No content change beyond this note; fix_round=0.

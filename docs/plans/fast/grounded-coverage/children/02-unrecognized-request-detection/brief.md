@@ -15,15 +15,18 @@
 - No push, no merge, no rebase, no amend, no history rewrite. One commit for implementation.
 - Do not review later children, repair unrelated behavior, or add files outside Authorized Files.
 
-## Authorized files (exact, from plan 变更文件清单)
+## Authorized files (plan 变更文件清单 + Amendment A1, HUMAN-approved 2026-08-19)
 1. `src/main/kotlin/com/weibo/talentintroduction/llm/service/InboundAskEnumerator.kt` (new)
 2. `src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt` (new)
 3. `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyIntentCatalog.kt` (modify)
 4. `src/main/kotlin/com/weibo/talentintroduction/llm/service/QaFactSelectionService.kt` (modify)
 5. `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt` (modify)
-6. `src/test/kotlin/com/weibo/talentintroduction/llm/service/InboundAskEnumeratorTest.kt` (new)
-7. `src/test/kotlin/com/weibo/talentintroduction/llm/service/QaFactSelectionServiceTest.kt` (modify)
-8. `src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyIntentCatalogTest.kt` (modify)
+6. `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt` (A1: ONLY the two data-class definitions RequestFactItem/ResolvedQaRules; nothing else in the file)
+7. `src/test/kotlin/com/weibo/talentintroduction/llm/service/InboundAskEnumeratorTest.kt` (new)
+8. `src/test/kotlin/com/weibo/talentintroduction/llm/service/QaFactSelectionServiceTest.kt` (modify)
+9. `src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyIntentCatalogTest.kt` (modify)
+
+A1 also ratifies: ResolvedQaRules may carry defaulted shadow fields enumeratorEnumerated/enumeratorClaimed for the [ASK_ENUM] log only; enumeration may be invoked inside QaFactSelectionService instead of a selectForWorkbench param; auto-path [ASK_ENUM] log may be emitted from select() (source=AUTO, contactId=0).
 
 ## Required commands (all must run; JDK11)
 - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest='InboundAskEnumeratorTest,QaFactSelectionServiceTest,AiReplyIntentCatalogTest'`
