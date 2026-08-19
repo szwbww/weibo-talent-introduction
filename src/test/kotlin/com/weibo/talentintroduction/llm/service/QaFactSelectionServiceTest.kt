@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.weibo.talentintroduction.llm.config.AskEnumeratorProperties
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -891,6 +892,207 @@ class QaFactSelectionServiceTest {
             resolved.requestFacts.flatMap { it.factRuleIds }.contains(6L),
             "id=6 must not evidence a partner-company ask"
         )
+    }
+
+    // ── P2a (plan 02, D-2): shadow-period measurement ──────────────────────
+
+    private fun ask(label: String, quote: String, mail: String): EnumeratedAsk {
+        val start = mail.indexOf(quote)
+        require(start >= 0) { "quote must be a substring of the mail: $quote" }
+        return EnumeratedAsk(label = label, quote = quote, originalRange = start until start + quote.length)
+    }
+
+    @Test
+    fun `shadow enumeration never changes status counts or fact ids`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val mail = "Thank you. Before I decide, could you tell me whether you provide visa support, " +
+            "and what happens if the enterprise withdraws midway?"
+        val three = AskEnumeration(
+            true,
+            listOf(
+                ask("Visa support", "provide visa support", mail),
+                ask("Withdrawal", "what happens if the enterprise withdraws midway", mail),
+                ask("Decision", "Before I decide", mail)
+            )
+        )
+        val none = AskEnumeration(true, emptyList())
+        Mockito.`when`(enumerator.enumerate(mail)).thenReturn(three, none)
+        val selectionService = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties())
+
+        val withShadow = selectionService.selectForWorkbench(mail, null, null, true)
+        val withoutShadow = selectionService.selectForWorkbench(mail, null, null, true)
+
+        // I-3: shadow fields differ…
+        assertEquals(3, withShadow.unrecognizedAskCount)
+        assertEquals(3, withShadow.requestFacts.single().unrecognizedAsks.size)
+        assertEquals(0, withoutShadow.unrecognizedAskCount)
+        assertTrue(withShadow.enumeratorAvailable)
+        assertEquals(3, withShadow.enumeratorEnumerated)
+        assertEquals(0, withShadow.enumeratorClaimed)
+
+        // …but every judgement output is byte-identical (I-3/N1/N2).
+        assertEquals(
+            withoutShadow.requestFacts.map { it.status },
+            withShadow.requestFacts.map { it.status }
+        )
+        assertEquals(withoutShadow.groundedRequestCount, withShadow.groundedRequestCount)
+        assertEquals(withoutShadow.unsupportedRequests, withShadow.unsupportedRequests)
+        assertEquals(
+            withoutShadow.requestFacts.map { it.factRuleIds },
+            withShadow.requestFacts.map { it.factRuleIds }
+        )
+        assertEquals(withoutShadow.sendQaRuleIds, withShadow.sendQaRuleIds)
+    }
+
+    @Test
+    fun `ask overlapping two intent spans is claimed exactly once`() {
+        val enumeration = AskEnumeration(
+            true,
+            listOf(ask("Remuneration and IP", "remuneration and intellectual property", orthopaedicLetter))
+        )
+        val promptSet = postV105Pool.mapNotNull { it.id }.toSet()
+        val fact = service.buildRequestFact(
+            index = 1,
+            requestText = orthopaedicLetter,
+            promptPool = postV105Pool,
+            promptSet = promptSet,
+            researchProfileSufficient = true,
+            askEnumeration = enumeration,
+            requestRange = 0 until orthopaedicLetter.length
+        )
+
+        // I-7: the ask overlaps the alias spans of BOTH finance and ip intents,
+        // yet it is claimed once — never unrecognized, never a negative count.
+        assertTrue(fact.unrecognizedAsks.isEmpty(), "the doubly-overlapping ask must be claimed")
+        val spans = AiReplyIntentCatalog.matchIntentsWithSpans(orthopaedicLetter)
+        val financeSpan = spans.single { it.definition.key == "finance.arrangements" }
+        val ipSpan = spans.single { it.definition.key == "ip.arrangements" }
+        val range = enumeration.asks.single().originalRange
+        assertTrue(financeSpan.originalRanges.any { it.first <= range.last && range.first <= it.last })
+        assertTrue(ipSpan.originalRanges.any { it.first <= range.last && range.first <= it.last })
+    }
+
+    @Test
+    fun `orthopaedic letter enumeration is fully claimed`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(postV105Pool)
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val quotes = listOf(
+            "its official name",
+            "the government body or institution supporting it",
+            "the usual form of collaboration",
+            "remuneration",
+            "intellectual property"
+        )
+        Mockito.`when`(enumerator.enumerate(orthopaedicLetter)).thenReturn(
+            AskEnumeration(true, quotes.map { ask(it, it, orthopaedicLetter) })
+        )
+        val selectionService = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties())
+
+        val resolved = selectionService.selectForWorkbench(
+            inboundText = orthopaedicLetter,
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(0, resolved.unrecognizedAskCount)
+        assertEquals(5, resolved.enumeratorEnumerated)
+        assertEquals(5, resolved.enumeratorClaimed)
+        assertTrue(resolved.enumeratorAvailable)
+        assertTrue(resolved.requestFacts.single().unrecognizedAsks.isEmpty())
+    }
+
+    @Test
+    fun `catalog missing ask is recorded as unrecognized`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val mail = "Thank you. Before I decide, could you tell me whether you provide visa support, " +
+            "and what happens if the enterprise withdraws midway?"
+        Mockito.`when`(enumerator.enumerate(mail)).thenReturn(
+            AskEnumeration(true, listOf(ask("Visa support", "provide visa support", mail)))
+        )
+        val selectionService = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties())
+
+        val resolved = selectionService.selectForWorkbench(
+            inboundText = mail,
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertTrue(resolved.unrecognizedAskCount >= 1)
+        assertEquals(
+            listOf("provide visa support"),
+            resolved.requestFacts.single().unrecognizedAsks.map { it.quote }
+        )
+    }
+
+    @Test
+    fun `asks are attributed to the request that contains them`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val mail = "- Salary?\n- Visa?"
+        Mockito.`when`(enumerator.enumerate(mail)).thenReturn(
+            AskEnumeration(
+                true,
+                listOf(ask("Salary", "Salary", mail), ask("Visa", "Visa", mail))
+            )
+        )
+        val selectionService = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties())
+
+        val resolved = selectionService.selectForWorkbench(
+            inboundText = mail,
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        // "Salary" is claimed by the finance.arrangements alias span; "Visa" is
+        // not claimed and belongs to the second request only.
+        val byIndex = resolved.requestFacts.associateBy { it.index }
+        assertTrue(byIndex.getValue(1).unrecognizedAsks.isEmpty())
+        assertEquals(listOf("Visa"), byIndex.getValue(2).unrecognizedAsks.map { it.quote })
+        assertEquals(1, resolved.unrecognizedAskCount)
+        assertEquals(1, resolved.enumeratorClaimed)
+        assertEquals(2, resolved.enumeratorEnumerated)
+    }
+
+    // ── P2a (plan 02, I-6): auto-reply path gating ──────────────────────────
+
+    @Test
+    fun `auto path skips enumeration while the auto reply flag is off`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val gated = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties(enabledForAutoReply = false))
+
+        gated.select("Hello there, I would like some information.", null, true)
+
+        Mockito.verify(enumerator, Mockito.never()).enumerate(Mockito.anyString())
+    }
+
+    @Test
+    fun `auto path enumerates when the auto reply flag is on`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        Mockito.`when`(enumerator.enumerate(Mockito.anyString())).thenReturn(AskEnumeration(false, emptyList()))
+        val gated = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties(enabledForAutoReply = true))
+
+        gated.select("Hello there, I would like some information.", null, true)
+
+        Mockito.verify(enumerator).enumerate(Mockito.anyString())
+    }
+
+    @Test
+    fun `workbench path always enumerates even with the auto reply flag off`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        Mockito.`when`(enumerator.enumerate(Mockito.anyString())).thenReturn(AskEnumeration(false, emptyList()))
+        val gated = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties(enabledForAutoReply = false))
+
+        gated.selectForWorkbench("- Hello?", null, null, true)
+
+        Mockito.verify(enumerator).enumerate(Mockito.anyString())
     }
 
     private fun reqFactStatusCount(resolved: ResolvedQaRules, status: RequestGroundingStatus): Int =

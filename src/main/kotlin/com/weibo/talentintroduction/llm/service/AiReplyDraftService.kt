@@ -352,7 +352,10 @@ data class RequestFactItem(
     val factRuleIds: List<Long>,
     val status: RequestGroundingStatus,
     val requiresResearchContext: Boolean = false,
-    val intents: List<RequestIntentCoverage> = emptyList()
+    val intents: List<RequestIntentCoverage> = emptyList(),
+    // P2a (plan 02): shadow-period measurement only — never feeds status,
+    // groundedRequestCount, unsupportedRequests or any hash (I-3/I-2).
+    val unrecognizedAsks: List<EnumeratedAsk> = emptyList()
 )
 
 data class ResolvedQaRules(
@@ -361,7 +364,14 @@ data class ResolvedQaRules(
     val requestFacts: List<RequestFactItem> = emptyList(),
     val unsupportedRequests: List<String> = emptyList(),
     val requestCount: Int = 0,
-    val groundedRequestCount: Int = 0
+    val groundedRequestCount: Int = 0,
+    // P2a (plan 02): shadow-period measurement only (I-3). unrecognizedAskCount
+    // is the total across requestFacts; the enumerator fields back the fixed
+    // [ASK_ENUM] log line without a second LLM call.
+    val unrecognizedAskCount: Int = 0,
+    val enumeratorAvailable: Boolean = false,
+    val enumeratorEnumerated: Int = 0,
+    val enumeratorClaimed: Int = 0
 )
 
 @Service

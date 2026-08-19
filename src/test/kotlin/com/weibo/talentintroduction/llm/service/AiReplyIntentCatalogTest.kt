@@ -347,4 +347,63 @@ class AiReplyIntentCatalogTest {
             )
         }
     }
+
+    // ── P2a (plan 02, A-2): span restoration ────────────────────────────────
+
+    @Test
+    fun `matchIntents stays a thin wrapper over matchIntentsWithSpans`() {
+        val questions = listOf(q1, q2, q3, q4, q5, q6, q7, orthopaedicLetter)
+        questions.forEach { question ->
+            assertEquals(
+                AiReplyIntentCatalog.matchIntents(question),
+                AiReplyIntentCatalog.matchIntentsWithSpans(question).map { it.definition },
+                "matchIntents($question) must equal the definitions of matchIntentsWithSpans"
+            )
+        }
+    }
+
+    @Test
+    fun `orthopaedic letter spans restore to the verbatim original words`() {
+        val spans = AiReplyIntentCatalog.matchIntentsWithSpans(orthopaedicLetter)
+        val finance = spans.single { it.definition.key == "finance.arrangements" }
+        assertTrue(
+            finance.originalRanges.any { orthopaedicLetter.substring(it) == "remuneration" },
+            "finance span must restore exactly the word 'remuneration'"
+        )
+        val ip = spans.single { it.definition.key == "ip.arrangements" }
+        assertTrue(
+            ip.originalRanges.any { orthopaedicLetter.substring(it) == "intellectual property" },
+            "ip span must restore exactly the phrase 'intellectual property'"
+        )
+    }
+
+    @Test
+    fun `programme spelling spans restore to the original form`() {
+        val text = "I would like to know the purpose and structure of the programme, and its official name."
+        val spans = AiReplyIntentCatalog.matchIntentsWithSpans(text)
+        val purpose = spans.single { it.definition.key == "programme.purpose" }
+        assertTrue(
+            purpose.originalRanges.any { text.substring(it) == "purpose and structure of the programme" },
+            "the programme -> program rewrite must not shift or truncate the restored span"
+        )
+        val structure = spans.single { it.definition.key == "programme.structure" }
+        assertTrue(structure.originalRanges.any { text.substring(it) == "purpose and structure of the programme" })
+        val name = spans.single { it.definition.key == "programme.name" }
+        assertTrue(name.originalRanges.any { text.substring(it) == "its official name" })
+    }
+
+    @Test
+    fun `hyphenated alias span covers the whole hyphenated phrase`() {
+        val text = "Could you outline the contractual, financial, intellectual-property arrangements?"
+        val spans = AiReplyIntentCatalog.matchIntentsWithSpans(text)
+        val ip = spans.single { it.definition.key == "ip.arrangements" }
+        assertTrue(ip.originalRanges.any { text.substring(it) == "intellectual-property" })
+    }
+
+    @Test
+    fun `general answer fallback carries no spans`() {
+        val spans = AiReplyIntentCatalog.matchIntentsWithSpans("I am writing to thank you for your time.")
+        assertEquals(listOf("general.answer"), spans.map { it.definition.key })
+        assertTrue(spans.single().originalRanges.isEmpty())
+    }
 }

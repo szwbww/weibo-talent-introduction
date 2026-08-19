@@ -27,6 +27,18 @@ data class RequestIntentCoverage(
     val requiresResearchContext: Boolean = false
 )
 
+/**
+ * P2a (plan 02-unrecognized-request-detection, A-1): an intent match together
+ * with the ORIGINAL-text coordinate ranges of every alias hit that produced
+ * it. Ranges index the raw inbound text (not the canonical form) — see
+ * [AiReplyIntentCatalog.matchIntentsWithSpans]. The [general.answer] fallback
+ * carries an empty range list.
+ */
+data class MatchedIntentSpan(
+    val definition: RequestIntentDefinition,
+    val originalRanges: List<IntRange>
+)
+
 object AiReplyIntentCatalog {
 
     private val groupTitles: List<IntentGroupTitle> = listOf(
@@ -351,10 +363,31 @@ object AiReplyIntentCatalog {
         return programmePattern.replace(whitespaceCollapsed, "program")
     }
 
-    fun matchIntents(requestText: String): List<RequestIntentDefinition> {
-        val canonical = canonicalize(requestText)
+    /**
+     * P2a (plan 02, A-1): matches intents exactly like [matchIntents] (same
+     * canonicalization, same alias matching, same disambiguation and
+     * next-stages timing rewrite) but also returns, per matched intent, the
+     * original-text ranges of every alias hit. The canonical→original index
+     * map is the same technique as [QaRequestExtractor]'s indexMap; ranges are
+     * additionally expanded to original word boundaries so a
+     * `programme`→`program` rewrite (which shortens the canonical string) does
+     * not truncate a restored span.
+     */
+    fun matchIntentsWithSpans(requestText: String): List<MatchedIntentSpan> {
+        val (canonical, indexMap) = canonicalizeWithMap(requestText)
+        val spanByKey = linkedMapOf<String, MutableList<IntRange>>()
         val matched = definitions.filter { def ->
-            def.requestAliases.any { alias -> wordBoundaryContains(canonical, canonicalize(alias)) }
+            var matchedAny = false
+            def.requestAliases.forEach { alias ->
+                val ranges = wordBoundaryRanges(canonical, canonicalize(alias))
+                    .map { canonicalRangeToOriginal(it, requestText, indexMap) }
+                    .toList()
+                if (ranges.isNotEmpty()) {
+                    matchedAny = true
+                    spanByKey.getOrPut(def.key) { mutableListOf() }.addAll(ranges)
+                }
+            }
+            matchedAny
         }
         val disambiguated = disambiguateSelectionMatchingProjectTypes(canonical, matched)
         val asksTiming = timingAliases.any { wordBoundaryContains(canonical, it) }
@@ -365,27 +398,43 @@ object AiReplyIntentCatalog {
             it.key == "work.time_commitment" || it.key == "work.advisory_duration"
         }
 
-        val result = if (disambiguated.isEmpty()) {
+        return if (disambiguated.isEmpty()) {
             listOf(
-                RequestIntentDefinition(
-                    key = "general.answer",
-                    title = "General answer",
-                    requestAliases = emptyList(),
-                    requiredCoverageKeys = emptyList()
+                MatchedIntentSpan(
+                    definition = RequestIntentDefinition(
+                        key = "general.answer",
+                        title = "General answer",
+                        requestAliases = emptyList(),
+                        requiredCoverageKeys = emptyList()
+                    ),
+                    originalRanges = emptyList()
                 )
             )
         } else {
             disambiguated.map { def ->
+                val ranges = spanByKey[def.key].orEmpty()
                 when {
                     def.key == "application.next_stages" && asksTiming && !hasWorkIntents -> {
-                        def.copy(requiredCoverageKeys = listOf("application.steps", "application.timeline"))
+                        MatchedIntentSpan(
+                            definition = def.copy(
+                                requiredCoverageKeys = listOf("application.steps", "application.timeline")
+                            ),
+                            originalRanges = ranges
+                        )
                     }
-                    else -> def
+                    else -> MatchedIntentSpan(definition = def, originalRanges = ranges)
                 }
             }
         }
-        return result
     }
+
+    /**
+     * Thin wrapper keeping the historical signature; every existing caller
+     * (AiReplyContextService, TrustReplyWorkbenchService.canonicalRequests,
+     * QaFactSelectionService.buildRequestFact) keeps identical output (N4).
+     */
+    fun matchIntents(requestText: String): List<RequestIntentDefinition> =
+        matchIntentsWithSpans(requestText).map { it.definition }
 
     /**
      * When a request already asks selection+matching, a bare "enterprise project(s)" object
@@ -412,10 +461,103 @@ object AiReplyIntentCatalog {
         return matched.filter { it.key != "enterprise.project_types" }
     }
 
-    private fun wordBoundaryContains(text: String, phrase: String): Boolean {
+    private fun wordBoundaryRanges(text: String, phrase: String): Sequence<IntRange> {
         val escaped = Regex.escape(phrase)
-        return Regex("\\b$escaped\\b").containsMatchIn(text)
+        return Regex("\\b$escaped\\b").findAll(text).map { it.range }
     }
+
+    private fun wordBoundaryContains(text: String, phrase: String): Boolean =
+        wordBoundaryRanges(text, phrase).any()
+
+    /**
+     * canonicalize with a per-output-character index map back into the ORIGINAL
+     * text. Every transform mirrors [canonicalize] step-for-step so the
+     * produced canonical string is character-identical.
+     */
+    private fun canonicalizeWithMap(text: String): Pair<String, List<Int>> {
+        val identity: List<Int> = (0 until text.length).toList()
+        val (urlMasked, map1) = replaceWithMap(text, identity, urlPattern, " ")
+        val (lower, map2) = lowercaseWithMap(urlMasked, map1)
+        val (dashNormalized, map3) = replaceWithMap(lower, map2, dashPattern, " ")
+        val (collapsedRaw, map4Raw) = replaceWithMap(dashNormalized, map3, Regex("""\s+"""), " ")
+        val trimStart = collapsedRaw.indexOfFirst { !it.isWhitespace() }
+            .let { if (it < 0) collapsedRaw.length else it }
+        val trimEnd = collapsedRaw.indexOfLast { !it.isWhitespace() }
+            .let { if (it < 0) collapsedRaw.length else it + 1 }
+        val collapsed = collapsedRaw.substring(trimStart, trimEnd)
+        val map4 = map4Raw.subList(trimStart, trimEnd)
+        return replaceWithMap(collapsed, map4, programmePattern, "program")
+    }
+
+    /** [String.replace]-equivalent with a positional map to the previous stage. */
+    private fun replaceWithMap(
+        input: String,
+        indexMap: List<Int>,
+        pattern: Regex,
+        replacement: String
+    ): Pair<String, List<Int>> {
+        val out = StringBuilder()
+        val outMap = mutableListOf<Int>()
+        var cursor = 0
+        for (match in pattern.findAll(input)) {
+            if (cursor < match.range.first) {
+                for (i in cursor until match.range.first) {
+                    out.append(input[i])
+                    outMap.add(indexMap[i])
+                }
+            }
+            out.append(replacement)
+            for (j in replacement.indices) {
+                outMap.add(indexMap[(match.range.first + j).coerceAtMost(match.range.last)])
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < input.length) {
+            for (i in cursor until input.length) {
+                out.append(input[i])
+                outMap.add(indexMap[i])
+            }
+        }
+        return out.toString() to outMap
+    }
+
+    /** Same lowercasing as [canonicalize], per character, keeping the map aligned. */
+    private fun lowercaseWithMap(input: String, indexMap: List<Int>): Pair<String, List<Int>> {
+        val out = StringBuilder()
+        val outMap = mutableListOf<Int>()
+        input.forEachIndexed { i, ch ->
+            val lowered = ch.toString().lowercase()
+            out.append(lowered)
+            repeat(lowered.length) { outMap.add(indexMap[i]) }
+        }
+        return out.toString() to outMap
+    }
+
+    /**
+     * Maps a canonical-coordinate match range back to original-text
+     * coordinates, then expands it to full original word boundaries so
+     * length-changing rewrites (`programme`→`program`, dash and whitespace
+     * folding) can never truncate a span mid-word.
+     */
+    private fun canonicalRangeToOriginal(
+        range: IntRange,
+        original: String,
+        indexMap: List<Int>
+    ): IntRange {
+        var start = indexMap[range.first]
+        var end = indexMap[range.last] + 1
+        while (start > 0 && isAsciiWordChar(original[start - 1])) {
+            start--
+        }
+        while (end < original.length && isAsciiWordChar(original[end])) {
+            end++
+        }
+        return start until end
+    }
+
+    /** ASCII `\w` (`[a-zA-Z0-9_]`), matching the word-boundary regex semantics. */
+    private fun isAsciiWordChar(ch: Char): Boolean =
+        ch == '_' || ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9'
 
     fun resolveIntentEvidence(
         intent: RequestIntentDefinition,
