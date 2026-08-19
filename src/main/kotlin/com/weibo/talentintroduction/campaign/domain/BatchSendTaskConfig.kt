@@ -25,8 +25,6 @@ data class BatchSendTaskConfig(
     val operatorStatusesJson: String = "[]",
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
-    /** I-6-5: 可达性过滤模式（EXCLUDE_BLOCKED / HIGH_ONLY 等，见 ExpertSearchService.ALLOWED_REACHABILITY_MODES）；null/空 = 不过滤。 */
-    val reachabilityFilter: String? = null,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
@@ -52,8 +50,6 @@ data class BatchSendTaskConfigView(
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long?,
     val gateFilterEnabled: Boolean = false,
-    /** I-6-2: 可达性过滤模式；null = 不过滤（I-6-5）。 */
-    val reachabilityFilter: String? = null,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
     /** Next planned trigger time; null when the cron is invalid (I-1/I-2/I-3). */
@@ -78,8 +74,7 @@ data class BatchSendTaskConfigCreateCommand(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null,
-    val gateFilterEnabled: Boolean = false,
-    val reachabilityFilter: String? = null
+    val gateFilterEnabled: Boolean = false
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -98,7 +93,5 @@ data class BatchSendTaskConfigUpdateCommand(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val templateId: Long? = null,
-    val gateFilterEnabled: Boolean = false,
-    /** I-6-5: 带默认值，旧 typed API 请求（BatchSendConfigUpdateRequest）不含该字段时不命中默认值重置。 */
-    val reachabilityFilter: String? = null
+    val gateFilterEnabled: Boolean = false
 )

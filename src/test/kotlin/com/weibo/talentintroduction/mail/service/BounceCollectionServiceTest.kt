@@ -43,7 +43,6 @@ class BounceCollectionServiceTest {
         expertIndexWriterService = expertIndexWriterService,
         expertContactRepository = expertContactRepository,
         expertEmailAliasService = expertEmailAliasService,
-        reachabilitySyncService = null,
         expertOperatorStatusService = expertOperatorStatusService
     )
 

@@ -39,8 +39,7 @@
       "recentWorkTitles": { "type": "keyword" },
       "patentTitles": { "type": "keyword" },
       "enrichedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
-      "enrichmentSource": { "type": "keyword" },
-      "reachability": { "type": "keyword" }
+      "enrichmentSource": { "type": "keyword" }
     }
   }
 }

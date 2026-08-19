@@ -49,8 +49,7 @@
       "recentWorkTitles": { "type": "keyword" },
       "patentTitles": { "type": "keyword" },
       "enrichedAt": { "type": "keyword" },
-      "enrichmentSource": { "type": "keyword" },
-      "reachability": { "type": "keyword" }
+      "enrichmentSource": { "type": "keyword" }
     }
   }
 }

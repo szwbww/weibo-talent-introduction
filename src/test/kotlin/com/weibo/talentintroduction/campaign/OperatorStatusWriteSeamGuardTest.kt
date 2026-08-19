@@ -52,12 +52,12 @@ class OperatorStatusWriteSeamGuardTest {
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 549, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 95, "operatorStatus = contact?.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 90, "operatorStatus = contact?.operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 485, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 431, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正）
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 476, "operatorStatus = source.nullableText"),
+        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 431, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
         // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
         // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status

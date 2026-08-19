@@ -4,7 +4,6 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
-import com.weibo.talentintroduction.expert.service.ExpertReachabilitySyncService
 import com.weibo.talentintroduction.mail.domain.BounceRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
@@ -26,10 +25,7 @@ class BounceCollectionService(
     private val expertContactRepository: ExpertContactRepository,
     private val expertEmailAliasService: ExpertEmailAliasService,
     // 尾部可空默认参数：既有 BounceCollectionServiceTest / BounceBackfillServiceTest 以位置/具名参数
-    // 直接构造（未授权文件），加默认值后无需改动。生产由 Spring 注入（I-3-5 挂载点）。
-    private val reachabilitySyncService: ExpertReachabilitySyncService? = null,
-    // I-3：EMAIL_INVALID 双写出口。可空默认参数沿用上方 reachabilitySyncService 先例，
-    // 使既有测试构造无需改签名；生产由 Spring 注入。
+    // 直接构造，加默认值后无需改动；生产由 Spring 注入（I-3 挂载点）。
     private val expertOperatorStatusService: ExpertOperatorStatusService? = null
 ) {
     private val log = LoggerFactory.getLogger(BounceCollectionService::class.java)
@@ -115,13 +111,6 @@ class BounceCollectionService(
                 expertOperatorStatusService?.markEmailInvalid(originalContact, "HARD_BOUNCE")
             } catch (e: Exception) {
                 log.warn("Failed to mark EMAIL_INVALID for orcid={}", originalContact.orcidId, e)
-            }
-            // I-3-5/IP-4: 硬退落库后立即增量写 reachability=BLOCKED_BOUNCED；
-            // ES 写失败不得回传为退信处理失败，只记 warn，下一轮全量扫描会自愈。
-            try {
-                reachabilitySyncService?.markBlockedByContact(originalContact)
-            } catch (e: Exception) {
-                log.warn("Failed to mark reachability BLOCKED_BOUNCED for orcid={}", originalContact.orcidId, e)
             }
         }
 

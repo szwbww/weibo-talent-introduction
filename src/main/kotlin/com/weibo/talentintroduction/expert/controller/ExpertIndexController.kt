@@ -10,7 +10,6 @@ import com.weibo.talentintroduction.expert.service.EligibilityFilterService
 import com.weibo.talentintroduction.expert.service.EligibilityFiltersResponse
 import com.weibo.talentintroduction.expert.service.CandidateOperatorStatusSyncService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
-import com.weibo.talentintroduction.expert.service.ExpertReachabilitySyncService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.EmailDomainCount
 import com.weibo.talentintroduction.expert.service.RegionCount
@@ -49,10 +48,7 @@ class ExpertIndexController(
     // 尾部可空默认参数（照 ManualExpertMailService.mailVariableService 先例）：
     // 生产由 Spring 注入 @Service bean；既有 ExpertIndexControllerTest 以 9 个位置参数直接构造，
     // 加默认值后无需改动该未授权测试文件。端点内 requireNotNull 兜底（生产必非空）。
-    private val operatorStatusReconcileService: OperatorStatusReconcileService? = null,
-    // 尾部可空默认参数（照 operatorStatusReconcileService 先例）：既有 ExpertIndexControllerTest
-    // 以 9 个位置参数直接构造，新增依赖加默认值后无需改动该未授权测试文件。端点内 requireNotNull 兜底（生产必非空）。
-    private val expertReachabilitySyncService: ExpertReachabilitySyncService? = null
+    private val operatorStatusReconcileService: OperatorStatusReconcileService? = null
 ) {
     @GetMapping
     fun listExperts(
@@ -68,12 +64,11 @@ class ExpertIndexController(
         @RequestParam(required = false) citationCountMin: Int? = null,
         @RequestParam(required = false) recentYears: Int? = null,
         @RequestParam(required = false) hasField: List<String>? = null,
-        @RequestParam(required = false) discipline: String? = null,
-        @RequestParam(required = false) reachability: String? = null
+        @RequestParam(required = false) discipline: String? = null
     ): ExpertListResponse {
         val result = expertSearchService.searchExperts(
             size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
-            hIndexMin, citationCountMin, recentYears, hasField, discipline, reachability
+            hIndexMin, citationCountMin, recentYears, hasField, discipline
         )
         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
@@ -161,54 +156,6 @@ class ExpertIndexController(
                 progressStore.clearExecutionContext("EXPERT_REVALIDATION", execId)
             } else {
                 progressStore.clearExecutionContext("EXPERT_REVALIDATION", token)
-            }
-        }
-    }
-
-    @PostMapping("/sync-reachability")
-    fun syncReachability(): ResponseEntity<Any> {
-        // I-3-4: 全量回填是万级文档量级，必须走 progressStore 长任务模式（并发保护 + 前端进度）。
-        val (started, token) = progressStore.tryStartWithToken("EXPERT_REACHABILITY_SYNC", TaskProgress(
-            taskType = "EXPERT_REACHABILITY_SYNC", status = "RUNNING",
-            batchNumber = 0, processedCount = 0, totalCount = 0, message = "初始化中..."
-        ))
-        if (!started) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(mapOf("message" to "任务正在执行中，请等待完成"))
-        }
-        var executionId: Long? = null
-        try {
-            val (savedExecution, result) = taskExecutionService.runAndRecordWithResult(
-                "EXPERT_REACHABILITY_SYNC", "MANUAL", "sync-reachability",
-                onStarted = { id ->
-                    executionId = id
-                    progressStore.bindExecutionId("EXPERT_REACHABILITY_SYNC", token, id)
-                }
-            ) {
-                requireNotNull(expertReachabilitySyncService) { "ExpertReachabilitySyncService 未注入" }.syncAll()
-            }
-            return ResponseEntity.ok(TaskLaunchResponse(savedExecution.id!!, result))
-        } catch (ex: IllegalStateException) {
-            // I-3-6: mapping 断言失败 fail-fast，与 /backfill-operator-status 同款返回 400。
-            progressStore.update("EXPERT_REACHABILITY_SYNC", TaskProgress(
-                taskType = "EXPERT_REACHABILITY_SYNC", status = "FAILED",
-                batchNumber = 0, processedCount = 0, totalCount = 0,
-                message = ex.message ?: "初始化失败"
-            ), executionId)
-            return ResponseEntity.badRequest().body(mapOf("message" to (ex.message ?: "同步失败")))
-        } catch (ex: Exception) {
-            progressStore.update("EXPERT_REACHABILITY_SYNC", TaskProgress(
-                taskType = "EXPERT_REACHABILITY_SYNC", status = "FAILED",
-                batchNumber = 0, processedCount = 0, totalCount = 0,
-                message = ex.message ?: "初始化失败"
-            ), executionId)
-            throw ex
-        } finally {
-            val execId = executionId
-            if (execId != null) {
-                progressStore.clearExecutionContext("EXPERT_REACHABILITY_SYNC", execId)
-            } else {
-                progressStore.clearExecutionContext("EXPERT_REACHABILITY_SYNC", token)
             }
         }
     }
@@ -451,8 +398,7 @@ data class ExpertIndexResponse(
     val disciplineCategory: String? = null,
     val institution: String? = null,
     val worksCount: Int? = null,
-    val enrichedAt: String? = null,
-    val reachability: String? = null
+    val enrichedAt: String? = null
 ) {
     companion object {
         fun from(
@@ -498,8 +444,7 @@ data class ExpertIndexResponse(
                 disciplineCategory = expert.disciplineCategory,
                 institution = expert.institution,
                 worksCount = expert.worksCount,
-                enrichedAt = expert.enrichedAt,
-                reachability = expert.reachability
+                enrichedAt = expert.enrichedAt
             )
     }
 }

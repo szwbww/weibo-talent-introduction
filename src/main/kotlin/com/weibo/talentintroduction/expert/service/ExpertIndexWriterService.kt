@@ -7,7 +7,6 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
-import com.weibo.talentintroduction.expert.domain.ExpertReachability
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
@@ -202,108 +201,6 @@ class ExpertIndexWriterService(
                     }
                 } catch (e: Exception) {
                     log.warn("Failed to batch sync operatorStatus for index {}: {}", index, e.message, e)
-                    overallResult.total += batch.size
-                    overallResult.failure += batch.size
-                    overallResult.errors.add("Bulk request failed: ${e.message}")
-                }
-            }
-        }
-        return overallResult
-    }
-
-    /**
-     * 可达性批量回填（计划 03 T1）。逐段对照 [syncOperatorStatusBatch] 复制，四点差异：
-     * ① 层级只含 CANDIDATE + APPLICATION（I-3-2 / I-4，RAW 无 mapping 声明，禁止写入）；
-     * ② 字段名 [reachability]；③ script 分支触发条件为 value == null（I-3-1：UNKNOWN = 删字段，绝不写未知档字符串）；
-     * ④ 两个分支均不写 updatedAt（IP-5：全量回填不得刷平「按更新时间排序」）。
-     */
-    fun syncReachabilityBatch(updates: List<Pair<String, ExpertReachability?>>): BulkSyncResult {
-        val overallResult = BulkSyncResult()
-        if (updates.isEmpty()) return overallResult
-        for (level in listOf(ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
-            val index = expertIndexService.indexName(level)
-            val batches = updates.chunked(500)
-            for (batch in batches) {
-                try {
-                    // Resolve orcidId → _id mapping via terms query
-                    val orcidIds = batch.map { ExpertIdNormalizer.normalize(it.first) }.distinct()
-                    val idMapping = resolveOrcidToDocIds(index, orcidIds)
-
-                    val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, reachability) ->
-                        val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
-                        val docId = idMapping[normalizedOrcidId] ?: return@joinToString ""
-                        val meta = mapOf("update" to mapOf("_id" to docId, "_index" to index))
-                        val data = if (reachability == null) {
-                            // I-3-1: UNKNOWN = 字段缺失；用 script 删字段，绝不写未知档字符串（I-2）。
-                            mapOf(
-                                "script" to mapOf(
-                                    "source" to "if (ctx._source.containsKey('reachability')) { ctx._source.remove('reachability'); }"
-                                )
-                            )
-                        } else {
-                            mapOf(
-                                "doc" to mapOf(
-                                    "reachability" to reachability.esValue
-                                ),
-                                "doc_as_upsert" to false
-                            )
-                        }
-                        "${objectMapper.writeValueAsString(meta)}\n${objectMapper.writeValueAsString(data)}"
-                    }
-
-                    // Count orcidIds not found in this layer as skipped
-                    for ((orcidId, _) in batch) {
-                        if (!idMapping.containsKey(ExpertIdNormalizer.normalize(orcidId))) {
-                            overallResult.total++
-                            overallResult.skipped++
-                        }
-                    }
-
-                    if (bulkBody.isBlank()) {
-                        log.debug("No _id mappings found for batch of {} orcidIds in index {}", batch.size, index)
-                        continue
-                    }
-
-                    val bulkUrl = "${properties.baseUrl}/_bulk"
-                    val bulkHeaders = HttpHeaders().apply {
-                        contentType = MediaType.valueOf("application/x-ndjson")
-                        set(HttpHeaders.AUTHORIZATION, basicAuthHeader())
-                    }
-                    val responseNode = restTemplate.exchange(
-                        bulkUrl, HttpMethod.POST,
-                        HttpEntity(bulkBody, bulkHeaders),
-                        JsonNode::class.java
-                    ).body
-                    if (responseNode != null) {
-                        val items = responseNode.path("items")
-                        if (items.isArray) {
-                            for (item in items) {
-                                val updateNode = item.path("update")
-                                val status = updateNode.path("status").asInt(200)
-                                val docId = updateNode.path("_id").asText("")
-                                overallResult.total++
-                                if (status in 200..299) {
-                                    overallResult.success++
-                                } else if (status == 404) {
-                                    overallResult.skipped++
-                                } else {
-                                    overallResult.failure++
-                                    val errReason = updateNode.path("error").path("reason").asText("Unknown error")
-                                    overallResult.errors.add("docId=$docId error: $errReason")
-                                }
-                            }
-                        } else {
-                            overallResult.total += batch.size
-                            overallResult.failure += batch.size
-                            overallResult.errors.add("Bulk response items path is not an array")
-                        }
-                    } else {
-                        overallResult.total += batch.size
-                        overallResult.failure += batch.size
-                        overallResult.errors.add("Empty bulk response from ES")
-                    }
-                } catch (e: Exception) {
-                    log.warn("Failed to batch sync reachability for index {}: {}", index, e.message, e)
                     overallResult.total += batch.size
                     overallResult.failure += batch.size
                     overallResult.errors.add("Bulk request failed: ${e.message}")

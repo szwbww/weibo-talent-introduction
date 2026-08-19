@@ -201,41 +201,6 @@ class ExpertIndexService(
         return true
     }
 
-    fun checkReachabilityMapping(): Boolean {
-        // I-2-6: reachability is written to CANDIDATE + APPLICATION only (I-4);
-        // RAW must not be asserted — orcid_info_raw.json never declares the field,
-        // so a RAW assertion could never structurally pass.
-        for (level in listOf(ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
-            val index = indexName(level)
-            val url = "${properties.baseUrl}/$index/_mapping/field/reachability"
-            try {
-                val response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    HttpEntity(null, headers()),
-                    JsonNode::class.java
-                ).body ?: return false
-                var isKeyword = false
-                response.fields().forEachRemaining { (_, indexNode) ->
-                    val type = indexNode.path("mappings")
-                        .path("reachability")
-                        .path("mapping")
-                        .path("reachability")
-                        .path("type")
-                        .asText()
-                    if (type == "keyword") {
-                        isKeyword = true
-                    }
-                }
-                if (!isKeyword) return false
-            } catch (e: Exception) {
-                log.warn("Failed to check reachability mapping for index {}", index, e)
-                return false
-            }
-        }
-        return true
-    }
-
     private fun headers(): HttpHeaders =
         HttpHeaders().apply {
             contentType = MediaType.APPLICATION_JSON
