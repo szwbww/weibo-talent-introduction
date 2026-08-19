@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Optional
 
 class QaFactSelectionServiceTest {
@@ -826,8 +828,11 @@ class QaFactSelectionServiceTest {
             answerBody = "The advisory role can be performed on a part-time remote basis.",
             replySubject = "Full-time and part-time options"
         ).copy(coverageKeys = "work.remote_arrangement,work.travel_arrangement"),
-        // Funding support — "remuneration" mirrors the letter-side finance phrasing
-        // so the fact stays the finance.arrangements evidence on this letter (N3).
+        // Funding support — keywords equal the exact post-V106 production state
+        // (V3 seed + V81 appends + V106__add_remuneration_keyword_to_funding_support.sql).
+        // The letter's "remuneration" phrasing is why V106 exists; the fixture must
+        // stay in lockstep with the V106 text assertion below (repair V-1), never a
+        // detached test-only override.
         rule(
             id = 8,
             keywords = "salary,subsidy,funding,compensation,advisory role compensated,is the advisory role compensated,remuneration",
@@ -841,6 +846,28 @@ class QaFactSelectionServiceTest {
             replySubject = "Pre-contract IP boundary"
         ).copy(coverageKeys = "ip.arrangements")
     )
+
+    @Test
+    fun `V106 conditionally appends remuneration to funding support preserving updated_at`() {
+        // Repair V-1: the fixture's 'remuneration' keyword must be tied to the
+        // production migration, not a detached test override. If V106 is edited,
+        // the fixture below and this assertion must move in lockstep.
+        val sql = Files.readString(
+            Path.of("src/main/resources/db/migration/V106__add_remuneration_keyword_to_funding_support.sql")
+        )
+        assertTrue(
+            sql.contains("WHERE reply_subject = 'Funding support'"),
+            "V106 must target Funding support only"
+        )
+        assertTrue(
+            sql.contains("LOWER(keywords) NOT LIKE '%remuneration%'"),
+            "V106 must conditionally append remuneration with a NOT LIKE guard"
+        )
+        assertTrue(
+            sql.contains("updated_at = updated_at"),
+            "V106 must preserve updated_at"
+        )
+    }
 
     @Test
     fun `orthopaedic letter binds five supported intents to five facts`() {
