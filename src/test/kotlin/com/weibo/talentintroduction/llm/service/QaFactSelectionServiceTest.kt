@@ -798,6 +798,101 @@ class QaFactSelectionServiceTest {
         assertEquals("TRUST_REPLY_FACT_SELECTION_AMBIGUOUS", ex.code)
     }
 
+    // ── P1 (plan 01-fact-and-catalog): orthopaedic trigger letter (C-2) ──
+
+    // I-7: verbatim orthopaedic trigger letter, character-for-character from the
+    // plan header (fixture authority — never rewrite, truncate or paraphrase).
+    private val orthopaedicLetter =
+        "Thank you for contacting me and for your explanation of how the programme works. I would be open to exploring whether there could be a suitable match. My current clinical and research interests are mainly focused on orthopaedic trauma, particularly femoral fractures, peri-implant femoral fractures, fracture fixation strategies, implant-related complications, and clinical research and registry development in these areas. Before going further, I would appreciate some additional information about the programme, particularly its official name, the government body or institution supporting it, the usual form of collaboration with the Chinese partner companies, and the general arrangements regarding remuneration and intellectual property. At this stage, I would be happy to continue the conversation by email."
+
+    private val postV105Pool: List<QaRule> = listOf(
+        rule(
+            id = 1001,
+            keywords = "official name,name of the scheme,what is it called",
+            answerBody = "The programme runs as three schemes: the Innovative Talent Project, the Entrepreneurial Talent Project and the Young Talent Project.",
+            replySubject = "Programme name and public visibility"
+        ).copy(coverageKeys = "programme.name"),
+        rule(
+            id = 1002,
+            keywords = "government body,government institution,government agency,institution supporting,supporting body",
+            answerBody = "It is a national-level talent scheme, and applications are organised locally through municipal governments and their talent offices.",
+            replySubject = "Programme sponsorship and organising level"
+        ).copy(coverageKeys = "governance.sponsor_level"),
+        // id=6 with the V105-appended collaboration-form keywords.
+        rule(
+            id = 6,
+            keywords = "full time,part time,remote,technical consultant,form of collaboration,forms of collaboration,how the collaboration works",
+            answerBody = "The advisory role can be performed on a part-time remote basis.",
+            replySubject = "Full-time and part-time options"
+        ).copy(coverageKeys = "work.remote_arrangement,work.travel_arrangement"),
+        // Funding support — "remuneration" mirrors the letter-side finance phrasing
+        // so the fact stays the finance.arrangements evidence on this letter (N3).
+        rule(
+            id = 8,
+            keywords = "salary,subsidy,funding,compensation,advisory role compensated,is the advisory role compensated,remuneration",
+            answerBody = "After a successful application, personal subsidies and research funding may be available.",
+            replySubject = "Funding support"
+        ).copy(coverageKeys = "finance.government_funding,finance.enterprise_compensation"),
+        rule(
+            id = 34,
+            keywords = "intellectual property,ip rights,ip arrangements,patent ownership,who owns the,ip terms",
+            answerBody = "Until a contract is signed, nothing you share with us transfers any rights.",
+            replySubject = "Pre-contract IP boundary"
+        ).copy(coverageKeys = "ip.arrangements")
+    )
+
+    @Test
+    fun `orthopaedic letter binds five supported intents to five facts`() {
+        val promptSet = postV105Pool.mapNotNull { it.id }.toSet()
+        val fact = service.buildRequestFact(
+            index = 1,
+            requestText = orthopaedicLetter,
+            promptPool = postV105Pool,
+            promptSet = promptSet,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(
+            setOf(
+                "programme.name", "governance.sponsor", "collaboration.form",
+                "finance.arrangements", "ip.arrangements"
+            ),
+            fact.intents.map { it.intentKey }.toSet()
+        )
+        assertTrue(fact.intents.all { it.status == "SUPPORTED" }, "all five intents must be SUPPORTED")
+        assertEquals(listOf(1001L, 1002L, 6L, 8L, 34L), fact.factRuleIds)
+        assertEquals(RequestGroundingStatus.GROUNDED, fact.status)
+
+        // N3: finance/ip evidence on this letter is unchanged.
+        assertEquals(
+            listOf(8L),
+            fact.intents.single { it.intentKey == "finance.arrangements" }.evidenceRuleIds
+        )
+        assertEquals(
+            listOf(34L),
+            fact.intents.single { it.intentKey == "ip.arrangements" }.evidenceRuleIds
+        )
+    }
+
+    @Test
+    fun `partner company question never absorbs the collaboration form fact`() {
+        // I-6: "which partner company" is enterprise-identity territory; id=6's
+        // collaboration-form keywords must not pull the fact into candidate rules.
+        val collaborationRule = postV105Pool.single { it.id == 6L }
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(collaborationRule))
+
+        val resolved = service.select(
+            inboundText = "Which partner company would I be matched with?",
+            selectedRuleIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertFalse(
+            resolved.requestFacts.flatMap { it.factRuleIds }.contains(6L),
+            "id=6 must not evidence a partner-company ask"
+        )
+    }
+
     private fun reqFactStatusCount(resolved: ResolvedQaRules, status: RequestGroundingStatus): Int =
         resolved.requestFacts.count { it.status == status }
 }

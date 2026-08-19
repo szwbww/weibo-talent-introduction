@@ -66,6 +66,10 @@ object AiReplyIntentCatalog {
         IntentGroupTitle(
             intentKeys = setOf("application.next_stages", "work.time_commitment", "work.advisory_duration"),
             title = "Commitment, duration and next stages"
+        ),
+        IntentGroupTitle(
+            intentKeys = setOf("programme.name", "governance.sponsor"),
+            title = "Programme identity and sponsorship"
         )
     )
 
@@ -283,6 +287,41 @@ object AiReplyIntentCatalog {
                 "length of advisory", "how long is a typical project"
             ),
             requiredCoverageKeys = listOf("work.advisory_duration")
+        ),
+        // ── P1 (plan 01-fact-and-catalog, A-2): programme identity intents ──
+        // requiresProfile stays at the default false (I-3 / N2). Keyword parity
+        // with V105 rule keywords is guarded by the I-2 mechanical test: no alias
+        // below relies on "programme" (canonicalize rewrites it to "program").
+        RequestIntentDefinition(
+            key = "programme.name",
+            title = "Programme name",
+            requestAliases = listOf(
+                "official name", "its official name", "the official name",
+                "what is it called", "name of the scheme"
+            ),
+            requiredCoverageKeys = listOf("programme.name"),
+            alternativeCoverageKeys = listOf("programme.tracks")
+        ),
+        RequestIntentDefinition(
+            key = "governance.sponsor",
+            title = "Sponsoring body and organising level",
+            requestAliases = listOf(
+                "government body", "government institution", "government agency",
+                "institution supporting", "body or institution", "which government",
+                "who supports the", "supporting body"
+            ),
+            requiredCoverageKeys = listOf("governance.sponsor_level"),
+            alternativeCoverageKeys = listOf("company.verification_evidence")
+        ),
+        RequestIntentDefinition(
+            key = "collaboration.form",
+            title = "Form of collaboration",
+            requestAliases = listOf(
+                "form of collaboration", "forms of collaboration",
+                "how the collaboration works", "collaboration arrangement"
+            ),
+            requiredCoverageKeys = listOf("work.remote_arrangement"),
+            alternativeCoverageKeys = listOf("work.travel_arrangement", "role.responsibilities")
         )
     )
 

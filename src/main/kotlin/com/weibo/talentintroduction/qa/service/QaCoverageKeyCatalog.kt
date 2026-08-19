@@ -88,7 +88,14 @@ object QaCoverageKeyCatalog {
 
         Entry("fees.policy", "费用政策", "申请/项目各阶段是否收费", "费用与保密"),
         Entry("confidentiality.materials", "材料保密", "申请材料的保密处理", "费用与保密"),
-        Entry("confidentiality.research", "研究保密", "研究数据/研究过程保密制度", "费用与保密")
+        Entry("confidentiality.research", "研究保密", "研究数据/研究过程保密制度", "费用与保密"),
+
+        // P1 (plan 01-fact-and-catalog, A-1): programme identity facts.
+        // Appended at the END of the list on purpose: normalizeAndValidate returns
+        // keys in catalog declaration order, so inserting mid-list would reorder
+        // existing rules' serialized coverage_keys (plan A-1 note).
+        Entry("programme.name", "项目名称与可见性", "对外可用的计划名称与项目是否公开", "项目概况"),
+        Entry("governance.sponsor_level", "背书层级与组织方", "项目的政府背书层级与具体组织申报的机构层级", "公司信息")
     ).associateBy { it.key }
 
     fun all(): List<Entry> = catalog.values.toList()

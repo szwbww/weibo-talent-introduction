@@ -1,5 +1,8 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
+import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -235,5 +238,113 @@ class AiReplyIntentCatalogTest {
     @Test
     fun `Q7 costs obligations matches fee policy not finance arrangements`() {
         assertExactKeys(q7, "fees.policy")
+    }
+
+    // ── P1 (plan 01-fact-and-catalog): programme identity intents ──
+
+    // I-7: verbatim orthopaedic trigger letter, character-for-character from the
+    // plan header (fixture authority — never rewrite, truncate or paraphrase).
+    private val orthopaedicLetter =
+        "Thank you for contacting me and for your explanation of how the programme works. I would be open to exploring whether there could be a suitable match. My current clinical and research interests are mainly focused on orthopaedic trauma, particularly femoral fractures, peri-implant femoral fractures, fracture fixation strategies, implant-related complications, and clinical research and registry development in these areas. Before going further, I would appreciate some additional information about the programme, particularly its official name, the government body or institution supporting it, the usual form of collaboration with the Chinese partner companies, and the general arrangements regarding remuneration and intellectual property. At this stage, I would be happy to continue the conversation by email."
+
+    @Test
+    fun `orthopaedic letter matches exactly the five identity intents`() {
+        val keys = AiReplyIntentCatalog.matchIntents(orthopaedicLetter).map { it.key }
+        assertEquals(
+            setOf(
+                "programme.name", "governance.sponsor", "collaboration.form",
+                "finance.arrangements", "ip.arrangements"
+            ),
+            keys.toSet()
+        )
+        assertFalse(keys.contains("general.answer"), "disambiguated intents must be non-empty")
+    }
+
+    @Test
+    fun `three existing fixtures keep their verbatim intent lists`() {
+        // N1 regression: the 20 pre-existing intent definitions are untouched.
+        assertExactKeys(q1, "finance.arrangements")
+        assertExactKeys(q3, "work.time_commitment", "work.advisory_duration")
+        assertExactKeys(q5, "ip.arrangements", "publication.authorship", "confidentiality.research")
+    }
+
+    // I-1 bidirectional guard exemptions (plan A-4). Must stay explicit so that a
+    // later plan removing an exemption immediately turns these tests red.
+    private val intentSideExemptions = setOf(
+        // O5 reverse mismatch: intents reference keys the catalog does not have.
+        "work.time_commitment",
+        "work.advisory_duration"
+    )
+    private val catalogSideExemptions = setOf(
+        // O4: orphan coverage keys, deferral declared by the master plan.
+        "general.answer",
+        "application.required_materials",
+        "work.relocation",
+        // Referenced only by matchIntents' runtime copy for next-stages + timing
+        // asks (AiReplyIntentCatalog.kt), never by a definition's required or
+        // alternative list — hence an O4-class orphan for this guard.
+        "application.timeline"
+    )
+
+    @Test
+    fun `every intent coverage key is a valid catalog key`() {
+        val referenced = AiReplyIntentCatalog.definitions
+            .flatMap { it.requiredCoverageKeys + it.alternativeCoverageKeys }
+            .toSet()
+        val invalid = (referenced - intentSideExemptions).filterNot { QaCoverageKeyCatalog.isValid(it) }
+        assertTrue(
+            invalid.isEmpty(),
+            "intent coverage keys missing from QaCoverageKeyCatalog: ${invalid.sorted()}"
+        )
+    }
+
+    @Test
+    fun `every catalog key is referenced by at least one intent`() {
+        val referenced = AiReplyIntentCatalog.definitions
+            .flatMap { it.requiredCoverageKeys + it.alternativeCoverageKeys }
+            .toSet()
+        val orphans = QaCoverageKeyCatalog.all()
+            .map { it.key }
+            .filterNot { it in referenced || it in catalogSideExemptions }
+        assertTrue(
+            orphans.isEmpty(),
+            "coverage keys referenced by no intent: ${orphans.sorted()}"
+        )
+    }
+
+    @Test
+    fun `new intent keywords satisfy both sides of the parity condition`() {
+        // I-2 mechanical parity: for each new intent there is a rule keyword k
+        // that is (a) a substring of the normalized letter and (b) aligned with
+        // the intent's canonicalized title/aliases (scored through the production
+        // canonicalize() path in scoreRuleIntentAlignment).
+        val normalizedLetter = QaFactKeywordMatcher.normalize(orthopaedicLetter)
+        val parity = listOf(
+            Triple("programme.name", "official name", 901L),
+            Triple("governance.sponsor", "government body", 902L),
+            Triple("collaboration.form", "form of collaboration", 903L)
+        )
+        parity.forEach { (intentKey, keyword, ruleId) ->
+            assertTrue(
+                normalizedLetter.contains(keyword),
+                "letter must contain keyword '$keyword' for $intentKey"
+            )
+            val intent = AiReplyIntentCatalog.definitions.single { it.key == intentKey }
+            val rule = QaRule(
+                id = ruleId,
+                categoryId = 1,
+                keywords = keyword,
+                replySubject = null,
+                replyBody = "fact",
+                answerBody = "fact",
+                priority = 100,
+                replyPolicy = QaReplyPolicy.AUTO.name,
+                enabled = true
+            )
+            assertTrue(
+                AiReplyIntentCatalog.scoreRuleIntentAlignment(rule, intent) > 0,
+                "keyword '$keyword' must align with canonicalized $intentKey title/aliases"
+            )
+        }
     }
 }
