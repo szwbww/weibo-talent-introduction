@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -795,5 +796,56 @@ class TrustReplyWorkbenchControllerTest {
             .andExpect(jsonPath("$.savedState.status").value("RESTORED"))
             .andExpect(jsonPath("$.savedState.stateVersion").value(2))
             .andExpect(jsonPath("$.savedState.lockedItems[0].requestKey").value("k".repeat(32)))
+    }
+
+    @Test
+    fun `state DELETE maps to the store delete and returns DELETED`() {
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L)
+        Mockito.`when`(service.deleteState(source, 3L))
+            .thenReturn(TrustReplySavedState(status = "DELETED", stateVersion = 0))
+
+        mockMvc.perform(
+            delete("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":3}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("DELETED"))
+            .andExpect(jsonPath("$.stateVersion").value(0))
+    }
+
+    @Test
+    fun `state DELETE surfaces version conflict and unknown source with stable codes`() {
+        // doThrow: re-stubbing a mock that already throws would otherwise blow
+        // up inside when(...) itself.
+        Mockito.doThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.CONFLICT,
+            "TRUST_REPLY_STATE_CONFLICT"
+        )).`when`(service).deleteState(
+            TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            3L
+        )
+        mockMvc.perform(
+            delete("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":3}""")
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_STATE_CONFLICT"))
+
+        Mockito.doThrow(TrustReplyWorkbenchException(
+            org.springframework.http.HttpStatus.NOT_FOUND,
+            "TRUST_REPLY_SOURCE_NOT_FOUND"
+        )).`when`(service).deleteState(
+            TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            3L
+        )
+        mockMvc.perform(
+            delete("/api/trust-reply/workbench/state")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedStateVersion":3}""")
+        )
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.code").value("TRUST_REPLY_SOURCE_NOT_FOUND"))
     }
 }

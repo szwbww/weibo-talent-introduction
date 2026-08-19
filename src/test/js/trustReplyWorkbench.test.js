@@ -98,6 +98,31 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /class="trust-reply-fact-picker-option"/);
     });
 
+    it("exposes the one-click orchestration, machine-fill badge and separate verdict lines", () => {
+        assert.match(workbench, /data-action="auto-run"/);
+        assert.match(workbench, /data-action="auto-reset"/);
+        assert.match(workbench, /一键预判/);
+        assert.match(workbench, /class="trust-reply-autofilled">机器代填/);
+        assert.match(workbench, /function autoRun\(/);
+        assert.match(workbench, /function autoReset\(/);
+        assert.match(workbench, /function runItemSequence\(/);
+        assert.match(workbench, /function renderVerdict\(/);
+        // I-5/R-2: assembly completion and send clearance are separate strings;
+        // the decision comes only from the retained preview evidence, never
+        // from a non-empty assembly.
+        assert.match(workbench, /汇总已完成/);
+        assert.match(workbench, /硬性闸门：尚未预判/);
+        assert.match(workbench, /尚未预判/);
+        assert.match(workbench, /判定：\$\{escapeText\(decision\)\}/);
+        assert.match(workbench, /"可自动发" : "转人工"/);
+        assert.match(workbench, /wouldBeBlockedBy/);
+        assert.doesNotMatch(workbench, /汇总完成.*可自动发送/s);
+        assert.doesNotMatch(workbench, /可自动发送/);
+        assert.doesNotMatch(workbench, /state\.assembly[^;]*可自动发|可自动发[^;]*state\.assembly/);
+        // T4-3: the read-only host never renders the aggregate bar.
+        assert.match(workbench, /state\.readOnly \? "" : `<div class="trust-reply-autorun"/);
+    });
+
     it("keeps page code as thin training/live adapters", () => {
         assert.match(app, /mountAiTrainingTrustReply/);
         assert.match(app, /source: \{ sourceType: "TRAINING_MAIL", sourceId: Number\(mail\.mailRecordId\) \}/);

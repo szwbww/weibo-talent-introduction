@@ -487,6 +487,92 @@ class TrustReplyWorkbenchItemFlowTest {
         assertFalse(Mockito.mockingDetails(fixture.draftService).invocations.any { it.method.name == "generateItem" })
     }
 
+    // T5-9: a machine-composed instruction (I-0 shape) must pass the existing
+    // ANSWER_FROM_OPERATOR_INPUT validation end to end: adjustItem generates
+    // with it, assemble locks the version with the same hash. No new backend
+    // branch or relaxed validation is involved.
+    @Test
+    fun `machine composed instruction passes operator directed validation and assembles`() {
+        val handling = operatorDirectedHandling()
+        val machineInstruction = "这一条我们库里没有确认口径。请按真人对接人的方式回答：先明说没有确认答案，最后交出下一步但不承诺具体时间。不要出现数字、链接或时间承诺。"
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = handling,
+            answerText = "We have no confirmed answer.",
+            claims = emptyList()
+        )
+        Mockito.`when`(
+            fixture.draftService.generateItem(
+                inboundText = Mockito.anyString(),
+                requestFact = Mockito.any(RequestFactItem::class.java) ?: RequestFactItem(
+                    index = 1,
+                    requestText = "What?",
+                    factRuleIds = emptyList(),
+                    status = RequestGroundingStatus.UNSUPPORTED
+                ),
+                handling = Mockito.eq(handling) ?: handling,
+                requestKey = Mockito.anyString(),
+                operatorInstruction = Mockito.anyString(),
+                expertProfile = Mockito.anyString(),
+                mailHistory = Mockito.anyString(),
+                contextWarnings = Mockito.anyList<String>() ?: emptyList(),
+                replyModel = Mockito.isNull(),
+                researchProfileSufficient = Mockito.anyBoolean(),
+                llmAttemptTimeoutSeconds = Mockito.isNull(),
+                llmTotalTimeoutSeconds = Mockito.isNull(),
+                cancellationToken = Mockito.isNull(),
+                progressReporter = Mockito.any(AiReplyProgressReporter::class.java) ?: AiReplyProgressReporter.NOOP
+            )
+        ).thenReturn(
+            AiReplyItemGenerationResult(
+                itemAnswer = AiReplyItemAnswer(
+                    1,
+                    "What?",
+                    RequestGroundingStatus.UNSUPPORTED,
+                    "We have no confirmed answer.",
+                    emptyList()
+                ),
+                handling = handling,
+                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                generationState = AiReplyGenerationState.LLM_USED,
+                usedLlm = true,
+                lockable = true
+            )
+        )
+
+        val adjusted = fixture.service.adjustItem(
+            TrustReplyItemAdjustmentRequest(
+                source = fixture.request.source,
+                expectedSourceVersion = fixture.request.expectedSourceVersion,
+                expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+                requestKey = fixture.validLockedItem.requestKey,
+                handling = handling,
+                operatorInstruction = machineInstruction
+            )
+        )
+        assertEquals(machineInstruction, adjusted.version.operatorInstruction)
+        assertEquals(handling, adjusted.version.handling)
+        assertTrue(adjusted.version.claims.isEmpty())
+        assertEquals(AiReplyDraftService.sha256Hex(machineInstruction), adjusted.version.operatorInstructionHash)
+
+        val locked = TrustReplyLockedItemRequest(
+            requestKey = adjusted.version.requestKey,
+            versionId = adjusted.version.versionId,
+            handling = adjusted.version.handling,
+            answerText = adjusted.version.answerText,
+            claims = adjusted.version.claims,
+            model = adjusted.version.model,
+            generationKind = adjusted.version.generationKind,
+            evidenceSetVersion = adjusted.version.evidenceSetVersion,
+            sourceVersion = adjusted.version.sourceVersion,
+            operatorInstructionHash = adjusted.version.operatorInstructionHash,
+            operatorInstruction = adjusted.version.operatorInstruction
+        )
+        val assembled = fixture.service.assemble(fixture.request.copy(lockedItems = listOf(locked)))
+        assertEquals(adjusted.version.versionId, assembled.itemVersions.single().versionId)
+        assertEquals(machineInstruction, assembled.itemVersions.single().operatorInstruction)
+    }
+
     @Test
     fun `assemble accepts complete locked set and returns raw rendered hash without side effects`() {
         val fixture = assembleFixture()

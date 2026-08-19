@@ -185,6 +185,9 @@
             itemControllers: new Map(),
             translationControllers: new Set(),
             assembly: null,
+            // R-2: retained auto-reply preview evidence (decision + hard gates)
+            // for the conclusion area; null = no evidence fetched yet.
+            previewEvidence: null,
             bootSeq: 0,
             destroyed: false,
             completePending: false,
@@ -397,8 +400,12 @@
                 factRuleIds: [...(item.factRuleIds || [])],
                 factPickerOpen: false,
                 availableHandlings: [...(item.allowedHandlings || [])],
+                recommendedHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
                 draftHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
                 instruction: "",
+                suggestedInstruction: item.suggestedInstruction || "",
+                autoFilled: false,
+                instructionEditedByOperator: false,
                 versions: [],
                 activeVersionId: null,
                 resolvedVersionId: null,
@@ -535,6 +542,10 @@
                     request.resolvedVersionId = version.versionId;
                     request.draftHandling = version.handling;
                     request.instruction = version.operatorInstruction || "";
+                    // V-3: machine-fill provenance is browser-local only; a
+                    // restored saved item is always unmarked.
+                    request.autoFilled = false;
+                    request.instructionEditedByOperator = false;
                     request.expanded = false;
                     request.error = null;
                     restoredCount += 1;
@@ -650,11 +661,32 @@
         }
 
         async function generateMissingGrounded(allowlist, seq) {
-            if (!allowlist.length || state.generation.pending || !state.sourceVersion) return false;
-            const frozenKeys = [...allowlist];
+            return runItemSequence(allowlist, seq, {
+                labelPrefix: "正在生成有据回答",
+                doneMessage: "有据回答生成完成",
+                handlingFor: () => "ANSWER_WITH_EVIDENCE"
+            });
+        }
+
+        // Shared sequential per-item generation skeleton (cancel / stale /
+        // failure branches). generateMissingGrounded and the one-click
+        // autoRun() both drive this loop; the caller supplies the progress
+        // wording and the per-item handling override, and mutates each request
+        // (draftHandling / instruction) before the loop if the payload builder
+        // must see it.
+        async function runItemSequence(keys, seq, options) {
+            const handlingFor = options.handlingFor || ((request) => request.draftHandling);
+            const labelPrefix = options.labelPrefix || "正在生成";
+            const doneMessage = options.doneMessage || "生成完成";
+            // V-1: one-click runs pass persistEach:false so generated locks stay
+            // in memory until the whole run succeeds; the default keeps the
+            // established per-item durable save for ordinary paths.
+            const persistEach = options.persistEach !== false;
+            if (!keys.length || state.generation.pending || !state.sourceVersion) return false;
+            const frozenKeys = [...keys];
             const total = frozenKeys.length;
             state.sequenceCancelled = false;
-            state.generation = { pending: true, stage: "GENERATING", message: `正在生成有据回答 1/${total}`, generationId: null, controller: null };
+            state.generation = { pending: true, stage: "GENERATING", message: `${labelPrefix} 1/${total}`, generationId: null, controller: null };
             render();
             let index = 0;
             for (const requestKey of frozenKeys) {
@@ -664,11 +696,11 @@
                 if (request.resolvedVersionId) continue;
                 index += 1;
                 state.generation.stage = "GENERATING";
-                state.generation.message = `正在生成有据回答 ${index}/${total}`;
+                state.generation.message = `${labelPrefix} ${index}/${total}`;
                 state.generation.generationId = makeId();
                 state.generation.controller = null;
                 render();
-                const outcome = await requestItemVersion(request, seq, state.generation.generationId, "full", "ANSWER_WITH_EVIDENCE");
+                const outcome = await requestItemVersion(request, seq, state.generation.generationId, "full", handlingFor(request));
                 if (!isLive(seq) || state.sequenceCancelled) return false;
                 if (outcome && outcome.stale) {
                     state.generation.pending = false;
@@ -698,34 +730,36 @@
                 request.resolvedVersionId = outcome.version.versionId;
                 request.expanded = false;
                 request.error = null;
-                state.stateSavePending = true;
-                render();
-                try {
-                    await persistResolvedSnapshot();
-                } catch (error) {
-                    if (isFrameStaleError(error)) {
-                        state.stateSavePending = false;
-                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                        return false;
-                    }
-                    if (isStaleError(error)) {
-                        state.stateSavePending = false;
-                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                        return false;
-                    }
-                    if (!isLive(seq)) return false;
-                    request.resolvedVersionId = null;
-                    request.expanded = true;
-                    request.error = error.message || "保存失败，请重试";
-                    state.stateSavePending = false;
-                    state.generation.pending = false;
-                    state.generation.controller = null;
-                    state.generation.stage = "ERROR";
-                    state.generation.message = request.error;
+                if (persistEach) {
+                    state.stateSavePending = true;
                     render();
-                    return false;
+                    try {
+                        await persistResolvedSnapshot();
+                    } catch (error) {
+                        if (isFrameStaleError(error)) {
+                            state.stateSavePending = false;
+                            handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                            return false;
+                        }
+                        if (isStaleError(error)) {
+                            state.stateSavePending = false;
+                            handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                            return false;
+                        }
+                        if (!isLive(seq)) return false;
+                        request.resolvedVersionId = null;
+                        request.expanded = true;
+                        request.error = error.message || "保存失败，请重试";
+                        state.stateSavePending = false;
+                        state.generation.pending = false;
+                        state.generation.controller = null;
+                        state.generation.stage = "ERROR";
+                        state.generation.message = request.error;
+                        render();
+                        return false;
+                    }
+                    state.stateSavePending = false;
                 }
-                state.stateSavePending = false;
                 state.generation.controller = null;
                 if (!isLive(seq)) return false;
                 if (state.sequenceCancelled) {
@@ -740,7 +774,7 @@
             state.generation.pending = false;
             state.generation.controller = null;
             state.generation.stage = "READY";
-            state.generation.message = "有据回答生成完成";
+            state.generation.message = doneMessage;
             render();
             return true;
         }
@@ -896,6 +930,7 @@
                 missingGroundedKeys,
                 adoptableGrounded,
                 unresolvedManualKeys,
+                autoFillableKeys: unresolvedManualKeys,
                 canStartAssembly
             };
         }
@@ -1012,6 +1047,170 @@
 
         function canAssemble() {
             return computeReadiness().canStartAssembly;
+        }
+
+        // R-2: read-only reuse of the existing auto-reply preview endpoint (the
+        // page-2 preview). Fetching never mutates state and never sends; any
+        // failure simply leaves the verdict in the explicit pending state.
+        async function fetchAutoReplyPreview() {
+            try {
+                const response = await global.fetch(apiUrl(state.contextPath, `/api/mail/unmatched-inbound/${Number(state.source.sourceId)}/auto-reply-preview`), {
+                    method: "GET",
+                    headers: { Accept: "application/json" }
+                });
+                if (!response.ok) return null;
+                const body = await response.json();
+                return body && typeof body === "object" ? body : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        // R-2: the displayed decision comes only from the existing preview
+        // result and its hard-gate evidence — never from the assembly. Gates
+        // take precedence; an authoritative QA_AUTO_REPLIED preview without
+        // gates is the only eligible decision.
+        function derivePreviewEvidence(preview) {
+            const gates = Array.isArray(preview.wouldBeBlockedBy) ? preview.wouldBeBlockedBy : [];
+            const decision = gates.length === 0 && preview.previewKind === "QA_AUTO_REPLIED"
+                ? "AUTO_SEND"
+                : "MANUAL_HANDOFF";
+            return {
+                decision,
+                gates,
+                previewKind: preview.previewKind || "",
+                reason: preview.reason || null
+            };
+        }
+
+        // I-1: one-click orchestration. Unresolved manual items (PARTIAL /
+        // UNSUPPORTED) are filled by the machine first — same ADJUST_ITEM path
+        // an operator would use, with the server-suggested handling and
+        // instruction — then the existing assemble() orchestration runs
+        // unchanged. Nothing is sent and no external mail record is written.
+        async function autoRun() {
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            const seq = state.bootSeq;
+            const readiness = computeReadiness();
+            const manualKeys = readiness.autoFillableKeys;
+            if (manualKeys.length > 0) {
+                manualKeys.forEach((requestKey) => {
+                    const request = findRequest(requestKey);
+                    if (!request) return;
+                    request.draftHandling = request.availableHandlings.includes(request.recommendedHandling)
+                        ? request.recommendedHandling
+                        : request.availableHandlings[0] || "OMIT";
+                    request.instruction = request.suggestedInstruction || "";
+                    request.autoFilled = true;
+                    request.instructionEditedByOperator = false;
+                });
+                const filled = await runItemSequence(manualKeys, seq, {
+                    labelPrefix: "正在生成",
+                    doneMessage: "编排生成完成",
+                    handlingFor: (request) => request.draftHandling,
+                    persistEach: false
+                });
+                if (!filled || !isLive(seq)) return;
+            }
+            // V-1: all-or-nothing durable persistence, wholly inside the
+            // one-click path. Manual items are generated above and grounded
+            // items are generated/adopted here — both without per-item durable
+            // writes — so the protected assemble() orchestration performs no
+            // mid-run persistence and issues only the server assembly. Exactly
+            // one complete snapshot is saved after everything succeeded; any
+            // failure, cancellation or stale state before that leaves nothing
+            // newly persisted.
+            computeReadiness().adoptableGrounded.forEach((request) => {
+                request.resolvedVersionId = request.activeVersionId;
+                request.expanded = false;
+            });
+            const missingGrounded = computeReadiness().missingGroundedKeys;
+            if (missingGrounded.length > 0) {
+                const generated = await runItemSequence(missingGrounded, seq, {
+                    labelPrefix: "正在生成有据回答",
+                    doneMessage: "有据回答生成完成",
+                    handlingFor: () => "ANSWER_WITH_EVIDENCE",
+                    persistEach: false
+                });
+                if (!generated || !isLive(seq)) return;
+            }
+            await assemble();
+            if (!isLive(seq)) return;
+            if (previewState() === "CURRENT") {
+                try {
+                    await persistResolvedSnapshot();
+                } catch (error) {
+                    if (isFrameStaleError(error)) {
+                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                        return;
+                    }
+                    if (isStaleError(error)) {
+                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                        return;
+                    }
+                    if (!isLive(seq)) return;
+                    setStatus(error.message || "保存失败，请重试", "ERROR");
+                    render();
+                    return;
+                }
+                if (!isLive(seq)) return;
+            }
+            // R-2: after a completed LIVE one-click assembly, reuse the existing
+            // auto-reply preview evidence for the conclusion. Simulation and
+            // unavailable previews keep the explicit pending state; assembly
+            // itself never decides send clearance.
+            if (previewState() === "CURRENT" && state.mode === MODES.LIVE) {
+                const preview = await fetchAutoReplyPreview();
+                if (!isLive(seq)) return;
+                state.previewEvidence = preview ? derivePreviewEvidence(preview) : null;
+                render();
+            }
+        }
+
+        // I-4: reset returns to the bootstrap default state. It deletes only the
+        // workbench state row for this source; QA rules, snippets, mail records
+        // and ES documents are untouched. After the DELETE the component
+        // re-bootstraps, which rebuilds the request list from the server.
+        async function autoReset() {
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            if (typeof global.confirm === "function"
+                && !global.confirm("重置将清空本次编排产生的所有采用与说明，回到初始状态。QA 规则与历史记录不受影响，继续？")) {
+                render();
+                return;
+            }
+            if (state.savedStateVersion > 0) {
+                try {
+                    await requestJson("/api/trust-reply/workbench/state", {
+                        source,
+                        expectedStateVersion: state.savedStateVersion
+                    }, null, "DELETE");
+                    state.savedStateVersion = 0;
+                } catch (error) {
+                    if (!isLive() || isAbort(error)) return;
+                    setStatus(error.message || "重置失败，请重试", "ERROR");
+                    render();
+                    return;
+                }
+            }
+            state.requests.forEach((request) => {
+                request.versions = [];
+                request.activeVersionId = null;
+                request.resolvedVersionId = null;
+                request.instruction = "";
+                request.autoFilled = false;
+                request.instructionEditedByOperator = false;
+                request.pending = false;
+                request.error = null;
+                request.expanded = request.coverage !== "GROUNDED";
+                request.questionTranslation = { state: "idle", text: "" };
+                request.answerTranslationsByVersionId = {};
+            });
+            state.assembly = null;
+            state.assemblyStale = false;
+            state.previewEvidence = null;
+            setStatus("正在重置工作台…", "RESETTING");
+            render();
+            await bootstrap();
         }
 
         async function cancelGeneration(generationId, controller) {
@@ -1387,7 +1586,10 @@
                 ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
                 : "";
             const modelOptions = state.availableModels.map((model) => `<option value="${escapeText(model)}"${model === state.selectedModel ? " selected" : ""}>${escapeText(MODEL_LABELS[model] || model)}</option>`).join("");
-            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
+            // S-1: the one-click orchestration bar (T4-3: never rendered on the
+            // read-only AUTO_PREVIEW host).
+            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun"><button type="button" class="button primary" data-action="auto-run">一键预判</button><button type="button" class="button secondary" data-action="auto-reset">重置</button><span class="trust-reply-autorun-hint">有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。</span></div>`;
+            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p>${autoRunBar}<div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
         }
 
         function translationEntry(request, versionId) {
@@ -1484,7 +1686,13 @@
                     : coverage === "GROUNDED"
                         ? "待生成"
                         : "待处理";
-            return `<span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""} <button type="button" class="button small secondary" data-action="toggle-item" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.expanded}">${request.expanded ? "收起" : "展开"}</button></div><span class="badge ${action.locked ? "ok" : ""}">${badge}</span>`;
+            // I-3: machine-filled items stay fully editable; the badge is a
+            // visible marker only and disappears as soon as the operator edits
+            // the handling or the instruction.
+            const autoFilledBadge = request.autoFilled === true && !request.instructionEditedByOperator
+                ? `<span class="trust-reply-autofilled">机器代填</span>`
+                : "";
+            return `<span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""} <button type="button" class="button small secondary" data-action="toggle-item" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.expanded}">${request.expanded ? "收起" : "展开"}</button></div><span class="badge ${action.locked ? "ok" : ""}">${badge}</span>${autoFilledBadge}`;
         }
 
         function renderItemActions(request) {
@@ -1543,6 +1751,26 @@
             return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
         }
 
+        // I-5/R-2: a finished assembly is never presented as send clearance.
+        // The verdict renders three independent lines: assembly completion, the
+        // decision, and each failed hard gate. The decision is derived only
+        // from the retained auto-reply preview evidence; without evidence the
+        // verdict stays in the explicit pending state, never blank and never
+        // implying clearance.
+        function renderVerdict() {
+            const assembled = previewState() === "CURRENT" && !!state.assembly;
+            const evidence = state.previewEvidence;
+            const decision = evidence
+                ? (evidence.decision === "AUTO_SEND" && evidence.gates.length === 0 ? "可自动发" : "转人工")
+                : "尚未预判";
+            const gateLine = evidence
+                ? (evidence.gates.length > 0
+                    ? evidence.gates.map((code) => `<li>${escapeText(code)}</li>`).join("")
+                    : `<li class="muted">无未通过硬性闸门</li>`)
+                : `<li class="muted">硬性闸门：尚未预判</li>`;
+            return `<div data-role="verdict"><p class="muted">${escapeText(assembled ? "汇总已完成" : "尚未汇总")}</p><p class="muted">判定：${escapeText(decision)}</p><ul>${gateLine}</ul></div>`;
+        }
+
         function renderSummary() {
             const readiness = computeReadiness();
             const locked = readiness.resolvedCount;
@@ -1570,7 +1798,7 @@
                 ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>`
                 : `<div class="trust-reply-assembly"><div class="muted">配置预览 · 未整合</div><pre class="pre" data-role="local-preview">${escapeText(renderFrameLocalPreview())}</pre></div>`;
             const completeDisabled = !assembly || stateKey !== "CURRENT" || state.completePending;
-            return `<h4>整合摘要</h4><p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${previewBlock}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${completeDisabled ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
+            return `<h4>整合摘要</h4>${renderVerdict()}<p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${previewBlock}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${completeDisabled ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
         }
 
         function renderStatus() {
@@ -1638,6 +1866,8 @@
             }
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
+            if (action === "auto-run") void autoRun();
+            if (action === "auto-reset") void autoReset();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
         }
 
@@ -1668,6 +1898,7 @@
             if (target.dataset.role === "handling") {
                 const previous = captureDecision(request);
                 request.draftHandling = target.value;
+                request.autoFilled = false;
                 request.activeVersionId = null;
                 const invalidated = invalidateDecision(request);
                 render();
@@ -1689,7 +1920,13 @@
                 if (instruction !== request.instruction) {
                     const previous = captureDecision(request);
                     request.instruction = instruction;
-                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) return;
+                    const wasAutoFilled = request.autoFilled;
+                    request.autoFilled = false;
+                    request.instructionEditedByOperator = true;
+                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) {
+                        if (wasAutoFilled) syncInstructionUi(request);
+                        return;
+                    }
                     request.activeVersionId = null;
                     const invalidated = invalidateDecision(request);
                     syncInstructionUi(request);

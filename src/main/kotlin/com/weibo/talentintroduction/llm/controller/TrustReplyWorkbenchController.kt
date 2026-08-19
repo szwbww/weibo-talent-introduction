@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -105,6 +106,10 @@ class TrustReplyWorkbenchController(
     @PutMapping("/state")
     fun saveState(@RequestBody request: TrustReplySaveStateHttpRequest): TrustReplySavedState =
         workbenchService.saveState(request.toDomain())
+
+    @DeleteMapping("/state")
+    fun deleteState(@RequestBody request: TrustReplyDeleteStateHttpRequest): TrustReplySavedState =
+        workbenchService.deleteState(request.source.toDomain(), request.expectedStateVersion)
 
     @ExceptionHandler(TrustReplyWorkbenchException::class)
     fun handleWorkbenchException(ex: TrustReplyWorkbenchException): ResponseEntity<TrustReplyErrorResponse> =
@@ -302,6 +307,11 @@ data class TrustReplyAssembleHttpRequest(
     val requestedFactIds: List<Long>? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
     val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+)
+
+data class TrustReplyDeleteStateHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedStateVersion: Long
 )
 
 data class TrustReplySaveStateHttpRequest(

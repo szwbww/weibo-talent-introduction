@@ -5362,6 +5362,41 @@ tr td {
     align-items: start;
 }
 
+.trust-reply-autorun {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    margin: 0 0 10px;
+    border: 1px solid var(--panel-border);
+    border-left: 2px solid var(--primary);
+    border-radius: var(--radius-sm);
+    background: var(--panel-bg);
+}
+
+.trust-reply-autorun-hint {
+    flex: 1;
+    min-width: 180px;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.trust-reply-autofilled {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background-color: var(--info-bg);
+    border: 1px solid var(--info-border);
+    color: var(--info);
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
 .trust-reply-readonly {
     position: relative;
 }

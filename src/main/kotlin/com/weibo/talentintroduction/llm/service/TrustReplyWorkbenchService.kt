@@ -130,7 +130,8 @@ data class TrustReplyRequestCoverage(
     val intents: List<TrustReplyIntentCoverage> = emptyList(),
     val requestKey: String = "",
     val allowedHandlings: List<String> = emptyList(),
-    val recommendedHandling: String = ""
+    val recommendedHandling: String = "",
+    val suggestedInstruction: String? = null
 )
 
 data class TrustReplyIntentCoverage(
@@ -474,6 +475,16 @@ class TrustReplyWorkbenchService(
             requestFactSelections = payload.requestFactSelections,
             frameSnapshot = frameSnapshot
         )
+    }
+
+    // I-4: reset only drops the workbench state row for this source and lets a
+    // re-bootstrap fall back to defaults. QA rules, snippets, mail records and
+    // ES documents are never touched; a version mismatch surfaces as the
+    // existing TRUST_REPLY_STATE_CONFLICT via the store.
+    fun deleteState(source: TrustReplySourceRef, expectedStateVersion: Long): TrustReplySavedState {
+        val resolved = resolveSource(source)
+        stateStore.delete(resolved.source.sourceType.name, resolved.source.sourceId, expectedStateVersion)
+        return TrustReplySavedState(status = "DELETED", stateVersion = 0)
     }
 
     private data class RestoreFrameResult(
@@ -1645,26 +1656,126 @@ class TrustReplyWorkbenchService(
         return (first + second).filter { seen.add(it) }
     }
 
-    private fun List<RequestFactItem>.toCoverage(sourceVersion: String): List<TrustReplyRequestCoverage> = map { item ->
-        TrustReplyRequestCoverage(
-            index = item.index,
-            requestText = item.requestText,
-            status = item.status.name,
-            factRuleIds = item.factRuleIds,
-            intents = item.intents.map { intent ->
-                TrustReplyIntentCoverage(
-                    intentKey = intent.intentKey,
-                    title = intent.title,
-                    status = intent.status,
-                    evidenceRuleIds = intent.evidenceRuleIds,
-                    missingEvidenceKeys = intent.missingEvidenceKeys,
-                    requiresResearchContext = intent.requiresResearchContext
-                )
-            },
-            requestKey = requestKey(sourceVersion, item),
-            allowedHandlings = allowedHandlings(item.status).map { it.name },
-            recommendedHandling = recommendedHandling(item.status).name
-        )
+    private fun List<RequestFactItem>.toCoverage(sourceVersion: String): List<TrustReplyRequestCoverage> {
+        // I-2: the suggested instruction is server-composed (never hard-coded on
+        // the frontend). Adjacent rules are the ones bound to the other requests
+        // of the same mail; only their display names may appear in the
+        // instruction, never their answer bodies (I-0).
+        // V-4: a display name is optional context; it is omitted when it carries
+        // any contiguous 12+ character fragment of an adjacent rule answerBody,
+        // because the ANSWER_FROM_OPERATOR_INPUT prompt treats the instruction
+        // as the sole answer basis. Bodies are used for rejection only.
+        val adjacentRules = if (any { it.status == RequestGroundingStatus.UNSUPPORTED }) {
+            val adjacentIds = flatMap { it.factRuleIds }.distinct()
+            if (adjacentIds.isEmpty()) {
+                emptyMap()
+            } else {
+                qaRuleRepository.findAllById(adjacentIds)
+                    .asSequence()
+                    .mapNotNull { rule -> rule.id?.let { id -> id to rule } }
+                    .toMap()
+            }
+        } else {
+            emptyMap()
+        }
+        val nameById = adjacentRules.mapValues { (_, rule) ->
+            rule.displayName?.takeIf { it.isNotBlank() } ?: "未命名事实"
+        }
+        val bodyById = adjacentRules.mapValues { (_, rule) -> rule.answerBody.orEmpty() }
+        return map { item ->
+            val adjacent = if (item.status == RequestGroundingStatus.UNSUPPORTED) {
+                adjacentRules.filterKeys { it !in item.factRuleIds }
+            } else {
+                emptyMap()
+            }
+            val adjacentBodies = adjacent.values.map { it.answerBody.orEmpty() }
+            val adjacentNames = nameById.filterKeys { it in adjacent.keys }
+                .values
+                .distinct()
+                .filter { name -> !overlapsAnswerBodyFragment(name, adjacentBodies) }
+            TrustReplyRequestCoverage(
+                index = item.index,
+                requestText = item.requestText,
+                status = item.status.name,
+                factRuleIds = item.factRuleIds,
+                intents = item.intents.map { intent ->
+                    TrustReplyIntentCoverage(
+                        intentKey = intent.intentKey,
+                        title = intent.title,
+                        status = intent.status,
+                        evidenceRuleIds = intent.evidenceRuleIds,
+                        missingEvidenceKeys = intent.missingEvidenceKeys,
+                        requiresResearchContext = intent.requiresResearchContext
+                    )
+                },
+                requestKey = requestKey(sourceVersion, item),
+                allowedHandlings = allowedHandlings(item.status).map { it.name },
+                recommendedHandling = recommendedHandling(item.status).name,
+                suggestedInstruction = suggestedInstructionFor(item, adjacentNames)
+            )
+        }
+    }
+
+    // I-0: the machine-composed instruction only describes HOW to answer
+    // (attitude + structure + the names of adjacent confirmable facts). It must
+    // never smuggle rule answer bodies, numbers, links or time promises into
+    // the operator instruction, which the ANSWER_FROM_OPERATOR_INPUT prompt
+    // treats as the sole answer basis.
+    // V-1: adjacent display names are optional context only. Before inclusion a
+    // name is rejected when it would make the composed instruction contain a
+    // digit, link text or a time-promise token; unsafe names are omitted
+    // entirely, never truncated or rewritten, and answer bodies are never read
+    // for them. Names are also included greedily only while the complete
+    // mandatory safety/structure wording stays within the 500-char contract.
+    private fun suggestedInstructionFor(item: RequestFactItem, adjacentNames: List<String>): String? {
+        if (item.status != RequestGroundingStatus.UNSUPPORTED) return null
+        val prefix = "这一条我们库里没有确认口径。请按真人对接人的方式回答：先明说没有确认答案"
+        val open = "，再给出能确认的邻近事实（"
+        val close = "）"
+        val suffix = "，最后交出下一步但不承诺具体时间。不要出现数字、链接或时间承诺。"
+        val fixedLength = prefix.length + open.length + close.length + suffix.length
+        val budget = 500 - fixedLength
+        val selected = mutableListOf<String>()
+        var used = 0
+        for (name in adjacentNames) {
+            if (containsUnsafeNameContent(name)) continue
+            val extra = name.length + if (selected.isEmpty()) 0 else 1
+            if (used + extra > budget) break
+            selected.add(name)
+            used += extra
+        }
+        val namesPart = if (selected.isEmpty()) "" else "$open${selected.joinToString("、")}$close"
+        return "$prefix$namesPart$suffix"
+    }
+
+    // I-0/V-1: digits, link text and time-promise tokens are prohibited in the
+    // operator instruction. The check applies to adjacent names only; the fixed
+    // instruction wording is authored to never contain them.
+    // I-0/V-4: a display name that carries any contiguous 12+-character
+    // fragment of an adjacent rule answerBody would smuggle unvalidated fact
+    // text into the sole operator answer basis; such names are omitted. Bodies
+    // are read only for this rejection and never copied into the instruction.
+    private fun overlapsAnswerBodyFragment(name: String, adjacentBodies: List<String>): Boolean {
+        for (body in adjacentBodies) {
+            if (body.length < 12) continue
+            for (i in 0..body.length - 12) {
+                if (name.contains(body.substring(i, i + 12))) return true
+            }
+        }
+        return false
+    }
+
+    // I-0/V-2: digits, link/URL forms and time promises are prohibited in the
+    // operator instruction. The check applies to adjacent names only; the fixed
+    // instruction wording is authored to never contain them.
+    private fun containsUnsafeNameContent(name: String): Boolean {
+        if (name.any { it.isDigit() }) return true
+        if (name.contains("http", ignoreCase = true)) return true
+        if (name.contains("www", ignoreCase = true)) return true
+        if (name.contains("://")) return true
+        if (domainFormRegex.containsMatchIn(name)) return true
+        if (timeCommitmentRegex.containsMatchIn(name)) return true
+        return timePromiseTokens.any { name.contains(it) }
     }
 
     private fun MailRecord.inboundText(): String = cleanedBody?.takeIf { it.isNotBlank() } ?: body.orEmpty()
@@ -1672,6 +1783,24 @@ class TrustReplyWorkbenchService(
     private fun InboundMailProcessing.inboundText(): String = cleanedBody?.takeIf { it.isNotBlank() } ?: body.orEmpty()
 
     companion object {
+        // I-0/V-2: time-promise tokens that adjacent display names must not
+        // introduce into the operator instruction ("周内" covers 一周内/两周内…).
+        private val timePromiseTokens = listOf(
+            "尽快", "立即", "马上", "今天", "明天", "后天", "本周", "下周", "本月", "下月",
+            "周内", "月内", "改天", "稍后", "近日", "小时内", "天内"
+        )
+
+        // I-0/V-2: dotted domain forms (example.com) are link-shaped even
+        // without a scheme and must not enter the operator answer basis.
+        private val domainFormRegex = Regex("""\.[a-zA-Z]{2,}""")
+
+        // I-0/V-1: concrete future response/answer commitments expressed with
+        // Chinese numerals (三天后答复, 一周内, 数日后…) are not decimal digits
+        // and are not covered by the phrase tokens; screen them structurally.
+        private val timeCommitmentRegex = Regex(
+            "[一二两三四五六七八九十几数半零\\d]+(天|日|周|星期|月|年|小时|分钟|秒)(后|内|之内|以内|前|之前|左右|以后|之后)"
+        )
+
         fun allowedHandlings(status: RequestGroundingStatus): List<TrustReplyItemHandling> = when (status) {
             RequestGroundingStatus.GROUNDED -> listOf(
                 TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,

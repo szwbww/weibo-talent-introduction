@@ -15,9 +15,11 @@ import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -496,6 +498,61 @@ class TrustReplyWorkbenchServiceTest {
         Mockito.verify(stateStore).pruneExpired(Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())
     }
 
+    // V-1: a time-commitment display name using a Chinese numeral (三天后答复)
+    // is neither a decimal digit nor a listed phrase; it must be omitted while
+    // safe neighboring names stay eligible.
+    @Test
+    fun `suggested instruction omits time-commitment display names`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "三天后答复"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "safe", replySubject = null, replyBody = "", answerBody = "second", displayName = "薪资标准")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertFalse(instruction.contains("三天后"), "the time-commitment name must be omitted")
+        assertFalse(instruction.contains("天后"), "the time-commitment phrase must be omitted")
+        assertTrue(instruction.contains("薪资标准"), "safe adjacent names must remain")
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+    }
+
+    // V-4: a display name that equals a 12+-character fragment of an adjacent
+    // rule answerBody is omitted; the suggestion stays non-empty with the safe
+    // structure and the remaining safe names.
+    @Test
+    fun `suggested instruction omits display names overlapping answer bodies`() {
+        val bodyFragment = "薪酬保密制度适用于全体正式员工"
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = bodyFragment, displayName = bodyFragment.take(20)),
+            QaRule(id = 10L, categoryId = 3L, keywords = "safe", replySubject = null, replyBody = "", answerBody = "second body", displayName = "薪资标准")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertFalse(instruction.contains(bodyFragment), "answer body must never enter the suggestion")
+        assertFalse(instruction.contains(bodyFragment.take(12)), "a 12+ char body fragment carried by the display name must be omitted")
+        assertTrue(instruction.contains("薪资标准"), "distinct safe adjacent names must remain")
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+    }
+
     @Test
     fun `saveState rejects forged request key and keeps the store untouched`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
@@ -878,6 +935,235 @@ class TrustReplyWorkbenchServiceTest {
 
         assertEquals(listOf(TrustReplyRequestFactSelection(key, listOf(9L))), bootstrap.requestFactSelections)
         Mockito.verify(factSelection).selectForWorkbench("What?", listOf(listOf(9L)), null, true)
+    }
+
+    @Test
+    fun `suggested handling stays inside the allowed set`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "Who?", listOf(10L), RequestGroundingStatus.PARTIAL),
+            item(3, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(emptyList<QaRule>())
+
+        val coverage = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage
+
+        assertEquals(3, coverage.size)
+        coverage.forEach { itemCoverage ->
+            assertTrue(
+                itemCoverage.recommendedHandling in itemCoverage.allowedHandlings,
+                "recommendedHandling ${itemCoverage.recommendedHandling} must be allowed for ${itemCoverage.status}"
+            )
+        }
+    }
+
+    @Test
+    fun `suggested instruction only for unsupported items within 500 chars`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "Who?", listOf(10L), RequestGroundingStatus.PARTIAL),
+            item(3, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(
+                id = 9L,
+                categoryId = 3L,
+                keywords = "what",
+                replySubject = null,
+                replyBody = "",
+                answerBody = "answer",
+                displayName = "What"
+            ),
+            QaRule(
+                id = 10L,
+                categoryId = 3L,
+                keywords = "who",
+                replySubject = null,
+                replyBody = "",
+                answerBody = "who answer",
+                displayName = "Who"
+            )
+        ))
+
+        val coverage = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage
+
+        val unsupported = coverage.single { it.status == "UNSUPPORTED" }
+        val instruction = requireNotNull(unsupported.suggestedInstruction)
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertEquals(null, coverage.single { it.status == "GROUNDED" }.suggestedInstruction)
+        assertEquals(null, coverage.single { it.status == "PARTIAL" }.suggestedInstruction)
+    }
+
+    // V-1: display names may be up to 120 characters each; with enough of them
+    // the naive join would exceed the 500-char operator-instruction cap. The
+    // instruction must stay non-empty, keep the complete mandatory wording and
+    // drop only optional adjacent names that would overflow the budget.
+    @Test
+    fun `suggested instruction stays within 500 chars with maximum-length adjacent names`() {
+        val name = "甲".repeat(120)
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = name),
+            QaRule(id = 10L, categoryId = 3L, keywords = "how", replySubject = null, replyBody = "", answerBody = "second", displayName = "${name}乙"),
+            QaRule(id = 11L, categoryId = 3L, keywords = "why", replySubject = null, replyBody = "", answerBody = "third", displayName = "${name}丙"),
+            QaRule(id = 12L, categoryId = 3L, keywords = "when", replySubject = null, replyBody = "", answerBody = "fourth", displayName = "${name}丁")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500, "instruction length must stay within 500, was ${instruction.length}")
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        // names are included greedily while the budget allows
+        assertTrue(instruction.contains(name))
+        assertFalse(instruction.contains("${name}丁"), "the 4th 120-char adjacent name must be dropped to stay within 500")
+    }
+
+    // V-1: adjacent display names are optional context and may never smuggle
+    // digits, links or time-promise tokens into the sole operator answer basis.
+    // Unsafe names are omitted entirely; the safe name remains.
+    @Test
+    fun `suggested instruction excludes unsafe adjacent names`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "Salary band"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "digit", replySubject = null, replyBody = "", answerBody = "second", displayName = "薪酬 2026 版"),
+            QaRule(id = 11L, categoryId = 3L, keywords = "link", replySubject = null, replyBody = "", answerBody = "third", displayName = "详见 http://internal/wiki/salary"),
+            QaRule(id = 12L, categoryId = 3L, keywords = "promise", replySubject = null, replyBody = "", answerBody = "fourth", displayName = "请尽快回复")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertTrue(instruction.contains("Salary band"), "the safe adjacent name must remain")
+        assertFalse(instruction.contains("2026"), "digit-carrying name must be omitted")
+        assertFalse(instruction.contains("http", ignoreCase = true), "link-carrying name must be omitted")
+        assertFalse(instruction.contains("尽快"), "time-promise name must be omitted")
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+    }
+
+    // V-2: URL/domain and Chinese-numeral time-commitment display names are
+    // omitted; the instruction stays non-empty with the safe structure and the
+    // remaining safe names.
+    @Test
+    fun `suggested instruction omits url and time-promise display names`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "请在一周内回复：www.example.com"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "safe", replySubject = null, replyBody = "", answerBody = "second", displayName = "薪资标准")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertFalse(instruction.contains("www", ignoreCase = true), "www/domain name must be omitted")
+        assertFalse(instruction.contains("一周内"), "time-promise name must be omitted")
+        assertFalse(instruction.contains("example.com"), "dotted domain must be omitted")
+        assertTrue(instruction.contains("薪资标准"), "safe adjacent names must remain")
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+    }
+
+    // V-1: when every adjacent name is unsafe the instruction must still be
+    // emitted with the complete safe structure and no adjacent-name clause.
+    @Test
+    fun `suggested instruction stays safe when every adjacent name is unsafe`() {
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "薪酬 2026 版"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "link", replySubject = null, replyBody = "", answerBody = "second", displayName = "请尽快联系 http://internal")
+        ))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertFalse(instruction.contains("邻近事实"), "no adjacent-name clause may appear when every name is unsafe")
+        assertFalse(instruction.contains("2026"))
+        assertFalse(instruction.contains("http", ignoreCase = true))
+        assertFalse(instruction.contains("尽快"))
+        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+    }
+
+    // I-0: the machine instruction describes HOW to answer; it must never carry
+    // rule answer bodies (>=12-char fragments), digits, links or time promises,
+    // because the ANSWER_FROM_OPERATOR_INPUT prompt treats it as the sole basis.
+    @Test
+    fun `suggested instruction never leaks fact bodies numbers links or time promises`() {
+        val leakyBody = "The salary band for senior experts is 800k to 1.2M RMB per year; payday is the 25th of next month. http://internal/wiki/salary"
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "Who?", listOf(10L), RequestGroundingStatus.PARTIAL),
+            item(3, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenReturn(listOf(
+            QaRule(
+                id = 9L,
+                categoryId = 3L,
+                keywords = "what",
+                replySubject = null,
+                replyBody = "",
+                answerBody = leakyBody,
+                displayName = "Salary band"
+            ),
+            QaRule(
+                id = 10L,
+                categoryId = 3L,
+                keywords = "who",
+                replySubject = null,
+                replyBody = "",
+                answerBody = "unrelated answer body",
+                displayName = "Unrelated fact"
+            )
+        ))
+
+        val coverage = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage
+        val instruction = requireNotNull(coverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        listOf(leakyBody, "unrelated answer body").forEach { body ->
+            for (i in 0..body.length - 12) {
+                assertFalse(instruction.contains(body.substring(i, i + 12)), "instruction must not leak a 12-char fragment of an answerBody")
+            }
+        }
+        assertFalse(instruction.any { it.isDigit() })
+        assertFalse(instruction.contains("http", ignoreCase = true))
+        listOf("尽快", "立即", "马上", "今天", "明天", "后天", "本周", "下周", "本月", "下月", "小时内", "天内")
+            .forEach { promise -> assertFalse(instruction.contains(promise), "instruction must not promise a time: $promise") }
+        // names of adjacent rules are allowed (names only, never bodies)
+        assertTrue(instruction.contains("Salary band"))
+        assertTrue(instruction.contains("Unrelated fact"))
     }
 
     @Test
