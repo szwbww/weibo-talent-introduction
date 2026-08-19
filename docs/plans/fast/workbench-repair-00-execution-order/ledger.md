@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-19T14:28:51Z
-- Current child: 01-tab-focus-selector
+- Current child: 03a-per-request-evidence-version
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -27,7 +27,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---:|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01-tab-focus-selector | docs/plans/2026-08-19/workbench-repair-01-tab-focus-selector.md | commit:b830ec208e9fe51bd693436f92158f1fde76622b | none | 1 | LIGHT_PASS_WITH_NOTES | b830ec208e9fe51bd693436f92158f1fde76622b | 3d719ad7f8143d185d890dbac0fc6ed5da5e3ce1 | 0 | — | 3d719ad7f8143d185d890dbac0fc6ed5da5e3ce1 | — | verifier Ver01TabFocus; RECORD_ONLY O-1/O-2: plan-internal acceptance counts (instanceId 5 vs 4, tabId( 7 vs 6) contradicted by plan's own verbatim T1 comment text; implementation byte-faithful |
-| 02-claim-paragraphs | docs/plans/2026-08-19/workbench-repair-02-claim-paragraphs.md | commit:b830ec208e9fe51bd693436f92158f1fde76622b | none | 1 | PENDING | — | — | 0 | — | — | — | — |
+| 02-claim-paragraphs | docs/plans/2026-08-19/workbench-repair-02-claim-paragraphs.md | commit:b830ec208e9fe51bd693436f92158f1fde76622b | none | 1 | LIGHT_PASS_WITH_NOTES | 3d719ad7f8143d185d890dbac0fc6ed5da5e3ce1 | 055d313d250053d7cbd917884745571b9580b9b4 | 0 | — | 055d313d250053d7cbd917884745571b9580b9b4 | — | verifier Ver02ClaimParagraphs; RECORD_ONLY O-1: plan line anchors shifted by plan's own mandated I-3 comment (content byte-faithful); O-2: uncommitted ledger state is controller docs |
 | 03a-per-request-evidence-version | docs/plans/2026-08-19/workbench-repair-03a-per-request-evidence-version.md | commit:b830ec208e9fe51bd693436f92158f1fde76622b | none | 1 | PENDING | — | — | 0 | — | — | — | 02 recommended before 03a (both touch assemble); no hard dependency |
 | 03b-source-version-split | docs/plans/2026-08-19/workbench-repair-03b-source-version-split.md | commit:b830ec208e9fe51bd693436f92158f1fde76622b | 03a-per-request-evidence-version | 1 | PENDING | — | — | 0 | — | — | — | hard dependency on 03a per master plan |
 
