@@ -246,6 +246,48 @@ class TrustReplyWorkbenchControllerTest {
         assertEquals("Use this exact answer basis.", locked.operatorInstruction)
     }
 
+    // 03a (I-3): assemble no longer receives a meaningful expectedEvidenceSetVersion —
+    // the whole-draft pre-check is gone, per-item evidence rules. The controller
+    // DTO (unchanged, C-4) still carries the field and must pass any value
+    // through without validating it.
+    @Test
+    fun `assemble forwards arbitrary expected evidence version without validating it`() {
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L)
+        var captured: TrustReplyAssembleRequest? = null
+        val response = TrustReplyAssembleResponse(
+            source = source,
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            rawDraftText = "answer",
+            renderedDraftText = "answer",
+            draftHash = "hash",
+            canonicalFactIds = emptyList(),
+            itemVersions = emptyList()
+        )
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplyAssembleRequest
+            response
+        }.`when`(service).assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+            source = source,
+            expectedSourceVersion = "s1",
+            expectedEvidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"stale-or-anything","lockedItems":[]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+
+        assertEquals("stale-or-anything", requireNotNull(captured).expectedEvidenceSetVersion)
+    }
+
     @Test
     fun `synchronous item adjustment endpoint is unavailable`() {
         mockMvc.perform(

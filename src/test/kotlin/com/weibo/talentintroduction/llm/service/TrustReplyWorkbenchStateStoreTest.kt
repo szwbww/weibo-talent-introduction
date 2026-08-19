@@ -36,13 +36,44 @@ class TrustReplyWorkbenchStateStoreTest {
     }
 
     @Test
-    fun `v2 payload decodes with canonical matrix`() {
+    fun `schema constants move to v4 with v3 previous and v1 legacy only`() {
+        assertEquals("trust-reply-workbench-state-v4", TrustReplyWorkbenchStateStore.SCHEMA_VERSION)
+        assertEquals("trust-reply-workbench-state-v3", TrustReplyWorkbenchStateStore.PREVIOUS_SCHEMA_VERSION)
+        assertEquals("trust-reply-workbench-state-v1", TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION)
+        assertEquals(
+            setOf(
+                TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+                TrustReplyWorkbenchStateStore.PREVIOUS_SCHEMA_VERSION,
+                TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION
+            ),
+            TrustReplyWorkbenchStateStore.ACCEPTED_REQUEST_SCHEMA_VERSIONS
+        )
+        assertTrue(
+            TrustReplyWorkbenchStateStore.ACCEPTED_REQUEST_SCHEMA_VERSIONS.none { it.endsWith("-v2") },
+            "v2 must be removed from the accepted request schema versions"
+        )
+    }
+
+    @Test
+    fun `v2 payload no longer decodes`() {
+        // I-6: v2 was removed from ACCEPTED_REQUEST_SCHEMA_VERSIONS; a stored
+        // v2 row now surfaces as INVALID instead of being migrated.
         val json =
             """{"schemaVersion":"trust-reply-workbench-state-v2","sourceVersion":"s1","evidenceSetVersion":"e1","requestedFactIds":[9],"requestFactSelections":[{"requestKey":"k","factRuleIds":[9]}],"selectedModel":"DEEPSEEK_V4_FLASH","lockedItems":[]}"""
+        assertNull(store.decodePayload(json))
+    }
+
+    @Test
+    fun `v3 payload decodes verbatim without field migration`() {
+        // I-6: the v3 aggregate evidence fingerprint cannot be decomposed into
+        // per-request values; decode keeps the v3 marker so the business layer
+        // judges the whole snapshot STALE instead of comparing per item.
+        val json =
+            """{"schemaVersion":"trust-reply-workbench-state-v3","sourceVersion":"s1","evidenceSetVersion":"e1","requestedFactIds":[9],"requestFactSelections":[{"requestKey":"k","factRuleIds":[9]}],"selectedModel":"DEEPSEEK_V4_FLASH","lockedItems":[]}"""
         val payload = store.decodePayload(json)
 
         assertNotNull(payload)
-        assertEquals(TrustReplyWorkbenchStateStore.SCHEMA_VERSION, payload!!.schemaVersion)
+        assertEquals(TrustReplyWorkbenchStateStore.PREVIOUS_SCHEMA_VERSION, payload!!.schemaVersion)
         assertEquals(listOf(TrustReplyRequestFactSelection("k", listOf(9L))), payload.requestFactSelections)
         assertEquals(listOf(9L), payload.requestedFactIds)
     }
@@ -57,7 +88,7 @@ class TrustReplyWorkbenchStateStoreTest {
     }
 
     @Test
-    fun `encode writes v2 schema with canonical matrix and round trips`() {
+    fun `encode writes v4 schema with canonical matrix and round trips`() {
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = "s1",

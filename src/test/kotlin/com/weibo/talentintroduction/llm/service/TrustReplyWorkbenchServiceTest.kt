@@ -355,7 +355,15 @@ class TrustReplyWorkbenchServiceTest {
         Mockito.`when`(factSelection.selectForWorkbench("What?", null, listOf(9L), true)).thenReturn(selected)
         Mockito.`when`(factSelection.selectForWorkbench("What?", null, null, true)).thenReturn(selected)
         Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(9L)), null, true)).thenReturn(selected)
+        // 03a (C-1): the resolver now reads the base snapshot per request
+        // subset, so every subset (including the empty one) must be stubbed.
         Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(selected.sendQaRuleIds))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        items.forEach { item ->
+            Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(item.factRuleIds))
+                .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        }
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
             .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
     }
 
@@ -409,10 +417,22 @@ class TrustReplyWorkbenchServiceTest {
             AiReplyIntentCatalog.matchIntents(requestText).map { it.key }
         )
 
-    private fun evidenceWithMapping(base: String, vararg entries: Pair<String, List<Long>>): String {
-        val mapping = entries.joinToString("\u0001") { (key, ids) -> "$key\u0000${ids.joinToString(",")}" }
-        return AiReplyDraftService.sha256Hex("$base\u0000$mapping")
-    }
+    // 03a (T1): mirrors TrustReplyWorkbenchService.requestEvidenceVersion —
+    // the per-request identity binds key + ordered ids + subset base snapshot.
+    private fun perRequestEvidence(base: String, requestKey: String, factRuleIds: List<Long>): String =
+        AiReplyDraftService.sha256Hex(listOf(requestKey, factRuleIds.joinToString(","), base).joinToString(" "))
+
+    // 03a (T1): mirrors TrustReplyWorkbenchService.aggregateEvidenceVersion —
+    // sha256 of the index-ordered per-request values concatenated.
+    private fun aggregateEvidence(perRequestByIndex: List<Pair<Int, String>>): String =
+        AiReplyDraftService.sha256Hex(perRequestByIndex.sortedBy { it.first }.joinToString("") { it.second })
+
+    // Whole-draft aggregate for the given entries (indices assigned by entry
+    // order, matching the canonical matrix ordering used by the tests).
+    private fun evidenceWithMapping(base: String, vararg entries: Pair<String, List<Long>>): String =
+        aggregateEvidence(
+            entries.mapIndexed { index, (key, ids) -> (index + 1) to perRequestEvidence(base, key, ids) }
+        )
 
     private fun canonicalMatrix(version: String): List<TrustReplyRequestFactSelection> =
         listOf(TrustReplyRequestFactSelection(canonicalKey(version), listOf(9L)))
@@ -447,7 +467,7 @@ class TrustReplyWorkbenchServiceTest {
             canonicalKey(version) to listOf(9L),
             canonicalKey(version, 2, "When?") to listOf(10L)
         )
-        val subset = lockedAnswer(version, currentEvidence, 2, "When?", answerText = "later answer", ruleId = 10L)
+        val subset = lockedAnswer(version, perRequestEvidence("evidence-v1", canonicalKey(version, 2, "When?"), listOf(10L)), 2, "When?", answerText = "later answer", ruleId = 10L)
 
         Mockito.`when`(stateStore.encodePayload(Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
             schemaVersion = "",
@@ -558,7 +578,7 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val forged = lockedAnswer(version, currentEvidence, 1, "What?").copy(requestKey = "forged")
+        val forged = lockedAnswer(version, perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)), 1, "What?").copy(requestKey = "forged")
 
         assertThrows(TrustReplyWorkbenchException::class.java) {
             service.saveState(TrustReplySaveStateRequest(
@@ -577,7 +597,7 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val tampered = lockedAnswer(version, currentEvidence, 1, "What?").copy(versionId = "not-the-canonical-id")
+        val tampered = lockedAnswer(version, perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)), 1, "What?").copy(versionId = "not-the-canonical-id")
 
         val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
             service.saveState(TrustReplySaveStateRequest(
@@ -623,7 +643,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         Mockito.`when`(
             claimValidator.validateGroundedCandidate(Mockito.any(GroundedCandidateInput::class.java) ?: GroundedCandidateInput(
                 validatedSections = emptyList(),
@@ -701,7 +722,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
 
         Mockito.`when`(stateStore.encodePayload(Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
             schemaVersion = "",
@@ -742,7 +764,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = version,
@@ -767,30 +790,40 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
-    fun `bootstrap marks stale when source or evidence version drifted`() {
+    fun `bootstrap marks stale only on source drift not on aggregate evidence drift`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
+        val key = canonicalKey(version)
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = version,
-            evidenceSetVersion = "old-evidence",
+            evidenceSetVersion = "old-aggregate",
             requestedFactIds = listOf(9L),
+            requestFactSelections = canonicalMatrix(version),
             selectedModel = "DEEPSEEK_V4_FLASH",
-            lockedItems = emptyList()
+            lockedItems = listOf(locked)
         )
         Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
             TrustReplyWorkbenchStateStore.TrustReplyStoredState(2L, LocalDateTime.now().plusDays(1), "{}")
         )
         Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
 
+        // I-4: the saved aggregate fingerprint no longer gates the restore;
+        // the per-request item evidence is what matters.
+        val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("RESTORED", restored.savedState?.status)
+        assertEquals(2L, restored.savedState?.stateVersion)
+        assertEquals(listOf(locked.requestKey), restored.savedState?.lockedItems?.map { it.requestKey })
+
+        // Source drift keeps the whole-draft STALE (must-NOT-change 6).
+        val drifted = payload.copy(sourceVersion = "old-source")
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(drifted)
         val stale = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
         assertEquals("STALE", stale.savedState?.status)
         assertEquals(2L, stale.savedState?.stateVersion)
         assert(stale.savedState?.lockedItems?.isEmpty() == true)
-
-        val drifted = payload.copy(sourceVersion = "old-source")
-        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(drifted)
-        assertEquals("STALE", service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L))).savedState?.status)
     }
 
     @Test
@@ -853,7 +886,7 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val tampered = lockedAnswer(version, currentEvidence, 1, "What?").copy(versionId = "forged")
+        val tampered = lockedAnswer(version, perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)), 1, "What?").copy(versionId = "forged")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = version,
@@ -878,7 +911,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = version,
@@ -1201,6 +1235,8 @@ class TrustReplyWorkbenchServiceTest {
             .thenReturn(selectionB)
         Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
             .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
         val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
         val matrixA = listOf(TrustReplyRequestFactSelection(keyA, listOf(9L)), TrustReplyRequestFactSelection(keyB, emptyList()))
         val matrixB = listOf(TrustReplyRequestFactSelection(keyA, emptyList()), TrustReplyRequestFactSelection(keyB, listOf(9L)))
@@ -1222,6 +1258,7 @@ class TrustReplyWorkbenchServiceTest {
         val version = sourceVersion()
         val key = canonicalKey(version)
         val currentEvidence = evidenceWithMapping("evidence-v1", key to listOf(9L))
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
         val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
         val matrix = listOf(TrustReplyRequestFactSelection(key, listOf(9L)))
 
@@ -1270,7 +1307,7 @@ class TrustReplyWorkbenchServiceTest {
             source = source,
             expectedSourceVersion = version,
             operation = "ADJUST_ITEM",
-            expectedEvidenceSetVersion = currentEvidence,
+            expectedEvidenceSetVersion = perRequest,
             requestKey = key,
             handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
             requestFactSelections = matrix
@@ -1344,10 +1381,11 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
-    fun `bootstrap restores v1 payload after flat normalization`() {
+    fun `bootstrap marks v1 saved locks stale under per request semantics`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        // A v1 locked item carries the legacy aggregate fingerprint.
         val locked = lockedAnswer(version, currentEvidence, 1, "What?")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION,
@@ -1362,14 +1400,93 @@ class TrustReplyWorkbenchServiceTest {
         )
         Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
 
+        // I-6: the aggregate fingerprint can never equal the fresh per-request
+        // value, so the lock is dropped and the all-dropped snapshot is STALE.
         val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
 
-        assertEquals("RESTORED", restored.savedState?.status)
+        assertEquals("STALE", restored.savedState?.status)
+        assert(restored.savedState?.lockedItems?.isEmpty() == true)
         assertEquals(canonicalMatrix(version), restored.requestFactSelections)
     }
 
     @Test
-    fun `bootstrap marks stale when stored v2 matrix drifts from current`() {
+    fun `bootstrap partial restore keeps matching items and drops stale per request evidence`() {
+        val exact = mail(id = 11L, body = "What?\nWho?\nHow?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val threeItems = listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "Who?", listOf(10L), RequestGroundingStatus.GROUNDED),
+            item(3, "How?", listOf(11L), RequestGroundingStatus.GROUNDED)
+        )
+        Mockito.`when`(factSelection.selectForWorkbench(
+            "What?\nWho?\nHow?",
+            listOf(listOf(9L), listOf(10L), listOf(11L)),
+            null,
+            true
+        )).thenReturn(selection(*threeItems.toTypedArray()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(Mockito.anyList<Long>()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "Who?")
+        val key3 = canonicalKey(version, 3, "How?")
+        val matrix = listOf(
+            TrustReplyRequestFactSelection(key1, listOf(9L)),
+            TrustReplyRequestFactSelection(key2, listOf(10L)),
+            TrustReplyRequestFactSelection(key3, listOf(11L))
+        )
+        val aggregate = evidenceWithMapping(
+            "evidence-v1",
+            key1 to listOf(9L),
+            key2 to listOf(10L),
+            key3 to listOf(11L)
+        )
+        val locked1 = lockedAnswer(version, perRequestEvidence("evidence-v1", key1, listOf(9L)), 1, "What?", ruleId = 9L)
+        val locked2 = lockedAnswer(version, perRequestEvidence("evidence-v1", key2, listOf(10L)), 2, "Who?", answerText = "who answer", ruleId = 10L)
+        val locked3 = lockedAnswer(version, perRequestEvidence("evidence-v1", key3, listOf(11L)), 3, "How?", answerText = "how answer", ruleId = 11L)
+        val staleLocked2 = locked2.copy(evidenceSetVersion = "old-per-request")
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = aggregate,
+            requestedFactIds = listOf(9L, 10L, 11L),
+            requestFactSelections = matrix,
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(locked1, staleLocked2, locked3)
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(5L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
+
+        // I-4: only the drifted item is dropped; the two matching locks survive.
+        val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+
+        assertEquals("PARTIALLY_RESTORED", restored.savedState?.status)
+        assertEquals(1, restored.savedState?.droppedItemCount)
+        assertEquals(
+            listOf(locked1.requestKey, locked3.requestKey),
+            restored.savedState?.lockedItems?.map { it.requestKey }
+        )
+
+        // I-4: when every locked item drifted the snapshot is whole STALE.
+        val allStale = payload.copy(lockedItems = listOf(
+            staleLocked2.copy(requestKey = locked1.requestKey, versionId = "x1"),
+            staleLocked2,
+            staleLocked2.copy(requestKey = locked3.requestKey, versionId = "x3")
+        ))
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(allStale)
+        val stale = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+
+        assertEquals("STALE", stale.savedState?.status)
+        assertEquals(3, stale.savedState?.droppedItemCount)
+        assert(stale.savedState?.lockedItems?.isEmpty() == true)
+    }
+
+    @Test
+    fun `bootstrap marks stale when stored v4 matrix drifts from current`() {
         val item = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
         stubCanonicalSource(listOf(item))
         val version = sourceVersion()
@@ -1407,6 +1524,7 @@ class TrustReplyWorkbenchServiceTest {
         val boot = service.bootstrap(TrustReplyBootstrapRequest(source, requestedFactIds = listOf(9L)))
         assertEquals(matrix, boot.requestFactSelections)
         val evidenceVersion = boot.evidenceSetVersion
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
 
         val generated = AiReplyItemGenerationResult(
             itemAnswer = AiReplyItemAnswer(
@@ -1446,7 +1564,7 @@ class TrustReplyWorkbenchServiceTest {
         val adjust = service.adjustItem(TrustReplyItemAdjustmentRequest(
             source = source,
             expectedSourceVersion = version,
-            expectedEvidenceSetVersion = evidenceVersion,
+            expectedEvidenceSetVersion = perRequest,
             requestKey = key,
             handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
             requestedFactIds = listOf(9L)
@@ -1606,11 +1724,12 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
-    fun `bootstrap restores v3 state with its saved frame snapshot`() {
+    fun `bootstrap restores v4 state with its saved frame snapshot`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val storedSelection = ReplyFrameSelection(salutationSnippetId = 7L, ackSnippetId = 8L)
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
@@ -1650,7 +1769,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
             sourceVersion = version,
@@ -1686,38 +1806,44 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
-    fun `bootstrap restores v1 and v2 state with default frame compat`() {
+    fun `bootstrap marks v1 and v3 saved state stale with default frame fallback`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
 
+        // v1 keeps its legacy flat-union normalization; its locked item still
+        // carries the aggregate fingerprint, which per-request validation
+        // drops, so the all-dropped snapshot is STALE (I-6).
         val v1Payload = TrustReplySavedStatePayload(
             schemaVersion = TrustReplyWorkbenchStateStore.LEGACY_SCHEMA_VERSION,
             sourceVersion = version,
             evidenceSetVersion = currentEvidence,
             requestedFactIds = listOf(9L),
             selectedModel = "DEEPSEEK_V4_FLASH",
-            lockedItems = listOf(locked)
+            lockedItems = listOf(locked.copy(evidenceSetVersion = currentEvidence))
         )
         Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
             TrustReplyWorkbenchStateStore.TrustReplyStoredState(2L, LocalDateTime.now().plusDays(1), "{}")
         )
         Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(v1Payload)
         val v1Restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
-        assertEquals("RESTORED", v1Restored.savedState?.status)
+        assertEquals("STALE", v1Restored.savedState?.status)
         assertEquals("frame-default", v1Restored.frameSnapshot?.version)
-        assertEquals(listOf(locked.requestKey), v1Restored.savedState?.lockedItems?.map { it.requestKey })
+        assert(v1Restored.savedState?.lockedItems?.isEmpty() == true)
 
-        val v2Payload = v1Payload.copy(
+        // v3 (PREVIOUS_SCHEMA_VERSION) is judged whole STALE without any
+        // per-item comparison (I-6).
+        val v3Payload = v1Payload.copy(
             schemaVersion = TrustReplyWorkbenchStateStore.PREVIOUS_SCHEMA_VERSION,
             requestFactSelections = canonicalMatrix(version)
         )
-        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(v2Payload)
-        val v2Restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
-        assertEquals("RESTORED", v2Restored.savedState?.status)
-        assertEquals("frame-default", v2Restored.frameSnapshot?.version)
-        assertEquals(listOf(locked.requestKey), v2Restored.savedState?.lockedItems?.map { it.requestKey })
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(v3Payload)
+        val v3Restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("STALE", v3Restored.savedState?.status)
+        assertEquals("frame-default", v3Restored.frameSnapshot?.version)
+        assert(v3Restored.savedState?.lockedItems?.isEmpty() == true)
     }
 
     @Test
@@ -1725,7 +1851,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         val selection = ReplyFrameSelection(salutationSnippetId = 7L)
         Mockito.`when`(replySnippetService.resolveSelectableFrame(selection)).thenReturn(resolvedFrame(
             selection = selection,
@@ -1782,7 +1909,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         Mockito.`when`(
             replySnippetService.resolveSelectableFrame(
                 Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()
@@ -1817,7 +1945,8 @@ class TrustReplyWorkbenchServiceTest {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
         val version = sourceVersion()
         val currentEvidence = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
-        val locked = lockedAnswer(version, currentEvidence, 1, "What?")
+        val perRequest = perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L))
+        val locked = lockedAnswer(version, perRequest, 1, "What?")
         Mockito.`when`(
             replySnippetService.resolveSelectableFrame(
                 Mockito.any(ReplyFrameSelection::class.java) ?: ReplyFrameSelection()

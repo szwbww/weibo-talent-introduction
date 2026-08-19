@@ -345,12 +345,17 @@
         }
 
         function hasVersionIdentity(version, requestKey) {
+            // 03a (I-1): a generated version is only acceptable when its
+            // evidence version matches THIS request's per-request value; the
+            // whole-draft aggregate says nothing about a single item.
+            const request = findRequest(requestKey);
             return !!version
                 && version.requestKey === requestKey
                 && typeof version.sourceVersion === "string"
                 && version.sourceVersion === state.sourceVersion
+                && !!request
                 && typeof version.evidenceSetVersion === "string"
-                && version.evidenceSetVersion === state.evidenceSetVersion;
+                && version.evidenceSetVersion === request.evidenceSetVersion;
         }
 
         function isStaleError(error) {
@@ -415,13 +420,22 @@
             invalidateAssembly();
         }
 
-        function requestFromCoverage(coverage) {
+        function requestFromCoverage(coverage, fallbackEvidence) {
             return (coverage || []).map((item, index) => ({
                 requestKey: item.requestKey,
                 requestText: item.requestText || "",
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
+                // 03a (I-1): per-request evidence version from the server
+                // coverage; the authority for this item's version identity.
+                // The aggregate fallback only covers pre-03a servers whose
+                // coverage lacks the per-request field; the current server
+                // always fills it (T3), so the fallback never fires there.
+                evidenceSetVersion: item.evidenceSetVersion || fallbackEvidence || "",
+                // 03a (I-5/S-1): set when this item's facts changed and its
+                // generated answer must be regenerated; renders the stale hint.
+                evidenceStale: false,
                 factPickerOpen: false,
                 availableHandlings: [...(item.allowedHandlings || [])],
                 recommendedHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
@@ -523,7 +537,7 @@
             state.availableModels = data.availableModels?.length ? [...data.availableModels] : [data.defaultModel || "DEEPSEEK_V4_FLASH"];
             state.selectedModel = state.availableModels.includes(data.defaultModel) ? data.defaultModel : state.availableModels[0];
             state.llmEnabled = data.llmEnabled !== false;
-            state.requests = requestFromCoverage(data.requestCoverage);
+            state.requests = requestFromCoverage(data.requestCoverage, data.evidenceSetVersion);
             state.frameOptions = Array.isArray(data.frameOptions) ? data.frameOptions : [];
             state.frameSnapshot = snapshotFrame(data.frameSnapshot);
             // Fail closed when the server canonical matrix disagrees with the
@@ -548,35 +562,45 @@
                 .forEach((request) => { void requestTranslation(request, null); });
         }
 
+        function restoreLockedItem(locked) {
+            const request = findRequest(locked.requestKey);
+            if (!request) return false;
+            const version = lockedToVersion(locked);
+            if (!isVersionSerializable(version, request)) return false;
+            request.versions = [...request.versions, version];
+            request.activeVersionId = version.versionId;
+            request.resolvedVersionId = version.versionId;
+            request.draftHandling = version.handling;
+            request.instruction = version.operatorInstruction || "";
+            // V-3: machine-fill provenance is browser-local only; a
+            // restored saved item is always unmarked.
+            request.autoFilled = false;
+            request.instructionEditedByOperator = false;
+            request.expanded = false;
+            request.error = null;
+            request.evidenceStale = false;
+            return true;
+        }
+
         function applySavedState(savedState) {
             state.savedStateVersion = savedState && Number.isInteger(savedState.stateVersion) ? savedState.stateVersion : 0;
             if (!savedState) {
                 setStatus("", "READY");
                 return;
             }
-            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE") {
+            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE" || savedState.status === "PARTIALLY_RESTORED") {
                 let restoredCount = 0;
                 (Array.isArray(savedState.lockedItems) ? savedState.lockedItems : []).forEach((locked) => {
-                    const request = findRequest(locked.requestKey);
-                    if (!request) return;
-                    const version = lockedToVersion(locked);
-                    if (!isVersionSerializable(version, request)) return;
-                    request.versions = [...request.versions, version];
-                    request.activeVersionId = version.versionId;
-                    request.resolvedVersionId = version.versionId;
-                    request.draftHandling = version.handling;
-                    request.instruction = version.operatorInstruction || "";
-                    // V-3: machine-fill provenance is browser-local only; a
-                    // restored saved item is always unmarked.
-                    request.autoFilled = false;
-                    request.instructionEditedByOperator = false;
-                    request.expanded = false;
-                    request.error = null;
-                    restoredCount += 1;
+                    if (restoreLockedItem(locked)) restoredCount += 1;
                 });
                 if (savedState.status === "FRAME_STALE") {
                     setStatus(`FRAME_STALE：框架配置已变化，已保留 ${restoredCount} 项锁定回答，请刷新框架选项`, "FRAME_STALE");
                     state.activePage = "frame";
+                } else if (savedState.status === "PARTIALLY_RESTORED") {
+                    // 03a (I-4): per-request evidence drift dropped the stale
+                    // items only; the kept locks are restored above.
+                    const dropped = Number.isInteger(savedState.droppedItemCount) ? savedState.droppedItemCount : 0;
+                    setStatus(`PARTIALLY_RESTORED：恢复了 ${restoredCount} 项锁定回答，丢弃 ${dropped} 项（事实已变化）`, "PARTIALLY_RESTORED");
                 } else {
                     setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
                 }
@@ -607,11 +631,19 @@
             };
         }
 
-        async function bootstrap() {
+        // 03a (I-5): when preserveVersions is true the per-request version
+        // state is carried across the bootstrap so only items whose
+        // per-request evidence version drifted are reset; the full-screen
+        // loading skeleton is skipped so the fact change never looks like a
+        // fresh workbench load.
+        async function bootstrap({ preserveVersions = false } = {}) {
             const seq = ++state.bootSeq;
             if (state.destroyed) return;
-            resetVersions();
-            renderShell("正在加载工作台…");
+            const preserved = preserveVersions ? captureVersionState() : null;
+            if (!preserveVersions) {
+                resetVersions();
+                renderShell("正在加载工作台…");
+            }
             try {
                 const data = await requestJson("/api/trust-reply/workbench/bootstrap", {
                     source,
@@ -619,6 +651,7 @@
                     frameSnapshot: state.frameSnapshot
                 });
                 applyBootstrap(data, seq);
+                if (preserveVersions) reconcilePreservedVersions(preserved, seq);
             } catch (error) {
                 if (!isLive(seq) || isAbort(error)) return;
                 state.generation.pending = false;
@@ -627,11 +660,77 @@
             }
         }
 
+        // 03a (I-5): snapshots the version/decision state of every request so
+        // a preserveVersions bootstrap can re-attach the untouched ones.
+        function captureVersionState() {
+            const snapshot = new Map();
+            state.requests.forEach((request) => {
+                snapshot.set(request.requestKey, {
+                    versions: request.versions,
+                    activeVersionId: request.activeVersionId,
+                    resolvedVersionId: request.resolvedVersionId,
+                    draftHandling: request.draftHandling,
+                    instruction: request.instruction,
+                    autoFilled: request.autoFilled,
+                    instructionEditedByOperator: request.instructionEditedByOperator,
+                    expanded: request.expanded,
+                    factPickerOpen: request.factPickerOpen,
+                    questionTranslation: request.questionTranslation,
+                    answerTranslationsByVersionId: request.answerTranslationsByVersionId,
+                    requestSeq: request.requestSeq,
+                    pending: request.pending,
+                    error: request.error
+                });
+            });
+            return snapshot;
+        }
+
+        // 03a (I-5): after applyBootstrap rebuilt the request objects, keep
+        // every request whose existing version still carries the fresh
+        // per-request evidence version and clear only the drifted items.
+        function reconcilePreservedVersions(snapshot, seq) {
+            if (!isLive(seq)) return;
+            state.requests.forEach((request) => {
+                const old = snapshot && snapshot.get(request.requestKey);
+                if (!old) return;
+                const retained = old.versions.find((version) =>
+                    version.versionId === (old.resolvedVersionId || old.activeVersionId)
+                ) || old.versions[0];
+                if (retained && retained.evidenceSetVersion === request.evidenceSetVersion) {
+                    request.versions = old.versions;
+                    request.activeVersionId = old.activeVersionId;
+                    request.resolvedVersionId = old.resolvedVersionId;
+                    request.draftHandling = old.draftHandling;
+                    request.instruction = old.instruction;
+                    request.autoFilled = old.autoFilled;
+                    request.instructionEditedByOperator = old.instructionEditedByOperator;
+                    request.expanded = old.expanded;
+                    request.factPickerOpen = old.factPickerOpen;
+                    request.questionTranslation = old.questionTranslation;
+                    request.answerTranslationsByVersionId = old.answerTranslationsByVersionId;
+                    request.requestSeq = old.requestSeq;
+                    request.pending = old.pending;
+                    request.error = old.error;
+                } else if (old.versions.length > 0 || old.resolvedVersionId) {
+                    // 03a (I-5): only this item lost its per-request evidence
+                    // identity; the fresh request object already has no
+                    // versions, so just mark it for the stale hint.
+                    request.evidenceStale = true;
+                    request.expanded = request.coverage !== "GROUNDED";
+                }
+            });
+            // applyBootstrap already rendered the fresh (empty) requests; the
+            // preserved versions were attached afterwards, so render again.
+            render();
+        }
+
         function makeGenerationPayload(requestKey, handling, instruction, generationId) {
             return {
                 source,
                 expectedSourceVersion: state.sourceVersion,
-                expectedEvidenceSetVersion: state.evidenceSetVersion,
+                // 03a (I-3): item generation is gated on THIS request's
+                // per-request evidence version, not the whole-draft aggregate.
+                expectedEvidenceSetVersion: findRequest(requestKey)?.evidenceSetVersion || "",
                 requestFactSelections: serializeRequestFactSelections(),
                 requestKey: requestKey || null,
                 handling: handling || null,
@@ -848,6 +947,9 @@
                 }
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
+                // 03a (S-1): a fresh version carries the current per-request
+                // evidence, so the stale hint goes away.
+                request.evidenceStale = false;
                 if (version.handling === "OMIT") {
                     request.resolvedVersionId = version.versionId;
                     request.expanded = false;
@@ -1031,6 +1133,11 @@
                 const response = await requestJson("/api/trust-reply/workbench/assemble", {
                     source,
                     expectedSourceVersion: state.sourceVersion,
+                    // 03a (I-3): the server no longer pre-checks this
+                    // whole-draft value (the :1051 gate is gone); each locked
+                    // item is validated against its own per-request evidence
+                    // version. The field is kept on the wire because the
+                    // controller DTO (unchanged, C-4) requires it.
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
                     requestFactSelections: serializeRequestFactSelections(),
                     frameSnapshot: state.frameSnapshot,
@@ -1332,14 +1439,15 @@
             };
         }
 
-        // I-3: fact add/remove invalidates everything (durable state, versions,
-        // locks, assembly) and re-bootstraps the canonical matrix; frame changes
-        // only clear the assembly and are handled by onFrameChange.
+        // I-3/03a (I-5): fact add/remove invalidates the affected item only
+        // (durable state, its versions, locks, assembly) and re-bootstraps the
+        // canonical matrix with preserveVersions so untouched items keep their
+        // answers; frame changes only clear the assembly (onFrameChange).
         async function changeRequestFacts(request, nextFactRuleIds) {
-            const hasGeneratedState = state.requests.some((item) => item.versions.length > 0 || item.resolvedVersionId)
-                || !!state.assembly
-                || state.savedStateVersion > 0;
-            if (hasGeneratedState && typeof global.confirm === "function" && !global.confirm("事实变化会清空当前版本和整合结果，继续？")) {
+            // 03a (T7): the confirmation only asks when THIS item actually has
+            // a generated or locked answer — other items' answers survive.
+            const targetHasGeneratedState = request.versions.length > 0 || !!request.resolvedVersionId;
+            if (targetHasGeneratedState && typeof global.confirm === "function" && !global.confirm("该摘要的事实变化会清空本条已生成回答，其余摘要保留，继续？")) {
                 render();
                 return;
             }
@@ -1352,8 +1460,7 @@
                 }
             }
             request.factRuleIds = nextFactRuleIds;
-            resetVersions();
-            void bootstrap();
+            void bootstrap({ preserveVersions: true });
         }
 
         async function addFact(requestKey, factId) {
@@ -1618,7 +1725,13 @@
             const pickerSearch = pickerOptions
                 ? `<div class="trust-reply-fact-picker-search"><input type="text" data-role="fact-search" data-request-key="${escapeText(request.requestKey)}" placeholder="搜索事实标题 / 正文…" aria-label="搜索事实"${factActionsDisabled ? " disabled" : ""}></div>`
                 : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
+            // 03a (S-1): only when this item's per-request evidence drifted is
+            // the verbatim stale hint appended after the fact section; no new
+            // class, no inline style, no output when the condition is false.
+            const staleMarkup = request.evidenceStale === true
+                ? `<span class="muted" data-role="item-evidence-stale">事实已变化，本条回答需重新生成</span>`
+                : "";
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
         }
 
         function renderFrameSelects() {

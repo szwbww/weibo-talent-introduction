@@ -196,6 +196,54 @@ class TrustReplyWorkbenchItemFlowTest {
         ))
     }
 
+    // 03a (I-1): the per-request evidence version binds exactly the requestKey,
+    // the ordered factRuleIds and the subset-only rule snapshot. No observation
+    // time and no other request's ids participate; repeated input is
+    // deterministic (K-ai-reply-evidence-version-deterministic).
+    @Test
+    fun `per request evidence version binds key and fact order and is deterministic`() {
+        val baseSnapshotOf = { ids: List<Long> -> "base-${ids.joinToString(".")}" }
+        val first = TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L), baseSnapshotOf)
+
+        // (c) determinism: identical input twice produces the identical version.
+        assertEquals(
+            first,
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L), baseSnapshotOf)
+        )
+        // (a) the same factRuleIds bound to a different requestKey differs.
+        assertNotEquals(
+            first,
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-b", listOf(9L, 10L), baseSnapshotOf)
+        )
+        // (b) swapping the fact order differs (must-NOT-change 5).
+        assertNotEquals(
+            first,
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(10L, 9L), baseSnapshotOf)
+        )
+        // subset identity: the subset snapshot of the ids participates, so
+        // changing the snapshot changes the version.
+        assertNotEquals(
+            first,
+            TrustReplyWorkbenchService.requestEvidenceVersion("key-a", listOf(9L, 10L)) { "base-9.10.changed" }
+        )
+    }
+
+    // 03a (I-3): the aggregate fingerprint is the sha256 of the index-ordered
+    // per-request values concatenated; ordering is by canonical index.
+    @Test
+    fun `aggregate evidence version orders by index and is deterministic`() {
+        val first = TrustReplyWorkbenchService.aggregateEvidenceVersion(listOf(1 to "aaa", 2 to "bbb"))
+        assertEquals(64, first.length)
+        assertEquals(
+            first,
+            TrustReplyWorkbenchService.aggregateEvidenceVersion(listOf(2 to "bbb", 1 to "aaa"))
+        )
+        assertNotEquals(
+            first,
+            TrustReplyWorkbenchService.aggregateEvidenceVersion(listOf(1 to "bbb", 2 to "aaa"))
+        )
+    }
+
     @Test
     fun `adjust item forwards coordinator token reporter and commit guard`() {
         val mailRecords = Mockito.mock(MailRecordRepository::class.java)
@@ -287,7 +335,9 @@ class TrustReplyWorkbenchItemFlowTest {
         val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
         val sourceVersion = service.resolveSource(source).sourceVersion
         val key = TrustReplyWorkbenchService.requestKey(sourceVersion, 1, "What?", AiReplyIntentCatalog.matchIntents("What?").map { it.key })
-        val currentEvidence = AiReplyDraftService.sha256Hex("e1\u0000$key\u00009")
+        // 03a (I-1): item generation is gated on the per-request evidence
+        // version: sha256(key ids-comma base, joined with a space).
+        val currentEvidence = AiReplyDraftService.sha256Hex(listOf(key, "9", "e1").joinToString(" "))
         val token = AiReplyCancellationToken()
         val reporter = Mockito.mock(AiReplyProgressReporter::class.java)
         val generated = AiReplyItemGenerationResult(
@@ -646,7 +696,7 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
-    fun `assemble rejects stale source evidence incomplete duplicate unknown and tampered locks`() {
+    fun `assemble rejects stale source incomplete duplicate unknown and tampered locks`() {
         val fixture = assembleFixture()
         val base = fixture.request
         fun code(request: TrustReplyAssembleRequest): String = assertThrows(TrustReplyWorkbenchException::class.java) {
@@ -654,7 +704,9 @@ class TrustReplyWorkbenchItemFlowTest {
         }.code
 
         assertEquals("TRUST_REPLY_SOURCE_STALE", code(base.copy(expectedSourceVersion = "stale")))
-        assertEquals("TRUST_REPLY_EVIDENCE_STALE", code(base.copy(expectedEvidenceSetVersion = "stale")))
+        // 03a (I-3): the whole-draft expectedEvidenceSetVersion pre-check is
+        // gone; a stale expected value is ignored and per-item evidence rules.
+        assertNotNull(fixture.service.assemble(base.copy(expectedEvidenceSetVersion = "stale")))
         assertEquals("TRUST_REPLY_LOCKED_ITEMS_INCOMPLETE", code(base.copy(lockedItems = emptyList())))
         assertEquals(
             "TRUST_REPLY_LOCKED_ITEMS_INCOMPLETE",
@@ -1105,6 +1157,11 @@ class TrustReplyWorkbenchItemFlowTest {
         Mockito.`when`(factSelection.selectForWorkbench("What?", null, null, true)).thenReturn(selection)
         Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(sendIds))
             .thenReturn(Triple("e2", emptyList(), emptyList()))
+        // 03a (C-1): per-request subsets must be stubbed too.
+        listOf(item1Source, item2Source).distinct().forEach { id ->
+            Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(id)))
+                .thenReturn(Triple("e2", emptyList(), emptyList()))
+        }
         listOf(item1Source, item2Source).distinct().forEach { id ->
             Mockito.`when`(qaRules.findById(id)).thenReturn(Optional.of(QaRule(
                 id = id,
@@ -1147,13 +1204,19 @@ class TrustReplyWorkbenchItemFlowTest {
         val sourceVersion = service.resolveSource(source).sourceVersion
         val key1 = TrustReplyWorkbenchService.requestKey(sourceVersion, 1, "What?", AiReplyIntentCatalog.matchIntents("What?").map { it.key })
         val key2 = TrustReplyWorkbenchService.requestKey(sourceVersion, 2, "Who?", AiReplyIntentCatalog.matchIntents("Who?").map { it.key })
-        val evidenceSetVersion = AiReplyDraftService.sha256Hex(
-            "e2\u0000$key1\u0000$item1Source\u0001$key2\u0000$item2Source"
+        // 03a (I-1): each locked item carries its own per-request evidence
+        // version; the aggregate is the sha256 of the ordered concatenation.
+        val perRequestOf = { key: String, sourceId: Long ->
+            AiReplyDraftService.sha256Hex(listOf(key, sourceId.toString(), "e2").joinToString(" "))
+        }
+        val aggregateEvidence = AiReplyDraftService.sha256Hex(
+            perRequestOf(key1, item1Source) + perRequestOf(key2, item2Source)
         )
         val emptyHash = AiReplyDraftService.sha256Hex("")
         fun locked(item: RequestFactItem, text: String, sourceId: Long): TrustReplyLockedItemRequest {
             val claims = listOf(AiReplyItemClaim("general.answer", text, listOf(sourceId)))
             val requestKey = if (item.index == 1) key1 else key2
+            val perRequest = perRequestOf(requestKey, sourceId)
             val versionId = TrustReplyWorkbenchService.versionId(
                 requestKey = requestKey,
                 handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
@@ -1161,7 +1224,7 @@ class TrustReplyWorkbenchItemFlowTest {
                 claims = claims,
                 model = "DEEPSEEK_V4_FLASH",
                 generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                evidenceSetVersion = evidenceSetVersion,
+                evidenceSetVersion = perRequest,
                 sourceVersion = sourceVersion,
                 operatorInstructionHash = emptyHash
             )
@@ -1173,7 +1236,7 @@ class TrustReplyWorkbenchItemFlowTest {
                 claims = claims,
                 model = "DEEPSEEK_V4_FLASH",
                 generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                evidenceSetVersion = evidenceSetVersion,
+                evidenceSetVersion = perRequest,
                 sourceVersion = sourceVersion,
                 operatorInstructionHash = emptyHash
             )
@@ -1184,7 +1247,7 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         return DuplicateFixture(
             service = service,
-            request = TrustReplyAssembleRequest(source, sourceVersion, evidenceSetVersion, lockedItems),
+            request = TrustReplyAssembleRequest(source, sourceVersion, aggregateEvidence, lockedItems),
             composer = composer,
             previewService = previewService
         )
@@ -1219,6 +1282,319 @@ class TrustReplyWorkbenchItemFlowTest {
         acknowledgement = acknowledgement,
         closing = closing
     )
+
+    // 03a (I-2/I-3): three canonical requests over facts 9/10/11 with three
+    // matrices — base (9/10/11), rebind (none/9+10/11) and item1Changed
+    // (none/10/11). Every evidence subset resolves to the same "evidence-v1"
+    // base so the tests focus on the version identity, not the snapshot.
+    private data class ThreeItemFixture(
+        val service: TrustReplyWorkbenchService,
+        val source: TrustReplySourceRef,
+        val sourceVersion: String,
+        val key1: String,
+        val key2: String,
+        val key3: String,
+        val baseMatrix: List<TrustReplyRequestFactSelection>,
+        val rebindMatrix: List<TrustReplyRequestFactSelection>,
+        val item1ChangedMatrix: List<TrustReplyRequestFactSelection>
+    )
+
+    private fun threeItemFixture(): ThreeItemFixture {
+        val mailRecords = Mockito.mock(MailRecordRepository::class.java)
+        val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        val trainingQa = Mockito.mock(AiTrainingQaService::class.java)
+        val contextService = Mockito.mock(AiReplyContextService::class.java)
+        val factSelection = Mockito.mock(QaFactSelectionService::class.java)
+        val qaRules = Mockito.mock(QaRuleRepository::class.java)
+        val draftService = Mockito.mock(AiReplyDraftService::class.java)
+        val previewService = Mockito.mock(AiReplyDraftPreviewService::class.java)
+        val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
+        val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
+        val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+        val contact = ExpertContact(
+            id = 7L,
+            campaignId = 1L,
+            orcidId = "0000-0000",
+            expertEmail = "test@example.com",
+            expertName = "Test"
+        )
+        val mail = MailRecord(
+            id = 11L,
+            expertContactId = 7L,
+            direction = "INBOUND",
+            mailType = "REPLY",
+            senderAccountCode = null,
+            messageId = "<11@example.com>",
+            inReplyTo = null,
+            subject = "Subject",
+            body = "What?\nWho?\nHow?",
+            cleanedBody = null,
+            matchedQaRuleId = null,
+            sendStatus = null,
+            receivedAt = LocalDateTime.of(2026, 7, 28, 10, 0),
+            sentAt = null
+        )
+        val item1 = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        val item2 = item(2, "Who?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        val item3 = item(3, "How?", listOf(11L), RequestGroundingStatus.GROUNDED)
+        val baseSelection = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L, 10L, 11L),
+            promptRuleIds = listOf(9L, 10L, 11L),
+            requestFacts = listOf(item1, item2, item3),
+            requestCount = 3,
+            groundedRequestCount = 3
+        )
+        val rebindItem1 = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        val rebindItem2 = item(2, "Who?", listOf(9L, 10L), RequestGroundingStatus.GROUNDED)
+        val rebindSelection = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L, 10L, 11L),
+            promptRuleIds = listOf(9L, 10L, 11L),
+            requestFacts = listOf(rebindItem1, rebindItem2, item3),
+            requestCount = 3,
+            groundedRequestCount = 2
+        )
+        val changedItem1 = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        val changedSelection = ResolvedQaRules(
+            sendQaRuleIds = listOf(10L, 11L),
+            promptRuleIds = listOf(10L, 11L),
+            requestFacts = listOf(changedItem1, item2, item3),
+            requestCount = 3,
+            groundedRequestCount = 2
+        )
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(mail))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(mail))
+        Mockito.`when`(trainingQa.buildKnowledgeContext("What?\nWho?\nHow?")).thenReturn("")
+        Mockito.`when`(
+            contextService.build(
+                Mockito.any(ExpertContact::class.java) ?: contact,
+                Mockito.anyList<MailRecord>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyString()
+            )
+        ).thenReturn(AiReplyContext("Name: Test", "history", emptyList(), true))
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWho?\nHow?", null, null, true)).thenReturn(baseSelection)
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWho?\nHow?", listOf(listOf(9L), listOf(10L), listOf(11L)), null, true))
+            .thenReturn(baseSelection)
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWho?\nHow?", listOf(emptyList(), listOf(9L, 10L), listOf(11L)), null, true))
+            .thenReturn(rebindSelection)
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWho?\nHow?", listOf(emptyList(), listOf(10L), listOf(11L)), null, true))
+            .thenReturn(changedSelection)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(Mockito.anyList<Long>()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(qaRules.findById(Mockito.anyLong())).thenReturn(Optional.of(QaRule(
+            id = 9L,
+            categoryId = 1,
+            keywords = "salary",
+            replyBody = "Salary info",
+            answerBody = "Salary info",
+            replySubject = null,
+            enabled = true
+        )))
+        val defaultFrame = defaultResolvedFrame()
+        Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultFrame)
+        Mockito.`when`(composer.composeLockedItems(Mockito.anyList<String>(), Mockito.eq(defaultFrame) ?: defaultFrame))
+            .thenAnswer { invocation ->
+                val answers = invocation.getArgument(0) as List<*>
+                "raw ${answers.joinToString("|")}"
+            }
+        Mockito.`when`(previewService.preview(Mockito.anyString(), Mockito.eq(contact) ?: contact, Mockito.isNull()))
+            .thenAnswer { invocation ->
+                AiReplyDraftPreviewService.PreviewResult(invocation.getArgument(0) as String, emptyList())
+            }
+        val claimValidator = AiReplyHighRiskClaimValidator(qaRules)
+        val stateStore = Mockito.mock(TrustReplyWorkbenchStateStore::class.java)
+        val service = TrustReplyWorkbenchService(
+            mailRecordRepository = mailRecords,
+            inboundMailProcessingRepository = inboundProcessing,
+            expertContactRepository = contacts,
+            aiTrainingQaService = trainingQa,
+            aiReplyContextService = contextService,
+            qaFactSelectionService = factSelection,
+            qaRuleRepository = qaRules,
+            aiReplyDraftService = draftService,
+            aiReplyDraftPreviewService = previewService,
+            aiReplyReviewAuditService = auditService,
+            llmProperties = LlmProperties(enabled = true),
+            aiReplyPointByPointComposer = composer,
+            claimValidator = claimValidator,
+            stateStore = stateStore,
+            replySnippetService = replySnippetService
+        )
+        val source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 11L)
+        val sourceVersion = service.resolveSource(source).sourceVersion
+        val key1 = TrustReplyWorkbenchService.requestKey(sourceVersion, 1, "What?", AiReplyIntentCatalog.matchIntents("What?").map { it.key })
+        val key2 = TrustReplyWorkbenchService.requestKey(sourceVersion, 2, "Who?", AiReplyIntentCatalog.matchIntents("Who?").map { it.key })
+        val key3 = TrustReplyWorkbenchService.requestKey(sourceVersion, 3, "How?", AiReplyIntentCatalog.matchIntents("How?").map { it.key })
+        return ThreeItemFixture(
+            service = service,
+            source = source,
+            sourceVersion = sourceVersion,
+            key1 = key1,
+            key2 = key2,
+            key3 = key3,
+            baseMatrix = listOf(
+                TrustReplyRequestFactSelection(key1, listOf(9L)),
+                TrustReplyRequestFactSelection(key2, listOf(10L)),
+                TrustReplyRequestFactSelection(key3, listOf(11L))
+            ),
+            rebindMatrix = listOf(
+                TrustReplyRequestFactSelection(key1, emptyList()),
+                TrustReplyRequestFactSelection(key2, listOf(9L, 10L)),
+                TrustReplyRequestFactSelection(key3, listOf(11L))
+            ),
+            item1ChangedMatrix = listOf(
+                TrustReplyRequestFactSelection(key1, emptyList()),
+                TrustReplyRequestFactSelection(key2, listOf(10L)),
+                TrustReplyRequestFactSelection(key3, listOf(11L))
+            )
+        )
+    }
+
+    private fun perRequest(fixture: ThreeItemFixture, key: String, ids: List<Long>): String =
+        TrustReplyWorkbenchService.requestEvidenceVersion(key, ids) { "evidence-v1" }
+
+    private fun lockItem(
+        fixture: ThreeItemFixture,
+        key: String,
+        answerText: String,
+        ids: List<Long>,
+        handling: TrustReplyItemHandling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+        generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+        claims: List<AiReplyItemClaim> = emptyList()
+    ): TrustReplyLockedItemRequest {
+        val normalizedAnswer = if (handling == TrustReplyItemHandling.OMIT) "" else answerText.trim()
+        // canonical claims for grounded locks: general.answer over the ids
+        val normalizedClaims = if (handling == TrustReplyItemHandling.OMIT) {
+            emptyList()
+        } else if (claims.isNotEmpty()) {
+            claims
+        } else {
+            listOf(AiReplyItemClaim("general.answer", normalizedAnswer, ids))
+        }
+        val evidence = perRequest(fixture, key, ids)
+        val versionId = TrustReplyWorkbenchService.versionId(
+            requestKey = key,
+            handling = handling,
+            answerText = normalizedAnswer,
+            claims = normalizedClaims,
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = generationKind,
+            evidenceSetVersion = evidence,
+            sourceVersion = fixture.sourceVersion,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex("")
+        )
+        return TrustReplyLockedItemRequest(
+            requestKey = key,
+            versionId = versionId,
+            handling = handling,
+            answerText = normalizedAnswer,
+            claims = normalizedClaims,
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = generationKind,
+            evidenceSetVersion = evidence,
+            sourceVersion = fixture.sourceVersion,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex("")
+        )
+    }
+
+    // 03a (I-2): moving fact F from request 1 to request 2 changes exactly the
+    // per-request evidence versions of requests 1 and 2; request 3 stays
+    // identical. A request-2 lock carrying the old version is rejected by
+    // validateLockedItem with TRUST_REPLY_EVIDENCE_STALE at assembly time.
+    @Test
+    fun `rebinding a fact invalidates exactly both ends and leaves the third request untouched`() {
+        val fixture = threeItemFixture()
+        val source = fixture.source
+
+        val baseBoot = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(source, requestFactSelections = fixture.baseMatrix)
+        )
+        val rebindBoot = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(source, requestFactSelections = fixture.rebindMatrix)
+        )
+        val coverageByKey = { boot: TrustReplyBootstrapResponse, key: String ->
+            boot.requestCoverage.single { it.requestKey == key }.evidenceSetVersion
+        }
+        assertNotEquals(
+            coverageByKey(baseBoot, fixture.key1),
+            coverageByKey(rebindBoot, fixture.key1),
+            "request 1 loses F so its per-request version must change"
+        )
+        assertNotEquals(
+            coverageByKey(baseBoot, fixture.key2),
+            coverageByKey(rebindBoot, fixture.key2),
+            "request 2 gains F with a different key so its per-request version must change"
+        )
+        assertEquals(
+            coverageByKey(baseBoot, fixture.key3),
+            coverageByKey(rebindBoot, fixture.key3),
+            "request 3 is untouched so its per-request version must not change"
+        )
+
+        // A rebind-matrix lock set where request 2 still carries the OLD
+        // per-request version must be rejected at assembly time.
+        val omitLock1 = lockItem(
+            fixture, fixture.key1, "", emptyList(),
+            handling = TrustReplyItemHandling.OMIT,
+            generationKind = TrustReplyItemGenerationKind.OMITTED
+        )
+        val staleLock2 = lockItem(fixture, fixture.key2, "old answer", listOf(9L, 10L))
+            .copy(evidenceSetVersion = perRequest(fixture, fixture.key2, listOf(10L)))
+        val freshLock3 = lockItem(fixture, fixture.key3, "how answer", listOf(11L))
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(TrustReplyAssembleRequest(
+                source = source,
+                expectedSourceVersion = fixture.sourceVersion,
+                expectedEvidenceSetVersion = "ignored",
+                lockedItems = listOf(omitLock1, staleLock2, freshLock3),
+                requestFactSelections = fixture.rebindMatrix
+            ))
+        }
+        assertEquals("TRUST_REPLY_EVIDENCE_STALE", error.code)
+    }
+
+    // 03a (I-3): after request 1's facts change, requests 2 and 3 keep their
+    // unchanged per-request versions and still assemble successfully together
+    // with a freshly generated request 1 lock.
+    @Test
+    fun `changing one request facts does not block assembling the unchanged requests`() {
+        val fixture = threeItemFixture()
+        val source = fixture.source
+
+        val changedBoot = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(source, requestFactSelections = fixture.item1ChangedMatrix)
+        )
+        val coverageByKey = { boot: TrustReplyBootstrapResponse, key: String ->
+            boot.requestCoverage.single { it.requestKey == key }.evidenceSetVersion
+        }
+        val baseBoot = fixture.service.bootstrap(
+            TrustReplyBootstrapRequest(source, requestFactSelections = fixture.baseMatrix)
+        )
+        // requests 2 and 3 are untouched by request 1's fact change
+        assertEquals(coverageByKey(baseBoot, fixture.key2), coverageByKey(changedBoot, fixture.key2))
+        assertEquals(coverageByKey(baseBoot, fixture.key3), coverageByKey(changedBoot, fixture.key3))
+
+        val freshLock1 = lockItem(
+            fixture, fixture.key1, "", emptyList(),
+            handling = TrustReplyItemHandling.OMIT,
+            generationKind = TrustReplyItemGenerationKind.OMITTED
+        )
+        val freshLock2 = lockItem(fixture, fixture.key2, "who answer", listOf(10L))
+        val freshLock3 = lockItem(fixture, fixture.key3, "how answer", listOf(11L))
+        val assembled = fixture.service.assemble(TrustReplyAssembleRequest(
+            source = source,
+            expectedSourceVersion = fixture.sourceVersion,
+            expectedEvidenceSetVersion = "ignored",
+            lockedItems = listOf(freshLock1, freshLock2, freshLock3),
+            requestFactSelections = fixture.item1ChangedMatrix
+        ))
+
+        assertEquals(listOf(freshLock2.versionId, freshLock3.versionId), assembled.itemVersions.map { it.versionId }.takeLast(2))
+        assertTrue(assembled.rawDraftText.isNotBlank())
+    }
 
     private fun operatorDirectedHandling(): TrustReplyItemHandling {
         val handling = TrustReplyItemHandling.values().firstOrNull {
@@ -1369,7 +1745,12 @@ class TrustReplyWorkbenchItemFlowTest {
         val requestKey = TrustReplyWorkbenchService.requestKey(
             sourceVersion, 1, "What?", item.intents.map { it.intentKey }
         )
-        val evidenceSetVersion = AiReplyDraftService.sha256Hex("$baseEvidenceSetVersion\u0000$requestKey\u00009")
+        // 03a (I-1): the locked item carries the per-request evidence version;
+        // the assemble request's expectedEvidenceSetVersion is now ignored by
+        // the server, so the fixture reuses the same per-request value.
+        val evidenceSetVersion = AiReplyDraftService.sha256Hex(
+            listOf(requestKey, "9", baseEvidenceSetVersion).joinToString(" ")
+        )
         val versionId = TrustReplyWorkbenchService.versionId(
             requestKey,
             handling,
