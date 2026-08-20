@@ -359,7 +359,15 @@ data class RequestFactItem(
     // P1 (I-3): 影子字段——运营显式绑定但被 buildRequestFact 过滤掉的事实 id，
     // 按运营原始顺序。仅供 UI 提示，绝不进入 status、factRuleIds、sendQaRuleIds、
     // promptRuleIds、任何 evidence/version 哈希或任何对外文本。
-    val droppedBindingRuleIds: List<Long> = emptyList()
+    val droppedBindingRuleIds: List<Long> = emptyList(),
+    // P2a (I-1/I-2): 运营绑定的事实 id，按运营给出的顺序。与 factRuleIds 的区别：
+    //   factRuleIds  = 系统认可、可用作回答依据的证据（关键词命中 + 落在 SUPPORTED 意图证据集）
+    //   boundRuleIds = 运营主张"这条事实属于这个问题"，不代表系统认可它是依据
+    // 自动匹配 / legacy 路径下两者相等；只有显式矩阵路径可能分叉。
+    // 注意：本字段与 unrecognizedAsks / droppedBindingRuleIds 这类影子字段【不同】——
+    // 它【会】进入 canonicalMatrix 与 requestEvidenceVersion 的身份哈希（I-2），
+    // 默认值仅为源码兼容存在，生产路径一律在调用点显式赋值（I-1）。
+    val boundRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(

@@ -666,3 +666,55 @@ describe("P1 dropped binding hints", () => {
         });
     });
 });
+
+// ---- P2a: bound facts survive as chips + hint wording is bound-not-basis ----
+
+describe("P2a bound vs evidence split", () => {
+    it("bound facts render as chips", async () => {
+        // P2a (S-2): coverage.factRuleIds 现由服务端产自 boundRuleIds（绑定集合），
+        // 前端 chips 走既有 request.factRuleIds 路径自动显示绑定的（含被丢弃的）事实。
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => bootstrapPayload("TRAINING_MAIL", 101, [10, 20], [10, 20])
+            });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.deepStrictEqual(renderedFactIds(host), ["10", "20"]);
+    });
+
+    it("hint wording says bound-but-not-evidence", async () => {
+        // P2a (I-6/S-1): 提示文案逐字含「已绑定但不会作为本条回答的依据」，
+        // 不再出现 P1 的「未被采纳」。
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => bootstrapPayload("TRAINING_MAIL", 101, [], [10])
+            });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        const droppedSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
+        assert.ok(droppedSpan, "dropped hint must render under the fact section");
+        assert.ok(droppedSpan[1].includes("已绑定但不会作为本条回答的依据"), "hint must say bound-but-not-basis");
+        assert.ok(!droppedSpan[1].includes("未被采纳"), "the P1 rejected wording must be gone");
+        assert.ok(!/style=/.test(droppedSpan[0]));
+    });
+});

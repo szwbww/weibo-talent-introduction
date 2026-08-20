@@ -1917,7 +1917,7 @@
             // hints; no new class, no inline style, no output when the
             // condition is false.
             const droppedMarkup = (Array.isArray(request.droppedFactRuleIds) && request.droppedFactRuleIds.length > 0)
-                ? `<span class="muted" data-role="item-facts-dropped">以下事实未被采纳：${escapeText(droppedFactLabels(request))}。该问题未识别出可支持的意图，事实无处挂载，本条回答不会引用它们。</span>`
+                ? `<span class="muted" data-role="item-facts-dropped">以下事实已绑定但不会作为本条回答的依据：${escapeText(droppedFactLabels(request))}。该问题未识别出可支持的意图，绑定会保留，但 AI 不会引用它们的正文。</span>`
                 : "";
             const factActionStatus = factActionReason
                 ? `<span class="trust-reply-fact-action-status" data-role="fact-action-status">${escapeText(factActionReason)}</span>`

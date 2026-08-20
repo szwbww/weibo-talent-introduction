@@ -451,6 +451,9 @@ class TrustReplyWorkbenchServiceTest {
         requestText = requestText,
         factRuleIds = facts,
         status = status,
+        // P2a (I-1): 夹具镜像生产赋值——auto/legacy/全采纳矩阵路径下
+        // boundRuleIds == factRuleIds；需要分叉的用例用 .copy(boundRuleIds = ...) 覆写。
+        boundRuleIds = facts,
         intents = listOf(
             RequestIntentCoverage(
                 intentKey = "general.answer",
@@ -1178,6 +1181,107 @@ class TrustReplyWorkbenchServiceTest {
         val unboundVersion = unboundBootstrap.requestCoverage.single().evidenceSetVersion
         assertFalse(droppedVersion.isBlank())
         assertEquals(unboundVersion, droppedVersion)
+    }
+
+    @Test
+    fun `canonical matrix and coverage both project boundRuleIds`() {
+        // P2a (I-2/I-3): canonicalMatrix 与 toCoverage 同一次提交同时切到
+        // boundRuleIds，且逐字相等（前端 applyBootstrap 守卫的比较对象）。
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val boundItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            .copy(boundRuleIds = listOf(10L, 20L), droppedBindingRuleIds = listOf(10L, 20L))
+        val facts = ResolvedQaRules(
+            sendQaRuleIds = emptyList(),
+            promptRuleIds = emptyList(),
+            requestFacts = listOf(boundItem),
+            requestCount = 1,
+            groundedRequestCount = 0
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(10L, 20L)), null, true)).thenReturn(facts)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L, 20L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val bootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L)))
+        ))
+
+        assertEquals(listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L))), bootstrap.requestFactSelections)
+        assertEquals(listOf(10L, 20L), bootstrap.requestCoverage.single().factRuleIds)
+    }
+
+    @Test
+    fun `evidence version is unchanged when every binding is accepted`() {
+        // P2a (I-5): 绑定全部被采纳时（boundRuleIds == factRuleIds），显式矩阵
+        // 路径与自动匹配路径同集合产生的 per-request evidenceSetVersion 完全相同。
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val accepted = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L),
+            promptRuleIds = listOf(9L),
+            requestFacts = listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)),
+            requestCount = 1,
+            groundedRequestCount = 1
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(9L)), null, true)).thenReturn(accepted)
+        Mockito.`when`(factSelection.selectForWorkbench("What?", null, null, true)).thenReturn(accepted)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val matrixBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(9L)))
+        ))
+        val autoBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        ))
+
+        val matrixVersion = matrixBootstrap.requestCoverage.single().evidenceSetVersion
+        val autoVersion = autoBootstrap.requestCoverage.single().evidenceSetVersion
+        assertFalse(matrixVersion.isBlank())
+        assertEquals(autoVersion, matrixVersion)
+        assertEquals(perRequestEvidence("evidence-v1", key, listOf(9L)), matrixVersion)
+    }
+
+    @Test
+    fun `suggested instruction never names a bound-but-unsupported fact`() {
+        // P2a (must-NOT-change 4 / B-5): toCoverage 内 adjacentIds 与
+        // filterKeys 仍读 factRuleIds——运营绑了但没成为证据的事实不得出现在
+        // 机器代填的回答说明里。
+        stubCanonicalSource(listOf(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "How?", emptyList(), RequestGroundingStatus.UNSUPPORTED).copy(boundRuleIds = listOf(10L))
+        ))
+        Mockito.`when`(qaRules.findAllById(Mockito.anyList())).thenAnswer { invocation ->
+            val ids = invocation.getArgument(0) as List<*>
+            listOf(
+                QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "已认可事实"),
+                QaRule(id = 10L, categoryId = 3L, keywords = "bound", replySubject = null, replyBody = "", answerBody = "bound body", displayName = "绑定未认可事实")
+            ).filter { it.id in ids }
+        }
+        // P2a (I-2): item2 的 boundRuleIds=[10] 进入 per-request 版本身份，
+        // 需要对应的 base snapshot stub。
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val instruction = requireNotNull(service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+        )).requestCoverage.single { it.status == "UNSUPPORTED" }.suggestedInstruction)
+
+        assertTrue(instruction.isNotBlank())
+        assertTrue(instruction.length <= 500)
+        assertFalse(instruction.contains("绑定未认可事实"), "a bound-but-unsupported fact must never be suggested as basis")
+        assertTrue(instruction.contains("已认可事实"), "evidence-backed adjacent names must remain")
+        assertTrue(instruction.contains("先明说没有确认答案"))
     }
 
     @Test

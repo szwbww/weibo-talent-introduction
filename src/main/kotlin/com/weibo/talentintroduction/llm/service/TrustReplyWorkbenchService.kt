@@ -1711,7 +1711,7 @@ class TrustReplyWorkbenchService(
             } else {
                 null
             }
-            item.index to (key to requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence))
+            item.index to (key to requestEvidenceVersion(key, item.boundRuleIds, baseSnapshotOf, researchEvidence))
         }
         return ResolvedCanonicalSelection(
             selection = selection,
@@ -1763,7 +1763,7 @@ class TrustReplyWorkbenchService(
         selection.requestFacts.sortedBy { it.index }.map { item ->
             TrustReplyRequestFactSelection(
                 requestKey = requestKey(sourceVersion, item),
-                factRuleIds = item.factRuleIds
+                factRuleIds = item.boundRuleIds
             )
         }
 
@@ -1841,7 +1841,7 @@ class TrustReplyWorkbenchService(
                     claims = answer.claims,
                     model = selectedModel,
                     generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                    evidenceSetVersion = requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence),
+                    evidenceSetVersion = requestEvidenceVersion(key, item.boundRuleIds, baseSnapshotOf, researchEvidence),
                     sourceVersion = sourceVersion,
                     contextVersion = contextVersion
                 )
@@ -1926,7 +1926,7 @@ class TrustReplyWorkbenchService(
                 index = item.index,
                 requestText = item.requestText,
                 status = item.status.name,
-                factRuleIds = item.factRuleIds,
+                factRuleIds = item.boundRuleIds,
                 intents = item.intents.map { intent ->
                     TrustReplyIntentCoverage(
                         intentKey = intent.intentKey,

@@ -784,6 +784,96 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
+    fun `matrix selection keeps operator bindings verbatim in boundRuleIds`() {
+        // P2a (I-1): UNSUPPORTED 摘要绑 2 条 → boundRuleIds == explicitIds（含运营顺序），
+        // factRuleIds 仍为空（系统不认可为证据），status 仍为 UNSUPPORTED（must-NOT-change 1）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Can you guarantee 10 million RMB?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(emptyList<Long>(), item.factRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
+        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `auto selection sets boundRuleIds equal to factRuleIds`() {
+        // P2a (I-1): 自动匹配路径 boundRuleIds == factRuleIds（逐字相等）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(salaryRule, visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        resolved.requestFacts.forEach { item ->
+            assertEquals(item.factRuleIds, item.boundRuleIds)
+        }
+        assertEquals(listOf(1L), resolved.requestFacts[0].boundRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].boundRuleIds)
+    }
+
+    @Test
+    fun `send and prompt rule ids still come from factRuleIds`() {
+        // P2a (must-NOT-change 3): 绑定被丢弃时，sendQaRuleIds / promptRuleIds 仍只含
+        // 系统认可的 evidence（factRuleIds），绝不包含被丢弃的绑定 id。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
+        assertEquals(listOf(1L), resolved.promptRuleIds)
+        assertFalse(2L in resolved.sendQaRuleIds)
+        assertFalse(2L in resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `dropped bindings are reported while still bound`() {
+        // P2a (I-6): droppedBindingRuleIds 非空（仍 = explicitIds - factRuleIds），
+        // 且 boundRuleIds 仍含这些 id——绑定保留、只是不作为证据。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(2L), item.droppedBindingRuleIds)
+        assertTrue(item.boundRuleIds.containsAll(item.droppedBindingRuleIds))
+    }
+
+    @Test
     fun `matrix size mismatch still throws`() {
         // must-NOT-change 1: 矩阵条数与摘要条数不等仍然硬拦。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")

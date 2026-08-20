@@ -744,6 +744,19 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
+    fun `locked items survive the bound-vs-evidence split`() {
+        // P2a (I-5): 自动匹配路径下 boundRuleIds == factRuleIds（I-1），切换后
+        // requestEvidenceVersion 的输入逐字不变 → 既有锁定项 versionId 原样通过。
+        val fixture = assembleFixture()
+        val boot = fixture.service.bootstrap(TrustReplyBootstrapRequest(fixture.request.source))
+        val currentEvidence = boot.requestCoverage.single().evidenceSetVersion
+        assertEquals(fixture.validLockedItem.evidenceSetVersion, currentEvidence)
+
+        val response = fixture.service.assemble(fixture.request)
+        assertEquals(fixture.validLockedItem.versionId, response.itemVersions.single().versionId)
+    }
+
+    @Test
     fun `assemble accepts matrix input and returns the canonical matrix`() {
         val fixture = assembleFixture()
         Mockito.`when`(fixture.factSelection.selectForWorkbench("What?", listOf(listOf(9L)), null, true))
@@ -1176,6 +1189,9 @@ class TrustReplyWorkbenchItemFlowTest {
         requestText = requestText,
         factRuleIds = facts,
         status = status,
+        // P2a (I-1): 夹具镜像生产赋值——auto/legacy/全采纳矩阵路径下
+        // boundRuleIds == factRuleIds；需要分叉的用例用 .copy(boundRuleIds = ...) 覆写。
+        boundRuleIds = facts,
         intents = listOf(
             RequestIntentCoverage(
                 intentKey = "general.answer",
@@ -1979,6 +1995,7 @@ class TrustReplyWorkbenchItemFlowTest {
             factRuleIds = listOf(9L),
             status = RequestGroundingStatus.GROUNDED,
             requiresResearchContext = true,
+            boundRuleIds = listOf(9L),
             intents = researchIntents
         )
         val generalItem = RequestFactItem(
@@ -1987,6 +2004,7 @@ class TrustReplyWorkbenchItemFlowTest {
             factRuleIds = listOf(10L),
             status = RequestGroundingStatus.GROUNDED,
             requiresResearchContext = false,
+            boundRuleIds = listOf(10L),
             intents = generalIntents
         )
         val selection = ResolvedQaRules(

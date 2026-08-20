@@ -196,16 +196,21 @@ class QaFactSelectionService(
                 askEnumeration = enumeration,
                 requestRange = unit.range
             )
-            // P1 (I-1): 服务端两层过滤（buildRequestFact 的关键词匹配与 SUPPORTED
-            // 证据集过滤）可能丢弃运营显式绑定的事实。对 UNSUPPORTED 条目这是必然
-            // 发生的（evidenceSet 恒空），因此这里不能当作非法输入抛错——那会让整个
-            // bootstrap 422、工作台打不开。改为：采纳过滤结果，把被丢弃的 id 记进
-            // 影子字段供 UI 提示（I-2/I-3）。
-            // 注意：条数校验、checkWorkbenchUniqueness、validateExplicitSelection
-            // 仍然硬拦（真正的脏输入必须继续报错）。
+            // P2a (I-1/I-4/I-6): 运营绑的原样进 boundRuleIds；factRuleIds 保持
+            // "系统认可的证据"语义不变。相等性校验回到比对运营输入——由本行的
+            // 赋值保证它恒真，作为防御性断言保留（I-4）。
             val accepted = item.factRuleIds.toSet()
-            val dropped = explicitIds.filter { it !in accepted }
-            if (dropped.isEmpty()) item else item.copy(droppedBindingRuleIds = dropped)
+            val bound = item.copy(
+                boundRuleIds = explicitIds,
+                droppedBindingRuleIds = explicitIds.filter { it !in accepted }
+            )
+            if (bound.boundRuleIds != explicitIds) {
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FACT_SELECTION_INVALID"
+                )
+            }
+            bound
         }
         return workbenchResult(requestFacts, enumeration)
     }
@@ -258,7 +263,8 @@ class QaFactSelectionService(
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
-            item
+            // P2a (I-1): legacy 路径 boundRuleIds 取 factRuleIds（显式赋值）。
+            item.copy(boundRuleIds = item.factRuleIds)
         }
         if (remaining.isNotEmpty()) {
             throw TrustReplyWorkbenchException(
@@ -290,7 +296,8 @@ class QaFactSelectionService(
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
-            item
+            // P2a (I-1): auto 路径 boundRuleIds 取 factRuleIds（显式赋值）。
+            item.copy(boundRuleIds = item.factRuleIds)
         }
         return workbenchResult(requestFacts, enumeration)
     }
