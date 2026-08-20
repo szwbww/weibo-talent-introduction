@@ -2110,6 +2110,43 @@ class TrustReplyWorkbenchServiceTest {
         )
     }
 
+    // P0 (I-4c/I-5): resetState deletes by (source_type, source_id) only and
+    // never takes a version; deleteState keeps its version enforcement.
+    @Test
+    fun `resetState deletes the row by source without a version`() {
+        Mockito.`when`(stateStore.deleteBySource("TRAINING_MAIL", 11L)).thenReturn(1)
+        val response = service.resetState(TrustReplySourceRef(TRAINING_MAIL, 11L))
+        assertEquals("DELETED", response.status)
+        assertEquals(0L, response.stateVersion)
+        Mockito.verify(stateStore).deleteBySource("TRAINING_MAIL", 11L)
+        Mockito.verify(stateStore, Mockito.never()).delete(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong())
+    }
+
+    @Test
+    fun `resetState never resolves the source`() {
+        // 死锁场景下解析来信所需的联系人/画像可能不可用：任何 resolveSource
+        // 尝试都会抛异常，resetState 必须完全不碰解析路径。
+        Mockito.`when`(inboundProcessing.findById(99L)).thenThrow(RuntimeException("contact unavailable"))
+        Mockito.`when`(stateStore.deleteBySource("LIVE_INBOUND", 99L)).thenReturn(1)
+        val response = service.resetState(TrustReplySourceRef(LIVE_INBOUND, 99L))
+        assertEquals("DELETED", response.status)
+        Mockito.verify(stateStore).deleteBySource("LIVE_INBOUND", 99L)
+        Mockito.verify(inboundProcessing, Mockito.never()).findById(Mockito.anyLong())
+    }
+
+    @Test
+    fun `deleteState still enforces the expected version`() {
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        Mockito.`when`(stateStore.delete("TRAINING_MAIL", 11L, 5L)).thenReturn(true)
+        val response = service.deleteState(TrustReplySourceRef(TRAINING_MAIL, 11L), 5L)
+        assertEquals("DELETED", response.status)
+        Mockito.verify(stateStore).delete("TRAINING_MAIL", 11L, 5L)
+        Mockito.verify(stateStore, Mockito.never()).deleteBySource(Mockito.anyString(), Mockito.anyLong())
+    }
+
     private fun contact() = ExpertContact(
         id = 7L,
         campaignId = 1L,

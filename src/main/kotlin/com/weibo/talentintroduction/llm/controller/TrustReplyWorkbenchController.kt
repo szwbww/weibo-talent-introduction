@@ -111,6 +111,10 @@ class TrustReplyWorkbenchController(
     fun deleteState(@RequestBody request: TrustReplyDeleteStateHttpRequest): TrustReplySavedState =
         workbenchService.deleteState(request.source.toDomain(), request.expectedStateVersion)
 
+    @PostMapping("/state/reset")
+    fun resetState(@RequestBody request: TrustReplyResetStateHttpRequest): TrustReplySavedState =
+        workbenchService.resetState(request.source.toDomain())
+
     @ExceptionHandler(TrustReplyWorkbenchException::class)
     fun handleWorkbenchException(ex: TrustReplyWorkbenchException): ResponseEntity<TrustReplyErrorResponse> =
         ResponseEntity.status(ex.status)
@@ -312,6 +316,10 @@ data class TrustReplyAssembleHttpRequest(
 data class TrustReplyDeleteStateHttpRequest(
     val source: TrustReplySourceHttpRequest,
     val expectedStateVersion: Long
+)
+
+data class TrustReplyResetStateHttpRequest(
+    val source: TrustReplySourceHttpRequest
 )
 
 data class TrustReplySaveStateHttpRequest(

@@ -590,6 +590,19 @@ class TrustReplyWorkbenchService(
         return TrustReplySavedState(status = "DELETED", stateVersion = 0)
     }
 
+    /**
+     * P0 (I-4c/I-5/I-6): 死锁自救专用。bootstrap 失败时前端拿不到 stateVersion，
+     * 因而无法走带乐观并发校验的 deleteState；本方法按 source 无条件删行。
+     * 破坏性操作，前端必须二次确认（I-4b），且只在失败界面暴露（I-4a）。
+     * 只删 trust_reply_workbench_state 一行，不动 QA 规则/片段/邮件记录/ES（I-5）。
+     * 不调 resolveSource：解析来信需要联系人与画像，而死锁场景下这些恰恰可能不可用。
+     */
+    fun resetState(source: TrustReplySourceRef): TrustReplySavedState {
+        require(source.sourceId > 0) { "sourceId must be positive" }
+        stateStore.deleteBySource(source.sourceType.name, source.sourceId)
+        return TrustReplySavedState(status = "DELETED", stateVersion = 0)
+    }
+
     private data class RestoreFrameResult(
         val savedState: TrustReplySavedState?,
         val canonicalFrame: TrustReplyFrameSnapshot

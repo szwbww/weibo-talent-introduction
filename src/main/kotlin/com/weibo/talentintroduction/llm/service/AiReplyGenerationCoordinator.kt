@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.llm.service
 
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -26,6 +27,7 @@ class AiReplyGenerationCoordinator(
     @Qualifier("aiReplyStreamScheduler") private val scheduler: ScheduledExecutorService
 ) {
     private val generations = ConcurrentHashMap<String, GenerationControl>()
+    private val logger = LoggerFactory.getLogger(AiReplyGenerationCoordinator::class.java)
 
     fun start(
         scopeKey: String,
@@ -77,11 +79,12 @@ class AiReplyGenerationCoordinator(
                     control.sendTerminal("result", response)
                 } catch (_: AiReplyGenerationCancelledException) {
                     control.sendTerminal("cancelled", mapOf("generationId" to generationId))
-                } catch (_: Exception) {
-                    control.sendTerminal(
-                        "error",
-                        mapOf("generationId" to generationId, "message" to "AI generation failed")
-                    )
+                } catch (ex: Exception) {
+                    // I-1: 只对已知业务异常透出真实 code；其余固定码，不泄露异常原文。
+                    val code = (ex as? TrustReplyWorkbenchException)?.code ?: CODE_GENERATION_FAILED
+                    // I-2: 响应与日志必须同时有原因；这里是本链路唯一的诊断点。
+                    logger.warn("AI reply generation failed: generationId={}, code={}", generationId, code, ex)
+                    control.sendTerminal("error", mapOf("generationId" to generationId, "code" to code, "message" to "AI generation failed"))
                 } finally {
                     control.cleanup()
                 }
@@ -130,6 +133,7 @@ class AiReplyGenerationCoordinator(
 
     companion object {
         private const val MAX_ACTIVE_GENERATIONS = 40
+        const val CODE_GENERATION_FAILED = "AI_REPLY_GENERATION_FAILED"
     }
 }
 

@@ -33,6 +33,25 @@
         PARTIAL: "PARTIAL · 部分有据",
         UNSUPPORTED: "UNSUPPORTED · 无依据"
     });
+    // P0 (I-3): SSE / HTTP 错误码 → 运营可读中文。查不到时退回 error.message。
+    const WORKBENCH_ERROR_TEXT = Object.freeze({
+        TRUST_REPLY_SOURCE_STALE: "来信内容已变化，请刷新工作台后重试。",
+        TRUST_REPLY_EVIDENCE_STALE: "本条的事实已变化，请刷新工作台后重试。",
+        TRUST_REPLY_EVIDENCE_VERSION_REQUIRED: "缺少事实版本，请刷新工作台后重试。",
+        TRUST_REPLY_REQUEST_KEY_INVALID: "摘要标识与来信对不上，请刷新工作台后重试。",
+        TRUST_REPLY_FACT_SELECTION_INVALID: "事实选择与来信摘要对不上，请刷新工作台后重试。",
+        TRUST_REPLY_FACT_SELECTION_AMBIGUOUS: "事实选择参数冲突，请刷新工作台后重试。",
+        TRUST_REPLY_FACT_ALREADY_ASSIGNED: "同一条事实被多个摘要绑定，请先解除其中一处。",
+        TRUST_REPLY_HANDLING_INVALID: "该处理方式不适用于本条摘要的当前状态。",
+        TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID: "回答说明为空或超过 500 字。",
+        TRUST_REPLY_ITEM_GENERATION_FAILED: "AI 未能产出可用的回答，请重试或换一种处理方式。",
+        TRUST_REPLY_CLAIM_INVALID: "生成的内容未通过内容安全校验。",
+        TRUST_REPLY_ACKNOWLEDGEMENT_INVALID: "致意内容未通过内容安全校验。",
+        TRUST_REPLY_LOCKED_ITEM_INVALID: "已锁定的回答与当前状态不一致，请重新生成本条。",
+        TRUST_REPLY_ITEM_VERSION_INVALID: "版本身份校验未通过，请重新生成本条。",
+        TRUST_REPLY_STATE_CONFLICT: "该封信的工作台状态已被其他页面修改，请刷新后重试。",
+        AI_REPLY_GENERATION_FAILED: "AI 生成失败，请重试。"
+    });
     const STATE_SCHEMA_VERSION = "trust-reply-workbench-state-v3";
     const FRAME_SLOTS = Object.freeze([
         { key: "salutationSnippetId", snippetType: "SALUTATION", label: "尊语" },
@@ -92,6 +111,14 @@
         const error = new Error(message || code || fallback);
         if (code) error.code = code;
         return error;
+    }
+
+    // P0 (I-3): 渲染层按 code 查中文表；查不到退回 error.message；再查不到用兜底串。
+    function errorText(error, fallback) {
+        const code = error && error.code ? String(error.code) : "";
+        if (WORKBENCH_ERROR_TEXT[code]) return WORKBENCH_ERROR_TEXT[code];
+        const message = error && error.message ? String(error.message) : "";
+        return message || fallback || "请求失败，请重试";
     }
 
     function parseSseChunk(buffer, flush) {
@@ -701,7 +728,7 @@
                 if (!isLive(seq) || isAbort(error)) return;
                 state.generation.pending = false;
                 setStatus(error.message || "工作台加载失败", "ERROR");
-                renderShell(error.message || "工作台加载失败");
+                renderShell(error.message || "工作台加载失败", true);
             }
         }
 
@@ -829,6 +856,25 @@
                 return true;
             } catch (_) {
                 return false;
+            }
+        }
+
+        // P0 (I-4b/I-6): 破坏性操作，必须二次确认；重置后走一次干净的 bootstrap，
+        // 绝不复用失败前的 state.requests——那份内存矩阵正是把 bootstrap 打挂的输入。
+        async function resetWorkbenchState() {
+            if (state.readOnly) return;
+            if (typeof global.confirm === "function" &&
+                !global.confirm("重置会清空本封信已锁定的全部回答，且不可撤销。确认继续？")) {
+                return;
+            }
+            try {
+                await requestJson("/api/trust-reply/workbench/state/reset", { source });
+                state.savedStateVersion = 0;
+                state.requests = [];
+                await bootstrap();
+            } catch (error) {
+                setStatus(errorText(error) || "重置失败，请刷新页面后重试", "ERROR");
+                renderShell(errorText(error) || "重置失败，请刷新页面后重试", true);
             }
         }
 
@@ -1028,7 +1074,7 @@
                     return { cancelled: true };
                 }
                 request.pending = false;
-                request.error = error.message || "单项生成失败，可重试";
+                request.error = errorText(error, "单项生成失败，可重试");
                 render();
                 return null;
             }
@@ -1951,12 +1997,13 @@
 
         // S-5: the former single-pane .trust-reply-layout shell (layout aside +
         // item list) is retired and replaced by two .trust-reply-page panels.
-        function renderShell(message) {
+        function renderShell(message, allowRecovery) {
             if (state.destroyed) return;
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
+            const recoveryZone = allowRecovery && !state.readOnly ? `<div class="trust-reply-item-actions" data-role="shell-recovery"><button type="button" class="button secondary" data-action="reset-workbench-state">重置本封信的工作台状态</button></div>` : "";
             host.innerHTML = `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
+                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div>${recoveryZone}<section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
             </details>`;
         }
 
@@ -2283,6 +2330,7 @@
             if (action === "complete") void complete();
             if (action === "auto-run") void autoRun();
             if (action === "auto-reset") void autoReset();
+            if (action === "reset-workbench-state") void resetWorkbenchState();
             if (action === "regenerate-context-stale") void regenerateContextStale();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
         }

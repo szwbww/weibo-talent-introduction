@@ -98,6 +98,20 @@ class TrustReplyWorkbenchStateStore(
         throwStateConflict(sourceType, sourceId, expectedStateVersion)
     }
 
+    /**
+     * P0 (I-5): 强制重置专用——按 (source_type, source_id) 删行，不比对 state_version。
+     * 删除 0 行或 1 行都算成功（幂等），绝不抛 TRUST_REPLY_STATE_CONFLICT：死锁的成因
+     * 恰恰是调用方拿不到当前版本号。作用域严格限定本表本行，不做 pruneExpired。
+     */
+    fun deleteBySource(sourceType: String, sourceId: Long): Int =
+        jdbc.update(
+            """
+            DELETE FROM trust_reply_workbench_state
+             WHERE source_type = :sourceType AND source_id = :sourceId
+            """.trimIndent(),
+            MapSqlParameterSource("sourceType", sourceType).addValue("sourceId", sourceId)
+        )
+
     fun pruneExpired(now: LocalDateTime): Int =
         jdbc.update(
             "DELETE FROM trust_reply_workbench_state WHERE expires_at <= :now",

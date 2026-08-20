@@ -500,3 +500,90 @@ describe("fact order drag (P3)", () => {
         assert.doesNotMatch(moveBody, /serializeRequestFactSelections|requestJson|fetch\(/);
     });
 });
+
+// ---- P0: SSE error-code rendering + bootstrap-failure reset entry ----
+
+function actionButton(action, requestKey) {
+    return {
+        dataset: requestKey ? { action, requestKey } : { action },
+        closest(selector) {
+            if (selector === "[data-action]") return this;
+            return null;
+        }
+    };
+}
+
+function sseStream(sseText) {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+        start(controller) {
+            controller.enqueue(encoder.encode(sseText));
+            controller.close();
+        }
+    });
+}
+
+describe("P0 SSE error code and state reset", () => {
+    it("error event code renders the mapped chinese text", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            if (String(url).endsWith("/generations/stream")) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    body: sseStream('event: error\ndata: {"code":"TRUST_REPLY_ITEM_GENERATION_FAILED","message":"AI generation failed"}\n\n')
+                });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2, 3]) });
+        }, () => false);
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(host.innerHTML.includes("AI 未能产出可用的回答，请重试或换一种处理方式。"));
+        assert.ok(!host.innerHTML.includes("AI generation failed"));
+    });
+
+    it("bootstrap failure shell offers the reset button", async () => {
+        const { window, document } = createSandbox(() => Promise.resolve({
+            ok: false,
+            status: 422,
+            json: async () => ({ code: "TRUST_REPLY_FACT_SELECTION_INVALID" })
+        }));
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(host.innerHTML.includes('data-action="reset-workbench-state"'));
+        assert.ok(!/style=/.test(host.innerHTML));
+    });
+
+    it("successful bootstrap never renders the reset button", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2, 3]) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('data-action="reset-workbench-state"'));
+        assert.ok(host.innerHTML.includes("可信回复工作台"));
+    });
+});
