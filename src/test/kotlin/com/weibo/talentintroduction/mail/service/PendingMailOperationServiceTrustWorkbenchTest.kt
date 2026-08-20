@@ -645,6 +645,100 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         )
     }
 
+    // 03a (I-3): the archive-time server re-assembly no longer pre-checks the
+    // whole-draft expectedEvidenceSetVersion; a stale expected value is
+    // accepted and the per-item revalidation (here satisfied) decides.
+    @Test
+    fun `sendManualRichReply accepts replay with stale expected evidence version when items revalidate`() {
+        val assembly = liveAssembly().copy(expectedEvidenceSetVersion = "stale-aggregate")
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible)
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verify(unsupportedAnswerIndexService).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            eqValue(listOf(eligible)),
+            eqValue("500"),
+            eqValue("op"),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+    }
+
+    // 03b (T5/I-4/I-6): the context fingerprint is observational only. An
+    // assembly whose locked item was generated under an older context
+    // fingerprint (training knowledge / mail history changed after locking)
+    // still sends and archives: context never gates the manual-reply path,
+    // never enters versionId or the evidence identity, and the re-assembly
+    // comparison is unaffected.
+    @Test
+    fun `sendManualRichReply accepts assembly locked under an older context fingerprint`() {
+        val base = liveAssembly()
+        val assembly = base.copy(
+            lockedItems = base.lockedItems.map { locked -> locked.copy(contextVersion = "context-old") }
+        )
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible)
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly)).thenReturn(assembled)
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText,
+            operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(UnsupportedAnswerArchiveStatus.SAVED, result.unsupportedAnswerArchiveStatus)
+        Mockito.verify(trustReplyWorkbenchService).assemble(assembly)
+        Mockito.verify(unsupportedAnswerIndexService).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            eqValue(listOf(eligible)),
+            eqValue("500"),
+            eqValue("op"),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+        )
+    }
+
     @Test
     fun `sendManualRichReply without assembly does not archive`() {
         stubSuccessfulSend()

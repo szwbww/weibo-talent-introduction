@@ -190,6 +190,10 @@
             onChange: typeof options.onChange === "function" ? options.onChange : null,
             sourceVersion: null,
             evidenceSetVersion: null,
+            // 03b (T6/I-4): the context fingerprint (training knowledge + mail
+            // history) of the last bootstrap; per-item comparison against each
+            // version's contextVersion drives the context-stale prompt.
+            contextVersion: null,
             activePage: "facts",
             frameOptions: [],
             frameSnapshot: null,
@@ -345,12 +349,17 @@
         }
 
         function hasVersionIdentity(version, requestKey) {
+            // 03a (I-1): a generated version is only acceptable when its
+            // evidence version matches THIS request's per-request value; the
+            // whole-draft aggregate says nothing about a single item.
+            const request = findRequest(requestKey);
             return !!version
                 && version.requestKey === requestKey
                 && typeof version.sourceVersion === "string"
                 && version.sourceVersion === state.sourceVersion
+                && !!request
                 && typeof version.evidenceSetVersion === "string"
-                && version.evidenceSetVersion === state.evidenceSetVersion;
+                && version.evidenceSetVersion === request.evidenceSetVersion;
         }
 
         function isStaleError(error) {
@@ -415,13 +424,27 @@
             invalidateAssembly();
         }
 
-        function requestFromCoverage(coverage) {
+        function requestFromCoverage(coverage, fallbackEvidence) {
             return (coverage || []).map((item, index) => ({
                 requestKey: item.requestKey,
                 requestText: item.requestText || "",
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
+                // 03a (I-1): per-request evidence version from the server
+                // coverage; the authority for this item's version identity.
+                // The aggregate fallback only covers pre-03a servers whose
+                // coverage lacks the per-request field; the current server
+                // always fills it (T3), so the fallback never fires there.
+                evidenceSetVersion: item.evidenceSetVersion || fallbackEvidence || "",
+                // 03a (I-5/S-1): set when this item's facts changed and its
+                // generated answer must be regenerated; renders the stale hint.
+                evidenceStale: false,
+                // 03b (T6/I-4): set when this item's locked version was
+                // generated under a different context fingerprint (old
+                // training knowledge / mail history); renders the per-item
+                // hint and participates in the one-click rerun.
+                contextStale: false,
                 factPickerOpen: false,
                 availableHandlings: [...(item.allowedHandlings || [])],
                 recommendedHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
@@ -519,11 +542,12 @@
             }
             state.sourceVersion = data.sourceVersion;
             state.evidenceSetVersion = data.evidenceSetVersion;
+            state.contextVersion = data.contextVersion || "";
             state.rules = data.rulesByCategory || [];
             state.availableModels = data.availableModels?.length ? [...data.availableModels] : [data.defaultModel || "DEEPSEEK_V4_FLASH"];
             state.selectedModel = state.availableModels.includes(data.defaultModel) ? data.defaultModel : state.availableModels[0];
             state.llmEnabled = data.llmEnabled !== false;
-            state.requests = requestFromCoverage(data.requestCoverage);
+            state.requests = requestFromCoverage(data.requestCoverage, data.evidenceSetVersion);
             state.frameOptions = Array.isArray(data.frameOptions) ? data.frameOptions : [];
             state.frameSnapshot = snapshotFrame(data.frameSnapshot);
             // Fail closed when the server canonical matrix disagrees with the
@@ -548,35 +572,49 @@
                 .forEach((request) => { void requestTranslation(request, null); });
         }
 
+        function restoreLockedItem(locked) {
+            const request = findRequest(locked.requestKey);
+            if (!request) return false;
+            const version = lockedToVersion(locked);
+            if (!isVersionSerializable(version, request)) return false;
+            request.versions = [...request.versions, version];
+            request.activeVersionId = version.versionId;
+            request.resolvedVersionId = version.versionId;
+            request.draftHandling = version.handling;
+            request.instruction = version.operatorInstruction || "";
+            // V-3: machine-fill provenance is browser-local only; a
+            // restored saved item is always unmarked.
+            request.autoFilled = false;
+            request.instructionEditedByOperator = false;
+            request.expanded = false;
+            request.error = null;
+            request.evidenceStale = false;
+            // 03b (T6/I-4): a restored lock generated under a different
+            // context fingerprint is flagged for the per-item hint; it is
+            // never dropped here (context changes never clear locks).
+            request.contextStale = (locked.contextVersion || "") !== (state.contextVersion || "");
+            return true;
+        }
+
         function applySavedState(savedState) {
             state.savedStateVersion = savedState && Number.isInteger(savedState.stateVersion) ? savedState.stateVersion : 0;
             if (!savedState) {
                 setStatus("", "READY");
                 return;
             }
-            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE") {
+            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE" || savedState.status === "PARTIALLY_RESTORED") {
                 let restoredCount = 0;
                 (Array.isArray(savedState.lockedItems) ? savedState.lockedItems : []).forEach((locked) => {
-                    const request = findRequest(locked.requestKey);
-                    if (!request) return;
-                    const version = lockedToVersion(locked);
-                    if (!isVersionSerializable(version, request)) return;
-                    request.versions = [...request.versions, version];
-                    request.activeVersionId = version.versionId;
-                    request.resolvedVersionId = version.versionId;
-                    request.draftHandling = version.handling;
-                    request.instruction = version.operatorInstruction || "";
-                    // V-3: machine-fill provenance is browser-local only; a
-                    // restored saved item is always unmarked.
-                    request.autoFilled = false;
-                    request.instructionEditedByOperator = false;
-                    request.expanded = false;
-                    request.error = null;
-                    restoredCount += 1;
+                    if (restoreLockedItem(locked)) restoredCount += 1;
                 });
                 if (savedState.status === "FRAME_STALE") {
                     setStatus(`FRAME_STALE：框架配置已变化，已保留 ${restoredCount} 项锁定回答，请刷新框架选项`, "FRAME_STALE");
                     state.activePage = "frame";
+                } else if (savedState.status === "PARTIALLY_RESTORED") {
+                    // 03a (I-4): per-request evidence drift dropped the stale
+                    // items only; the kept locks are restored above.
+                    const dropped = Number.isInteger(savedState.droppedItemCount) ? savedState.droppedItemCount : 0;
+                    setStatus(`PARTIALLY_RESTORED：恢复了 ${restoredCount} 项锁定回答，丢弃 ${dropped} 项（事实已变化）`, "PARTIALLY_RESTORED");
                 } else {
                     setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
                 }
@@ -603,15 +641,24 @@
                 evidenceSetVersion: locked.evidenceSetVersion,
                 sourceVersion: locked.sourceVersion,
                 operatorInstructionHash: locked.operatorInstructionHash || "",
-                operatorInstruction: locked.operatorInstruction || ""
+                operatorInstruction: locked.operatorInstruction || "",
+                contextVersion: locked.contextVersion || ""
             };
         }
 
-        async function bootstrap() {
+        // 03a (I-5): when preserveVersions is true the per-request version
+        // state is carried across the bootstrap so only items whose
+        // per-request evidence version drifted are reset; the full-screen
+        // loading skeleton is skipped so the fact change never looks like a
+        // fresh workbench load.
+        async function bootstrap({ preserveVersions = false } = {}) {
             const seq = ++state.bootSeq;
             if (state.destroyed) return;
-            resetVersions();
-            renderShell("正在加载工作台…");
+            const preserved = preserveVersions ? captureVersionState() : null;
+            if (!preserveVersions) {
+                resetVersions();
+                renderShell("正在加载工作台…");
+            }
             try {
                 const data = await requestJson("/api/trust-reply/workbench/bootstrap", {
                     source,
@@ -619,6 +666,7 @@
                     frameSnapshot: state.frameSnapshot
                 });
                 applyBootstrap(data, seq);
+                if (preserveVersions) reconcilePreservedVersions(preserved, seq);
             } catch (error) {
                 if (!isLive(seq) || isAbort(error)) return;
                 state.generation.pending = false;
@@ -627,11 +675,81 @@
             }
         }
 
+        // 03a (I-5): snapshots the version/decision state of every request so
+        // a preserveVersions bootstrap can re-attach the untouched ones.
+        function captureVersionState() {
+            const snapshot = new Map();
+            state.requests.forEach((request) => {
+                snapshot.set(request.requestKey, {
+                    versions: request.versions,
+                    activeVersionId: request.activeVersionId,
+                    resolvedVersionId: request.resolvedVersionId,
+                    draftHandling: request.draftHandling,
+                    instruction: request.instruction,
+                    autoFilled: request.autoFilled,
+                    instructionEditedByOperator: request.instructionEditedByOperator,
+                    expanded: request.expanded,
+                    factPickerOpen: request.factPickerOpen,
+                    questionTranslation: request.questionTranslation,
+                    answerTranslationsByVersionId: request.answerTranslationsByVersionId,
+                    requestSeq: request.requestSeq,
+                    pending: request.pending,
+                    error: request.error
+                });
+            });
+            return snapshot;
+        }
+
+        // 03a (I-5): after applyBootstrap rebuilt the request objects, keep
+        // every request whose existing version still carries the fresh
+        // per-request evidence version and clear only the drifted items.
+        function reconcilePreservedVersions(snapshot, seq) {
+            if (!isLive(seq)) return;
+            state.requests.forEach((request) => {
+                const old = snapshot && snapshot.get(request.requestKey);
+                if (!old) return;
+                const retained = old.versions.find((version) =>
+                    version.versionId === (old.resolvedVersionId || old.activeVersionId)
+                ) || old.versions[0];
+                if (retained && retained.evidenceSetVersion === request.evidenceSetVersion) {
+                    request.versions = old.versions;
+                    request.activeVersionId = old.activeVersionId;
+                    request.resolvedVersionId = old.resolvedVersionId;
+                    request.draftHandling = old.draftHandling;
+                    request.instruction = old.instruction;
+                    request.autoFilled = old.autoFilled;
+                    request.instructionEditedByOperator = old.instructionEditedByOperator;
+                    request.expanded = old.expanded;
+                    request.factPickerOpen = old.factPickerOpen;
+                    request.questionTranslation = old.questionTranslation;
+                    request.answerTranslationsByVersionId = old.answerTranslationsByVersionId;
+                    request.requestSeq = old.requestSeq;
+                    request.pending = old.pending;
+                    request.error = old.error;
+                    // 03b (T6/I-4): the evidence identity is still fresh, but
+                    // the retained version may have been generated under a
+                    // different context fingerprint — flag it, keep the lock.
+                    request.contextStale = (retained.contextVersion || "") !== (state.contextVersion || "");
+                } else if (old.versions.length > 0 || old.resolvedVersionId) {
+                    // 03a (I-5): only this item lost its per-request evidence
+                    // identity; the fresh request object already has no
+                    // versions, so just mark it for the stale hint.
+                    request.evidenceStale = true;
+                    request.expanded = request.coverage !== "GROUNDED";
+                }
+            });
+            // applyBootstrap already rendered the fresh (empty) requests; the
+            // preserved versions were attached afterwards, so render again.
+            render();
+        }
+
         function makeGenerationPayload(requestKey, handling, instruction, generationId) {
             return {
                 source,
                 expectedSourceVersion: state.sourceVersion,
-                expectedEvidenceSetVersion: state.evidenceSetVersion,
+                // 03a (I-3): item generation is gated on THIS request's
+                // per-request evidence version, not the whole-draft aggregate.
+                expectedEvidenceSetVersion: findRequest(requestKey)?.evidenceSetVersion || "",
                 requestFactSelections: serializeRequestFactSelections(),
                 requestKey: requestKey || null,
                 handling: handling || null,
@@ -706,6 +824,9 @@
             // in memory until the whole run succeeds; the default keeps the
             // established per-item durable save for ordinary paths.
             const persistEach = options.persistEach !== false;
+            // 03b (T6/I-4): the context-stale rerun passes skipResolved:false
+            // so already-locked items are regenerated instead of skipped.
+            const skipResolved = options.skipResolved !== false;
             if (!keys.length || state.generation.pending || !state.sourceVersion) return false;
             const frozenKeys = [...keys];
             const total = frozenKeys.length;
@@ -717,7 +838,7 @@
                 if (!isLive(seq) || state.sequenceCancelled) return false;
                 const request = findRequest(requestKey);
                 if (!request) return false;
-                if (request.resolvedVersionId) continue;
+                if (skipResolved && request.resolvedVersionId) continue;
                 index += 1;
                 state.generation.stage = "GENERATING";
                 state.generation.message = `${labelPrefix} ${index}/${total}`;
@@ -848,6 +969,12 @@
                 }
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
+                // 03a (S-1): a fresh version carries the current per-request
+                // evidence, so the stale hint goes away.
+                request.evidenceStale = false;
+                // 03b (T6/I-4): a fresh version also carries the current
+                // context fingerprint, so the context-stale hint goes away.
+                request.contextStale = false;
                 if (version.handling === "OMIT") {
                     request.resolvedVersionId = version.versionId;
                     request.expanded = false;
@@ -904,6 +1031,44 @@
             const outcome = await requestItemVersion(request, sourceSeq, generationId, request.requestKey);
             if (!outcome || !outcome.version) return null;
             return outcome.version;
+        }
+
+        // 03b (T6/I-4): one-click rerun of every context-stale item. All
+        // affected items run through the shared sequential generation loop
+        // (reused, not a new pipeline); untouched items are never regenerated,
+        // resetVersions()/handleStaleGeneration are never invoked, and no
+        // re-bootstrap happens. After the whole run succeeds, one complete
+        // snapshot persists the fresh context fingerprints durably.
+        async function regenerateContextStale() {
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            const seq = state.bootSeq;
+            const keys = state.requests
+                .filter((request) => request.contextStale === true)
+                .map((request) => request.requestKey);
+            if (!keys.length || !state.sourceVersion) return;
+            const completed = await runItemSequence(keys, seq, {
+                labelPrefix: "正在重新生成受影响条目",
+                doneMessage: "受影响条目已重新生成",
+                skipResolved: false,
+                persistEach: false
+            });
+            if (!completed || !isLive(seq)) return;
+            try {
+                await persistResolvedSnapshot();
+            } catch (error) {
+                if (isFrameStaleError(error)) {
+                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
+                    return;
+                }
+                if (isStaleError(error)) {
+                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
+                    return;
+                }
+                if (!isLive(seq)) return;
+                setStatus(error.message || "保存失败，请重试", "ERROR");
+                render();
+                return;
+            }
         }
 
         function isVersionSerializable(version, request) {
@@ -1031,6 +1196,11 @@
                 const response = await requestJson("/api/trust-reply/workbench/assemble", {
                     source,
                     expectedSourceVersion: state.sourceVersion,
+                    // 03a (I-3): the server no longer pre-checks this
+                    // whole-draft value (the :1051 gate is gone); each locked
+                    // item is validated against its own per-request evidence
+                    // version. The field is kept on the wire because the
+                    // controller DTO (unchanged, C-4) requires it.
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
                     requestFactSelections: serializeRequestFactSelections(),
                     frameSnapshot: state.frameSnapshot,
@@ -1328,18 +1498,20 @@
                 evidenceSetVersion: version.evidenceSetVersion,
                 sourceVersion: version.sourceVersion,
                 operatorInstructionHash: version.operatorInstructionHash || "",
-                operatorInstruction: version.operatorInstruction || ""
+                operatorInstruction: version.operatorInstruction || "",
+                contextVersion: version.contextVersion || ""
             };
         }
 
-        // I-3: fact add/remove invalidates everything (durable state, versions,
-        // locks, assembly) and re-bootstraps the canonical matrix; frame changes
-        // only clear the assembly and are handled by onFrameChange.
+        // I-3/03a (I-5): fact add/remove invalidates the affected item only
+        // (durable state, its versions, locks, assembly) and re-bootstraps the
+        // canonical matrix with preserveVersions so untouched items keep their
+        // answers; frame changes only clear the assembly (onFrameChange).
         async function changeRequestFacts(request, nextFactRuleIds) {
-            const hasGeneratedState = state.requests.some((item) => item.versions.length > 0 || item.resolvedVersionId)
-                || !!state.assembly
-                || state.savedStateVersion > 0;
-            if (hasGeneratedState && typeof global.confirm === "function" && !global.confirm("事实变化会清空当前版本和整合结果，继续？")) {
+            // 03a (T7): the confirmation only asks when THIS item actually has
+            // a generated or locked answer — other items' answers survive.
+            const targetHasGeneratedState = request.versions.length > 0 || !!request.resolvedVersionId;
+            if (targetHasGeneratedState && typeof global.confirm === "function" && !global.confirm("该摘要的事实变化会清空本条已生成回答，其余摘要保留，继续？")) {
                 render();
                 return;
             }
@@ -1352,8 +1524,7 @@
                 }
             }
             request.factRuleIds = nextFactRuleIds;
-            resetVersions();
-            void bootstrap();
+            void bootstrap({ preserveVersions: true });
         }
 
         async function addFact(requestKey, factId) {
@@ -1509,9 +1680,18 @@
             state.activePage = page;
             render();
             if (!focusTarget || state.destroyed) return;
-            const id = focusTarget === "tab" ? tabId(page) : focusTarget === "panel" ? panelId(page) : null;
-            if (!id) return;
-            const element = host.querySelector ? host.querySelector(`#${id}`) : null;
+            // I-1: state.instanceId is a UUID v4 — 62.5% of mounts start with a
+            // digit, and a CSS identifier may not start with a digit, so
+            // `#${tabId(page)}` throws SyntaxError. Query by the stable
+            // role/data attributes instead; the id attributes stay on the
+            // elements for aria-controls / aria-labelledby (I-2).
+            const selector = focusTarget === "tab"
+                ? `[role="tab"][data-page="${page}"]`
+                : focusTarget === "panel"
+                    ? `[data-page-panel="${page}"]`
+                    : null;
+            if (!selector) return;
+            const element = host.querySelector ? host.querySelector(selector) : null;
             if (element && typeof element.focus === "function") element.focus();
         }
 
@@ -1609,7 +1789,18 @@
             const pickerSearch = pickerOptions
                 ? `<div class="trust-reply-fact-picker-search"><input type="text" data-role="fact-search" data-request-key="${escapeText(request.requestKey)}" placeholder="搜索事实标题 / 正文…" aria-label="搜索事实"${factActionsDisabled ? " disabled" : ""}></div>`
                 : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>`;
+            // 03a (S-1): only when this item's per-request evidence drifted is
+            // the verbatim stale hint appended after the fact section; no new
+            // class, no inline style, no output when the condition is false.
+            // 03b (S-1): the verbatim context-stale hint is appended beside it
+            // (never replacing it) when the item's locked version was
+            // generated under a different context fingerprint.
+            const staleMarkup = (request.evidenceStale === true
+                ? `<span class="muted" data-role="item-evidence-stale">事实已变化，本条回答需重新生成</span>`
+                : "") + (request.contextStale === true
+                ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
+                : "");
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
         }
 
         function renderFrameSelects() {
@@ -1960,9 +2151,19 @@
         }
 
         function renderStatus() {
-            if (!state.generation.message) return "";
-            const cls = state.generation.stage === "ERROR" ? "ai-reply-error" : "ai-reply-coverage";
-            return `<div class="${cls}" role="${state.generation.stage === "ERROR" ? "alert" : "status"}">${escapeText(state.generation.stage ? `${state.generation.stage}：` : "")}${escapeText(state.generation.message)}</div>`;
+            const parts = [];
+            if (state.generation.message) {
+                const cls = state.generation.stage === "ERROR" ? "ai-reply-error" : "ai-reply-coverage";
+                parts.push(`<div class="${cls}" role="${state.generation.stage === "ERROR" ? "alert" : "status"}">${escapeText(state.generation.stage ? `${state.generation.stage}：` : "")}${escapeText(state.generation.message)}</div>`);
+            }
+            // 03b (S-2): one-click rerun for every context-stale item,
+            // appended at the end of the status area; verbatim contract DOM,
+            // only when at least one item is context-stale (I-4).
+            const contextStaleCount = state.requests.filter((request) => request.contextStale === true).length;
+            if (contextStaleCount >= 1) {
+                parts.push(`<button type="button" class="button small secondary" data-action="regenerate-context-stale">重新生成受影响条目</button>`);
+            }
+            return parts.join("");
         }
 
         function renderStatusOnly() {
@@ -2026,6 +2227,7 @@
             if (action === "complete") void complete();
             if (action === "auto-run") void autoRun();
             if (action === "auto-reset") void autoReset();
+            if (action === "regenerate-context-stale") void regenerateContextStale();
             if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
         }
 

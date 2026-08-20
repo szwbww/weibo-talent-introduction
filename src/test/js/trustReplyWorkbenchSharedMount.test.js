@@ -206,6 +206,9 @@ function coverageItem(sourceType, sourceId, index, status, requestKeySuffix = ""
         requestText: `Question ${index + 1}`,
         status,
         factRuleIds: status === "UNSUPPORTED" ? [] : [1],
+        // 03a (I-1): per-request evidence version; tests use the same value as
+        // the aggregate so generated versions satisfy hasVersionIdentity.
+        evidenceSetVersion: `${sourceType}-${sourceId}-e1`,
         allowedHandlings: status === "UNSUPPORTED"
             ? ["ANSWER_FROM_OPERATOR_INPUT", "ACKNOWLEDGE_PENDING", "OMIT"]
             : status === "PARTIAL"
@@ -238,6 +241,7 @@ const bootstrap = (sourceType, sourceId) => ({
         requestText: "Question",
         status: "GROUNDED",
         factRuleIds: [1],
+        evidenceSetVersion: `${sourceType}-${sourceId}-e1`,
         allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
         recommendedHandling: "ANSWER_WITH_EVIDENCE"
     }],
@@ -1440,6 +1444,99 @@ describe("shared trust reply workbench mount contract", () => {
         }
     });
 
+    // 03b (I-4/S-1/S-2): a locked item generated under an older context
+    // fingerprint (training knowledge / mail history) is flagged per-item —
+    // never dropped — with the verbatim hint; the status area gains the
+    // one-click rerun button; clicking it regenerates exactly the affected
+    // items through /generations/stream with no re-bootstrap and no
+    // resetVersions; untouched items keep their locks.
+    it("flags context stale items, renders the rerun button and regenerates exactly the affected items", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 385;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const partial = coverageItem(sourceType, sourceId, 1, "PARTIAL", "-partial");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [grounded, partial]);
+        current.contextVersion = "ctx-v2";
+        current.savedState = {
+            status: "RESTORED",
+            stateVersion: 1,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [
+                lockedItem(grounded.requestKey, current.sourceVersion, current.evidenceSetVersion, "g-v1", { contextVersion: "ctx-v1" }),
+                lockedItem(partial.requestKey, current.sourceVersion, current.evidenceSetVersion, "p-v1", { contextVersion: "ctx-v2", handling: "ANSWER_SUPPORTED_PART" })
+            ]
+        };
+        const calls = [];
+        let streamCount = 0;
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(2));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/generations/stream")) {
+                streamCount += 1;
+                const payload = JSON.parse(options.body);
+                const version = {
+                    ...itemVersion(payload.requestKey, current.sourceVersion, current.evidenceSetVersion, `fresh-${payload.requestKey}`),
+                    contextVersion: "ctx-v2",
+                    ...(payload.requestKey === partial.requestKey ? { handling: "ANSWER_SUPPORTED_PART" } : {})
+                };
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // (a) the affected item renders the verbatim per-item hint; the
+        // untouched item does not.
+        assert.match(host.innerHTML, /<span class="muted" data-role="item-context-stale">本条在旧训练知识\/对话历史下生成<\/span>/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-role="item-context-stale"`));
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-role="item-context-stale"`));
+        // context staleness never clears the lock.
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-locked="true"`));
+        // (b) the status area renders the verbatim one-click rerun button.
+        assert.match(host.innerHTML, /<button type="button" class="button small secondary" data-action="regenerate-context-stale">重新生成受影响条目<\/button>/);
+
+        const bootstrapCallsBefore = calls.filter((call) => call.url.includes("/bootstrap")).length;
+        click(host, "regenerate-context-stale");
+        await settle();
+        await settle();
+
+        // (c) exactly the context-stale items are regenerated (1 item → 1
+        // ADJUST_ITEM stream call; no FULL_DRAFT).
+        assert.strictEqual(streamCount, 1);
+        assert.strictEqual(
+            calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "ADJUST_ITEM").length,
+            1
+        );
+        assert.strictEqual(
+            calls.filter((call) => call.url.includes("/generations/stream") && JSON.parse(call.options.body).operation === "FULL_DRAFT").length,
+            0
+        );
+        // (d) no re-bootstrap, no resetVersions: the locks survive and the
+        // fresh context fingerprints clear every hint and the button.
+        assert.strictEqual(calls.filter((call) => call.url.includes("/bootstrap")).length, bootstrapCallsBefore);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${partial.requestKey}"[\\s\\S]*?data-locked="true"`));
+        assert.doesNotMatch(host.innerHTML, /data-role="item-context-stale"/);
+        assert.doesNotMatch(host.innerHTML, /data-action="regenerate-context-stale"/);
+    });
+
     it("does not restore stale saved state and never generates", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 382;
@@ -1576,6 +1673,169 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(failMount.statePayloads.length, 1);
         assert.strictEqual(failMount.getBootstrapCalls(), 1, "delete failure must not switch facts");
         assert.match(failMount.host.innerHTML, /旧锁定状态删除失败/);
+    });
+
+    // 03a (I-5): a fact change re-bootstraps exactly once and resets only the
+    // affected item; untouched items keep their locked answers and the stale
+    // hint (S-1) appears only on the changed card. No full-screen skeleton.
+    it("preserves untouched items and resets only the changed item after fact edits", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 396;
+        const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const second = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-second");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [first, second]);
+        current.savedState = {
+            status: "RESTORED",
+            stateVersion: 3,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [
+                lockedItem(first.requestKey, current.sourceVersion, current.evidenceSetVersion, "first-v1"),
+                lockedItem(second.requestKey, current.sourceVersion, current.evidenceSetVersion, "second-v1")
+            ]
+        };
+        const changed = bootstrapWithCoverage(sourceType, sourceId, [
+            { ...first, evidenceSetVersion: "changed-e1" },
+            second
+        ]);
+        const calls = [];
+        const confirmCalls = [];
+        const { window } = createSandbox((url, options) => {
+            calls.push({ url, options });
+            if (url.includes("/bootstrap")) {
+                const bootCalls = calls.filter((call) => call.url.includes("/bootstrap")).length;
+                return Promise.resolve(jsonResponse(bootCalls === 1 ? current : changed));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        window.confirm = (message) => {
+            confirmCalls.push(message);
+            return true;
+        };
+        const host = new FakeElement(window.document);
+        const instance = window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        const bootstrapCallsBefore = calls.filter((call) => call.url.includes("/bootstrap")).length;
+        click(host, "add-fact", first.requestKey, undefined, "2");
+        await settle();
+        await settle();
+
+        // I-5: the fact edit triggers exactly one new /bootstrap.
+        assert.strictEqual(calls.filter((call) => call.url.includes("/bootstrap")).length, bootstrapCallsBefore + 1);
+        // The untouched item keeps its locked answer.
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[\\s\\S]*?second-v1`));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[\\s\\S]*?data-locked="true"`));
+        // The changed item lost its answer and shows the verbatim S-1 hint.
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${first.requestKey}"[\\s\\S]*?first-v1`));
+        assert.match(
+            host.innerHTML,
+            /<span class="muted" data-role="item-evidence-stale">事实已变化，本条回答需重新生成<\/span>/
+        );
+        // The scoped confirmation asked exactly once, naming only this item.
+        assert.strictEqual(confirmCalls.length, 1);
+        assert.match(confirmCalls[0], /本条/);
+        assert.match(confirmCalls[0], /其余摘要保留/);
+        // Observable outcome 2: never the full-screen loading skeleton.
+        assert.doesNotMatch(host.innerHTML, /正在加载工作台/);
+        instance.unmount();
+    });
+
+    // 03a (T7 / A-3): the confirmation only appears when the changed item
+    // itself has a generated or locked answer; empty items change silently.
+    it("confirms fact changes only when the changed item has a generated answer", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 398;
+        const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const second = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-second");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [first, second]);
+        current.savedState = {
+            status: "RESTORED",
+            stateVersion: 2,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [lockedItem(first.requestKey, current.sourceVersion, current.evidenceSetVersion, "first-v1")]
+        };
+        const confirmCalls = [];
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        window.confirm = (message) => {
+            confirmCalls.push(message);
+            return true;
+        };
+        const host = new FakeElement(window.document);
+        const instance = window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // item 2 has no answer: no confirmation.
+        click(host, "add-fact", second.requestKey, undefined, "2");
+        await settle();
+        await settle();
+        assert.strictEqual(confirmCalls.length, 0);
+
+        // item 1 has a locked answer: confirmation with the scoped wording.
+        click(host, "add-fact", first.requestKey, undefined, "3");
+        await settle();
+        await settle();
+        assert.strictEqual(confirmCalls.length, 1);
+        assert.match(confirmCalls[0], /该摘要的事实变化会清空本条已生成回答，其余摘要保留，继续？/);
+        instance.unmount();
+    });
+
+    // 03a (I-4): PARTIALLY_RESTORED restores the kept locks and reports the
+    // dropped count instead of wiping everything.
+    it("restores kept locks and reports dropped count for partially restored saved state", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 397;
+        const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const second = coverageItem(sourceType, sourceId, 1, "GROUNDED", "-second");
+        const current = bootstrapWithCoverage(sourceType, sourceId, [first, second]);
+        current.savedState = {
+            status: "PARTIALLY_RESTORED",
+            stateVersion: 4,
+            droppedItemCount: 1,
+            selectedModel: "DEEPSEEK_V4_FLASH",
+            requestedFactIds: [1],
+            lockedItems: [lockedItem(first.requestKey, current.sourceVersion, current.evidenceSetVersion, "kept-v1")]
+        };
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        const instance = window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        assert.match(host.innerHTML, /kept-v1/);
+        assert.match(host.innerHTML, /PARTIALLY_RESTORED/);
+        assert.match(host.innerHTML, /丢弃 1 项/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[\\s\\S]*?data-locked="true"`));
+        instance.unmount();
     });
 
     it("generates all missing grounded items in canonical order with durable per-item saves", async () => {
@@ -1989,6 +2249,52 @@ describe("shared trust reply workbench mount contract", () => {
         assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "Home must open the first page");
     });
 
+    it("focuses the target tab via role/data attributes, never a bare instanceId id selector", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 503;
+        const current = bootstrap(sourceType, sourceId);
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // I-1/I-3/I-4: swap in a spy so the real selector text setActivePage
+        // builds is observable — the FakeElement stub never validates selector
+        // syntax (A-7 blindness) and its focus() would be silently lost.
+        const selectors = [];
+        let focusCalls = 0;
+        const focusable = { focus: () => { focusCalls += 1; } };
+        host.querySelector = (selector) => {
+            selectors.push(selector);
+            return /^\[role="tab"\]\[data-page="(facts|frame)"\]$/.test(selector) ? focusable : null;
+        };
+
+        click(host, "set-page", undefined, undefined, undefined, "frame");
+        await settle();
+
+        assert.ok(selectors.length > 0, "setActivePage must call host.querySelector");
+        const tabSelector = selectors.find((s) => s.includes("data-page"));
+        assert.ok(tabSelector, "a tab selector must be built");
+        assert.ok(!tabSelector.startsWith("#"), "selector must not be a bare instanceId id selector");
+        assert.match(tabSelector, /^\[role="tab"\]\[data-page="(facts|frame)"\]$/, "selector must be unique to the tab button");
+        assert.strictEqual(focusCalls, 1, "focus must land on the target tab exactly once");
+
+        // I-1 source-text guard: the component must never build bare
+        // `querySelector(`#${...})` selectors again (K-dom-stub-tests-hide-dangling-refs).
+        assert.ok(!source.includes("querySelector(`#${"), "component must not contain bare template-literal id selectors");
+        assert.ok(source.includes('[role="tab"][data-page="'), "component must query tabs by role + data-page");
+    });
+
     it("shows per-card fact chips with used owners disabled and releases facts on remove", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 502;
@@ -2134,7 +2440,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(host.innerHTML, /data-locked="true"/);
     });
 
-    it("confirms a destructive fact change, deletes durable state, resets versions and re-bootstraps", async () => {
+    it("confirms a destructive fact change, deletes durable state, resets the changed item and re-bootstraps", async () => {
         const sourceType = "LIVE_INBOUND";
         const sourceId = 508;
         const current = bootstrap(sourceType, sourceId);
@@ -2144,7 +2450,15 @@ describe("shared trust reply workbench mount contract", () => {
         let stateCount = 0;
         const { window } = createSandbox((url, options) => {
             calls.push({ url, options });
-            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/bootstrap")) {
+                // 03a (I-5): the re-bootstrap reflects the changed fact
+                // assignment with a drifted per-request evidence version.
+                const bootCalls = calls.filter((call) => call.url.includes("/bootstrap")).length;
+                if (bootCalls === 1) return Promise.resolve(jsonResponse(current));
+                const changed = bootstrap(sourceType, sourceId);
+                changed.requestCoverage[0].evidenceSetVersion = "changed-e1";
+                return Promise.resolve(jsonResponse(changed));
+            }
             if (url.includes("/state")) {
                 stateCount += 1;
                 return Promise.resolve(stateResponse(stateCount));
@@ -2181,7 +2495,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.deepStrictEqual(statePayloads.at(-1).lockedItems, [], "durable state must be deleted first");
         assert.strictEqual(statePayloads.at(-1).expectedStateVersion, 1);
         assert.ok(calls.filter((call) => call.url.includes("/bootstrap")).length >= 2, "fact change must re-bootstrap");
-        assert.doesNotMatch(host.innerHTML, /data-locked="true"/, "old locks must not survive a fact change");
+        assert.doesNotMatch(host.innerHTML, /data-locked="true"/, "the changed item's lock must not survive the fact change");
         assert.match(host.innerHTML, /待生成/);
     });
 

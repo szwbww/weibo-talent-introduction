@@ -1549,7 +1549,7 @@ class AiReplyDraftService(
                     requestIndex = section.requestIndex,
                     requestText = request?.requestText.orEmpty(),
                     status = request?.status ?: RequestGroundingStatus.GROUNDED,
-                    answerText = section.answers.joinToString(" ") { it.answer },
+                    answerText = section.answers.joinToString(CLAIM_PARAGRAPH_SEPARATOR) { it.answer },
                     claims = section.answers.map { answer ->
                         AiReplyItemClaim(
                             intentKey = answer.intentKey,
@@ -2334,6 +2334,15 @@ class AiReplyDraftService(
     }
 
     companion object {
+        /**
+         * I-1 (plan 02): the single authority for how a request item's claims are
+         * joined into its canonical answerText. Three production sites and one
+         * test mirror MUST reference this constant instead of a literal:
+         * AiReplyDraftService:1552, TrustReplyWorkbenchService:1286 and :1331.
+         * The paragraph structure lives in answerText itself — the locked
+         * composer never formats (K-locked-item-assembly-list-not-set).
+         */
+        const val CLAIM_PARAGRAPH_SEPARATOR = "\n\n"
         private val INTERNAL_RESPONSE_MARKER = Regex(
             "(?i)(?:AI_REPLY_[A-Z0-9_]+|\\b(?:GROUNDED|PARTIAL|UNSUPPORTED)\\b|\\b(?:requestKey|sourceVersion|evidenceSetVersion)\\b)"
         )
