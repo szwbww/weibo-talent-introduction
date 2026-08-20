@@ -196,13 +196,21 @@ class QaFactSelectionService(
                 askEnumeration = enumeration,
                 requestRange = unit.range
             )
-            if (item.factRuleIds != explicitIds) {
+            // P2a (I-1/I-4/I-6): 运营绑的原样进 boundRuleIds；factRuleIds 保持
+            // "系统认可的证据"语义不变。相等性校验回到比对运营输入——由本行的
+            // 赋值保证它恒真，作为防御性断言保留（I-4）。
+            val accepted = item.factRuleIds.toSet()
+            val bound = item.copy(
+                boundRuleIds = explicitIds,
+                droppedBindingRuleIds = explicitIds.filter { it !in accepted }
+            )
+            if (bound.boundRuleIds != explicitIds) {
                 throw TrustReplyWorkbenchException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "TRUST_REPLY_FACT_SELECTION_INVALID"
                 )
             }
-            item
+            bound
         }
         return workbenchResult(requestFacts, enumeration)
     }
@@ -255,7 +263,8 @@ class QaFactSelectionService(
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
-            item
+            // P2a (I-1): legacy 路径 boundRuleIds 取 factRuleIds（显式赋值）。
+            item.copy(boundRuleIds = item.factRuleIds)
         }
         if (remaining.isNotEmpty()) {
             throw TrustReplyWorkbenchException(
@@ -287,7 +296,8 @@ class QaFactSelectionService(
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
-            item
+            // P2a (I-1): auto 路径 boundRuleIds 取 factRuleIds（显式赋值）。
+            item.copy(boundRuleIds = item.factRuleIds)
         }
         return workbenchResult(requestFacts, enumeration)
     }
@@ -298,11 +308,16 @@ class QaFactSelectionService(
     ): ResolvedQaRules {
         // I-1: the ordered union derives from the canonical per-request lists and is
         // never fed back into per-request pools.
-        val sendIds = requestFacts.sortedBy { it.index }.flatMap { it.factRuleIds }.distinct()
+        // P2b (I-1): 外发审计只认证据（sendIds 不变）；prompt 可以多看运营绑定的事实。
+        // 并集顺序固定为「证据在前、绑定补在后」，保证两者相等时 promptIds 与 sendIds
+        // 逐字相同（I-4）。
+        val ordered = requestFacts.sortedBy { it.index }
+        val sendIds = ordered.flatMap { it.factRuleIds }.distinct()
+        val promptIds = (sendIds + ordered.flatMap { it.boundRuleIds }).distinct()
         val unrecognizedAskCount = requestFacts.sumOf { it.unrecognizedAsks.size }
         return ResolvedQaRules(
             sendQaRuleIds = sendIds,
-            promptRuleIds = sendIds,
+            promptRuleIds = promptIds,
             requestFacts = requestFacts,
             unsupportedRequests = requestFacts
                 .filter { it.status == RequestGroundingStatus.UNSUPPORTED }

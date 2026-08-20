@@ -659,22 +659,29 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `matrix mode rejects a fact that matches another request only`() {
+    fun `matrix mode keeps the request working when a bound fact matches another request only`() {
+        // P1 (I-1): "绑定的事实不匹配这条摘要"正是本刀降级的场景——服务端过滤掉
+        // 运营的绑定后不再抛 422，而是记进 droppedBindingRuleIds（原 :199-204
+        // 是唯一取消抛出的判据；本用例随 P1 语义从"rejects"改为"keeps working"）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
         Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
 
-        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
-            service.selectForWorkbench(
-                inboundText = "- Salary?\n- Visa?",
-                selectionsByRequest = listOf(listOf(2L), emptyList()),
-                requestedFactIds = null,
-                researchProfileSufficient = true
-            )
-        }
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(2L), emptyList()),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
 
-        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
+        val salaryItem = resolved.requestFacts[0]
+        assertEquals(emptyList<Long>(), salaryItem.factRuleIds)
+        assertEquals(listOf(2L), salaryItem.droppedBindingRuleIds)
+        val visaItem = resolved.requestFacts[1]
+        assertEquals(emptyList<Long>(), visaItem.factRuleIds)
+        assertEquals(emptyList<Long>(), visaItem.droppedBindingRuleIds)
+        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
     }
 
     @Test
@@ -730,6 +737,223 @@ class QaFactSelectionServiceTest {
         assertEquals(emptyList<Long>(), resolved.requestFacts.single().factRuleIds)
         assertEquals(RequestGroundingStatus.UNSUPPORTED, resolved.requestFacts.single().status)
         assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `unsupported request keeps the filtered facts and reports the dropped bindings`() {
+        // P1 (I-1): UNSUPPORTED 条目上显式绑定的事实必然被过滤（evidenceSet 恒空），
+        // 降级后不再抛 422：采纳过滤结果（空 factRuleIds），把被丢弃的 id 按
+        // 运营原始顺序记进影子字段，status 与 factRuleIds 与改动前一致。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Can you guarantee 10 million RMB?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(emptyList<Long>(), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.droppedBindingRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
+        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `accepted bindings report no dropped ids`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(2L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[0].droppedBindingRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[1].droppedBindingRuleIds)
+    }
+
+    @Test
+    fun `matrix selection keeps operator bindings verbatim in boundRuleIds`() {
+        // P2a (I-1): UNSUPPORTED 摘要绑 2 条 → boundRuleIds == explicitIds（含运营顺序），
+        // factRuleIds 仍为空（系统不认可为证据），status 仍为 UNSUPPORTED（must-NOT-change 1）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Can you guarantee 10 million RMB?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(emptyList<Long>(), item.factRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
+        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `auto selection sets boundRuleIds equal to factRuleIds`() {
+        // P2a (I-1): 自动匹配路径 boundRuleIds == factRuleIds（逐字相等）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(salaryRule, visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        resolved.requestFacts.forEach { item ->
+            assertEquals(item.factRuleIds, item.boundRuleIds)
+        }
+        assertEquals(listOf(1L), resolved.requestFacts[0].boundRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].boundRuleIds)
+    }
+
+    @Test
+    fun `send rule ids stay evidence only while bound facts join prompt ids`() {
+        // P2b (I-1): 外发审计（sendQaRuleIds）仍只含系统认可的 evidence，绑定但非
+        // 证据的 id 只进入 promptRuleIds。本用例随 P2b 修订：P2a 时代断言
+        // 「promptRuleIds 不含绑定 id」的部分被本刀有意的契约修订取代
+        // （P2b 需求方决策 2：绑定进 prompt、不进 send）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
+        assertFalse(2L in resolved.sendQaRuleIds)
+        // P2b (I-1): 证据在前、绑定补在后。
+        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `prompt rule ids include bound facts while send rule ids do not`() {
+        // P2b (C-1 / I-1 / IP-3): 绑定但非证据的事实进 promptRuleIds（证据在前、
+        // 绑定补在后），sendQaRuleIds 绝不包含它（外发审计只记真证据）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
+        assertFalse(2L in resolved.sendQaRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+        assertTrue(2L in resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `prompt rule ids are identical to send rule ids without extra bindings`() {
+        // P2b (C-1 / I-4): 无绑定分叉（boundRuleIds == factRuleIds）时，
+        // promptRuleIds 与 sendQaRuleIds 逐字相等——恒等变换。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(2L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
+        assertEquals(resolved.sendQaRuleIds, resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `dropped bindings are reported while still bound`() {
+        // P2a (I-6): droppedBindingRuleIds 非空（仍 = explicitIds - factRuleIds），
+        // 且 boundRuleIds 仍含这些 id——绑定保留、只是不作为证据。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(2L), item.droppedBindingRuleIds)
+        assertTrue(item.boundRuleIds.containsAll(item.droppedBindingRuleIds))
+    }
+
+    @Test
+    fun `matrix size mismatch still throws`() {
+        // must-NOT-change 1: 矩阵条数与摘要条数不等仍然硬拦。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?\n- Visa?",
+                selectionsByRequest = listOf(listOf(1L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
+    }
+
+    @Test
+    fun `disabled rule still throws`() {
+        // 证据 E-2b: 已停用规则是"客观上不能用"，必须让运营知道，不降级。
+        val disabled = rule(id = 1, keywords = "salary", answerBody = "X").copy(enabled = false)
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(disabled))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(1L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
     }
 
     @Test

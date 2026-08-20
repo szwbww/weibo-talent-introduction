@@ -204,7 +204,8 @@ function createSandbox(fetchImpl, confirmImpl) {
     return { sandbox, window, document };
 }
 
-function bootstrapPayload(sourceType, sourceId, factIds) {
+function bootstrapPayload(sourceType, sourceId, factIds, droppedFactIds) {
+    const droppedIds = droppedFactIds || [];
     return {
         source: { sourceType, sourceId },
         sourceVersion: `${sourceType}-${sourceId}-v1`,
@@ -217,13 +218,15 @@ function bootstrapPayload(sourceType, sourceId, factIds) {
         defaultModel: "DEEPSEEK_V4_FLASH",
         suggestedFactIds: [...factIds],
         canonicalFactIds: [...factIds],
-        rulesByCategory: factIds.map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
+        rulesByCategory: [...factIds, ...droppedIds].map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
         requestCoverage: [{
             index: 0,
             requestKey: `${sourceType}-${sourceId}-request`,
             requestText: "Question",
             status: "GROUNDED",
             factRuleIds: [...factIds],
+            // P1 (I-2): server-side shadow field, carried for the muted hint only.
+            droppedFactRuleIds: [...droppedIds],
             allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
             recommendedHandling: "ANSWER_WITH_EVIDENCE"
         }],
@@ -498,5 +501,220 @@ describe("fact order drag (P3)", () => {
         const moveBody = workbench.slice(workbench.indexOf("async function moveFact"), workbench.indexOf("function onGripArrowKey"));
         assert.match(moveBody, /changeRequestFacts/);
         assert.doesNotMatch(moveBody, /serializeRequestFactSelections|requestJson|fetch\(/);
+    });
+});
+
+// ---- P0: SSE error-code rendering + bootstrap-failure reset entry ----
+
+function actionButton(action, requestKey) {
+    return {
+        dataset: requestKey ? { action, requestKey } : { action },
+        closest(selector) {
+            if (selector === "[data-action]") return this;
+            return null;
+        }
+    };
+}
+
+function sseStream(sseText) {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+        start(controller) {
+            controller.enqueue(encoder.encode(sseText));
+            controller.close();
+        }
+    });
+}
+
+describe("P0 SSE error code and state reset", () => {
+    it("error event code renders the mapped chinese text", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            if (String(url).endsWith("/generations/stream")) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    body: sseStream('event: error\ndata: {"code":"TRUST_REPLY_ITEM_GENERATION_FAILED","message":"AI generation failed"}\n\n')
+                });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2, 3]) });
+        }, () => false);
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(host.innerHTML.includes("AI 未能产出可用的回答，请重试或换一种处理方式。"));
+        assert.ok(!host.innerHTML.includes("AI generation failed"));
+    });
+
+    it("bootstrap failure shell offers the reset button", async () => {
+        const { window, document } = createSandbox(() => Promise.resolve({
+            ok: false,
+            status: 422,
+            json: async () => ({ code: "TRUST_REPLY_FACT_SELECTION_INVALID" })
+        }));
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(host.innerHTML.includes('data-action="reset-workbench-state"'));
+        assert.ok(!/style=/.test(host.innerHTML));
+    });
+
+    it("successful bootstrap never renders the reset button", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2, 3]) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('data-action="reset-workbench-state"'));
+        assert.ok(host.innerHTML.includes("可信回复工作台"));
+    });
+});
+
+// ---- P1: dropped-binding muted hint + never-sent-back shadow field ----
+
+describe("P1 dropped binding hints", () => {
+    it("dropped bindings render a muted hint under the fact section", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [], [10, 20]) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        const droppedSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
+        assert.ok(droppedSpan, "dropped hint must render under the fact section");
+        assert.ok(droppedSpan[1].includes("Fact 10"), "hint lists the first dropped display name");
+        assert.ok(droppedSpan[1].includes("Fact 20"), "hint lists the second dropped display name");
+        // S-1 禁止项: 提示片段无 inline style，且未引入新 CSS class。
+        assert.ok(!/style=/.test(droppedSpan[0]));
+        assert.ok(!host.innerHTML.includes("trust-reply-fact-dropped"));
+    });
+
+    it("no dropped bindings renders no hint", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2]) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('data-role="item-facts-dropped"'));
+    });
+
+    it("dropped bindings are never sent back to the server", async () => {
+        let generationBody = null;
+        const { window, document } = createSandbox((url, options) => {
+            const body = JSON.parse(options.body);
+            if (String(url).endsWith("/generations/stream")) {
+                generationBody = body;
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    body: sseStream('event: error\ndata: {"code":"TRUST_REPLY_ITEM_GENERATION_FAILED","message":"AI generation failed"}\n\n')
+                });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [], [10, 20]) });
+        }, () => true);
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(generationBody, "a generation request must have been sent");
+        assert.ok(Array.isArray(generationBody.requestFactSelections));
+        generationBody.requestFactSelections.forEach((selection) => {
+            // I-5/B-2: the canonical matrix carries ONLY requestKey + factRuleIds.
+            assert.deepStrictEqual(Object.keys(selection).sort(), ["factRuleIds", "requestKey"]);
+        });
+    });
+});
+
+// ---- P2a: bound facts survive as chips + hint wording is bound-not-basis ----
+
+describe("P2a bound vs evidence split", () => {
+    it("bound facts render as chips", async () => {
+        // P2a (S-2): coverage.factRuleIds 现由服务端产自 boundRuleIds（绑定集合），
+        // 前端 chips 走既有 request.factRuleIds 路径自动显示绑定的（含被丢弃的）事实。
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => bootstrapPayload("TRAINING_MAIL", 101, [10, 20], [10, 20])
+            });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.deepStrictEqual(renderedFactIds(host), ["10", "20"]);
+    });
+
+    it("hint wording says bound-but-not-evidence", async () => {
+        // P2a (I-6/S-1): 提示文案逐字含「已绑定但不会作为本条回答的依据」，
+        // 不再出现 P1 的「未被采纳」。
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => bootstrapPayload("TRAINING_MAIL", 101, [], [10])
+            });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        const droppedSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
+        assert.ok(droppedSpan, "dropped hint must render under the fact section");
+        assert.ok(droppedSpan[1].includes("已绑定但不会作为本条回答的依据"), "hint must say bound-but-not-basis");
+        assert.ok(!droppedSpan[1].includes("未被采纳"), "the P1 rejected wording must be gone");
+        assert.ok(!/style=/.test(droppedSpan[0]));
     });
 });

@@ -145,7 +145,10 @@ data class TrustReplyRequestCoverage(
     val unrecognizedAsks: List<TrustReplyUnrecognizedAsk> = emptyList(),
     // 03a (I-1): per-request evidence version for this coverage item; the
     // default keeps every existing constructor site source-compatible.
-    val evidenceSetVersion: String = ""
+    val evidenceSetVersion: String = "",
+    // P1 (I-2/I-3): 本条摘要中运营绑定但未被采纳的事实 id。影子字段，
+    // 默认值保证既有构造点源码兼容；不参与任何身份哈希（I-3）。
+    val droppedFactRuleIds: List<Long> = emptyList()
 )
 
 /**
@@ -587,6 +590,19 @@ class TrustReplyWorkbenchService(
     fun deleteState(source: TrustReplySourceRef, expectedStateVersion: Long): TrustReplySavedState {
         val resolved = resolveSource(source)
         stateStore.delete(resolved.source.sourceType.name, resolved.source.sourceId, expectedStateVersion)
+        return TrustReplySavedState(status = "DELETED", stateVersion = 0)
+    }
+
+    /**
+     * P0 (I-4c/I-5/I-6): 死锁自救专用。bootstrap 失败时前端拿不到 stateVersion，
+     * 因而无法走带乐观并发校验的 deleteState；本方法按 source 无条件删行。
+     * 破坏性操作，前端必须二次确认（I-4b），且只在失败界面暴露（I-4a）。
+     * 只删 trust_reply_workbench_state 一行，不动 QA 规则/片段/邮件记录/ES（I-5）。
+     * 不调 resolveSource：解析来信需要联系人与画像，而死锁场景下这些恰恰可能不可用。
+     */
+    fun resetState(source: TrustReplySourceRef): TrustReplySavedState {
+        require(source.sourceId > 0) { "sourceId must be positive" }
+        stateStore.deleteBySource(source.sourceType.name, source.sourceId)
         return TrustReplySavedState(status = "DELETED", stateVersion = 0)
     }
 
@@ -1695,7 +1711,7 @@ class TrustReplyWorkbenchService(
             } else {
                 null
             }
-            item.index to (key to requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence))
+            item.index to (key to requestEvidenceVersion(key, item.boundRuleIds, baseSnapshotOf, researchEvidence))
         }
         return ResolvedCanonicalSelection(
             selection = selection,
@@ -1747,7 +1763,7 @@ class TrustReplyWorkbenchService(
         selection.requestFacts.sortedBy { it.index }.map { item ->
             TrustReplyRequestFactSelection(
                 requestKey = requestKey(sourceVersion, item),
-                factRuleIds = item.factRuleIds
+                factRuleIds = item.boundRuleIds
             )
         }
 
@@ -1825,7 +1841,7 @@ class TrustReplyWorkbenchService(
                     claims = answer.claims,
                     model = selectedModel,
                     generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-                    evidenceSetVersion = requestEvidenceVersion(key, item.factRuleIds, baseSnapshotOf, researchEvidence),
+                    evidenceSetVersion = requestEvidenceVersion(key, item.boundRuleIds, baseSnapshotOf, researchEvidence),
                     sourceVersion = sourceVersion,
                     contextVersion = contextVersion
                 )
@@ -1910,7 +1926,7 @@ class TrustReplyWorkbenchService(
                 index = item.index,
                 requestText = item.requestText,
                 status = item.status.name,
-                factRuleIds = item.factRuleIds,
+                factRuleIds = item.boundRuleIds,
                 intents = item.intents.map { intent ->
                     TrustReplyIntentCoverage(
                         intentKey = intent.intentKey,
@@ -1928,7 +1944,9 @@ class TrustReplyWorkbenchService(
                 unrecognizedAsks = item.unrecognizedAsks.map { ask ->
                     TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
                 },
-                evidenceSetVersion = requestEvidenceVersions[requestKey(sourceVersion, item)].orEmpty()
+                evidenceSetVersion = requestEvidenceVersions[requestKey(sourceVersion, item)].orEmpty(),
+                // P1 (I-2): 第三投影——只进 coverage，不进 canonicalMatrix。
+                droppedFactRuleIds = item.droppedBindingRuleIds
             )
         }
     }

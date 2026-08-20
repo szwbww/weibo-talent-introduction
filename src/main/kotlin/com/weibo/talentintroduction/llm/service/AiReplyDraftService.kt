@@ -355,7 +355,19 @@ data class RequestFactItem(
     val intents: List<RequestIntentCoverage> = emptyList(),
     // P2a (plan 02): shadow-period measurement only — never feeds status,
     // groundedRequestCount, unsupportedRequests or any hash (I-3/I-2).
-    val unrecognizedAsks: List<EnumeratedAsk> = emptyList()
+    val unrecognizedAsks: List<EnumeratedAsk> = emptyList(),
+    // P1 (I-3): 影子字段——运营显式绑定但被 buildRequestFact 过滤掉的事实 id，
+    // 按运营原始顺序。仅供 UI 提示，绝不进入 status、factRuleIds、sendQaRuleIds、
+    // promptRuleIds、任何 evidence/version 哈希或任何对外文本。
+    val droppedBindingRuleIds: List<Long> = emptyList(),
+    // P2a (I-1/I-2): 运营绑定的事实 id，按运营给出的顺序。与 factRuleIds 的区别：
+    //   factRuleIds  = 系统认可、可用作回答依据的证据（关键词命中 + 落在 SUPPORTED 意图证据集）
+    //   boundRuleIds = 运营主张"这条事实属于这个问题"，不代表系统认可它是依据
+    // 自动匹配 / legacy 路径下两者相等；只有显式矩阵路径可能分叉。
+    // 注意：本字段与 unrecognizedAsks / droppedBindingRuleIds 这类影子字段【不同】——
+    // 它【会】进入 canonicalMatrix 与 requestEvidenceVersion 的身份哈希（I-2），
+    // 默认值仅为源码兼容存在，生产路径一律在调用点显式赋值（I-1）。
+    val boundRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(
@@ -439,6 +451,7 @@ class AiReplyDraftService(
             return rejectNonEnglishItemAnswer(generateOperatorDirectedAnswer(
                 inboundText = inboundText,
                 requestFact = requestFact,
+                boundRuleIds = requestFact.boundRuleIds,
                 requestKey = requestKey,
                 operatorInstruction = instruction,
                 expertProfile = expertProfile,
@@ -473,7 +486,8 @@ class AiReplyDraftService(
 
         val resolved = ResolvedQaRules(
             sendQaRuleIds = requestFact.factRuleIds.distinct(),
-            promptRuleIds = requestFact.factRuleIds.distinct(),
+            // P2b (I-1): 证据在前、绑定补在后；无绑定或两者相等时逐字等于 sendQaRuleIds（I-4）。
+            promptRuleIds = (requestFact.factRuleIds + requestFact.boundRuleIds).distinct(),
             requestFacts = listOf(requestFact),
             requestCount = 1,
             groundedRequestCount = if (requestFact.status == RequestGroundingStatus.UNSUPPORTED) 0 else 1
@@ -625,6 +639,7 @@ class AiReplyDraftService(
     private fun generateOperatorDirectedAnswer(
         inboundText: String,
         requestFact: RequestFactItem,
+        boundRuleIds: List<Long>,
         requestKey: String?,
         operatorInstruction: String?,
         expertProfile: String?,
@@ -658,15 +673,25 @@ class AiReplyDraftService(
         }
 
         val allowedActions = AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
+        // P2b (I-3): 逐个从仓库取当前正文，跳过空的；不得复用任何缓存或快照。
+        // P2b (I-4): 为空时什么都不输出——不得出现空的段落标题。
+        val boundFactsBlock = boundRuleIds.mapNotNull { ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                val body = rule.answerBody.trim()
+                if (body.isBlank()) return@mapNotNull null
+                val title = rule.displayName?.trim().takeIf { !it.isNullOrBlank() } ?: "Fact $ruleId"
+                "$title\n$body"
+            }
+        }.joinToString("\n\n").take(12000)
         val messages = withActionBoundary(
             listOf(
                 LlmChatMessage(
                     role = "system",
                     content = "Rewrite one recipient-facing answer from the operator-provided answer basis. " +
                         "Return English only, regardless of the language used in the target question or answer basis; translate the answer basis into natural English without changing its facts. " +
-                        "The operator-provided answer basis is authoritative content. Only restate or organize it; " +
-                        "do not add any institution, programme, funding, contract, time, identity, number, URL, or other fact " +
-                        "not present in that basis. Return plain email prose only, with no JSON, headings, lists, status labels, " +
+                        "The operator-provided answer basis is authoritative content and defines what the reply says. " +
+                        "Only restate or organize it. You may additionally quote or paraphrase the attached reference facts when they support that answer basis, but you must not add any institution, programme, funding, contract, time, identity, number, URL, or other fact that appears in neither the answer basis nor the attached reference facts. " +
+                        "Return plain email prose only, with no JSON, headings, lists, status labels, " +
                         "or internal markers. " +
                         "The answer basis may authorise asking the recipient for materials or proposing a meeting or call; " +
                         "when it does, express that action in the reply. Do not introduce any outbound action that the answer basis does not state. " +
@@ -688,6 +713,12 @@ class AiReplyDraftService(
                         }
                         appendLine("operator-provided answer basis:")
                         appendLine(instruction)
+                        // P2b (B-2/I-4): 事实通道与 answer basis 并列；无绑定事实时
+                        // 整个块为空，什么都不输出。
+                        if (boundFactsBlock.isNotBlank()) {
+                            appendLine("Facts the operator attached to this question (reference material, not the answer basis):")
+                            appendLine(boundFactsBlock)
+                        }
                     }
                 )
             ),

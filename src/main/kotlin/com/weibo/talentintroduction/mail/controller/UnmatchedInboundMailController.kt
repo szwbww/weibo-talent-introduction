@@ -61,7 +61,6 @@ import com.weibo.talentintroduction.llm.service.AiReplyProgressReporter
 import com.weibo.talentintroduction.llm.service.AiReplyProgressSnapshot
 import com.weibo.talentintroduction.llm.service.AiReplyProgressTracker
 import com.weibo.talentintroduction.llm.service.AiReplyTimeoutPolicy
-
 @RestController
 @RequestMapping("/api/mail")
 class UnmatchedInboundMailController(
@@ -85,6 +84,7 @@ class UnmatchedInboundMailController(
         Executors.newScheduledThreadPool(2)
 ) {
     private val generations = ConcurrentHashMap<String, GenerationControl>()
+    private val logger = org.slf4j.LoggerFactory.getLogger(UnmatchedInboundMailController::class.java)
     @GetMapping("/unmatched-inbound")
     fun list(
         @RequestParam(required = false) reasonType: String?,
@@ -527,11 +527,11 @@ class UnmatchedInboundMailController(
                     control.sendTerminal("result", response)
                 } catch (_: AiReplyGenerationCancelledException) {
                     control.sendTerminal("cancelled", mapOf("generationId" to generationId))
-                } catch (_: Exception) {
-                    control.sendTerminal(
-                        "error",
-                        mapOf("generationId" to generationId, "message" to "AI generation failed")
-                    )
+                } catch (ex: Exception) {
+                    // I-1: 只对已知业务异常透出真实 code；其余固定码，不泄露异常原文。
+                    val code = (ex as? com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException)?.code ?: com.weibo.talentintroduction.llm.service.AiReplyGenerationCoordinator.CODE_GENERATION_FAILED
+                    logger.warn("AI reply generation failed: generationId={}, code={}", generationId, code, ex)
+                    control.sendTerminal("error", mapOf("generationId" to generationId, "code" to code, "message" to "AI generation failed"))
                 } finally {
                     control.cleanup()
                 }

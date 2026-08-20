@@ -1,10 +1,15 @@
 package com.weibo.talentintroduction.llm.service
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -119,6 +124,161 @@ class AiReplyGenerationCoordinatorTest {
             coordinator.cancel("TRAINING_MAIL:commit", "00000000-0000-0000-0000-000000000042")
             executor.shutdownNow()
             scheduler.shutdownNow()
+        }
+    }
+
+    // P0 (I-1): a known business exception surfaces its real code in the error
+    // event payload while the fixed generic message stays.
+    @Test
+    fun `business exception surfaces its code in the error event`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newScheduledThreadPool(1)
+        val coordinator = AiReplyGenerationCoordinator(executor, scheduler)
+        val id = "00000000-0000-0000-0000-000000000010"
+        val release = CountDownLatch(1)
+        val capture = SseCapture()
+        try {
+            val emitter = coordinator.start("TRAINING_MAIL:10", id, AiReplyTimeoutPolicy(10, 30)) { _, _, _ ->
+                release.await(5, TimeUnit.SECONDS)
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_EVIDENCE_STALE")
+            }
+            capture.attach(emitter)
+            release.countDown()
+            assertTrue(capture.done.await(5, TimeUnit.SECONDS))
+            val error = capture.events.firstOrNull { it.first == "error" }
+            assertTrue(error != null, "expected an error event, got ${capture.events.map { it.first }}")
+            @Suppress("UNCHECKED_CAST")
+            val payload = error!!.second as Map<String, Any>
+            assertEquals("TRUST_REPLY_EVIDENCE_STALE", payload["code"])
+            assertEquals("AI generation failed", payload["message"])
+            assertEquals(id, payload["generationId"])
+            assertEquals(setOf("generationId", "code", "message"), payload.keys)
+        } finally {
+            release.countDown()
+            coordinator.cancel("TRAINING_MAIL:10", id)
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    // P0 (I-1): unknown exceptions surface the fixed code and the generic
+    // message only; no exception text, class name or stack may leak.
+    @Test
+    fun `unknown exception surfaces the fixed code and no exception text`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newScheduledThreadPool(1)
+        val coordinator = AiReplyGenerationCoordinator(executor, scheduler)
+        val id = "00000000-0000-0000-0000-000000000011"
+        val release = CountDownLatch(1)
+        val capture = SseCapture()
+        try {
+            val emitter = coordinator.start("TRAINING_MAIL:11", id, AiReplyTimeoutPolicy(10, 30)) { _, _, _ ->
+                release.await(5, TimeUnit.SECONDS)
+                throw IllegalStateException("db password is xyz")
+            }
+            capture.attach(emitter)
+            release.countDown()
+            assertTrue(capture.done.await(5, TimeUnit.SECONDS))
+            val error = capture.events.firstOrNull { it.first == "error" }
+            assertTrue(error != null, "expected an error event, got ${capture.events.map { it.first }}")
+            @Suppress("UNCHECKED_CAST")
+            val payload = error!!.second as Map<String, Any>
+            assertEquals("AI_REPLY_GENERATION_FAILED", payload["code"])
+            assertEquals("AI generation failed", payload["message"])
+            assertEquals(setOf("generationId", "code", "message"), payload.keys)
+            val serialized = payload.toString()
+            assertFalse(serialized.contains("xyz"))
+            assertFalse(serialized.contains("IllegalStateException"))
+            assertFalse(serialized.contains("db password"))
+        } finally {
+            release.countDown()
+            coordinator.cancel("TRAINING_MAIL:11", id)
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    // P0 (must-NOT-change 2): cancellation keeps emitting `cancelled` and never
+    // surfaces an error event.
+    @Test
+    fun `cancellation still emits cancelled and never error`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val scheduler = Executors.newScheduledThreadPool(1)
+        val coordinator = AiReplyGenerationCoordinator(executor, scheduler)
+        val id = "00000000-0000-0000-0000-000000000012"
+        val release = CountDownLatch(1)
+        val capture = SseCapture()
+        try {
+            val emitter = coordinator.start("TRAINING_MAIL:12", id, AiReplyTimeoutPolicy(10, 30)) { _, _, _ ->
+                release.await(5, TimeUnit.SECONDS)
+                throw AiReplyGenerationCancelledException()
+            }
+            capture.attach(emitter)
+            release.countDown()
+            assertTrue(capture.done.await(5, TimeUnit.SECONDS))
+            assertTrue(capture.events.any { it.first == "cancelled" }, "expected a cancelled event, got ${capture.events.map { it.first }}")
+            assertFalse(capture.events.any { it.first == "error" })
+            val cancelled = capture.events.first { it.first == "cancelled" }
+            @Suppress("UNCHECKED_CAST")
+            assertEquals(id, (cancelled.second as Map<String, Any>)["generationId"])
+        } finally {
+            release.countDown()
+            coordinator.cancel("TRAINING_MAIL:12", id)
+            executor.shutdownNow()
+            scheduler.shutdownNow()
+        }
+    }
+
+    // P0: captures SSE events emitted by a coordinator-owned SseEmitter.
+    // ResponseBodyEmitter.Handler and initialize() are package-private, so the
+    // handler is attached reflectively after start(); sends made before the
+    // handler exists are queued by Spring and flushed on initialize.
+    private class SseCapture {
+        val events = CopyOnWriteArrayList<Pair<String, Any?>>()
+        val done = CountDownLatch(1)
+        @Volatile
+        private var currentEvent: String? = null
+
+        fun attach(emitter: SseEmitter) {
+            val handlerClass = Class.forName("org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter\$Handler")
+            val handler = java.lang.reflect.Proxy.newProxyInstance(
+                handlerClass.classLoader,
+                arrayOf(handlerClass)
+            ) { _, method, args ->
+                when (method.name) {
+                    "send" -> {
+                        val arg = args?.getOrNull(0)
+                        if (arg is Set<*>) {
+                            arg.forEach { entry ->
+                                if (entry is ResponseBodyEmitter.DataWithMediaType) {
+                                    deliver(entry.data, entry.mediaType)
+                                }
+                            }
+                        } else {
+                            deliver(arg, null)
+                        }
+                        null
+                    }
+                    "complete", "completeWithError" -> {
+                        done.countDown()
+                        null
+                    }
+                    else -> null
+                }
+            }
+            val initialize = ResponseBodyEmitter::class.java.getDeclaredMethod("initialize", handlerClass)
+            initialize.isAccessible = true
+            runCatching { initialize.invoke(emitter, handler) }.getOrThrow()
+        }
+
+        private fun deliver(data: Any?, mediaType: MediaType?) {
+            if (data is String && data.startsWith("event:")) {
+                // SseEventBuilderImpl flushes the "event:<name>\ndata:" prefix
+                // as one String entry; keep only the event name itself.
+                currentEvent = data.removePrefix("event:").substringBefore('\n').trim()
+            } else {
+                events.add((currentEvent ?: "message") to data)
+            }
         }
     }
 }

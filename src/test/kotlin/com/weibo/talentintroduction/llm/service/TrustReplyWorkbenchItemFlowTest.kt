@@ -744,6 +744,78 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
+    fun `bound facts never enter the send audit rule ids`() {
+        // P2b (C-4 / must-NOT-change 1 / IP-3): 绑定但非证据的事实只进 prompt 通道，
+        // 整封汇总（assemble / generate）暴露的外发审计 id 一律不含它。
+        val boundId = 99L
+        val fixture = assembleFixture(boundFactIds = listOf(boundId))
+
+        // P2b (I-1): prompt 通道携带绑定事实，send 通道只有证据。
+        assertTrue(fixture.selection.promptRuleIds.contains(boundId))
+        assertEquals(listOf(9L), fixture.selection.sendQaRuleIds)
+        assertFalse(fixture.selection.sendQaRuleIds.contains(boundId))
+
+        // 整封汇总：requestedFactIds（= selection.sendQaRuleIds）与 canonicalFactIds
+        // （= claims 的证据 sourceRuleIds）都不含绑定但非证据的 id。
+        val response = fixture.service.assemble(fixture.request)
+        assertEquals(listOf(9L), response.requestedFactIds)
+        assertEquals(listOf(9L), response.canonicalFactIds)
+        assertFalse(response.requestedFactIds.contains(boundId))
+        assertFalse(response.canonicalFactIds.contains(boundId))
+
+        // 整封生成：外发审计快照的 qaRuleIds 只含证据（mail_record_qa_rule 只记真证据）。
+        Mockito.`when`(
+            fixture.draftService.generate(
+                inboundText = "What?",
+                operatorTurns = emptyList(),
+                qaRuleIds = null,
+                operatorInstruction = null,
+                expertProfile = "Name: Test",
+                mailHistory = "history",
+                contextWarnings = emptyList(),
+                replyModel = null,
+                researchProfileSufficient = true
+            )
+        ).thenReturn(
+            AiReplyDraftResult(
+                draftText = "Salary info",
+                usedLlm = true,
+                qaRuleIds = listOf(9L),
+                mode = AiReplyMode.QA_GROUNDED,
+                requestFacts = listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)),
+                generationState = AiReplyGenerationState.LLM_USED,
+                draftReadiness = AiReplyDraftReadiness.READY,
+                evidenceSetVersion = "e1",
+                itemAnswers = emptyList()
+            )
+        )
+        Mockito.`when`(fixture.previewService.preview("Salary info", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered Salary info", emptyList()))
+
+        val generated = fixture.service.generate(
+            TrustReplyGenerationRequest(
+                source = fixture.request.source,
+                expectedSourceVersion = fixture.request.expectedSourceVersion
+            )
+        )
+        assertEquals(listOf(9L), generated.qaRuleIds)
+        assertFalse(generated.qaRuleIds.contains(boundId))
+    }
+
+    @Test
+    fun `locked items survive the bound-vs-evidence split`() {
+        // P2a (I-5): 自动匹配路径下 boundRuleIds == factRuleIds（I-1），切换后
+        // requestEvidenceVersion 的输入逐字不变 → 既有锁定项 versionId 原样通过。
+        val fixture = assembleFixture()
+        val boot = fixture.service.bootstrap(TrustReplyBootstrapRequest(fixture.request.source))
+        val currentEvidence = boot.requestCoverage.single().evidenceSetVersion
+        assertEquals(fixture.validLockedItem.evidenceSetVersion, currentEvidence)
+
+        val response = fixture.service.assemble(fixture.request)
+        assertEquals(fixture.validLockedItem.versionId, response.itemVersions.single().versionId)
+    }
+
+    @Test
     fun `assemble accepts matrix input and returns the canonical matrix`() {
         val fixture = assembleFixture()
         Mockito.`when`(fixture.factSelection.selectForWorkbench("What?", listOf(listOf(9L)), null, true))
@@ -1176,6 +1248,9 @@ class TrustReplyWorkbenchItemFlowTest {
         requestText = requestText,
         factRuleIds = facts,
         status = status,
+        // P2a (I-1): 夹具镜像生产赋值——auto/legacy/全采纳矩阵路径下
+        // boundRuleIds == factRuleIds；需要分叉的用例用 .copy(boundRuleIds = ...) 覆写。
+        boundRuleIds = facts,
         intents = listOf(
             RequestIntentCoverage(
                 intentKey = "general.answer",
@@ -1722,7 +1797,8 @@ class TrustReplyWorkbenchItemFlowTest {
         val auditService: AiReplyReviewAuditService,
         val replySnippetService: ReplySnippetService,
         val stateStore: TrustReplyWorkbenchStateStore,
-        val defaultFrame: ResolvedReplyFrame
+        val defaultFrame: ResolvedReplyFrame,
+        val selection: ResolvedQaRules
     )
 
     private fun assembleFixture(
@@ -1731,7 +1807,8 @@ class TrustReplyWorkbenchItemFlowTest {
         answerText: String = "Salary info",
         claims: List<AiReplyItemClaim> = listOf(AiReplyItemClaim("general.answer", "Salary info", listOf(9L))),
         generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED,
-        intents: List<RequestIntentCoverage> = emptyList()
+        intents: List<RequestIntentCoverage> = emptyList(),
+        boundFactIds: List<Long> = emptyList()
     ): AssembleFixture {
         val mailRecords = Mockito.mock(MailRecordRepository::class.java)
         val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
@@ -1770,10 +1847,17 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         val baseItem = item(1, "What?", listOf(9L), status)
         val item = if (intents.isEmpty()) baseItem else baseItem.copy(intents = intents)
+        val boundItem = if (boundFactIds.isEmpty()) {
+            item
+        } else {
+            // P2b (C-4): 运营额外绑定但非证据的事实（如 99L）与证据（9L）并存；
+            // prompt 通道携带绑定，send 通道只有证据。
+            item.copy(boundRuleIds = boundFactIds + item.factRuleIds)
+        }
         val selection = ResolvedQaRules(
             sendQaRuleIds = listOf(9L),
-            promptRuleIds = listOf(9L),
-            requestFacts = listOf(item),
+            promptRuleIds = (listOf(9L) + boundFactIds).distinct(),
+            requestFacts = listOf(boundItem),
             requestCount = 1,
             groundedRequestCount = if (status == RequestGroundingStatus.GROUNDED) 1 else 0
         )
@@ -1805,6 +1889,10 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
             .thenReturn(Triple(baseEvidenceSetVersion, emptyList(), emptyList()))
+        if (boundItem.boundRuleIds != listOf(9L)) {
+            Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(boundItem.boundRuleIds))
+                .thenReturn(Triple(baseEvidenceSetVersion, emptyList(), emptyList()))
+        }
         val canonicalAnswer = when (handling) {
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
@@ -1855,8 +1943,11 @@ class TrustReplyWorkbenchItemFlowTest {
         // 03a (I-1): the locked item carries the per-request evidence version;
         // the assemble request's expectedEvidenceSetVersion is now ignored by
         // the server, so the fixture reuses the same per-request value.
+        // P2b (C-4): the per-request evidence version derives from boundRuleIds
+        // (an identity input) while sendQaRuleIds stays evidence-only; when there
+        // are no extra bindings this is byte-identical to the legacy "9" form.
         val evidenceSetVersion = AiReplyDraftService.sha256Hex(
-            listOf(requestKey, "9", baseEvidenceSetVersion).joinToString(" ")
+            listOf(requestKey, boundItem.boundRuleIds.joinToString(","), baseEvidenceSetVersion).joinToString(" ")
         )
         val versionId = TrustReplyWorkbenchService.versionId(
             requestKey,
@@ -1894,7 +1985,8 @@ class TrustReplyWorkbenchItemFlowTest {
             auditService = auditService,
             replySnippetService = replySnippetService,
             stateStore = stateStore,
-            defaultFrame = defaultFrame
+            defaultFrame = defaultFrame,
+            selection = selection
         )
     }
 
@@ -1979,6 +2071,7 @@ class TrustReplyWorkbenchItemFlowTest {
             factRuleIds = listOf(9L),
             status = RequestGroundingStatus.GROUNDED,
             requiresResearchContext = true,
+            boundRuleIds = listOf(9L),
             intents = researchIntents
         )
         val generalItem = RequestFactItem(
@@ -1987,6 +2080,7 @@ class TrustReplyWorkbenchItemFlowTest {
             factRuleIds = listOf(10L),
             status = RequestGroundingStatus.GROUNDED,
             requiresResearchContext = false,
+            boundRuleIds = listOf(10L),
             intents = generalIntents
         )
         val selection = ResolvedQaRules(
