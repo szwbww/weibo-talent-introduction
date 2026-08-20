@@ -355,7 +355,11 @@ data class RequestFactItem(
     val intents: List<RequestIntentCoverage> = emptyList(),
     // P2a (plan 02): shadow-period measurement only — never feeds status,
     // groundedRequestCount, unsupportedRequests or any hash (I-3/I-2).
-    val unrecognizedAsks: List<EnumeratedAsk> = emptyList()
+    val unrecognizedAsks: List<EnumeratedAsk> = emptyList(),
+    // P1 (I-3): 影子字段——运营显式绑定但被 buildRequestFact 过滤掉的事实 id，
+    // 按运营原始顺序。仅供 UI 提示，绝不进入 status、factRuleIds、sendQaRuleIds、
+    // promptRuleIds、任何 evidence/version 哈希或任何对外文本。
+    val droppedBindingRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(

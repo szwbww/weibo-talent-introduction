@@ -196,13 +196,16 @@ class QaFactSelectionService(
                 askEnumeration = enumeration,
                 requestRange = unit.range
             )
-            if (item.factRuleIds != explicitIds) {
-                throw TrustReplyWorkbenchException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
-                    "TRUST_REPLY_FACT_SELECTION_INVALID"
-                )
-            }
-            item
+            // P1 (I-1): 服务端两层过滤（buildRequestFact 的关键词匹配与 SUPPORTED
+            // 证据集过滤）可能丢弃运营显式绑定的事实。对 UNSUPPORTED 条目这是必然
+            // 发生的（evidenceSet 恒空），因此这里不能当作非法输入抛错——那会让整个
+            // bootstrap 422、工作台打不开。改为：采纳过滤结果，把被丢弃的 id 记进
+            // 影子字段供 UI 提示（I-2/I-3）。
+            // 注意：条数校验、checkWorkbenchUniqueness、validateExplicitSelection
+            // 仍然硬拦（真正的脏输入必须继续报错）。
+            val accepted = item.factRuleIds.toSet()
+            val dropped = explicitIds.filter { it !in accepted }
+            if (dropped.isEmpty()) item else item.copy(droppedBindingRuleIds = dropped)
         }
         return workbenchResult(requestFacts, enumeration)
     }

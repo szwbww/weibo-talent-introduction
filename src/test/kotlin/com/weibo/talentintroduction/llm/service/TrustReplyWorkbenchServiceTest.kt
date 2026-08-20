@@ -1101,6 +1101,86 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
+    fun `bootstrap surfaces dropped bindings per request without failing`() {
+        // P1 (I-2/IP-2): 服务端过滤掉运营绑定后，bootstrap 仍然 200，且对应
+        // coverage 项携带 droppedFactRuleIds（第三投影，不进 canonicalMatrix）。
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val droppedItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+            .copy(droppedBindingRuleIds = listOf(10L, 20L))
+        val facts = ResolvedQaRules(
+            sendQaRuleIds = emptyList(),
+            promptRuleIds = emptyList(),
+            requestFacts = listOf(droppedItem),
+            requestCount = 1,
+            groundedRequestCount = 0
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(10L, 20L)), null, true)).thenReturn(facts)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val bootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L)))
+        ))
+
+        val coverage = bootstrap.requestCoverage.single()
+        assertEquals(emptyList<Long>(), coverage.factRuleIds)
+        assertEquals(listOf(10L, 20L), coverage.droppedFactRuleIds)
+        // I-4: canonicalMatrix 投影仍只取 item.factRuleIds（空），逐字相等。
+        assertEquals(listOf(TrustReplyRequestFactSelection(key, emptyList())), bootstrap.requestFactSelections)
+    }
+
+    @Test
+    fun `dropped bindings never change the per-request evidence version`() {
+        // P1 (I-3/IP-4): 同一摘要，"绑定被丢弃"与"完全没绑定"两种输入产生的
+        // requestCoverage[].evidenceSetVersion 必须完全相同——影子字段不进哈希。
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val droppedFacts = ResolvedQaRules(
+            sendQaRuleIds = emptyList(),
+            promptRuleIds = emptyList(),
+            requestFacts = listOf(item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+                .copy(droppedBindingRuleIds = listOf(10L, 20L))),
+            requestCount = 1,
+            groundedRequestCount = 0
+        )
+        val unboundFacts = ResolvedQaRules(
+            sendQaRuleIds = emptyList(),
+            promptRuleIds = emptyList(),
+            requestFacts = listOf(item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)),
+            requestCount = 1,
+            groundedRequestCount = 0
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(10L, 20L)), null, true)).thenReturn(droppedFacts)
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(emptyList<Long>()), null, true)).thenReturn(unboundFacts)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val droppedBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L)))
+        ))
+        val unboundBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, emptyList()))
+        ))
+
+        val droppedVersion = droppedBootstrap.requestCoverage.single().evidenceSetVersion
+        val unboundVersion = unboundBootstrap.requestCoverage.single().evidenceSetVersion
+        assertFalse(droppedVersion.isBlank())
+        assertEquals(unboundVersion, droppedVersion)
+    }
+
+    @Test
     fun `suggested handling stays inside the allowed set`() {
         stubCanonicalSource(listOf(
             item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),

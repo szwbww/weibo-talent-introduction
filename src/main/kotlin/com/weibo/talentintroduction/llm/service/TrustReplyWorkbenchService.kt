@@ -145,7 +145,10 @@ data class TrustReplyRequestCoverage(
     val unrecognizedAsks: List<TrustReplyUnrecognizedAsk> = emptyList(),
     // 03a (I-1): per-request evidence version for this coverage item; the
     // default keeps every existing constructor site source-compatible.
-    val evidenceSetVersion: String = ""
+    val evidenceSetVersion: String = "",
+    // P1 (I-2/I-3): 本条摘要中运营绑定但未被采纳的事实 id。影子字段，
+    // 默认值保证既有构造点源码兼容；不参与任何身份哈希（I-3）。
+    val droppedFactRuleIds: List<Long> = emptyList()
 )
 
 /**
@@ -1941,7 +1944,9 @@ class TrustReplyWorkbenchService(
                 unrecognizedAsks = item.unrecognizedAsks.map { ask ->
                     TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
                 },
-                evidenceSetVersion = requestEvidenceVersions[requestKey(sourceVersion, item)].orEmpty()
+                evidenceSetVersion = requestEvidenceVersions[requestKey(sourceVersion, item)].orEmpty(),
+                // P1 (I-2): 第三投影——只进 coverage，不进 canonicalMatrix。
+                droppedFactRuleIds = item.droppedBindingRuleIds
             )
         }
     }

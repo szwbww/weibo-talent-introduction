@@ -488,6 +488,8 @@
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
+                // P1 (I-2): 服务端未采纳的绑定，仅用于提示，不参与任何请求载荷。
+                droppedFactRuleIds: [...(item.droppedFactRuleIds || [])],
                 // 03a (I-1): per-request evidence version from the server
                 // coverage; the authority for this item's version identity.
                 // The aggregate fallback only covers pre-03a servers whose
@@ -1840,6 +1842,17 @@
         }
 
         // I-2: per-card fact chips and picker. Owners, pending saves and server
+        // P1 (S-1): maps dropped binding ids to display names for the muted
+        // hint. Reuses the chips' state.rules lookup (factRuleById) and the
+        // same `事实 <id>` fallback — never a second id-lookup path.
+        function droppedFactLabels(request) {
+            return (request.droppedFactRuleIds || []).map((factId) => {
+                const id = Number(factId);
+                const rule = factRuleById(id);
+                return rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
+            }).join("、");
+        }
+
         // re-validation keep the matrix canonical; disabled states are UX only.
         function renderFactSection(request) {
             const factActionReason = factActionReasonFor(request, state);
@@ -1899,10 +1912,17 @@
                 : "") + (request.contextStale === true
                 ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
                 : "");
+            // P1 (S-1): only when this item's explicit bindings were dropped by
+            // the server is the verbatim muted hint appended after the stale
+            // hints; no new class, no inline style, no output when the
+            // condition is false.
+            const droppedMarkup = (Array.isArray(request.droppedFactRuleIds) && request.droppedFactRuleIds.length > 0)
+                ? `<span class="muted" data-role="item-facts-dropped">以下事实未被采纳：${escapeText(droppedFactLabels(request))}。该问题未识别出可支持的意图，事实无处挂载，本条回答不会引用它们。</span>`
+                : "";
             const factActionStatus = factActionReason
                 ? `<span class="trust-reply-fact-action-status" data-role="fact-action-status">${escapeText(factActionReason)}</span>`
                 : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}${droppedMarkup}`;
         }
 
         function renderFrameSelects() {
