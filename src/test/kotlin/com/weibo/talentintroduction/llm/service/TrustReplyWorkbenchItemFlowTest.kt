@@ -69,6 +69,11 @@ class TrustReplyWorkbenchItemFlowTest {
 
     @Test
     fun `assembled operator directed answer cannot bypass action policy`() {
+        // I-2: 授权放开只作用于 G1（该动作是否被允许出现）。本用例的 answerText
+        // 「Please send your CV.」缺目的与自愿表述——在新语义下仍被拒，但拒因从
+        // G1（动作未授权，detectActions 无条件判废）变为 G2（CV_PURPOSE_MISSING /
+        // CV_OPTIONALITY_MISSING，findViolations 在 OPERATOR_DIRECTED_ALLOWED_ACTIONS
+        // 下仍判废）。断言（TRUST_REPLY_CLAIM_INVALID）逐字保留。
         val fixture = assembleFixture(
             status = RequestGroundingStatus.UNSUPPORTED,
             handling = operatorDirectedHandling(),
@@ -81,6 +86,107 @@ class TrustReplyWorkbenchItemFlowTest {
         }
 
         assertEquals("TRUST_REPLY_CLAIM_INVALID", error.code)
+    }
+
+    @Test
+    fun `assembled operator directed answer keeps an operator authorised compliant request`() {
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorDirectedHandling(),
+            answerText = "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                "so that we can carry out an initial eligibility review.",
+            claims = emptyList()
+        )
+
+        val assembled = fixture.service.assemble(fixture.request)
+
+        assertTrue(assembled.itemVersions.single().answerText.contains("CV"))
+        assertTrue(assembled.rawDraftText.contains("eligibility review"))
+    }
+
+    @Test
+    fun `operator authorized actions come only from operator directed items with a non-blank instruction`() {
+        val service = assembleFixture(status = RequestGroundingStatus.UNSUPPORTED).service
+        val meetingAnswer =
+            "We would also be glad to arrange a Zoom call once that initial review is complete."
+
+        fun locked(
+            handling: TrustReplyItemHandling,
+            answerText: String,
+            operatorInstruction: String = "Use the operator-provided basis."
+        ) = TrustReplyLockedItemRequest(
+            requestKey = "k",
+            versionId = "v",
+            handling = handling,
+            answerText = answerText,
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = "e",
+            sourceVersion = "s",
+            operatorInstruction = operatorInstruction
+        )
+
+        // (a) empty list -> empty set
+        assertEquals(emptySet<AiReplyAction>(), service.operatorAuthorizedActions(emptyList()))
+        // (b) grounded item whose answer contains a CV request -> empty set (handling mismatch)
+        assertEquals(
+            emptySet<AiReplyAction>(),
+            service.operatorAuthorizedActions(
+                listOf(locked(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE, "Could you please send me your CV?"))
+            )
+        )
+        // (c) operator-directed but blank instruction -> empty set
+        assertEquals(
+            emptySet<AiReplyAction>(),
+            service.operatorAuthorizedActions(
+                listOf(locked(TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT, meetingAnswer, operatorInstruction = ""))
+            )
+        )
+        // (d) operator-directed with instruction; only the meeting action appears -> exactly PROPOSE_MEETING
+        assertEquals(
+            setOf(AiReplyAction.PROPOSE_MEETING),
+            service.operatorAuthorizedActions(
+                listOf(locked(TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT, meetingAnswer))
+            )
+        )
+    }
+
+    @Test
+    fun `operator authorized actions ignore a missing or expired snapshot`() {
+        val fixture = assembleFixture(status = RequestGroundingStatus.UNSUPPORTED)
+        val service = fixture.service
+        val store = fixture.stateStore
+        val source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 100L)
+
+        // (a) no snapshot -> empty set; decode is never consulted
+        Mockito.`when`(store.load("LIVE_INBOUND", 100L)).thenReturn(null)
+        assertEquals(emptySet<AiReplyAction>(), service.operatorAuthorizedActions(source))
+        Mockito.verify(store, Mockito.never()).decodePayload(Mockito.anyString() ?: "")
+
+        // (b) expired snapshot -> empty set even though a payload exists
+        Mockito.`when`(store.load("LIVE_INBOUND", 100L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(
+                stateVersion = 1L,
+                expiresAt = LocalDateTime.now().minusSeconds(1),
+                payloadJson = "anything"
+            )
+        )
+        assertEquals(emptySet<AiReplyAction>(), service.operatorAuthorizedActions(source))
+
+        // (c) decode failure -> empty set
+        Mockito.`when`(store.load("LIVE_INBOUND", 100L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(
+                stateVersion = 1L,
+                expiresAt = LocalDateTime.now().plusDays(1),
+                payloadJson = "anything"
+            )
+        )
+        Mockito.`when`(store.decodePayload("anything")).thenReturn(null)
+        assertEquals(emptySet<AiReplyAction>(), service.operatorAuthorizedActions(source))
+
+        // I-8: this read-only path never prunes
+        Mockito.verify(store, Mockito.never()).pruneExpired(Mockito.any() ?: LocalDateTime.now())
     }
 
     @Test
@@ -1615,6 +1721,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val previewService: AiReplyDraftPreviewService,
         val auditService: AiReplyReviewAuditService,
         val replySnippetService: ReplySnippetService,
+        val stateStore: TrustReplyWorkbenchStateStore,
         val defaultFrame: ResolvedReplyFrame
     )
 
@@ -1786,6 +1893,7 @@ class TrustReplyWorkbenchItemFlowTest {
             previewService = previewService,
             auditService = auditService,
             replySnippetService = replySnippetService,
+            stateStore = stateStore,
             defaultFrame = defaultFrame
         )
     }

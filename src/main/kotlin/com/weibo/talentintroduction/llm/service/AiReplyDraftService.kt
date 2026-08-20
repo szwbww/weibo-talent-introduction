@@ -657,7 +657,7 @@ class AiReplyDraftService(
             )
         }
 
-        val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
+        val allowedActions = AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
         val messages = withActionBoundary(
             listOf(
                 LlmChatMessage(
@@ -667,7 +667,14 @@ class AiReplyDraftService(
                         "The operator-provided answer basis is authoritative content. Only restate or organize it; " +
                         "do not add any institution, programme, funding, contract, time, identity, number, URL, or other fact " +
                         "not present in that basis. Return plain email prose only, with no JSON, headings, lists, status labels, " +
-                        "or internal markers."
+                        "or internal markers. " +
+                        "The answer basis may authorise asking the recipient for materials or proposing a meeting or call; " +
+                        "when it does, express that action in the reply. Do not introduce any outbound action that the answer basis does not state. " +
+                        "When the answer basis asks for a CV or other materials, the sentence that makes the request must, within that same sentence, " +
+                        "state the purpose using the words \"eligibility review\" and make it optional using the words \"at your convenience\". " +
+                        "Example of an acceptable request sentence: " +
+                        "\"If you would like to proceed, you are welcome to share your CV at your convenience so that we can carry out an initial eligibility review.\" " +
+                        "Never ask for passports, ID cards, work certificates, bank statements, or any other identity or financial document."
                 ),
                 LlmChatMessage(
                     role = "user",

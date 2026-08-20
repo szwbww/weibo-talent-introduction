@@ -86,6 +86,24 @@ object AiReplyActionPolicy {
 
     private val SENTENCE_SPLIT = Regex("""(?<=[.!?。！？])\s+|\n+""")
 
+    /**
+     * I-1: ANSWER_FROM_OPERATOR_INPUT 的授权集合（方案 C）。
+     *
+     * 该 handling 只适用于 RequestGroundingStatus.UNSUPPORTED 条目，答案正文完全来自
+     * 运营在「回答说明」里填写的内容，不存在可供偏离的证据。因此「防止 AI 自作主张
+     * 向专家提要求」这一层防线（G1）在此没有对象，由运营的填写行为本身承担授权。
+     *
+     * 本常量只放开 G1。合规层（G2）——敏感材料 CTA、CV 目的缺失、CV 自愿缺失——
+     * 由 findViolations() 独立执行，不受本集合影响，见 I-2。
+     *
+     * 适用范围仅限「生成一条 operator-directed 答案」与「校验一条 operator-directed
+     * 锁定项」。发送/预检的整封取证不使用本常量，而是按 I-6 从锁定项实际内容推导。
+     */
+    val OPERATOR_DIRECTED_ALLOWED_ACTIONS: Set<AiReplyAction> = setOf(
+        AiReplyAction.REQUEST_MATERIALS,
+        AiReplyAction.PROPOSE_MEETING
+    )
+
     fun deriveAllowed(
         inboundText: String,
         operatorInstruction: String?,

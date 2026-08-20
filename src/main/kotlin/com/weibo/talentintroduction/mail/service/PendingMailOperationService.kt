@@ -27,6 +27,7 @@ import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.ResolvedQaRules
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
 import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplySourceType
@@ -216,13 +217,24 @@ class PendingMailOperationService(
         mailVariableService.requireValidPlaceholders(finalTextBody)
         mailVariableService.requireValidPlaceholders(finalHtmlBody)
 
+        // I-6 / I-8: 授权只能由服务端从本次请求已携带的锁定集合推导；
+        // assembly 必须指向本次来信，否则视为未授权（照抄 :573-576 的身份守卫）。
+        val operatorAuthorized = trustReplyAssembly
+            ?.takeIf {
+                it.source.sourceType == TrustReplySourceType.LIVE_INBOUND &&
+                    it.source.sourceId == inboundProcessingId
+            }
+            ?.let { trustReplyWorkbenchService.operatorAuthorizedActions(it.lockedItems) }
+            .orEmpty()
+
         val findings = collectSafetyFindings(
             verificationText = finalValidationText,
             carriesQa = carriesQa,
             canonicalFactIds = canonicalFactIds,
             contact = contact,
             inboundText = inboundText,
-            researchProfileSufficient = researchProfileSufficient
+            researchProfileSufficient = researchProfileSufficient,
+            operatorAuthorizedActions = operatorAuthorized
         )
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
         if (findings.isNotEmpty() && !safetyWarningConfirmed) {
@@ -700,7 +712,8 @@ class PendingMailOperationService(
         canonicalFactIds: List<Long>,
         contact: ExpertContact,
         inboundText: String,
-        researchProfileSufficient: Boolean
+        researchProfileSufficient: Boolean,
+        operatorAuthorizedActions: Set<AiReplyAction>
     ): List<SafetyFinding> {
         val findings = mutableListOf<SafetyFinding>()
         fun add(code: String, sentence: String? = null) {
@@ -786,7 +799,7 @@ class PendingMailOperationService(
         }
 
         val restrictedActions = AiReplyActionPolicy.restrictForTrustState(
-            AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList()),
+            AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList()) + operatorAuthorizedActions,
             hasBlockingTrust
         )
         val violations = AiReplyActionPolicy.findViolations(verificationText, restrictedActions)
@@ -994,7 +1007,11 @@ class PendingMailOperationService(
             canonicalFactIds = canonicalFactIds,
             contact = contact,
             inboundText = inboundText,
-            researchProfileSufficient = researchProfileSufficient
+            researchProfileSufficient = researchProfileSufficient,
+            // I-8: 预检没有 assembly 入参，改从持久化快照推导；读不到即空集（fail-closed）。
+            operatorAuthorizedActions = trustReplyWorkbenchService.operatorAuthorizedActions(
+                TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, inboundProcessingId)
+            )
         )
         safetyFindings.forEach { finding ->
             if (finding.code !in warningCodes) {

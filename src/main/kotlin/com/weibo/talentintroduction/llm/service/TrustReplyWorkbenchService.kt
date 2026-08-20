@@ -382,6 +382,41 @@ class TrustReplyWorkbenchService(
         }
     }
 
+    /**
+     * I-6: 从一组锁定项推导「运营已批准的动作类型」。
+     * 只取 handling 为 ANSWER_FROM_OPERATOR_INPUT 且回答说明非空的条目，
+     * 并且只授权这些条目的答案正文里**实际出现过**的动作类型——不是无条件
+     * 授权该 handling 的全集。无此类条目时返回空集，
+     * 调用方行为与改动前逐字一致。
+     */
+    fun operatorAuthorizedActions(lockedItems: List<TrustReplyLockedItemRequest>): Set<AiReplyAction> =
+        lockedItems
+            .asSequence()
+            .filter {
+                it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
+                    it.operatorInstruction.isNotBlank()
+            }
+            .flatMap { AiReplyActionPolicy.detectActions(it.answerText).asSequence() }
+            .toSet()
+
+    /**
+     * I-8: 预检侧入口——没有 assembly 请求时，从持久化快照读回锁定项。
+     * 读不到（无快照 / 已过期 / 解码失败）一律返回空集，属有意的 fail-closed：
+     * 预检偏严（多报不漏报），运营在发送时仍可确认放行。
+     * 本方法只读不写，不触碰 state_version。
+     */
+    fun operatorAuthorizedActions(source: TrustReplySourceRef): Set<AiReplyAction> {
+        require(source.sourceId > 0) { "sourceId must be positive" }
+        val stored = stateStore.load(source.sourceType.name, source.sourceId) ?: return emptySet()
+        // I-8: 过期是惰性清理的，load() 可能读到已过期的行（pruneExpired 只在
+        // save() 与 restoreSavedStateWithFrame 的过期分支被调用）。这里必须显式判，
+        // 照抄 restoreSavedStateWithFrame :593-599 的判据；但本方法只读，
+        // 不调 pruneExpired、不写 state_version。
+        if (!stored.expiresAt.isAfter(LocalDateTime.now())) return emptySet()
+        val payload = stateStore.decodePayload(stored.payloadJson) ?: return emptySet()
+        return operatorAuthorizedActions(payload.lockedItems)
+    }
+
     fun bootstrap(request: TrustReplyBootstrapRequest): TrustReplyBootstrapResponse {
         val resolved = resolveSource(request.source)
         val stored = stateStore.load(resolved.source.sourceType.name, resolved.source.sourceId)
@@ -1348,9 +1383,14 @@ class TrustReplyWorkbenchService(
                 ) {
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
                 }
-                val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
-                if (AiReplyActionPolicy.detectActions(locked.answerText).isNotEmpty() ||
-                    AiReplyActionPolicy.findViolations(locked.answerText, allowedActions).isNotEmpty()
+                // I-3: 本分支不再用无条件 detectActions 判废——运营的回答说明已授权索要材料/
+                // 提议会议两类动作（I-1）。G2（敏感材料、CV 目的/自愿）仍由 findViolations 执行。
+                // 注意：下面 ANSWER_WITH_EVIDENCE / ANSWER_SUPPORTED_PART 分支的 detectActions
+                // 必须保留——grounded claim 正文永远不许含动作。
+                if (AiReplyActionPolicy.findViolations(
+                        locked.answerText,
+                        AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
+                    ).isNotEmpty()
                 ) {
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
                 }

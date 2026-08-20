@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.llm.service.AiReplyAction
 import com.weibo.talentintroduction.llm.service.AiReplyActionPolicy
 import com.weibo.talentintroduction.llm.service.AiReplyContext
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
@@ -334,6 +335,87 @@ class PendingMailOperationServiceTrustWorkbenchTest {
 
         assertEquals("SENT", result.sendStatus)
         Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `manual send accepts an operator authorised materials request`() {
+        val compliant =
+            "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                "so that we can carry out an initial eligibility review."
+        val assembly = liveAssembly().copy(
+            lockedItems = listOf(liveAssembly().lockedItems.single().copy(answerText = compliant))
+        )
+        Mockito.`when`(trustReplyWorkbenchService.assemble(assembly))
+            .thenReturn(assembledResponse(operatorDirectedVersion()))
+        Mockito.`when`(trustReplyWorkbenchService.operatorAuthorizedActions(assembly.lockedItems))
+            .thenReturn(setOf(AiReplyAction.REQUEST_MATERIALS))
+        stubSuccessfulSend()
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>$compliant</p>",
+            textBody = compliant,
+            operatorName = "op",
+            templateTextBody = "different-template",
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+    }
+
+    @Test
+    fun `manual send ignores an assembly that points at another inbound`() {
+        val compliant =
+            "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                "so that we can carry out an initial eligibility review."
+        val assembly = liveAssembly().copy(
+            source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 99L)
+        )
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L,
+                senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>$compliant</p>",
+                textBody = compliant,
+                operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+
+        assertTrue(ex.findings.any { it.code == AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED })
+        Mockito.verify(trustReplyWorkbenchService, Mockito.never())
+            .operatorAuthorizedActions(Mockito.anyList<TrustReplyLockedItemRequest>())
+    }
+
+    @Test
+    fun `operator authorisation does not override a blocking trust gap`() {
+        val compliant =
+            "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                "so that we can carry out an initial eligibility review."
+        val assembly = liveAssembly()
+        Mockito.`when`(trustReplyWorkbenchService.operatorAuthorizedActions(assembly.lockedItems))
+            .thenReturn(setOf(AiReplyAction.REQUEST_MATERIALS))
+        Mockito.`when`(aiReplyDraftService.hasBlockingTrustGapForSelection(Mockito.anyList<RequestFactItem>()))
+            .thenReturn(true)
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L,
+                senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>$compliant</p>",
+                textBody = compliant,
+                operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+
+        assertTrue(ex.findings.any { it.code == AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED })
     }
 
     @Test
@@ -1118,7 +1200,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 trustReplyAssembly = assembly
             )
         }
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
     }
 
     @Test
@@ -1240,7 +1323,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 trustReplyAssembly = assembly
             )
         }
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
     }
 
     @Test
@@ -1260,7 +1344,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 trustReplyAssembly = assembly
             )
         }
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
     }
 
     @Test
@@ -1280,7 +1365,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 trustReplyAssembly = assembly
             )
         }
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
     }
 
     @Test
@@ -1318,7 +1404,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 trustReplyAssembly = assembly
             )
         }
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+        Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActions(assembly.lockedItems)
+        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
     }
 
     private fun stubSuccessfulSend() {

@@ -4807,4 +4807,86 @@ class AiReplyDraftServiceTest {
         assertEquals(resultA.draftText, resultB.draftText)
         assertEquals(resultA.draftReadiness, resultB.draftReadiness)
     }
+
+    @Test
+    fun `operator directed item keeps a materials request authorised by the operator instruction`() {
+        stubEmptyFrame()
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult(
+                    "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                        "so that we can carry out an initial eligibility review."
+                )
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Hi, thank you for your email. My area of specialisation is econometric and statistical analysis.",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you introduce your current research?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "希望专家先提供一下简历 做一个简单的了解 然后再安排 zoom 视频会议"
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        assertEquals(
+            "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                "so that we can carry out an initial eligibility review.",
+            result.itemAnswer?.answerText
+        )
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(
+            prompt.contains("Allowed outbound actions for this draft: REQUEST_MATERIALS,PROPOSE_MEETING."),
+            "prompt must carry the operator-directed allowed set"
+        )
+    }
+
+    @Test
+    fun `operator directed item still rejects a CV request without purpose or optionality`() {
+        stubEmptyFrame()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("Could you please share your CV so we can get to know you better?")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Hi, thank you for your email.",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you introduce your current research?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "希望专家先提供一下简历 做一个简单的了解 然后再安排 zoom 视频会议"
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertNull(result.itemAnswer)
+        assertNull(result.generationKind)
+        assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
+    }
 }
