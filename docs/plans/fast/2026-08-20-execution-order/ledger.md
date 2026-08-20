@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-20/00-execution-order.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-20/00-execution-order.md (commit 15dbf44ea93cfab28f24bfb3ab017fa60ad3dbc8)
 - Amendments: N/A
 - Master base: 66e1036d5e5d9d33f2b59655f20063ed90fa9015
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: P0Verifier exited 1 mid-run (~2026-08-20T09:0xZ) before any verdict; verify-log empty; tree clean; re-dispatching fresh verifier (no fix_round consumed)
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Finalization validator failure — controller bookkeeping defects in docs-only evidence commits: (1) child IDs P0/P1/P2a/P2b are uppercase; validator CHILD_ID_RE requires [a-z0-9][a-z0-9._-]* (children/P0.. dirs + ledger rows + handoff must rename to lowercase, which the existing evidence commits do not contain); (2) P1 evidence d0721ee and P2a evidence 1e95d9b do not include fix-log.md in their changed file sets (empty placeholder pre-committed in P0 evidence 62f99f1). Both repairable only by amending/rebase-ing the docs-only evidence commits — explicitly unauthorized by the fast-p invocation (no rebase/squash/amend/reset). Product implementation commits (8ea1e24/a356ea4/14f88ad/a3ef1cd) and all four LIGHT_PASS_WITH_NOTES verdicts are sound.
+- Resume from: 66e1036d5e5d9d33f2b59655f20063ed90fa9015
 
 ## Baseline
 
