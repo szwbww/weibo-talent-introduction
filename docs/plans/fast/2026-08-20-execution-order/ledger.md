@@ -33,7 +33,7 @@
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| P0 | docs/plans/2026-08-20/P0-sse-error-code-and-state-reset.md | commit:15dbf44 | none | 1 | LIGHT_PASS_WITH_NOTES | 66e1036d5e5d9d33f2b59655f20063ed90fa9015 | 8ea1e241b5703e967da9861847663e67e5eb3bdc | 0 | — | 8ea1e241b5703e967da9861847663e67e5eb3bdc | | verifier P0Verifier3 (attempts 1-2 crashed pre-verdict); RECORD_ONLY O-1..O-5 in verify-log (forced deviations, all plan-audit/constraint driven) |
+| P0 | docs/plans/2026-08-20/P0-sse-error-code-and-state-reset.md | commit:15dbf44 | none | 1 | LIGHT_PASS_WITH_NOTES | 66e1036d5e5d9d33f2b59655f20063ed90fa9015 | 8ea1e241b5703e967da9861847663e67e5eb3bdc | 0 | — | 8ea1e241b5703e967da9861847663e67e5eb3bdc | 62f99f1d9c7065ff282a89d1dffba5b15d5a2316 | verifier P0Verifier3 (attempts 1-2 crashed pre-verdict); RECORD_ONLY O-1..O-5 in verify-log (forced deviations, all plan-audit/constraint driven) |
 | P1 | docs/plans/2026-08-20/P1-fact-binding-drop-not-fatal.md | commit:15dbf44 | P0 | 1 | PENDING | | | 0 | — | | | |
 | P2a | docs/plans/2026-08-20/P2a-bound-vs-evidence-split.md | commit:15dbf44 | P1 | 1 | PENDING | | | 0 | — | | | |
 | P2b | docs/plans/2026-08-20/P2b-bound-facts-into-prompt.md | commit:15dbf44 | P2a | 1 | PENDING | | | 0 | — | | | |
