@@ -1464,6 +1464,7 @@ async function api(path, options = {}) {
         const message = data?.message || `${response.status} ${response.statusText}`;
         const error = new Error(message);
         error.status = response.status;
+        error.data = data;
         throw error;
     }
     return data;
@@ -4162,6 +4163,8 @@ const AI_REPLY_WARNING_LABELS = {
     AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED: "依据中明确有\"服务方\"等角色披露要求，但正文未披露。请补上角色身份说明。",
     AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED: "正文给企业确定性描述，但依据中为不确定性表述。请改用依据原文。",
     AI_REPLY_ACTION_SENSITIVE_MATERIAL: "正文含敏感材料请求（护照/身份证/银行证明），已标记为风险。",
+    AI_REPLY_ACTION_MATERIALS_NOT_ALLOWED: "对方来信未提出提供材料，正文却主动索要简历/材料。请改为不索取，或先确认对方已表达提供意愿。",
+    AI_REPLY_ACTION_MEETING_NOT_ALLOWED: "对方来信未提出会面意向，正文却主动提议安排会议/Zoom。请改为不提议，或先确认对方已表达会面意愿。",
     AI_REPLY_ACTION_CV_PURPOSE_MISSING: "请求简历但未说明用途，请补充资格审核/研究方向匹配等说明。",
     AI_REPLY_ACTION_CV_OPTIONALITY_MISSING: "请求简历但未说明自愿性，请补充\"如您方便\"等提示。",
     AI_REPLY_PREFLIGHT_SOURCE_CHANGED: "依据已变化或不可用，请重新生成草稿或重新选择事实。",
@@ -10370,29 +10373,44 @@ async function handleUnmatchedAction(element) {
                 alert("人工回复邮件发送成功");
             }
         } catch (e) {
-            const warningCode = !safetyWarningConfirmed
-                ? String(e?.message || "").match(/\bAI_REPLY_CLAIM_[A-Z0-9_]+\b/)?.[0]
-                : null;
-            const canConfirmSafetyWarning = (e?.status === 422 || e?.status === 500) && [
-                "AI_REPLY_CLAIM_HALLUCINATED_FACT",
-                "AI_REPLY_CLAIM_MODALITY_STRENGTHENED",
-                "AI_REPLY_CLAIM_HIGH_RISK_UNBACKED",
-                "AI_REPLY_CLAIM_TRUST_RHETORIC",
-                "AI_REPLY_CLAIM_CONFIDENTIALITY_SUBSTITUTE",
-                "AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED",
-                "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
-            ].includes(warningCode);
-            if (canConfirmSafetyWarning) {
-                const confirmed = await openActionDialog("confirm", {
-                    message: `<p>内容安全校验提示：</p><p>${escapeHtml(AI_REPLY_WARNING_LABELS[warningCode] || "正文包含需人工核对的风险声明")}</p><p>确认已人工核对，仍要发送吗？</p>`
+            const canConfirmSafety = !safetyWarningConfirmed &&
+                e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED" &&
+                Array.isArray(e.data.findings) &&
+                e.data.findings.length > 0;
+            if (canConfirmSafety) {
+                const findings = e.data.findings;
+                const renderFindings = (list) => list.map((finding) => {
+                    const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
+                    const label = AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
+                    const coverage = finding.sentence
+                        ? `<div class="ai-reply-coverage">命中原句：${escapeHtml(finding.sentence)}</div>`
+                        : "";
+                    return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
+                }).join("");
+                const firstConfirmed = await openActionDialog("confirm", {
+                    message: `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p><div class="ai-reply-feedback">${renderFindings(findings)}</div><p>确认已人工核对，仍要发送吗？</p>`
                 });
-                if (confirmed) {
-                    return submitManualRichReply(
-                        recordId,
-                        { ...requestBody, safetyWarningConfirmed: true },
-                        true
-                    );
+                if (!firstConfirmed) {
+                    alert("人工回复发送失败: " + e.message);
+                    throw e;
                 }
+                let strongConfirmationText = null;
+                if (e.data.requiresStrongConfirmation === true) {
+                    const strongFindings = findings.filter((finding) => finding.severity === "STRONG");
+                    const secondConfirmed = await openActionDialog("confirm-typed", {
+                        message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderFindings(strongFindings)}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
+                    });
+                    if (!secondConfirmed) {
+                        alert("人工回复发送失败: " + e.message);
+                        throw e;
+                    }
+                    strongConfirmationText = "确认发送";
+                }
+                const retryBody = { ...requestBody, safetyWarningConfirmed: true };
+                if (strongConfirmationText !== null) {
+                    retryBody.strongConfirmationText = strongConfirmationText;
+                }
+                return submitManualRichReply(recordId, retryBody, true);
             }
             alert("人工回复发送失败: " + e.message);
             throw e;
@@ -11974,6 +11992,14 @@ const ACTION_DIALOG_SCHEMAS = {
         fields: [
             { name: "message", label: "", type: "html", required: false }
         ]
+    },
+    "confirm-typed": {
+        title: "高风险发送二次确认",
+        fields: [
+            { name: "message", label: "", type: "html", required: false },
+            { name: "confirmText", label: "请输入「确认发送」", type: "text", required: true, placeholder: "确认发送" }
+        ],
+        validate: (result) => (String(result.confirmText || "").trim() === "确认发送" ? null : "输入不匹配，请逐字输入「确认发送」四个字。")
     }
 };
 
@@ -12035,6 +12061,9 @@ function openActionDialog(type, options = {}) {
                 `;
             }
         });
+        if (schema.validate) {
+            html += '<div class="ai-reply-error" id="dialog_validationError" hidden></div>';
+        }
         bodyEl.innerHTML = html;
 
         const handleCancel = () => {
@@ -12054,6 +12083,17 @@ function openActionDialog(type, options = {}) {
                     result[field.name] = el.value;
                 }
             });
+            if (schema.validate) {
+                const validationError = schema.validate(result);
+                if (validationError) {
+                    const errorEl = document.getElementById("dialog_validationError");
+                    if (errorEl) {
+                        errorEl.textContent = validationError;
+                        errorEl.hidden = false;
+                    }
+                    return;
+                }
+            }
             cleanup();
             resolve(result);
         };

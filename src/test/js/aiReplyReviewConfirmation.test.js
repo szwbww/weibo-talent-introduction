@@ -122,11 +122,55 @@ describe("adopt-direct-send UI contracts", function () {
 
     it("manual safety warnings require confirmation before a single retry", function () {
         const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
-        if (!submit.includes("AI_REPLY_CLAIM_HALLUCINATED_FACT")) throw new Error("claim warning code is not recognized");
-        if (!submit.includes("e?.status === 500")) throw new Error("legacy 500 safety warning should still open confirmation");
-        if (!submit.includes("openActionDialog(\"confirm\"")) throw new Error("claim warning should open confirmation dialog");
+        if (submit.includes("AI_REPLY_CLAIM_HALLUCINATED_FACT")) throw new Error("legacy claim code literal should be removed");
+        if (submit.includes("e?.status === 422") || submit.includes("e?.status === 500")) {
+            throw new Error("HTTP status must not be the confirmation criterion");
+        }
+        if (!submit.includes('e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED"')) {
+            throw new Error("server response code must gate the confirmation flow");
+        }
+        if (!submit.includes("e.data.findings")) throw new Error("findings list must gate the confirmation flow");
+        if (!submit.includes("requiresStrongConfirmation")) throw new Error("strong confirmation flag must be honored");
+        if (!submit.includes("openActionDialog(\"confirm\"")) throw new Error("first confirmation dialog required");
+        if (!submit.includes("confirm-typed")) throw new Error("strong typed confirmation dialog required");
+        if (!submit.includes("strongConfirmationText")) throw new Error("retry must carry the typed strong confirmation");
         if (!submit.includes("safetyWarningConfirmed: true")) throw new Error("confirmed retry must carry server confirmation");
         if (!submit.includes("submitManualRichReply(recordId")) throw new Error("confirmed retry should reuse the send path");
+        if (!submit.includes("ai-reply-feedback")) throw new Error("findings list must reuse ai-reply-feedback");
+        if (!submit.includes("ai-reply-warning")) throw new Error("normal findings must use ai-reply-warning");
+        if (!submit.includes("ai-reply-error")) throw new Error("strong findings must use ai-reply-error");
+        if (!submit.includes("ai-reply-coverage")) throw new Error("matched sentence rows must use ai-reply-coverage");
+        if (submit.includes('style="')) throw new Error("confirmation rendering must not add inline styles");
+        if (submit.includes("disabled = true")) throw new Error("submit button must not be disabled");
+    });
+
+    it("api() exposes response body as error.data", function () {
+        const apiFn = app.match(/async function api\([\s\S]*?\n\}/)?.[0] || "";
+        if (!apiFn.includes("error.data = data")) throw new Error("api() must expose the response body for the confirmation flow");
+    });
+
+    it("confirm-typed dialog schema validates exact 确认发送 input", function () {
+        const schemasStart = app.indexOf("const ACTION_DIALOG_SCHEMAS");
+        const schemasEnd = app.indexOf("function openActionDialog");
+        const schemasBlock = app.slice(schemasStart, schemasEnd);
+        if (!schemasBlock.includes('"confirm-typed"')) throw new Error("confirm-typed schema missing");
+        if (!schemasBlock.includes("确认发送")) throw new Error("confirm-typed must require exact 确认发送 text");
+        const confirmTypedBlock = schemasBlock.slice(schemasBlock.indexOf('"confirm-typed"'));
+        if (confirmTypedBlock.includes('style="')) throw new Error("confirm-typed schema must not add inline styles");
+        if (confirmTypedBlock.includes("disabled = true")) throw new Error("confirm-typed must not disable the submit button");
+        const dialogFn = app.match(/function openActionDialog\([\s\S]*?\n\}/)?.[0] || "";
+        if (!dialogFn.includes("dialog_validationError")) throw new Error("validation error node missing");
+        if (!dialogFn.includes('class="ai-reply-error"')) throw new Error("validation error node must reuse ai-reply-error");
+        if (!dialogFn.includes("schema.validate")) throw new Error("submit-time validation hook missing");
+        if (dialogFn.includes("disabled = true")) throw new Error("openActionDialog must not disable the submit button");
+    });
+
+    it("warning labels cover the two new action codes", function () {
+        const labelsStart = app.indexOf("const AI_REPLY_WARNING_LABELS");
+        const labelsEnd = app.indexOf("const PREFLIGHT_PASS_TEXT");
+        const labelsBlock = app.slice(labelsStart, labelsEnd);
+        if (!labelsBlock.includes("AI_REPLY_ACTION_MATERIALS_NOT_ALLOWED")) throw new Error("materials-not-allowed label missing");
+        if (!labelsBlock.includes("AI_REPLY_ACTION_MEETING_NOT_ALLOWED")) throw new Error("meeting-not-allowed label missing");
     });
 
     it("training host never constructs manual-rich-reply payload", function () {

@@ -142,7 +142,8 @@ class PendingMailOperationService(
         templateTextBody: String? = null,
         templateHtmlBody: String? = null,
         trustReplyAssembly: TrustReplyAssembleRequest? = null,
-        safetyWarningConfirmed: Boolean = false
+        safetyWarningConfirmed: Boolean = false,
+        strongConfirmationText: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -215,7 +216,7 @@ class PendingMailOperationService(
         mailVariableService.requireValidPlaceholders(finalTextBody)
         mailVariableService.requireValidPlaceholders(finalHtmlBody)
 
-        val blockingCode = performFinalBlockingCheck(
+        val findings = collectSafetyFindings(
             verificationText = finalValidationText,
             carriesQa = carriesQa,
             canonicalFactIds = canonicalFactIds,
@@ -223,14 +224,12 @@ class PendingMailOperationService(
             inboundText = inboundText,
             researchProfileSufficient = researchProfileSufficient
         )
-        val overriddenSafetyWarning = blockingCode?.takeIf {
-            safetyWarningConfirmed && isOverridableManualSafetyWarning(it)
+        val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
+        if (findings.isNotEmpty() && !safetyWarningConfirmed) {
+            throw ManualSendSafetyBlockedException(findings)
         }
-        if (blockingCode != null && overriddenSafetyWarning == null) {
-            throw ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "发送内容安全校验未通过: $blockingCode"
-            )
+        if (requiresStrong && strongConfirmationText?.trim() != "确认发送") {
+            throw ManualSendSafetyBlockedException(findings)
         }
 
         val payload = ManualReplySendAttemptService.SendPayload(
@@ -305,9 +304,16 @@ class PendingMailOperationService(
                                 edited = edited,
                                 note = buildString {
                                     append("Manual rich reply sent for inbound processing $inboundProcessingId")
-                                    if (overriddenSafetyWarning != null) {
-                                        append("; safety warning manually confirmed: ")
-                                        append(overriddenSafetyWarning)
+                                    if (findings.isNotEmpty()) {
+                                        append("; safety findings confirmed: ")
+                                        val codes = findings.map { it.code }
+                                        append(codes.take(10).joinToString(","))
+                                        if (codes.size > 10) {
+                                            append("+").append(codes.size)
+                                        }
+                                    }
+                                    if (requiresStrong) {
+                                        append("; strong confirmation typed")
                                     }
                                 }
                             )
@@ -688,34 +694,52 @@ class PendingMailOperationService(
         ).joinToString(" ")
     }
 
-    private fun performFinalBlockingCheck(
+    private fun collectSafetyFindings(
         verificationText: String,
         carriesQa: Boolean,
         canonicalFactIds: List<Long>,
         contact: ExpertContact,
         inboundText: String,
         researchProfileSufficient: Boolean
-    ): String? {
+    ): List<SafetyFinding> {
+        val findings = mutableListOf<SafetyFinding>()
+        fun add(code: String, sentence: String? = null) {
+            if (findings.none { it.code == code }) {
+                findings += SafetyFinding(
+                    code = code,
+                    severity = if (code == AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL) {
+                        SafetySeverity.STRONG
+                    } else {
+                        SafetySeverity.NORMAL
+                    },
+                    sentence = sentence
+                )
+            }
+        }
+
         if (carriesQa && canonicalFactIds.isNotEmpty()) {
             val claimValidation = aiReplyHighRiskClaimValidator.validatePlainText(
                 verificationText, canonicalFactIds
             )
             if (!claimValidation.valid) {
-                return claimValidation.warningCodes.firstOrNull() ?: "CLAIM_VALIDATION_FAILED"
+                claimValidation.warningCodes.forEach { add(it) }
+                if (claimValidation.warningCodes.isEmpty()) {
+                    add("CLAIM_VALIDATION_FAILED")
+                }
             }
         } else if (carriesQa && canonicalFactIds.isEmpty()) {
-            return "QA_FACTS_ALL_INVALID"
+            add("QA_FACTS_ALL_INVALID")
         } else {
             if (aiReplyHighRiskClaimValidator.containsHallucinatedNumberOrUrl(verificationText, "")) {
-                return AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT
+                add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT)
             }
             if (aiReplyHighRiskClaimValidator.containsUnbackedHighRiskDeclarations(verificationText, "")) {
-                return AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED
+                add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED)
             }
         }
 
         if (aiReplyHighRiskClaimValidator.containsTrustRhetoric(verificationText)) {
-            return AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC
+            add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC)
         }
 
         val selection = if (canonicalFactIds.isNotEmpty()) {
@@ -727,7 +751,7 @@ class PendingMailOperationService(
         if (hasBlockingTrust &&
             aiReplyHighRiskClaimValidator.containsConfidentialitySubstitute(verificationText)
         ) {
-            return AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
+            add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE)
         }
 
         for (fact in selection.requestFacts) {
@@ -744,7 +768,7 @@ class PendingMailOperationService(
                                 if (aiReplyHighRiskClaimValidator.isRoleDisclosureRequired(sourceText) &&
                                     !aiReplyHighRiskClaimValidator.containsRoleDisclosure(verificationText)
                                 ) {
-                                    return AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
+                                    add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED)
                                 }
                             }
                             if (isEnterprise) {
@@ -752,7 +776,7 @@ class PendingMailOperationService(
                                     (aiReplyHighRiskClaimValidator.containsEnterpriseCertainty(verificationText) ||
                                         !aiReplyHighRiskClaimValidator.containsEnterpriseUncertainty(verificationText))
                                 ) {
-                                    return AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+                                    add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED)
                                 }
                             }
                         }
@@ -766,23 +790,14 @@ class PendingMailOperationService(
             hasBlockingTrust
         )
         val violations = AiReplyActionPolicy.findViolations(verificationText, restrictedActions)
-        if (violations.isNotEmpty()) {
-            return violations.first().code ?: "ACTION_VIOLATION"
+        violations.forEach { violation ->
+            if (violation.code != null) {
+                add(violation.code, violation.sentence)
+            }
         }
 
-        return null
+        return findings
     }
-
-    private fun isOverridableManualSafetyWarning(code: String): Boolean =
-        code in setOf(
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED,
-            AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
-        )
 
     private fun classifyDelivery(delivered: DeliveredMail): ManualReplyDeliveryClassification {
         return when {
@@ -973,57 +988,17 @@ class PendingMailOperationService(
             warningCodes += AI_REPLY_PREFLIGHT_NO_EVIDENCE
         }
 
-        val claimValidation = aiReplyHighRiskClaimValidator.validatePlainText(textBody, canonicalFactIds)
-        if (!claimValidation.valid) {
-            warningCodes += claimValidation.warningCodes
-        }
-
-        if (aiReplyHighRiskClaimValidator.containsTrustRhetoric(textBody)) {
-            warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC
-        }
-
-        val hasBlockingTrust = aiReplyDraftService.hasBlockingTrustGapForSelection(selection.requestFacts)
-        if (hasBlockingTrust && aiReplyHighRiskClaimValidator.containsConfidentialitySubstitute(textBody)) {
-            warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE
-        }
-
-        for (fact in selection.requestFacts) {
-            for (intent in fact.intents) {
-                val isAgencyOrCompany = intent.intentKey.startsWith("agency.") || intent.intentKey.startsWith("company.")
-                val isEnterprise = intent.intentKey.startsWith("enterprise.")
-                if (isAgencyOrCompany || isEnterprise) {
-                    val evidenceIds = intent.evidenceRuleIds
-                    if (evidenceIds.isNotEmpty()) {
-                        val sourceText = aiReplyHighRiskClaimValidator.resolveSourceText(evidenceIds)
-                        if (sourceText != null) {
-                            if (isAgencyOrCompany) {
-                                if (aiReplyHighRiskClaimValidator.isRoleDisclosureRequired(sourceText) &&
-                                    !aiReplyHighRiskClaimValidator.containsRoleDisclosure(textBody)
-                                ) {
-                                    warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED
-                                }
-                            }
-                            if (isEnterprise) {
-                                if (aiReplyHighRiskClaimValidator.isEnterpriseUncertaintyRequired(sourceText) &&
-                                    (aiReplyHighRiskClaimValidator.containsEnterpriseCertainty(textBody) ||
-                                        !aiReplyHighRiskClaimValidator.containsEnterpriseUncertainty(textBody))
-                                ) {
-                                    warningCodes += AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val allowedActions = AiReplyActionPolicy.deriveAllowed(inboundText, null, emptyList())
-        val restrictedActions = AiReplyActionPolicy.restrictForTrustState(allowedActions, hasBlockingTrust)
-        val violations = AiReplyActionPolicy.findViolations(textBody, restrictedActions)
-        violations.forEach { violation ->
-            val code = violation.code
-            if (code != null && code !in warningCodes) {
-                warningCodes += code
+        val safetyFindings = collectSafetyFindings(
+            verificationText = textBody,
+            carriesQa = factRuleIds.isNotEmpty(),
+            canonicalFactIds = canonicalFactIds,
+            contact = contact,
+            inboundText = inboundText,
+            researchProfileSufficient = researchProfileSufficient
+        )
+        safetyFindings.forEach { finding ->
+            if (finding.code !in warningCodes) {
+                warningCodes += finding.code
             }
         }
 
@@ -1077,7 +1052,8 @@ data class PendingManualRichReplyRequest(
     val templateTextBody: String? = null,
     val templateHtmlBody: String? = null,
     val trustReplyAssembly: TrustReplyAssembleRequest? = null,
-    val safetyWarningConfirmed: Boolean = false
+    val safetyWarningConfirmed: Boolean = false,
+    val strongConfirmationText: String? = null
 )
 
 data class ComposedReplyRequest(
@@ -1128,3 +1104,18 @@ data class AiReplyPreflightResult(
     val currentEvidenceSetVersion: String,
     val checkedTextHash: String
 )
+
+enum class SafetySeverity {
+    NORMAL,
+    STRONG
+}
+
+data class SafetyFinding(
+    val code: String,
+    val severity: SafetySeverity,
+    val sentence: String?
+)
+
+class ManualSendSafetyBlockedException(
+    val findings: List<SafetyFinding>
+) : RuntimeException("发送内容安全校验未通过")

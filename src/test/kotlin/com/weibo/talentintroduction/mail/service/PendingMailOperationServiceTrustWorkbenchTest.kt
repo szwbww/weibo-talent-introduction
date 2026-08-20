@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.llm.service.AiReplyActionPolicy
 import com.weibo.talentintroduction.llm.service.AiReplyContext
 import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
@@ -240,7 +241,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 )
             )
 
-        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
             service.sendManualRichReply(
                 inboundProcessingId = 100L, senderAccountCode = null,
                 subject = "Re: Test",
@@ -249,6 +250,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 operatorName = "op", qaRuleIds = listOf(10L)
             )
         }
+        assertTrue(ex.findings.isNotEmpty())
         Mockito.verifyNoInteractions(mailDeliveryService, manualReplySendAttemptService)
     }
 
@@ -290,6 +292,170 @@ class PendingMailOperationServiceTrustWorkbenchTest {
 
         assertEquals("SENT", result.sendStatus)
         Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `unauthorized CV request yields materials-not-allowed finding and sends after confirm`() {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Before arranging a Zoom meeting, could you please send me your CV?</p>",
+                textBody = "Before arranging a Zoom meeting, could you please send me your CV?",
+                operatorName = "op"
+            )
+        }
+        assertTrue(ex.findings.any { it.code == AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-cv@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-cv@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-cv@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Before arranging a Zoom meeting, could you please send me your CV?</p>",
+            textBody = "Before arranging a Zoom meeting, could you please send me your CV?",
+            operatorName = "op",
+            safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `sendManualRichReply collects all matching findings not just first`() {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Could you share your CV? Please rest assured that we guarantee everything.</p>",
+                textBody = "Could you share your CV? Please rest assured that we guarantee everything.",
+                operatorName = "op"
+            )
+        }
+        assertTrue(ex.findings.size >= 2)
+        assertTrue(ex.findings.any { it.code == AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED })
+        assertTrue(ex.findings.any { it.code == AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `passport request requires strong typed confirmation to send`() {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Please also send your passport copy for verification.</p>",
+                textBody = "Please also send your passport copy for verification.",
+                operatorName = "op",
+                safetyWarningConfirmed = true
+            )
+        }
+        assertTrue(ex.findings.any { it.severity == SafetySeverity.STRONG })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-passport@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-passport@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-passport@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Please also send your passport copy for verification.</p>",
+            textBody = "Please also send your passport copy for verification.",
+            operatorName = "op",
+            safetyWarningConfirmed = true,
+            strongConfirmationText = "确认发送"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `strong typed confirmation alone cannot bypass the first confirmation`() {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Please also send your passport copy for verification.</p>",
+                textBody = "Please also send your passport copy for verification.",
+                operatorName = "op",
+                safetyWarningConfirmed = false,
+                strongConfirmationText = "确认发送"
+            )
+        }
+        assertTrue(ex.findings.isNotEmpty())
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `audit note records overridden safety codes without matching sentence`() {
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-audit@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-audit@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-audit@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val noteHolder = mutableListOf<String>()
+        Mockito.doAnswer { invocation ->
+            noteHolder += invocation.getArgument<String>(12)
+            null
+        }.`when`(manualReplySendAttemptService).recordSendAudit(
+            anyValue(100L), anyValue(1L), anyValue(500L),
+            anyValue(emptyList<Long>()), anyValue(false),
+            anyValue(DeliveredMail("", "")), anyValue("Re: Test"),
+            anyValue("preview"), anyValue("op"), anyValue(inbound()),
+            anyValue(emptyList<Long>()), anyValue(false), anyValue("note")
+        )
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Before arranging a Zoom meeting, could you please send me your CV?</p>",
+            textBody = "Before arranging a Zoom meeting, could you please send me your CV?",
+            operatorName = "op",
+            safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val note = noteHolder.single()
+        assertTrue(note.contains(AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED))
+        assertTrue(!note.contains("your CV"))
     }
 
     @Test

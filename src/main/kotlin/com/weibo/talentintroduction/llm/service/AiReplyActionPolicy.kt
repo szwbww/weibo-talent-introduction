@@ -140,10 +140,12 @@ object AiReplyActionPolicy {
             }
             if (action in allowed && violationCode == null) {
                 null
-            } else if (action in allowed && violationCode != null) {
-                ActionViolation(action = action, sentence = unit.text.trim(), code = violationCode)
             } else {
-                ActionViolation(action = action, sentence = unit.text.trim(), code = violationCode)
+                val code = violationCode ?: when (action) {
+                    AiReplyAction.REQUEST_MATERIALS -> CODE_ACTION_MATERIALS_NOT_ALLOWED
+                    AiReplyAction.PROPOSE_MEETING -> CODE_ACTION_MEETING_NOT_ALLOWED
+                }
+                ActionViolation(action = action, sentence = unit.text.trim(), code = code)
             }
         }
     }
@@ -409,4 +411,6 @@ object AiReplyActionPolicy {
     const val CODE_ACTION_SENSITIVE_MATERIAL = "AI_REPLY_ACTION_SENSITIVE_MATERIAL"
     const val CODE_ACTION_CV_PURPOSE_MISSING = "AI_REPLY_ACTION_CV_PURPOSE_MISSING"
     const val CODE_ACTION_CV_OPTIONALITY_MISSING = "AI_REPLY_ACTION_CV_OPTIONALITY_MISSING"
+    const val CODE_ACTION_MATERIALS_NOT_ALLOWED = "AI_REPLY_ACTION_MATERIALS_NOT_ALLOWED"
+    const val CODE_ACTION_MEETING_NOT_ALLOWED = "AI_REPLY_ACTION_MEETING_NOT_ALLOWED"
 }

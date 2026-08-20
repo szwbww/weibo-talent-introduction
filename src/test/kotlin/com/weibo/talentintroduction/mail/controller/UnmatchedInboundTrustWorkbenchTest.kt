@@ -187,7 +187,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 templateTextBody = null,
                 templateHtmlBody = null,
                 trustReplyAssembly = null,
-                safetyWarningConfirmed = true
+                safetyWarningConfirmed = true,
+                strongConfirmationText = "确认发送"
             )
         ).thenReturn(
             PendingMailSendResult(
@@ -211,7 +212,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 qaRuleIds = listOf(10L),
                 suggestedRuleIds = listOf(99L),
                 edited = false,
-                safetyWarningConfirmed = true
+                safetyWarningConfirmed = true,
+                strongConfirmationText = "确认发送"
             )
         )
 
@@ -226,7 +228,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean()
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(
@@ -252,7 +255,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean()
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "\u53d1\u9001\u6682\u65f6\u5931\u8d25\uff0c\u53ef\u5b89\u5168\u91cd\u8bd5")
@@ -275,7 +279,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean()
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.CONFLICT, "\u53d1\u9001\u72b6\u6001\u672a\u77e5\uff0c\u8bf7\u52ff\u91cd\u590d\u53d1\u9001 (Message-ID: <test@weibo.com>)")
@@ -369,7 +374,8 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.anyString(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.any(),
                 Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
-                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean()
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(),
+                Mockito.any()
             )
         ).thenReturn(
             PendingMailSendResult(

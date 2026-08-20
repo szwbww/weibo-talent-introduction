@@ -33,6 +33,30 @@ class AiReplyActionPolicyTest {
     }
 
     @Test
+    fun `unauthorized material request carries stable materials-not-allowed code`() {
+        val violations = AiReplyActionPolicy.findViolations(
+            "Before arranging a Zoom meeting, could you please send me your CV?",
+            emptySet()
+        )
+        assertEquals(
+            AiReplyActionPolicy.CODE_ACTION_MATERIALS_NOT_ALLOWED,
+            violations.single().code
+        )
+    }
+
+    @Test
+    fun `unauthorized meeting proposal carries stable meeting-not-allowed code`() {
+        val violations = AiReplyActionPolicy.findViolations(
+            "Let us schedule a Zoom meeting next week.",
+            emptySet()
+        )
+        assertEquals(
+            AiReplyActionPolicy.CODE_ACTION_MEETING_NOT_ALLOWED,
+            violations.single().code
+        )
+    }
+
+    @Test
     fun `explicit materials or meeting intent authorizes matching action only`() {
         assertEquals(
             setOf(AiReplyAction.REQUEST_MATERIALS),
