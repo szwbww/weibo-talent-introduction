@@ -253,6 +253,46 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     }
 
     @Test
+    fun `sendManualRichReply sends after operator confirms claim warning`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = emptyList(),
+                    promptRuleIds = emptyList(),
+                    requestFacts = emptyList()
+                )
+            )
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-confirmed@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-confirmed@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-confirmed@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>We guarantee 10 million RMB with no fees.</p>",
+            textBody = "We guarantee 10 million RMB with no fees.",
+            operatorName = "op", qaRuleIds = null,
+            safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
     fun `sendManualRichReply rejects suppressed recipient before claiming an attempt`() {
         Mockito.`when`(emailSuppressionService.isSuppressed(contact.expertEmail)).thenReturn(true)
 

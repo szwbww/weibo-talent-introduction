@@ -120,6 +120,14 @@ describe("adopt-direct-send UI contracts", function () {
         if (submit.includes('showStatus("人工回复发送失败')) throw new Error("submit must not mark archive failure as send failure");
     });
 
+    it("manual safety warnings require confirmation before a single retry", function () {
+        const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
+        if (!submit.includes("AI_REPLY_CLAIM_HALLUCINATED_FACT")) throw new Error("claim warning code is not recognized");
+        if (!submit.includes("openActionDialog(\"confirm\"")) throw new Error("claim warning should open confirmation dialog");
+        if (!submit.includes("safetyWarningConfirmed: true")) throw new Error("confirmed retry must carry server confirmation");
+        if (!submit.includes("submitManualRichReply(recordId")) throw new Error("confirmed retry should reuse the send path");
+    });
+
     it("training host never constructs manual-rich-reply payload", function () {
         const trainingBlock = app.slice(app.indexOf("function mountAiTrainingTrustReply"), app.indexOf("function selectSimulateMail"));
         if (trainingBlock.includes("send-manual-rich-reply")) throw new Error("training host must not send");

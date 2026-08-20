@@ -141,7 +141,8 @@ class PendingMailOperationService(
         useVariants: Boolean = false,
         templateTextBody: String? = null,
         templateHtmlBody: String? = null,
-        trustReplyAssembly: TrustReplyAssembleRequest? = null
+        trustReplyAssembly: TrustReplyAssembleRequest? = null,
+        safetyWarningConfirmed: Boolean = false
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -222,7 +223,10 @@ class PendingMailOperationService(
             inboundText = inboundText,
             researchProfileSufficient = researchProfileSufficient
         )
-        if (blockingCode != null) {
+        val overriddenSafetyWarning = blockingCode?.takeIf {
+            safetyWarningConfirmed && isOverridableManualSafetyWarning(it)
+        }
+        if (blockingCode != null && overriddenSafetyWarning == null) {
             throw ResponseStatusException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "发送内容安全校验未通过: $blockingCode"
@@ -299,7 +303,13 @@ class PendingMailOperationService(
                                 inboundRecord = record,
                                 serverSuggestedFactIds = serverSuggestedFactIds,
                                 edited = edited,
-                                note = "Manual rich reply sent for inbound processing $inboundProcessingId"
+                                note = buildString {
+                                    append("Manual rich reply sent for inbound processing $inboundProcessingId")
+                                    if (overriddenSafetyWarning != null) {
+                                        append("; safety warning manually confirmed: ")
+                                        append(overriddenSafetyWarning)
+                                    }
+                                }
                             )
                             id
                         } catch (finalizeEx: Exception) {
@@ -763,6 +773,17 @@ class PendingMailOperationService(
         return null
     }
 
+    private fun isOverridableManualSafetyWarning(code: String): Boolean =
+        code in setOf(
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_MODALITY_STRENGTHENED,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_HIGH_RISK_UNBACKED,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_CONFIDENTIALITY_SUBSTITUTE,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_ROLE_DISCLOSURE_OMITTED,
+            AiReplyHighRiskClaimValidator.WARNING_CLAIM_ENTERPRISE_UNGROUNDED
+        )
+
     private fun classifyDelivery(delivered: DeliveredMail): ManualReplyDeliveryClassification {
         return when {
             delivered.status == "SENT" && delivered.errorCategory == SmtpErrorCategory.SUCCESS ->
@@ -1055,7 +1076,8 @@ data class PendingManualRichReplyRequest(
     val useVariants: Boolean = false,
     val templateTextBody: String? = null,
     val templateHtmlBody: String? = null,
-    val trustReplyAssembly: TrustReplyAssembleRequest? = null
+    val trustReplyAssembly: TrustReplyAssembleRequest? = null,
+    val safetyWarningConfirmed: Boolean = false
 )
 
 data class ComposedReplyRequest(

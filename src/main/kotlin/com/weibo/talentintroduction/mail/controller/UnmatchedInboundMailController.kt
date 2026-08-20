@@ -251,7 +251,8 @@ class UnmatchedInboundMailController(
             useVariants = request.useVariants,
             templateTextBody = request.templateTextBody,
             templateHtmlBody = request.templateHtmlBody,
-            trustReplyAssembly = request.trustReplyAssembly
+            trustReplyAssembly = request.trustReplyAssembly,
+            safetyWarningConfirmed = request.safetyWarningConfirmed
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")

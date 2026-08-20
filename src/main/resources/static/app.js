@@ -1462,7 +1462,9 @@ async function api(path, options = {}) {
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
         const message = data?.message || `${response.status} ${response.statusText}`;
-        throw new Error(message);
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
     }
     return data;
 }
@@ -10346,7 +10348,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
 
-    async function submitManualRichReply(recordId, requestBody) {
+    async function submitManualRichReply(recordId, requestBody, safetyWarningConfirmed = false) {
         try {
             const result = await api(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, {
                 method: "POST",
@@ -10368,6 +10370,30 @@ async function handleUnmatchedAction(element) {
                 alert("人工回复邮件发送成功");
             }
         } catch (e) {
+            const warningCode = !safetyWarningConfirmed
+                ? String(e?.message || "").match(/\bAI_REPLY_CLAIM_[A-Z0-9_]+\b/)?.[0]
+                : null;
+            const canConfirmSafetyWarning = e?.status === 422 && [
+                "AI_REPLY_CLAIM_HALLUCINATED_FACT",
+                "AI_REPLY_CLAIM_MODALITY_STRENGTHENED",
+                "AI_REPLY_CLAIM_HIGH_RISK_UNBACKED",
+                "AI_REPLY_CLAIM_TRUST_RHETORIC",
+                "AI_REPLY_CLAIM_CONFIDENTIALITY_SUBSTITUTE",
+                "AI_REPLY_CLAIM_ROLE_DISCLOSURE_OMITTED",
+                "AI_REPLY_CLAIM_ENTERPRISE_UNGROUNDED"
+            ].includes(warningCode);
+            if (canConfirmSafetyWarning) {
+                const confirmed = await openActionDialog("confirm", {
+                    message: `<p>内容安全校验提示：</p><p>${escapeHtml(AI_REPLY_WARNING_LABELS[warningCode] || "正文包含需人工核对的风险声明")}</p><p>确认已人工核对，仍要发送吗？</p>`
+                });
+                if (confirmed) {
+                    return submitManualRichReply(
+                        recordId,
+                        { ...requestBody, safetyWarningConfirmed: true },
+                        true
+                    );
+                }
+            }
             alert("人工回复发送失败: " + e.message);
             throw e;
         }
