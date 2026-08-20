@@ -123,6 +123,7 @@ describe("adopt-direct-send UI contracts", function () {
     it("manual safety warnings require confirmation before a single retry", function () {
         const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
         if (!submit.includes("AI_REPLY_CLAIM_HALLUCINATED_FACT")) throw new Error("claim warning code is not recognized");
+        if (!submit.includes("e?.status === 500")) throw new Error("legacy 500 safety warning should still open confirmation");
         if (!submit.includes("openActionDialog(\"confirm\"")) throw new Error("claim warning should open confirmation dialog");
         if (!submit.includes("safetyWarningConfirmed: true")) throw new Error("confirmed retry must carry server confirmation");
         if (!submit.includes("submitManualRichReply(recordId")) throw new Error("confirmed retry should reuse the send path");

@@ -10373,7 +10373,7 @@ async function handleUnmatchedAction(element) {
             const warningCode = !safetyWarningConfirmed
                 ? String(e?.message || "").match(/\bAI_REPLY_CLAIM_[A-Z0-9_]+\b/)?.[0]
                 : null;
-            const canConfirmSafetyWarning = e?.status === 422 && [
+            const canConfirmSafetyWarning = (e?.status === 422 || e?.status === 500) && [
                 "AI_REPLY_CLAIM_HALLUCINATED_FACT",
                 "AI_REPLY_CLAIM_MODALITY_STRENGTHENED",
                 "AI_REPLY_CLAIM_HIGH_RISK_UNBACKED",
