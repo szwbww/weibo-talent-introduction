@@ -2,8 +2,8 @@
 id: K-high-risk-phrase-family-symmetric-match
 domain: llm
 created: 2026-07-16
-last_used: 2026-07-27
-hit_count: 16
+last_used: 2026-08-19
+hit_count: 17
 source: fix-v:ai-reply-p0-p2-master-plan:fix-1
 severity: P1
 ---

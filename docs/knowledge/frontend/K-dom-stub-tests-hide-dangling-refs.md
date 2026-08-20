@@ -2,8 +2,8 @@
 id: K-dom-stub-tests-hide-dangling-refs
 domain: frontend
 created: 2026-08-06
-last_used: 2026-08-18
-hit_count: 4
+last_used: 2026-08-19
+hit_count: 5
 source: create-p:batch-manual-execution-observability-p2
 severity: P1
 ---

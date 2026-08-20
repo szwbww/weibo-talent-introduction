@@ -2,8 +2,8 @@
 id: K-locked-item-assembly-list-not-set
 domain: llm
 created: 2026-07-28
-last_used: 2026-08-05
-hit_count: 5
+last_used: 2026-08-19
+hit_count: 6
 source: create-p:trusted-reply-shared-workbench
 severity: P1
 ---

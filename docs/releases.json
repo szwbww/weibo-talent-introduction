@@ -2350,5 +2350,47 @@
     "release_id": "010f378e",
     "timestamp": "20260818-221844",
     "operator": "multi-ai-kit"
+  },
+  {
+    "environment": "production",
+    "action": "publish",
+    "source_revision": "3bd132cb429a6928aa0eaa7c9f72d733d6905a15",
+    "resolved_commit_sha": "3bd132cb429a6928aa0eaa7c9f72d733d6905a15",
+    "status": "passed",
+    "operation_id": "e463792f-8bab-4ed6-bacc-7e9b759e9497",
+    "artifact": {
+      "repo_relative_path": "target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_path": "/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-3bd132cb429a-jqqy2p6e/target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_ephemeral": true,
+      "size": 46287799,
+      "sha256": "73a77769acd80c4961bc01f4eebf714c32eb5d1541d537a26ef423405bb7be8b",
+      "remote_upload_path": "/opt/apache-tomcat-9.0.71/deploy/incoming/talent.war.release_20260819-203523_3bd132cb429a.upload",
+      "remote_deployed_path": "/opt/apache-tomcat-9.0.71/webapps/talent.war",
+      "remote_backup_path": "/opt/apache-tomcat-9.0.71/deploy/backups/talent.war.release_20260819-203523_3bd132cb429a.bak"
+    },
+    "release_id": "bcb6b3e8",
+    "timestamp": "20260819-204024",
+    "operator": "multi-ai-kit"
+  },
+  {
+    "environment": "production",
+    "action": "publish",
+    "source_revision": "97b27132010c9a4b7a1389b23d9d4bf75075ed60",
+    "resolved_commit_sha": "97b27132010c9a4b7a1389b23d9d4bf75075ed60",
+    "status": "passed",
+    "operation_id": "a343e8ec-250a-41b3-99b4-e0c06f27002d",
+    "artifact": {
+      "repo_relative_path": "target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_path": "/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-97b27132010c-qr8p0hww/target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+      "build_worktree_ephemeral": true,
+      "size": 46305428,
+      "sha256": "65c18f4527172de0190113b0f0935a2d8927cf1d95b5f10d981a602a8039fbba",
+      "remote_upload_path": "/opt/apache-tomcat-9.0.71/deploy/incoming/talent.war.release_20260820-095306_97b27132010c.upload",
+      "remote_deployed_path": "/opt/apache-tomcat-9.0.71/webapps/talent.war",
+      "remote_backup_path": "/opt/apache-tomcat-9.0.71/deploy/backups/talent.war.release_20260820-095306_97b27132010c.bak"
+    },
+    "release_id": "3d628480",
+    "timestamp": "20260820-095744",
+    "operator": "multi-ai-kit"
   }
 ]

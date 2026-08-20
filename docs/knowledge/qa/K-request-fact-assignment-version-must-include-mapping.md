@@ -2,8 +2,8 @@
 id: K-request-fact-assignment-version-must-include-mapping
 domain: qa
 created: 2026-08-05
-last_used: 2026-08-05
-hit_count: 0
+last_used: 2026-08-19
+hit_count: 1
 source: create-p:trust-reply-configurable-workbench
 severity: P1
 ---
