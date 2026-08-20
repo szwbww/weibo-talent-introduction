@@ -3,7 +3,7 @@ id: K-manual-send-safety-gate-first-hit-only
 domain: mail
 created: 2026-08-20
 last_used: 2026-08-20
-hit_count: 0
+hit_count: 1
 source: create-p:manual-send-safety-confirm
 severity: P1
 ---

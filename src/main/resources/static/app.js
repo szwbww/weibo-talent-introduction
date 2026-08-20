@@ -11575,6 +11575,18 @@ function bindEvents() {
             schedulePreflightCheck();
         }
     });
+    $("#unmatchedDetailPanel").addEventListener("paste", (event) => {
+        const editor = event.target.nodeType === 1
+            ? event.target.closest("#manualRichReplyEditor")
+            : event.target.parentElement?.closest("#manualRichReplyEditor");
+        if (!editor) return;
+        event.preventDefault();
+        const clipboardData = event.clipboardData || window.clipboardData;
+        const text = clipboardData ? clipboardData.getData("text/plain") : "";
+        if (!text) return;
+        const html = escapeHtml(text.replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>");
+        document.execCommand("insertHTML", false, html);
+    });
     $("#closeUnmatchedDetailBtn")?.addEventListener("click", () => {
         unmountMailboxTrustReplyHosts();
         $("#unmatchedDetailPanel").hidden = true;

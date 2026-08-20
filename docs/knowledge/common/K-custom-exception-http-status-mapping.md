@@ -3,7 +3,7 @@ id: K-custom-exception-http-status-mapping
 domain: common
 created: 2026-08-10
 last_used: 2026-08-20
-hit_count: 2
+hit_count: 3
 source: create-p:sender-binding-02-send-path-consistency
 severity: P1
 ---

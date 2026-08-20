@@ -3,7 +3,7 @@ id: K-operator-directed-authorization-seam
 domain: llm
 created: 2026-08-20
 last_used: 2026-08-20
-hit_count: 0
+hit_count: 1
 source: create-p:workbench-operator-instruction-authorizes-actions
 severity: P1
 ---
