@@ -828,9 +828,11 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `send and prompt rule ids still come from factRuleIds`() {
-        // P2a (must-NOT-change 3): 绑定被丢弃时，sendQaRuleIds / promptRuleIds 仍只含
-        // 系统认可的 evidence（factRuleIds），绝不包含被丢弃的绑定 id。
+    fun `send rule ids stay evidence only while bound facts join prompt ids`() {
+        // P2b (I-1): 外发审计（sendQaRuleIds）仍只含系统认可的 evidence，绑定但非
+        // 证据的 id 只进入 promptRuleIds。本用例随 P2b 修订：P2a 时代断言
+        // 「promptRuleIds 不含绑定 id」的部分被本刀有意的契约修订取代
+        // （P2b 需求方决策 2：绑定进 prompt、不进 send）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -847,9 +849,54 @@ class QaFactSelectionServiceTest {
         assertEquals(listOf(1L), item.factRuleIds)
         assertEquals(listOf(2L, 1L), item.boundRuleIds)
         assertEquals(listOf(1L), resolved.sendQaRuleIds)
-        assertEquals(listOf(1L), resolved.promptRuleIds)
         assertFalse(2L in resolved.sendQaRuleIds)
-        assertFalse(2L in resolved.promptRuleIds)
+        // P2b (I-1): 证据在前、绑定补在后。
+        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `prompt rule ids include bound facts while send rule ids do not`() {
+        // P2b (C-1 / I-1 / IP-3): 绑定但非证据的事实进 promptRuleIds（证据在前、
+        // 绑定补在后），sendQaRuleIds 绝不包含它（外发审计只记真证据）。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
+        assertFalse(2L in resolved.sendQaRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+        assertTrue(2L in resolved.promptRuleIds)
+    }
+
+    @Test
+    fun `prompt rule ids are identical to send rule ids without extra bindings`() {
+        // P2b (C-1 / I-4): 无绑定分叉（boundRuleIds == factRuleIds）时，
+        // promptRuleIds 与 sendQaRuleIds 逐字相等——恒等变换。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(2L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
+        assertEquals(resolved.sendQaRuleIds, resolved.promptRuleIds)
     }
 
     @Test

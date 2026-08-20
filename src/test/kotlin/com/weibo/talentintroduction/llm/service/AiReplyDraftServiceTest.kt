@@ -126,7 +126,9 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `operator directed item uses only target question and operator answer basis`() {
+    fun `operator directed item uses only target question and operator answer basis without attached facts`() {
+        // P2b (C-3 / I-4): 无绑定事实时 operator-directed prompt 仍只含目标问题与
+        // answer basis——本条验证的正是 I-4 的恒等性（绑定为空时 prompt 一字不增）。
         stubEmptyFrame()
         val capturedMessages = mutableListOf<List<LlmChatMessage>>()
         val client = object : LlmDraftClient {
@@ -170,6 +172,131 @@ class AiReplyDraftServiceTest {
         assertTrue(prompt.contains("First question?"))
         assertFalse(prompt.contains("Second question?"))
         assertFalse(prompt.contains("expression only"))
+    }
+
+    @Test
+    fun `operator directed item injects attached facts as reference material`() {
+        // P2b (C-2 / I-2 / B-2): 绑定事实经服务端注入为「可引用素材」通道，
+        // 与 answer basis 并列；模型不得自行发明。事实正文只来自注入内容。
+        stubEmptyFrame()
+        val factRule = sampleRule(42).copy(
+            displayName = "Research scope",
+            answerBody = "The programme covers AI and NLP research directions."
+        )
+        stubMatchPool(factRule)
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult("We cover AI and NLP research directions.")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "First question?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "First question?",
+                factRuleIds = emptyList(),
+                boundRuleIds = listOf(42L),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Reply that we support selected research directions."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains("operator-provided answer basis"))
+        assertTrue(prompt.contains("Facts the operator attached to this question (reference material, not the answer basis):"))
+        assertTrue(prompt.contains("Research scope"))
+        assertTrue(prompt.contains("The programme covers AI and NLP research directions."))
+    }
+
+    @Test
+    fun `operator directed item without bound facts keeps the prompt unchanged`() {
+        // P2b (C-2 / I-4): boundRuleIds 为空时 prompt 不得出现「可引用事实」段落标题。
+        stubEmptyFrame()
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult("Our current partners include A University and B Institute.")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "First question?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "First question?",
+                factRuleIds = emptyList(),
+                boundRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Reply: our current partners include A University and B Institute."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains("operator-provided answer basis"))
+        assertFalse(prompt.contains("Facts the operator attached"))
+    }
+
+    @Test
+    fun `operator directed item still blocks an unauthorised action from an attached fact`() {
+        // P2b (C-2 / I-5 / IP-4): 注入事实的正文含敏感措辞（护照索取）时，出参校验
+        // findViolations 仍判废——不得为让注入的事实通过而放宽任一校验。
+        stubEmptyFrame()
+        val factRule = sampleRule(42).copy(
+            answerBody = "Please provide a copy of your passport for identity verification."
+        )
+        stubMatchPool(factRule)
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("Please provide a copy of your passport for identity verification.")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "What documents are needed?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "What documents are needed?",
+                factRuleIds = emptyList(),
+                boundRuleIds = listOf(42L),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Reply that no identity documents are required."
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertNull(result.itemAnswer)
     }
 
     @Test

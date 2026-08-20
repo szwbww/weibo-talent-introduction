@@ -308,11 +308,16 @@ class QaFactSelectionService(
     ): ResolvedQaRules {
         // I-1: the ordered union derives from the canonical per-request lists and is
         // never fed back into per-request pools.
-        val sendIds = requestFacts.sortedBy { it.index }.flatMap { it.factRuleIds }.distinct()
+        // P2b (I-1): 外发审计只认证据（sendIds 不变）；prompt 可以多看运营绑定的事实。
+        // 并集顺序固定为「证据在前、绑定补在后」，保证两者相等时 promptIds 与 sendIds
+        // 逐字相同（I-4）。
+        val ordered = requestFacts.sortedBy { it.index }
+        val sendIds = ordered.flatMap { it.factRuleIds }.distinct()
+        val promptIds = (sendIds + ordered.flatMap { it.boundRuleIds }).distinct()
         val unrecognizedAskCount = requestFacts.sumOf { it.unrecognizedAsks.size }
         return ResolvedQaRules(
             sendQaRuleIds = sendIds,
-            promptRuleIds = sendIds,
+            promptRuleIds = promptIds,
             requestFacts = requestFacts,
             unsupportedRequests = requestFacts
                 .filter { it.status == RequestGroundingStatus.UNSUPPORTED }
