@@ -289,6 +289,53 @@ function frameStateResponse(stateVersion, frameSnapshot, lockedItems) {
 }
 
 describe("shared trust reply workbench mount contract", () => {
+    it("reorders a dragged fact before the target when the drop is on the target's left half", () => {
+        const { window } = createSandbox(() => Promise.reject(new Error("not used")));
+        assert.deepStrictEqual(
+            Array.from(window.TrustReplyWorkbench.resolveFactDrop([1, 2, 3], 3, 1, true)),
+            [3, 1, 2]
+        );
+    });
+
+    it("explains why fact actions are blocked while a shared save is pending", () => {
+        const { window } = createSandbox(() => Promise.reject(new Error("not used")));
+        assert.strictEqual(
+            window.TrustReplyWorkbench.factActionBlockReason({ stateSavePending: true }),
+            "正在保存工作台状态，完成后可调整事实"
+        );
+    });
+
+    it("shows a fact-update busy state until the canonical matrix reload finishes", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 513;
+        const current = bootstrap(sourceType, sourceId);
+        const reload = deferred();
+        let bootstrapCalls = 0;
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) {
+                bootstrapCalls += 1;
+                return bootstrapCalls === 1 ? Promise.resolve(jsonResponse(current)) : reload.promise;
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        click(host, "remove-fact", current.requestCoverage[0].requestKey, undefined, "1");
+        assert.match(host.innerHTML, /正在更新事实，完成后可继续调整/);
+        reload.resolve(jsonResponse({ ...current, requestCoverage: [{ ...current.requestCoverage[0], factRuleIds: [] }], requestFactSelections: [{ requestKey: current.requestCoverage[0].requestKey, factRuleIds: [] }] }));
+        await settle();
+        await settle();
+        assert.doesNotMatch(host.innerHTML, /正在更新事实，完成后可继续调整/);
+    });
+
     it("loads the runtime relative to the deployed context and guards both host mounts", () => {
         assert.doesNotMatch(indexSource, /src="\/trust-reply-workbench\.js/);
         const runtimeMatch = indexSource.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
@@ -926,6 +973,8 @@ describe("shared trust reply workbench mount contract", () => {
         assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-chip\s*\{/);
         assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-picker-option\s*\{/);
         assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-picker-option\[data-state="used"\]/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-action-status\s*\{/);
+        assert.match(styles, /\.trust-reply-workbench \.trust-reply-fact-head > \[data-action="toggle-fact-picker"\]:disabled\s*\{/);
         assert.match(styles, /\.trust-reply-workbench \.trust-reply-preview-state\[data-state="CURRENT"\]/);
         assert.match(styles, /\.trust-reply-workbench \.trust-reply-frame-preview \.trust-reply-summary/);
         assert.doesNotMatch(styles, /\.trust-reply-layout\s*\{/);

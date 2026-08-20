@@ -400,6 +400,15 @@ describe("fact order drag (P3)", () => {
 
         assert.deepStrictEqual(renderedFactIds(host), ["2", "3", "1"]);
         assert.strictEqual(calls[calls.length - 1].body.requestFactSelections[0].factRuleIds.join(","), "2,3,1");
+
+        // Drag chip 1 onto the left half of chip 2 -> drop before it.
+        host.dispatchEvent("dragstart", event(gripEl(chips[0]), { dataTransfer: dt }));
+        host.dispatchEvent("dragover", event(chips[1], { clientX: 20, dataTransfer: dt }));
+        assert.strictEqual(chips[1].dataset.dropBefore, "true");
+        host.dispatchEvent("drop", event(chips[1], { clientX: 20, dataTransfer: dt }));
+        await settle();
+        assert.deepStrictEqual(renderedFactIds(host), ["1", "2", "3"]);
+        assert.strictEqual(calls[calls.length - 1].body.requestFactSelections[0].factRuleIds.join(","), "1,2,3");
         assert.strictEqual(chips[0].dataset.dragging, undefined); // dragend cleanup path
         assert.strictEqual(chips[2].dataset.dropAfter, undefined);
     });

@@ -140,6 +140,35 @@
         return next;
     }
 
+    function resolveFactDrop(ids, fromId, targetId, before) {
+        const source = ids || [];
+        const fromIndex = source.map(Number).indexOf(Number(fromId));
+        const targetIndex = source.map(Number).indexOf(Number(targetId));
+        if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return [...source];
+        const targetRemainderIndex = targetIndex - (fromIndex < targetIndex ? 1 : 0);
+        const toIndex = before ? targetRemainderIndex : targetRemainderIndex + 1;
+        return reorderFactIds(source, fromId, toIndex);
+    }
+
+    function factActionBlockReason(flags) {
+        if (flags && flags.requestPending) return "本摘要正在生成，完成后可调整事实";
+        if (flags && flags.factChangePending) return "正在更新事实，完成后可继续调整";
+        if (flags && flags.stateSavePending) return "正在保存工作台状态，完成后可调整事实";
+        if (flags && flags.generationPending) return "正在生成回复，完成后可调整事实";
+        if (flags && flags.frameSavePending) return "正在保存回复框架，完成后可调整事实";
+        return "";
+    }
+
+    function factActionReasonFor(request, state) {
+        return factActionBlockReason({
+            requestPending: request.pending,
+            factChangePending: state.factChangePending,
+            stateSavePending: state.stateSavePending,
+            generationPending: state.generation.pending,
+            frameSavePending: state.frameSavePending
+        });
+    }
+
     function mount(host, options) {
         validateMount(host, options);
         const instance = createInstance(host, options);
@@ -218,6 +247,7 @@
             completePending: false,
             savedStateVersion: 0,
             stateSavePending: false,
+            factChangePending: false,
             sequenceCancelled: false,
             // I-3: grip keyboard moves re-render via bootstrap(); the next
             // render() restores focus to this fact's grip (consumed once).
@@ -1515,23 +1545,36 @@
                 render();
                 return;
             }
-            if (state.savedStateVersion > 0) {
-                const deleted = await deleteSavedState();
-                if (!deleted) {
-                    setStatus("旧锁定状态删除失败，未切换事实，请刷新后重试", "ERROR");
+            state.factChangePending = true;
+            render();
+            try {
+                if (state.savedStateVersion > 0) {
+                    const deleted = await deleteSavedState();
+                    if (!deleted) {
+                        setStatus("旧锁定状态删除失败，未切换事实，请刷新后重试", "ERROR");
+                        return;
+                    }
+                }
+                request.factRuleIds = nextFactRuleIds;
+                await bootstrap({ preserveVersions: true });
+            } finally {
+                if (!state.destroyed) {
+                    state.factChangePending = false;
                     render();
-                    return;
                 }
             }
-            request.factRuleIds = nextFactRuleIds;
-            void bootstrap({ preserveVersions: true });
         }
 
         async function addFact(requestKey, factId) {
             const request = findRequest(requestKey);
             if (!request) return;
             const id = Number(factId);
-            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const blockReason = factActionReasonFor(request, state);
+            if (blockReason) {
+                setStatus(blockReason, "BUSY");
+                render();
+                return;
+            }
             const owner = factOwnerById().get(id);
             if (owner && owner.requestKey !== request.requestKey) {
                 setStatus("该事实已被其他摘要使用", "ERROR");
@@ -1545,7 +1588,12 @@
         async function removeFact(requestKey, factId) {
             const request = findRequest(requestKey);
             if (!request) return;
-            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const blockReason = factActionReasonFor(request, state);
+            if (blockReason) {
+                setStatus(blockReason, "BUSY");
+                render();
+                return;
+            }
             const id = Number(factId);
             await changeRequestFacts(request, (request.factRuleIds || []).filter((item) => Number(item) !== id));
         }
@@ -1554,13 +1602,28 @@
         // remove (changeRequestFacts -> confirm -> saved-state delete -> reset
         // versions -> bootstrap); an unchanged order short-circuits so the
         // confirmation dialog and state deletion never fire for a no-op.
+        function commitFactOrder(request, next) {
+            const blockReason = factActionReasonFor(request, state);
+            if (blockReason) {
+                setStatus(blockReason, "BUSY");
+                render();
+                return;
+            }
+            if (JSON.stringify(next) === JSON.stringify(request.factRuleIds)) return;
+            void changeRequestFacts(request, next);
+        }
+
         async function moveFact(requestKey, factId, toIndex) {
             const request = findRequest(requestKey);
             if (!request) return;
-            if (request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending) return;
+            const blockReason = factActionReasonFor(request, state);
+            if (blockReason) {
+                setStatus(blockReason, "BUSY");
+                render();
+                return;
+            }
             const next = reorderFactIds(request.factRuleIds, factId, toIndex);
-            if (JSON.stringify(next) === JSON.stringify(request.factRuleIds)) return;
-            await changeRequestFacts(request, next);
+            commitFactOrder(request, next);
         }
 
         // I-3: keyboard reorder (ArrowLeft/ArrowRight on a focused grip). The
@@ -1630,26 +1693,15 @@
             // fall through to the button's click handler.
             event.preventDefault && event.preventDefault();
             event.stopPropagation && event.stopPropagation();
+            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
+            const before = chip && chip.dataset && chip.dataset.dropBefore === "true";
             clearDropMarks(list);
             const factId = event.dataTransfer && event.dataTransfer.getData ? event.dataTransfer.getData("text/plain") : null;
-            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
             if (!chip || !chip.dataset || factId == null) return;
             const request = findRequest(chip.dataset.requestKey);
             if (!request) return;
-            const ids = request.factRuleIds || [];
-            const fromIndex = ids.map(Number).indexOf(Number(factId));
-            if (fromIndex < 0) return;
-            const chips = typeof list.querySelectorAll === "function" ? [...list.querySelectorAll(".trust-reply-fact-chip")] : [];
-            const targetIndex = chips.findIndex((element) => String(element.dataset && element.dataset.factId) === String(chip.dataset.factId));
-            if (targetIndex < 0) return;
-            // Dropping a chip back onto itself is a no-op under either mark.
-            if (targetIndex === fromIndex) return;
-            const before = chip.dataset.dropBefore === "true";
-            // toIndex is the insertion slot in the post-removal array: the
-            // target chip's index minus one when the dragged chip sat before it.
-            const targetRemainderIndex = targetIndex - (fromIndex < targetIndex ? 1 : 0);
-            const toIndex = before ? targetRemainderIndex : targetRemainderIndex + 1;
-            void moveFact(chip.dataset.requestKey, factId, toIndex);
+            const next = resolveFactDrop(request.factRuleIds, factId, chip.dataset.factId, before);
+            commitFactOrder(request, next);
         }
 
         function onDragEnd(event) {
@@ -1744,7 +1796,8 @@
         // I-2: per-card fact chips and picker. Owners, pending saves and server
         // re-validation keep the matrix canonical; disabled states are UX only.
         function renderFactSection(request) {
-            const factActionsDisabled = request.pending || state.stateSavePending || state.generation.pending || state.frameSavePending;
+            const factActionReason = factActionReasonFor(request, state);
+            const factActionsDisabled = !!factActionReason;
             const owners = factOwnerById();
             // S-3: hint id derived from the request key (unique per summary,
             // instance-scoped so multiple workbenches on one page never clash).
@@ -1800,7 +1853,10 @@
                 : "") + (request.contextStale === true
                 ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
                 : "");
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span><button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? " disabled" : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
+            const factActionStatus = factActionReason
+                ? `<span class="trust-reply-fact-action-status" data-role="fact-action-status">${escapeText(factActionReason)}</span>`
+                : "";
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}`;
         }
 
         function renderFrameSelects() {
@@ -2395,5 +2451,5 @@
         return { state, bootstrap, unmount };
     }
 
-    global.TrustReplyWorkbench = Object.freeze({ mount, reorderFactIds });
+    global.TrustReplyWorkbench = Object.freeze({ mount, reorderFactIds, resolveFactDrop, factActionBlockReason });
 })(typeof window !== "undefined" ? window : globalThis);

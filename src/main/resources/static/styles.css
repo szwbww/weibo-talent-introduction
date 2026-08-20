@@ -7867,6 +7867,17 @@ tr td {
   font-size: 10.5px;
 }
 
+.trust-reply-workbench .trust-reply-fact-action-status {
+  color: var(--warning);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.trust-reply-workbench .trust-reply-fact-head > [data-action="toggle-fact-picker"]:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+
 .trust-reply-workbench .trust-reply-fact-picker {
   display: flex;
   flex-direction: column;
