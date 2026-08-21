@@ -996,6 +996,14 @@ UPDATE qa_rule
 文件：`src/test/js/batchSendTaskConsoleVisualFix.test.js`
 - `:49-51` 三条硬编码字符串改为 `20260821-v12-qa-coverage-gate`。
 
+#### T11. `qaFactCardEditor.test.js` 陈旧缺席用例退役（A5，I-3）
+文件：`src/test/js/qaFactCardEditor.test.js`
+- 删除 `:99-104` 的 `loadQa does not request coverage-keys endpoint` 用例
+  （断言 `!apiCalls.includes("/api/qa/coverage-keys")`，与 I-3/T6 的「loadQa 必须请求
+  `/api/qa/coverage-keys`」直接冲突；该文件 `:102` 的 `loadQa fetches coverage-keys metadata plus
+  gate endpoints` 正向用例已覆盖此契约，属陈旧契约测试，K-ui-removal-retires-obsolete-contract-tests）。
+- 其余用例逐字不动。
+
 ---
 
 ## 变更文件清单
@@ -1012,8 +1020,9 @@ UPDATE qa_rule
 | 8 | `src/test/js/qaCoverageKeyEditor.test.js` | 修改 | 反转 4 条缺席断言；新增收集契约与四态用例 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleManagementServiceTest.kt` | 修改 | 真实 24 号 fixture；不成对放行；V107 文本断言；:810 语义复核 |
 | 10 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 修改 | 缓存键硬编码断言同步 (I-8) |
+| 11 | `src/test/js/qaFactCardEditor.test.js` | 修改 | T11（A5：删除陈旧缺席用例 `loadQa does not request coverage-keys endpoint`） |
 
-文件数 10（上限 10）。子系统 2（A=后端 QA 服务+迁移，B=前端静态资源）。新增共享存储字段 0。
+文件数 11（计划原 10 + A5 追加 1；A3 同步的三键断言测试另计）。子系统 2（A=后端 QA 服务+迁移，B=前端静态资源）。新增共享存储字段 0。
 
 ---
 
