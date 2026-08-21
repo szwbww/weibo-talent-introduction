@@ -97,3 +97,8 @@ the fix was NOT self-authorized. Missing authority: human/controller approval to
 ## Next Action
 
 - PLAN_CONFLICT → obtain human decision / plan amendment (authorize the single unlisted test file), then resume for a bounded fix round; or amend the plan to document the file in the change list.
+
+## Finalization note (controller, 2026-08-21)
+
+- Amendment A1 approved; fix round 1 `53e12b9` applied (unmatchedQaReplySource.test.js 4th case → retirement guard); verifier P1Verifier-2 verdict `LIGHT_PASS_WITH_NOTES` (O-1 benign) — see verify-log.md.
+- Final outcome: LIGHT_PASS_WITH_NOTES, evidence commit recorded by controller.
