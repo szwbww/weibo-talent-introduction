@@ -5,7 +5,7 @@
   (identity commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd)
 - Master plan (ordering and global constraints):
   `docs/plans/2026-08-21/ui-tweaks-00-execution-order.md`
-- Child base (product boundary): p1 terminal Code head (set at dispatch time)
+- Child base (product boundary): `53e12b979025e1df5f36736b2baf30d9e0bc688e` (p1 terminal Code head)
 - Cache key for this child: `20260821-v10-overlay-contrast` (I-8; P1 set v9, P3 bumps to v11)
 
 ## Global constraints (from master plan)
