@@ -100,6 +100,39 @@ class QaFactSelectionService(
     }
 
     /**
+     * Read-only diagnostics partition of an explicit rule selection (计划 04,
+     * T1.1). Splits [ruleIds] into: [ExplicitSelectionPartition.selectable]
+     * (passes the same four availability checks as [validateExplicitSelection]
+     * AND keyword-matches at least one extracted request, order preserved),
+     * [ExplicitSelectionPartition.unavailable] (missing / disabled / policy
+     * NEVER / blank answer body), and [ExplicitSelectionPartition.unmatched]
+     * (available but matching no request). Never throws — it is the degraded
+     * path's sole seam, so the shared [select] keeps its hard behaviour (I-1).
+     */
+    fun partitionExplicitSelection(inboundText: String, ruleIds: List<Long>): ExplicitSelectionPartition {
+        val normalizedRequests = extractRequests(inboundText).map { QaFactKeywordMatcher.normalize(it.text) }
+        val selectable = mutableListOf<Long>()
+        val unavailable = mutableListOf<Long>()
+        val unmatched = mutableListOf<Long>()
+        ruleIds.forEach { ruleId ->
+            val rule = qaRuleRepository.findById(ruleId).orElse(null)
+            when {
+                rule == null || !rule.enabled ||
+                    rule.replyPolicyEnum() == QaReplyPolicy.NEVER ||
+                    rule.answerBody.trim().isBlank() -> unavailable += ruleId
+                normalizedRequests.any { QaFactKeywordMatcher.matchesRule(rule, it) } -> selectable += ruleId
+                else -> unmatched += ruleId
+            }
+        }
+        return ExplicitSelectionPartition(
+            selectable = selectable,
+            unavailable = unavailable,
+            unmatched = unmatched,
+            noRequests = normalizedRequests.isEmpty()
+        )
+    }
+
+    /**
      * Workbench-only selection entry (Task 2). Unlike [select], it produces a
      * canonical summary-to-fact matrix in which every fact is consumed at most
      * once across the whole mail:
@@ -603,3 +636,15 @@ internal object QaFactKeywordMatcher {
         }
     }
 }
+
+/**
+ * 计划 04 (T1.1): 只读的可选性分区，供人工富文本发送路径把显式选择失败降级为
+ * 可二次确认的风险项。由 [QaFactSelectionService.partitionExplicitSelection]
+ * 产出；本类不抛异常（分类即结果）。
+ */
+data class ExplicitSelectionPartition(
+    val selectable: List<Long>,      // 通过全部校验、且至少匹配一条 request（保序）
+    val unavailable: List<Long>,     // 不存在 / 停用 / policy=NEVER / answerBody 空
+    val unmatched: List<Long>,       // 规则可用，但关键词不匹配任何 request
+    val noRequests: Boolean          // 来信抽不出任何 request
+)

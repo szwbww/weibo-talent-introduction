@@ -4485,7 +4485,11 @@ const AI_REPLY_WARNING_LABELS = {
     AI_REPLY_ACTION_CV_PURPOSE_MISSING: "请求简历但未说明用途，请补充资格审核/研究方向匹配等说明。",
     AI_REPLY_ACTION_CV_OPTIONALITY_MISSING: "请求简历但未说明自愿性，请补充\"如您方便\"等提示。",
     AI_REPLY_PREFLIGHT_SOURCE_CHANGED: "依据已变化或不可用，请重新生成草稿或重新选择事实。",
-    AI_REPLY_PREFLIGHT_NO_EVIDENCE: "当前正文无关联审核事实，部分检查已跳过。"
+    AI_REPLY_PREFLIGHT_NO_EVIDENCE: "当前正文无关联审核事实，部分检查已跳过。",
+    QA_FACTS_ALL_INVALID: "所选事实均未被系统认可为本次来信的依据，本次发送不会关联任何 QA 事实。",
+    QA_FACT_NOT_MATCHING_REQUEST: "部分所选事实的关键词与来信中的问句对不上，系统未把它们当作依据。",
+    QA_FACT_UNAVAILABLE: "部分所选事实已停用、被设为不可外发或事实正文为空，系统未把它们当作依据。",
+    QA_FACT_NO_EXTRACTABLE_REQUEST: "来信中没有可识别的问句，所选事实无法与任何问题对应。",
 };
 
 const PREFLIGHT_PASS_TEXT = "当前未发现新增风险，发送前仍请人工核对";

@@ -1513,6 +1513,76 @@ class QaFactSelectionServiceTest {
         Mockito.verify(enumerator).enumerate(Mockito.anyString())
     }
 
+    // ── 计划 04 (T4.1): ExplicitSelectionPartition 只测新方法 ───────────────
+
+    @Test
+    fun `partition explicit selection marks all rules selectable when every rule matches`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val partition = service.partitionExplicitSelection(
+            inboundText = "- Salary?\n- Visa?",
+            ruleIds = listOf(1L, 2L)
+        )
+
+        assertEquals(listOf(1L, 2L), partition.selectable)
+        assertEquals(emptyList<Long>(), partition.unavailable)
+        assertEquals(emptyList<Long>(), partition.unmatched)
+        assertFalse(partition.noRequests)
+    }
+
+    @Test
+    fun `partition explicit selection separates unmatched from selectable rules`() {
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val feeRule = rule(id = 2, keywords = "fee", answerBody = "Fee body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(feeRule))
+
+        val partition = service.partitionExplicitSelection(
+            inboundText = "What is salary?",
+            ruleIds = listOf(1L, 2L)
+        )
+
+        assertEquals(listOf(1L), partition.selectable)
+        assertEquals(emptyList<Long>(), partition.unavailable)
+        assertEquals(listOf(2L), partition.unmatched)
+        assertFalse(partition.noRequests)
+    }
+
+    @Test
+    fun `partition explicit selection reports all rules unmatched`() {
+        val feeRule = rule(id = 2, keywords = "fee", answerBody = "Fee body")
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(feeRule))
+
+        val partition = service.partitionExplicitSelection(
+            inboundText = "What is salary?",
+            ruleIds = listOf(2L)
+        )
+
+        assertEquals(emptyList<Long>(), partition.selectable)
+        assertEquals(emptyList<Long>(), partition.unavailable)
+        assertEquals(listOf(2L), partition.unmatched)
+        assertFalse(partition.noRequests)
+    }
+
+    @Test
+    fun `partition explicit selection reports noRequests when nothing extractable`() {
+        val feeRule = rule(id = 2, keywords = "fee", answerBody = "Fee body")
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(feeRule))
+
+        val partition = service.partitionExplicitSelection(
+            inboundText = "",
+            ruleIds = listOf(2L)
+        )
+
+        assertTrue(partition.noRequests)
+        assertEquals(emptyList<Long>(), partition.selectable)
+        assertEquals(emptyList<Long>(), partition.unavailable)
+        assertEquals(listOf(2L), partition.unmatched)
+    }
+
     private fun reqFactStatusCount(resolved: ResolvedQaRules, status: RequestGroundingStatus): Int =
         resolved.requestFacts.count { it.status == status }
 }

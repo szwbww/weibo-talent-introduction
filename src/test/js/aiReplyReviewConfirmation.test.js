@@ -173,6 +173,21 @@ describe("adopt-direct-send UI contracts", function () {
         if (!labelsBlock.includes("AI_REPLY_ACTION_MEETING_NOT_ALLOWED")) throw new Error("meeting-not-allowed label missing");
     });
 
+    it("warning labels cover the four manual-send QA fact degradation codes", function () {
+        const labelsStart = app.indexOf("const AI_REPLY_WARNING_LABELS");
+        const labelsEnd = app.indexOf("const PREFLIGHT_PASS_TEXT");
+        const labelsBlock = app.slice(labelsStart, labelsEnd);
+        const required = [
+            "QA_FACTS_ALL_INVALID",
+            "QA_FACT_NOT_MATCHING_REQUEST",
+            "QA_FACT_UNAVAILABLE",
+            "QA_FACT_NO_EXTRACTABLE_REQUEST"
+        ];
+        for (const code of required) {
+            if (!labelsBlock.includes(code)) throw new Error(code + " label missing");
+        }
+    });
+
     it("training host never constructs manual-rich-reply payload", function () {
         const trainingBlock = app.slice(app.indexOf("function mountAiTrainingTrustReply"), app.indexOf("function selectSimulateMail"));
         if (trainingBlock.includes("send-manual-rich-reply")) throw new Error("training host must not send");

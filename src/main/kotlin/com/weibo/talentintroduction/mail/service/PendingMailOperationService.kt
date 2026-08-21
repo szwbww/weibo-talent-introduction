@@ -81,6 +81,10 @@ class PendingMailOperationService(
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
         const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
         const val AI_REPLY_PREFLIGHT_NO_EVIDENCE = "AI_REPLY_PREFLIGHT_NO_EVIDENCE"
+        // 计划 04 (T2.7): 显式 QA 选择在发送路径被降级为可确认风险时的诊断码。
+        const val QA_FACT_NOT_MATCHING_REQUEST = "QA_FACT_NOT_MATCHING_REQUEST"
+        const val QA_FACT_UNAVAILABLE = "QA_FACT_UNAVAILABLE"
+        const val QA_FACT_NO_EXTRACTABLE_REQUEST = "QA_FACT_NO_EXTRACTABLE_REQUEST"
         private val HREF_EXTRACTOR = Regex(
             """href\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>"']+))""",
             RegexOption.IGNORE_CASE
@@ -161,24 +165,18 @@ class PendingMailOperationService(
         val inboundText = inboundMessageBody(record)
         val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
         val carriesQa = !qaRuleIds.isNullOrEmpty()
-        val canonicalFactIds = if (carriesQa) {
+        val factResolution = if (carriesQa) {
             canonicalizeFactRuleIds(inboundText, qaRuleIds!!, researchProfileSufficient)
         } else {
-            emptyList()
+            CanonicalFactResolution(emptyList(), emptyList())
         }
+        val canonicalFactIds = factResolution.canonicalFactIds
         val serverSuggestedFactIds = if (carriesQa) {
             qaFactSelectionService.select(inboundText, null, researchProfileSufficient).sendQaRuleIds
         } else {
             emptyList()
         }
         val primaryRuleId = canonicalFactIds.firstOrNull()
-
-        if (carriesQa && canonicalFactIds.isEmpty()) {
-            throw ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "所选的QA事实已全部失效，请重新选择"
-            )
-        }
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
@@ -234,7 +232,8 @@ class PendingMailOperationService(
             contact = contact,
             inboundText = inboundText,
             researchProfileSufficient = researchProfileSufficient,
-            operatorAuthorizedActions = operatorAuthorized
+            operatorAuthorizedActions = operatorAuthorized,
+            degradedFactCodes = factResolution.degradedCodes
         )
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
         if (findings.isNotEmpty() && !safetyWarningConfirmed) {
@@ -549,13 +548,54 @@ class PendingMailOperationService(
         )
     }
 
+    private data class CanonicalFactResolution(
+        val canonicalFactIds: List<Long>,
+        val degradedCodes: List<String>   // 有序、去重
+    )
+
+    // 计划 04 (T2.1): 显式 QA 选择的唯一放宽接缝（I-1）。select() 本身逐字不变；
+    // 仅当它抛 IllegalArgumentException（validateExplicitSelection /
+    // validateExplicitRulesMatchRequests 的异常）时降级为可确认的风险：
+    // - I-2: 只捕获 IllegalArgumentException，真故障（DB/IO/ResponseStatusException）向上抛；
+    // - I-3: 降级产出的 canonicalFactIds 只能是运营选择的子集（partition.selectable
+    //   再经一次真 select()），永不回退自动全集；
+    // - I-5: 子集仍走真 select()，用其 sendQaRuleIds 作为取证源；
+    // - I-6: 子集为空时直接返回 emptyList()，禁止调 select(emptyList())。
     private fun canonicalizeFactRuleIds(
         inboundText: String,
         requestedRuleIds: List<Long>,
         researchProfileSufficient: Boolean
-    ): List<Long> {
-        val selection = qaFactSelectionService.select(inboundText, requestedRuleIds, researchProfileSufficient)
-        return selection.sendQaRuleIds
+    ): CanonicalFactResolution {
+        try {
+            return CanonicalFactResolution(
+                qaFactSelectionService.select(inboundText, requestedRuleIds, researchProfileSufficient).sendQaRuleIds,
+                emptyList()
+            )
+        } catch (ex: IllegalArgumentException) {
+            val partition = qaFactSelectionService.partitionExplicitSelection(inboundText, requestedRuleIds)
+            val codes = mutableListOf<String>()
+            if (partition.noRequests) {
+                codes += QA_FACT_NO_EXTRACTABLE_REQUEST
+            }
+            if (partition.unmatched.isNotEmpty()) {
+                codes += QA_FACT_NOT_MATCHING_REQUEST
+            }
+            if (partition.unavailable.isNotEmpty()) {
+                codes += QA_FACT_UNAVAILABLE
+            }
+            val ids = if (partition.selectable.isEmpty()) {
+                emptyList()
+            } else {
+                try {
+                    qaFactSelectionService.select(inboundText, partition.selectable, researchProfileSufficient)
+                        .sendQaRuleIds
+                } catch (innerEx: IllegalArgumentException) {
+                    codes += QA_FACT_UNAVAILABLE
+                    emptyList()
+                }
+            }
+            return CanonicalFactResolution(ids, codes.distinct())
+        }
     }
 
     private fun resolveResearchProfileSufficient(contact: ExpertContact, inboundText: String): Boolean {
@@ -713,7 +753,10 @@ class PendingMailOperationService(
         contact: ExpertContact,
         inboundText: String,
         researchProfileSufficient: Boolean,
-        operatorAuthorizedActions: Set<AiReplyAction>
+        operatorAuthorizedActions: Set<AiReplyAction>,
+        // 计划 04 (T2.4): 发送路径显式 QA 选择被降级时产生的诊断码（默认空，预检不传——
+        // 预检已有 AI_REPLY_PREFLIGHT_SOURCE_CHANGED，不重复报，N-6）。
+        degradedFactCodes: List<String> = emptyList()
     ): List<SafetyFinding> {
         val findings = mutableListOf<SafetyFinding>()
         fun add(code: String, sentence: String? = null) {
@@ -729,6 +772,9 @@ class PendingMailOperationService(
                 )
             }
         }
+
+        // I-9: 新增码走默认 NORMAL（一次确认弹窗即可，不要求输入「确认发送」）。
+        degradedFactCodes.forEach { add(it) }
 
         if (carriesQa && canonicalFactIds.isNotEmpty()) {
             val claimValidation = aiReplyHighRiskClaimValidator.validatePlainText(

@@ -16,6 +16,7 @@ import com.weibo.talentintroduction.llm.service.AiReplyContextService
 import com.weibo.talentintroduction.llm.service.AiReplyDraftReadiness
 import com.weibo.talentintroduction.llm.service.AiReplyDraftService
 import com.weibo.talentintroduction.llm.service.AiReplyHighRiskClaimValidator
+import com.weibo.talentintroduction.llm.service.ExplicitSelectionPartition
 import com.weibo.talentintroduction.llm.service.QaFactSelectionService
 import com.weibo.talentintroduction.llm.service.RequestFactItem
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
@@ -203,6 +204,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         assertEquals(1, result.requestCoverage.size)
     }
 
+    // 计划 04 (T4.2): 全部失效不再 422 —— 走可二次确认（I-7），确认后发送成功。
     @Test
     fun `sendManualRichReply blocks on QA facts all invalid`() {
         val rule = qaRule(10L)
@@ -216,7 +218,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 )
             )
 
-        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
             service.sendManualRichReply(
                 inboundProcessingId = 100L, senderAccountCode = null,
                 subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
@@ -224,6 +226,244 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 qaRuleIds = listOf(10L)
             )
         }
+        assertTrue(ex.findings.map { it.code }.contains("QA_FACTS_ALL_INVALID"))
+        // I-9: 全部失效是 NORMAL 级，不要求逐字强确认。
+        assertTrue(ex.findings.none { it.severity == SafetySeverity.STRONG })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-all-invalid@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-all-invalid@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-all-invalid@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op",
+            qaRuleIds = listOf(10L), safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    // 计划 04 (T4.2): select() 抛 IllegalArgumentException 时不再 400，降级为
+    // 可确认风险 QA_FACT_NOT_MATCHING_REQUEST；确认后发送成功且
+    // payload.canonicalQaRuleIds 等于运营入参的可选子集（I-3，保序）。
+    @Test
+    fun `sendManualRichReply degrades select failure to confirmable unmatched finding`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L, 11L), true))
+            .thenThrow(
+                IllegalArgumentException(
+                    "Selected QA rules do not match any request in the inbound email: [11]"
+                )
+            )
+        Mockito.`when`(
+            qaFactSelectionService.partitionExplicitSelection("Can I work remotely?", listOf(10L, 11L))
+        ).thenReturn(
+            ExplicitSelectionPartition(
+                selectable = listOf(10L),
+                unavailable = emptyList(),
+                unmatched = listOf(11L),
+                noRequests = false
+            )
+        )
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L, 11L)
+            )
+        }
+        assertTrue(ex.findings.map { it.code }.contains("QA_FACT_NOT_MATCHING_REQUEST"))
+        assertTrue(ex.findings.none { it.severity == SafetySeverity.STRONG })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val payloadHolder = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-unmatched@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.doAnswer { invocation ->
+            payloadHolder += invocation.getArgument<ManualReplySendAttemptService.SendPayload>(0)
+            claim
+        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-unmatched@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-unmatched@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op",
+            qaRuleIds = listOf(10L, 11L), safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(listOf(10L), payloadHolder.single().canonicalQaRuleIds)
+        assertEquals(10L, payloadHolder.single().primaryRuleId)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    // 计划 04 (T4.2, I-4/IP-1): 可选子集为空时降级为 QA_FACT_UNAVAILABLE，
+    // 确认后发送成功且 payload.canonicalQaRuleIds 为空 —— finalizeSuccess 的
+    // isNotEmpty() 守卫使 mail_record_qa_rule 零行、matchedQaRuleId = null，
+    // 但 carriesQa 仍为 true（审计记 SEND_MANUAL_COMPOSED_REPLY）。
+    @Test
+    fun `sendManualRichReply with empty selectable subset keeps audit qa association empty`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenThrow(IllegalArgumentException("QA rule is disabled: 10"))
+        Mockito.`when`(
+            qaFactSelectionService.partitionExplicitSelection("Can I work remotely?", listOf(10L))
+        ).thenReturn(
+            ExplicitSelectionPartition(
+                selectable = emptyList(),
+                unavailable = listOf(10L),
+                unmatched = emptyList(),
+                noRequests = false
+            )
+        )
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L)
+            )
+        }
+        assertTrue(ex.findings.map { it.code }.contains("QA_FACT_UNAVAILABLE"))
+        assertTrue(ex.findings.map { it.code }.contains("QA_FACTS_ALL_INVALID"))
+        assertTrue(ex.findings.none { it.severity == SafetySeverity.STRONG })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val payloadHolder = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-unavailable@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.doAnswer { invocation ->
+            payloadHolder += invocation.getArgument<ManualReplySendAttemptService.SendPayload>(0)
+            claim
+        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(DeliveredMail(messageId = "<manual-rich-unavailable@weibo.com>", status = "SENT"))
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeSuccess(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-unavailable@weibo.com>")
+            )
+        ).thenReturn(500L)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op",
+            qaRuleIds = listOf(10L), safetyWarningConfirmed = true
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val sent = payloadHolder.single()
+        assertEquals(emptyList<Long>(), sent.canonicalQaRuleIds)
+        assertEquals(null, sent.primaryRuleId)
+        // I-4: carriesQa 仍按 qaRuleIds 判定为 true，审计口径不变。
+        Mockito.verify(manualReplySendAttemptService).recordSendAudit(
+            Mockito.eq(100L), Mockito.eq(1L), Mockito.eq(500L),
+            eqValue(emptyList<Long>()), Mockito.eq(true),
+            anyValue(DeliveredMail("", "")), eqValue("Re: Test"),
+            Mockito.anyString(), eqValue("op"), anyValue(inbound()),
+            anyValue(emptyList<Long>()), anyValue(false), Mockito.anyString()
+        )
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    // 计划 04 (IP-2 收敛): 同一 (inboundText, factRuleIds) 组合，预检产
+    // AI_REPLY_PREFLIGHT_SOURCE_CHANGED 警告（不阻断），发送产
+    // MANUAL_SEND_SAFETY_BLOCKED（可确认）—— 两者都不再 400/422，方向一致。
+    @Test
+    fun `preflight and send agree on degraded selection as warning not hard failure`() {
+        val rule = qaRule(10L)
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(rule))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L, 11L), true))
+            .thenThrow(
+                IllegalArgumentException(
+                    "Selected QA rules do not match any request in the inbound email: [11]"
+                )
+            )
+        Mockito.`when`(
+            qaFactSelectionService.partitionExplicitSelection("Can I work remotely?", listOf(10L, 11L))
+        ).thenReturn(
+            ExplicitSelectionPartition(
+                selectable = listOf(10L),
+                unavailable = emptyList(),
+                unmatched = listOf(11L),
+                noRequests = false
+            )
+        )
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", listOf(10L), true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        Mockito.`when`(
+            aiReplyDraftService.resolveDraftReadinessForSelection(
+                Mockito.anyList<RequestFactItem>(), Mockito.anyList<Long>()
+            )
+        ).thenReturn(AiReplyDraftReadiness.READY)
+        Mockito.`when`(
+            aiReplyDraftService.buildEvidenceSnapshotForSelection(Mockito.anyList<Long>())
+        ).thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val preflight = service.preflightEditedAiReply(
+            inboundProcessingId = 100L,
+            factRuleIds = listOf(10L, 11L),
+            expectedEvidenceSetVersion = "",
+            textBody = "Remote work is possible."
+        )
+        assertEquals("WARNING", preflight.status)
+        assertTrue(preflight.warningCodes.contains("AI_REPLY_PREFLIGHT_SOURCE_CHANGED"))
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                qaRuleIds = listOf(10L, 11L)
+            )
+        }
+        assertTrue(ex.findings.map { it.code }.contains("QA_FACT_NOT_MATCHING_REQUEST"))
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
