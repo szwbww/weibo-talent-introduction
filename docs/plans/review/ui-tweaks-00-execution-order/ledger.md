@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md
+- Governing master identity: worktree sha256 87848b296a47161fcba1bd85ac04029c22be46e264c50242486f3b0d45ec55d2; recorded identity commit 737b4b1a974a5ef40e5f46f2aa8b8b3c09e8c4fa
+- Invoked master identity: 136dee5c1746395a72a73a21e9e1a908afa23deb192141ab7e950d9b6931c09e (invoked copy == master plan content at pre-amendment commit 2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd)
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A3 (master plan 2cbf6d3 → 737b4b1a; master rule: master 计划「为什么必须按序」缓存键同步约定 + K-frontend-cache-key-triad; reason: 本 run 每个后续子计划都需同步此前子计划新增的三键断言测试，避免逐计划重复暂停; approval: HUMAN:user selected "Approve A2 + A3 (recommended)" (ask p2_amendment, 2026-08-21))
+- Amendments: A1 (p1 plan 2cbf6d3 → c7b9163, add unmatchedQaReplySource.test.js as 9th authorized file), A2 (p2 plan 2cbf6d3 → 737b4b1a, add checkRepliesRelocation.test.js as 6th authorized file), A3 (master plan, see Governing amendment), A4 (p3 plan 2cbf6d3 → a4446c5, add expertProfileAbsence.test.js as 7th authorized file), A5 (p4 plan 2cbf6d3 → 93ae957, add qaFactCardEditor.test.js as 11th authorized file) — all HUMAN-approved 2026-08-21
+- Fast-p ledger: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-ui-tweaks-00-execution-order/docs/plans/fast/ui-tweaks-00-execution-order/ledger.md (sha256 db6b68c3e2e331b8637c95bccd0ebc46a03bc1a69693d192df6c6c67f9efee7f)
+- Fast-p handoff: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-ui-tweaks-00-execution-order/docs/plans/fast/ui-tweaks-00-execution-order/human-review-handoff.md (sha256 d377446acd0614e2aee8ef39f45bc0f1eeac36e41dd882b4031304885b5ed398)
+- Master base: bb34ca2001d0abeac3bd7a8fc13995769e14143e
+- Final code head: c13b12d8c25652b5047889c4075aba6c9c4a5bbf
+- Evidence parent before next commit: 06f80c8aba8dd558bce5fa6f0104f0ee666a8dfc
+- Previous evidence commit: N/A
+- Branch: fast/ui-tweaks-00-execution-order
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-ui-tweaks-00-execution-order
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: discover_fast_p.py SELECTED exactly one worktree with matching master-plan path, branch, READY_FOR_HUMAN_REVIEW ledger+handoff, terminal child table, evidence commits, valid base/code ancestry; 4 children
+- Misdirected review evidence: N/A
+- Reviewer: AggregateReviewerEpoch1
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: 1 (machine-verification.md)
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human runs manual-acceptance.md epoch 1 items (P1-A-1..11, P2-A-1..10, P3-A-1..9, P4-A-1..13, PRE-1..2) against c13b12d boundary, then signs off

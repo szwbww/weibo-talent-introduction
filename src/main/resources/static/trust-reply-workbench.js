@@ -2058,8 +2058,44 @@
             const itemMarkup = state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`;
             return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section></div>
+                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section>${renderBusyOverlay()}</div>
             </details>`;
+        }
+
+        // P2 (I-5): overlay busy reasons mirror factActionBlockReason()'s
+        // priority so the mask and the per-fact tooltip never disagree.
+        function busyOverlayState() {
+            if (state.requests.some((request) => request.pending)) {
+                return { text: "本条摘要正在生成…", hint: "完成后可继续调整该条目。", cancellable: false };
+            }
+            if (state.factChangePending) {
+                return { text: "正在更新事实…", hint: "服务端重算证据矩阵中，完成后可继续调整。", cancellable: false };
+            }
+            if (state.stateSavePending) {
+                return { text: "正在保存工作台状态…", hint: "完成后可调整事实与处理方式。", cancellable: false };
+            }
+            if (state.generation.pending) {
+                return { text: state.generation.message || "正在生成回复…", hint: "生成期间不能改动事实与处理方式。", cancellable: true };
+            }
+            if (state.frameSavePending) {
+                return { text: "正在保存回复框架…", hint: "完成后可调整事实与处理方式。", cancellable: false };
+            }
+            if (state.completePending) {
+                return { text: "正在整合整封回复…", hint: "服务端合成中，请勿离开本页。", cancellable: false };
+            }
+            return null;
+        }
+
+        // P2 (I-1/I-2): the mask is part of renderMarkup() output and lives as
+        // the last child of .reply-workflow-content, so <summary> stays clickable.
+        // I-4: the cancel button reuses the existing delegated action.
+        function renderBusyOverlay() {
+            const busy = busyOverlayState();
+            if (!busy) return "";
+            const cancel = busy.cancellable
+                ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
+                : "";
+            return `<div class="trust-reply-busy-overlay" role="status" aria-live="polite"><div class="trust-reply-busy-card"><span class="ai-reply-loading-spinner" aria-hidden="true"></span><span class="trust-reply-busy-text">${escapeText(busy.text)}</span><span class="trust-reply-busy-hint">${escapeText(busy.hint)}</span>${cancel}</div></div>`;
         }
 
         function renderToolbar() {

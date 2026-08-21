@@ -130,20 +130,37 @@ class QaRuleManagementController(
         service.setRuleEnabled(ruleId, false).toResponse(category = null)
 
     @GetMapping("/coverage-keys")
-    fun listCoverageKeys(): List<CoverageKeyMetadataResponse> =
-        QaCoverageKeyCatalog.all().map { entry ->
+    fun listCoverageKeys(): List<CoverageKeyMetadataResponse> {
+        val groupsById = QaCoverageKeyCatalog.controlledGroups().associateBy { it.id }
+        return QaCoverageKeyCatalog.all().map { entry ->
             val groupId = QaCoverageKeyCatalog.groupIdOf(entry.key)
             CoverageKeyMetadataResponse(
                 key = entry.key,
                 label = entry.label,
                 description = entry.description,
                 group = entry.group,
-                controlled = QaCoverageKeyCatalog.isControlled(entry.key),
+                controlled = groupId != null,
                 groupId = groupId,
-                groupName = groupId?.let { id ->
-                    QaCoverageKeyCatalog.controlledGroups().first { it.id == id }.name
-                }
+                groupName = groupsById[groupId]?.name
             )
+        }
+    }
+
+    @GetMapping("/coverage-keys/controlled-groups")
+    fun listControlledCoverageGroups(): List<ControlledGroupResponse> =
+        QaCoverageKeyCatalog.controlledGroups().map {
+            ControlledGroupResponse(
+                id = it.id,
+                name = it.name,
+                keys = it.keys.toList(),
+                canonicalBody = it.canonicalAnswerBody
+            )
+        }
+
+    @GetMapping("/coverage-keys/authorities")
+    fun listCoverageAuthorities(): Map<String, List<AuthorityRuleResponse>> =
+        service.listCoverageAuthorities().mapValues { (_, rules) ->
+            rules.map { AuthorityRuleResponse(id = it.id ?: error("QA rule id is required"), displayName = it.displayName) }
         }
 
     /** I-4: read-only definition of the four controlled groups; no write endpoint exists. */
@@ -375,6 +392,11 @@ data class ControlledGroupResponse(
     val name: String,
     val keys: List<String>,
     val canonicalBody: String
+)
+
+data class AuthorityRuleResponse(
+    val id: Long,
+    val displayName: String?
 )
 
 private fun QaCategory.toResponse(): QaCategoryResponse =

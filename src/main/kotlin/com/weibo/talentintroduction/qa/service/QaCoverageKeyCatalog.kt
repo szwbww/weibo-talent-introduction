@@ -48,14 +48,10 @@ object QaCoverageKeyCatalog {
     fun groupIdOf(key: String): String? =
         controlledCoverageGroups.firstOrNull { key in it.keys }?.id
 
-    fun isControlled(key: String): Boolean =
-        controlledCoverageGroups.any { key in it.keys }
+    fun isControlled(key: String): Boolean = groupIdOf(key) != null
 
     fun validateControlledBody(coverageKeys: List<String>, answerBody: String) {
         val parsed = coverageKeys.toSet()
-        // I-1: the gate only applies when the coverage set is EXACTLY one
-        // controlled group. Overview rules that merely mention a controlled
-        // key, or partial groups, are not authorities and pass unchecked.
         val group = controlledCoverageGroups.firstOrNull { it.keys == parsed }
             ?: return
         if (answerBody.trim() != group.canonicalAnswerBody) {

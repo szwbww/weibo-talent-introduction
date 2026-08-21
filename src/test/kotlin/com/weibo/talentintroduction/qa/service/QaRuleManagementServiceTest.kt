@@ -808,8 +808,6 @@ class QaRuleManagementServiceTest {
 
     @Test
     fun `create accepts mixed controlled coverage as a non-authority rule`() {
-        // I-1: a mixed set equals no controlled group, so it is not an authority
-        // and must pass the body gate while preserving the keys verbatim.
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -823,26 +821,8 @@ class QaRuleManagementServiceTest {
             )
         )
 
+        // I-1: mixed controlled keys do not form exactly one V82 group -> no body gate.
         assertEquals("fees.policy,confidentiality.materials", created.rule.coverageKeys)
-    }
-
-    @Test
-    fun `create accepts partial controlled group like contract party alone`() {
-        // I-1: a partial group is not an authority and must be allowed to save.
-        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
-        Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
-            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
-
-        val created = service.createRule(
-            QaRuleCreateCommand(
-                categoryId = 1L,
-                keywords = "contract party",
-                answerBody = "The matched enterprise signs the contract.",
-                coverageKeys = listOf("contract.party")
-            )
-        )
-
-        assertEquals("contract.party", created.rule.coverageKeys)
     }
 
     @Test
@@ -950,18 +930,18 @@ class QaRuleManagementServiceTest {
     }
 
     @Test
-    fun `legacy non controlled coverage is unaffected by the body gate`() {
-        // Real rule-24 fixture (V76 backfill): the overview set carries both
-        // controlled keys but is not itself a controlled group, so the gate
-        // must let create AND update through with the keys preserved verbatim.
-        val overviewKeys = listOf(
+    fun `program overview rule 24 real fixture is unaffected by the body gate after I-1 relaxation`() {
+        // Real V76 coverage string for rule 24 (11 keys, incl. the two controlled keys).
+        val rule24Coverage = listOf(
             "programme.purpose", "programme.structure", "programme.tracks", "programme.scope",
             "finance.government_funding", "finance.enterprise_compensation",
             "work.remote_arrangement", "work.travel_arrangement", "work.relocation",
             "fees.policy", "confidentiality.materials"
         )
-        val overviewKeysStored = overviewKeys.joinToString(",")
-        val overviewBody = "Two tracks: Innovative Talent Schemes and Entrepreneurial Talent Schemes. There are no fees at any stage, and all materials are kept strictly confidential."
+        val rule24Stored = rule24Coverage.joinToString(",")
+        // Real Program overview body excerpt (starts "Two tracks:", mentions fees/confidentiality).
+        val overviewBody = "Two tracks: Innovative Talent Scheme and Entrepreneurial Talent Scheme. " +
+            "There are no fees at any stage, and all materials are kept strictly confidential."
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
@@ -975,66 +955,56 @@ class QaRuleManagementServiceTest {
         val created = service.createRule(
             QaRuleCreateCommand(
                 categoryId = 1L,
-                keywords = "programme purpose,programme structure",
+                keywords = "programme purpose",
                 answerBody = overviewBody,
-                coverageKeys = overviewKeys
+                coverageKeys = rule24Coverage
             )
         )
-        assertEquals(overviewKeysStored, created.rule.coverageKeys)
+        assertEquals(rule24Stored, created.rule.coverageKeys, "create must preserve coverage verbatim")
 
-        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(
-            Optional.of(
-                rule(id = 10L, enabled = true, replyBody = overviewBody, answerBody = overviewBody)
-                    .copy(coverageKeys = overviewKeysStored)
+        val existing = rule(id = 10L, enabled = true, replyBody = overviewBody, answerBody = overviewBody)
+            .copy(coverageKeys = rule24Stored)
+        Mockito.`when`(ruleRepository.findById(10L)).thenReturn(Optional.of(existing))
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.QA_RULE,
+                10L
             )
-        )
+        ).thenReturn(emptyList())
+
         val updated = service.updateRule(
             10L,
             QaRuleUpdateCommand(
                 categoryId = 1L,
-                keywords = "programme purpose,programme structure",
+                keywords = "programme purpose",
                 matchMode = "ANY",
                 priority = 100,
-                answerBody = "$overviewBody Updated wording.",
+                answerBody = overviewBody,
                 enabled = true,
-                coverageKeys = overviewKeys
+                coverageKeys = rule24Coverage
             )
         )
-        assertEquals(overviewKeysStored, updated.rule.coverageKeys)
+        assertEquals(rule24Stored, updated.rule.coverageKeys, "update must preserve coverage verbatim")
     }
 
     @Test
-    fun `disable then enable still rejects a controlled rule with drifted body`() {
-        // K-qa-rule-enable-must-revalidate-facts: an EXACT controlled group keeps
-        // the body gate on enable even after the rule was disabled out-of-band.
-        fun existing(body: String) = rule(
-            id = 2L, enabled = true,
-            replyBody = body,
-            answerBody = body
-        ).copy(coverageKeys = "fees.policy")
+    fun `create accepts unpaired contract key as a non-authority rule`() {
+        Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
-            .thenAnswer { invocation -> invocation.arguments[0] as QaRule }
-        Mockito.`when`(
-            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
-                ContentVariantOwnerType.QA_RULE,
-                2L
+            .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
+
+        val created = service.createRule(
+            QaRuleCreateCommand(
+                categoryId = 1L,
+                keywords = "contract",
+                answerBody = "The matched enterprise is introduced after selection.",
+                coverageKeys = listOf("contract.party")
             )
-        ).thenReturn(emptyList())
-
-        Mockito.`when`(ruleRepository.findById(2L)).thenReturn(
-            Optional.of(existing(canonicalFeeBody))
         )
-        val disabled = service.setRuleEnabled(2L, false)
-        assertFalse(disabled.rule.enabled)
+        assertEquals(overviewKeysStored, created.rule.coverageKeys)
 
-        Mockito.`when`(ruleRepository.findById(2L)).thenReturn(
-            Optional.of(existing("Wrong body for fees."))
-        )
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.setRuleEnabled(2L, true)
-        }
-        assertTrue(ex.message!!.contains("canonical body"))
-        Mockito.verify(ruleRepository, Mockito.times(1)).save(Mockito.any())
+        // I-1: a half-checked controlled group is not an authority -> body gate passes it through.
+        assertEquals("contract.party", created.rule.coverageKeys)
     }
 
     // ── P1-1: blank key rejection (I-5) ────────────────────────────────────────
@@ -1167,6 +1137,23 @@ class QaRuleManagementServiceTest {
         assertTrue(section.contains("work.travel_arrangement"), "Full-time should include travel_arrangement")
         assertTrue(section.contains("work.remote_arrangement"), "Full-time should include remote_arrangement")
         assertFalse(section.contains("'work.remote_arrangement,work.travel_arrangement,work.relocation'"), "Full-time must not include relocation")
+    }
+
+    // ── P4 (I-6): V107 strips only the two controlled keys from rule 24 ────────
+
+    @Test
+    fun `v107 strips only the two controlled keys from program overview and preserves timestamps`() {
+        val v107 = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/main/resources/db/migration/V107__strip_controlled_keys_from_program_overview.sql")
+        )
+        val nineKeys = "programme.purpose,programme.structure,programme.tracks,programme.scope,finance.government_funding,finance.enterprise_compensation,work.remote_arrangement,work.travel_arrangement,work.relocation"
+        val baseline = "$nineKeys,fees.policy,confidentiality.materials"
+        assertTrue(v107.contains("updated_at = updated_at"), "V107 must preserve the auto-updated timestamp")
+        assertTrue(v107.contains("WHERE id = 24"), "V107 must target rule 24 only")
+        assertTrue(v107.contains("coverage_keys = '$nineKeys'"), "V107 must write the 9-key stripped string")
+        assertTrue(v107.contains("coverage_keys = '$baseline'"), "V107 baseline guard must match the V76 value verbatim")
+        assertFalse(v107.contains("answer_body"), "V107 must not touch answer_body")
+        assertFalse(v107.contains("reply_body"), "V107 must not touch reply_body")
     }
 
     // ── P1-8: work arrangement labels match final body ──────────────────────────

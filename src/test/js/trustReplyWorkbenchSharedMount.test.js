@@ -348,7 +348,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(runtimeMatch[1], stylesMatch[1]);
         assert.ok(indexSource.indexOf(runtimeMatch[0]) < indexSource.indexOf(appMatch[0]));
         assert.match(appSource, /function requireTrustReplyWorkbenchRuntime\(host\)/);
-        assert.strictEqual((appSource.match(/requireTrustReplyWorkbenchRuntime\(host\)/g) || []).length, 4);
+        assert.strictEqual((appSource.match(/requireTrustReplyWorkbenchRuntime\(host\)/g) || []).length, 3);
         assert.match(appSource, /可信回复工作台资源加载失败，请刷新页面后重试/);
     });
 

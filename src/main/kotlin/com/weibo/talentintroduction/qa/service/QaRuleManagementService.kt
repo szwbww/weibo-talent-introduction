@@ -144,27 +144,16 @@ class QaRuleManagementService(
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
-    /**
-     * I-5: every enabled rule whose stored coverage set contains each controlled
-     * key, keyed by that key. Pure read (no repository projection: reuses
-     * findAllEnabledOrdered + parseStored), used only for the revoke-confirm copy.
-     */
-    fun listCoverageAuthorities(): Map<String, List<AuthorityRuleResponse>> {
-        val byKey = mutableMapOf<String, MutableList<AuthorityRuleResponse>>()
+    /** All enabled rules that declare a controlled key, keyed by that key (I-5, advisory only). */
+    fun listCoverageAuthorities(): Map<String, List<QaRule>> {
+        val authorities = linkedMapOf<String, MutableList<QaRule>>()
         ruleRepository.findAllEnabledOrdered().forEach { rule ->
-            val ruleId = rule.id ?: error("QA rule id is required")
-            QaCoverageKeyCatalog.parseStored(rule.coverageKeys).forEach { key ->
-                byKey.getOrPut(key) { mutableListOf() }
-                    .add(AuthorityRuleResponse(ruleId, rule.displayName))
+            val keys = QaCoverageKeyCatalog.parseStored(rule.coverageKeys)
+            keys.filter { QaCoverageKeyCatalog.isControlled(it) }.forEach { key ->
+                authorities.getOrPut(key) { mutableListOf() }.add(rule)
             }
         }
-        val ordered = LinkedHashMap<String, List<AuthorityRuleResponse>>()
-        QaCoverageKeyCatalog.controlledGroups().forEach { group ->
-            group.keys.sorted().forEach { key ->
-                ordered[key] = byKey[key].orEmpty()
-            }
-        }
-        return ordered
+        return authorities
     }
 
     private fun rejectQaVariants(variants: List<String>) {

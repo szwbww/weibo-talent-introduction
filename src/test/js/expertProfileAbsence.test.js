@@ -345,6 +345,7 @@ function createRendererSandbox() {
     // P2: loadContactDetail now initializes the sender-binding dirty gate after filling the select
     vm.runInContext(extractFunction("updateSenderBindingDirtyState"), sandbox);
     vm.runInContext(extractFunction("showMailDetail"), sandbox);
+    vm.runInContext(extractFunction("buildManualReplySubject"), sandbox);
     vm.runInContext(extractFunction("showUnmatchedDetail"), sandbox);
     return { sandbox, elements, statusCalls };
 }
