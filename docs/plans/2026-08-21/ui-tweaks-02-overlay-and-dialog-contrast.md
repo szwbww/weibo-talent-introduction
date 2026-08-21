@@ -307,6 +307,7 @@
 | `trustReplyWorkbenchSharedMount.test.js:386-388` | 训练/生产两宿主的 `data-role` 序列 `deepStrictEqual` | 两宿主在该断言点均为**空闲**态，遮罩不渲染；且遮罩不带 `data-role` → 不受影响 |
 | `trustReplyWorkbenchSharedMount.test.js:347-348` | 三个缓存键相等 | bump 后仍相等 → 不改 |
 | `batchSendTaskConsoleVisualFix.test.js:49-51` | 三键逐字等于旧值 | **必须改**为新键（I-8） |
+| `checkRepliesRelocation.test.js:11,57`（P1 新增） | `CACHE_KEY` 常量与 I-3 用例硬编码 `20260821-v9-check-replies-move` | **必须同步**为 `20260821-v10-overlay-contrast`（A2，T3-4） |
 
 ### 前端样式盘点
 - 可复用 class：
@@ -391,6 +392,7 @@
 **T3-1**　`index.html:11 / 2074 / 2075` 三处 `?v=` 改为 `20260821-v10-overlay-contrast`。
 **T3-2**　`src/test/js/batchSendTaskConsoleVisualFix.test.js:49-51` 三条字符串同步改为新键。
 **T3-3**　新增 `src/test/js/overlayAndDialogContrast.test.js`：以「读源文件 + 正则/字符串断言」的方式验证 S-1/S-2/S-3 的逐字落地与 I-1/I-2/I-4/I-6/I-7；并用现有 `trustReplyWorkbench.test.js` 的 vm + FakeElement 套路，构造 `state.generation.pending === true` 的一次 render，断言 `host.innerHTML` 含 `class="trust-reply-busy-overlay"` 与 `data-action="cancel-generation"`、且 `aria-busy="true"` 出现在 `reply-workflow-content` 上、且不含 `style=`。
+**T3-4**　`src/test/js/checkRepliesRelocation.test.js`（A2）：把其中的 `CACHE_KEY` 常量与 I-3 用例的三键断言从 `20260821-v9-check-replies-move` 同步为 `20260821-v10-overlay-contrast`；其余断言逐字不动。
 
 ---
 
@@ -403,8 +405,9 @@
 | 3 | `src/main/resources/static/index.html` | 改（3 行） | T3-1 |
 | 4 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 改（3 行） | T3-2 |
 | 5 | `src/test/js/overlayAndDialogContrast.test.js` | 新增 | T3-3 |
+| 6 | `src/test/js/checkRepliesRelocation.test.js` | 改 | T3-4（A2：三键断言 v9→v10） |
 
-合计 5 个文件，1 个子系统。`app.js` 与全部 Kotlin 源码/测试**不在清单内**。
+合计 6 个文件，1 个子系统。`app.js` 与全部 Kotlin 源码/测试**不在清单内**。
 
 ---
 
