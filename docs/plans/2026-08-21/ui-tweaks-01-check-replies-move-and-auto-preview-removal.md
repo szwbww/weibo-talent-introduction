@@ -218,6 +218,7 @@
 | `trustReplyWorkbenchSharedMount.test.js:352` | `requireTrustReplyWorkbenchRuntime(host)` 出现 **4** 次 | 变 3 → **必须改** |
 | `batchSendTaskConsoleVisualFix.test.js:49-51` | 三个缓存键 **逐字等于** `20260820-v8-trust-fact-actions` | **必须改**为新键 |
 | `autoPreviewWorkbenchHost.test.js` 全文（4 个用例） | AUTO_PREVIEW 宿主挂载、写闸门、`wouldBeBlockedBy` 渲染、无 `onComplete` 挂载 | 宿主删除 → **必须改写为退休守卫** |
+| `unmatchedQaReplySource.test.js:28-32` | 断言 `mountAutoPreviewTrustReply` / `data-trust-reply-auto-preview-host` / `data-auto-preview-status` **存在**于 `app.js` | 第 4 个用例「mounts the read-only AUTO_PREVIEW workbench host from source」→ **必须翻转为缺席断言**（A1） |
 | `trustReplyWorkbench.test.js:573` | `!/style=/.test(host.innerHTML)` | 本计划不改 workbench → 不受影响 |
 
 ### 前端样式盘点
@@ -339,6 +340,7 @@ describe("AUTO_PREVIEW workbench host (retired in P1)", () => {
 ```
 
 **T3-6**　新增 `src/test/js/checkRepliesRelocation.test.js`（I-1、I-2、S-1、S-2 的机器验证）。
+**T3-7**　`src/test/js/unmatchedQaReplySource.test.js`（A1）：仅改写第 4 个用例「mounts the read-only AUTO_PREVIEW workbench host from source」为退休守卫 —— 断言 `mountAutoPreviewTrustReply`、`data-trust-reply-auto-preview-host`、`data-auto-preview-status` 在 `app.js` 中**全部缺席**（与 T3-5 的退休守卫同构，I-4）；其余 7 个用例逐字保留。
 
 ---
 
@@ -354,8 +356,9 @@ describe("AUTO_PREVIEW workbench host (retired in P1)", () => {
 | 6 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 改（1 行） | T3-3 |
 | 7 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 改（3 行） | T3-2 |
 | 8 | `src/test/js/checkRepliesRelocation.test.js` | 新增 | T3-6 |
+| 9 | `src/test/js/unmatchedQaReplySource.test.js` | 改 | T3-7（A1：第 4 个用例翻转为退休守卫） |
 
-合计 8 个文件，1 个子系统。`trust-reply-workbench.js` 与全部 Kotlin 源码/测试**不在清单内**。
+合计 9 个文件，1 个子系统。`trust-reply-workbench.js` 与全部 Kotlin 源码/测试**不在清单内**。
 
 ---
 
