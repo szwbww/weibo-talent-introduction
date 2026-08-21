@@ -25,10 +25,13 @@ describe("mail processing reply workflow source", () => {
         assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail mail-body-section cleaned-mail-body-section" open'));
     });
 
-    it("mounts the read-only AUTO_PREVIEW workbench host from source", () => {
-        assert.ok(appJsSource.includes("function mountAutoPreviewTrustReply(recordId)"));
-        assert.ok(appJsSource.includes("data-trust-reply-auto-preview-host"));
-        assert.ok(appJsSource.includes("data-auto-preview-status"));
+    it("I-4: the retired AUTO_PREVIEW workbench host identifiers are absent from source", () => {
+        assert.ok(!appJsSource.includes("mountAutoPreviewTrustReply"),
+            "mountAutoPreviewTrustReply must be gone from app.js");
+        assert.ok(!appJsSource.includes("data-trust-reply-auto-preview-host"),
+            "data-trust-reply-auto-preview-host must be gone from app.js");
+        assert.ok(!appJsSource.includes("data-auto-preview-status"),
+            "data-auto-preview-status must be gone from app.js");
         assert.ok(!appJsSource.includes("loadAutoReplyPreview"));
         assert.ok(!appJsSource.includes("preview-auto-reply"));
     });
