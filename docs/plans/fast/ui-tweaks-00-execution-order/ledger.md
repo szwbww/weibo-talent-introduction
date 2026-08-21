@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md (commit 5b6c6ffe777b00c447c81cc38700f80f9ec07fdb)
-- Amendments: A1, A2, A3
+- Amendments: A1, A2, A3, A4
 - Master base: bb34ca2001d0abeac3bd7a8fc13995769e14143e
 - Branch: fast/ui-tweaks-00-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-ui-tweaks-00-execution-order
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-21T00:00:00Z
 - Current child: p3
-- Waiting role: N/A
+- Waiting role: VERIFIER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: P3 implementer proved that pre-existing src/test/js/expertProfileAbsence.test.js:384 (showUnmatchedDetail sandbox case) fails with ReferenceError: buildManualReplySubject is not defined after p3's mandated S-1 change — createRendererSandbox (lines 326-349) loads a fixed extractFunction list that excludes the new buildManualReplySubject. The file is NOT in p3's authorized 6-file list and the plan never mentions it/sandbox. Fix is one line (register buildManualReplySubject in the sandbox); requires amendment A4 adding it as the 7th authorized file. This is the vm-sandbox variant of the A1/A2 pattern (plan blind spot on dependent tests), not covered by A3 (A3 covers run-created triad-asserting tests only).
-- Resume from: 0ad6b3b (p3 base; partial uncommitted p3 edits retained: app.js, index.html, batchSendTaskConsoleVisualFix.test.js, checkRepliesRelocation.test.js, overlayAndDialogContrast.test.js, new manualReplySubjectPrefill.test.js)
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -35,7 +35,7 @@
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | p1 | docs/plans/2026-08-21/ui-tweaks-01-check-replies-move-and-auto-preview-removal.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | none | 2 | LIGHT_PASS_WITH_NOTES | bb34ca2001d0abeac3bd7a8fc13995769e14143e | 9b90e41c678c396c7e720832c58e162e717f34da | 1 | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 53e12b979025e1df5f36736b2baf30d9e0bc688e | b525450eeae6375db4ec64f1ca4e96360f941378 | epoch 2 (A1 approved 2026-08-21); round 1 FIXED; verifier P1Verifier-2; RECORD_ONLY O-1 (A1 guard asserts 2 extra absence tokens, benign); implementer P1Implementer-2 |
 | p2 | docs/plans/2026-08-21/ui-tweaks-02-overlay-and-dialog-contrast.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p1 | 2 | LIGHT_PASS | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 0 | — | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 69a6ee46684c3e90e4a3161505ccca5e13df5e1f | epoch 2 (A2+A3 approved 2026-08-21); verifier P2Verifier; RECORD_ONLY O-1 (uncommitted doc-only edits at verify time, attributed to 0ad6b3b); implementer P2Implementer |
-| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 1 | PAUSED_FOR_HUMAN | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | — | 0 | — | — | — | 人工富文本回复主题预填；6 files (4 plan + 2 per A3)；implementer P3Implementer paused on unlisted expertProfileAbsence.test.js sandbox ReferenceError — amendment A4 pending |
+| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 2 | LIGHT_VERIFYING | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | 0 | — | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | — | epoch 2 (A4 approved 2026-08-21); implementer P3Implementer (epochs 1-2); verifier dispatch pending |
 | p4 | docs/plans/2026-08-21/qa-gate-visibility.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p3 | 1 | PENDING | — | — | 0 | — | — | — | QA 门禁可见化 + V107；10 files, 2 subsystems |
 
 ## Amendments
@@ -45,3 +45,4 @@
 | A1 | docs/plans/2026-08-21/ui-tweaks-01-check-replies-move-and-auto-preview-removal.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | commit:c7b91635195f6007b297dc42777128db81559107 | P1 计划 I-4 + K-ui-removal-retires-obsolete-contract-tests（删 UI 必须成组删干净并退休契约测试） | P1 遗漏第二个断言已删 AUTO_PREVIEW 标识的契约测试 unmatchedQaReplySource.test.js，全量 JS 门禁失败；文件预算 8/8 需扩为 9 个授权文件 | HUMAN:user selected "Approve amendment A1: add test as 9th authorized file, flip 4th case to retirement guard" (ask p1_amendment, 2026-08-21) |
 | A2 | docs/plans/2026-08-21/ui-tweaks-02-overlay-and-dialog-contrast.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | commit:5b6c6ffe777b00c447c81cc38700f80f9ec07fdb | P2 计划 I-8 + K-frontend-cache-key-triad（三键断言同步规则） | P1 新增测试 checkRepliesRelocation.test.js:11,57 硬编码 v9 键，P2 bump v10 后全量 JS 门禁失败；文件预算 5/5 需扩为 6 个授权文件 | HUMAN:user selected "Approve A2 + A3 (recommended)" (ask p2_amendment, 2026-08-21) |
 | A3 | docs/plans/2026-08-21/ui-tweaks-00-execution-order.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | commit:5b6c6ffe777b00c447c81cc38700f80f9ec07fdb | master 计划「为什么必须按序」缓存键同步约定 + K-frontend-cache-key-triad | 本 run 每个后续子计划都需同步此前子计划新增的三键断言测试，避免逐计划重复暂停 | HUMAN:user selected "Approve A2 + A3 (recommended)" (ask p2_amendment, 2026-08-21) |
+| A4 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | commit:d17578b470368901ead0bc40285ba40f9f363b66 | P3 计划 I-1/S-1（新增顶层镜像函数）+ K-dom-stub-tests-hide-dangling-refs（vm 沙箱固定函数清单） | P3 的 S-1 让 showUnmatchedDetail 调用新增顶层函数 buildManualReplySubject，既有沙箱测试 expertProfileAbsence.test.js:384 因固定函数清单不含它而 ReferenceError；文件预算 6/6 需扩为 7 | HUMAN:user selected "Approve amendment A4 (recommended)" (ask p3_amendment, 2026-08-21) |

@@ -17,7 +17,7 @@
    zero style changes this child (S-1: `git diff src/main/resources/static/styles.css` empty).
 4. Commit locally as `feat(fast-p): implement p3`; exclude fast-p evidence files.
 
-## Authorized files (6 — 4 from plan + 2 per amendment A3)
+## Authorized files (7 — 4 from plan + 2 per A3 + 1 per A4)
 
 | # | File | Action |
 |---|---|---|
@@ -27,6 +27,13 @@
 | 4 | src/test/js/manualReplySubjectPrefill.test.js | NEW (T3-3) |
 | 5 | src/test/js/checkRepliesRelocation.test.js | modify (A3: key v10→v11 in CACHE_KEY + I-3 assertion) |
 | 6 | src/test/js/overlayAndDialogContrast.test.js | modify (A3: key v10→v11 in its triad assertion) |
+| 7 | src/test/js/expertProfileAbsence.test.js | modify 1 line (T3-4, amendment A4) |
+
+Amendment A4 (approved 2026-08-21): T3-4 — in `createRendererSandbox()` (expertProfileAbsence.test.js ~:326-349), add
+`vm.runInContext(extractFunction("buildManualReplySubject"), sandbox);` immediately before the
+`showUnmatchedDetail` registration (~:348); nothing else in that file changes. Reason: the S-1 template
+line makes showUnmatchedDetail call the new top-level buildManualReplySubject, which the sandbox's fixed
+function list does not load (ReferenceError at :384).
 
 Amendment A3 (approved 2026-08-21, master plan §三键断言测试的跨计划同步规则):
 each later child may update cache-key-asserting tests created by earlier children of this run
