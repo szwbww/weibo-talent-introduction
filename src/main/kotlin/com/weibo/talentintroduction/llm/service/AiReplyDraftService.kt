@@ -586,7 +586,8 @@ class AiReplyDraftService(
                 role = "system",
                 content = "Return one short single-paragraph acknowledgement. Confirm only that the point is pending verification. " +
                     "Return English only, regardless of the language used in the inbound email or operator instruction. " +
-                    "Do not add facts, numbers, dates, URLs, identities, contracts, funding, actions, lists, internal labels, or promises with a deadline."
+                    "Do not add facts, numbers, dates, URLs, identities, contracts, funding, actions, lists, internal labels, or promises with a deadline. " +
+                    "Do not include a salutation, an opening thank-you line, a closing courtesy line, or a sign-off. The reply frame supplies those separately. Begin directly with the substance of the answer."
             ),
             LlmChatMessage(
                 role = "user",
@@ -607,21 +608,29 @@ class AiReplyDraftService(
             progressReporter.endProviderCall()
         }
         val candidate = observed.content?.trim()
-        val validation = candidate?.let { claimValidator.validateNoEvidenceAcknowledgement(it) }
-        if (candidate != null && validation?.valid == true) {
+        // 计划 01（I-1/I-6）：与 generateOperatorDirectedAnswer 共用同一剥离策略，
+        // 剥离后的文本才是 answerText 的唯一取值；I-2 保证剥离不会清空答案。
+        val cleaned = candidate?.let { AiReplyFramePhrasePolicy.strip(it) }
+        val validation = cleaned?.let { claimValidator.validateNoEvidenceAcknowledgement(it.text) }
+        if (candidate != null && cleaned != null && validation?.valid == true) {
             return AiReplyItemGenerationResult(
                 itemAnswer = AiReplyItemAnswer(
                     requestIndex = requestFact.index,
                     requestText = requestFact.requestText,
                     status = requestFact.status,
-                    answerText = candidate,
+                    answerText = cleaned.text,
                     claims = emptyList()
                 ),
                 handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
                 generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
                 generationState = AiReplyGenerationState.LLM_USED,
                 usedLlm = true,
-                lockable = true
+                lockable = true,
+                warningCodes = buildList {
+                    addAll(validation?.warningCodes.orEmpty())
+                    if (cleaned.stripped) add(WARNING_FRAME_PHRASE_STRIPPED)
+                    if (cleaned.skipped) add(WARNING_FRAME_PHRASE_STRIP_SKIPPED)
+                }
             )
         }
         return safeAcknowledgementResult(
@@ -699,7 +708,8 @@ class AiReplyDraftService(
                         "state the purpose using the words \"eligibility review\" and make it optional using the words \"at your convenience\". " +
                         "Example of an acceptable request sentence: " +
                         "\"If you would like to proceed, you are welcome to share your CV at your convenience so that we can carry out an initial eligibility review.\" " +
-                        "Never ask for passports, ID cards, work certificates, bank statements, or any other identity or financial document."
+                        "Never ask for passports, ID cards, work certificates, bank statements, or any other identity or financial document. " +
+                        "Do not include a salutation, an opening thank-you line, a closing courtesy line, or a sign-off. The reply frame supplies those separately. Begin directly with the substance of the answer."
                 ),
                 LlmChatMessage(
                     role = "user",
@@ -740,10 +750,17 @@ class AiReplyDraftService(
             progressReporter.endProviderCall()
         }
         val candidate = observed.content?.trim().orEmpty()
+        // 计划 01（I-1/I-6）：剥离后的文本才是 answerText 的唯一取值（I-1），
+        // 与 generatePendingAcknowledgement 共用同一策略（I-6）；I-2 保证剥离不会清空答案。
+        val cleaned = AiReplyFramePhrasePolicy.strip(candidate)
         val transportWarning = failureTypeToWarning(observed.failureType)
-        val warnings = transportWarning?.let(::listOf).orEmpty()
-        val invalid = candidate.isBlank() || INTERNAL_RESPONSE_MARKER.containsMatchIn(candidate) ||
-            AiReplyActionPolicy.findViolations(candidate, allowedActions).isNotEmpty()
+        val warnings = buildList {
+            transportWarning?.let(::add)
+            if (cleaned.stripped) add(WARNING_FRAME_PHRASE_STRIPPED)
+            if (cleaned.skipped) add(WARNING_FRAME_PHRASE_STRIP_SKIPPED)
+        }
+        val invalid = cleaned.text.isBlank() || INTERNAL_RESPONSE_MARKER.containsMatchIn(cleaned.text) ||
+            AiReplyActionPolicy.findViolations(cleaned.text, allowedActions).isNotEmpty()
         if (observed.failureType != LlmChatFailureType.SUCCESS || invalid) {
             return AiReplyItemGenerationResult(
                 itemAnswer = null,
@@ -764,14 +781,15 @@ class AiReplyDraftService(
                 requestIndex = requestFact.index,
                 requestText = requestFact.requestText,
                 status = requestFact.status,
-                answerText = candidate,
+                answerText = cleaned.text,
                 claims = emptyList()
             ),
             handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
             generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
             generationState = AiReplyGenerationState.LLM_USED,
             usedLlm = true,
-            lockable = true
+            lockable = true,
+            warningCodes = warnings
         )
     }
 
@@ -2385,6 +2403,10 @@ class AiReplyDraftService(
             "(?i)(?:AI_REPLY_[A-Z0-9_]+|\\b(?:GROUNDED|PARTIAL|UNSUPPORTED)\\b|\\b(?:requestKey|sourceVersion|evidenceSetVersion)\\b)"
         )
         const val WARNING_ENGLISH_REPLY_REQUIRED = "AI_REPLY_ENGLISH_REQUIRED"
+        // 计划 01：条目答案剥离了 frame 语气词（称呼/开场致谢/落款/收尾客套）。
+        const val WARNING_FRAME_PHRASE_STRIPPED = "AI_REPLY_FRAME_PHRASE_STRIPPED"
+        // 计划 01（I-2）：剥离会清空答案时跳过，原文返回 —— 剥离永不成为生成失败成因。
+        const val WARNING_FRAME_PHRASE_STRIP_SKIPPED = "AI_REPLY_FRAME_PHRASE_STRIP_SKIPPED"
         private const val GROUNDED_REPAIR_TEMPERATURE = 0.0
         const val UNAUTHORIZED_ACTION_REMOVED = "UNAUTHORIZED_ACTION_REMOVED"
         const val TRUST_REPAIR_EXHAUSTED = "AI_REPLY_TRUST_REPAIR_EXHAUSTED"

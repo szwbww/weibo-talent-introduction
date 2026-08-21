@@ -5016,4 +5016,137 @@ class AiReplyDraftServiceTest {
         assertNull(result.generationKind)
         assertEquals(AiReplyGenerationState.FALLBACK_NO_RESPONSE, result.generationState)
     }
+
+    // ── 计划 01：条目答案剥离邮件框架语气词（I-1/I-2/I-5/I-6/I-7）─────────────
+
+    private val framePhraseProhibition =
+        "Do not include a salutation, an opening thank-you line, a closing courtesy line, or a sign-off. " +
+            "The reply frame supplies those separately. Begin directly with the substance of the answer."
+
+    @Test
+    fun `operator directed answer strips frame phrases and keeps substance verbatim`() {
+        stubEmptyFrame()
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult(
+                    "Dear Josep,\n\nThank you for your message.\n\n" +
+                        "At this stage we are reviewing your profile.\n\nBest regards,"
+                )
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "First question?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "First question?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Reply that we are reviewing the profile."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        val answer = result.itemAnswer?.answerText
+        assertEquals("At this stage we are reviewing your profile.", answer)
+        assertFalse(answer!!.contains("Dear "))
+        assertFalse(answer.contains("Thank you for your message"))
+        assertFalse(answer.contains("Best regards"))
+        assertTrue(result.warningCodes.contains(AiReplyDraftService.WARNING_FRAME_PHRASE_STRIPPED))
+        assertFalse(result.warningCodes.contains(AiReplyDraftService.WARNING_FRAME_PHRASE_STRIP_SKIPPED))
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains(framePhraseProhibition), "system prompt must carry the frame-phrase prohibition")
+    }
+
+    @Test
+    fun `pending acknowledgement strips frame phrases and keeps substance verbatim`() {
+        stubEmptyFrame()
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult(
+                    "Dear Josep,\n\nThank you for your message.\n\n" +
+                        "I do not have verified information to confirm it yet, so I will check and follow up.\n\nBest regards,"
+                )
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you confirm the programme details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you confirm the programme details?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+            requestKey = "target-request"
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        val answer = result.itemAnswer?.answerText
+        assertEquals("I do not have verified information to confirm it yet, so I will check and follow up.", answer)
+        assertFalse(answer!!.contains("Dear "))
+        assertFalse(answer.contains("Thank you for your message"))
+        assertFalse(answer.contains("Best regards"))
+        assertTrue(result.warningCodes.contains(AiReplyDraftService.WARNING_FRAME_PHRASE_STRIPPED))
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains(framePhraseProhibition), "system prompt must carry the frame-phrase prohibition")
+    }
+
+    @Test
+    fun `operator directed answer keeps a degenerate sign-off-only reply instead of failing`() {
+        stubEmptyFrame()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("Best regards,")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "First question?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "First question?",
+                factRuleIds = emptyList(),
+                status = RequestGroundingStatus.UNSUPPORTED
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Reply to the question."
+        )
+
+        // I-2：剥离跳过而非清空 —— 原文返回，仍是可锁定的成功结果，不是生成失败。
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        assertEquals("Best regards,", result.itemAnswer?.answerText)
+        assertTrue(result.warningCodes.contains(AiReplyDraftService.WARNING_FRAME_PHRASE_STRIP_SKIPPED))
+        assertFalse(result.warningCodes.contains(AiReplyDraftService.WARNING_FRAME_PHRASE_STRIPPED))
+    }
 }

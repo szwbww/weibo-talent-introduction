@@ -1777,6 +1777,59 @@ class TrustReplyWorkbenchItemFlowTest {
         assertTrue(assembled.rawDraftText.isNotBlank())
     }
 
+    // ── 计划 01：剥离后的答案过锁定校验，整合后框架语句恰好各出现一次 ──────────
+
+    @Test
+    fun `stripped operator directed answer validates and composes exactly one frame phrase each`() {
+        val strippedAnswer =
+            "We are reviewing your profile at this stage and will follow up once the initial review is complete."
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.UNSUPPORTED,
+            handling = operatorDirectedHandling(),
+            answerText = strippedAnswer,
+            claims = emptyList()
+        )
+        val v47Frame = ResolvedReplyFrame(
+            selection = ReplyFrameSelection(
+                salutationSnippetId = 1L,
+                greetingSnippetId = 2L,
+                ackSnippetId = null,
+                closingSnippetId = 3L
+            ),
+            version = "frame-v47",
+            salutation = "Dear Professor,",
+            greeting = "Thank you for your email. Please find our answers below.",
+            acknowledgement = null,
+            closing = "Please let us know if you have any further questions.\n\nBest regards,\nTalent Introduction Team"
+        )
+        Mockito.`when`(fixture.replySnippetService.resolveDefaultSelectableFrame()).thenReturn(v47Frame)
+        // 用真实 composer 产出预期拼接结果，再以精确值桩掉 composer/preview，
+        // 避免 any()/isNull() 这类返回 null 的 matcher 在 when(...) 内抛 NPE
+        //（本文件既有桩一律使用 `?: default` 兜底或精确值，此处走精确值）。
+        val realComposer = AiReplyPointByPointComposer(
+            Mockito.mock(QaRuleRepository::class.java),
+            fixture.replySnippetService
+        )
+        val expectedRaw = realComposer.composeLockedItems(listOf(strippedAnswer), v47Frame)
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf(strippedAnswer), v47Frame))
+            .thenReturn(expectedRaw)
+        Mockito.`when`(fixture.previewService.preview(expectedRaw, fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        // IP-2：剥离后的答案逐字通过 validateLockedItem（assemble 内部），
+        // claims 为空、findViolations 为空。
+        val response = fixture.service.assemble(fixture.request)
+
+        assertEquals(strippedAnswer, response.itemVersions.single().answerText)
+        assertTrue(response.itemVersions.single().claims.isEmpty())
+        // IP-1：整合正文中三种框架语句各自只出现一次，且只由 frame 片段提供。
+        assertEquals(1, response.rawDraftText.split("Dear Professor,").size - 1)
+        assertEquals(1, response.rawDraftText.split("Best regards").size - 1)
+        assertEquals(1, response.rawDraftText.split("Thank you for your email").size - 1)
+        assertTrue(response.rawDraftText.startsWith("Dear Professor,"))
+        assertTrue(response.rawDraftText.contains("\n\nBest regards,\nTalent Introduction Team"))
+    }
+
     private fun operatorDirectedHandling(): TrustReplyItemHandling {
         val handling = TrustReplyItemHandling.values().firstOrNull {
             it.name == "ANSWER_FROM_OPERATOR_INPUT"
