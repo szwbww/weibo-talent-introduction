@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md (commit 5b6c6ffe777b00c447c81cc38700f80f9ec07fdb)
 - Amendments: A1, A2, A3, A4
 - Master base: bb34ca2001d0abeac3bd7a8fc13995769e14143e
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-21T00:00:00Z
-- Current child: p3
-- Waiting role: VERIFIER
+- Current child: p4
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Two items. (1) p4 implementation 12b3b7d is committed and its named tests pass, but the full JS suite fails at unlisted src/test/js/qaFactCardEditor.test.js:99-104 ("loadQa does not request coverage-keys endpoint" asserts the endpoint is NOT requested — contradicts p4 I-3/T6 which mandates loadQa request /api/qa/coverage-keys; the file ALREADY contains the positive twin case at :102, pre-existing state from commit 6d2f77c). Fix requires amendment A5 adding it as the 14th authorized file. (2) The plan's required Flyway migration integration run (mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true) is unexecutable: docker info exit 1, no docker socket; repo convention (ProgrammeIdentityFactsMigrationTest docstring) substitutes text-level migration assertions, and p4's plan file #9 already mandates V107 text assertions in QaRuleManagementServiceTest (implemented; 60 tests pass). Classification of that single required command needs human decision.
+- Resume from: b9c8e1d (p4 base; implementation 12b3b7d committed and retained)
 
 ## Baseline
 
@@ -35,8 +35,8 @@
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | p1 | docs/plans/2026-08-21/ui-tweaks-01-check-replies-move-and-auto-preview-removal.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | none | 2 | LIGHT_PASS_WITH_NOTES | bb34ca2001d0abeac3bd7a8fc13995769e14143e | 9b90e41c678c396c7e720832c58e162e717f34da | 1 | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 53e12b979025e1df5f36736b2baf30d9e0bc688e | b525450eeae6375db4ec64f1ca4e96360f941378 | epoch 2 (A1 approved 2026-08-21); round 1 FIXED; verifier P1Verifier-2; RECORD_ONLY O-1 (A1 guard asserts 2 extra absence tokens, benign); implementer P1Implementer-2 |
 | p2 | docs/plans/2026-08-21/ui-tweaks-02-overlay-and-dialog-contrast.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p1 | 2 | LIGHT_PASS | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 0 | — | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 69a6ee46684c3e90e4a3161505ccca5e13df5e1f | epoch 2 (A2+A3 approved 2026-08-21); verifier P2Verifier; RECORD_ONLY O-1 (uncommitted doc-only edits at verify time, attributed to 0ad6b3b); implementer P2Implementer |
-| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 2 | LIGHT_VERIFYING | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | 0 | — | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | — | epoch 2 (A4 approved 2026-08-21); implementer P3Implementer (epochs 1-2); verifier dispatch pending |
-| p4 | docs/plans/2026-08-21/qa-gate-visibility.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p3 | 1 | PENDING | — | — | 0 | — | — | — | QA 门禁可见化 + V107；10 files, 2 subsystems |
+| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 2 | LIGHT_PASS | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | 0 | — | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | 63a228a24134a3f6de8d510ce272d68941f06229 | epoch 2 (A4 approved 2026-08-21); verifier P3Verifier; RECORD_ONLY O-1 (S-1 line drift, verbatim content OK), O-2 (mvn node record via exec plugin); implementer P3Implementer |
+| p4 | docs/plans/2026-08-21/qa-gate-visibility.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p3 | 1 | PAUSED_FOR_HUMAN | b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589 | 12b3b7d712edab5888cd79007befe21a81db5f97 | 0 | — | 12b3b7d712edab5888cd79007befe21a81db5f97 | — | QA 门禁可见化 + V107；13 files (10 plan + 3 per A3)；implementer P4Implementer; gates fail at unlisted qaFactCardEditor.test.js stale absence case — amendment A5 pending; Flyway docker command unexecutable (docker unavailable) — classification pending human |
 
 ## Amendments
 

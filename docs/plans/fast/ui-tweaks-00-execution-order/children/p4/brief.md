@@ -5,7 +5,7 @@
   (identity commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd)
 - Master plan (ordering and global constraints):
   `docs/plans/2026-08-21/ui-tweaks-00-execution-order.md`
-- Child base (product boundary): p3 terminal Code head (set at dispatch time)
+- Child base (product boundary): `b9c8e1d4f933dbb6fe12c169a7dfe79aa1830589` (p3 terminal Code head)
 - Cache key for this child: `20260821-v12-qa-coverage-gate` (I-8; P3 set v11)
 
 ## Global constraints (from master plan)
@@ -22,7 +22,7 @@
    if needed; never create/write it in this worktree.
 5. Commit locally as `feat(fast-p): implement p4`; exclude fast-p evidence files.
 
-## Authorized files (10 — exactly, the plan's limit)
+## Authorized files (13 — 10 plan + 3 per amendment A3)
 
 | # | File | Action |
 |---|---|---|
@@ -36,6 +36,15 @@
 | 8 | src/test/js/qaCoverageKeyEditor.test.js | modify (flip 4 absence assertions; add collection contract + four-state cases) |
 | 9 | src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleManagementServiceTest.kt | modify (real rule-24 fixture; unpaired pass-through; V107 text assertions; :810 semantics) |
 | 10 | src/test/js/batchSendTaskConsoleVisualFix.test.js | modify (triad assertions) |
+| 11 | src/test/js/checkRepliesRelocation.test.js | modify (A3: key v11→v12 in CACHE_KEY + I-3 assertion) |
+| 12 | src/test/js/overlayAndDialogContrast.test.js | modify (A3: key v11→v12 in triad assertion) |
+| 13 | src/test/js/manualReplySubjectPrefill.test.js | modify (A3: key v11→v12 in triad assertion) |
+
+Budget note: the plan states "文件数 10（上限 10）"; rows 11-13 are authorized by amendment A3
+(approved 2026-08-21, master plan §三键断言测试的跨计划同步规则) — the ≤10 figure was the
+planning-time decomposition criterion for the original four plans, and the approved A3 rule
+explicitly applies to p4 ("each subsequent child (p3, p4)"). The three files carry only the
+cache-key literal change to `20260821-v12-qa-coverage-gate`; all other assertions verbatim.
 
 ## Key invariants (plan sections are authoritative)
 
