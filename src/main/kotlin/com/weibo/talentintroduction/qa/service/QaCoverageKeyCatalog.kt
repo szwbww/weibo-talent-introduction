@@ -9,6 +9,8 @@ object QaCoverageKeyCatalog {
     )
 
     data class ControlledCoverageGroup(
+        val id: String,
+        val name: String,
         val keys: Set<String>,
         val canonicalAnswerBody: String
     )
@@ -16,33 +18,46 @@ object QaCoverageKeyCatalog {
     /** V82 atomic fact groups: coverage set -> its exact canonical answer body. */
     private val controlledCoverageGroups: List<ControlledCoverageGroup> = listOf(
         ControlledCoverageGroup(
+            id = "G1",
+            name = "材料保密",
             keys = setOf("confidentiality.materials"),
             canonicalAnswerBody = "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction."
         ),
         ControlledCoverageGroup(
+            id = "G2",
+            name = "费用政策",
             keys = setOf("fees.policy"),
             canonicalAnswerBody = "We never charge any fees throughout the entire process."
         ),
         ControlledCoverageGroup(
+            id = "G3",
+            name = "合同安排",
             keys = setOf("contract.party", "contract.terms"),
             canonicalAnswerBody = "After selection, you will sign a labor contract directly with the matched enterprise, and you may review the full terms before making any commitment."
         ),
         ControlledCoverageGroup(
+            id = "G4",
+            name = "签约前 IP 边界",
             keys = setOf("ip.arrangements"),
             canonicalAnswerBody = "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement."
         )
     )
 
+    fun controlledGroups(): List<ControlledCoverageGroup> = controlledCoverageGroups
+
+    fun groupIdOf(key: String): String? =
+        controlledCoverageGroups.firstOrNull { key in it.keys }?.id
+
+    fun isControlled(key: String): Boolean =
+        controlledCoverageGroups.any { key in it.keys }
+
     fun validateControlledBody(coverageKeys: List<String>, answerBody: String) {
         val parsed = coverageKeys.toSet()
-        val controlled = controlledCoverageGroups.flatMap { it.keys }.toSet()
-        if (parsed.none { it in controlled }) {
-            return
-        }
+        // I-1: the gate only applies when the coverage set is EXACTLY one
+        // controlled group. Overview rules that merely mention a controlled
+        // key, or partial groups, are not authorities and pass unchecked.
         val group = controlledCoverageGroups.firstOrNull { it.keys == parsed }
-            ?: throw IllegalArgumentException(
-                "Controlled coverage keys must form exactly one V82 atomic fact group"
-            )
+            ?: return
         if (answerBody.trim() != group.canonicalAnswerBody) {
             throw IllegalArgumentException(
                 "Answer body must match the V82 canonical body for coverage ${group.keys.sorted().joinToString(",")}"

@@ -54,6 +54,9 @@ function createSandbox() {
             apiCalls.push(url);
             if (url === "/api/qa/categories") return sandbox.state.categories;
             if (url === "/api/qa/rules") return sandbox.state.qaRules;
+            if (url === "/api/qa/coverage-keys") return sandbox.state.qaCoverageKeys || [];
+            if (url === "/api/qa/coverage-keys/controlled-groups") return sandbox.state.qaControlledGroups || [];
+            if (url === "/api/qa/coverage-keys/authorities") return sandbox.state.qaCoverageAuthorities || {};
             throw new Error("unexpected url: " + url);
         },
         apiCalls,
@@ -96,11 +99,16 @@ describe("qa fact card editor", () => {
         assert.ok(indexHtmlSource.includes("<th>回复策略</th>"));
     });
 
-    it("loadQa does not request coverage-keys endpoint", async () => {
+    it("loadQa fetches coverage-keys metadata plus gate endpoints", async () => {
         const sb = createSandbox();
         await sb.loadQa();
-        assert.ok(!sb.apiCalls.includes("/api/qa/coverage-keys"));
-        assert.deepEqual(sb.apiCalls, ["/api/qa/categories", "/api/qa/rules"]);
+        assert.deepEqual(sb.apiCalls, [
+            "/api/qa/categories",
+            "/api/qa/rules",
+            "/api/qa/coverage-keys",
+            "/api/qa/coverage-keys/controlled-groups",
+            "/api/qa/coverage-keys/authorities"
+        ]);
     });
 
     it("renderQaRulesTable shows policy badges", () => {

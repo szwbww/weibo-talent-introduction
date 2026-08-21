@@ -144,6 +144,29 @@ class QaRuleManagementService(
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
+    /**
+     * I-5: every enabled rule whose stored coverage set contains each controlled
+     * key, keyed by that key. Pure read (no repository projection: reuses
+     * findAllEnabledOrdered + parseStored), used only for the revoke-confirm copy.
+     */
+    fun listCoverageAuthorities(): Map<String, List<AuthorityRuleResponse>> {
+        val byKey = mutableMapOf<String, MutableList<AuthorityRuleResponse>>()
+        ruleRepository.findAllEnabledOrdered().forEach { rule ->
+            val ruleId = rule.id ?: error("QA rule id is required")
+            QaCoverageKeyCatalog.parseStored(rule.coverageKeys).forEach { key ->
+                byKey.getOrPut(key) { mutableListOf() }
+                    .add(AuthorityRuleResponse(ruleId, rule.displayName))
+            }
+        }
+        val ordered = LinkedHashMap<String, List<AuthorityRuleResponse>>()
+        QaCoverageKeyCatalog.controlledGroups().forEach { group ->
+            group.keys.sorted().forEach { key ->
+                ordered[key] = byKey[key].orEmpty()
+            }
+        }
+        return ordered
+    }
+
     private fun rejectQaVariants(variants: List<String>) {
         if (variants.isNotEmpty()) {
             throw IllegalArgumentException("QA rule content variants are no longer supported")
@@ -173,6 +196,11 @@ data class QaRuleWithCategory(
 data class QaRuleDetail(
     val rule: QaRule,
     val variants: List<String> = emptyList()
+)
+
+data class AuthorityRuleResponse(
+    val id: Long,
+    val displayName: String?
 )
 
 data class QaCategoryCreateCommand(

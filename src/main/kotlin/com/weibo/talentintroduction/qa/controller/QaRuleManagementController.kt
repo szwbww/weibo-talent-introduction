@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.service.PreviewVariableItem
 import com.weibo.talentintroduction.mail.service.VariableMeta
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
+import com.weibo.talentintroduction.qa.service.AuthorityRuleResponse
 import com.weibo.talentintroduction.qa.service.QaCategoryCreateCommand
 import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import com.weibo.talentintroduction.qa.service.QaRuleCreateCommand
@@ -130,14 +131,37 @@ class QaRuleManagementController(
 
     @GetMapping("/coverage-keys")
     fun listCoverageKeys(): List<CoverageKeyMetadataResponse> =
-        QaCoverageKeyCatalog.all().map {
+        QaCoverageKeyCatalog.all().map { entry ->
+            val groupId = QaCoverageKeyCatalog.groupIdOf(entry.key)
             CoverageKeyMetadataResponse(
-                key = it.key,
-                label = it.label,
-                description = it.description,
-                group = it.group
+                key = entry.key,
+                label = entry.label,
+                description = entry.description,
+                group = entry.group,
+                controlled = QaCoverageKeyCatalog.isControlled(entry.key),
+                groupId = groupId,
+                groupName = groupId?.let { id ->
+                    QaCoverageKeyCatalog.controlledGroups().first { it.id == id }.name
+                }
             )
         }
+
+    /** I-4: read-only definition of the four controlled groups; no write endpoint exists. */
+    @GetMapping("/coverage-keys/controlled-groups")
+    fun listControlledGroups(): List<ControlledGroupResponse> =
+        QaCoverageKeyCatalog.controlledGroups().map {
+            ControlledGroupResponse(
+                id = it.id,
+                name = it.name,
+                keys = it.keys.sorted(),
+                canonicalBody = it.canonicalAnswerBody
+            )
+        }
+
+    /** I-5: read-only last-authority source lookup, keyed by controlled key. */
+    @GetMapping("/coverage-keys/authorities")
+    fun listCoverageAuthorities(): Map<String, List<AuthorityRuleResponse>> =
+        service.listCoverageAuthorities()
 
     @GetMapping("/audit/rule-usage")
     fun ruleUsageAudit(
@@ -340,7 +364,17 @@ data class CoverageKeyMetadataResponse(
     val key: String,
     val label: String,
     val description: String,
-    val group: String
+    val group: String,
+    val controlled: Boolean,
+    val groupId: String?,
+    val groupName: String?
+)
+
+data class ControlledGroupResponse(
+    val id: String,
+    val name: String,
+    val keys: List<String>,
+    val canonicalBody: String
 )
 
 private fun QaCategory.toResponse(): QaCategoryResponse =

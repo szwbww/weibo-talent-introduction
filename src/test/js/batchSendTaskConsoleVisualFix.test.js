@@ -46,9 +46,9 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-        assert.ok(html.includes('styles.css?v=20260820-v8-trust-fact-actions'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260820-v8-trust-fact-actions'));
-        assert.ok(html.includes('app.js?v=20260820-v8-trust-fact-actions'));
+        assert.ok(html.includes('styles.css?v=20260821-v9-qa-coverage-gate'));
+        assert.ok(html.includes('trust-reply-workbench.js?v=20260821-v9-qa-coverage-gate'));
+        assert.ok(html.includes('app.js?v=20260821-v9-qa-coverage-gate'));
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
